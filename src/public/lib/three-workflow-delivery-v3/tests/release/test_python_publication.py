@@ -38,14 +38,22 @@ def _readback(registry, distributions):
     )
 
 
-@pytest.mark.parametrize("state", ["absent", "exact", "partial", "conflict"])
-def test_python_publication_snapshot_forms_only_absent_or_exact_set(state):
-    """A partial/conflicting version cannot authorize completion uploads."""
+@pytest.mark.parametrize(
+    "state", ["absent", "exact", "wheel", "sdist", "conflict"]
+)
+def test_python_publication_snapshot_classifies_absent_exact_and_exact_subset(
+    state,
+):
+    """Only exact retained files can prune the complete approved upload plan."""
     decision, _, distributions = qualification()
     if state == "absent":
         observed = native_observation(decision)
-    elif state == "partial":
-        observed = native_observation(decision, distributions[:1], "partial")
+    elif state in {"wheel", "sdist"}:
+        observed = native_observation(
+            decision,
+            tuple(d for d in distributions if d.variant == state),
+            "partial",
+        )
     else:
         if state == "conflict":
             distributions = (
@@ -53,12 +61,12 @@ def test_python_publication_snapshot_forms_only_absent_or_exact_set(state):
                 distributions[1],
             )
         observed = native_observation(decision, distributions, "complete")
-    if state in {"partial", "conflict"}:
+    if state == "conflict":
         with pytest.raises(ValueError, match="blocks publication"):
             publication_snapshot(decision, observed)
     else:
         snapshot = publication_snapshot(decision, observed)
-        assert snapshot.action_required is (state == "absent")
+        assert snapshot.action_required is (state != "exact")
         action = snapshot.to_document()["action"]
         if state == "exact":
             assert action is None
@@ -68,6 +76,10 @@ def test_python_publication_snapshot_forms_only_absent_or_exact_set(state):
                 (item["ordinal"], item["variant"])
                 for item in action["operations"]
             ] == [(0, "wheel"), (1, "sdist")]
+            assert [item["disposition"] for item in action["operations"]] == [
+                "already-present" if state == variant else "upload"
+                for variant in ("wheel", "sdist")
+            ]
 
 
 @pytest.mark.parametrize(
@@ -106,8 +118,8 @@ def test_python_marker_rejects_fresh_state_or_authority_drift(change):
     marker, _, _, distributions = prepared_publication()
     changes = {}
     if change == "partial":
-        changes["absence"] = replace(
-            marker.absence, files=distributions[:1], classification="partial"
+        changes["pre_state"] = replace(
+            marker.pre_state, files=distributions[:1], classification="partial"
         )
     elif change == "destination":
         changes["fresh_governance"] = governance(
@@ -132,7 +144,7 @@ def test_python_publication_success_requires_two_posts_and_exact_readback(
 ):
     """HTTP 200, including an identical replay, needs both exact reads."""
     marker, marker_ref, payloads, distributions = prepared_publication(name)
-    registry = marker.absence.registry
+    registry = marker.pre_state.registry
     ok = PythonHttpResponse(200, acknowledgement, "text/plain")
     transport = FakeHttp(
         ok,
@@ -194,7 +206,7 @@ def test_python_publication_failure_stops_without_completion_or_retry(
 ):
     """Known partial and ambiguous effects stay failed without extra uploads."""
     marker, marker_ref, payloads, distributions = prepared_publication()
-    registry = marker.absence.registry
+    registry = marker.pre_state.registry
     ok = PythonHttpResponse(200, b"created", "text/plain")
     rejected = PythonHttpResponse(400, b"duplicate", "text/plain")
     missing = PythonHttpResponse(404, b"missing", "text/plain")

@@ -25,8 +25,10 @@ limits, and the [delivery gates](docs/migration-strategy.md#python-smoke-deliver
 keep implementation, configuration/admission and publication separately authorized.
 The npm and NuGet smoke objectives remain complete.
 The [partial-publication recovery design](docs/hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
-connects reproducible rebuilding to exact-subset completion; implementation
-awaits separate protected delivery. No hosted recovery is claimed.
+is implemented: fresh reproducible builds and qualification feed exact-subset
+completion, missing-file uploads and strict terminal audit. Real-build and
+controlled-transport recovery tests preserve prior failures. No hosted recovery
+is claimed.
 
 The old `governance run-fixed-acceptance-probe` command and fixed-coordinate
 Python producer APIs are retired. `governance admit-acceptance-evidence` and

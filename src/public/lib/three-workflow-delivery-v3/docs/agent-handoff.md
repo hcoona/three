@@ -29,9 +29,11 @@ operations, publication, or another npm proving run.
 
 The [partial-publication recovery contract](./hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
 permits a fresh independently built/qualified Attempt to retain exact existing
-files and upload only missing files. Its implementation is pending separate
-protected delivery under the current recovery Wave; no hosted recovery has
-been executed or authorized by this design.
+files and upload only missing files. The runtime implements both single-file
+subsets with current-Attempt Approval, strict pre-state binding and complete
+Result/Finalizer replay. Joined real-build and controlled-transport tests cover
+fresh recovery while preserving the earlier failed Outcome. This is capability
+validation; no hosted recovery has been executed or authorized.
 
 The npm and NuGet GitHub Packages smoke objectives are complete. Use the
 [NuGet completion evidence](./validation/nuget-normal-live-evidence.md) and

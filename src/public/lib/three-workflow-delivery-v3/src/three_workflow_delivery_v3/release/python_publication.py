@@ -1,4 +1,4 @@
-"""One Python set action, two ordered one-shot uploads and scalar terminal."""
+"""One Python set action, ordered missing-file uploads and scalar terminal."""
 
 from __future__ import annotations
 
@@ -58,6 +58,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from three_workflow_delivery_v3.adapters.pypi import PythonHttpResponse
     from three_workflow_delivery_v3.release.python_qualification import (
         PythonQualificationDecision,
     )
@@ -86,9 +87,9 @@ def _exact_files(
     observation: PythonIndexObservation,
     decision: PythonQualificationDecision,
     *,
-    wheel_only: bool = False,
+    variants: tuple[str, ...] = ("wheel", "sdist"),
 ) -> bool:
-    originals = decision.artifacts[:1] if wheel_only else decision.artifacts
+    originals = tuple(a for a in decision.artifacts if a.variant in variants)
     return (
         observation.registry == decision.snapshot.governance.registry
         and observation.version
@@ -102,8 +103,37 @@ def _exact_files(
             for a in originals
         )
         and observation.classification
-        == ("partial" if wheel_only else "complete")
+        == (
+            "complete"
+            if len(originals) == len(decision.artifacts)
+            else "partial"
+        )
     )
+
+
+def _verified_inventory(
+    observation: PythonIndexObservation,
+) -> dict[str, JsonValue]:
+    """Bind the raw existing-project index to the verified file inventory."""
+    response = observation.index_response
+    if (
+        response is None
+        or python_digest(response.body) != observation.index_digest
+    ):
+        message = (
+            "Python publication requires verified existing-project inventory"
+        )
+        raise ValueError(message)
+    inventory = index_inventory(
+        observation.registry, response, observation.version
+    )
+    if {
+        name: "sha256:" + python_text(cast("dict", entry)["hashes"]["sha256"])
+        for name, entry in inventory.items()
+    } != {d.filename: d.digest for d in observation.files}:
+        message = "Python pre-state inventory differs from verified files"
+        raise ValueError(message)
+    return inventory
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,14 +161,17 @@ class PythonRemoteObservation:
 
     @property
     def classification(self) -> str:
-        """Partial or conflicting state never authorizes completion uploads."""
+        """Admit only absent, exact complete or exact single-file state."""
         if self.native.classification == "absent" and not self.native.files:
             return "absent"
-        return (
-            "exact-satisfied"
-            if _exact_files(self.native, self.decision)
-            else "blocked"
-        )
+        if _exact_files(self.native, self.decision):
+            return "exact-satisfied"
+        if any(
+            _exact_files(self.native, self.decision, variants=(variant,))
+            for variant in ("wheel", "sdist")
+        ):
+            return "exact-subset"
+        return "blocked"
 
     def to_document(self) -> dict[str, JsonValue]:
         """Retain sanitized index/download facts under the current Attempt."""
@@ -161,18 +194,29 @@ class PythonPublicationSnapshot:
     observation_reference: ArtifactReference
 
     def __post_init__(self) -> None:
-        """Materialize only qualified absent or exactly complete state."""
+        """Materialize only absence, exact subset or exact complete state."""
         _reference(self.observation_reference, self.observation.to_document())
-        if self.observation.classification not in {"absent", "exact-satisfied"}:
-            message = (
-                "Python partial, conflicting or unknown set blocks publication"
-            )
+        if self.observation.classification not in {
+            "absent",
+            "exact-subset",
+            "exact-satisfied",
+        }:
+            message = "Python conflicting or unverified set blocks publication"
             raise ValueError(message)
 
     @property
     def action_required(self) -> bool:
-        """Absence alone is a candidate, not a service success guarantee."""
-        return self.observation.classification == "absent"
+        """Missing files are candidates, not service success guarantees."""
+        return self.observation.classification != "exact-satisfied"
+
+    @property
+    def dispositions(self) -> tuple[str, ...]:
+        """Seal each qualified original as an upload or exact retained file."""
+        present = {d.variant for d in self.observation.native.files}
+        return tuple(
+            "already-present" if a.variant in present else "upload"
+            for a in self.observation.decision.artifacts
+        )
 
     @property
     def attempt(self) -> ReleaseAttemptIdentity:
@@ -199,6 +243,7 @@ class PythonPublicationSnapshot:
                     {
                         "ordinal": i,
                         "variant": a.variant,
+                        "disposition": self.dispositions[i],
                         "filename": a.filename,
                         "artifact-reference": a.reference.to_document(),
                     }
@@ -228,13 +273,15 @@ def render_python_approval_summary(
         f"Profile: {snapshot.registry.profile_digest}",
     ]
     lines.extend(
-        f"{i}: {a.filename} {a.reference.payload_digest}"
+        f"{i}: {snapshot.dispositions[i]} {a.filename} "
+        f"{a.reference.payload_digest}"
         for i, a in enumerate(decision.artifacts)
     )
     lines.append(
-        "Upload wheel once, verify exact bytes, then upload sdist once "
-        "and verify the complete set. Partial success remains failure. "
-        "No retry, completion, rollback or deletion."
+        "Retain exact already-present files. Upload only missing files once "
+        "in wheel/sdist order, verifying exact bytes and the final complete "
+        "set. Partial success remains failure. No same-Attempt retry, "
+        "rollback or deletion."
     )
     return ("\n".join(lines) + "\n").encode()
 
@@ -360,16 +407,16 @@ class PythonPublicationAuthorization:
 
 @dataclass(frozen=True, slots=True)
 class PythonMutationMarker:
-    """Durable one-set authority and fresh proofs before operation zero."""
+    """Durable one-set authority and fresh proofs before the first upload."""
 
     authorization: PythonPublicationAuthorization
     authorization_reference: ArtifactReference
     fresh_governance: PythonGovernance
-    absence: PythonIndexObservation
+    pre_state: PythonIndexObservation
     observed_at: datetime
 
     def __post_init__(self) -> None:
-        """Reject changed authority, nonempty state or stale preparation."""
+        """Reject authority, approved subset, inventory or preparation drift."""
         _reference(
             self.authorization_reference, self.authorization.to_document()
         )
@@ -378,10 +425,26 @@ class PythonMutationMarker:
             self.fresh_governance, self.observed_at
         )
         if (
-            self.absence.registry != snapshot.registry
-            or self.absence.version != snapshot.observation.native.version
-            or self.absence.classification != "absent"
-            or self.absence.files
+            self.pre_state.registry != snapshot.registry
+            or self.pre_state.version != snapshot.observation.native.version
+            or self.pre_state.classification
+            != snapshot.observation.native.classification
+            or (
+                tuple(d.variant for d in self.pre_state.files)
+                != tuple(d.variant for d in snapshot.observation.native.files)
+            )
+            or (
+                bool(self.pre_state.files)
+                and not _exact_files(
+                    self.pre_state,
+                    snapshot.observation.decision,
+                    variants=tuple(
+                        d.variant for d in snapshot.observation.native.files
+                    ),
+                )
+            )
+            or _verified_inventory(self.pre_state)
+            != _verified_inventory(snapshot.observation.native)
             or self.observed_at < self.authorization.completed_at
             or self.fresh_governance.observed_at
             < self.authorization.completed_at
@@ -407,8 +470,8 @@ class PythonMutationMarker:
             "governance-observed-at": _instant(
                 self.fresh_governance.observed_at
             ),
-            "profile-digest": self.absence.registry.profile_digest,
-            "absence": self.absence.to_document(),
+            "profile-digest": self.pre_state.registry.profile_digest,
+            "pre-state": self.pre_state.to_document(),
             "observed-at": _instant(self.observed_at),
             "producer": PYTHON_PUBLISHER,
         }
@@ -416,7 +479,7 @@ class PythonMutationMarker:
 
 @dataclass(frozen=True, slots=True)
 class PythonOperationResult:
-    """One fixed action ordinal's sanitized invocation and readback facts."""
+    """One fixed file ordinal's retained proof or upload/readback facts."""
 
     ordinal: int
     status: str
@@ -431,7 +494,13 @@ class PythonOperationResult:
             type(self.ordinal) is not int
             or self.ordinal not in {0, 1}
             or self.status
-            not in {"not-attempted", "succeeded", "failed", "unknown"}
+            not in {
+                "not-attempted",
+                "already-present",
+                "succeeded",
+                "failed",
+                "unknown",
+            }
             or type(self.readback_exact) is not bool
         ):
             message = "invalid Python operation Result"
@@ -454,6 +523,14 @@ class PythonOperationResult:
                 and self.response_digest is None
             )
             or (self.readback_exact and self.readback_digest is None)
+            or (
+                self.status == "already-present"
+                and (
+                    self.response_digest is not None
+                    or not self.readback_exact
+                    or self.observation is not None
+                )
+            )
         ):
             message = "Python operation state lacks its exact evidence"
             raise ValueError(message)
@@ -494,25 +571,27 @@ class PythonPublicationResult:
             )
             raise ValueError(message)
         wheel, sdist = self.operations
-        if sdist.status != "not-attempted" and (
-            wheel.status != "succeeded" or not wheel.readback_exact
+        if sdist.status not in {"not-attempted", "already-present"} and (
+            wheel.status not in {"succeeded", "already-present"}
+            or not wheel.readback_exact
         ):
             message = "Python sdist invocation lacks definitive wheel success"
             raise ValueError(message)
         if self.final_readback_digest is not None:
             _digest(self.final_readback_digest, field="Python final readback")
-        if self.final_readback_exact != sdist.readback_exact:
+        uploads = [o for o in self.operations if o.status == "succeeded"]
+        satisfied = all(
+            o.status in {"succeeded", "already-present"} and o.readback_exact
+            for o in self.operations
+        )
+        if self.final_readback_exact != (bool(uploads) and satisfied):
             message = "Python final readback differs from operation evidence"
             raise ValueError(message)
         if self.final_readback_exact and (
             self.final_readback_digest is None
-            or any(
-                o.status != "succeeded" or not o.readback_exact
-                for o in self.operations
-            )
-            or self.final_readback_digest != sdist.readback_digest
+            or self.final_readback_digest != uploads[-1].readback_digest
         ):
-            message = "Python final exactness requires both exact readbacks"
+            message = "Python final exactness requires the last upload readback"
             raise ValueError(message)
         if (
             not self.final_readback_exact
@@ -525,19 +604,14 @@ class PythonPublicationResult:
 
     @property
     def result(self) -> str:
-        """Require two definitive successes and exact whole-set readback."""
-        return (
-            "published"
-            if self.final_readback_exact
-            and all(o.status == "succeeded" for o in self.operations)
-            else "failed"
-        )
+        """Require successful planned uploads and exact whole-set readback."""
+        return "published" if self.final_readback_exact else "failed"
 
     @property
     def mutation_classification(self) -> str:
         """Preserve partial effects and conservative ambiguity."""
         states = {o.status for o in self.operations}
-        if states == {"not-attempted"}:
+        if states <= {"not-attempted", "already-present"}:
             return "not-mutated"
         if states & {"unknown", "failed"}:
             return "possibly-mutated"
@@ -582,7 +656,7 @@ def execute_python_publication(  # noqa: PLR0913, PLR0915
     monotonic: Callable[[], float] = time.monotonic,
     wait: Callable[[float], None] = time.sleep,
 ) -> PythonPublicationResult:
-    """Consume a read-admitted durable marker, then send each original once."""
+    """Consume a durable pre-state marker, then send each missing file once."""
     _reference(marker_reference, marker.to_document())
     snapshot = marker.authorization.bundle.snapshot
     decision = snapshot.observation.decision
@@ -601,25 +675,25 @@ def execute_python_publication(  # noqa: PLR0913, PLR0915
     originals = tuple(
         a.inspect(p) for a, p in zip(decision.artifacts, payloads, strict=True)
     )
-    previous = marker.absence.index_response
-    if (
-        previous is None
-        or python_digest(previous.body) != marker.absence.index_digest
-        or index_inventory(snapshot.registry, previous, marker.absence.version)
-    ):
-        message = (
-            "Python publication requires verified existing-project absence"
-        )
-        raise ValueError(message)
+    _verified_inventory(marker.pre_state)
+    previous = cast("PythonHttpResponse", marker.pre_state.index_response)
     # Platform current-run admission and concurrency own cross-process replay;
     # this exclusive task-owned claim prevents accidental reuse in this job.
     with claim_path.open("xb"):
         pass
     entries = [
         PythonOperationResult(
-            i, "not-attempted", None, None, readback_exact=False
+            i,
+            "already-present"
+            if disposition == "already-present"
+            else "not-attempted",
+            None,
+            canonical_sha256(marker.pre_state.to_document())
+            if disposition == "already-present"
+            else None,
+            readback_exact=disposition == "already-present",
         )
-        for i in (0, 1)
+        for i, disposition in enumerate(snapshot.dispositions)
     ]
     evidence_root = claim_path.with_name(claim_path.name + "-observations")
     evidence_root.mkdir(exist_ok=False)
@@ -651,7 +725,10 @@ def execute_python_publication(  # noqa: PLR0913, PLR0915
 
     final_digest = None
     final_exact = False
+    present = {d.variant for d in marker.pre_state.files}
     for ordinal, distribution in enumerate(originals):
+        if snapshot.dispositions[ordinal] == "already-present":
+            continue
         invocation = upload_python_once(
             snapshot.registry, distribution, token, timed
         )
@@ -717,7 +794,9 @@ def execute_python_publication(  # noqa: PLR0913, PLR0915
                 )
                 readback_digest = canonical_sha256(readback.to_document())
                 exact = _exact_files(
-                    readback, decision, wheel_only=ordinal == 0
+                    readback,
+                    decision,
+                    variants=tuple(present | {distribution.variant}),
                 )
                 previous = final_index
             except (OSError, ValueError, TypeError):
@@ -734,7 +813,8 @@ def execute_python_publication(  # noqa: PLR0913, PLR0915
         )
         if status != "succeeded" or not exact:
             break
-        if ordinal == 1:
+        present.add(distribution.variant)
+        if present == {"wheel", "sdist"}:
             final_digest, final_exact = readback_digest, exact
     return PythonPublicationResult(
         marker.attempt,
@@ -825,22 +905,39 @@ def audit_python_publication_result(  # noqa: C901, PLR0912, PLR0915 - strict or
     result: PythonPublicationResult, marker: PythonMutationMarker
 ) -> None:
     """Verify immutable observations against the approved artifacts."""
-    decision = marker.authorization.bundle.snapshot.observation.decision
-    previous = marker.absence.index_response
-    if (
-        previous is None
-        or python_digest(previous.body) != marker.absence.index_digest
-        or index_inventory(
-            marker.absence.registry, previous, marker.absence.version
-        )
-    ):
-        message = "Python Result lacks verified previous inventory"
+    snapshot = marker.authorization.bundle.snapshot
+    decision = snapshot.observation.decision
+    if result.attempt != marker.attempt:
+        message = "Python Result belongs to another Attempt"
         raise ValueError(message)
+    _reference(result.mutation_marker_reference, marker.to_document())
+    _verified_inventory(marker.pre_state)
+    previous = cast("PythonHttpResponse", marker.pre_state.index_response)
+    present = {d.variant for d in marker.pre_state.files}
     previous_finish = 0.0
     original_authority = None
     for operation, artifact in zip(
         result.operations, decision.artifacts, strict=True
     ):
+        if snapshot.dispositions[operation.ordinal] == "already-present":
+            if (
+                operation.status != "already-present"
+                or operation.readback_digest
+                != canonical_sha256(marker.pre_state.to_document())
+                or not operation.readback_exact
+                or operation.response_digest is not None
+                or operation.observation is not None
+            ):
+                message = (
+                    "Python retained Result differs from approved pre-state"
+                )
+                raise ValueError(message)
+            continue
+        if operation.status == "already-present":
+            message = (
+                "Python planned upload cannot become an already-present Result"
+            )
+            raise ValueError(message)
         if operation.status != "succeeded":
             if (
                 operation.observation is not None
@@ -894,7 +991,7 @@ def audit_python_publication_result(  # noqa: C901, PLR0912, PLR0915 - strict or
             message = "Python Result upload order differs"
             raise ValueError(message)
         basis = ObservationBasis(
-            marker.absence.registry,
+            marker.pre_state.registry,
             f"normal-{operation.ordinal}",
             ExpectedAddition(
                 artifact.filename,
@@ -922,7 +1019,7 @@ def audit_python_publication_result(  # noqa: C901, PLR0912, PLR0915 - strict or
             continue
         final_index = replay_index_phase(phase, basis)
         readback = replay_readback(
-            marker.absence.registry,
+            marker.pre_state.registry,
             artifact.witness,
             final_index,
             evidence["downloads"],
@@ -938,7 +1035,7 @@ def audit_python_publication_result(  # noqa: C901, PLR0912, PLR0915 - strict or
                 raise ValueError(message) from None
             continue
         exact = _exact_files(
-            readback, decision, wheel_only=operation.ordinal == 0
+            readback, decision, variants=tuple(present | {artifact.variant})
         )
         if (
             operation.readback_digest
@@ -948,6 +1045,8 @@ def audit_python_publication_result(  # noqa: C901, PLR0912, PLR0915 - strict or
             message = "Python Result readback differs from original evidence"
             raise ValueError(message)
         previous = final_index
+        if exact:
+            present.add(artifact.variant)
         if any(
             number(cast("dict", item)["start"]) >= deadline
             for item in cast("list", evidence["downloads"])

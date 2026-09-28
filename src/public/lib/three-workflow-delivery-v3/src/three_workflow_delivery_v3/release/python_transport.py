@@ -325,7 +325,7 @@ def python_marker_from_document(
             "governance-source-commit",
             "governance-observed-at",
             "profile-digest",
-            "absence",
+            "pre-state",
             "observed-at",
             "producer",
         },
@@ -344,7 +344,10 @@ def python_marker_from_document(
         authorization,
         reference,
         fresh,
-        python_native_observation_from_document(doc["absence"], ()),
+        python_native_observation_from_document(
+            doc["pre-state"],
+            authorization.bundle.snapshot.observation.native.files,
+        ),
         observed_at,
     )
     _normalized(doc, result.to_document())

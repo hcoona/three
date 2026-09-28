@@ -1,5 +1,6 @@
 """Synthetic authorized Python set DAGs for pure publication scenario tests."""
 
+from dataclasses import replace
 from datetime import timedelta
 
 from three_workflow_delivery_v3.adapters.pypi import PythonIndexObservation
@@ -11,11 +12,12 @@ from three_workflow_delivery_v3.release.python_publication import (
     PythonPublicationAuthorization,
     PythonPublicationSnapshot,
     PythonRemoteObservation,
+    render_python_approval_summary,
 )
 from three_workflow_delivery_v3.repository.python_provider import python_digest
 
 from ..adapters.test_pypi import _entry, _index
-from ..python_fixtures import NOW, governance, qualification, reference
+from ..python_fixtures import NOW, qualification, reference
 
 
 def native_observation(decision, distributions=(), classification="absent"):
@@ -42,29 +44,15 @@ def publication_snapshot(decision, native):
     )
 
 
-def prepared_publication(name="testpypi"):
+def prepared_publication(name="testpypi", *, retained=(), qualified=None):
     """Construct a fully synthetic approved marker with exact record lineage."""
-    decision, payloads, distributions = qualification(name)
-    absence = native_observation(decision)
-    snapshot = publication_snapshot(decision, absence)
-    lines = [
-        "Python distribution set approval",
-        f"Target: {snapshot.attempt.execution.target}",
-        f"Run: {snapshot.attempt.workflow_run_id}",
-        f"Version: {decision.snapshot.model.provider.nbgv.pep440_version}",
-        f"Destination: {snapshot.registry.origin}",
-        f"Profile: {snapshot.registry.profile_digest}",
-        *(
-            f"{i}: {artifact.filename} {artifact.reference.payload_digest}"
-            for i, artifact in enumerate(decision.artifacts)
-        ),
-        (
-            "Upload wheel once, verify exact bytes, then upload sdist once and "
-            "verify the complete set. Partial success remains failure. "
-            "No retry, completion, rollback or deletion."
-        ),
-    ]
-    summary = ("\n".join(lines) + "\n").encode()
+    decision, payloads, distributions = qualified or qualification(name)
+    existing = tuple(d for d in distributions if d.variant in retained)
+    pre_state = native_observation(
+        decision, existing, "partial" if existing else "absent"
+    )
+    snapshot = publication_snapshot(decision, pre_state)
+    summary = render_python_approval_summary(snapshot)
     summary_reference = ArtifactReference(
         503,
         "sha256:" + "3" * 64,
@@ -98,8 +86,11 @@ def prepared_publication(name="testpypi"):
     marker = PythonMutationMarker(
         authorization,
         reference(authorization.to_document(), 506),
-        governance(name, NOW + timedelta(seconds=2)),
-        absence,
+        replace(
+            decision.snapshot.governance,
+            observed_at=NOW + timedelta(seconds=2),
+        ),
+        pre_state,
         NOW + timedelta(seconds=2),
     )
     return marker, reference(marker.to_document(), 507), payloads, distributions

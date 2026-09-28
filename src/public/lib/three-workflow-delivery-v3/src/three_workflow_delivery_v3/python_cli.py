@@ -654,7 +654,7 @@ def _publication(  # noqa: C901, PLR0915 - closed hosted stage dispatch
             decision.snapshot.governance.registry,
             initial=decision.snapshot.governance,
         )
-        absence = read_python_index(
+        pre_state = read_python_index(
             fresh.registry,
             decision.artifacts[0].witness,
             PythonHttpsTransport(),
@@ -663,7 +663,7 @@ def _publication(  # noqa: C901, PLR0915 - closed hosted stage dispatch
             authorization,
             inputs.reference("authorization"),
             fresh,
-            absence,
+            pre_state,
             datetime.now(UTC),
         )
     elif command == "execute":
