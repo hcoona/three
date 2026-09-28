@@ -684,7 +684,7 @@ def test_catalog_command_emits_exact_static_catalog(
         ]
         assert (
             definition["live_mutation_status"]
-            == "requires-python-native-acceptance"
+            == "requires-python-governance-admission"
         )
     assert output["capabilities"]["python/trusted-publishing-oidc-v1"][
         "github_permissions"

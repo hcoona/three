@@ -271,7 +271,7 @@ DESTINATION_DEFINITIONS: Mapping[str, DestinationDefinition] = MappingProxyType(
                 ("buddy",),
                 "side-effect/privileged-v1",
                 ("python/trusted-publishing-oidc-v1",),
-                "requires-python-native-acceptance",
+                "requires-python-governance-admission",
             ),
             DestinationDefinition(
                 "python/pypi-v1",
@@ -280,7 +280,7 @@ DESTINATION_DEFINITIONS: Mapping[str, DestinationDefinition] = MappingProxyType(
                 ("official",),
                 "side-effect/privileged-v1",
                 ("python/trusted-publishing-oidc-v1",),
-                "requires-python-native-acceptance",
+                "requires-python-governance-admission",
             ),
             DestinationDefinition(
                 "npm/github-packages-hcoona-three-v1",

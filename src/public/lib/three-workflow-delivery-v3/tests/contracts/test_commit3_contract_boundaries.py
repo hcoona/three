@@ -1239,7 +1239,7 @@ def test_repository_model_serializes_complete_canonical_document() -> None:
         },
     }
     assert snapshot.snapshot_digest == (
-        "sha256:36da2e277a4e267274bbc7c266a1f53fe4a48aa12d19f5cd4fab5201813964e5"
+        "sha256:131ceb5a482355ce97aa822d4b99fa51e4f4ab3439d31c6d65e57352321e583f"
     )
 
 
@@ -1271,11 +1271,11 @@ def test_exact_provider_result_and_repository_model_admission_preserve_concrete_
     assert result.nbgv.git_commit_id == TARGET
     assert result.nbgv.npm_package_version == NPM_VERSION
     assert result.result_digest == (
-        "sha256:69783612b6cb509af0f3aac90be0390f11f9793d70d8132170e6f308e0809711"
+        "sha256:29949febe75e94952183d70163942cde8983c84d0ee145fc9847a9ea9e08e829"
     )
     assert snapshot.release_units[0].builds[0].build_id == "npm-package"
     assert snapshot.quality[0].preset == "node/hcoona-release-smoke-npm-v1"
     assert snapshot.ready is True
     assert snapshot.snapshot_digest == (
-        "sha256:36da2e277a4e267274bbc7c266a1f53fe4a48aa12d19f5cd4fab5201813964e5"
+        "sha256:131ceb5a482355ce97aa822d4b99fa51e4f4ab3439d31c6d65e57352321e583f"
     )

@@ -442,7 +442,7 @@ def upload_python_once(
     token: str,
     transport: PythonHttpTransport,
 ) -> PythonUploadResponse:
-    """POST one original file once; duplicates and redirects are failures."""
+    """POST one original file once; only HTTP 200 acknowledges success."""
     require_public_python_version(distribution.witness.nbgv)
     inspect_python_distribution(
         distribution.filename,

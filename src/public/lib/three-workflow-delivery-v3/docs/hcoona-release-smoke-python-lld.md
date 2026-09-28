@@ -7,9 +7,8 @@ the [HLD](./high-level-design.md#python-smoke-extension) and its five MLDs.
 The V3 maintainer authors and maintains this carrier; implementers and reviewers
 use it to close the Python slice's concrete contracts without turning the MLDs
 into command inventories. The revised contract trusts platform non-replacement
-and identical replay under `WD-PY-006`. It is a design for the next disabled
-implementation, not a claim that the existing v1 runtime already supports the
-new admission. Both destinations stay disabled. The
+and identical replay under `WD-PY-006`. Runtime and both protected files
+implement strict Python Governance v2. Both destinations stay disabled. The
 [retired native interface](./validation/python-native-readiness.md) preserves
 failed-evidence consumers only; no duplicate/race suite is a prerequisite.
 Implementation, configuration/admission and publication require their separate
@@ -259,7 +258,7 @@ readback/consumer audit; no separate duplicate/race execution qualifies it.
 
 ## Python Governance v2 Migration
 
-The later disabled implementation replaces v1 atomically across the strict
+The disabled implementation replaces v1 atomically across the strict
 parser, constructors, serialized consumers, tests and both protected Governance
 files. The v2 schema retains the existing exact top-level fields except
 `native-acceptance`, which is removed, not set to a synthetic passing value.
@@ -284,8 +283,8 @@ selection, sentinel, no secrets and reviewed project-bound registration.
 Nothing in v2 infers configuration from a successful upload or source research.
 
 Migration must first ship both destinations blocked with no authentication,
-registry read, publisher registration or publication. This design PR leaves
-actual v1 files and runtime untouched. After implementation delivery, a
+registry read, publisher registration or publication. Both protected files
+use the blocked v2 form. After implementation delivery, a
 separately authorized configuration/admission change may make one destination
 ready from reviewed configuration and the accepted dependency basis. It does
 not require a completed publication before the first authorized publication.

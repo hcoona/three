@@ -18,7 +18,6 @@ from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonicalize,
     parse_canonical_json,
-    parse_json_strict,
 )
 from three_workflow_delivery_v3.repository.python_provider import (
     PYTHON_RELEASE_UNIT,
@@ -191,26 +190,6 @@ class NativeRequest:
         return cast(
             "dict[str, dict[str, JsonValue]]", self.document["targets"]
         )[label]
-
-
-def load_request(
-    root: Path, registry: str, expected_digest: str
-) -> NativeRequest:
-    """Read only the exact destination's protected non-null slot."""
-    slots = python_object(
-        parse_json_strict((root / SLOT_PATH).read_bytes()),
-        {"testpypi", "pypi"},
-    )
-    require(
-        registry in slots and slots[registry] is not None,
-        "Python native request slot is disabled",
-    )
-    request = NativeRequest(canonicalize(slots[registry]))
-    require(
-        request.registry.name == registry and request.digest == expected_digest,
-        "protected acceptance request mismatch",
-    )
-    return request
 
 
 def write_exclusive(root: Path, name: str, content: bytes) -> None:

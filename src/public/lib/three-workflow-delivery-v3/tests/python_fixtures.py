@@ -135,16 +135,6 @@ def ready_document(registry):
             .isoformat()
             .replace("+00:00", "Z"),
             "source-evidence-revision": TARGET,
-            "native-acceptance": {
-                "suite": "workflow-delivery/v3/python-native-suite-v1",
-                "registry": registry.name,
-                "project": PYTHON_RELEASE_UNIT,
-                "profile-digest": registry.profile_digest,
-                "evidence-digest": "sha256:" + "d" * 64,
-                "generation": "e" * 32,
-                "review": "https://github.com/hcoona/three/pull/1",
-                "passed": True,
-            },
             "configuration": {
                 "publisher-registration": python_publisher_tuple(registry),
                 "environment-id": 1901,
