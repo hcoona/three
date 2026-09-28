@@ -69,10 +69,22 @@ manifest rewriting service. A missing or unsupported shape fails. `nbgv-python`
 retains its existing public API and requirements. The producer lock/pinned
 backend must bind its full resolved build closure; the sdist declares portable
 build prerequisites, with the initial consumer's actual resolved versions
-retained as evidence. The producer uses CPython 3.14.3, UV 0.10.9, Hatchling 1.32.0, NBGV
-3.10.94, `nbgv-python` 2.1.0.dev1 and packaging 26.3. The hash-pinned
-`eng/workflow-delivery/v3/python-build-constraints.txt` closes the Hatchling
-backend dependency set against `uv.lock`.
+retained as evidence. The smoke package's `pyproject.toml` owns the exact
+Hatchling build requirement. `mise run update-uv-lock` resolves that pin with UV
+and generates both the hash-pinned
+`eng/workflow-delivery/v3/python-build-constraints.txt` and the V3 package's
+`_python_build_backend.py` from the manifest and `uv.lock`. Provider identity,
+source admission, staging and sdist inspection consume that package projection;
+they do not read ambient repository configuration at runtime. Root HK rejects
+stale projections. Renovate includes both outputs with Python dependency updates.
+The shared native-lock reader requires an unambiguous public-PyPI dependency
+closure and exact wheel hashes. This keeps native manifests and locks as the
+version authorities without a second dependency inventory.
+
+The remaining producer baseline uses CPython 3.14.3, UV 0.10.9, NBGV 3.10.94,
+`nbgv-python` 2.1.0.dev1 and packaging 26.3. Updating a producer dependency changes
+the frozen toolchain facts and source inputs; it does not grant publication or
+reuse qualification from another revision.
 
 ## Qualification and Artifact Admission
 

@@ -17,6 +17,9 @@ from unittest.mock import Mock
 
 import pytest
 import tomli_w
+from three_workflow_delivery_v3._python_build_backend import (
+    HATCHLING_REQUIREMENT,
+)
 from three_workflow_delivery_v3.adapters import pypi
 from three_workflow_delivery_v3.adapters.pypi import (
     HTTP_TIMEOUT_SECONDS,
@@ -147,7 +150,7 @@ def _distribution(variant, witness):
         )
         manifest["project"].pop("dynamic")
         manifest["project"]["version"] = version
-        manifest["build-system"]["requires"] = ["hatchling==1.32.0"]
+        manifest["build-system"]["requires"] = [HATCHLING_REQUIREMENT]
         manifest["tool"]["hatch"].pop("version")
         manifest["tool"].pop("uv")
         members = {

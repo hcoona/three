@@ -173,8 +173,8 @@ pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site install --lo
 '''
 
 [tasks.update-uv-lock]
-description = "Refresh root uv lockfile"
-run = 'uv lock'
+description = "Refresh root uv lockfile and Python build backend projections"
+run = 'uv run --no-project python eng/scripts/sync_python_build_backend.py --write --update-lock'
 
 [tasks.scan-restoration-plugin-check]
 description = "Validate the scan restoration Copilot CLI plugin"
