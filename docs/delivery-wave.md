@@ -8,6 +8,35 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
+### Implement disabled Python platform reliance
+
+- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
+- **Accepted inputs:** the owner's approved
+  [implementation scope](https://github.com/hcoona/three/issues/843#issuecomment-5860905700),
+  the platform-reliance design delivered by PR #877, and the current Python
+  requirements, HLD, MLDs and LLD under
+  `src/public/lib/three-workflow-delivery-v3/docs/`.
+- **Advancement and outcome:** implement strict Python Governance v2 without
+  native-acceptance admission; migrate both protected destinations blocked;
+  retire duplicate/race producer and hosted execution paths while retaining
+  justified exact-revision historical readers and original failed evidence.
+  Validate the application's success, failure, authority, one-shot and schema
+  contracts, complete independent review and protected delivery, and prepare
+  the later concrete TestPyPI configuration/admission/publication proposal.
+- **Effects and delivery:** permit code, documentation and disabled repository
+  configuration changes, locked dependency downloads, isolated local tests,
+  ordinary CI, Issue/PR/evidence delivery and protected merge. Complete affected
+  tests, repository gates and independent domain, record, research-evidence and
+  open-code-review-delegate reviews. Evaluate applicable mutable-source rechecks
+  without new platform verification. Carry forward the confirmed Sole Owner
+  and existing publisher facts unless changed or contradicted.
+- **Exclusions:** no smoke registry-state/file reads, external configuration or
+  access changes, OIDC, release/native dispatch, uploads, ready admission,
+  activation, publication, retry/rerun/refill/deletion/cleanup, new native
+  generation, production PyPI operations or Ruby implementation. Both normal
+  destinations remain disabled and all operation slots null. Existing service
+  publishers and historical failed evidence remain unchanged.
+
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
