@@ -161,15 +161,27 @@ both fresh original archives with the seed archives as evidence, without
 adopting their authority. Every gate binds actual reviewer identity and
 retained evidence digests; an author-produced `passed` flag is insufficient.
 
-After terminal collection, independently replay the actual current-DAG
-references, Authorization/marker/Result and original scalar terminal with the
-actual job/step conclusions. The seed gate requires failed partial publication,
-wheel success/readback, no sdist invocation and no still-running publisher.
-The recovery gate requires published and only the missing sdist POST.
-Only then perform that Attempt's single allowed independent index observation
-and up to two downloads, retaining raw sanitized responses and exact bytes.
-Seed audit verifies the exact wheel-only state; recovery audit verifies the
-complete pair and runs clean consumers on these downloaded files.
+After terminal collection, an independent diagnostic-read gate first resolves
+the unique dispatch/run identity and proves no publisher can still send.
+Using the remaining original budget, this gate may admit that Attempt's single
+independent index observation and up to two downloads after failed or unknown
+terminal evidence, including a marker-only or missing Result. Retain raw
+sanitized responses and exact bytes. Missing logs/Result alone do not establish
+identity, liveness or absence; unresolved dispatch/liveness blocks the read.
+This diagnostic admission neither accepts the proof nor changes a failed or
+unknown Outcome, and never releases spent uncertain effects. An independently
+verified exact subset, compatible source/frozen inputs and remaining cumulative
+budgets are still necessary before a new recovery Attempt.
+
+The stronger proof-acceptance gates independently replay actual current-DAG
+references, Authorization/marker/Result and original scalar terminal with
+actual job/step conclusions. The seed proof requires failed partial publication,
+wheel success/readback, no sdist invocation and the fresh exact wheel-only
+destination audit. The recovery proof requires published, only the missing
+sdist POST, the fresh complete pair audit and clean consumers on those downloaded
+files. A diagnostic read after an ambiguous/failed upload cannot manufacture
+these success facts. Use the same single native audit allowance for diagnosis
+or proof; do not add another read when an audit's purpose changes.
 
 Native approval records retain response digests and structured platform facts,
 not every original administrative API body. Later readback corroborates
