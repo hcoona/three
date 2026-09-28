@@ -95,12 +95,11 @@ future delivery group.
 
 The Python requirements and design adopt the owner's platform-reliance decision
 under `WD-PY-006`. The [Python LLD](./hcoona-release-smoke-python-lld.md)
-owns the successor admission contract. Existing runtime and both disabled v1
-Governance files still implement the earlier contract; design delivery alone
-cannot enable them. The [retired native interface](./validation/python-native-readiness.md)
+owns the v2 admission contract. Runtime and both protected Governance files
+implement the blocked v2 form; implementation delivery alone cannot enable them. The [retired native interface](./validation/python-native-readiness.md)
 exists for failed-evidence consumers, not new operation requests.
 
-1. Under a later implementation Wave, migrate Python Governance to v2 across
+1. The disabled implementation migrates Python Governance to v2 across
    strict producers/readers, protected blocked files and tests. Preserve the
    exact-target Provider, original two-format Build/Qualification, one-shot
    transport, bounded observation and scalar terminal contract. Retire the

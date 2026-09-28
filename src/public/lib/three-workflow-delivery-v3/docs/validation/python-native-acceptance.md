@@ -1,7 +1,7 @@
 # Retired Python Destination-Native Acceptance Protocol
 
 The V3 maintainer retains this boundary for reviewers of the failed TestPyPI
-run and the still-present disabled legacy tooling. The owner selected platform
+run and its retained historical evidence readers. The owner selected platform
 reliance without further verification under
 [`WD-PY-006`](../requirements.md#python-smoke-slice). Duplicate/race probes and a
 passing native generation are no longer Python admission prerequisites. This
@@ -22,9 +22,9 @@ The failed generation and request stay spent; the revised dependency decision
 neither retroactively passes the run nor proves its missing state.
 
 The [retained tooling boundary](python-native-readiness.md) routes historical
-inspection/replay and the required later producer retirement. Both protected
+inspection/replay after producer retirement. Both protected
 native request slots remain null. Do not populate them, prepare another native
-generation, dispatch, retry, refill or clean up from this record. The later
-implementation must preserve original reader contracts while removing the
+generation, dispatch, retry, refill or clean up from this record. The
+implementation preserves original reader contracts and removes the
 prerequisite producer route. No service configuration or publisher removal is
 implied by retiring the protocol.

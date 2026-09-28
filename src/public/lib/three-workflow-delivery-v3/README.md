@@ -36,8 +36,8 @@ The Python workflow runs credential-free CI at the tested PR merge target;
 manual TestPyPI/PyPI entry first requires the destination's protected Governance.
 Both destinations remain disabled. The revised
 [platform-reliance design](docs/hcoona-release-smoke-python-lld.md#python-governance-v2-migration)
-requires a later blocked v2 implementation; it does not claim current runtime
-readiness. The [retired native tooling boundary](docs/validation/python-native-readiness.md)
+is implemented as strict v2 with both protected files blocked. Normal runtime
+rejects v1 and hybrid admission; configuration/admission remains outstanding. The [retired native tooling boundary](docs/validation/python-native-readiness.md)
 retains failed-evidence consumers with both request slots null. No duplicate/race
 suite is a prerequisite. Configuration/admission and actual publication retain
 separate grants and each destination still needs exact readback and clean consumers.

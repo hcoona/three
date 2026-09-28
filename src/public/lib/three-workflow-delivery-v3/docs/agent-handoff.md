@@ -57,9 +57,9 @@ For the owner's next Workflow Delivery v3 task:
    prerequisite. HTTP-200 identical replay may succeed only with required exact
    file/set readback; a rejected or ambiguous upload remains failed.
    The [LLD migration](./hcoona-release-smoke-python-lld.md#python-governance-v2-migration)
-   specifies v2 admission without a fake passing native record. Existing runtime
-   and both blocked v1 Governance files remain unchanged pending separately
-   authorized implementation. Then independently review the normal-workflow
+   specifies v2 admission without a fake passing native record. Runtime and both
+   protected Governance files now use strict blocked v2; the duplicate/race
+   producer and hosted workflow are removed. Independently review the normal-workflow
    configuration/admission and actual TestPyPI publication, followed by PyPI.
    The [migration order](./migration-strategy.md#python-smoke-delivery) owns
    these stages; design acceptance grants no configuration, OIDC or dispatch.

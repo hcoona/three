@@ -59,24 +59,6 @@ def git_output(root: Path, *arguments: str) -> str:
     ).stdout.strip()
 
 
-def validate_hosted(
-    root: Path,
-    environment: Mapping[str, str],
-    tooling_sha: str,
-    request: NativeRequest,
-) -> int:
-    """Reject foreign, moving, unprotected or rerun tooling before effects."""
-    return validate_hosted_targets(
-        root,
-        environment,
-        tooling_sha,
-        tuple(
-            cast("str", request.target(label)["commit"]) for label in ("a", "b")
-        ),
-        WORKFLOW,
-    )
-
-
 def validate_hosted_targets(
     root: Path,
     environment: Mapping[str, str],

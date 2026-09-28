@@ -52,9 +52,9 @@ def python_publisher_tuple(registry: PythonRegistry) -> dict[str, JsonValue]:
 
 
 def blocked_python_governance(registry: PythonRegistry) -> dict[str, JsonValue]:
-    """Represent missing native and configuration evidence."""
+    """Represent missing configuration and source-evidence admission."""
     return {
-        "schema": "workflow-delivery/v3/python-governance-v1",
+        "schema": "workflow-delivery/v3/python-governance-v2",
         "publisher": python_publisher_tuple(registry),
         "accepted-operator": "hcoona",
         "live_enabled": False,
@@ -62,7 +62,6 @@ def blocked_python_governance(registry: PythonRegistry) -> dict[str, JsonValue]:
         "operation-profile-digest": registry.profile_digest,
         "inspected-at": None,
         "expires-at": None,
-        "native-acceptance": None,
         "configuration": None,
         "source-evidence-revision": None,
     }
@@ -120,37 +119,6 @@ class PythonGovernance:
         expires = _time(doc["expires-at"])
         if not inspected < expires <= inspected + _MAX_GOVERNANCE_AGE:
             message = "Python Governance freshness window is invalid"
-            raise ValueError(message)
-        native = python_object(
-            doc["native-acceptance"],
-            {
-                "suite",
-                "registry",
-                "project",
-                "profile-digest",
-                "evidence-digest",
-                "generation",
-                "review",
-                "passed",
-            },
-        )
-        if (
-            native["suite"] != "workflow-delivery/v3/python-native-suite-v1"
-            or native["registry"] != self.registry.name
-            or native["project"] != PYTHON_RELEASE_UNIT
-            or native["profile-digest"] != self.registry.profile_digest
-            or native["passed"] is not True
-            or not _DIGEST.fullmatch(python_text(native["evidence-digest"]))
-            or not re.fullmatch(
-                r"[0-9a-f]{32}", python_text(native["generation"])
-            )
-            or not python_text(native["review"]).startswith(
-                "https://github.com/hcoona/three/"
-            )
-        ):
-            message = (
-                "Python native acceptance does not admit this exact destination"
-            )
             raise ValueError(message)
         configuration = python_object(
             doc["configuration"],

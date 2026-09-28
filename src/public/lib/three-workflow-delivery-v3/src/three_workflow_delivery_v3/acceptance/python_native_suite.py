@@ -1,23 +1,17 @@
-"""Fixed ten-upload Python acceptance suite and supplied-fact audit."""
+"""Historical ten-upload Python evidence validation and supplied-fact audit."""
 
 from __future__ import annotations
 
-import threading
-import time
-from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast
 
 from three_workflow_delivery_v3.acceptance.python_native_capture import (
     Capture,
-    NativeTransport,
-    collect_capture,
     replay_capture,
 )
 from three_workflow_delivery_v3.acceptance.python_native_contract import (
     NativeRequest,
     require,
-    write_exclusive,
 )
 from three_workflow_delivery_v3.acceptance.python_native_fixture import (
     NativeFixtures,
@@ -26,9 +20,7 @@ from three_workflow_delivery_v3.acceptance.python_native_fixture import (
 )
 from three_workflow_delivery_v3.adapters.pypi import (
     PythonHttpResponse,
-    PythonHttpTransport,
     PythonUploadResponse,
-    upload_python_once,
 )
 from three_workflow_delivery_v3.adapters.python import (
     PythonConsumerResult,
@@ -36,7 +28,6 @@ from three_workflow_delivery_v3.adapters.python import (
     qualify_python_consumer,
 )
 from three_workflow_delivery_v3.adapters.python_observation import (
-    IndexPhase,
     ObservationBasis,
     replay_retained_phase,
 )
@@ -50,7 +41,6 @@ from three_workflow_delivery_v3.repository.python_provider import python_digest
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
 _CREATION_STEPS = 2
 _LAST_DUPLICATE_STEP = 6
@@ -204,227 +194,6 @@ def _observation_basis(  # noqa: PLR0913, PLR0917 - fixed native scenario inputs
         ),
         deadline,
     )
-
-
-class _UploadRecorder:
-    def __init__(
-        self,
-        transport: NativeTransport,
-        key: str,
-        distribution: PythonDistribution,
-        barrier: threading.Barrier | None,
-    ) -> None:
-        self.transport = transport
-        self.barrier = barrier
-        self.response: PythonHttpResponse | None = None
-        self.record: dict[str, JsonValue] = {
-            "key": key,
-            "digest": distribution.digest,
-            "start": None,
-            "finish": None,
-            "status": None,
-        }
-
-    def request(
-        self,
-        method: str,
-        url: str,
-        headers: dict[str, str],
-        body: bytes | None,
-        maximum_bytes: int,
-    ) -> PythonHttpResponse:
-        if self.barrier is not None:
-            self.barrier.wait(timeout=30)
-        self.record["start"] = self.transport.clock()
-        try:
-            self.response = self.transport.request(
-                method, url, headers, body, maximum_bytes
-            )
-            self.record["status"] = self.response.status
-            return self.response
-        finally:
-            self.record["finish"] = self.transport.clock()
-            actual = getattr(self.transport.local, "call", None)
-            if actual is not None:
-                self.record["start"] = actual["start"]
-                self.record["finish"] = actual["finish"]
-
-
-def run_suite(  # noqa: C901, PLR0913, PLR0915 - fixed protocol with bounded external seams
-    request: NativeRequest,
-    fixtures: NativeFixtures,
-    transport: PythonHttpTransport,
-    token: str,
-    output: Path,
-    *,
-    secrets: tuple[str, ...] = (),
-    clock: Callable[[], float] = time.monotonic,
-    deadline: float | None = None,
-    wait: Callable[[float], None] = time.sleep,
-) -> dict[str, bytes]:
-    """Execute the fixed schedule once, retaining partial facts on any stop."""
-    fixtures.match(request)
-    output.mkdir(parents=True, exist_ok=False)
-    native = NativeTransport(
-        request.registry,
-        transport,
-        secrets=(*secrets, token),
-        clock=clock,
-        deadline=deadline,
-    )
-    witnesses = (
-        fixtures.distributions["a/original/wheel"].witness,
-        fixtures.distributions["b/original/wheel"].witness,
-    )
-    files: dict[str, bytes] = {}
-
-    def retain(name: str, data: bytes) -> None:
-        if name in files:
-            require(files[name] == data, "retained acceptance fact changed")
-            return
-        write_exclusive(output, name, data)
-        files[name] = data
-
-    try:
-        retain("request.json", request.content)
-        retain(
-            "budget.json",
-            canonicalize(
-                {"deadline": native.deadline, "start": native.clock()}
-            ),
-        )
-        before = collect_capture(
-            request.registry, witnesses, native, retain=retain, ordinal=0
-        )
-        for name, content in before.files(0).items():
-            retain(name, content)
-        _initial(before, fixtures)
-        for ordinal, keys in enumerate(SCHEDULE, 1):
-            retain(
-                f"upload/step-{ordinal}.marker.json",
-                canonicalize(_marker(request, fixtures, ordinal)),
-            )
-            barrier = threading.Barrier(2) if len(keys) == _RACE_WIDTH else None
-            recorders = tuple(
-                _UploadRecorder(
-                    native, key, fixtures.distributions[key], barrier
-                )
-                for key in keys
-            )
-
-            def send(recorder: _UploadRecorder) -> None:
-                upload_python_once(
-                    request.registry,
-                    fixtures.distributions[cast("str", recorder.record["key"])],
-                    token,
-                    recorder,
-                )
-
-            if barrier is None:
-                send(recorders[0])
-            else:
-                with ThreadPoolExecutor(max_workers=2) as pool:
-                    futures = [
-                        pool.submit(send, recorder) for recorder in recorders
-                    ]
-                    for future in futures:
-                        future.result()
-            results = []
-            for number, recorder in enumerate(recorders):
-                prefix = f"upload/step-{ordinal}-{number}"
-                retain(prefix + ".json", canonicalize(recorder.record))
-                if recorder.response is not None:
-                    retain(prefix + ".body", recorder.response.body)
-                    results.append((recorder.record, recorder.response))
-            require(len(results) == len(keys), "ambiguous acceptance upload")
-            # Reject failed upload outcomes before spending another read budget.
-            statuses = [response.status for _, response in results]
-            require(
-                all(
-                    response.status == HTTPStatus.OK
-                    or duplicate_response(response)
-                    for _, response in results
-                ),
-                "unrecognized acceptance upload outcome",
-            )
-            require(
-                statuses.count(200)
-                == (
-                    1
-                    if ordinal <= _CREATION_STEPS or ordinal >= _FIRST_RACE_STEP
-                    else 0
-                ),
-                "unexpected acceptance upload outcome",
-            )
-            if ordinal >= _FIRST_RACE_STEP:
-                require(
-                    max(cast("float", r[0]["start"]) for r in results)
-                    < min(cast("float", r[0]["finish"]) for r in results),
-                    "competing requests did not overlap",
-                )
-            index_response = None
-            if ordinal in {1, 2, 7, 8}:
-                basis = _observation_basis(
-                    request,
-                    fixtures,
-                    ordinal,
-                    before,
-                    tuple(results),
-                    native.deadline,
-                )
-                prefix = f"observation/c{ordinal}/"
-                index_response = IndexPhase(basis).run(
-                    native,
-                    retain=lambda name, data, prefix=prefix: retain(
-                        prefix + name, data
-                    ),
-                    clock=clock,
-                    wait=wait,
-                )
-            after = collect_capture(
-                request.registry,
-                witnesses,
-                native,
-                retain=retain,
-                ordinal=ordinal,
-                response=index_response,
-            )
-            for name, content in after.files(ordinal).items():
-                retain(name, content)
-            validate_step(ordinal, before, after, tuple(results), fixtures)
-            before = after
-        require(
-            native.counts["upload"] == _UPLOAD_COUNT
-            and native.counts["file"] == _DOWNLOAD_COUNT
-            and _MIN_INDEX_COUNT <= native.counts["index"] <= _MAX_INDEX_COUNT,
-            "acceptance effect totals differ",
-        )
-        retain("requests.json", canonicalize(cast("JsonValue", native.calls)))
-        retain(
-            "suite.json",
-            canonicalize(
-                {
-                    "request-digest": request.digest,
-                    "counts": cast("JsonValue", native.counts),
-                    "result": "supplied-facts-pass",
-                }
-            ),
-        )
-    except Exception:  # noqa: BLE001 - never retain credential-bearing exceptions
-        retain("requests.json", canonicalize(cast("JsonValue", native.calls)))
-        retain(
-            "failure.json",
-            canonicalize(
-                {
-                    "result": "spent-possibly-mutated",
-                    "category": "acceptance-step-failed",
-                    "counts": cast("JsonValue", native.counts),
-                }
-            ),
-        )
-        msg = "Python native acceptance stopped; generation remains spent"
-        raise ValueError(msg) from None
-    return files
 
 
 def _audit_timing(files: dict[str, bytes]) -> dict[str, int]:
