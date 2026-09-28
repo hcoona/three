@@ -60,14 +60,20 @@ For the owner's next Workflow Delivery v3 task:
    specifies v2 admission without a fake passing native record. Runtime and both
    protected Governance files now use strict v2. TestPyPI has reviewed ready
    admission; PyPI remains blocked. The duplicate/race producer and hosted
-   workflow are removed. The normal-publication operation stopped at its initial
-   GitHub read because local TLS certificate verification failed, before dispatch.
-   No normal Attempt, OIDC exchange or upload occurred; no retry was made.
-   The closed operation does not permit a replacement or fresh request budget.
-   A future concrete TestPyPI operation needs separate authorization and the
-   existing independent publication audit before PyPI. See the
-   [operation outcome](https://github.com/hcoona/three/issues/843#issuecomment-5862680211) for original
-   evidence and the local trust-store diagnosis; do not disable TLS validation.
+   workflow are removed. The source-bound normal
+   [Attempt](https://github.com/hcoona/three/actions/runs/36383200978) failed before
+   publication: Build and Qualification passed, but publication preparation and
+   publisher were skipped. The [independent audit](https://github.com/hcoona/three/issues/843#issuecomment-5864320684)
+   replays original artifacts and matches the persisted
+   `failed-before-publication` Outcome with `possibly-mutated: false`.
+   No Environment approval, OIDC exchange or upload occurred. The suspected
+   skipped-ancestor status condition remains a hypothesis, not a scheduler trace.
+   The dispatch is spent; no rerun or replacement is authorized. Corrective
+   implementation and any fresh operation must follow their applicable Wave
+   and domain gates before the independent publication audit required for PyPI.
+   Retain the earlier [TLS-stopped operation](https://github.com/hcoona/three/issues/843#issuecomment-5862680211)
+   separately. Process-local selection of the existing system CA store enabled
+   the later operator connection; do not disable TLS validation or change host trust.
    The [migration order](./migration-strategy.md#python-smoke-delivery) owns
    these stages; design acceptance grants no configuration, OIDC or dispatch.
    Carry forward Backspace7980's confirmed Sole Owner status and all three configured

@@ -65,8 +65,10 @@ findings, the retained failed runs and that owner decision.
 The [migration policy](./migration-strategy.md#python-smoke-delivery) routes the
 disabled implementation, configuration/admission and actual publication
 stages. Runtime and both protected files use strict Python Governance v2.
-TestPyPI has reviewed ready admission; PyPI remains blocked. The normal
-operation stopped before dispatch on local TLS verification, with no upload.
+TestPyPI has reviewed ready admission; PyPI remains blocked. The source-bound
+normal Attempt passed Build and Qualification, then failed before publication
+because publication preparation and publisher were skipped. Original-artifact
+replay confirms `failed-before-publication`, with no approval, OIDC or upload.
 Actual two-destination publication remains outstanding; the [handoff](./agent-handoff.md#starting-a-new-session)
 routes admission evidence and the next operation gate.
 The [retired native interface](./validation/python-native-readiness.md) retains
