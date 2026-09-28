@@ -18,8 +18,10 @@ The Python slice is the separate `hcoona-release-smoke-python` package. Its
 [Python design entry](docs/README.md#python-smoke-design) routes the confirmed
 requirements, HLD/MLDs, brief LLD and source evidence for TestPyPI Buddy followed
 by PyPI Official. TestPyPI has reviewed ready Governance v2 admission; PyPI
-remains blocked. The normal TestPyPI operation stopped before dispatch on local
-TLS verification; actual publication remains outstanding. The
+remains blocked. The source-bound normal TestPyPI Attempt passed Build and
+Qualification, then failed before publication; actual publication remains
+outstanding. The [handoff](docs/agent-handoff.md#starting-a-new-session) routes
+the audited outcome and current operation limits. The
 [delivery gates](docs/migration-strategy.md#python-smoke-delivery) keep
 implementation, configuration/admission and publication separately authorized.
 The npm and NuGet smoke objectives remain complete.
