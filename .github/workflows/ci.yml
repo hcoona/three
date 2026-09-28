@@ -277,11 +277,11 @@ jobs:
         run: |
           set -Eeuo pipefail
           if [[ "$CI_FULL" == 'true' ]]; then
-            hk check --no-progress --no-fail-fast --all
+            hk check --check --no-stage --no-progress --no-fail-fast --all
           else
             python eng/scripts/workflow_delivery_v3_hk.py \
-              --from-ref "$CI_BASE" --to-ref "$CI_CANDIDATE" \
-              -- hk check --no-progress --no-fail-fast
+              --from-ref "$CI_BASE" --to-ref "$CI_CANDIDATE" --files0 \
+              -- hk check --check --no-stage --no-progress --no-fail-fast
           fi
 
       - name: Reject canceled validation

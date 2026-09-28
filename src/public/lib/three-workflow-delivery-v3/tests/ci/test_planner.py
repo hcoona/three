@@ -299,6 +299,9 @@ def test_slice_affecting_paths_select_all_lanes(path: str) -> None:
         "hk.pkl",
         ".python-version",
         "nested/package.json",
+        "src/private/lib/hk/Config.pkl",
+        "src/private/lib/hk/Steps.pkl",
+        "src/private/lib/hk/steps/Typos.pkl",
     ],
 )
 def test_repository_only_change_selects_root_hk(path: str) -> None:
@@ -341,6 +344,11 @@ def test_manual_slice_validation_always_selects_complete_slice() -> None:
         (
             (SHA_A, SHA_B),
             ("src/private/app/unclassified/source.py",),
+            "changed path is unclassified",
+        ),
+        (
+            (SHA_A, SHA_B),
+            ("src/private/lib/hk-other/Config.pkl",),
             "changed path is unclassified",
         ),
         (

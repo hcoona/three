@@ -199,6 +199,7 @@ def _v3_input(path: str) -> bool:
             ".gitattributes",
             ".github/CODEOWNERS",
             "eng/scripts/hk_exec.py",
+            "eng/scripts/hk_file_operands.py",
             "eng/scripts/hk_actionlint.py",
             "eng/scripts/hk_pkl_eval.py",
         }

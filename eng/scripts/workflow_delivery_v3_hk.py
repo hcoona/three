@@ -1,4 +1,4 @@
-"""Run HK for every path reported by a real Git name-status range."""
+"""Keep complete Git impact paths separate from existing HK file operands."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -113,11 +114,38 @@ def changed_paths(
     return parse_name_status(result.stdout)
 
 
+def staged_paths(repository: Path) -> tuple[str, ...]:
+    """Read both sides of staged renames and retain staged deletions."""
+    result = subprocess.run(
+        (
+            "git",
+            "diff",
+            "--cached",
+            "--name-status",
+            "--find-renames",
+            "-z",
+            "--",
+        ),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    return parse_name_status(result.stdout)
+
+
+def _write_files(directory: Path, paths: tuple[str, ...]) -> Path:
+    path = directory / "files.nul"
+    path.write_bytes(b"".join(item.encode("utf-8") + b"\0" for item in paths))
+    return path
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", type=Path, default=Path.cwd())
-    parser.add_argument("--from-ref", required=True)
-    parser.add_argument("--to-ref", required=True)
+    parser.add_argument("--from-ref")
+    parser.add_argument("--to-ref")
+    parser.add_argument("--staged", action="store_true")
+    parser.add_argument("--files0", action="store_true")
     parser.add_argument(
         "command",
         nargs=argparse.REMAINDER,
@@ -127,13 +155,18 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(arguments: Sequence[str] | None = None) -> int:
-    """Print changed paths or run the supplied HK command for those paths."""
-    options = _parser().parse_args(arguments)
-    paths = changed_paths(
-        options.repository,
-        options.from_ref,
-        options.to_ref,
-    )
+    """Print complete paths or invoke HK with the selected Git history."""
+    parser = _parser()
+    options = parser.parse_args(arguments)
+    repository = options.repository.resolve()
+    if options.staged:
+        if options.from_ref or options.to_ref:
+            parser.error("--staged cannot be combined with refs")
+        paths = staged_paths(repository)
+    else:
+        if not options.from_ref or not options.to_ref:
+            parser.error("supply --staged or both --from-ref and --to-ref")
+        paths = changed_paths(repository, options.from_ref, options.to_ref)
     command: list[str] = options.command
     if command and command[0] == "--":
         command = command[1:]
@@ -141,9 +174,17 @@ def main(arguments: Sequence[str] | None = None) -> int:
         json.dump(paths, sys.stdout)
         sys.stdout.write("\n")
         return 0
+    if options.files0:
+        with tempfile.TemporaryDirectory(prefix="hk-changes-") as temporary:
+            files = _write_files(Path(temporary), paths)
+            return subprocess.run(
+                (*command, "--files0-from", str(files)),
+                cwd=repository,
+                check=False,
+            ).returncode
     result = subprocess.run(
         (*command, "--", *paths),
-        cwd=options.repository,
+        cwd=repository,
         check=False,
     )
     return result.returncode

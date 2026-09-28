@@ -34,14 +34,19 @@ not require a new engineering review or report.
 
 Use the [repository toolchain guidance](README.md#repository-toolchain) and
 existing `hk.pkl` checks. With the pinned tools available, check the intended
-staged files using the CI profile set:
+staged change paths, including deletions and rename sources, using the CI
+profile set:
 
 ```powershell
-mise exec -- hk --profile small --profile medium --profile large check --check --no-stage --no-progress --no-fail-fast
+python eng/scripts/workflow_delivery_v3_hk.py --staged --files0 -- `
+  mise exec -- hk --profile small --profile medium --profile large `
+  check --check --no-stage --no-progress --no-fail-fast
 ```
 
-This selects staged files by default; explicit files or refs select a different
-scope. Record the snapshot and scope actually checked. CI compares its base with the actual tested checkout;
+The helper selects staged paths; `--from-ref <base> --to-ref <candidate>`
+selects a commit range instead. These commands select paths without stashing
+unstaged content. Record the snapshot and scope actually checked.
+CI compares its base with the actual tested checkout;
 local pre-commit uses HK's configured stashing. Do not claim staged/worktree
 equivalence without evidence. Existing profile and path exclusions still apply.
 For record changes, run `mise run records:check -- --base <accepted-commit>

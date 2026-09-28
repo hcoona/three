@@ -146,8 +146,10 @@ Scheduled execution may have a candidate procedure file without being enabled.
 
 Three's `hk.pkl` uses `pre-commit` with `stash = "git"` and a `check` hook.
 Local defaults from `mise.toml` enable `small,medium`; the CI validation job uses
-`small,medium,large` and explicit base/head refs. Evaluate both plans with the
-actual profiles and selected files. Confirm every mapped step is included when
+`small,medium,large`. Incremental PR/push validation uses explicit base/head
+refs; explicit full validation, including manual dispatch, uses `--all`.
+Evaluate both plans with the actual profiles and selected files. Confirm every
+mapped step is included when
 its applicable inputs change, and that the CI set contains local checks with
 the same semantics. Plan reachability does not establish an executed result or
 branch protection. Preserve exclusions and report their coverage limits.

@@ -106,6 +106,36 @@ Parallel job durations are not added as wall time. Integration optimization
 preserves required real-tool proof, immutable preparation reuse, isolated
 writable fixtures, bounded concurrency and owned temporary-file cleanup.
 
+## Complete Git Paths and File Operands
+
+[The Git helper](../../eng/scripts/workflow_delivery_v3_hk.py) retains deleted
+paths and both sides of renames from an explicit commit range or `--staged`.
+Its `--files0` option passes a temporary NUL-delimited list to HK, preserving
+path boundaries and option-like names without command-line length limits.
+The temporary file is removed after the child finishes, including failure;
+the helper propagates the child's exit status. PR/push source checks use this
+transport. Explicit full/manual CI uses `--all` because it has no event baseline.
+
+These are impact paths used for HK selection. Only opted-in file-reading steps
+set `HK_SKIP_MISSING_FILES=1`; their wrappers then omit absent operands.
+Deletion-only lists return successfully without invoking a tool's implicit
+full scan. Directory-to-file replacements count as absent old paths; permission
+errors and other filesystem failures remain errors. Unconditional checks,
+static-reference preparation/scanning and lock validation retain their own
+inputs and do not inherit this opt-in. HK still owns source conformance;
+product tests remain in their explicit local commands and selected CI jobs.
+
+File-reading `hk_exec.py` commands use `--hk-files` to mark the start of file
+operands. The first such marker is the boundary, so wrapped commands may retain
+their own `--` arguments and a file named `--` stays a file. Existing leading-dash
+operands are prefixed with `./` before reaching the tool. The legacy last-`--`
+form remains available for callers without ambiguous filenames.
+
+The explicit staged helper does not stash unstaged changes. Normal pre-commit
+retains HK's native selection and configured stashing; it does not call this
+helper to augment its path list. Distinguish path selection from the content
+snapshot when reporting validation. See the [local check command](../../CONTRIBUTING.md#local-checks).
+
 ## Quoted Paths and Watchdogs
 
 [hk_exec.py](../../eng/scripts/hk_exec.py) normalizes quoted file arguments

@@ -415,9 +415,11 @@ project-owned command implementation.
 
 ### Execution Contract
 
-Incremental execution gives HK the authoritative comparison revisions. Full
-validation gives HK an explicit all-files mode. HK computes its own internal
-file and step selection.
+Incremental execution derives complete impact paths from the authoritative
+comparison revisions, retaining deletions and both sides of renames. HK receives
+those paths through NUL-delimited transport and computes its own internal file
+and step selection. File-reading steps omit absent operands only after selection.
+Full validation gives HK an explicit all-files mode.
 
 The executor uses read-only check behavior. Configuration load failure, panic,
 timeout, tool failure, or any failed internal step fails the composite

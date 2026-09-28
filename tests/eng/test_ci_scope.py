@@ -35,6 +35,7 @@ LEGACY_RELEASE_TESTS = "tests/eng/test_legacy_release_contract.py"
     ("path", "jobs", "roots"),
     [
         ("docs/README.md", set(), set()),
+        ("eng/scripts/hk_file_operands.py", {"python"}, {V3_TESTS}),
         (scope.V3 + "/docs/requirements.md", set(), set()),
         ("src/public/lib/CircularList/CircularList.cs", {"dotnet"}, set()),
         (

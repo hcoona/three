@@ -62,23 +62,3 @@ ends a grant. Git and the proposing PR retain the reason and history.
   result reuse across incompatible revisions. HK 2 compatibility remains a
   separate concern under #647/#823. New hosted experiments require a bounded
   protocol before execution; this entry grants no new native operation.
-
-### Complete residual HK path handling
-
-- **Work carrier:** [PR #711](https://github.com/hcoona/three/pull/711).
-- **Accepted inputs:** the owner's request to inspect and finish that PR;
-  current HK/CI execution and V3 source-conformance contracts; and the
-  accepted separation of product tests from HK.
-- **Advancement and outcome:** reconcile the PR against current main, retaining
-  complete deletion and rename paths, NUL-safe HK path transport, scoped
-  missing-file operand handling and shared-HK path admission. Preserve current
-  CI test ownership and retire superseded test-dispatch changes. Resolve
-  applicable review findings, align current guidance, and validate the bounded
-  residual implementation through protected delivery.
-- **Effects and delivery:** permit local dependency preparation, isolated tests,
-  ordinary CI and GitHub PR/check/comment operations, independent delegated
-  OCR/domain and record/evidence review, and protected merge. Retain exact
-  candidate evidence and monitor CI and reviews through delivery.
-- **Exclusions:** no HK runtime upgrade, product tests inside HK, new dependency
-  admission or test profile, package publication, native acceptance, release
-  dispatch, credential/access changes, or weakened review and required checks.

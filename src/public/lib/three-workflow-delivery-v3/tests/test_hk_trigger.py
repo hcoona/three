@@ -1378,3 +1378,371 @@ def test_real_hk_selects_future_buddy_route(tmp_path: Path) -> None:
     step = _helper_step_plan(repo, base, head)
     assert step["status"] == "included"
     assert step["fileCount"] == 1
+
+
+@pytest.mark.parametrize("full", [False, True], ids=["range", "full"])
+@pytest.mark.parametrize("child_status", [0, 73], ids=["success", "failure"])
+def test_general_ci_hk_shell_routes_events_and_propagates_child_status(
+    tmp_path: Path,
+    *,
+    full: bool,
+    child_status: int,
+) -> None:
+    """Run the actual CI shell without dispatching or invoking validation."""
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
+    script = next(
+        step["run"]
+        for step in workflow["jobs"]["conformance"]["steps"]
+        if step.get("name") == "Validate with HK"
+    )
+    assert "${{" not in script
+    stubs = """\
+hk() {
+  printf '%s\\0' hk "$@" >> "$HK_TEST_TRACE"
+  return "$HK_TEST_CHILD_STATUS"
+}
+python() {
+  printf '%s\\0' python "$@" >> "$HK_TEST_TRACE"
+  return "$HK_TEST_CHILD_STATUS"
+}
+"""
+    trace = tmp_path / "calls.bin"
+    bash = shutil.which("bash")
+    assert bash is not None
+    result = subprocess.run(  # noqa: S603
+        (bash, "-c", stubs + script),
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "CI_FULL": str(full).lower(),
+            "CI_BASE": "a" * 40,
+            "CI_CANDIDATE": "b" * 40,
+            "HK_TEST_TRACE": str(trace),
+            "HK_TEST_CHILD_STATUS": str(child_status),
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    calls = tuple(trace.read_text().rstrip("\0").split("\0"))
+    hk_arguments = (
+        "hk",
+        "check",
+        "--check",
+        "--no-stage",
+        "--no-progress",
+        "--no-fail-fast",
+    )
+    if full:
+        expected = (*hk_arguments, "--all")
+    else:
+        expected = (
+            "python",
+            HK_RANGE_HELPER.as_posix(),
+            "--from-ref",
+            "a" * 40,
+            "--to-ref",
+            "b" * 40,
+            "--files0",
+            "--",
+            *hk_arguments,
+        )
+
+    assert result.returncode == child_status, result.stderr
+    assert calls == expected
+
+
+@pytest.mark.parametrize("hook", ["pre-commit", "check", "fix"])
+def test_real_hk_formats_tracked_notebook_for_each_hook(
+    tmp_path: Path,
+    hook: str,
+) -> None:
+    """Keep Notebook formatting selected across local validation modes."""
+    notebook = "src/example/main.ipynb"
+    repo = tmp_path / "repo"
+    _initialize_repository(repo, baseline_paths=(notebook,))
+    _write(
+        repo,
+        notebook,
+        json.dumps(
+            {"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}
+        ),
+    )
+    _git(repo, "add", "--", notebook)
+
+    result = _run(
+        (
+            _hk_executable(),
+            "--no-progress",
+            "run",
+            hook,
+            "--plan",
+            "--json",
+            "--step",
+            "ruff_format",
+            "--",
+            notebook,
+        ),
+        cwd=repo,
+    )
+    plan: HkPlanJson = json.loads(result.stdout)
+
+    assert plan["hook"] == hook
+    assert plan["runType"] == ("fix" if hook == "fix" else "check")
+    assert len(plan["steps"]) == 1
+    step = plan["steps"][0]
+    assert step["name"] == "ruff_format"
+    assert step["status"] == "included", (hook, step)
+    assert step["fileCount"] == 1
+
+
+@pytest.mark.parametrize("with_source", [False, True], ids=["removed", "mixed"])
+def test_ruff_format_diff_handles_removed_operands(
+    tmp_path: Path,
+    *,
+    with_source: bool,
+) -> None:
+    """Run the effective diff without reading deleted paths or writing files."""
+    config = json.loads(
+        _run(
+            ("mise", "exec", "--", "pkl", "eval", "--format", "json", "hk.pkl"),
+            cwd=REPO_ROOT,
+        ).stdout
+    )
+    step = config["hooks"]["check"]["steps"]["ruff_format"]
+    command = shlex.split(step["check_diff"])
+    assert command.count("{{files}}") == 1
+    removed = tmp_path / "removed.py"
+    paths = [str(removed)]
+    source = tmp_path / "existing.py"
+    original = "value=  1\n"
+    if with_source:
+        source.write_text(original, encoding="utf-8")
+        paths.append(str(source))
+    file_index = command.index("{{files}}")
+    command[file_index : file_index + 1] = paths
+
+    result = subprocess.run(  # noqa: S603
+        command,
+        cwd=REPO_ROOT,
+        env={**os.environ, **step["env"]},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == int(with_source), result.stderr
+    assert str(removed) not in result.stderr
+    assert not removed.exists()
+    if with_source:
+        assert "-value=  1" in result.stdout
+        assert "+value = 1" in result.stdout
+        assert source.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.parametrize("staged", [False, True], ids=["range", "staged"])
+def test_hk_files0_helper_keeps_history_child_status_and_cleanup(
+    tmp_path: Path,
+    *,
+    staged: bool,
+) -> None:
+    """Keep removed names until the child exits, then remove the NUL file."""
+    repo = tmp_path / "repo"
+    base = _initialize_repository(
+        repo, baseline_paths=("deleted.py", "old name.py")
+    )
+    (repo / "deleted.py").unlink()
+    (repo / "old name.py").rename(repo / "new name.py")
+    if staged:
+        _git(repo, "add", "--all")
+        selection = ("--staged",)
+    else:
+        head = _commit(repo, "complete history child lifetime")
+        selection = ("--from-ref", base, "--to-ref", head)
+    child_status = 73
+    child_program = """\
+import json
+from pathlib import Path
+import sys
+
+assert sys.argv[1] == '--files0-from' and len(sys.argv) == 3
+paths_file = Path(sys.argv[2])
+print(json.dumps({
+    'paths': paths_file.read_text().rstrip('\\0').split('\\0'),
+    'temporaryFile': str(paths_file),
+}))
+sys.exit(73)
+"""
+
+    result = _run_helper_without_check(
+        repo,
+        *selection,
+        "--files0",
+        "--",
+        sys.executable,
+        "-c",
+        child_program,
+    )
+    observed = json.loads(result.stdout)
+
+    assert result.returncode == child_status
+    assert result.stderr == ""
+    assert observed["paths"] == ["deleted.py", "old name.py", "new name.py"]
+    assert not Path(observed["temporaryFile"]).exists()
+
+
+@pytest.mark.parametrize("wrapper", ["hk_exec", "hk_actionlint", "hk_pkl_eval"])
+@pytest.mark.parametrize(
+    "replaced_parent", [False, True], ids=["absent", "enotdir"]
+)
+@pytest.mark.parametrize(
+    ("skip_missing", "include_existing"),
+    [(True, True), (True, False), (False, True)],
+    ids=["filtered-mixed", "filtered-all-removed", "unfiltered"],
+)
+def test_file_linter_wrappers_filter_removed_operands_only_when_scoped(  # noqa: PLR0913
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    wrapper: str,
+    *,
+    replaced_parent: bool,
+    skip_missing: bool,
+    include_existing: bool,
+) -> None:
+    """Send extant operands to file tools without broadening an empty set."""
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "eng/scripts"))
+    monkeypatch.setenv("HK_EXEC_PER_FILE", "1")
+    spec = importlib.util.spec_from_file_location(
+        f"_hk_file_linter_{wrapper}",
+        REPO_ROOT / "eng/scripts" / f"{wrapper}.py",
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    existing = tmp_path / "existing input.pkl"
+    existing.write_text("value = 1\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    option_like = ["--config.pkl", "--", "--hk-files"]
+    for name in option_like:
+        Path(name).write_text("value = 1\n", encoding="utf-8")
+    removed_parent = tmp_path / "removed parent"
+    if replaced_parent:
+        removed_parent.write_text("replacement file\n", encoding="utf-8")
+    removed = removed_parent / "removed input.pkl"
+    paths = [str(removed)]
+    if include_existing:
+        paths.extend([str(existing), *option_like])
+    if skip_missing:
+        monkeypatch.setenv("HK_SKIP_MISSING_FILES", "1")
+    else:
+        monkeypatch.delenv("HK_SKIP_MISSING_FILES", raising=False)
+    command_prefix = (
+        ["stub-file-tool", "--", "--hk-files"] if wrapper == "hk_exec" else []
+    )
+    monkeypatch.setattr(module.sys, "argv", [wrapper, *command_prefix, *paths])
+    observed_commands: list[list[str]] = []
+
+    def capture_watchdog(
+        command: list[str], *_args: object
+    ) -> tuple[int, float, bool]:
+        observed_commands.append(command)
+        return 0, 0.0, False
+
+    def capture_subprocess(
+        command: list[str], **_kwargs: object
+    ) -> SimpleNamespace:
+        observed_commands.append(command)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    if wrapper == "hk_pkl_eval":
+        monkeypatch.setattr(
+            module, "subprocess", SimpleNamespace(run=capture_subprocess)
+        )
+    else:
+        monkeypatch.setattr(module, "run_with_watchdog", capture_watchdog)
+
+    assert module.main() == 0
+    expected = (
+        (
+            [str(existing), *(f"./{name}" for name in option_like)]
+            if include_existing
+            else []
+        )
+        if skip_missing
+        else paths
+    )
+    assert [command[-1] for command in observed_commands] == expected
+    if wrapper == "hk_exec":
+        assert all(
+            command[:2] == ["stub-file-tool", "--"]
+            for command in observed_commands
+        )
+
+
+def test_file_operand_filter_preserves_strict_filesystem_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retain directories and dangling links while propagating access errors."""
+    spec = importlib.util.spec_from_file_location(
+        "_hk_operand_strict_test", REPO_ROOT / "eng/scripts/hk_file_operands.py"
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setenv("HK_SKIP_MISSING_FILES", "1")
+    directory = tmp_path / "actual-directory"
+    directory.mkdir()
+    dangling_link = tmp_path / "dangling-link"
+    dangling_link.symlink_to(tmp_path / "absent-target")
+    strict_paths = [str(directory), str(dangling_link)]
+
+    assert module.existing_operands(strict_paths) == strict_paths
+
+    def denied_lstat(_path: Path) -> None:
+        message = "denied operand"
+        raise PermissionError(message)
+
+    monkeypatch.setattr(module.Path, "lstat", denied_lstat)
+    with pytest.raises(PermissionError, match="denied operand"):
+        module.existing_operands([str(tmp_path / "restricted")])
+
+
+def test_hk_missing_file_filter_is_scoped_to_file_tools() -> None:
+    """Keep operand filtering out of project checks and their children."""
+    result = _run(
+        ("mise", "exec", "--", "pkl", "eval", "--format", "json", "hk.pkl"),
+        cwd=REPO_ROOT,
+    )
+    config = json.loads(result.stdout)
+    flag = "HK_SKIP_MISSING_FILES"
+    assert flag not in config["env"]
+    for hook_name in ("pre-commit", "check", "fix"):
+        hook = config["hooks"][hook_name]
+        assert flag not in hook["env"]
+        for name, step in hook["steps"].items():
+            if name in {
+                PREPARATION_STEP_NAME,
+                STATIC_REFERENCE_STEP_NAME,
+                SCHOLARLY_STEP_NAME,
+                "node-mise-authority",
+                "global-json",
+                "uv-lock",
+            }:
+                assert flag not in step["env"], (hook_name, name)
+            elif "{{files}}" in (step["check"] or ""):
+                assert step["env"][flag] == "1", (hook_name, name)
+            for mode in ("check", "check_diff", "fix"):
+                command = step.get(mode) or ""
+                if "hk_exec.py" in command and "{{files}}" in command:
+                    assert " --hk-files {{files}}" in command, (
+                        hook_name,
+                        name,
+                        mode,
+                    )
