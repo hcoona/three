@@ -1627,20 +1627,23 @@ def test_file_linter_wrappers_filter_removed_operands_only_when_scoped(  # noqa:
     existing = tmp_path / "existing input.pkl"
     existing.write_text("value = 1\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    option_like = "--config.pkl"
-    Path(option_like).write_text("value = 1\n", encoding="utf-8")
+    option_like = ["--config.pkl", "--", "--hk-files"]
+    for name in option_like:
+        Path(name).write_text("value = 1\n", encoding="utf-8")
     removed_parent = tmp_path / "removed parent"
     if replaced_parent:
         removed_parent.write_text("replacement file\n", encoding="utf-8")
     removed = removed_parent / "removed input.pkl"
     paths = [str(removed)]
     if include_existing:
-        paths.extend([str(existing), option_like])
+        paths.extend([str(existing), *option_like])
     if skip_missing:
         monkeypatch.setenv("HK_SKIP_MISSING_FILES", "1")
     else:
         monkeypatch.delenv("HK_SKIP_MISSING_FILES", raising=False)
-    command_prefix = ["stub-file-tool", "--"] if wrapper == "hk_exec" else []
+    command_prefix = (
+        ["stub-file-tool", "--", "--hk-files"] if wrapper == "hk_exec" else []
+    )
     monkeypatch.setattr(module.sys, "argv", [wrapper, *command_prefix, *paths])
     observed_commands: list[list[str]] = []
 
@@ -1665,11 +1668,20 @@ def test_file_linter_wrappers_filter_removed_operands_only_when_scoped(  # noqa:
 
     assert module.main() == 0
     expected = (
-        ([str(existing), f"./{option_like}"] if include_existing else [])
+        (
+            [str(existing), *(f"./{name}" for name in option_like)]
+            if include_existing
+            else []
+        )
         if skip_missing
         else paths
     )
     assert [command[-1] for command in observed_commands] == expected
+    if wrapper == "hk_exec":
+        assert all(
+            command[:2] == ["stub-file-tool", "--"]
+            for command in observed_commands
+        )
 
 
 def test_file_operand_filter_preserves_strict_filesystem_diagnostics(
@@ -1726,3 +1738,11 @@ def test_hk_missing_file_filter_is_scoped_to_file_tools() -> None:
                 assert flag not in step["env"], (hook_name, name)
             elif "{{files}}" in (step["check"] or ""):
                 assert step["env"][flag] == "1", (hook_name, name)
+            for mode in ("check", "check_diff", "fix"):
+                command = step.get(mode) or ""
+                if "hk_exec.py" in command and "{{files}}" in command:
+                    assert " --hk-files {{files}}" in command, (
+                        hook_name,
+                        name,
+                        mode,
+                    )

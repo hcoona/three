@@ -125,6 +125,12 @@ static-reference preparation/scanning and lock validation retain their own
 inputs and do not inherit this opt-in. HK still owns source conformance;
 product tests remain in their explicit local commands and selected CI jobs.
 
+File-reading `hk_exec.py` commands use `--hk-files` to mark the start of file
+operands. The first such marker is the boundary, so wrapped commands may retain
+their own `--` arguments and a file named `--` stays a file. Existing leading-dash
+operands are prefixed with `./` before reaching the tool. The legacy last-`--`
+form remains available for callers without ambiguous filenames.
+
 The explicit staged helper does not stash unstaged changes. Normal pre-commit
 retains HK's native selection and configured stashing; it does not call this
 helper to augment its path list. Distinguish path selection from the content

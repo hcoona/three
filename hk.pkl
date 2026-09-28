@@ -50,7 +50,8 @@ local general_linters = new Mapping<String, Step> {
   ["editorconfig-check"] = (Steps.editorconfig_check) {
     profiles = List("medium")
     exclude = general_exclude_list
-    check = "python eng/scripts/hk_exec.py editorconfig-checker --disable-indent-size -- {{files}}"
+    check =
+      "python eng/scripts/hk_exec.py editorconfig-checker --disable-indent-size --hk-files {{files}}"
   }
 }
 
@@ -71,8 +72,8 @@ local markdown_linters = new Mapping<String, Step> {
     batch = true
     glob = List("*.md")
     stage = List("*.md")
-    check = "python eng/scripts/hk_exec.py pnpm exec -- markdownlint-cli2 -- {{files}}"
-    fix = "python eng/scripts/hk_exec.py pnpm exec -- markdownlint-cli2 --fix -- {{files}}"
+    check = "python eng/scripts/hk_exec.py pnpm exec -- markdownlint-cli2 --hk-files {{files}}"
+    fix = "python eng/scripts/hk_exec.py pnpm exec -- markdownlint-cli2 --fix --hk-files {{files}}"
   }
 
   ["markdown-prettier"] {
@@ -80,8 +81,8 @@ local markdown_linters = new Mapping<String, Step> {
     exclude = general_exclude_list + markdown_append_only_artifact_exclude
     glob = List("*.md")
     stage = List("*.md")
-    check = "python eng/scripts/hk_exec.py pnpm exec -- prettier --check -- {{files}}"
-    fix = "python eng/scripts/hk_exec.py pnpm exec -- prettier --write -- {{files}}"
+    check = "python eng/scripts/hk_exec.py pnpm exec -- prettier --check --hk-files {{files}}"
+    fix = "python eng/scripts/hk_exec.py pnpm exec -- prettier --write --hk-files {{files}}"
   }
 }
 
@@ -102,9 +103,9 @@ local json_linters = new Mapping<String, Step> {
     glob = List("*.json", "*.jsonc")
     stage = List("*.json", "*.jsonc")
     check =
-      "python eng/scripts/hk_exec.py pnpm exec -- biome check --no-errors-on-unmatched -- {{files}}"
+      "python eng/scripts/hk_exec.py pnpm exec -- biome check --no-errors-on-unmatched --hk-files {{files}}"
     fix =
-      "python eng/scripts/hk_exec.py pnpm exec -- biome check --write --no-errors-on-unmatched -- {{files}}"
+      "python eng/scripts/hk_exec.py pnpm exec -- biome check --write --no-errors-on-unmatched --hk-files {{files}}"
   }
 }
 
@@ -114,8 +115,8 @@ local yaml_linters = new Mapping<String, Step> {
     exclude = general_exclude_list
     glob = List("*.yml", "*.yaml")
     stage = List("*.yml", "*.yaml")
-    check = "python eng/scripts/hk_exec.py pnpm exec -- prettier --check -- {{files}}"
-    fix = "python eng/scripts/hk_exec.py pnpm exec -- prettier --write -- {{files}}"
+    check = "python eng/scripts/hk_exec.py pnpm exec -- prettier --check --hk-files {{files}}"
+    fix = "python eng/scripts/hk_exec.py pnpm exec -- prettier --write --hk-files {{files}}"
   }
 }
 
@@ -124,7 +125,7 @@ local toml_linters = new Mapping<String, Step> {
     profiles = List("small")
     exclude = general_exclude_list
     glob = List("**/*.toml")
-    check = "python eng/scripts/hk_exec.py pnpm exec -- taplo check -- {{files}}"
+    check = "python eng/scripts/hk_exec.py pnpm exec -- taplo check --hk-files {{files}}"
   }
 
   ["toml-taplo-format"] {
@@ -132,10 +133,10 @@ local toml_linters = new Mapping<String, Step> {
     exclude = general_exclude_list
     glob = List("**/*.toml")
     stage = List("<JOB_FILES>")
-    check = "python eng/scripts/hk_exec.py pnpm exec -- taplo format --check -- {{files}}"
+    check = "python eng/scripts/hk_exec.py pnpm exec -- taplo format --check --hk-files {{files}}"
     check_diff =
-      "python eng/scripts/hk_exec.py pnpm exec -- taplo format --check --diff -- {{files}}"
-    fix = "python eng/scripts/hk_exec.py pnpm exec -- taplo format -- {{files}}"
+      "python eng/scripts/hk_exec.py pnpm exec -- taplo format --check --diff --hk-files {{files}}"
+    fix = "python eng/scripts/hk_exec.py pnpm exec -- taplo format --hk-files {{files}}"
   }
 }
 
@@ -144,7 +145,7 @@ local docker_linters = new Mapping<String, Step> {
     profiles = List("small")
     exclude = general_exclude_list
     glob = List("Dockerfile", "*.Dockerfile", "Dockerfile.*")
-    check = "python eng/scripts/hk_exec.py hadolint -- {{files}}"
+    check = "python eng/scripts/hk_exec.py hadolint --hk-files {{files}}"
   }
 }
 
@@ -153,15 +154,15 @@ local bash_linters = new Mapping<String, Step> {
     profiles = List("small")
     exclude = general_exclude_list
     glob = List("**/*.sh", "**/*.bash")
-    check = "python eng/scripts/hk_exec.py shellcheck -- {{files}}"
+    check = "python eng/scripts/hk_exec.py shellcheck --hk-files {{files}}"
   }
 
   ["shfmt"] {
     profiles = List("small")
     exclude = general_exclude_list
     glob = List("**/*.sh", "**/*.bash", "**/*.mksh", "**/*.bats", "**/*.zsh")
-    check = "python eng/scripts/hk_exec.py shfmt -d --apply-ignore -- {{files}}"
-    fix = "python eng/scripts/hk_exec.py shfmt -w --apply-ignore -- {{files}}"
+    check = "python eng/scripts/hk_exec.py shfmt -d --apply-ignore --hk-files {{files}}"
+    fix = "python eng/scripts/hk_exec.py shfmt -w --apply-ignore --hk-files {{files}}"
   }
 }
 
@@ -178,9 +179,9 @@ local pwsh_linters = new Mapping<String, Step> {
       ["HK_EXEC_PER_FILE"] = "0"
     }
     check =
-      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-FormatterWrapper.ps1 -Mode Check -Path -- {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-FormatterWrapper.ps1 -Mode Check -Path --hk-files {{files}}"
     fix =
-      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-FormatterWrapper.ps1 -Mode Fix -Path -- {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-FormatterWrapper.ps1 -Mode Fix -Path --hk-files {{files}}"
   }
 
   ["pwsh-script-analyzer"] {
@@ -194,9 +195,9 @@ local pwsh_linters = new Mapping<String, Step> {
       ["HK_EXEC_TIMEOUT_SECONDS"] = "300"
     }
     check =
-      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path -- {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path --hk-files {{files}}"
     fix =
-      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Fix -Path -- {{files}}"
+      "python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/linter/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Fix -Path --hk-files {{files}}"
   }
 }
 
@@ -223,9 +224,9 @@ local javascript_typescript_linters = new Mapping<String, Step> {
     glob = javascript_typescript_files
     stage = javascript_typescript_files
     check =
-      "python eng/scripts/hk_exec.py pnpm exec -- biome check --no-errors-on-unmatched -- {{files}}"
+      "python eng/scripts/hk_exec.py pnpm exec -- biome check --no-errors-on-unmatched --hk-files {{files}}"
     fix =
-      "python eng/scripts/hk_exec.py pnpm exec -- biome check --write --no-errors-on-unmatched -- {{files}}"
+      "python eng/scripts/hk_exec.py pnpm exec -- biome check --write --no-errors-on-unmatched --hk-files {{files}}"
   }
 }
 
@@ -241,8 +242,9 @@ local python_linters = new Mapping<String, Step> {
     exclude = python_exclude_list
     glob = all_python_files
     stage = all_python_files
-    check = "python eng/scripts/hk_exec.py uv run ruff check --force-exclude -- {{files}}"
-    fix = "python eng/scripts/hk_exec.py uv run ruff check --force-exclude --fix -- {{files}}"
+    check = "python eng/scripts/hk_exec.py uv run ruff check --force-exclude --hk-files {{files}}"
+    fix =
+      "python eng/scripts/hk_exec.py uv run ruff check --force-exclude --fix --hk-files {{files}}"
   }
 
   ["ruff_format"] {
@@ -251,10 +253,11 @@ local python_linters = new Mapping<String, Step> {
     glob = all_python_files
     stage = all_python_files
     check =
-      "python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude --check -- {{files}}"
+      "python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude --check --hk-files {{files}}"
     check_diff =
-      "python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude --diff -- {{files}}"
-    fix = "python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude -- {{files}}"
+      "python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude --diff --hk-files {{files}}"
+    fix =
+      "python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude --hk-files {{files}}"
   }
 }
 
@@ -326,8 +329,8 @@ local scholarly_publication_validation = new Mapping<String, Step> {
 local dotenv_linter = new Mapping<String, Step> {
   ["dotenv-linter"] = (Steps.dotenv_linter) {
     profiles = List("small")
-    check = "python eng/scripts/hk_exec.py dotenv-linter check -- {{files}}"
-    fix = "python eng/scripts/hk_exec.py dotenv-linter fix --no-backup -- {{files}}"
+    check = "python eng/scripts/hk_exec.py dotenv-linter check --hk-files {{files}}"
+    fix = "python eng/scripts/hk_exec.py dotenv-linter fix --no-backup --hk-files {{files}}"
   }
 }
 

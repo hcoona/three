@@ -2,6 +2,6 @@ import "../Config.pkl"
 
 typos = new Config.Step {
   batch = true
-  check = "python eng/scripts/hk_exec.py typos -c .typos.toml --force-exclude -- {{files}}"
-  fix = "python eng/scripts/hk_exec.py typos -c .typos.toml --force-exclude -w -- {{files}}"
+  check = "python eng/scripts/hk_exec.py typos -c .typos.toml --force-exclude --hk-files {{files}}"
+  fix = "python eng/scripts/hk_exec.py typos -c .typos.toml --force-exclude -w --hk-files {{files}}"
 }

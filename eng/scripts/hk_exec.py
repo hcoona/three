@@ -190,7 +190,10 @@ def run_with_watchdog(  # noqa: PLR0913, PLR0917
 def split_command_and_files(
     argv: list[str],
 ) -> tuple[list[str], list[str]]:
-    """Split argv at the last '--' separator."""
+    """Use an explicit file boundary, retaining the legacy separator form."""
+    if "--hk-files" in argv:
+        sep = argv.index("--hk-files")
+        return argv[:sep], argv[sep + 1 :]
     if "--" not in argv:
         return argv, []
 
