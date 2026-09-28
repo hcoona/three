@@ -407,7 +407,7 @@
         "xunit",
         "xunit.abstractions",
         "xunit.runner.visualstudio",
-        "xunit.v3"
+        "/^xunit\\.v3($|\\.)/"
       ],
       "groupName": ".NET Test Stack"
     },
@@ -619,7 +619,7 @@
         "xunit",
         "xunit.abstractions",
         "xunit.runner.visualstudio",
-        "xunit.v3"
+        "/^xunit\\.v3($|\\.)/"
       ],
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true,
