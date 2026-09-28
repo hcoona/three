@@ -65,7 +65,7 @@ gopass = "1.16.1"
 ripgrep = "latest"
 github-cli = "latest"
 "github:microsoft/apm" = "v0.29.0"
-"github:alibaba/open-code-review" = { version = "v1.12.8", bin = "ocr" }
+"github:alibaba/open-code-review" = { version = "v1.12.9", bin = "ocr" }
 
 #
 # Environment Variables
