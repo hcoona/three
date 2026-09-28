@@ -8,6 +8,42 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
+### Complete one normal TestPyPI publication
+
+- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
+- **Accepted inputs:** the owner's approved
+  [TestPyPI proposal](https://github.com/hcoona/three/issues/843#issuecomment-5861383218),
+  the disabled Governance v2 implementation delivered by PR #880, and the
+  current Python requirements, design, source evidence and publication contracts
+  under `src/public/lib/three-workflow-delivery-v3/docs/`.
+- **Advancement and outcome:** register the normal-workflow publisher on the
+  existing TestPyPI project; inspect and independently review configuration;
+  protected-deliver TestPyPI-only ready Governance v2; execute one new normal
+  Attempt and independently audit its actual outcome, original files and clean
+  wheel/sdist consumers. Carry forward the confirmed Sole Owner and existing
+  bootstrap/native registrations unless changed or contradicted. The owner
+  adds only `hcoona/three`, `workflow-delivery-v3-python-smoke.yml`, Environment
+  `workflow-delivery-v3-python-testpypi` on `hcoona-release-smoke-python`.
+- **Effects and delivery:** permit the named owner-side registration, bounded
+  GitHub configuration and TestPyPI state/file reads, TestPyPI-only admission,
+  one protected-main normal dispatch, independent original-byte Approval Bundle
+  review and its sole Environment approval, one OIDC assertion/token exchange,
+  and at most wheel then sdist uploads with the accepted finite readback policy.
+  Pin the actual target/tooling revision, unchanged NBGV version, configuration
+  and run bindings before dependent effects. Permit locked dependencies, clean
+  consumers, independent engineering/domain/record/research-evidence/OCR reviews,
+  ordinary CI and protected Issue/PR delivery. Trust platform non-replacement
+  without duplicate/race proving; actual publication evidence remains required.
+- **Risk and stopping:** partial or ambiguous results remain failed and spent;
+  no refill, rollback or automatic retry. An already exact pair uses the
+  no-action path. Unexpected configuration or target drift stops dependent work
+  without implicit repair. Retain prior failed evidence and current-run bytes
+  outside registry retention; close this bounded entry with the actual outcome.
+- **Exclusions:** no new native generation or duplicate/race probes, additional
+  dispatch/rerun/retry, deletion/cleanup, other publisher/access/Environment
+  changes, credential export, production PyPI or Ruby operations, or promotion
+  of prior failures. PyPI stays blocked; native/bootstrap request slots stay null.
+
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
