@@ -14,6 +14,10 @@ from typing import cast
 from nbgv_python.versioning import normalize_version_field
 from packaging.version import Version
 
+from three_workflow_delivery_v3._python_build_backend import (
+    HATCHLING_REQUIREMENT,
+    HATCHLING_VERSION,
+)
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
@@ -35,6 +39,9 @@ from three_workflow_delivery_v3.repository.node_provider import (
     validate_provider_binding,
     verify_exact_checkout,
 )
+from three_workflow_delivery_v3.repository.python_backend import (
+    backend_constraints,
+)
 
 PYTHON_RELEASE_UNIT = "hcoona-release-smoke-python"
 PYTHON_IMPORT = "hcoona_release_smoke_python"
@@ -50,7 +57,7 @@ PYTHON_POLICY = (
 PYTHON_TOOLCHAIN = (
     ("python", "3.14.3"),
     ("uv", "0.10.9"),
-    ("hatchling", "1.32.0"),
+    ("hatchling", HATCHLING_VERSION),
     ("nbgv", "3.10.94"),
     ("nbgv-python", "2.1.0.dev1"),
     ("packaging", "26.3"),
@@ -99,49 +106,15 @@ def validate_python_build_constraints(
     content: bytes, lock_content: bytes
 ) -> None:
     """Bind the complete producer backend closure to native UV lock facts."""
-    names = {
-        "hatchling",
-        "packaging",
-        "pathspec",
-        "pluggy",
-        "tomlkit",
-        "trove-classifiers",
-    }
-    lock = tomllib.loads(lock_content.decode("utf-8"))
-    packages = [p for p in lock.get("package", []) if p.get("name") in names]
-    if len(packages) != len(names):
-        message = "Python backend lock closure is incomplete or ambiguous"
-        raise ValueError(message)
-    expected: list[str] = []
-    for package in sorted(packages, key=lambda p: p["name"]):
-        if package.get("source") != {"registry": "https://pypi.org/simple"}:
-            message = "Python backend must resolve from the public PyPI index"
-            raise ValueError(message)
-        if any(
-            d.get("name") not in names for d in package.get("dependencies", [])
-        ):
-            message = "Python backend has an unclosed transitive dependency"
-            raise ValueError(message)
-        hashes = sorted({wheel["hash"] for wheel in package.get("wheels", [])})
-        if not hashes or any(
-            not re.fullmatch(r"sha256:[0-9a-f]{64}", h) for h in hashes
-        ):
-            message = "Python backend lock lacks exact wheel hashes"
-            raise ValueError(message)
-        expected.append(
-            f"{package['name']}=={package['version']} "
-            + " ".join("--hash=" + digest for digest in hashes)
-        )
+    expected = backend_constraints(lock_content, HATCHLING_VERSION)
     actual = [
         line
         for line in content.decode("utf-8").splitlines()
         if line and not line.startswith("#")
     ]
-    if (
-        actual != expected
-        or next(p for p in packages if p["name"] == "hatchling")["version"]
-        != "1.32.0"
-    ):
+    if actual != [
+        line for line in expected.splitlines() if not line.startswith("#")
+    ]:
         message = "Python producer constraints differ from the frozen UV lock"
         raise ValueError(message)
 
@@ -241,7 +214,7 @@ def validate_python_source_manifest(content: bytes) -> dict[str, object]:
         or set(document) != {"project", "build-system", "tool"}
         or document["build-system"]
         != {
-            "requires": ["hatchling==1.32.0", "nbgv-python"],
+            "requires": [HATCHLING_REQUIREMENT, "nbgv-python"],
             "build-backend": "hatchling.build",
         }
         or set(project)

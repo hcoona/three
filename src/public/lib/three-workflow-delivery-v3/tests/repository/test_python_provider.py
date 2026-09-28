@@ -10,6 +10,9 @@ from pathlib import Path
 
 import pytest
 import tomli_w
+from three_workflow_delivery_v3._python_build_backend import (
+    HATCHLING_REQUIREMENT,
+)
 from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.catalogs import catalog_digest
 from three_workflow_delivery_v3.repository import python_provider
@@ -67,7 +70,7 @@ def _facts():
 
 
 def _provider():
-    constraints = b"hatchling==1.32.0\n"
+    constraints = (HATCHLING_REQUIREMENT + "\n").encode()
     paths = (*_GLOBALS, *(f"{PYTHON_ROOT}/{p}" for p in PYTHON_SOURCE_FILES))
     return PythonProviderResult(
         ProviderBinding(
@@ -364,7 +367,7 @@ def test_python_build_constraints_reject_tampered_frozen_closure(change):
         )
     elif change == "version":
         constraints = constraints.replace(
-            b"hatchling==1.32.0", b"hatchling==1.31.0"
+            HATCHLING_REQUIREMENT.encode(), b"hatchling==0.0.0"
         )
     elif change == "missing":
         constraints = b"\n".join(

@@ -65,10 +65,32 @@ def _synthetic_provider(label):
     )
 
 
+def _restore_historical_toolchain(monkeypatch, files):
+    """Supply original dependencies only inside historical replay tests."""
+    toolchain = tuple(
+        tuple(pair)
+        for pair in parse_canonical_json(files["provider/a.json"])["toolchain"]
+    )
+    # Replay the archived revision's dependencies, not today's producer.
+    # These fixture-local substitutions cannot admit old bytes to current Live.
+    hatchling = dict(toolchain)["hatchling"]
+    for module in ("adapters.python", "repository.python_provider"):
+        monkeypatch.setattr(
+            f"three_workflow_delivery_v3.{module}.HATCHLING_REQUIREMENT",
+            f"hatchling=={hatchling}",
+        )
+    monkeypatch.setattr(
+        "three_workflow_delivery_v3.repository.python_provider.PYTHON_TOOLCHAIN",
+        toolchain,
+    )
+
+
 @pytest.fixture
 def modeled_fixtures(monkeypatch):
     """Decode static synthetic originals; never generate a native suite."""
-    fixtures = fixtures_from_files(historical_files("prepared"))
+    files = historical_files("prepared")
+    _restore_historical_toolchain(monkeypatch, files)
+    fixtures = fixtures_from_files(files)
     original_catalog = historical_catalog_digest()
     # Historical readers require their original revision's catalog dependency.
     # Keep all archived bytes unchanged; this is not current runtime admission.
@@ -322,9 +344,12 @@ def test_python_native_fixture_rejects_inconsistent_preparation_provenance(
         )
 
 
-def test_python_native_old_provider_requires_original_catalog_revision():
+def test_python_native_old_provider_requires_original_catalog_revision(
+    monkeypatch,
+):
     """Current runtime cannot relabel an archived provider as current proof."""
     files = historical_files("prepared")
+    _restore_historical_toolchain(monkeypatch, files)
     fixtures = fixtures_from_files(files)
     request = NativeRequest(files["request.json"])
     with pytest.raises(

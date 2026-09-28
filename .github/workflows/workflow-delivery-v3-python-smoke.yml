@@ -4,7 +4,7 @@ name: Workflow Delivery v3 Python smoke
   workflow_dispatch:
     inputs:
       registry:
-        description: Separately authorized destination (both remain disabled).
+        description: Separately authorized destination with protected ready admission.
         type: choice
         required: true
         options:

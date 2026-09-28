@@ -17,7 +17,9 @@ explains reusable integration lessons and the next-task guide.
 The Python slice is the separate `hcoona-release-smoke-python` package. Its
 [Python design entry](docs/README.md#python-smoke-design) routes the confirmed
 requirements, HLD/MLDs, brief LLD and source evidence for TestPyPI Buddy followed
-by PyPI Official. Its implementation keeps both destinations disabled; the
+by PyPI Official. TestPyPI has reviewed ready Governance v2 admission; PyPI
+remains blocked. The normal TestPyPI operation stopped before dispatch on local
+TLS verification; actual publication remains outstanding. The
 [delivery gates](docs/migration-strategy.md#python-smoke-delivery) keep
 implementation, configuration/admission and publication separately authorized.
 The npm and NuGet smoke objectives remain complete.
@@ -31,13 +33,14 @@ and Release continue to use their existing commands and contracts.
 
 The [Python smoke package](../hcoona-release-smoke-python/README.md) provides the
 wheel/sdist proving payload. The [Python LLD](docs/hcoona-release-smoke-python-lld.md)
-owns its concrete build, qualification and disabled publication contracts.
+owns its concrete build, qualification and publication contracts.
 The Python workflow runs credential-free CI at the tested PR merge target;
 manual TestPyPI/PyPI entry first requires the destination's protected Governance.
-Both destinations remain disabled. The revised
+The revised
 [platform-reliance design](docs/hcoona-release-smoke-python-lld.md#python-governance-v2-migration)
-is implemented as strict v2 with both protected files blocked. Normal runtime
-rejects v1 and hybrid admission; configuration/admission remains outstanding. The [retired native tooling boundary](docs/validation/python-native-readiness.md)
+is implemented as strict v2. Normal runtime rejects v1 and hybrid admission.
+The [handoff](docs/agent-handoff.md#starting-a-new-session) routes current
+admission evidence and the outstanding publication gate. The [retired native tooling boundary](docs/validation/python-native-readiness.md)
 retains failed-evidence consumers with both request slots null. No duplicate/race
 suite is a prerequisite. Configuration/admission and actual publication retain
 separate grants and each destination still needs exact readback and clean consumers.

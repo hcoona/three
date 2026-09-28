@@ -264,7 +264,11 @@
       "matchManagers": ["pep621"],
       "postUpgradeTasks": {
         "commands": ["mise run --skip-tools --force update-uv-lock"],
-        "fileFilters": ["uv.lock"],
+        "fileFilters": [
+          "uv.lock",
+          "eng/workflow-delivery/v3/python-build-constraints.txt",
+          "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_build_backend.py"
+        ],
         "executionMode": "branch"
       }
     },
@@ -296,6 +300,13 @@
       "matchDepTypes": ["dependency-groups"],
       "matchPackageNames": ["ruff", "pyrefly", "pytest", "hatch", "hatchling", "datamodel-code-generator"],
       "groupName": "Python Dev Tooling Dependencies",
+      "automerge": true
+    },
+    {
+      "description": "Keep the exact smoke backend pin and workspace tooling requirement compatible.",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["hatchling"],
+      "groupName": "Python Build Backend",
       "automerge": true
     },
     {
@@ -421,7 +432,7 @@
         "xunit",
         "xunit.abstractions",
         "xunit.runner.visualstudio",
-        "xunit.v3"
+        "/^xunit\\.v3($|\\.)/"
       ],
       "groupName": ".NET Test Stack"
     },
@@ -576,7 +587,11 @@
       "groupName": "Mise uv",
       "postUpgradeTasks": {
         "commands": ["mise install --locked uv", "mise run --skip-tools --force update-uv-lock"],
-        "fileFilters": ["uv.lock"],
+        "fileFilters": [
+          "uv.lock",
+          "eng/workflow-delivery/v3/python-build-constraints.txt",
+          "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_build_backend.py"
+        ],
         "executionMode": "branch"
       },
       "automerge": true
@@ -640,7 +655,7 @@
         "xunit",
         "xunit.abstractions",
         "xunit.runner.visualstudio",
-        "xunit.v3"
+        "/^xunit\\.v3($|\\.)/"
       ],
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true,

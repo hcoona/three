@@ -1,4 +1,4 @@
-"""Bootstrap artifact order, separate requests and disabled Live gates."""
+"""Bootstrap artifact order and inactive request boundaries."""
 
 from pathlib import Path
 
@@ -6,12 +6,8 @@ import yaml
 from three_workflow_delivery_v3.acceptance.python_bootstrap_contract import (
     SLOT_PATH,
     WORKFLOW,
-    BootstrapRequest,
 )
-from three_workflow_delivery_v3.acceptance.python_native_contract import (
-    NativeRequest,
-)
-from three_workflow_delivery_v3.canonical import canonicalize, parse_json_strict
+from three_workflow_delivery_v3.canonical import parse_json_strict
 
 _ROOT = Path(__file__).resolve().parents[6]
 
@@ -168,25 +164,16 @@ def test_bootstrap_workflow_limits_capability_and_retains_failure():
     assert '"tooling-sha": os.environ["WDV3_TOOLING_SHA"]' in final["run"]
 
 
-def test_bootstrap_request_does_not_admit_native_or_live():
-    """Bootstrap and native requests remain separate from normal admission."""
+def test_inactive_bootstrap_native_slots_are_separate_from_normal_admission():
+    """Inactive requests supply no authority to normal Governance v2."""
     request = parse_json_strict((_ROOT / SLOT_PATH).read_bytes())
-    if request is not None:
-        BootstrapRequest(canonicalize(request))
+    assert request is None
     native = parse_json_strict(
         (
             _ROOT / ".github/workflow-delivery/native/python-requests.json"
         ).read_bytes()
     )
-    if request is not None:
-        assert native == {"testpypi": None, "pypi": None}
-    else:
-        assert set(native) == {"testpypi", "pypi"}
-        for registry, value in native.items():
-            if value is not None:
-                assert (
-                    NativeRequest(canonicalize(value)).registry.name == registry
-                )
+    assert native == {"testpypi": None, "pypi": None}
     for registry in ("testpypi", "pypi"):
         governance = parse_json_strict(
             (
@@ -195,6 +182,11 @@ def test_bootstrap_request_does_not_admit_native_or_live():
                 / f"hcoona-release-smoke-python-{registry}.json"
             ).read_bytes()
         )
-        assert governance["live_enabled"] is False
+        assert (
+            governance["schema"] == "workflow-delivery/v3/python-governance-v2"
+        )
+        assert (
+            governance["publisher"]["workflow"]
+            == "workflow-delivery-v3-python-smoke.yml"
+        )
         assert "native-acceptance" not in governance
-        assert governance["state"] == "blocked"
