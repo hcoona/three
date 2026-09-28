@@ -104,6 +104,13 @@ Changing any of those facts affects qualification. The compiler rejects an
 incomplete pair, duplicate variant, unresolved build prerequisite or conflicting
 version lineage; it does not guess from filenames or run a backend.
 
+A recovery Attempt retains this complete Build contract even when a destination
+already contains one file. The same admitted target/version and frozen inputs
+must reproduce both original formats; destination state does not prune the
+Build or change the witness. Release compares actual bytes before retaining
+an existing file. Recovery adds no target/control revision substitution and
+does not relax protected-main target eligibility.
+
 The Python Provider reads exact-target `pyproject.toml` and UV workspace facts
 using TOML/native Python metadata standards, resolves declared build inputs,
 and obtains full-history NBGV facts once. It calls `nbgv-python`'s supported

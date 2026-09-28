@@ -655,6 +655,12 @@ Three required obligations remain separately decidable:
 | Clean wheel consumer  | Fresh environment outside the checkout with empty cache installs the exact qualified wheel, validates installed metadata/witness and calls `project_id()`.                                                                         |
 | Clean sdist consumer  | A separate fresh environment outside Git rebuilds and installs the original qualified sdist with declared backend prerequisites and no NBGV/.NET or ambient version variable; it verifies the same installed metadata/witness/API. |
 
+Partial-publication recovery reruns the same complete content, wheel and sdist
+obligations in its new Release Attempt. Existing remote files cannot replace
+Build outputs, satisfy a missing obligation or import old Evidence. Tests join
+independent reproducible builds with controlled partial-state publication,
+including both possible existing single-file subsets and conflicting bytes.
+
 The sdist consumer's rebuilt wheel is evidence, never a replacement for the
 original wheel in the publication set. Native metadata and logical archive
 bytes, not GitHub transport basenames, determine identity. Missing or malformed

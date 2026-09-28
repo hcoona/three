@@ -270,10 +270,13 @@ real publication are distinct evidence levels.
 
 ### Python Distribution-Set Action
 
-The bounded Python publication action under `WD-PY-005`: exactly one wheel
-upload followed by one sdist upload at one registry, covered by one current
-Snapshot, Approval and Authorization. It is one business action with two
-non-atomic file operations, not a registry transaction. One marker precedes the
+The bounded Python publication action under `WD-PY-005`: two ordered file
+dispositions, wheel then sdist, at one registry, covered by one current
+Snapshot, Approval and Authorization. Each file is either uploaded once or
+retained as exactly already present; only missing files are uploaded. A fresh
+Attempt independently rebuilds and qualifies the complete pair before admitting
+an exact existing subset. It is one business action with non-atomic file
+operations, not a registry transaction. One marker precedes the
 set and one Result records its controlled terminal state, including partial
 failure; scalar terminal transport is unchanged. See the
 [Python delivery design](./release-delivery-mld.md#python-smoke-delivery).
@@ -1208,8 +1211,10 @@ Records with the resulting desired state and materialized actions:
 - state absent from the active projection may produce a publish action only
   under current Governance-bound active-version acceptance;
 - exact satisfied state produces no side effect;
-- partial, unknown, conflicting, or unprovable state fails closed and requires
-  reconciliation.
+- an exactly verified Python subset may produce the missing-file completion
+  action defined by `WD-PY-005` in a fresh independently qualified Attempt;
+- other partial, unknown, conflicting, or unprovable state fails closed and
+  requires reconciliation.
 
 For first-slice npm, the Observation also embeds a Package-Control Proof for
 the version-independent package container. That proof is an admission
@@ -1270,7 +1275,7 @@ non-overwrite and the bounded tag race. Active absence
 does not claim the version was never published, is not retained as a tombstone,
 or will accept creation. Multiple independent ordered actions remain outside
 this first slice. The [Python set action](#python-distribution-set-action)
-defines its separately confirmed two-operation partial-failure behavior.
+defines its separately confirmed file dispositions and partial-failure behavior.
 
 ### Approval Bundle
 
@@ -1471,9 +1476,12 @@ does not copy ancestor lineage reachable through that predecessor.
 ### Release Reconciliation
 
 The read-only exceptional process used when Remote-State Observation cannot
-classify a projection as safely absent or exactly satisfied.
+classify a projection as safely absent, exactly satisfied, or an admitted
+exact Python subset under `WD-PY-005`.
 
-Reconciliation resolves partial, unknown, conflicting, or unprovable state.
+Reconciliation resolves other partial, unknown, conflicting, or unprovable
+state. The admitted Python subset follows a fresh normal Attempt with
+missing-file uploads; it never resumes the failed Attempt.
 Existing successful publication is not automatically rolled back.
 It is a separate exceptional process, not an Attempt Outcome field, and it
 never resumes the old Attempt. The first-slice implementation defers the

@@ -161,7 +161,7 @@ no SDK/CLI name or mocked response proves platform behavior.
 The disabled implementation realizes the owner-confirmed `WD-PY-005` reliability choice,
 not a service visibility guarantee. It applies only after a definitive HTTP-200
 upload, before its readback terminates. Bootstrap P2/P3 and normal publication's
-two post-upload readbacks share the mechanism. Initial checks, zero-action
+up to two post-upload readbacks share the mechanism. Initial checks, zero-action
 proofs and independent final audits remain single reads. The retired native
 reader retains its historical policy only for the original failed evidence. HTTP transport retries, cache-bypass headers, token
 refresh and file-download retries remain unavailable.
@@ -310,39 +310,61 @@ any needed normal registration is a concrete later configuration change.
 ## Approval and Terminal Contract
 
 The credential-free preparation job persists one Snapshot and Approval Bundle
-for the two-file set. The summary presents target/version, both original file
-digests, destination/profile, two sequential uploads and possible partial effects.
+for the complete freshly built and qualified pair. Its Observation classifies
+whole absence, an exact existing subset, whole exact state or blocked state.
+Whole exact state has no action. Whole absence or either exact single-file
+subset forms one set action with ordinal 0 (wheel) and 1 (sdist), each explicitly
+`upload` or `already-present`. Existing-file admission requires actual downloaded
+bytes, matching filename/version/metadata/witness and no extra, yanked or unknown
+file. The summary presents both original digests, each disposition, destination,
+profile, ordered missing-file uploads and possible partial effects.
 The destination-bound Environment gates the trusted publisher. After native
 current-run approval verification, that job emits the immutable Authorization
 before requesting an OIDC assertion or short-lived registry token. The job
 permission exists after Environment approval; reviewed control enforces this
 later token-acquisition order, not a cryptographic artifact-bound permission.
 It verifies all current bindings,
-final Governance/configuration and fresh whole-set absence before the marker.
+final Governance/configuration and fresh pre-state before the marker. The
+approved subset, missing-file plan and preserved target-version index entries
+must be unchanged; even newly complete state stops this action rather than
+rewriting its approved plan.
 
 The action discriminator is `python-distribution-set`; its closed operations
-are ordinal 0 (wheel) and 1 (sdist). One marker binds the Authorization and
-actual profile proof. Persist and read-validate it before operation 0. Operation
-1 is unreachable without definitive operation-0 success and exact readback.
-After both succeed, exact whole-set readback is mandatory.
+are ordinal 0 (wheel) and 1 (sdist). One marker binds Authorization, actual
+profile and the fresh `pre-state`, replacing the former absence-only field.
+Persist and read-validate it before any upload. Retain exact existing files
+without POSTs; upload each missing file at most once in ordinal order. A wheel
+upload requires definitive success and exact readback before sdist upload.
+A pre-existing wheel satisfies that prerequisite through the marker's exact
+proof. Every post-upload observation preserves the already verified inventory
+and adds only that file. The last actual upload must read back the complete
+pair, including the retained file; it may be wheel when sdist already exists.
 
 The existing Publication Result record gains a strict Python destination
 variant with two operation entries and final whole-set readback. It refers to
 the marker, which resolves both requested artifacts through Authorization and
-Snapshot. Unknown/missing/extra operation entries fail admission; it cannot be
+Snapshot. `already-present` records exact pre-state proof with its digest,
+`readback-exact: true` and no upload response or post-upload observation. It
+cannot be assigned to a planned upload, and a retained file cannot be reported
+as uploaded. `not-attempted` applies to missing files whose upload was not
+reached. Both entries remain present even after failure. Final exactness binds
+the last actual successful upload's readback digest, not necessarily ordinal 1;
+all files must be satisfied and at least one upload must have succeeded for
+`published`. Already-present entries alone imply no current-Attempt mutation.
+Unknown/missing/extra operation entries fail admission; it cannot be
 parsed as an npm or NuGet Result. Existing schema consumers must either
 explicitly admit the Python variant or reject it before effects. No generic
 list of independent actions or backward-compatible coercion is added.
 
-| Terminal evidence                                                 | Set outcome                                                                          |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Pre-marker rejection/cancellation                                 | No upload authorized or Result; current DAG explains failure.                        |
-| Both uploads definitively succeed and final exact readback passes | `published`, verified published state; no unique-insertion claim.                    |
-| Wheel fails definitively                                          | Failed; sdist is not attempted; mutation facts require supported evidence.           |
-| Wheel succeeds; sdist fails or is not attempted                   | Failed with retained partial mutation; no compensation.                              |
-| Any ambiguous upload or unsuccessful final readback               | Failed, retaining known and possible effects; never exact-satisfied in this Attempt. |
-| Durable marker but no durable Result                              | Unknown and possibly mutated, irrespective of subsequent registry reads.             |
-| No action and fresh complete exact proof                          | Exact-satisfied without Environment, token or publisher.                             |
+| Terminal evidence                                                                                       | Set outcome                                                                          |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Pre-marker rejection/cancellation                                                                       | No upload authorized or Result; current DAG explains failure.                        |
+| Every planned upload definitively succeeds, retained files are exact and final complete readback passes | `published`, verified published state; no unique-insertion claim.                    |
+| Wheel fails definitively                                                                                | Failed; sdist is not attempted; mutation facts require supported evidence.           |
+| Wheel succeeds; sdist fails or is not attempted                                                         | Failed with retained partial mutation; no compensation.                              |
+| Any ambiguous upload or unsuccessful final readback                                                     | Failed, retaining known and possible effects; never exact-satisfied in this Attempt. |
+| Durable marker but no durable Result                                                                    | Unknown and possibly mutated, irrespective of subsequent registry reads.             |
+| No action and fresh complete exact proof                                                                | Exact-satisfied without Environment, token or publisher.                             |
 
 A successful acknowledgement can be a service no-op. Result mutation facts
 record the reached uploads and observed state; they do not attribute unique
@@ -353,7 +375,19 @@ Result/marker/null remains one scalar terminal reference. Rerun/other-Attempt
 records, malformed references and missing publisher outputs fail admission;
 Finalizer never searches artifacts or synthesizes missing records. After a
 failure, a new separately permitted dispatch starts a new build and observation;
-a partial set still blocks. Only separately requested recovery may address it.
+an exact existing subset may now be completed under `WD-PY-005`. Rebuild and
+qualify both formats from the same admitted target/version and frozen inputs;
+never adopt old artifacts, Approval, Evidence or a prior run's success claim.
+A recovered success belongs only to the new Attempt. Changed inputs or bytes
+still block at comparison; recovery adds no target/control override, old-target
+eligibility or same-Attempt retry.
+
+The current workflow entry, protected Environments, publisher registrations,
+Governance and per-file transport profile stay unchanged. Producers, strict
+readers, summary, marker, Result audit, CLI and Finalizer consumers change
+atomically at the same revision. Historical evidence retains its original
+source revision; do not coerce old absence-only markers into recovery proofs.
+No workflow dispatch, OIDC or upload is authorized by implementation delivery.
 
 ## First-Project Bootstrap
 
@@ -388,7 +422,8 @@ Implementation validation covers these distinct claims before normal admission:
   cannot renew.
 
 - Scenario tests: complete two-file success; wheel failure prevents sdist;
-  partial/extra/yanked/conflicting pre-state blocks; second-file failure and
+  exact wheel-only and sdist-only pre-state uploads only the missing file;
+  extra/yanked/conflicting/unverified partial state blocks; second-file failure and
   ambiguous response stop; HTTP-200 identical replay still requires exact
   readback; rejected duplicate cannot become skip-existing success; zero-action
   exactness; fresh state drift; marker or
@@ -402,7 +437,13 @@ Implementation validation covers these distinct claims before normal admission:
   responses prove only application behavior.
 - Real local integration: full-history NBGV projection, static Hatch metadata,
   original wheel/sdist contents, isolated clean consumers and reproducible
-  bytes for the same target and frozen build inputs. Any reproducibility gap
+  bytes for the same target and frozen build inputs. Join an initial controlled
+  partial failure to a new independently built/qualified Attempt; prove only the
+  missing file is uploaded, fresh complete readback passes, strict Result and
+  Finalizer replay agree, and the old failure is unchanged. Also cover sdist-only
+  state, zero-action complete state, pre-marker drift, rejected/ambiguous upload,
+  retained-file corruption and forged existing-file evidence. These local tests
+  do not claim a real hosted recovery experiment. Any reproducibility gap
   blocks this slice; sealed-artifact resume is outside scope.
 - Reviewed destination-specific configuration/admission: project ownership,
   exact normal-workflow OIDC tuple, Environment and writer/reviewer controls,

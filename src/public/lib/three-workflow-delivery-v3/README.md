@@ -24,6 +24,9 @@ for `0.1.0b26`; production PyPI remains blocked. The
 limits, and the [delivery gates](docs/migration-strategy.md#python-smoke-delivery)
 keep implementation, configuration/admission and publication separately authorized.
 The npm and NuGet smoke objectives remain complete.
+The [partial-publication recovery design](docs/hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
+connects reproducible rebuilding to exact-subset completion; implementation
+awaits separate protected delivery. No hosted recovery is claimed.
 
 The old `governance run-fixed-acceptance-probe` command and fixed-coordinate
 Python producer APIs are retired. `governance admit-acceptance-evidence` and

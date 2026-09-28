@@ -294,15 +294,18 @@ wheel and rebuild/install the sdist. The Shared Foundation provides these
 mechanisms; each context retains its own Plans, Evidence and Decisions.
 
 Release models **one Python distribution-set action**, with exactly two ordered
-file operations (wheel, then sdist). One Snapshot, Approval Bundle and
+file dispositions (wheel, then sdist): upload a missing file or retain an
+exactly verified existing file. One Snapshot, Approval Bundle and
 Authorization close both immutable files and their destination. One durable
 marker precedes the first upload, and one destination-specific Result records
 the complete controlled outcome, including unattempted or partially successful
 operations. The existing nullable scalar terminal reference and Finalizer
 remain; there is no per-file approval, generic transaction or compensation
 system. Missing Result after the marker is unknown and possibly mutated even
-if one file is independently observable. `published` requires two definitive
-upload successes and exact readback of both original artifacts and witnesses.
+if one file is independently observable. `published` requires definitive success
+for every planned upload, exact proof for each retained file and final readback
+of both original artifacts and witnesses. A new Attempt rebuilds and qualifies
+the complete pair; it never imports the failed Attempt's artifacts or Approval.
 After successful uploads, the profile-bound finite observation phase in the
 [Python LLD](./hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
 may retain eligible missing additions as pending. Every intermediate response
@@ -311,8 +314,9 @@ waiting neither resends uploads nor renews authority.
 
 This set action is **not an atomic registry operation**. A definitive or
 ambiguous failure stops remaining uploads and remains failure. Whole-set exact
-state can be freshly verified without an action; partial/conflicting/unknown
-state blocks normal Live. `WD-PY-006` supplies the explicit per-file service
+state can be freshly verified without an action. An exact existing subset can
+be completed by uploading only the missing file under `WD-PY-005`; conflicting,
+unverified partial or unknown state blocks normal Live. `WD-PY-006` supplies the explicit per-file service
 dependency, accepted identical-replay behavior and bounded availability claim.
 No prerequisite duplicate/race suite re-proves the platform. V3 tests its own
 use of that contract; each destination independently completes its actual
@@ -726,13 +730,14 @@ contradictory. The Outcome does not copy ancestors reachable through that
 predecessor.
 
 A blocking destination Observation does not imply Attempt mutation uncertainty.
-After exact successful Qualification, a `partial`, `conflicting`, `unknown`, or
+After exact successful Qualification, an unadmitted `partial`, `conflicting`, `unknown`, or
 `unprovable` Observation with publisher `skipped`, no valid zero-action
 Snapshot, and a null publication terminal reference takes
 `failed-before-publication`. Separate
 Release Reconciliation or remediation may be required before a productive
 later dispatch; operator guidance must preserve that prerequisite and never
-resumes the old Attempt.
+resume the old Attempt. Python's admitted exact-subset completion follows
+`WD-PY-005` instead of treating every partial state as blocking.
 
 Incomplete, unknown, conflicting, partial, or possibly mutated state is never a
 no-op success. If current-DAG facts prove that mutation-capable execution never

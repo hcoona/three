@@ -56,6 +56,12 @@ operating guidance, not a second normative specification.
 
 ## Python Smoke Design
 
+The [partial-publication recovery contract](./hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
+permits a fresh independently built/qualified Attempt to retain exact existing
+files and upload only missing files. Its implementation is pending separate
+protected delivery under the current recovery Wave; no hosted recovery has
+been executed or authorized by this design.
+
 [Issue #843](https://github.com/hcoona/three/issues/843) tracks TestPyPI first,
 then PyPI. The owner's confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),
 HLD, five MLDs and [Python LLD](./hcoona-release-smoke-python-lld.md) adopt
