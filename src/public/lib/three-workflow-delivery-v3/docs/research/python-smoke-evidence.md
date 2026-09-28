@@ -321,9 +321,9 @@ one-set/two-operation action and static staged metadata. Those are design
 choices whose disabled implementation is protected-delivered through
 [PR #849](https://github.com/hcoona/three/pull/849). The successor design removes
 native-generation admission; the disabled v2 implementation follows that
-contract. Separately authorized configuration/admission and normal publication
-remain outstanding. Both
-destinations remain disabled.
+contract. The [handoff](../agent-handoff.md#starting-a-new-session) routes
+current destination admission and the separate actual-publication gates;
+source findings alone establish neither.
 
 The initial public-source study performed no runtime experiment, package build,
 native probe, workflow dispatch, registry mutation or account inspection. The

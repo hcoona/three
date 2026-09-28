@@ -11,8 +11,9 @@ links its exact historical contract. It supplies no new execution permission.
 `replay`, `archive` and `digest` entry points. The hosted workflow
 `workflow-delivery-v3-native-python-acceptance.yml` and its prepare/probe/audit
 commands, fixture producers and executable duplicate/race suite are removed.
-Both slots in `.github/workflow-delivery/native/python-requests.json` remain null;
-both normal destinations use blocked Governance v2. No fresh fixtures,
+Both slots in `.github/workflow-delivery/native/python-requests.json` remain null.
+The [handoff](../agent-handoff.md#starting-a-new-session) routes current normal
+admission independently of this retired interface. No fresh fixtures,
 generation or duplicate/race run is needed for admission.
 
 Historical `replay`, `archive` and `digest` consumers retain their exact-revision
