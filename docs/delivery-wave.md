@@ -8,6 +8,55 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
+### Complete one source-bound normal TestPyPI publication
+
+- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
+- **Accepted inputs:** the [source-rebinding proposal](https://github.com/hcoona/three/issues/843#issuecomment-5863188749),
+  [owner approval](https://github.com/hcoona/three/issues/843#issuecomment-5863795409),
+  unchanged ready TestPyPI Governance v2, current Python requirements and design,
+  and the [bounded operation protocol](https://github.com/hcoona/three/issues/843#issuecomment-5863803445)
+  (SHA-256 `17ffc8eeb7dd71d4cdaec8171e0080da6bb3cf57e451fc2d44b5f27ddf7f5565`).
+- **Advancement and outcome:** complete at most one normal TestPyPI Attempt for
+  `hcoona-release-smoke-python` using the final independently reviewed protected
+  source and its genuine public NBGV version. Independently admit original
+  current-run artifacts, qualification, Snapshot and Bundle before Environment
+  approval; audit terminal lineage, actual destination bytes and separate clean
+  wheel/sdist consumers. Retain the truthful outcome and close this grant.
+- **Preparation delegation:** before operator construction, ordinary accepted-main
+  movement permits source/version rebinding and independent re-review without
+  another owner approval inside this same project, destination, profile,
+  Governance content, publication requirements, authority model and effect scope.
+  Review intervening changes and affected tests/consumers; do not assume backend
+  changes preserve evidence. Different product, effects or risk decisions remain
+  owner decisions. Compare current and reviewed base before protected merge, then
+  require reviewed/merged tree equality. A preconstruction mismatch returns to
+  preparation; it does not consume a publication attempt or require renewed
+  approval of identical scope.
+- **Execution binding:** before constructing the one operator, publish exact
+  target/tooling SHA, tree, full-history public NBGV version and filenames,
+  successful applicable exact-merge CI, unchanged fresh ready Governance and
+  protocol identity. The original construction starts the cumulative four-hour
+  lifetime. The first main-ref request must match; subsequent mismatch, failure,
+  uncertainty or exhaustion stops without target/version rebinding, another
+  lifetime, retry, refill or replacement.
+- **Effects and bounds:** retain the confirmed owner and three publisher tuples,
+  stable `workflow-delivery-v3-python-smoke.yml` entry, and process-local system CA
+  selection with certificate/hostname verification. Permit one main/attempt-1
+  dispatch for `testpypi`, at most one approval for Environment `22765954016`, one
+  OIDC assertion/token exchange and at most wheel POST then sdist POST with exact
+  readback. Preserve all protocol timing, body, transfer and request ceilings,
+  including at most 15 index and 6 file GETs across runtime and final audit.
+  Permit locked dependency preparation, local consumers, ordinary CI,
+  independent domain/record/research/OCR review and protected evidence delivery.
+- **Risk and exclusions:** rely on platform file non-replacement without native,
+  duplicate or race probes; promise neither atomic pair upload nor indefinite
+  retention. Exact existing state takes zero actions without approval or token.
+  Partial, rejected, ambiguous or incomplete results remain failed/incomplete.
+  No publisher/access/Environment/host changes, disabled TLS verification, PyPI
+  or Ruby operation, automatic resend/rerun, rollback/deletion/cleanup, version
+  rewrite, old evidence adoption or changed isolated consumer environment.
+  Prior failed ledgers and coordinates remain untouched; expiry grants no renewal.
+
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
