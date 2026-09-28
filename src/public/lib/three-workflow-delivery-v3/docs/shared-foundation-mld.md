@@ -557,7 +557,11 @@ and mutation ordering. Single HTTP calls still have zero transport retries.
 The client reports
 success, definitive non-success or ambiguity plus sanitized observations; it
 does not decide set success, partial recovery or action planning. Release owns
-the fixed wheel-then-sdist policy and one Result for the set action.
+the fixed wheel-then-sdist dispositions and one Result for the set action.
+An existing-file disposition is an exact-state proof, not an HTTP upload or
+synthetic upload response. The same strict readers and retained current-Attempt
+pre-state support it; transport does not implement skip-existing reconciliation
+or infer recovery from a rejected response.
 
 The profile records exact client/TLS/tool versions and behavior, not just a
 command name. `uv publish` is not selected: its reconciliation behavior is not

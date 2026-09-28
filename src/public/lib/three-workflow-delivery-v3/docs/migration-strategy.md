@@ -127,6 +127,15 @@ exists for failed-evidence consumers, not new operation requests.
    Each must retain actual publication, fresh original file bytes and both clean
    consumers. No prerequisite duplicate/race proving is required.
 
+The partial-publication recovery extension first delivers revised requirements,
+HLD/MLDs and LLD, then its complete same-revision implementation and local/CI
+validation under the selected Wave. Both formats are rebuilt and qualified;
+only exact existing files may be retained while missing files are uploaded.
+The normal workflow/publisher identities and per-file operation profile stay
+unchanged. Protected capability delivery grants no real registry recovery run;
+any hosted experiment needs its own bounded protocol and operation authorization.
+The completed TestPyPI campaign and historical partial bootstrap remain spent.
+
 No previous smoke grant, artifact or Approval is promoted. Original failures
 remain failed and spent. Revalidate changed prerequisites before dependent work;
 trust in platform behavior does not infer a configuration change or publication

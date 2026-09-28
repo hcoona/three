@@ -915,7 +915,11 @@ They define a new Python scope, not implemented support or an operation grant.
   destinations. Ruby follows that completion audit.
 - **WD-PY-005:** Approval must cover the entire two-file set before its first
   upload. Uploads are separate and may expose a partial release. Only complete
-  fresh exact state may take the zero-action exact-satisfied path. Partial,
+  fresh exact state may take the zero-action exact-satisfied path. A fresh
+  independently built and qualified Attempt may complete an exact existing
+  subset: download and verify every existing file against its own qualified
+  bytes/witness, approve the complete pair and missing-file plan, and upload
+  only missing files. Either single-file subset is supported. Extra, yanked,
   conflicting or unknown pre-existing state blocks normal Live. Failure or
   ambiguity stops further mutation and cannot become same-Attempt success even
   if later readback is exact. After definitive upload success only, an admitted
@@ -931,8 +935,13 @@ They define a new Python scope, not implemented support or an operation grant.
   file. Exact original bytes/witnesses and the complete set remain mandatory.
   A duplicate rejection or ambiguous response remains failed; later exactness
   cannot turn it into skip-existing success. No rollback, deletion, upload/token/file retry,
-  skip-existing success or automatic partial completion is allowed. Recovery
-  requires a separate request. A missing durable Result after the mutation
+  skip-existing success or same-Attempt partial completion is allowed. Recovery
+  uses a new authorized dispatch, fresh Build/Qualification, observation and
+  Approval; it never reopens or relabels an earlier failed Attempt. No prior
+  artifact, Approval or Evidence is promoted. Reproducibility requires the same
+  source/version and frozen build inputs; actual downloaded-byte comparison
+  remains mandatory. Before mutation, the approved existing subset must still
+  be exact and the same files must remain missing. A missing durable Result after the mutation
   marker remains unknown and possibly mutated under `WD-REL-009`.
 - **WD-PY-006:** Rely on PyPI filename non-reuse and TestPyPI live-file
   non-replacement as platform dependencies under the owner's
@@ -1055,7 +1064,9 @@ They define a new Python scope, not implemented support or an operation grant.
   and is not inherently unprovable, but it does not prove the coordinate was
   never published, is not retained as deleted/restorable state, or will accept
   creation. For Python, `WD-PY-005` and `WD-PY-006` govern the two-file set
-  and file-level non-replacement; no atomic version-set creation is assumed.
+  and file-level non-replacement: an exactly verified subset may form its
+  missing-file completion action under `WD-PY-005`, while unverified partial
+  state still blocks. No atomic version-set creation is assumed.
   For the other supported slices, the authoritative package-version effect must use atomic
   non-overwriting creation against the active version namespace. Pre-observed
   exact active state produces no action. At mutation linearization, the
@@ -1226,7 +1237,8 @@ They define a new Python scope, not implemented support or an operation grant.
   first slice and requires a concrete scenario and a new reviewed design. The
   first slice has one action and defines no generic transaction, compensation,
   rollback, or Saga protocol. Python `WD-PY-005` adds one bounded set action
-  containing two sequential file uploads at one destination, without changing
+  containing two ordered file dispositions at one destination, uploading only
+  missing files under `WD-PY-005`, without changing
   the npm/NuGet single-file action or scalar terminal-reference contracts.
 - **WD-OPS-007:** Reconciliation must be exceptional handling for destination
   state that cannot safely proceed through normal observation and a new

@@ -406,6 +406,14 @@ executes no target build code. Approval is intent confirmation, not an
 independent security review. No static token or broader credential fallback is
 allowed. Zero-action finalization schedules no Environment job or token flow.
 
+An exact-subset completion keeps these same authority gates. Its current Bundle
+covers both freshly qualified files and explicitly distinguishes retained files
+from missing-file uploads. Fresh pre-marker state must preserve that approved
+subset; drift cannot silently change the plan after Approval. Prior failures
+and old Approval remain outside the new Attempt's authority. No publisher,
+Environment, token scope or operation-profile change follows from this planning
+policy; each file still permits at most one upload in an Attempt.
+
 The profile binds `testpypi` or `pypi` audience, HTTPS token exchange/upload
 origins, project publisher registration and effective short-lived token scope.
 Tokens and OIDC assertions never enter retained evidence, command lines or

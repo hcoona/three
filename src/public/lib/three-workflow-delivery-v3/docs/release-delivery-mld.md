@@ -203,18 +203,20 @@ A version with additional, yanked, conflicting or unclassifiable files blocks;
 metadata/hash declarations alone do not establish exactness. Supported reads
 are bounded observations, not an atomic snapshot across endpoints.
 
-| Observed complete version state                                            | Normal Live decision                                                                                                       |
-| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Neither file nor another file at that version exists                       | One set action may be formed under current admission. Absence does not prove unused filenames or guarantee upload success. |
-| Exactly both expected files, exact bytes and witnesses                     | Zero actions; fresh whole-set exact-satisfied proof is still required.                                                     |
-| Only one file, extra files, changed bytes/witness, yanked or unknown state | Block; no partial completion or corrective mutation.                                                                       |
+| Observed complete version state                                                 | Normal Live decision                                                                                                       |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Neither file nor another file at that version exists                            | One set action may be formed under current admission. Absence does not prove unused filenames or guarantee upload success. |
+| Exactly both expected files, exact bytes and witnesses                          | Zero actions; fresh whole-set exact-satisfied proof is still required.                                                     |
+| Exactly one expected file, exact bytes and witness                              | One set action retains that file and uploads only the missing file, after complete fresh Build/Qualification and Approval. |
+| Extra files, changed bytes/witness, yanked, unverified partial or unknown state | Block; no overwrite or corrective mutation.                                                                                |
 
 The set action has a strict Python discriminator and exactly two ordered
-operations, wheel then sdist, at one destination. It binds both Artifact
+file dispositions, wheel then sdist, at one destination. Each is `upload` or
+`already-present`, derived only from current exact Observation. It binds both Artifact
 References, filenames and logical digests through the Snapshot, one operation
 profile and the full mutable-resource key for physical registry/project. Both
 file identities and their version are closed before approval. One Approval
-Bundle describes both uploads, their non-atomic visibility and failure behavior.
+Bundle describes both files, their dispositions, non-atomic visibility and failure behavior.
 One current-Attempt Authorization covers the set. There is no per-file action
 adoption, approval or generic action graph.
 
@@ -223,18 +225,23 @@ adoption, approval or generic action graph.
 After the destination Environment approval and Authorization admission defined
 by [Python Governance](./governance-integration-mld.md#python-smoke-governance),
 the publisher repeats fresh Governance/configuration checks and whole-set
-absence observation. Any state change blocks before mutation; it does not
+pre-state observation. The approved exact subset and missing-file plan must be
+unchanged, including the preserved target-version index entries. Any state
+change blocks before mutation; it does not
 rewrite the approved Snapshot into an exact-satisfied path. It validates the
 actual operation profile and persists/validates one durable marker before the
 first upload. That marker's authority transitively closes both operations.
 
-Upload the wheel once. Only a definitive successful response and exact wheel
-byte/witness readback permit the sdist upload, also once. A definitive failure,
+Retain any exactly verified pre-existing file without uploading it. Visit
+missing files in wheel-then-sdist order, uploading each at most once. A wheel
+upload must succeed and its required readback must be exact before an sdist
+upload; a pre-existing wheel is satisfied by the bound exact pre-state proof.
+Readback must preserve existing files as well as the new addition. A definitive failure,
 timeout, cancellation, ambiguous response or failed readback stops subsequent
 mutation. HTTP 200, including an identical-file acknowledgement, is successful
 without claiming this request uniquely inserted the file. Rejected duplicates
-remain failures, with no skip-existing reconciliation. After two definitive
-successes, whole-set readback must still find
+remain failures, with no skip-existing reconciliation. After the last planned
+upload definitively succeeds, whole-set readback must still find
 exactly the approved files with matching bytes/witnesses and no conflicting
 state. No readback can upgrade a failed upload response to success. Read-only
 observation after definitive success follows the
@@ -248,11 +255,14 @@ a final exact response alone cannot satisfy admission. Waiting never repeats a
 mutation, renews authority or reopens a terminal failure.
 
 A controlled terminal path forms one Python Publication Result, with an ordered
-entry for each operation: `not-attempted`, `succeeded`, `failed` or `unknown`,
+entry for each file: `already-present`, `not-attempted`, `succeeded`, `failed` or `unknown`,
 plus sanitized invocation/readback evidence and mutation classification. Entries
 bind operation ordinals from the approved action rather than repeat requested
-artifacts or coordinates. Success means both definitive upload successes and
-exact final whole-set readback. If the wheel succeeded and sdist failed or was
+artifacts or coordinates. `already-present` has the exact current marker
+pre-state digest and no upload response; strict replay binds it to the approved
+retained file. Success requires every planned upload to succeed, every retained
+file to remain exact and final whole-set readback from the last planned upload.
+The last upload may be wheel when sdist was already present. If the wheel succeeded and sdist failed or was
 not attempted, the set Result remains failed with the visible partial effect.
 Ambiguity remains failed/possibly-mutated; complete proof of no effect alone
 can classify no mutation. Controlled failure never authorizes another upload.
@@ -272,8 +282,10 @@ rewriting a successful mutation into an invented rollback. Retain the exact
 Attempt lineage, original and downloaded bytes, both consumer results and
 limitations outside each registry. `WD-PY-006` bounds availability to that event.
 The [Python LLD](./hcoona-release-smoke-python-lld.md) closes the application/integration evidence
-matrix and disabled implementation migration. No set retry, deletion, reconciliation
-service or cross-registry transaction is introduced.
+matrix and implementation migration. A new authorized Attempt may rebuild and
+complete an exact subset; the previous failed Attempt stays failed. No
+same-Attempt retry, deletion, reconciliation service or cross-registry transaction
+is introduced.
 
 First-project bootstrap is outside the normal-Live state machine. Its separate
 request, approval, durable marker, two-file execution result and audit follow
@@ -1514,7 +1526,8 @@ Attempt processing fails closed when:
 - a required obligation is not satisfied;
 - artifact identity, provenance, or deterministic first-slice bytes are
   unprovable;
-- destination Observation is partial, conflicting, unknown, or unprovable;
+- destination Observation is conflicting, unknown, unprovable, or partial
+  without Python's exact-subset admission under `WD-PY-005`;
 - an action remains and the pinned standard npm publish operation has not
   passed the bounded destination acceptance;
 - the Publication Snapshot contains more than one first-slice action;
@@ -1723,7 +1736,9 @@ package.
 ### Future Break-Glass Remediation Contract
 
 A future separately approved implementation handles destination state that is
-partial or conflicting and cannot proceed normally. It is not part of
+partial or conflicting and cannot proceed normally. Python's admitted exact
+subset instead follows its normal missing-file completion contract. This
+break-glass mechanism is not part of
 first-slice delivery acceptance.
 
 - A protected remediation workflow admits the original immutable lineage and
