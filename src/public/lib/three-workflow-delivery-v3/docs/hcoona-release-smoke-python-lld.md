@@ -9,7 +9,7 @@ use it to close the Python slice's concrete contracts without turning the MLDs
 into command inventories. The revised contract trusts platform non-replacement
 and identical replay under `WD-PY-006`. Runtime and both protected files
 implement strict Python Governance v2. TestPyPI has reviewed ready admission;
-PyPI remains blocked. Admission evidence and the outstanding publication gate
+PyPI remains blocked. Admission evidence, completed TestPyPI audit and the separate PyPI gate
 are routed by the [handoff](./agent-handoff.md#starting-a-new-session). The
 [retired native interface](./validation/python-native-readiness.md) preserves
 failed-evidence consumers only; no duplicate/race suite is a prerequisite.

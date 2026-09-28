@@ -59,21 +59,19 @@ For the owner's next Workflow Delivery v3 task:
    The [LLD migration](./hcoona-release-smoke-python-lld.md#python-governance-v2-migration)
    specifies v2 admission without a fake passing native record. Runtime and both
    protected Governance files now use strict v2. TestPyPI has reviewed ready
-   admission; PyPI remains blocked. The duplicate/race producer and hosted
-   workflow are removed. The source-bound normal
-   [Attempt](https://github.com/hcoona/three/actions/runs/36383200978) failed before
-   publication: Build and Qualification passed, but publication preparation and
-   publisher were skipped. The [independent audit](https://github.com/hcoona/three/issues/843#issuecomment-5864320684)
-   replays original artifacts and matches the persisted
-   `failed-before-publication` Outcome with `possibly-mutated: false`.
-   No Environment approval, OIDC exchange or upload occurred. The suspected
-   skipped-ancestor status condition remains a hypothesis, not a scheduler trace.
-   The dispatch is spent; no rerun or replacement is authorized. Corrective
-   implementation and any fresh operation must follow their applicable Wave
-   and domain gates before the independent publication audit required for PyPI.
-   Retain the earlier [TLS-stopped operation](https://github.com/hcoona/three/issues/843#issuecomment-5862680211)
-   separately. Process-local selection of the existing system CA store enabled
-   the later operator connection; do not disable TLS validation or change host trust.
+   admission, and its normal publication and fresh clean wheel/sdist consumers
+   are [independently complete](./validation/python-normal-live-evidence.md)
+   for `0.1.0b26`. Production PyPI remains blocked. The duplicate/race producer
+   and hosted workflow are removed. The completion campaign stopped at its first
+   audited success; no further slot, dispatch, Approval, OIDC, upload or registry
+   audit is authorized. Do not reopen its operator or reuse its artifacts as a
+   new Attempt. Future operations need their own applicable Wave and domain gates.
+   Preserve the earlier source-bound
+   [failed normal Attempt](https://github.com/hcoona/three/actions/runs/36383200978)
+   and [audit](https://github.com/hcoona/three/issues/843#issuecomment-5864320684),
+   and the separate [TLS-stopped operation](https://github.com/hcoona/three/issues/843#issuecomment-5862680211).
+   Process-local selection of the existing system CA store enabled the later
+   operator connection; do not disable TLS validation or change host trust.
    The [migration order](./migration-strategy.md#python-smoke-delivery) owns
    these stages; design acceptance grants no configuration, OIDC or dispatch.
    Carry forward Backspace7980's confirmed Sole Owner status and all three configured
@@ -93,8 +91,8 @@ For the owner's next Workflow Delivery v3 task:
    stop before C3; `0.1.0b3` was not uploaded. The partial bootstrap `0.1.0b6`
    also remains failed and untouched. Missing captures and consumers cannot be
    inferred from source code or the owner's reliance decision. Neither failure
-   grants retry, refill, deletion or another generation. Normal publication
-   still needs its own complete pair, Approval, exact readback and clean consumers.
+   grants retry, refill, deletion or another generation. Any future normal publication
+   needs its own complete pair, Approval, exact readback and clean consumers.
 
 Recovery uses repository records and linked GitHub carriers. A prior
 conversation, local operator directory or old Agent handle is not required.
