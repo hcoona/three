@@ -117,6 +117,41 @@ class Operator:
                 category, name, url, method=method, document=document, poll=poll
             )
 
+    def _require_read_states_ready(self, keys: Any) -> None:
+        """Check all applicable waits before reserving any fresh request."""
+        now = datetime.datetime.now(datetime.UTC)
+        states = [
+            self.ledger.get("read_control", {}),
+            *(self.ledger.get("read_pacing", {}).get(key, {}) for key in keys),
+        ]
+        for state in states:
+            if state.get("stopped"):
+                raise ReadStopped(state["stopped"])
+        due = max(
+            (
+                datetime.datetime.fromisoformat(state["next_not_before"])
+                for state in states
+                if state.get("next_not_before")
+            ),
+            default=now,
+        )
+        if (due - now).total_seconds() >= self.remaining():
+            control = self.ledger.setdefault("read_control", {})
+            control["stopped"] = "original read deadline exhausted"
+            self.save()
+            raise ReadStopped(control["stopped"])
+        if now < due:
+            raise ReadPending(due.isoformat())
+
+    def require_reads_ready(self, endpoints: Any) -> None:
+        """Admit a fresh mutable-check sequence without caching prerequisites."""
+        self._require_read_states_ready(
+            hashlib.sha256(
+                ("https://api.github.com/" + endpoint).encode()
+            ).hexdigest()
+            for endpoint in endpoints
+        )
+
     def _request(
         self,
         category: Any,
@@ -199,30 +234,13 @@ class Operator:
         pacer = None
         if method == "GET":
             control = self.ledger.setdefault("read_control", {})
-            if control.get("stopped"):
-                raise ReadStopped(control["stopped"])
-            if (
-                control.get("next_not_before")
-                and (
-                    datetime.datetime.fromisoformat(control["next_not_before"])
-                    - now
-                ).total_seconds()
-                >= self.remaining()
-            ):
-                control["stopped"] = "original read deadline exhausted"
-                self.save()
-                raise ReadStopped(control["stopped"])
-            if control.get(
-                "next_not_before"
-            ) and now < datetime.datetime.fromisoformat(
-                control["next_not_before"]
-            ):
-                raise ReadPending(control["next_not_before"])
             key = (
-                "github-polls"
-                if poll
-                else getattr(self, "_active_transfer_key", None)
+                getattr(self, "_active_transfer_key", None)
                 or hashlib.sha256(url.encode()).hexdigest()
+            )
+            keys = [key, "github-polls"] if poll else [key]
+            self._require_read_states_ready(
+                [] if getattr(self, "_transfer_redirect", False) else keys
             )
             pacing = self.ledger.setdefault("read_pacing", {}).setdefault(
                 key, {}
@@ -265,7 +283,9 @@ class Operator:
                 if control["consecutive_errors"]:
                     waits.append(
                         datetime.datetime.fromisoformat(
-                            pacing["next_not_before"]
+                            pacing.get(
+                                "error_not_before", pacing["next_not_before"]
+                            )
                         )
                     )
                 if waits:
@@ -276,6 +296,12 @@ class Operator:
 
             pacer = ReadPacer(pacing, deadline, save=save_pacing)
             if not getattr(self, "_transfer_redirect", False):
+                if poll:
+                    # Shared discovery cadence never consumes a resource's headers.
+                    shared = self.ledger["read_pacing"].setdefault(
+                        "github-polls", {}
+                    )
+                    ReadPacer(shared, deadline, save=self.save).before("github")
                 pacer.before("github" if poll else "transfer")
         ordinal = len(requests) + 1
         stem = f"{ordinal:03d}-{name}"
@@ -434,13 +460,9 @@ class Operator:
         try:
             return json.loads(content)
         except (ValueError, UnicodeError):
-            key = (
-                "github-polls"
-                if poll
-                else hashlib.sha256(
-                    ("https://api.github.com/" + endpoint).encode()
-                ).hexdigest()
-            )
+            key = hashlib.sha256(
+                ("https://api.github.com/" + endpoint).encode()
+            ).hexdigest()
             self.ledger["read_pacing"][key]["stopped"] = "malformed GitHub JSON"
             self.ledger.setdefault("read_control", {})["stopped"] = (
                 "malformed GitHub JSON"

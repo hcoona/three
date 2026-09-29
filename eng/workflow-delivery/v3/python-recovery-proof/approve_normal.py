@@ -41,11 +41,15 @@ def main() -> None:
         )
         assert gate["dispositions"] == expected
         repo = "repos/hcoona/three"
-        current = op.get(repo + "/git/ref/heads/main", "preapproval-main")
+        main_endpoint = repo + "/git/ref/heads/main"
+        run_endpoint = repo + f"/actions/runs/{op.ledger['run']}"
+        pending_endpoint = run_endpoint + "/pending_deployments"
+        # Wait before refreshing any prerequisite, so a successful prefix cannot
+        # perpetually renew its wait while a later prerequisite is still pending.
+        op.require_reads_ready((main_endpoint, run_endpoint, pending_endpoint))
+        current = op.get(main_endpoint, "preapproval-main")
         assert current["object"]["sha"] == TARGET
-        run = op.get(
-            repo + f"/actions/runs/{op.ledger['run']}", "preapproval-run"
-        )
+        run = op.get(run_endpoint, "preapproval-run")
         assert run["id"] == op.ledger["run"]
         assert run["head_sha"] == TARGET
         assert run["run_attempt"] == 1
@@ -59,10 +63,7 @@ def main() -> None:
         )
         assert run["status"] == "waiting"
         assert run["conclusion"] is None
-        pending = op.get(
-            repo + f"/actions/runs/{op.ledger['run']}/pending_deployments",
-            "preapproval-pending",
-        )
+        pending = op.get(pending_endpoint, "preapproval-pending")
         assert len(pending) == 1
         assert pending[0]["environment"]["id"] == 22765954016
         assert (
