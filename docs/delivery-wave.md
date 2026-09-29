@@ -19,37 +19,28 @@ ends a grant. Git and the proposing PR retain the reason and history.
   this slice's resource. The [owner's production bypass decision](https://github.com/hcoona/three/issues/843#issuecomment-5897947051)
   accepts administrator bypass within the existing sole-`hcoona` trust boundary
   and reports the requested bootstrap Pending Publisher registered.
-- **Advancement and outcome:** first reconcile Python requirements and applicable
-  architecture/configuration contracts with that owner decision, preserving
-  current-run artifact authorization and other destinations' accepted contracts.
-  Review and protected-deliver that design before executing the separately
-  authorized disabled implementation; configuration admission waits for both.
-  Then independently admit the owner-reported exact bootstrap Pending Publisher
+- **Advancement and outcome:** independently admit the owner-reported exact bootstrap Pending Publisher
   together with the GitHub Environment configuration, and (only after separately authorized project establishment
   and owner/converted-publisher evidence) register the stable normal publisher
   and independently deliver fresh ready production Governance. Remove this
   entry when configuration/admission is accepted or the lifetime terminates.
 - **Effects and delivery:** permit scoped public-source rechecks, local tests,
   ordinary CI, independent review/triage and protected delivery. Permit bounded
-  GitHub configuration inventory and exact reviewed mutations for repository
+  GitHub configuration inventory for repository
   `hcoona/three` (1102295886), sole writer/reviewer `hcoona` (712433), protected
   `main`, project `hcoona-release-smoke-python`, Environment
   `workflow-delivery-v3-python-pypi`; the owner performs the later normal PyPI
   publisher registration without exposing credentials. Existing delegation covers these
   scoped stages without repeated consent, subject to the [concrete configuration protocol](https://github.com/hcoona/three/issues/843#issuecomment-5895723024).
-- **Concrete boundaries:** first inspect and independently accept the actual
-  before/after diff. Across one seven-day lifetime from the first recorded
-  configuration read, allow at most one Environment create/update, one missing
-  `main` branch-policy creation and one marker create/update, plus one conditional
-  owner-side GitHub website save to disable administrator bypass, one bootstrap
-  pending publisher and one later normal publisher registration by the owner.
-  The bootstrap registration is owner-reported complete; preserve its spent
-  role and do not repeat registration or request unchanged-field confirmation.
-  The owner's decision cancels the pending no-bypass website instruction; do not
-  perform or repeat it. Preserve its recorded intent and all original lifetime
-  and cumulative counts without refill. The linked protocol's no-bypass
-  acceptance condition remains superseded only after the revised design and
-  implementation are accepted; until then keep admission blocked.
+- **Concrete boundaries:** preserve the linked protocol's original seven-day
+  lifetime from its first recorded configuration read and all cumulative counts
+  without refill. No additional GitHub configuration writes, bootstrap Pending
+  Publisher registration or website save to disable bypass are authorized.
+  Do not request unchanged-field confirmation. Only the later normal publisher
+  registration remains available, once and after its stated prerequisites.
+  Admit the actual bypass Boolean under accepted `WD-PY-007` and its delivered
+  implementation; this supersedes the linked protocol's false-only condition
+  for production PyPI, without replacing current-run Approval/Authorization.
   Require sole reviewer, self-review allowed, zero wait,
   main-only selection, no secrets and marker `<environment>/v1`. Retain the
   stable bootstrap and normal workflow filenames. Unknown grants or ambiguous
@@ -58,8 +49,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
   than owner-refilled request quotas; read evidence cannot renew mutation limits.
 - **Prerequisites and exclusions:** both bootstrap slots remain null and
   production Governance blocked until their separate applicable gates close.
-  This design advancement grants no implementation before its later accepted
-  Wave, additional configuration write or change to current-run Approval proof.
   Project establishment requires its own later accepted operation Wave; this
   entry grants no smoke registry observation, bootstrap request population,
   current-run Approval, OIDC, dispatch or upload. Normal admission requires
@@ -69,28 +58,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
   registration, unrelated project change, TestPyPI effect, static token,
   deletion/rollback, duplicate/race probing, spent-operation revival or host
   trust/profile change. Preserve failed outcomes and all prior evidence.
-
-### Implement production Python administrator-bypass admission
-
-- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
-- **Accepted inputs:** the owner's production bypass decision and existing
-  end-to-end delegation; accepted `WD-PY-007`, Python Governance design and
-  bootstrap configuration protocol. Execute only after that design is accepted.
-- **Advancement and outcome:** implement and test strict destination-specific
-  `can-admins-bypass` admission: PyPI accepts either Boolean under the sole-owner
-  trust boundary; TestPyPI retains false-only acceptance. Preserve the observed
-  value, closed schema, all other configuration protections and current-run
-  Approval/Authorization. Independently review and protected-deliver the disabled
-  implementation; remove this entry after delivery and acceptance.
-- **Effects and delivery:** permit local locked dependency preparation, affected
-  tests and repository checks, ordinary CI, delegated independent review/triage
-  and protected delivery under the existing owner delegation.
-- **Exclusions:** keep production Governance blocked and both bootstrap requests
-  null. No configuration write, smoke registry observation, OIDC, Approval,
-  dispatch, upload, publisher registration, additional administrator, change to
-  npm/NuGet or TestPyPI contracts, new bypass-event approval mechanism, mutation
-  allowance or renewal of the original configuration lifetime/counters. The
-  separate configuration and operation grants retain their own prerequisites.
 
 ### Restore dependency updates and simplify V3 tooling ownership
 

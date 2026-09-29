@@ -141,7 +141,6 @@ class PythonGovernance:
             "publisher-registration": python_publisher_tuple(self.registry),
             "reviewer-id": 712433,
             "prevent-self-review": False,
-            "can-admins-bypass": False,
             "wait-timer": 0,
             "protected-main-only": True,
             "sentinel": self.registry.environment + "/v1",
@@ -161,6 +160,14 @@ class PythonGovernance:
                     "Python configuration differs from admitted protections"
                 )
                 raise ValueError(message)
+        bypass = configuration["can-admins-bypass"]
+        if type(bypass) is not bool or (
+            self.registry.name != "pypi" and bypass
+        ):
+            message = (
+                "Python administrator bypass differs from destination policy"
+            )
+            raise ValueError(message)
         if (
             type(configuration["environment-id"]) is not int
             or cast("int", configuration["environment-id"]) <= 0

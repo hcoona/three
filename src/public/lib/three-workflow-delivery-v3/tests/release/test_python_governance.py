@@ -223,24 +223,72 @@ def test_python_governance_requires_pinned_source_evidence(revision):
 
 
 @pytest.mark.parametrize(
-    "change",
-    ["missing", "foreign-publisher", "extra-writer", "bypass", "attestation"],
+    ("name", "bypass", "accepted"),
+    [
+        ("pypi", False, True),
+        ("pypi", True, True),
+        ("testpypi", False, True),
+        ("testpypi", True, False),
+    ],
 )
-def test_python_ready_v2_still_requires_exact_configuration(change):
+def test_python_governance_preserves_destination_bypass_policy(
+    name, bypass, accepted
+):
+    """Production accepts either observed Boolean; TestPyPI stays false-only."""
+    registry = PythonRegistry(name)
+    document = ready_document(registry)
+    document["configuration"]["can-admins-bypass"] = bypass
+    content = canonicalize(document)
+    if not accepted:
+        with pytest.raises(ValueError, match="Python"):
+            PythonGovernance(registry, content, TARGET, NOW)
+        return
+    admitted = PythonGovernance(registry, content, TARGET, NOW)
+    admitted.require_live(NOW)
+    assert admitted.content == content
+    assert admitted.document["configuration"]["can-admins-bypass"] is bypass
+    assert admitted.document["configuration"]["accepted-writers"] == ["hcoona"]
+
+
+@pytest.mark.parametrize("name", ["testpypi", "pypi"])
+@pytest.mark.parametrize("bypass", [None, 0, 1, 0.0, 1.0, "false", "true"])
+def test_python_governance_rejects_non_boolean_bypass(name, bypass):
+    """Boolean-looking JSON values cannot coerce the observed configuration."""
+    registry = PythonRegistry(name)
+    document = ready_document(registry)
+    document["configuration"]["can-admins-bypass"] = bypass
+    with pytest.raises(ValueError, match="Python"):
+        PythonGovernance(registry, canonicalize(document), TARGET, NOW)
+
+
+@pytest.mark.parametrize("name", ["testpypi", "pypi"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing",
+        "missing-bypass",
+        "foreign-publisher",
+        "extra-writer",
+        "attestation",
+    ],
+)
+def test_python_ready_v2_still_requires_exact_configuration(name, change):
     """Platform reliance grants no exemption from configuration protections."""
-    admitted = governance()
+    admitted = governance(name)
     document = admitted.document
     configuration = document["configuration"]
+    if name == "pypi":
+        configuration["can-admins-bypass"] = True
     if change == "missing":
         document["configuration"] = None
+    elif change == "missing-bypass":
+        configuration.pop("can-admins-bypass")
     elif change == "foreign-publisher":
         configuration["publisher-registration"]["workflow"] = (
             "workflow-delivery-v3-native-python-acceptance.yml"
         )
     elif change == "extra-writer":
         configuration["accepted-writers"].append("foreign")
-    elif change == "bypass":
-        configuration["can-admins-bypass"] = True
     else:
         configuration["attestation-digest"] = "unbound"
     with pytest.raises(ValueError, match="Python"):
