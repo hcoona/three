@@ -75,9 +75,14 @@ before sending/approval; failed or uncertain sends consume their allowance.
 No slot, deadline, ledger or effect allowance may be reset or replenished.
 Only one operation/runner publication lifetime may be active at a time.
 
-The operator has a cumulative four-hour lifetime from original reservation,
-including construction, waiting and audit. No resume or tool correction resets
-that deadline or the unchanged Governance expiry. Ordinary scoped evidence reads
+The mutation-capable operator has a cumulative four-hour lifetime from original
+reservation, including construction, waiting and its ordinary audit stages.
+No resume or tool correction resets that publisher deadline or the unchanged
+Governance expiry. A separately admitted terminal registry GET-only audit may
+continue after the publisher deadline under the
+[continuation contract](#read-only-continuation-across-a-protected-operator-correction).
+It has no mutation authority and uses the unchanged Governance expiry as its
+fixed read deadline. Ordinary scoped evidence reads
 use resource controls, not owner-replenished cumulative request allowances.
 Retain every request and response/error as diagnostic evidence. Dispatch,
 approval, credential acquisition/exchange and file POST reservations retain
@@ -97,7 +102,7 @@ polls back off through 30, 60, 120 and 300 seconds, then remain at least five
 minutes apart. Honor any longer applicable service-directed Retry-After,
 GitHub rate-reset or poll-interval wait. Persist next eligible time and error
 state across invocations; a restart cannot shorten a wait. Do not start a wait
-or request beyond the remaining original lifetime. Five consecutive transient
+or request beyond the applicable bound lifetime. Five consecutive transient
 transport/service/rate-limit failures stop the read stage; a valid regressed
 index is a pending observation, not a transport error. Permission failures,
 invalid TLS, scope violations, malformed authoritative content and digest or
@@ -182,7 +187,7 @@ retained evidence digests; an author-produced `passed` flag is insufficient.
 
 After terminal collection, an independent diagnostic-read gate first resolves
 the unique dispatch/run identity and proves no publisher can still send.
-Within the original lifetime and read-resource controls, this gate may admit
+Within the original operator lifetime and read-resource controls, this gate may admit
 that Attempt's independent index observations and required file downloads
 after failed or unknown terminal evidence, including a marker-only or missing
 Result. Retain raw sanitized responses and exact bytes. Missing logs/Result alone do not establish
@@ -199,7 +204,8 @@ wheel success/readback, no sdist invocation and the fresh exact wheel-only
 destination audit. The recovery proof requires published, only the missing
 sdist POST, the fresh complete pair audit and clean consumers on those downloaded
 files. A diagnostic read after an ambiguous/failed upload cannot manufacture
-these success facts. Diagnosis and proof share one persistent audit history and original deadline;
+these success facts. Diagnosis and proof share one persistent audit history and
+the audit's bound deadline;
 changing purpose does not discard responses, failures or resource usage.
 
 A native index demonstrably regressed relative to retained successful runtime
@@ -215,25 +221,50 @@ incomplete and dependent mutation stopped; it is not a quota-refill request.
 ### Read-only continuation across a protected operator correction
 
 A tested, independently admitted protected operator correction may continue a
-terminal Attempt's incomplete read-only audit within its original deadline.
+terminal Attempt's incomplete registry GET-only audit through the existing
+unchanged Governance expiry, including after the original publisher deadline.
+Require independently resolved unique run identity and publisher quiescence
+before admitting this separate read lifetime. This does not extend the
+mutation-capable operator, its capture stages or any publisher authority.
 Keep its original source/version, execution binding, caller snapshot, ledgers,
 responses, failed Outcome and reservations immutable. Bind the correction's
 exact protected source, caller/protocol hashes and original evidence in a
 separate read-only continuation record and append-only audit history. Independent
 admission must reestablish dispatch identity and publisher quiescence and
-verify the original start/deadline and unchanged Governance/profile. The
+verify the original start/publisher deadline, the separate read deadline and
+unchanged current Governance/profile. The
 continuation cannot dispatch, approve, acquire credentials, upload or change
 source authority; historical artifact readers use their pinned contract.
 
 The narrow continuation has only registry GET capability; it does not inherit
 the normal operator's dispatch or approval methods. Its strict binding records
 original scenario/Attempt/run/source/tree/version/mode, original binding and
-ledger digests, original start/deadline, Governance/profile/frozen-input digests,
+ledger digests, original start/publisher deadline, separate read deadline,
+Governance/profile/frozen-input digests,
 new protected caller source/tree and complete imported caller hashes, accepted
 protocol digest, pinned historical reader checkout/source/tree, and inspected
 original evidence hashes. Paths remain inside the admitted roots. Require a
 clean exact reader checkout and verify the actually imported reader module;
 new caller source and old publication subject are distinct identities.
+
+The binding, independent admission, initialization, read ledger and completion
+all bind `audit_deadline` to exactly the existing Governance expiry
+`2026-10-05T02:27:04.836609+00:00`. Retain `original_deadline` as the unchanged
+publisher deadline; never substitute one for the other. First admission after
+publisher expiry is allowed, while admission or registry work at or after
+`audit_deadline` is rejected. The alarm, request scheduler, pending waits and
+completion checks all enforce that same fixed read deadline. Verify the
+protected caller's Governance bytes against the original admitted digest and
+require its unchanged ready/live profile and validity interval. This introduces
+no Governance renewal or new remote configuration observation.
+
+Use revision-2 continuation binding, admission, ledger and completion schemas
+for this distinct lifetime contract. An earlier continuation record must not
+silently gain a later deadline or new authority: preserve it and reject
+unsupported migration. The original publisher evidence remains under its own
+historical schema. The existing concrete continuation remains restricted to
+the retained terminal wheel-only subject; this amendment adds no generic
+mutation-stage replay or arbitrary historical-reader migration.
 
 Retain the binding, independent admission, accepted protocol, chronological
 read ledger, sanitized response bodies/headers and final completion separately
@@ -243,9 +274,16 @@ time, backoff position, consecutive-error count and completion/stop state under
 the existing campaign lock. A request interrupted after reservation remains
 recorded as uncertain; only a new idempotent read may follow. Completion needs
 the exact expected wheel-only inventory and bytes, not merely a serial value.
-No new GitHub or credential operation is needed for this terminal continuation.
+Preserve hard read stops and all prior observations, waits, errors and resource
+accounting. The expired publisher deadline alone does not reject a newly
+admitted terminal read; a stopped read stage is not revived by replacing its
+deadline. No new GitHub or credential operation is needed for this terminal
+continuation. At read expiry, an associated pending ledger may be finalized
+locally as stopped, without source subprocesses, reader reconstruction or
+network effects. An expired initial call creates no read ledger.
 
-Independent closure binds both the original and supplementary evidence. It
+Independent closure binds both the original and supplementary evidence,
+including both distinct deadlines and completion before `audit_deadline`. It
 requires resolved current destination state; unknown-state abandonment is not
 granted. A changed protected main stops same-version recovery. Only after
 known-state closure may a new-version scenario use a newly admitted source and

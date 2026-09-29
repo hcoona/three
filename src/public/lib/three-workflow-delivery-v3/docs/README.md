@@ -63,10 +63,9 @@ subsets with current-Attempt Approval, strict pre-state binding and complete
 Result/Finalizer replay. Joined real-build and controlled-transport tests cover
 fresh recovery while preserving the earlier failed Outcome. This is capability
 validation; no hosted recovery has been executed. The current Wave separately
-authorizes the [bounded hosted proof](./validation/python-hosted-recovery.md),
-with the temporary default-off interruption, persisted evidence-read pacing
-and terminal-audit continuation implemented. Protected delivery and independent
-exact execution admission remain prerequisites.
+authorizes the [bounded hosted proof](./validation/python-hosted-recovery.md).
+The [handoff](./agent-handoff.md#starting-a-new-session) identifies implemented
+proof stages and the remaining implementation, delivery and admission gates.
 
 [Issue #843](https://github.com/hcoona/three/issues/843) tracks TestPyPI first,
 then PyPI. The owner's confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),

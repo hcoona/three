@@ -434,7 +434,10 @@ publication effects. Its persisted read scheduler and resumable immutable
 captures follow the [protocol](./validation/python-hosted-recovery.md#finite-campaign-and-autonomous-continuation).
 A narrow GET-only continuation may complete a terminal audit across an operator
 correction; it binds the new caller separately from the pinned historical
-publication reader and never inherits mutation methods. Each Attempt retains
+publication reader and never inherits mutation methods. Its separately admitted
+read deadline is the unchanged Governance expiry, even when the original
+publisher lifetime has expired. Both deadlines remain distinct in its evidence;
+publisher authority and prior read stops are never renewed. Each Attempt retains
 its own immutable protocol and callers for historical closure. The
 [continuation contract](./validation/python-hosted-recovery.md#read-only-continuation-across-a-protected-operator-correction)
 owns admission, evidence preservation and successor conditions. These external
