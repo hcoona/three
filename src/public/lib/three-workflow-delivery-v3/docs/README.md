@@ -265,10 +265,11 @@ The [bootstrap protocol](./validation/python-bootstrap.md) defines the separatel
 authorized first-project resource path under `WD-PY-009` and its
 [tooling interface](./validation/python-bootstrap.md#tooling-interface).
 The stable bootstrap entry supports destination-bound TestPyPI and production
-PyPI operations. The PyPI protected slot carries the separately authorized
-request; TestPyPI remains null. Request delivery does not establish execution
-or bootstrap success. Normal production Governance and Official publication
-remain blocked behind their distinct gates.
+PyPI operations. Both protected bootstrap slots are null after the production
+generation failed at wheel readback. Its original failure and partial/unknown
+effects remain retained; no repeated bootstrap or automatic completion is
+authorized. Normal production Governance and Official publication remain blocked
+behind their distinct gates.
 The [Delivery Wave](../../../../../docs/delivery-wave.md) owns current work
 authorization, and the [handoff](./agent-handoff.md#starting-a-new-session)
 routes the accepted operation, configuration and remaining evidence gates.

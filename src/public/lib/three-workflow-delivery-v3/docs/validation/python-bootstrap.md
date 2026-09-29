@@ -5,8 +5,11 @@
 The V3 maintainer maintains this protocol for implementers, the smoke operator
 and independent auditors. It realizes `WD-PY-009` as a separate first-project
 resource operation, not a normal-Live Attempt or automatic normal admission.
-The retained failed bootstrap established owner-reviewed resource facts; it
-does not authorize repeating the absent-project path for the existing project.
+The retained failed TestPyPI bootstrap established owner-reviewed resource facts;
+it does not authorize repeating the absent-project path for that existing project.
+The production PyPI generation also failed, at wheel readback. Its consumed
+request is retired; actual owner/converted-publisher evidence is still required
+before it can supply the narrower resource prerequisite.
 The former native suite is retired under `WD-PY-006`.
 Current work authorization is determined by the
 [Wave](../../../../../../docs/delivery-wave.md). Configuration and execution
