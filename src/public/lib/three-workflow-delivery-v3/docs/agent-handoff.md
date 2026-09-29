@@ -62,7 +62,7 @@ The campaign is stopped and its temporary interruption control and operators
 are retired. The [ordinary recovery contract](./hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
 retains both exact single-file subsets; the inverse subset has local evidence
 only. Preserve the stable workflow/publisher/Environment and historical evidence.
-This completion grants no further operation; production PyPI remains blocked.
+This completion grants no further operation; normal production PyPI publication remains blocked.
 
 The npm and NuGet GitHub Packages smoke objectives are complete. Use the
 [NuGet completion evidence](./validation/nuget-normal-live-evidence.md) and
@@ -98,7 +98,7 @@ For the owner's next Workflow Delivery v3 task:
    protected Governance files now use strict v2. TestPyPI has reviewed ready
    admission, and its normal publication and fresh clean wheel/sdist consumers
    are [independently complete](./validation/python-normal-live-evidence.md)
-   for `0.1.0b26`. Production PyPI remains blocked. The duplicate/race producer
+   for `0.1.0b26`. Normal production PyPI publication remains blocked. The duplicate/race producer
    and hosted workflow are removed. The completion campaign stopped at its first
    audited success; no further slot, dispatch, Approval, OIDC, upload or registry
    audit is authorized. Do not reopen its operator or reuse its artifacts as a

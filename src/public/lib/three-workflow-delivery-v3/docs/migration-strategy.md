@@ -113,9 +113,10 @@ exists for failed-evidence consumers, not new operation requests.
    null. No native-generation placeholder or automatic v1 admission migration.
 3. If a project does not exist, its separately scoped establishment must close
    the resource prerequisite. The destination-bound [bootstrap protocol](./validation/python-bootstrap.md)
-   owns each first-project path; both destination bindings are implemented with
-   null protected requests. Production configuration and execution still need
-   their separate grants. Independently audited ownership/configuration
+   owns each first-project path. Both destination bindings are implemented;
+   protected requests default to null and may be populated only for separately
+   authorized, protected-delivered operations. Configuration and execution
+   retain their separate grants. Independently audited ownership/configuration
    after partial bootstrap can establish resource facts, but cannot establish
    bootstrap completion, refill a failed version or supply normal-Live evidence.
    An established project proceeds directly to the next admission step.
