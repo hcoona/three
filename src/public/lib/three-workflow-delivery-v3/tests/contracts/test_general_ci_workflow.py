@@ -697,6 +697,17 @@ def test_dotnet_check_executes_restore_build_and_supported_test_projects(
         ]
     )
     assert calls.index(["dotnet", "tool", "restore"]) < restore < build
+    dump_install = [
+        "dotnet",
+        "tool",
+        "install",
+        "dotnet-dump",
+        "--version",
+        "10.0.745401",
+        "--tool-path",
+        str(tmp_path / "artifacts/nuget-authority-tools"),
+    ]
+    assert calls[build + 1] == dump_install
     expected = [
         [
             "dotnet",
@@ -717,7 +728,7 @@ def test_dotnet_check_executes_restore_build_and_supported_test_projects(
             str(projects["vstest"].parent / "bin/Debug/net10.0/vstest.dll"),
         ]
     )
-    assert {tuple(command) for command in calls[build + 1 :]} == {
+    assert {tuple(command) for command in calls[build + 2 :]} == {
         tuple(command) for command in expected
     }
 
@@ -851,7 +862,18 @@ def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
             "always()" if name == "validation" else "${{ !cancelled() }}"
         )
         for step in job["steps"][1:-1]:
-            if step["if"].startswith("always() &&"):
+            if step.get("name") == "Retain NuGet authority diagnostics":
+                assert name == "dotnet-tests"
+                assert step.get("uses", "").startswith(
+                    "actions/upload-artifact@"
+                )
+                assert step["if"] == (
+                    "(failure() || cancelled() || "
+                    "hashFiles('artifacts/nuget-authority-diagnostics/"
+                    "**/slow-process.txt') != '') "
+                    "&& steps.scope.outputs.run == 'true'"
+                )
+            elif step["if"].startswith("always() &&"):
                 assert step.get("uses", "").startswith(
                     "actions/upload-artifact@"
                 )
