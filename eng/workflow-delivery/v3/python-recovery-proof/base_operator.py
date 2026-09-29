@@ -358,6 +358,12 @@ class Operator:
                 while size <= body_limit:
                     chunk = response.read(min(65536, body_limit + 1 - size))
                     if not chunk:
+                        remaining = getattr(response, "length", None)
+                        if remaining is not None and remaining > 0:
+                            # The prefix is already retained by this handler.
+                            raise http.client.IncompleteRead(  # noqa: TRY301
+                                partial=b"", expected=remaining
+                            )
                         break
                     stream.write(chunk)
                     stream.flush()

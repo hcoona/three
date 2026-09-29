@@ -119,6 +119,12 @@ def https_get(url: str, headers: dict, maximum_bytes: int) -> tuple:
         while len(content) <= maximum_bytes:
             chunk = response.read(min(65536, maximum_bytes + 1 - len(content)))
             if not chunk:
+                remaining = getattr(response, "length", None)
+                if remaining is not None and remaining > 0:
+                    # The prefix is already retained by this handler.
+                    raise http.client.IncompleteRead(  # noqa: TRY301
+                        partial=b"", expected=remaining
+                    )
                 break
             content.extend(chunk)
         return status, response_headers, bytes(content)
