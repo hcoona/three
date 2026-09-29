@@ -587,6 +587,13 @@ bindings:
     carrier: repository-file
     path: src/private/app/workflow-delivery-v3-nuget-authority/README.md
     format: markdown
+  - id: three-workflow-delivery-v3-nuget-authority-test-interface
+    family: project-interfaces
+    namespace: src/public/lib/three-workflow-delivery-v3
+    state: current
+    carrier: repository-file
+    path: tests/private/app/workflow-delivery-v3-nuget-authority/README.md
+    format: markdown
   - id: three-workflow-delivery-v3-dotnet-helper-interface
     family: three-workflow-delivery-v3-dotnet-helper-interface
     namespace: src/public/lib/three-workflow-delivery-v3

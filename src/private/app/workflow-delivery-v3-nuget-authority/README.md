@@ -9,3 +9,6 @@ It is not a .NET Release Provider or NuGet publisher. The
 routes the confirmed requirements, accepted design, and remaining admission
 gates. Disabled implementation, native probes, and publication require
 separate authorization.
+
+For subprocess failure artifacts and local diagnostic setup, see the
+[process-test diagnostics](../../../../tests/private/app/workflow-delivery-v3-nuget-authority/README.md).
