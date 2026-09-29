@@ -32,8 +32,9 @@ their configuration is outside this protocol. The prospective publisher is
 project-name-bound and pending; it is not ownership evidence. No wildcard,
 static token or other project is supported.
 
-Both destination bindings are implemented with their protected request slots
-null. This tooling supplies no configuration or execution authority. The
+Both destination bindings are implemented. Each protected request slot defaults
+to null and may be populated only for its separately authorized, protected-delivered
+operation. This tooling supplies no configuration or execution authority. The
 historical TestPyPI generation retains its original identity; no spent
 generation or publisher registration is reopened by this extension.
 
