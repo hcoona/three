@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -37,7 +38,9 @@ ADMISSION_FIELDS = frozenset(
 )
 
 
-def validate_binding(directory: Path, campaign: Campaign, now: Any) -> tuple:
+def validate_binding(
+    directory: Path, campaign: Campaign, now: Any, *, expiry_only: bool = False
+) -> tuple:
     """Reestablish immutable original identity and independent continuation admission."""
     sidecar = directory / "read-continuation"
     binding = read(sidecar / "binding.json")
@@ -103,11 +106,11 @@ def validate_binding(directory: Path, campaign: Campaign, now: Any) -> tuple:
     )
     assert binding["original_deadline"] == "2026-09-29T01:55:15.465230+00:00"
     assert binding["governance_expiry"] == EXPIRY.isoformat()
-    assert (
-        datetime.fromisoformat(binding["original_started"])
-        <= now
-        < min(EXPIRY, datetime.fromisoformat(binding["original_deadline"]))
+    assert datetime.fromisoformat(binding["original_started"]) <= now
+    expired = now >= min(
+        EXPIRY, datetime.fromisoformat(binding["original_deadline"])
     )
+    assert expired is expiry_only
     assert original_ledger["run"] == binding["run"]
     assert (
         "registry_audit_started" in original_ledger
@@ -274,7 +277,7 @@ class Continuation:
         """Validate exact independent admission, then advance only registry GETs."""
         with (
             self.campaign.locked(),
-            deadline_guard("2026-09-29T01:55:15.465230+00:00", now=self.now),
+            self._deadline(),
         ):
             binding, original = validate_binding(
                 self.directory, self.campaign, self.now()
@@ -427,6 +430,78 @@ class Continuation:
             }
             save_json(completion_path, completion)
             return completion
+
+    @contextmanager
+    def _deadline(self) -> Any:
+        """Enforce the effect deadline and retain only verified existing expiry state."""
+        deadline = "2026-09-29T01:55:15.465230+00:00"
+        try:
+            with deadline_guard(deadline, now=self.now):
+                yield
+        except ReadStopped as error:
+            if self.now() >= datetime.fromisoformat(deadline):
+                try:
+                    self._retain_expiry()
+                except (
+                    AssertionError,
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                ) as rejected:
+                    error.add_note(
+                        f"Local expiry finalization rejected: {type(rejected).__name__}"
+                    )
+            raise
+
+    def _retain_expiry(self) -> None:
+        """Finalize associated pending evidence under the existing lock without effects."""
+        ledger_path = self.sidecar / "ledger.json"
+        if (
+            not ledger_path.exists()
+            or (self.sidecar / "completion.json").exists()
+        ):
+            return
+        binding, original = validate_binding(
+            self.directory, self.campaign, self.now(), expiry_only=True
+        )
+        binding_digest = digest(self.sidecar / "binding.json")
+        admission_digest = digest(self.sidecar / "independent-admission.json")
+        assert read(self.sidecar / "initialization.json") == {
+            "binding_sha256": binding_digest,
+            "admission_sha256": admission_digest,
+            "original_deadline": binding["original_deadline"],
+        }
+        ledger = read(ledger_path)
+        assert ledger["schema"] == "testpypi-read-continuation-ledger-v1"
+        assert ledger["binding_sha256"] == binding_digest
+        assert ledger["admission_sha256"] == admission_digest
+        assert ledger["original_deadline"] == binding["original_deadline"]
+        assert (
+            ledger["original_ledger_sha256"]
+            == binding["original_ledger_sha256"]
+        )
+        assert (
+            ledger["inherited_observations"]
+            == original["registry_audit_requests"]
+        )
+        if ledger["classification"] != "pending":
+            return
+        for request in ledger["requests"]:
+            for key, hash_key in (
+                ("body", "sha256"),
+                ("headers", "headers_sha256"),
+            ):
+                if key in request:
+                    bound_files(self.sidecar, {request[key]: request[hash_key]})
+        for observation in ledger.get("observations", []):
+            bound_files(
+                self.sidecar, {observation["path"]: observation["sha256"]}
+            )
+        reason = "original read deadline exhausted"
+        ledger.update(classification="stopped", reason=reason)
+        ledger["pacing"]["stopped"] = reason
+        save_json(ledger_path, ledger)
 
 
 def main() -> None:

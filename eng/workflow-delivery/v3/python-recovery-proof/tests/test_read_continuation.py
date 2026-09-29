@@ -14,7 +14,7 @@ import pytest
 import read_continuation
 from campaign import EXPIRY, digest, read, save_json
 from read_continuation import Continuation
-from read_policy import ReadStopped
+from read_policy import ReadPending, ReadStopped
 from test_campaign import REVIEWER, construct, prepare, write_gate
 from test_campaign import campaign as campaign  # noqa: PLC0414
 from test_registry_read import index, response
@@ -335,6 +335,125 @@ def test_continuation_tampering_or_expiry_blocks_before_network(
         fixture.caller().step()
     assert fixture.calls == []
     assert not (fixture.sidecar / "ledger.json").exists()
+    if fault == "deadline":
+        assert not (fixture.sidecar / "initialization.json").exists()
+        assert fixture.verified == []
+
+
+def pending_continuation(fixture):
+    """Retain a genuinely admitted pending read before its original deadline."""
+    fixture.replies.append(response(index(fixture.registry, (), 100)))
+    with pytest.raises(ReadPending):
+        fixture.caller().step()
+    return read(fixture.sidecar / "ledger.json")
+
+
+def sidecar_bytes(fixture):
+    """Snapshot all existing continuation evidence for no-rewrite assertions."""
+    return {
+        p.relative_to(fixture.sidecar).as_posix(): p.read_bytes()
+        for p in fixture.sidecar.rglob("*")
+        if p.is_file()
+    }
+
+
+def test_expired_admitted_pending_continuation_records_stop_without_more_work(
+    continuation_fixture,
+):
+    """Expiry finalizes admitted pending state without changing its evidence."""
+    fixture = continuation_fixture
+    before = pending_continuation(fixture)
+    files = sidecar_bytes(fixture)
+    campaign_before = fixture.campaign.read()
+    calls, verified = list(fixture.calls), list(fixture.verified)
+    fixture.clock[0] = datetime.fromisoformat(DEADLINE)
+    with pytest.raises(ReadStopped, match="original read deadline exhausted"):
+        fixture.caller().step()
+    after = read(fixture.sidecar / "ledger.json")
+    assert after["classification"] == "stopped"
+    assert after["reason"] == "original read deadline exhausted"
+    assert after["original_deadline"] == DEADLINE
+    for key in (
+        "requests",
+        "observations",
+        "inherited_observations",
+        "binding_sha256",
+        "admission_sha256",
+        "original_ledger_sha256",
+    ):
+        assert after[key] == before[key]
+    for key, value in before["pacing"].items():
+        assert after["pacing"][key] == value
+    assert {
+        name: raw
+        for name, raw in sidecar_bytes(fixture).items()
+        if name != "ledger.json"
+    } == {name: raw for name, raw in files.items() if name != "ledger.json"}
+    assert fixture.campaign.read() == campaign_before
+    for name, expected in fixture.binding["original_evidence_sha256"].items():
+        assert digest(fixture.root / name) == expected
+    assert fixture.calls == calls
+    assert fixture.verified == verified
+    assert not (fixture.sidecar / "completion.json").exists()
+
+
+@pytest.mark.parametrize(
+    "fault", ["malformed-ledger", "unbound-initialization", "changed-binding"]
+)
+def test_expired_continuation_cannot_rewrite_malformed_or_unbound_state(
+    continuation_fixture,
+    fault,
+):
+    """Expiry does not grant permission to adopt arbitrary existing state."""
+    fixture = continuation_fixture
+    pending_continuation(fixture)
+    if fault == "malformed-ledger":
+        (fixture.sidecar / "ledger.json").write_text("not JSON")
+    elif fault == "unbound-initialization":
+        value = read(fixture.sidecar / "initialization.json")
+        value["binding_sha256"] = "f" * 64
+        save_json(fixture.sidecar / "initialization.json", value)
+    else:
+        value = read(fixture.sidecar / "binding.json")
+        value["original_ledger_sha256"] = "f" * 64
+        save_json(fixture.sidecar / "binding.json", value)
+    files = sidecar_bytes(fixture)
+    campaign_before = fixture.campaign.read()
+    calls, verified = list(fixture.calls), list(fixture.verified)
+    fixture.clock[0] = datetime.fromisoformat(DEADLINE)
+    with pytest.raises((ReadStopped, AssertionError, ValueError)):
+        fixture.caller().step()
+    assert sidecar_bytes(fixture) == files
+    assert fixture.campaign.read() == campaign_before
+    assert fixture.calls == calls
+    assert fixture.verified == verified
+
+
+def test_expired_completed_continuation_keeps_original_completion_unchanged(
+    continuation_fixture,
+):
+    """Local expiry bookkeeping cannot turn completed evidence into a failure."""
+    fixture = continuation_fixture
+    fixture.replies.extend(
+        [
+            response(index(fixture.registry, fixture.pair[:1], 201)),
+            response(fixture.pair[0].content),
+        ]
+    )
+    fixture.caller().step()
+    files = sidecar_bytes(fixture)
+    calls, verified = list(fixture.calls), list(fixture.verified)
+    fixture.clock[0] = datetime.fromisoformat(DEADLINE)
+    with pytest.raises(ReadStopped, match="original read deadline exhausted"):
+        fixture.caller().step()
+    assert sidecar_bytes(fixture) == files
+    assert read(fixture.sidecar / "ledger.json")["classification"] == "complete"
+    assert (
+        read(fixture.sidecar / "completion.json")["destination_state"]
+        == "wheel-only"
+    )
+    assert fixture.calls == calls
+    assert fixture.verified == verified
 
 
 def test_unknown_continuation_state_blocks_new_version_scenario(
