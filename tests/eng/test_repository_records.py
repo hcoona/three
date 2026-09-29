@@ -615,13 +615,31 @@ def test_v2_base_and_v3_candidate_boundary(repo: Repository) -> None:
     assert "schema-invalid" in codes(repo.check())
 
 
-def test_unknown_structured_candidates_are_unresolved(repo: Repository) -> None:
+@pytest.mark.parametrize("committed", [False, True])
+def test_github_mcp_configuration_is_classified(
+    repo: Repository, committed: bool
+) -> None:
+    """Recognize the root MCP configuration without a record binding."""
+    path = ".github/mcp.json"
+    repo.write(path, '{"mcpServers": {}}\n')
+    candidate = repo.commit() if committed else None
+    report = repo.check(candidate)
+    assert report["diagnostics"] == []
+    entry = next(item for item in report["manifest"] if item["path"] == path)
+    assert entry["classification"] == "configuration-source"
+
+
+@pytest.mark.parametrize(
+    "path", ["src/private/app/project/unknown.json", ".github/unknown.json"]
+)
+def test_unknown_structured_candidates_are_unresolved(
+    repo: Repository, path: str
+) -> None:
     """Verify unknown structured candidates are unresolved."""
-    repo.write("src/private/app/project/unknown.json", "{}\n")
+    repo.write(path, "{}\n")
     report = repo.check()
     assert any(
-        d["code"] == "classification-unresolved"
-        and d["path"].endswith("unknown.json")
+        d["code"] == "classification-unresolved" and d["path"] == path
         for d in report["diagnostics"]
     )
 

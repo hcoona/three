@@ -280,6 +280,7 @@ def test_project_change_selects_complete_first_slice(
         ".github/actions/workflow-delivery-v3-node/action.yml",
         "eng/scripts/workflow_delivery_v3_control.py",
         CI_WORKFLOW_PATH,
+        ".config/uv/uv.toml",
         "mise.toml",
         "mise.lock",
         "package.json",
@@ -354,6 +355,16 @@ def test_manual_slice_validation_always_selects_complete_slice() -> None:
         (
             (SHA_A, SHA_B),
             (".github/workflows/helper.py",),
+            "changed path is unclassified",
+        ),
+        (
+            (SHA_A, SHA_B),
+            (".config/uv/other.toml",),
+            "changed path is unclassified",
+        ),
+        (
+            (SHA_A, SHA_B),
+            (".config/uv-other/uv.toml",),
             "changed path is unclassified",
         ),
         (

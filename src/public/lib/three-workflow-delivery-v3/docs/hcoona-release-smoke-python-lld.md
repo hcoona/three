@@ -395,55 +395,27 @@ No workflow dispatch, OIDC or upload is authorized by implementation delivery.
 
 ## Temporary Hosted Recovery Proof
 
-The separately authorized [hosted recovery protocol](./validation/python-hosted-recovery.md)
-proves wheel-present/sdist-missing recovery using the existing workflow and
-publisher. It adds only a temporary manual `recovery-proof` input with choices
-`none` (default) and `stop-after-wheel`. The protected workflow projects the
-actual GitHub input into `WDV3_PYTHON_PROOF`. The CLI rejects unknown values
-and rejects the stop mode outside TestPyPI Live on the existing current-run
-protected-main entry. PR CI cannot select it. This changes neither frozen
-build inputs nor distribution witness bytes.
+The [completed hosted evidence](./validation/python-hosted-recovery.md) records
+TestPyPI wheel-present/sdist-missing recovery. Its temporary manual
+`recovery-proof` input, `WDV3_PYTHON_PROOF` projection, Snapshot `proof-mode`
+field, intentional-stop branch and local campaign operators are retired.
+The stable normal workflow, publisher and Environment remain unchanged.
 
-The publication Snapshot adds a required strict `proof-mode` field with those
-two values. Normal mode retains existing behavior. Stop mode requires whole
-absence and TestPyPI; exact subset/whole state cannot seed a new experiment.
-The deterministic Approval summary discloses intentional stopping after the
-wheel and a failed partial publication. Bundle, Authorization and marker bind
-this selection through their existing Snapshot references. Preparation takes
-the actual input; before authorization, token acquisition, marker creation and
-execution, the CLI requires the bound mode to equal that current input.
-All strict producers, readers and offline auditors move together. Historical
-records retain their original reader/revision; no old proof is coerced.
+Current Snapshot producers and strict readers use the same contracted shape,
+without a proof-mode member. An old or hybrid proof-bearing document is
+rejected as an unknown-field contract violation; no defaulting, migration or
+compatibility execution selector is provided. The existing schema identifier
+is retained under the same-revision tooling contract. Historical artifacts
+are interpreted only by their pinned source readers through the evidence
+record's offline replay route, never adopted as current-run authority.
 
-After actual wheel HTTP success and exact native readback, the executor in
-stop mode returns the ordinary failed Result before calling sdist upload:
-wheel `succeeded` with original response/observation, sdist `not-attempted`,
-no final exact pair and retained mutation. Persist Result and expose its scalar
-terminal before Finalizer emits the failed Outcome. Do not raise an artificial
-HTTP failure, cancel the job, discard evidence or mark interruption successful.
-Earlier transport/readback/persistence failure retains ordinary conservative
-semantics. The normal mode of the next independent Attempt uses the existing
-recovery executor without a fault or old-artifact adoption.
-
-Validate input/domain rejection before credentials, immutable mode/summary
-binding and tamper rejection, actual first-file success with no second POST,
-truthful failed terminal replay, and a fresh normal recovery with one missing
-POST. Preserve normal absent, exact-subset and whole-exact paths. Remove the
-temporary input, mode field and stop branch after accepted proof; retained
-evidence remains replayable at its pinned source. This is validation tooling,
-not a new release destination, generic fault framework or retry contract.
-
-The external proof operator separates idempotent evidence reads from one-shot
-publication effects. Its persisted read scheduler and resumable immutable
-captures follow the [protocol](./validation/python-hosted-recovery.md#finite-campaign-and-autonomous-continuation).
-A narrow GET-only continuation may complete a terminal audit across an operator
-correction; it binds the new caller separately from the pinned historical
-publication reader and never inherits mutation methods. Each Attempt retains
-its own immutable protocol and callers for historical closure. The
-[continuation contract](./validation/python-hosted-recovery.md#read-only-continuation-across-a-protected-operator-correction)
-owns admission, evidence preservation and successor conditions. These external
-tooling changes do not alter the runtime transport profile or distribution
-bytes.
+Ordinary absent, exact-subset and complete-exact behavior is unchanged. Each
+fresh Attempt independently builds and qualifies both files, obtains its own
+Approval and verifies retained files before sending only missing files at
+most once. Failed or ambiguous uploads remain failed; later success does not
+rewrite the earlier Outcome. Both subset directions remain covered locally;
+the hosted evidence establishes only wheel-present/sdist-missing recovery.
+No further hosted operation or production PyPI admission follows from this proof.
 
 ## First-Project Bootstrap
 

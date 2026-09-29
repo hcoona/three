@@ -56,17 +56,15 @@ operating guidance, not a second normative specification.
 
 ## Python Smoke Design
 
-The [partial-publication recovery contract](./hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
-permits a fresh independently built/qualified Attempt to retain exact existing
-files and upload only missing files. The runtime implements both single-file
-subsets with current-Attempt Approval, strict pre-state binding and complete
-Result/Finalizer replay. Joined real-build and controlled-transport tests cover
-fresh recovery while preserving the earlier failed Outcome. This is capability
-validation; no hosted recovery has been executed. The current Wave separately
-authorizes the [bounded hosted proof](./validation/python-hosted-recovery.md),
-with the temporary default-off interruption, persisted evidence-read pacing
-and terminal-audit continuation implemented. Protected delivery and independent
-exact execution admission remain prerequisites.
+The [hosted partial-publication recovery](./validation/python-hosted-recovery.md)
+is independently complete for TestPyPI `0.1.0b39`: a fresh Attempt rebuilt both
+archives byte-identically, retained the existing wheel and uploaded only the
+missing sdist. Both clean consumers passed; the seed Outcome remains failed.
+The campaign is stopped and its temporary interruption control and operators
+are retired. The [ordinary recovery contract](./hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
+retains both exact single-file subsets; the inverse subset has local evidence
+only. Preserve the stable workflow/publisher/Environment and historical evidence.
+This completion grants no further operation; production PyPI remains blocked.
 
 [Issue #843](https://github.com/hcoona/three/issues/843) tracks TestPyPI first,
 then PyPI. The owner's confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),
