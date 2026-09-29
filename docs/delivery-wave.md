@@ -8,6 +8,50 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
+### Prepare Python Official publication on PyPI
+
+- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
+- **Accepted inputs:** the owner's [direction to continue with production PyPI](https://github.com/hcoona/three/issues/843#issuecomment-5885105603),
+  accepted Python requirements/design and platform-reliance decision, completed
+  TestPyPI normal publication and partial-recovery evidence, and protected
+  retirement in [#923](https://github.com/hcoona/three/pull/923). The subject
+  remains the smoke-only `hcoona-release-smoke-python` distribution, without
+  production consumers; TestPyPI evidence does not admit the PyPI destination.
+- **Advancement and outcome:** determine the actual PyPI account/project prerequisites;
+  accept any required first-project requirements/design/protocol extension
+  before implementing it; test, independently review and protected-deliver
+  the scoped disabled implementation. Prepare concrete configuration/admission
+  and publication proposals for their separate later Wave authorizations.
+  Remove this entry when the required preparation is independently accepted.
+- **Effects and delivery:** permit public-source research, local locked dependency
+  preparation, builds/tests, ordinary CI, Issue/PR delivery, independent delegated
+  review/triage and protected merges. Obtain owner-provided account/project facts
+  without collecting credentials or an authenticated browser session. Preserve
+  the stable normal workflow and all existing TestPyPI registrations. The
+  existing owner direction covers scoped diagnosis, correction, validation and
+  delivery without repeated approval; it does not make later Wave gates implicit.
+- **Bounds and continuation:** only preparation for repository `hcoona/three`,
+  operator/reviewer `hcoona`, protected `main`, production PyPI project
+  `hcoona-release-smoke-python` and Environment
+  `workflow-delivery-v3-python-pypi` is in scope. Later proposals must separately
+  close concrete configuration diffs/readback, finite cumulative mutation and
+  lifetime bounds, persistent paced/resource-limited evidence reads, fresh
+  current-run authority, independent admission and terminal closure. This
+  preparation grants no operational budget or automatic follow-on effects.
+- **Prerequisites and exclusions:** existing blocked PyPI Governance remains
+  blocked throughout this advancement. Configuration/admission and actual
+  publication require their separate accepted Wave authorizations and domain gates.
+  An absent project requires accepted destination-specific bootstrap contracts
+  and implementation before any bootstrap effect; TestPyPI-only tooling is not
+  executable PyPI authority. No smoke registry observation, configuration change,
+  publisher registration, Approval, OIDC, dispatch or upload is granted here.
+  No duplicate/race proving, intentional fault
+  injection, arbitrary old-version recovery, old artifact/Approval adoption,
+  GitHub rerun, static publisher token, deletion/rollback, broad access grant,
+  host-trust/profile change, unrelated package or TestPyPI mutation. Preserve
+  current-run authority, failed/ambiguous Outcomes, sole-owner trust boundaries,
+  independent reviews and all completed npm/NuGet/TestPyPI histories.
+
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
