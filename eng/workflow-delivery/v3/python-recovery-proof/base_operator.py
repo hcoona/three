@@ -401,8 +401,10 @@ class Operator:
                     body=partial.name,
                     retained_sha256=hashlib.sha256(retained).hexdigest(),
                 )
-            if pacer is not None and not isinstance(
-                error, (ReadPending, ReadStopped)
+            if (
+                pacer is not None
+                and isinstance(error, Exception)
+                and not isinstance(error, (ReadPending, ReadStopped))
             ):
                 pacer.after(
                     "github" if poll else "transfer",

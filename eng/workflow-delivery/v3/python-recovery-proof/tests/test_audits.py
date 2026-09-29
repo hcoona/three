@@ -224,7 +224,7 @@ def test_terminal_controls_reject_missing_ambiguous_or_changed_original(
         ("diagnostic", ["wheel", "sdist"]),
     ],
 )
-def test_native_audit_separates_diagnostic_and_proof_consumer_requirements(
+def test_native_audit_separates_diagnostic_and_proof_consumer_requirements(  # noqa: C901 - complete caller fixture and purpose table.
     campaign, monkeypatch, purpose, variants
 ) -> None:
     """Diagnostic state evidence never substitutes for complete-pair consumer proof."""
@@ -316,7 +316,7 @@ def test_native_audit_separates_diagnostic_and_proof_consumer_requirements(
             decision=lambda: decision, content=lambda role: role.encode()
         ),
     )
-    audits, consumers = [], []
+    audits, consumers, admissions, states = [], [], [], []
 
     class Audit:
         """The native parser journey is exercised by test_registry_read."""
@@ -325,12 +325,20 @@ def test_native_audit_separates_diagnostic_and_proof_consumer_requirements(
             self, output, _state, _deadline, _registry, expected, **kwargs
         ):
             output.mkdir(exist_ok=True)
+            states.append(_state)
             audits.append(
                 (
                     tuple(distribution.variant for distribution in expected),
                     kwargs.get("purpose"),
                 )
             )
+            admission = kwargs["admission"]
+            assert isinstance(admission, module.AuditAdmission)
+            assert admission.purpose == kwargs["purpose"]
+            assert admission.identity["binding_sha256"] == digest(
+                root / "execution-binding.json"
+            )
+            admissions.append(admission)
 
         def step(self):
             selected = tuple(x for x in originals if x.variant in variants)
@@ -350,8 +358,35 @@ def test_native_audit_separates_diagnostic_and_proof_consumer_requirements(
         )
 
     monkeypatch.setattr(module, "qualify_python_consumer", consumer)
+    if purpose != "diagnostic":
+        write_gate(
+            root,
+            binding,
+            "diagnostic-read",
+            run=15,
+            terminal=True,
+            dispatch_resolved=True,
+            publisher_quiescent=True,
+            native_read_admitted=True,
+            purpose="diagnostic",
+        )
+        module.main()
+        assert consumers == []
+        write_gate(
+            root,
+            binding,
+            "diagnostic-read",
+            run=15,
+            terminal=True,
+            dispatch_resolved=True,
+            publisher_quiescent=True,
+            native_read_admitted=True,
+            purpose=purpose,
+        )
     module.main()
-    assert audits == [
+    assert audits == (
+        [] if purpose == "diagnostic" else [(("wheel", "sdist"), "diagnostic")]
+    ) + [
         (
             ("wheel",) if purpose == "seed-proof" else ("wheel", "sdist"),
             purpose,
@@ -360,6 +395,13 @@ def test_native_audit_separates_diagnostic_and_proof_consumer_requirements(
     assert consumers == (
         ["wheel", "sdist"] if purpose == "recovery-proof" else []
     )
+    if purpose != "diagnostic":
+        assert states[0] is states[1]
+        assert admissions[0].identity == admissions[1].identity
+        assert (
+            admissions[0].provenance["gate_sha256"]
+            != admissions[1].provenance["gate_sha256"]
+        )
     assert "registry_audit_completed" in ledger
 
 

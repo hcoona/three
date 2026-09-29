@@ -260,3 +260,47 @@ def test_registry_wire_terminating_partial_bytes_remain_bounded(monkeypatch):
     assert terminated.retained_status == 200
     assert terminated.retained_body == b"partmore-"
     assert closed == [True]
+
+
+@pytest.mark.parametrize("status", [200, 503])
+def test_github_deadline_preserves_exception_partial_bytes_and_owner_marker(
+    base, wire, partial_clock, status
+):
+    """Terminating GET evidence reaches the owning deadline context."""
+    started = base.ledger["started"]
+    deadline = datetime.fromisoformat(started) + timedelta(hours=4)
+    terminated = base_operator.OperatorDeadlineExceeded(
+        "original deadline exhausted"
+    )
+
+    class DeadlineReply(Reply):
+        def read(self, size):
+            if self.offset:
+                partial_clock[0] = deadline
+                raise terminated
+            return super().read(size)
+
+    wire.replies.append(DeadlineReply(status, b"partial GitHub evidence"))
+    with (
+        pytest.raises(base_operator.OperatorDeadlineExceeded) as error,
+        base.deadline(),
+    ):
+        base.get("repos/hcoona/three/actions/jobs/15", "deadline-body")
+    assert error.value is terminated
+    ledger = read(base.ledger_path)
+    assert ledger["deadline_exhausted_at"] == deadline.isoformat()
+    assert ledger["started"] == started
+    assert len(ledger["requests"]) == 1
+    entry = ledger["requests"][0]
+    assert entry["status"] == status
+    assert entry["error_type"] == "OperatorDeadlineExceeded"
+    assert (
+        base.directory / entry["body"]
+    ).read_bytes() == b"partial GitHub evidence"
+    assert entry["retained_bytes"] == len(b"partial GitHub evidence")
+    assert len(wire.calls) == len(wire.credentials) == 1
+    resumed = Operator(base.directory, TARGET)
+    with pytest.raises(base_operator.OperatorDeadlineExceeded):
+        resumed.get("repos/hcoona/three/actions/jobs/16", "forbidden-resume")
+    assert len(wire.calls) == len(wire.credentials) == 1
+    assert read(base.ledger_path) == ledger

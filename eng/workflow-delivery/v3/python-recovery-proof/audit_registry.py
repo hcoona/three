@@ -11,11 +11,9 @@ import json
 import os
 from pathlib import Path
 
-from campaign import gate as read_gate
 from dispatch_normal import BINDING, ROOT, TARGET
 from normal_operator import Operator
-from proof_checks import diagnostic_gate
-from registry_read import RegistryAudit, successful_index
+from registry_read import AuditAdmission, RegistryAudit, successful_index
 from three_workflow_delivery_v3.adapters.python import qualify_python_consumer
 from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.python_cli import PythonInputs
@@ -27,14 +25,7 @@ def main() -> None:
     assert (directory / "ledger.json").exists()
     op = Operator(directory, TARGET)
     with op.deadline():
-        gate = read_gate(
-            ROOT,
-            "independent-diagnostic-read-gate.json",
-            BINDING,
-            "diagnostic-read",
-            run=op.ledger["run"],
-        )
-        diagnostic_gate(gate, op.ledger["run"])
+        admission = AuditAdmission(ROOT, BINDING, op.ledger["run"])
         assert (
             os.environ.get("SSL_CERT_FILE")
             == "/etc/ssl/certs/ca-certificates.crt"
@@ -80,7 +71,7 @@ def main() -> None:
         state = op.ledger.setdefault("registry_read_state", {})
         op.save()
         output = directory / "registry-audit"
-        purpose = gate["purpose"]
+        purpose = admission.purpose
         assert purpose in ("diagnostic", "seed-proof", "recovery-proof")
         expected = originals[:1] if purpose == "seed-proof" else originals
         result_path = directory / "inputs/result.json"
@@ -106,6 +97,7 @@ def main() -> None:
             save=op.save,
             baseline=baseline,
             purpose=purpose,
+            admission=admission,
         )
         observation = audit.step()
         (output / "observation.json").write_bytes(

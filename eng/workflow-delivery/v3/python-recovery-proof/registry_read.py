@@ -13,6 +13,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from campaign import digest, save_json
+from campaign import gate as read_gate
+from proof_checks import diagnostic_gate
 from read_policy import ReadPacer, ReadPending, ReadStopped
 from three_workflow_delivery_v3.adapters.pypi import (
     PythonHttpResponse,
@@ -132,6 +134,39 @@ def https_get(url: str, headers: dict, maximum_bytes: int) -> tuple:
         connection.close()
 
 
+class AuditAdmission:
+    """Load independent read authority and retain its verified provenance."""
+
+    def __init__(self, directory: Any, binding: dict, run: Any) -> None:
+        """Verify the concrete gate instead of accepting an author trust flag."""
+        filename = "independent-diagnostic-read-gate.json"
+        proof = read_gate(
+            directory, filename, binding, "diagnostic-read", run=run
+        )
+        diagnostic_gate(proof, run)
+        self.purpose = proof["purpose"]
+        assert self.purpose in ("diagnostic", "seed-proof", "recovery-proof")
+        if self.purpose == "seed-proof":
+            assert binding["mode"] == "stop-after-wheel"
+        if self.purpose == "recovery-proof":
+            assert binding["mode"] == "none"
+        self.identity = {
+            key: proof[key]
+            for key in (
+                "binding_sha256",
+                "target",
+                "scenario",
+                "attempt",
+                "mode",
+                "run",
+            )
+        }
+        self.provenance = {
+            "gate_sha256": digest(Path(directory) / filename),
+            "gate": proof,
+        }
+
+
 class RegistryAudit:
     """Persist an exact native audit; expose no mutation or authentication API."""
 
@@ -148,6 +183,7 @@ class RegistryAudit:
         wire: Any = None,
         baseline: bytes | None = None,
         purpose: str = "exact-inventory",
+        admission: AuditAdmission | None = None,
     ) -> None:
         """Bind the retained audit and injected deterministic dependencies."""
         self.directory = Path(directory)
@@ -166,7 +202,6 @@ class RegistryAudit:
             "recovery-proof",
         )
         self.purpose = purpose
-        assert self.ledger.setdefault("purpose", purpose) == purpose
         assert registry.name == "testpypi"
         assert originals and originals[0].variant == "wheel"
         self.directory.mkdir(exist_ok=True)
@@ -180,6 +215,72 @@ class RegistryAudit:
             now=self.now,
             save=self.save,
         )
+        self._admit_purpose(admission)
+
+    def _admit_purpose(self, admission: AuditAdmission | None) -> None:
+        """Strengthen only independently bound diagnosis without resetting history."""
+        purpose = self.purpose
+        previous = self.ledger.setdefault("purpose", purpose)
+        self.ledger.setdefault("initial_purpose", previous)
+        subject = {
+            "index_url": self.registry.index_url,
+            "target": self.originals[0].witness.target,
+            "files": [[item.filename, item.digest] for item in self.originals],
+        }
+        if admission is not None:
+            assert isinstance(admission, AuditAdmission)
+            assert admission.purpose == purpose
+            assert admission.identity["target"] == subject["target"]
+            existing = self.ledger.get("admission_identity")
+            if existing is None:
+                assert not self.ledger["requests"], "unbound audit history"
+                assert previous == purpose
+                self.ledger.update(
+                    admission_identity=admission.identity,
+                    admission_subject=subject,
+                    admission_deadline=self.deadline,
+                    purpose_history=[
+                        {"purpose": purpose, **admission.provenance}
+                    ],
+                )
+            else:
+                assert existing == admission.identity, (
+                    "audit admission identity changed"
+                )
+                assert self.ledger["admission_deadline"] == self.deadline
+                original = self.ledger["admission_subject"]
+                assert original["index_url"] == subject["index_url"]
+                assert original["target"] == subject["target"]
+                assert subject["files"] == original["files"] or (
+                    purpose == "seed-proof"
+                    and subject["files"] == original["files"][:1]
+                ), "audit originals changed"
+        if previous == purpose:
+            return
+        assert admission is not None, (
+            "purpose strengthening requires independent admission"
+        )
+        assert previous == "diagnostic" and purpose in (
+            "seed-proof",
+            "recovery-proof",
+        )
+        if self.ledger["classification"] == "stopped" or self.pacer.state.get(
+            "stopped"
+        ):
+            raise ReadStopped(
+                self.ledger.get("reason", "audit already stopped")
+            )
+        if self.now() >= datetime.fromisoformat(self.deadline):
+            self.ledger.update(
+                classification="stopped",
+                reason="original read deadline exhausted",
+            )
+            self.pacer.stop("original read deadline exhausted")
+        self.ledger["purpose_history"].append(
+            {"purpose": purpose, **admission.provenance}
+        )
+        self.ledger["purpose"] = purpose
+        self.save()
 
     def _retained(self, entry: dict) -> Any:
         path = self.directory / entry["body"]
@@ -352,7 +453,9 @@ class RegistryAudit:
             )
             classification = classify(
                 observation,
-                self.originals,
+                self.originals[:1]
+                if self.purpose == "seed-proof"
+                else self.originals,
                 self.baseline,
                 diagnostic=self.purpose == "diagnostic",
             )
