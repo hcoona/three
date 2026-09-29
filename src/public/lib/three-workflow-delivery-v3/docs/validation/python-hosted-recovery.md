@@ -101,7 +101,13 @@ Run discovery/state polls start at least 30 seconds apart. Independent registry
 polls back off through 30, 60, 120 and 300 seconds, then remain at least five
 minutes apart. Honor any longer applicable service-directed Retry-After,
 GitHub rate-reset or poll-interval wait. Persist next eligible time and error
-state across invocations; a restart cannot shorten a wait. Do not start a wait
+state across invocations; a restart cannot shorten a wait. A resource's
+`X-Poll-Interval` applies to that exact resource, not unrelated GETs. Preserve
+the shared discovery/state cadence separately from resource intervals and
+stage-wide service/rate/error waits. Before repeating approval checks after a
+pending read, wait until every prerequisite resource is eligible, then refresh
+all mutable prerequisites; do not reuse an earlier main/run/deployment response.
+Do not start a wait
 or request beyond the applicable bound lifetime. Five consecutive transient
 transport/service/rate-limit failures stop the read stage; a valid regressed
 index is a pending observation, not a transport error. Permission failures,
