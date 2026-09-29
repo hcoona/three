@@ -32,8 +32,9 @@ Production PyPI configuration and admission follow the current
 administrator bypass under `WD-PY-007` and
 [reported the exact bootstrap Pending Publisher registered](https://github.com/hcoona/three/issues/843#issuecomment-5897947051).
 Carry that attestation forward; do not repeat registration, unchanged-field
-confirmation or the canceled instruction to disable bypass. Design acceptance
-alone does not establish implementation compatibility or configuration admission.
+confirmation or the canceled instruction to disable bypass. The destination-specific
+validator implements that accepted policy; configuration admission still requires
+independent review of actual settings under the original finite grant.
 Project bootstrap and Official publication require separate accepted operation
 Waves and their current-run gates; this stage grants no registry observation,
 request population, Approval, OIDC, dispatch or upload.
