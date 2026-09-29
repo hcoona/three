@@ -15,6 +15,8 @@ ends a grant. Git and the proposing PR retain the reason and history.
   its [operation proposal](https://github.com/hcoona/three/issues/843#issuecomment-5878081917),
   the owner's [ordinary-read policy acceptance](https://github.com/hcoona/three/issues/843#issuecomment-5880355879)
   of the [revised proposal](https://github.com/hcoona/three/issues/843#issuecomment-5879961542),
+  the owner's [terminal-read lifetime acceptance](https://github.com/hcoona/three/issues/843#issuecomment-5882370637)
+  of the [separate audit proposal](https://github.com/hcoona/three/issues/843#issuecomment-5882174271),
   accepted Python recovery requirements/design/runtime, and the existing ready
   TestPyPI admission. The owner accepts intentional wheel-only partial
   publication and retained failed versions within this smoke-only boundary.
@@ -41,7 +43,14 @@ ends a grant. Git and the proposing PR retain the reason and history.
   publisher lifetime. Replace owner-replenished ordinary evidence-read counts
   with persistent pacing, backoff, service-directed waits and resource limits
   in the accepted protocol and tested callers. Preserve the original four-hour
-  per-Attempt lifetime, response/transfer size and scope limits, and diagnostics.
+  per-Attempt publisher lifetime, response/transfer size and scope limits, and
+  diagnostics. For an independently resolved terminal run with a quiescent
+  publisher, separately admit a registry GET-only terminal audit through the
+  unchanged Governance expiry, including after its publisher lifetime expires.
+  Retain original bindings, deadlines, failed Outcomes, observations, waits,
+  errors, resource accounting and all mutation reservations. This audit cannot
+  revive publisher authority or abandon unknown state; independently verified
+  exact current state remains necessary for closure and any fresh successor.
   Read retries do not retry dispatch, approval, OIDC or uploads, alter the
   publication profile, or turn incomplete evidence into success.
   Stop at first independently audited success, owner cancellation, exhaustion
