@@ -383,6 +383,7 @@ def _is_slice_affecting_path(  # noqa: PLR0911
     global_inputs = {
         *FIRST_SLICE_REQUIRED_GLOBAL_INPUTS,
         *node_provider_version_input_candidates(project.path),
+        ".config/uv/uv.toml",
         "mise.lock",
         "mise.toml",
     }
