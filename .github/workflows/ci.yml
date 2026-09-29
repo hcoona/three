@@ -297,6 +297,8 @@ jobs:
 
     env:
       NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+      NUGET_AUTHORITY_DIAGNOSTICS_DIRECTORY: ${{ github.workspace }}/artifacts/nuget-authority-diagnostics
+      NUGET_AUTHORITY_DUMP_TOOL: ${{ github.workspace }}/artifacts/nuget-authority-tools/dotnet-dump.exe
 
     needs: scope
     if: ${{ !cancelled() }}
@@ -342,6 +344,11 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: dotnet build dirs.proj -c Debug --no-restore -p:RestoreLockedMode=true
 
+      - name: Prepare NuGet authority dump collection
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        shell: pwsh
+        run: dotnet tool install dotnet-dump --version 10.0.745401 --tool-path (Split-Path $env:NUGET_AUTHORITY_DUMP_TOOL)
+
       - name: Test
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: pwsh
@@ -364,6 +371,19 @@ jobs:
               }
             }
           }
+
+      - name: Retain NuGet authority diagnostics
+        if: >-
+          (failure() || hashFiles('artifacts/nuget-authority-diagnostics/**/slow-process.txt') != '')
+          && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: nuget-authority-diagnostics-${{ github.run_attempt }}
+          path: |
+            artifacts/nuget-authority-diagnostics/
+            src/private/app/workflow-delivery-v3-nuget-authority/bin/Debug/net10.0/
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Reject canceled validation
         if: cancelled()
