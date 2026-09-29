@@ -27,27 +27,32 @@ operations, publication, or another npm proving run.
 
 ## Starting a New Session
 
-Production PyPI configuration and admission follow the current
-[Wave](../../../../../docs/delivery-wave.md) and its linked configuration protocol. The owner accepted production
-administrator bypass under `WD-PY-007` and
+The accepted production PyPI first-project operation follows the current
+[Wave](../../../../../docs/delivery-wave.md) and its linked concrete operation
+protocol, with [independently admitted bootstrap configuration](https://github.com/hcoona/three/issues/843#issuecomment-5899412557).
+The owner accepted administrator bypass under `WD-PY-007` and
 [reported the exact bootstrap Pending Publisher registered](https://github.com/hcoona/three/issues/843#issuecomment-5897947051).
-Carry that attestation forward; do not repeat registration, unchanged-field
-confirmation or the canceled instruction to disable bypass. The destination-specific
-validator implements that accepted policy; configuration admission still requires
-independent review of actual settings under the original finite grant.
-Project bootstrap and Official publication require separate accepted operation
-Waves and their current-run gates; this stage grants no registry observation,
-request population, Approval, OIDC, dispatch or upload.
-The [first-project protocol](./validation/python-bootstrap.md) extends the
-destination-bound tooling to PyPI; both bootstrap request slots remain null
-and production Governance remains blocked. The owner
-reported account `Sherry7290` and a different `hcoona-release-smoke` project;
-neither that project nor its `release-official.yml`/`release` publisher is this
-slice's resource. Preserve the stable V3 workflow filenames. The owner confirmed sole control of `Sherry7290` in the
+Carry these facts forward; do not repeat registration, unchanged-field
+confirmation or the canceled instruction to disable bypass. Preserve the
+original finite configuration and operation grants without refill.
+
+The [first-project protocol](./validation/python-bootstrap.md) governs the
+separately authorized request in the PyPI protected slot; the TestPyPI slot
+remains null and normal production Governance remains blocked. Request delivery
+prepares the authorized run; it does not establish dispatch or bootstrap success.
+Execution requires the exact protected tooling/request binding, independent
+review of immutable hosted preparation and current-run Approval/Authorization.
+Administrator bypass does not replace that authority.
+
+The owner confirmed sole control of `Sherry7290` in the
 [account-control report](https://github.com/hcoona/three/issues/843#issuecomment-5895091575).
-Carry that fact forward unless changed or contradicted. Project creation and
-normal publisher admission remain separate evidence gates;
-do not ask the owner to modify unrelated or existing TestPyPI resources.
+Carry that fact forward unless changed or contradicted. The different
+`hcoona-release-smoke` project and its `release-official.yml`/`release` publisher
+are outside this slice. Preserve `hcoona-release-smoke-python` and the stable
+V3 workflow filenames. Actual newly established project ownership and converted
+bootstrap publisher facts require a later owner report; normal publisher
+registration, ready admission and Official publication retain their distinct
+gates. Do not ask the owner to modify unrelated or existing TestPyPI resources.
 
 The [hosted partial-publication recovery](./validation/python-hosted-recovery.md)
 is independently complete for TestPyPI `0.1.0b39`: a fresh Attempt rebuilt both
@@ -57,7 +62,7 @@ The campaign is stopped and its temporary interruption control and operators
 are retired. The [ordinary recovery contract](./hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
 retains both exact single-file subsets; the inverse subset has local evidence
 only. Preserve the stable workflow/publisher/Environment and historical evidence.
-This completion grants no further operation; production PyPI remains blocked.
+This completion grants no further operation; normal production PyPI publication remains blocked.
 
 The npm and NuGet GitHub Packages smoke objectives are complete. Use the
 [NuGet completion evidence](./validation/nuget-normal-live-evidence.md) and
@@ -93,7 +98,7 @@ For the owner's next Workflow Delivery v3 task:
    protected Governance files now use strict v2. TestPyPI has reviewed ready
    admission, and its normal publication and fresh clean wheel/sdist consumers
    are [independently complete](./validation/python-normal-live-evidence.md)
-   for `0.1.0b26`. Production PyPI remains blocked. The duplicate/race producer
+   for `0.1.0b26`. Normal production PyPI publication remains blocked. The duplicate/race producer
    and hosted workflow are removed. The completion campaign stopped at its first
    audited success; no further slot, dispatch, Approval, OIDC, upload or registry
    audit is authorized. Do not reopen its operator or reuse its artifacts as a

@@ -1,4 +1,4 @@
-"""Bootstrap artifact order and inactive request boundaries."""
+"""Bootstrap artifact order and separate request authority boundaries."""
 
 from pathlib import Path
 
@@ -6,6 +6,7 @@ import yaml
 from three_workflow_delivery_v3.acceptance.python_bootstrap_contract import (
     SLOT_PATHS,
     WORKFLOW,
+    BootstrapRequest,
 )
 from three_workflow_delivery_v3.canonical import parse_json_strict
 
@@ -168,10 +169,12 @@ def test_bootstrap_workflow_limits_capability_and_retains_failure():
     assert '"tooling-sha": os.environ["WDV3_TOOLING_SHA"]' in final["run"]
 
 
-def test_inactive_bootstrap_native_slots_are_separate_from_normal_admission():
-    """Inactive requests supply no authority to normal Governance v2."""
-    for slot in SLOT_PATHS.values():
-        assert parse_json_strict((_ROOT / slot).read_bytes()) is None
+def test_bootstrap_slots_are_separate_from_normal_admission():
+    """Bootstrap requests bind their destination, never normal Governance v2."""
+    for registry, slot in SLOT_PATHS.items():
+        content = (_ROOT / slot).read_bytes()
+        if parse_json_strict(content) is not None:
+            assert BootstrapRequest(content).registry.name == registry
     native = parse_json_strict(
         (
             _ROOT / ".github/workflow-delivery/native/python-requests.json"
