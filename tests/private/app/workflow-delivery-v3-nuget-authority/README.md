@@ -4,7 +4,8 @@
 protocol. Each invocation has a two-minute execution deadline. A failed invocation
 attempts diagnostic collection before terminating the child process tree; dump
 collection has a separate 30-second deadline and cleanup waits are limited to
-10 seconds each. Test-run cancellation skips dump collection and proceeds to cleanup.
+10 seconds each. Cooperative test-run cancellation skips or interrupts dump collection and proceeds
+to bounded cleanup. Forced runner termination can interrupt that cleanup.
 
 Each invocation writes a uniquely named directory under
 `NUGET_AUTHORITY_DIAGNOSTICS_DIRECTORY`, or the test results directory locally:
@@ -26,7 +27,8 @@ Each invocation writes a uniquely named directory under
 
 The Windows .NET CI job installs `dotnet-dump` 10.0.745401 and uploads diagnostics
 and the matching helper binaries as `nuget-authority-diagnostics-<run-attempt>`
-on failure, cancellation or a slow successful invocation, retaining them for seven days. Download that artifact
+on failure or a slow successful invocation, retaining them for seven days. Whole-job
+cancellation can prevent artifact upload. Download that artifact
 before it expires. Use `process.log` and `host.txt` to locate the delayed phase;
 use PerfView for the trace and WinDbg or `dotnet-dump analyze` for dump inspection.
 Streaming retains evidence before forced termination, but a killed process can

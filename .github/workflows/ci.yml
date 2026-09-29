@@ -374,7 +374,7 @@ jobs:
 
       - name: Retain NuGet authority diagnostics
         if: >-
-          (failure() || cancelled() || hashFiles('artifacts/nuget-authority-diagnostics/**/slow-process.txt') != '')
+          (failure() || hashFiles('artifacts/nuget-authority-diagnostics/**/slow-process.txt') != '')
           && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:

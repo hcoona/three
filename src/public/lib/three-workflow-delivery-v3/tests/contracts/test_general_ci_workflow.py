@@ -868,7 +868,7 @@ def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
                     "actions/upload-artifact@"
                 )
                 assert step["if"] == (
-                    "(failure() || cancelled() || "
+                    "(failure() || "
                     "hashFiles('artifacts/nuget-authority-diagnostics/"
                     "**/slow-process.txt') != '') "
                     "&& steps.scope.outputs.run == 'true'"

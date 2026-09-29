@@ -5,20 +5,33 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace WorkflowDeliveryV3NuGetAuthority.Tests;
 
+internal sealed record AuthorityProcessOptions
+{
+    public TimeSpan ProcessTimeout { get; init; } = TimeSpan.FromMinutes(2);
+    public TimeSpan DumpTimeout { get; init; } = TimeSpan.FromSeconds(30);
+    public string? DiagnosticsDirectory { get; init; }
+    public string? DumpTool { get; init; }
+    // Regression tests can expire deadlines after explicit child readiness.
+    public CancellationToken ExecutionDeadlineToken { get; init; }
+    public CancellationToken CollectionDeadlineToken { get; init; }
+}
+
 internal static class AuthorityProcess
 {
-    private static readonly TimeSpan ProcessTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan SlowProcessThreshold = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan DumpTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(10);
 
     public static async Task<(int ExitCode, string Output, string Error)> RunAsync(
         ProcessStartInfo startInfo,
         string request,
         string family,
-        TestContext testContext)
+        TestContext testContext,
+        AuthorityProcessOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
-        string root = Environment.GetEnvironmentVariable("NUGET_AUTHORITY_DIAGNOSTICS_DIRECTORY")
+        options ??= new AuthorityProcessOptions();
+        string root = options.DiagnosticsDirectory
+            ?? Environment.GetEnvironmentVariable("NUGET_AUTHORITY_DIAGNOSTICS_DIRECTORY")
             ?? Path.Combine(
                 testContext.TestRunResultsDirectory ?? AppContext.BaseDirectory,
                 "nuget-authority");
@@ -72,8 +85,10 @@ internal static class AuthorityProcess
         startInfo.Environment["DOTNET_EventPipeCircularMB"] = "10"; // Hexadecimal: 16 MiB.
 
         using var process = new Process { StartInfo = startInfo };
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            testContext.CancellationToken, cancellationToken);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
-            testContext.CancellationToken);
+            cancellation.Token, options.ExecutionDeadlineToken);
         using var outputCancellation = new CancellationTokenSource();
         Task outputTask = Task.CompletedTask;
         Task errorTask = Task.CompletedTask;
@@ -93,7 +108,7 @@ internal static class AuthorityProcess
             Record($"Process started; PID={process.Id}; executable={process.MainModule?.FileName}");
             // A hosted Windows process can exceed 30 seconds. Retain a finite
             // execution budget and separate budgets for evidence and cleanup.
-            timeout.CancelAfter(ProcessTimeout);
+            timeout.CancelAfter(options.ProcessTimeout);
             outputTask = CaptureOutputAsync(
                 process.StandardOutput, outputPath, Record, outputCancellation.Token);
             errorTask = CaptureOutputAsync(
@@ -114,13 +129,14 @@ internal static class AuthorityProcess
                 await File.WriteAllTextAsync(
                     Path.Combine(directory, "slow-process.txt"),
                     $"PID={process.Id}; elapsed={elapsed.Elapsed}; "
-                        + $"threshold={SlowProcessThreshold}");
+                        + $"threshold={SlowProcessThreshold}",
+                    cancellation.Token);
             }
 
             return (
                 process.ExitCode,
-                await File.ReadAllTextAsync(outputPath),
-                await File.ReadAllTextAsync(errorPath));
+                await File.ReadAllTextAsync(outputPath, cancellation.Token),
+                await File.ReadAllTextAsync(errorPath, cancellation.Token));
         }
         catch (Exception failure)
         {
@@ -131,9 +147,10 @@ internal static class AuthorityProcess
                 {
                     RecordSnapshot(process, Record);
                     if (!process.HasExited
-                        && !testContext.CancellationToken.IsCancellationRequested)
+                        && !cancellation.IsCancellationRequested)
                     {
-                        await CollectDumpAsync(process.Id, directory, Record);
+                        await CollectDumpAsync(
+                            process.Id, directory, Record, options, cancellation.Token);
                     }
                 }
             }
@@ -162,7 +179,8 @@ internal static class AuthorityProcess
             }
 
             throw new AssertFailedException(
-                $"NuGet authority failed during {stage} (execution budget {ProcessTimeout}). "
+                $"NuGet authority failed during {stage} "
+                    + $"(execution budget {options.ProcessTimeout}). "
                     + $"Diagnostics: {directory}."
                     + Environment.NewLine + $"stdout: {ReadOutput(outputPath)}"
                     + Environment.NewLine + $"stderr: {ReadOutput(errorPath)}",
@@ -225,9 +243,13 @@ internal static class AuthorityProcess
     private static async Task CollectDumpAsync(
         int processId,
         string directory,
-        Action<string> record)
+        Action<string> record,
+        AuthorityProcessOptions options,
+        CancellationToken cancellationToken)
     {
-        string? tool = Environment.GetEnvironmentVariable("NUGET_AUTHORITY_DUMP_TOOL");
+        cancellationToken.ThrowIfCancellationRequested();
+        string? tool = options.DumpTool
+            ?? Environment.GetEnvironmentVariable("NUGET_AUTHORITY_DUMP_TOOL");
         if (string.IsNullOrEmpty(tool))
         {
             record("Dump not collected: NUGET_AUTHORITY_DUMP_TOOL is not configured.");
@@ -250,10 +272,12 @@ internal static class AuthorityProcess
             startInfo.ArgumentList.Add(argument);
         }
 
-        record($"Dump requested: {tool}; PID={processId}; budget={DumpTimeout}");
+        record($"Dump requested: {tool}; PID={processId}; budget={options.DumpTimeout}");
         using Process collector = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Dump collector did not start.");
-        using var timeout = new CancellationTokenSource(DumpTimeout);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, options.CollectionDeadlineToken);
+        timeout.CancelAfter(options.DumpTimeout);
         using var outputCancellation = new CancellationTokenSource();
         Task output = CaptureOutputAsync(
             collector.StandardOutput, Path.Combine(directory, "dump-stdout.txt"),
