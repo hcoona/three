@@ -7,12 +7,19 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
-        if (args is ["--authority-process-probe", string pidFile])
+        if (args is [string mode, string pidFile]
+            && mode is "--authority-process-probe" or "--authority-process-probe-success")
         {
+            await Console.In.ReadToEndAsync();
             Console.WriteLine("probe-stdout");
             Console.Error.WriteLine("probe-stderr");
             await File.WriteAllTextAsync(
                 pidFile, Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+            if (mode == "--authority-process-probe-success")
+            {
+                return 0;
+            }
+
             // Finite fallback if the parent test runner is forcibly terminated.
             await Task.Delay(TimeSpan.FromMinutes(2));
             return 1;

@@ -9,6 +9,7 @@ internal sealed record AuthorityProcessOptions
 {
     public TimeSpan ProcessTimeout { get; init; } = TimeSpan.FromMinutes(2);
     public TimeSpan DumpTimeout { get; init; } = TimeSpan.FromSeconds(30);
+    public TimeSpan SlowProcessThreshold { get; init; } = TimeSpan.FromSeconds(30);
     public string? DiagnosticsDirectory { get; init; }
     public string? DumpTool { get; init; }
     // Regression tests can expire deadlines after explicit child readiness.
@@ -18,7 +19,6 @@ internal sealed record AuthorityProcessOptions
 
 internal static class AuthorityProcess
 {
-    private static readonly TimeSpan SlowProcessThreshold = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(10);
 
     public static async Task<(int ExitCode, string Output, string Error)> RunAsync(
@@ -123,13 +123,13 @@ internal static class AuthorityProcess
             Record($"Process exited; exit code={process.ExitCode}");
             stage = "draining stdout/stderr";
             await Task.WhenAll(outputTask, errorTask).WaitAsync(timeout.Token);
-            if (elapsed.Elapsed >= SlowProcessThreshold)
+            if (elapsed.Elapsed >= options.SlowProcessThreshold)
             {
                 Record("Slow successful invocation; retain diagnostics");
                 await File.WriteAllTextAsync(
                     Path.Combine(directory, "slow-process.txt"),
                     $"PID={process.Id}; elapsed={elapsed.Elapsed}; "
-                        + $"threshold={SlowProcessThreshold}",
+                        + $"threshold={options.SlowProcessThreshold}",
                     cancellation.Token);
             }
 

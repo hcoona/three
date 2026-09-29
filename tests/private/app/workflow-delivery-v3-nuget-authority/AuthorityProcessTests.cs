@@ -16,6 +16,29 @@ public sealed class AuthorityProcessTests(TestContext testContext)
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
+    public async Task SuccessfulInvocationMarksOnlySlowResults(bool slow)
+    {
+        AuthorityProcessOptions options = CreateOptions() with
+        {
+            SlowProcessThreshold = slow ? TimeSpan.Zero : TimeSpan.MaxValue,
+        };
+        Task<(int ExitCode, string Output, string Error)> run = AuthorityProcess.RunAsync(
+            CreateProbe(success: true), "request", "probe", testContext,
+            options, cancellation.Token);
+        activeRun = run;
+        (int exitCode, string output, string error) = await run;
+
+        Assert.AreEqual(0, exitCode);
+        Assert.Contains("probe-stdout", output);
+        Assert.Contains("probe-stderr", error);
+        AssertProcessExited("helper.pid");
+        string evidence = Assert.ContainsSingle(Directory.GetDirectories(directory));
+        Assert.AreEqual(slow, File.Exists(Path.Combine(evidence, "slow-process.txt")));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     public async Task DeadlineRetainsPartialOutputAndCleansUpFailedCollector(bool hungCollector)
     {
         using var deadline = new CancellationTokenSource();
@@ -173,7 +196,7 @@ public sealed class AuthorityProcessTests(TestContext testContext)
         return activeRun;
     }
 
-    private ProcessStartInfo CreateProbe()
+    private ProcessStartInfo CreateProbe(bool success = false)
     {
         var start = new ProcessStartInfo(ProbeExecutable)
         {
@@ -182,7 +205,8 @@ public sealed class AuthorityProcessTests(TestContext testContext)
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        start.ArgumentList.Add("--authority-process-probe");
+        start.ArgumentList.Add(success
+            ? "--authority-process-probe-success" : "--authority-process-probe");
         start.ArgumentList.Add(Path.Combine(directory, "helper.pid"));
         return start;
     }
