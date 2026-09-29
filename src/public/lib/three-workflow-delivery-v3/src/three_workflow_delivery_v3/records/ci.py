@@ -92,6 +92,7 @@ _FIRST_SLICE_OUTPUTS = (("npm-tarball", "primary-package", "npm-tarball"),)
 _FIRST_SLICE_PROJECT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 _FIRST_SLICE_AFFECTING_PATHS = frozenset(
     {
+        ".config/uv/uv.toml",
         ".github/workflows/workflow-delivery-v3-ci.yml",
         "eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml",
         "mise.lock",
@@ -129,6 +130,7 @@ _SLO_BROAD_CONTROL_PATHS = frozenset(
 )
 _SLO_ROOT_TOOLCHAIN_PATHS = frozenset(
     {
+        ".config/uv/uv.toml",
         ".python-version",
         "Directory.Build.props",
         "Directory.Build.targets",

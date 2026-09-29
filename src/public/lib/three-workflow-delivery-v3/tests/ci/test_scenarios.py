@@ -638,9 +638,9 @@ def test_ci_scenario_project_source_change_selects_complete_slice() -> None:
     )
 
 
-def test_global_input_change_runs_complete_slice_scenario() -> None:
+@pytest.mark.parametrize("path", ["mise.toml", ".config/uv/uv.toml"])
+def test_global_input_change_runs_complete_slice_scenario(path: str) -> None:
     """Apply a global input through Plan, lanes, Finalizer, and summary."""
-    path = "mise.toml"
     plan = _incremental_plan(changed_paths=(path,))
     results = _lane_results(plan)
     decision = _finalize(plan, results, elapsed_seconds=60)
