@@ -111,19 +111,20 @@ exists for failed-evidence consumers, not new operation requests.
    evidence behavior locally and through ordinary CI, then independently review
    and protected-deliver with both destinations disabled and all operation slots
    null. No native-generation placeholder or automatic v1 admission migration.
-3. Under separate concrete authorization, review each destination's actual
+3. If a project does not exist, its separately scoped establishment must close
+   the resource prerequisite. The destination-bound [bootstrap protocol](./validation/python-bootstrap.md)
+   owns each first-project path; both destination bindings are implemented with
+   null protected requests. Production configuration and execution still need
+   their separate grants. Independently audited ownership/configuration
+   after partial bootstrap can establish resource facts, but cannot establish
+   bootstrap completion, refill a failed version or supply normal-Live evidence.
+   An established project proceeds directly to the next admission step.
+4. Under separate concrete authorization, review each destination's actual
    project ownership, normal-workflow publisher, Environment and writer/reviewer
    controls, and install its protected admission from the accepted platform
    dependency and reviewed configuration. Existing owner-confirmed TestPyPI
    resource facts persist unless changed or contradicted. The bootstrap/native
    workflow registrations do not register the normal workflow.
-4. If a project does not exist, its separately scoped establishment must close
-   the resource prerequisite. The destination-bound [bootstrap protocol](./validation/python-bootstrap.md)
-   owns each first-project path; extending its TestPyPI-only implementation to
-   PyPI requires protected disabled delivery before production configuration or
-   execution. Independently audited ownership/configuration
-   after partial bootstrap can establish resource facts, but cannot establish
-   bootstrap completion, refill a failed version or supply normal-Live evidence.
 5. Execute separately authorized TestPyPI Buddy publication and completion audit,
    then a newly built/qualified/approved PyPI Official Attempt and its own audit.
    Each must retain actual publication, fresh original file bytes and both clean

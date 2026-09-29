@@ -3,7 +3,6 @@
 import pytest
 from three_workflow_delivery_v3.acceptance import python_native_github
 from three_workflow_delivery_v3.acceptance.python_bootstrap_contract import (
-    SENTINEL,
     WORKFLOW,
 )
 from three_workflow_delivery_v3.acceptance.python_native_github import (
@@ -29,6 +28,12 @@ from .test_python_native_hosted import github_facts, hosted_environment
 bootstrap_fixtures = fixture_tests.bootstrap_fixtures
 
 
+@pytest.fixture(params=["testpypi", "pypi"])
+def registry_name(request):
+    """Exercise both closed account and Environment bindings."""
+    return request.param
+
+
 @pytest.mark.parametrize(
     ("key", "value"),
     [
@@ -44,15 +49,11 @@ bootstrap_fixtures = fixture_tests.bootstrap_fixtures
         ("RUNNER_OS", "Windows"),
     ],
 )
-def test_bootstrap_hosted_context_rejects_foreign_or_repeated_execution(
-    bootstrap_fixtures, tmp_path, monkeypatch, key, value
+def test_bootstrap_hosted_context_rejects_foreign_or_repeated_execution(  # noqa: PLR0913, PLR0917 - independent pytest inputs
+    bootstrap_fixtures, tmp_path, monkeypatch, key, value, registry_name
 ):
-    """TestPyPI account identity is distinct from the one.
-
-    TestPyPI account identity is distinct from the one accepted GitHub
-    owner.
-    """
-    request = bootstrap_request(bootstrap_fixtures)
+    """Registry account identity is distinct from the accepted GitHub owner."""
+    request = bootstrap_request(bootstrap_fixtures, registry_name)
     environment = hosted_environment()
     environment["GITHUB_WORKFLOW_REF"] = (
         f"hcoona/three/{WORKFLOW}@refs/heads/main"
@@ -86,14 +87,14 @@ def test_bootstrap_hosted_context_rejects_foreign_or_repeated_execution(
 
 @pytest.mark.parametrize("suffix", ["", "@main"])
 def test_bootstrap_approval_proofs_preserve_original_current_run_facts(
-    bootstrap_fixtures, suffix
+    bootstrap_fixtures, suffix, registry_name
 ):
     """Both proof passes use the same exact bounded raw.
 
     Both proof passes use the same exact bounded raw current-run
     authority.
     """
-    request = bootstrap_request(bootstrap_fixtures)
+    request = bootstrap_request(bootstrap_fixtures, registry_name)
     facts = github_facts(request, deployment_count=5)
     facts[0][1]["path"] = WORKFLOW + suffix
     http = FakeHttp(
@@ -107,7 +108,7 @@ def test_bootstrap_approval_proofs_preserve_original_current_run_facts(
             request,
             RUN,
             TOOLING,
-            SENTINEL,
+            request.sentinel,
             PythonGitHubRuntime("synthetic-proof", http),
             WORKFLOW,
         )
@@ -128,10 +129,10 @@ def test_bootstrap_approval_proofs_preserve_original_current_run_facts(
     ["actor", "approver", "path", "rerun", "sentinel", "too-many-deployments"],
 )
 def test_bootstrap_approval_rejects_foreign_or_unbounded_facts(
-    bootstrap_fixtures, change
+    bootstrap_fixtures, change, registry_name
 ):
     """Neither account labels nor repeated/foreign proofs can admit a send."""
-    request = bootstrap_request(bootstrap_fixtures)
+    request = bootstrap_request(bootstrap_fixtures, registry_name)
     facts = github_facts(
         request, deployment_count=6 if change == "too-many-deployments" else 1
     )
@@ -158,7 +159,7 @@ def test_bootstrap_approval_rejects_foreign_or_unbounded_facts(
             request,
             RUN,
             TOOLING,
-            "foreign" if change == "sentinel" else SENTINEL,
+            "foreign" if change == "sentinel" else request.sentinel,
             PythonGitHubRuntime("synthetic-proof", http),
             WORKFLOW,
         )

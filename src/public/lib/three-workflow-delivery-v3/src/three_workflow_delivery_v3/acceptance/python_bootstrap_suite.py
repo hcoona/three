@@ -12,7 +12,6 @@ from three_workflow_delivery_v3.acceptance.python_bootstrap_capture import (
     upload_pair,
 )
 from three_workflow_delivery_v3.acceptance.python_bootstrap_contract import (
-    SENTINEL,
     WINDOW_SECONDS,
     WORKFLOW,
     BootstrapRequest,
@@ -192,6 +191,7 @@ def authorize(  # noqa: PLR0913 - exact phase artifact tuple
         http,
         "authorize",
         retain,
+        registry=context.request.registry,
         window=window,
         clock=clock,
         secrets=(environment["GITHUB_TOKEN"],),
@@ -206,7 +206,7 @@ def authorize(  # noqa: PLR0913 - exact phase artifact tuple
                 environment["WDV3_APPROVAL_ENVIRONMENT_MARKER"],
             ),
         )
-        require_absent(journal)
+        require_absent(journal, registry=context.request.registry)
     except Exception:
         retain(
             "result.json",
@@ -231,13 +231,15 @@ def replay_authorization(
     )
     window = parse_canonical_json(files["window.json"])
     authority_window(window)
-    replay = ReplayTransport(files, "authorize", window=window)
+    replay = ReplayTransport(
+        files, "authorize", registry=context.request.registry, window=window
+    )
     require(
         files["approval.json"]
-        == _proof(context, replay, "offline-proof", SENTINEL),
+        == _proof(context, replay, "offline-proof", context.request.sentinel),
         "bootstrap first proof differs",
     )
-    require_absent(replay)
+    require_absent(replay, registry=context.request.registry)
     replay.finished()
     return window
 
@@ -256,9 +258,12 @@ def marker(
     window = replay_authorization(context, authorization)
     created = utc_number(clock())
     authority_window(window, created)
-    last = ReplayTransport(authorization, "authorize", window=window).records[
-        -1
-    ]
+    last = ReplayTransport(
+        authorization,
+        "authorize",
+        registry=context.request.registry,
+        window=window,
+    ).records[-1]
     require(
         created >= cast("float", last["finish"]),
         "bootstrap marker predates authorization",
@@ -296,9 +301,12 @@ def validate_marker(
         created
         >= cast(
             "float",
-            ReplayTransport(authorization, "authorize", window=window).records[
-                -1
-            ]["finish"],
+            ReplayTransport(
+                authorization,
+                "authorize",
+                registry=context.request.registry,
+                window=window,
+            ).records[-1]["finish"],
         ),
         "bootstrap marker predates authorization",
     )
@@ -340,6 +348,7 @@ def execute(  # noqa: PLR0913, PLR0917 - exact phase artifact tuple
         http,
         "execute",
         retain,
+        registry=context.request.registry,
         window=window,
         clock=clock,
         monotonic=monotonic,
@@ -358,9 +367,9 @@ def execute(  # noqa: PLR0913, PLR0917 - exact phase artifact tuple
                 environment["WDV3_APPROVAL_ENVIRONMENT_MARKER"],
             ),
         )
-        require_absent(journal)
+        require_absent(journal, registry=context.request.registry)
         assertion = obtain_python_oidc_assertion(
-            "testpypi", environment, journal
+            context.request.registry.name, environment, journal
         )
         journal.add_secret(assertion)
         token = mint_python_token(context.request.registry, assertion, journal)
@@ -369,6 +378,7 @@ def execute(  # noqa: PLR0913, PLR0917 - exact phase artifact tuple
             journal,
             fixtures.distributions,
             token,
+            registry=context.request.registry,
             retain=retain,
             deadline=journal.monotonic_deadline,
             clock=journal.monotonic,
@@ -425,7 +435,9 @@ def replay_execution(
         files["window.json"] == canonicalize(window),
         "bootstrap execution renewed authority",
     )
-    replay = ReplayTransport(files, "execute", window=window)
+    replay = ReplayTransport(
+        files, "execute", registry=context.request.registry, window=window
+    )
     require(
         bool(replay.records)
         and cast("float", replay.records[0]["start"])
@@ -434,16 +446,17 @@ def replay_execution(
     )
     require(
         files["approval.json"]
-        == _proof(context, replay, "offline-proof", SENTINEL),
+        == _proof(context, replay, "offline-proof", context.request.sentinel),
         "bootstrap second proof differs",
     )
-    require_absent(replay)
+    require_absent(replay, registry=context.request.registry)
     replay.credential("oidc")
     replay.credential("mint")
     upload_pair(
         replay,
         fixtures.distributions,
         "pypi-offline-replay",
+        registry=context.request.registry,
         retain=lambda _name, _content: None,
         deadline=replay.monotonic_deadline,
         replay=files,
@@ -478,6 +491,7 @@ def audit(  # noqa: PLR0913, PLR0917 - exact phase artifact tuple
     previous = ReplayTransport(
         execution,
         "execute",
+        registry=context.request.registry,
         window=parse_canonical_json(execution["window.json"]),
     )
     require(
@@ -490,10 +504,14 @@ def audit(  # noqa: PLR0913, PLR0917 - exact phase artifact tuple
             "audit", ("prepared", "authorization", "marker", "result")
         ),
     )
-    journal = JournalTransport(http, "audit", retain, clock=clock)
+    journal = JournalTransport(
+        http, "audit", retain, registry=context.request.registry, clock=clock
+    )
     try:
         for item in capture_exact(
-            journal, tuple(fixtures.distributions.values())
+            journal,
+            tuple(fixtures.distributions.values()),
+            registry=context.request.registry,
         ):
             evidence = consumer_evidence(consumer(item))
             validate_consumer_evidence(evidence, item)
@@ -528,7 +546,9 @@ def replay_audit(  # noqa: PLR0913, PLR0917 - exact phase artifact tuple
         ("prepared", "authorization", "marker", "result"),
         {"consumer/wheel.json", "consumer/sdist.json", "result.json"},
     )
-    replay = ReplayTransport(audited, "audit")
+    replay = ReplayTransport(
+        audited, "audit", registry=context.request.registry
+    )
     execution = {
         key.removeprefix("execution/"): value
         for key, value in result.items()
@@ -537,6 +557,7 @@ def replay_audit(  # noqa: PLR0913, PLR0917 - exact phase artifact tuple
     previous = ReplayTransport(
         execution,
         "execute",
+        registry=context.request.registry,
         window=parse_canonical_json(execution["window.json"]),
     )
     require(
@@ -545,7 +566,11 @@ def replay_audit(  # noqa: PLR0913, PLR0917 - exact phase artifact tuple
         >= cast("float", previous.records[-1]["finish"]),
         "bootstrap P4 precedes execution",
     )
-    for item in capture_exact(replay, tuple(fixtures.distributions.values())):
+    for item in capture_exact(
+        replay,
+        tuple(fixtures.distributions.values()),
+        registry=context.request.registry,
+    ):
         validate_consumer_evidence(
             audited[f"consumer/{item.variant}.json"], item
         )

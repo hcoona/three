@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 from three_workflow_delivery_v3.acceptance.python_bootstrap_contract import (
-    SLOT_PATH,
+    SLOT_PATHS,
     WORKFLOW,
 )
 from three_workflow_delivery_v3.canonical import parse_json_strict
@@ -17,6 +17,7 @@ def test_bootstrap_workflow_binds_immutable_artifact_dag():
     workflow = yaml.safe_load((_ROOT / WORKFLOW).read_text())
     assert set(workflow["on"]) == {"workflow_dispatch"}
     assert set(workflow["on"]["workflow_dispatch"]["inputs"]) == {
+        "registry",
         "request_digest",
         "tooling_sha",
     }
@@ -106,7 +107,7 @@ def test_bootstrap_workflow_limits_capability_and_retains_failure():
     workflow = yaml.safe_load((_ROOT / WORKFLOW).read_text())
     assert workflow["permissions"] == {}
     assert workflow["concurrency"] == {
-        "group": "wdv3-python-project-testpypi",
+        "group": "wdv3-python-project-${{ inputs.registry }}",
         "cancel-in-progress": False,
     }
     for name, job in workflow["jobs"].items():
@@ -128,7 +129,10 @@ def test_bootstrap_workflow_limits_capability_and_retains_failure():
             "persist-credentials": False,
         }
     publisher = workflow["jobs"]["publisher"]
-    assert publisher["environment"] == "workflow-delivery-v3-python-testpypi"
+    assert (
+        publisher["environment"]
+        == "workflow-delivery-v3-python-${{ inputs.registry }}"
+    )
     assert not any(
         "build-fixtures" in step.get("run", "")
         or "dotnet" in step.get("run", "")
@@ -166,8 +170,8 @@ def test_bootstrap_workflow_limits_capability_and_retains_failure():
 
 def test_inactive_bootstrap_native_slots_are_separate_from_normal_admission():
     """Inactive requests supply no authority to normal Governance v2."""
-    request = parse_json_strict((_ROOT / SLOT_PATH).read_bytes())
-    assert request is None
+    for slot in SLOT_PATHS.values():
+        assert parse_json_strict((_ROOT / slot).read_bytes()) is None
     native = parse_json_strict(
         (
             _ROOT / ".github/workflow-delivery/native/python-requests.json"
@@ -190,3 +194,50 @@ def test_inactive_bootstrap_native_slots_are_separate_from_normal_admission():
             == "workflow-delivery-v3-python-smoke.yml"
         )
         assert "native-acceptance" not in governance
+
+
+def test_bootstrap_workflow_closes_and_propagates_selected_destination():
+    """The explicit selector binds every hosted phase and protected resource."""
+    workflow = yaml.safe_load((_ROOT / WORKFLOW).read_text())
+    selection = workflow["on"]["workflow_dispatch"]["inputs"]["registry"]
+    assert selection["type"] == "choice"
+    assert selection["required"] is True
+    assert selection["options"] == ["testpypi", "pypi"]
+    assert "default" not in selection
+    assert workflow["env"]["WDV3_REGISTRY"] == "${{ inputs.registry }}"
+    phases = []
+    for job in workflow["jobs"].values():
+        assert (
+            "(inputs.registry == 'testpypi' || inputs.registry == 'pypi')"
+            in job["if"]
+        )
+        assert "WDV3_REGISTRY" not in job.get("env", {})
+        for step in job["steps"]:
+            assert "WDV3_REGISTRY" not in step.get("env", {})
+            run = step.get("run", "")
+            if "python_bootstrap " not in run:
+                continue
+            phase = run.split("python_bootstrap ")[1].split()[0]
+            if phase in {"prepare", "authorize", "marker", "execute", "audit"}:
+                phases.append(phase)
+                assert '--registry "$WDV3_REGISTRY"' in run
+    assert phases == ["prepare", "authorize", "marker", "execute", "audit"]
+    normal = yaml.safe_load(
+        (
+            _ROOT / ".github/workflows/workflow-delivery-v3-python-smoke.yml"
+        ).read_text()
+    )
+    assert normal["concurrency"] == {
+        "group": (
+            "${{ github.event_name == 'pull_request' && "
+            "format('wdv3-python-ci-{0}', github.event.pull_request.number) "
+            "|| format('wdv3-python-project-{0}', inputs.registry) }}"
+        ),
+        "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
+    }
+    for registry in ("testpypi", "pypi"):
+        group = workflow["concurrency"]["group"].replace(
+            "${{ inputs.registry }}", registry
+        )
+        assert group == f"wdv3-python-project-{registry}"
+    assert set(SLOT_PATHS) == {"testpypi", "pypi"}

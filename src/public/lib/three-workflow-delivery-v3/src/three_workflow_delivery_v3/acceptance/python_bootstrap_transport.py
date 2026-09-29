@@ -38,7 +38,6 @@ if TYPE_CHECKING:
 
     from three_workflow_delivery_v3.adapters.pypi import PythonHttpTransport
 
-REGISTRY = PythonRegistry("testpypi")
 PHASE_LIMITS = {
     "authorize": {"proof": 8, "index": 1},
     "execute": {
@@ -69,7 +68,9 @@ RECORD_FIELDS = {
 }
 
 
-def request_kind(method: str, url: str, maximum: int) -> str:
+def request_kind(
+    method: str, url: str, maximum: int, *, registry: PythonRegistry
+) -> str:
     """Classify only admitted HTTPS effects with exact response ceilings."""
     parsed = urlsplit(url)
     require(
@@ -79,13 +80,13 @@ def request_kind(method: str, url: str, maximum: int) -> str:
         and not parsed.fragment,
         "foreign bootstrap URL",
     )
-    if method == "POST" and url == REGISTRY.upload_url:
+    if method == "POST" and url == registry.upload_url:
         kind, bound = "upload", MAX_RESPONSE_BYTES
-    elif method == "GET" and url == REGISTRY.index_url:
+    elif method == "GET" and url == registry.index_url:
         kind, bound = "index", MAX_INDEX_BYTES
     elif (
         method == "GET"
-        and parsed.netloc == REGISTRY.file_host
+        and parsed.netloc == registry.file_host
         and parsed.path.startswith("/packages/")
         and not parsed.query
     ):
@@ -96,7 +97,7 @@ def request_kind(method: str, url: str, maximum: int) -> str:
         and parsed.path.startswith("/repos/hcoona/three/")
     ):
         kind, bound = "proof", 8 * 1024 * 1024
-    elif method == "POST" and url == f"{REGISTRY.origin}/_/oidc/mint-token":
+    elif method == "POST" and url == f"{registry.origin}/_/oidc/mint-token":
         kind, bound = "mint", MAX_RESPONSE_BYTES
     else:
         require(
@@ -109,7 +110,7 @@ def request_kind(method: str, url: str, maximum: int) -> str:
                 for key, value in parse_qsl(parsed.query)
                 if key == "audience"
             ]
-            == ["testpypi"],
+            == [registry.name],
             "unadmitted bootstrap effect",
         )
         kind, bound = "oidc", MAX_RESPONSE_BYTES
@@ -126,12 +127,14 @@ class JournalTransport:
         phase: str,
         retain: Callable[[str, bytes], None],
         *,
+        registry: PythonRegistry,
         window: JsonValue = None,
         clock: Callable[[], float] = time.time,
         monotonic: Callable[[], float] = time.monotonic,
         secrets: tuple[str, ...] = (),
     ) -> None:
         """Hold the fixed authority and credentials only within this process."""
+        self.registry = registry
         self.transport = transport
         self.limits = PHASE_LIMITS[phase]
         self.counts = dict.fromkeys(self.limits, 0)
@@ -169,7 +172,7 @@ class JournalTransport:
         maximum_bytes: int,
     ) -> PythonHttpResponse:
         """Send once; expiry does not discard an already admitted response."""
-        kind = request_kind(method, url, maximum_bytes)
+        kind = request_kind(method, url, maximum_bytes, registry=self.registry)
         require(
             kind in self.limits and self.counts[kind] < self.limits[kind],
             "bootstrap effect budget exhausted",
@@ -265,7 +268,12 @@ class ReplayTransport:
     """Consume original noncredential responses in recorded order."""
 
     def __init__(
-        self, files: dict[str, bytes], phase: str, *, window: JsonValue = None
+        self,
+        files: dict[str, bytes],
+        phase: str,
+        *,
+        registry: PythonRegistry,
+        window: JsonValue = None,
     ) -> None:
         """Validate raw journals and finite timing without network access."""
         records = parse_json_strict(files["requests.json"])
@@ -293,6 +301,7 @@ class ReplayTransport:
                 cast("str", record["method"]),
                 cast("str", record["url"]),
                 cast("int", record["maximum-bytes"]),
+                registry=registry,
             )
             require(
                 kind == record["kind"] and kind in limits,

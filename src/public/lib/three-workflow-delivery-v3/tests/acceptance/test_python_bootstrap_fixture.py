@@ -4,8 +4,7 @@ from dataclasses import replace
 
 import pytest
 from three_workflow_delivery_v3.acceptance.python_bootstrap_contract import (
-    ACCOUNT,
-    SENTINEL,
+    ACCOUNTS,
     WORKFLOW,
     BootstrapRequest,
     phase_binding,
@@ -41,19 +40,20 @@ RUN = 911
 TOOLING = "c" * 40
 
 
-def bootstrap_request(fixtures):
+def bootstrap_request(fixtures, registry_name="testpypi"):
     """Construct prospective authority for one modeled or real original pair."""
     wheel = fixtures.distributions["wheel"]
+    registry = PythonRegistry(registry_name)
     return BootstrapRequest(
         canonicalize(
             {
                 "schema": "workflow-delivery/v3/python-bootstrap-request",
                 "generation": "1" * 32,
-                "registry": "testpypi",
-                "account": ACCOUNT,
+                "registry": registry.name,
+                "account": ACCOUNTS[registry.name],
                 "project": "hcoona-release-smoke-python",
                 "workflow": WORKFLOW,
-                "profile-digest": PythonRegistry("testpypi").profile_digest,
+                "profile-digest": registry.profile_digest,
                 "source": {
                     "commit": wheel.witness.target,
                     "version": wheel.witness.nbgv.pep440_version,
@@ -64,8 +64,8 @@ def bootstrap_request(fixtures):
                 },
                 "environment": {
                     "id": 17,
-                    "name": "workflow-delivery-v3-python-testpypi",
-                    "sentinel": SENTINEL,
+                    "name": registry.environment,
+                    "sentinel": registry.environment + "/v1",
                 },
                 "authorization": {
                     "url": "https://github.com/hcoona/three/issues/843",
@@ -128,9 +128,9 @@ def bootstrap_fixtures():
     return BootstrapFixtures(distributions, evidence)
 
 
-def prepared_files(fixtures):
+def prepared_files(fixtures, registry_name="testpypi"):
     """Form the actual retained prepare envelope without mocking validators."""
-    request = bootstrap_request(fixtures)
+    request = bootstrap_request(fixtures, registry_name)
     return {
         **fixtures.files(),
         "request.json": request.content,
