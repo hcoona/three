@@ -6,7 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace WorkflowDeliveryV3NuGetAuthority.Tests;
 
 [TestClass]
-public sealed class AuthorityProtocolTests
+public sealed class AuthorityProtocolTests(TestContext testContext)
 {
     private const string RequestSchema =
         "workflow-delivery/v3/static-reference-nuget-authority-request";
@@ -96,20 +96,13 @@ public sealed class AuthorityProtocolTests
         };
         startInfo.ArgumentList.Add(authorityPath);
 
-        using Process process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("NuGet authority did not start.");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        Task<string> outputTask = process.StandardOutput.ReadToEndAsync(
-            timeout.Token);
-        Task<string> errorTask = process.StandardError.ReadToEndAsync(
-            timeout.Token);
-        await process.StandardInput.WriteAsync(request.AsMemory(), timeout.Token);
-        process.StandardInput.Close();
-        await process.WaitForExitAsync(timeout.Token);
-        string output = await outputTask;
-        string error = await errorTask;
+        (int exitCode, string output, string error) = await AuthorityProcess.RunAsync(
+            startInfo,
+            request,
+            family,
+            testContext);
 
-        Assert.AreEqual(0, process.ExitCode, error);
+        Assert.AreEqual(0, exitCode, error);
         Assert.AreEqual(string.Empty, error);
         using JsonDocument response = JsonDocument.Parse(output);
         JsonElement root = response.RootElement;
