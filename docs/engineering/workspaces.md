@@ -23,8 +23,9 @@ packages without those scripts. Review needed install scripts with
 under `src/`; there is no separate top-level `OnePython/` workspace. Project
 manifests own their dependencies, supported versions and package contracts.
 
-The root `.python-version` and V3 package runtime constant are generated from
-`mise.lock`, checked against `mise.toml`. After a Python lock update, run
+The root `.python-version`, setup-uv configuration `.config/uv/uv.toml`, and
+V3 package runtime constants are generated from `mise.lock`, checked against
+`mise.toml`. After a Python or UV lock update, run
 `mise run sync:python-version`; HK checks projection drift. Synchronize an
 existing environment before using `--no-sync`. For example:
 

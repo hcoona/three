@@ -18,6 +18,10 @@ from three_workflow_delivery_v3._python_build_backend import (
     HATCHLING_REQUIREMENT,
     HATCHLING_VERSION,
 )
+from three_workflow_delivery_v3._python_runtime import (
+    PYTHON_VERSION,
+    UV_VERSION,
+)
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
@@ -55,8 +59,8 @@ PYTHON_POLICY = (
     "eng/workflow-delivery/v3/policies/hcoona-release-smoke-python.yml"
 )
 PYTHON_TOOLCHAIN = (
-    ("python", "3.14.3"),
-    ("uv", "0.10.9"),
+    ("python", PYTHON_VERSION),
+    ("uv", UV_VERSION),
     ("hatchling", HATCHLING_VERSION),
     ("nbgv", "3.10.94"),
     ("nbgv-python", "2.1.0.dev1"),
@@ -506,7 +510,10 @@ def provide_python_repository_facts(
             if importlib.metadata.version(name) != dict(PYTHON_TOOLCHAIN)[name]:
                 message = "Python projection implementation version mismatch"
                 raise ValueError(message)
-        if run_native(("uv", "--version"), isolated).strip() != "uv 0.10.9":
+        if (
+            run_native(("uv", "self", "version", "--short"), isolated).strip()
+            != UV_VERSION
+        ):
             message = "Python Provider UV version mismatch"
             raise ValueError(message)
         if (

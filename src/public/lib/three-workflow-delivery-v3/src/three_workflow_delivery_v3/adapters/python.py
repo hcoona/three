@@ -32,6 +32,10 @@ from packaging.version import Version
 from three_workflow_delivery_v3._python_build_backend import (
     HATCHLING_REQUIREMENT,
 )
+from three_workflow_delivery_v3._python_runtime import (
+    PYTHON_VERSION,
+    UV_VERSION,
+)
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonicalize,
@@ -464,17 +468,18 @@ def _tools(cwd: Path) -> tuple[str, str]:
     uv = shutil.which("uv")
     if (
         platform.system() != "Linux"
-        or platform.python_version() != "3.14.3"
+        or platform.python_version() != PYTHON_VERSION
         or not uv
     ):
         message = (
-            "Python smoke requires Linux with pinned CPython 3.14.3 and UV"
+            "Python smoke requires Linux with pinned "
+            f"CPython {PYTHON_VERSION} and UV"
         )
         raise ValueError(message)
     evidence = parse_canonical_json(
-        _execute((uv, "--version"), cwd, _environment(""))
+        _execute((uv, "self", "version", "--short"), cwd, _environment(""))
     )
-    if evidence["stdout"] != "uv 0.10.9\n":
+    if evidence["stdout"] != f"{UV_VERSION}\n":
         message = "Python smoke UV tool version mismatch"
         raise ValueError(message)
     return uv, str(Path(sys.executable).resolve())

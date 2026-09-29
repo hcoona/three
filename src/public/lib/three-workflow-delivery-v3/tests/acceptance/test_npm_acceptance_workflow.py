@@ -150,9 +150,8 @@ def test_probe_token_env_binding_and_prerequisite_order():  # noqa: PLR0915
         "ref": "${{ github.sha }}",
         "persist-credentials": False,
     }
-    uv_version = _step(UV)["with"]["version"]
-    assert isinstance(uv_version, str)
-    assert uv_version.strip()
+    assert _step(UV)["with"]["version-file"] == ".config/uv/uv.toml"
+    assert "version" not in _step(UV)["with"]
     assert _step(MISE)["with"] == {
         "install": False,
         "working_directory": "${{ runner.temp }}",

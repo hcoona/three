@@ -5,8 +5,7 @@ runs:
   steps:
     - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
       with:
-        version: 0.10.9
-        python-version: 3.14.3
+        version-file: .config/uv/uv.toml
         github-token: ''
     - shell: bash
       run: |

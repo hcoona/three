@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,7 @@ COMMAND_RECORDER = r"""
 import json
 import os
 import sys
+import tomllib
 from pathlib import Path
 
 command = [Path(sys.argv[0]).name, *sys.argv[1:]]
@@ -462,8 +464,13 @@ def test_python_check_has_consumed_toolchain_prerequisites(
     )
     assert "python-version" not in prerequisites["astral-sh/setup-uv"]["with"]
     assert (
-        prerequisites["astral-sh/setup-uv"]["with"]["version"]
-        == dict(PYTHON_TOOLCHAIN)["uv"]
+        tomllib.loads(
+            (
+                REPO_ROOT
+                / prerequisites["astral-sh/setup-uv"]["with"]["version-file"]
+            ).read_text()
+        )["required-version"]
+        == "==" + dict(PYTHON_TOOLCHAIN)["uv"]
     )
     for action, flag in (
         ("actions/setup-dotnet", "python_dotnet"),

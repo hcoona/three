@@ -528,7 +528,8 @@
         "commands": ["uv run --no-project python eng/scripts/sync_python_version.py --write"],
         "fileFilters": [
           ".python-version",
-          "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_runtime.py"
+          "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_runtime.py",
+          ".config/uv/uv.toml"
         ],
         "executionMode": "update"
       }
@@ -557,7 +558,8 @@
         "fileFilters": [
           "global.json",
           ".python-version",
-          "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_runtime.py"
+          "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_runtime.py",
+          ".config/uv/uv.toml"
         ],
         "executionMode": "update"
       }
@@ -586,11 +588,19 @@
       "matchDepNames": ["uv"],
       "groupName": "Mise uv",
       "postUpgradeTasks": {
-        "commands": ["mise install --locked uv", "mise run --skip-tools --force update-uv-lock"],
+        "commands": [
+          "mise install --locked uv",
+          "uv run --no-project python eng/scripts/sync_python_version.py --write",
+          "mise run --skip-tools --force update-uv-lock"
+        ],
         "fileFilters": [
           "uv.lock",
           "eng/workflow-delivery/v3/python-build-constraints.txt",
-          "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_build_backend.py"
+          "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_build_backend.py",
+          "mise.lock",
+          ".python-version",
+          ".config/uv/uv.toml",
+          "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_runtime.py"
         ],
         "executionMode": "branch"
       },

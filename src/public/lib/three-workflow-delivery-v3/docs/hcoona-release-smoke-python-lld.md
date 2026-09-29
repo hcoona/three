@@ -81,8 +81,12 @@ The shared native-lock reader requires an unambiguous public-PyPI dependency
 closure and exact wheel hashes. This keeps native manifests and locks as the
 version authorities without a second dependency inventory.
 
-The remaining producer baseline uses CPython 3.14.3, UV 0.10.9, NBGV 3.10.94,
-`nbgv-python` 2.1.0.dev1 and packaging 26.3. Updating a producer dependency changes
+CPython and UV versions are owned by `mise.toml` and `mise.lock`. The existing
+`sync:python-version` task projects them into the installed V3 runtime and
+projects UV into `.config/uv/uv.toml`, consumed by setup-uv. Provider and build
+checks consume those package constants, preserving exact toolchain binding
+without ambient configuration reads. The remaining producer baseline uses
+NBGV 3.10.94, `nbgv-python` 2.1.0.dev1 and packaging 26.3. Updating a producer dependency changes
 the frozen toolchain facts and source inputs; it does not grant publication or
 reuse qualification from another revision.
 
