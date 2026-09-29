@@ -267,7 +267,42 @@ class Campaign:
             assert proof[f"read_continuation_{name}_sha256"] == digest(
                 sidecar / f"{name}.json"
             )
+        binding = read(sidecar / "binding.json")
+        admission = read(sidecar / "independent-admission.json")
+        initialization = read(sidecar / "initialization.json")
+        ledger = read(sidecar / "ledger.json")
         completion = read(sidecar / "completion.json")
+        original = read(directory / "operation/ledger.json")
+        for record, suffix in (
+            (binding, ""),
+            (admission, "-admission"),
+            (initialization, "-initialization"),
+            (ledger, "-ledger"),
+            (completion, "-completion"),
+        ):
+            assert record["schema"] == f"testpypi-read-continuation{suffix}-v2"
+            assert record["original_deadline"] == original["deadline"]
+            assert record["audit_deadline"] == EXPIRY.isoformat()
+        assert binding["governance_expiry"] == EXPIRY.isoformat()
+        assert (
+            proof["read_continuation_original_deadline"] == original["deadline"]
+        )
+        assert proof["read_continuation_audit_deadline"] == EXPIRY.isoformat()
+        assert (
+            datetime.fromisoformat(original["started"])
+            <= datetime.fromisoformat(completion["completed"])
+            < EXPIRY
+        )
+        binding_digest = digest(sidecar / "binding.json")
+        admission_digest = digest(sidecar / "independent-admission.json")
+        for record in (admission, initialization, ledger, completion):
+            assert record["binding_sha256"] == binding_digest
+        for record in (initialization, ledger):
+            assert record["admission_sha256"] == admission_digest
+        for record in (binding, admission, ledger):
+            assert record["original_ledger_sha256"] == digest(
+                directory / "operation/ledger.json"
+            )
         assert completion["destination_state"] == "wheel-only"
         assert completion["binding_sha256"] == digest(sidecar / "binding.json")
         assert completion["ledger_sha256"] == digest(sidecar / "ledger.json")
@@ -275,7 +310,13 @@ class Campaign:
             directory / "operation/ledger.json"
         )
         bound_files(sidecar, completion["files_sha256"])
-        assert read(sidecar / "ledger.json")["classification"] == "complete"
+        assert {
+            "binding.json",
+            "independent-admission.json",
+            "initialization.json",
+            "protocol.md",
+        } <= completion["files_sha256"].keys()
+        assert ledger["classification"] == "complete"
         assert proof["destination_state"] == "wheel-only"
         assert proof["native_audit_complete"] is True
 

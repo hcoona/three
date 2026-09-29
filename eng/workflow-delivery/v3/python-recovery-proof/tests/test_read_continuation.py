@@ -25,18 +25,45 @@ OLD_TARGET = "86b63fd09fcf3d20ee2615b35e37f4a541d0dc27"
 OLD_TREE = "c6ca3df1c54915433b19767621caedb07b8b52b8"
 STARTED = "2026-09-28T21:55:15.465230+00:00"
 DEADLINE = "2026-09-29T01:55:15.465230+00:00"
+AUDIT_DEADLINE = EXPIRY.isoformat()
 RUN = 36489233271
 
 
+def protected_governance(campaign, registry, monkeypatch, changes):
+    """Bind real local Governance bytes with optional invalid fixture fields."""
+    checkout = campaign.directory.parent / "protected-checkout"
+    governance_path = (
+        checkout
+        / ".github/workflow-delivery/governance/hcoona-release-smoke-python-testpypi.json"
+    )
+    governance_path.parent.mkdir(parents=True)
+    governance = {
+        "schema": "workflow-delivery/v3/python-governance-v2",
+        "state": "ready",
+        "live_enabled": True,
+        "operation-profile-digest": registry.profile_digest,
+        "inspected-at": "2026-09-28T02:27:04.836609+00:00",
+        "expires-at": AUDIT_DEADLINE,
+    }
+    governance.update(changes)
+    save_json(governance_path, governance)
+    monkeypatch.setattr(read_continuation, "CHECKOUT", checkout)
+    return governance_path
+
+
 @pytest.fixture
-def continuation_fixture(campaign, native_pair, monkeypatch):
+def continuation_fixture(campaign, native_pair, monkeypatch, request):
     """Build real binding/gate records while replacing only reader/source seams."""
     registry = PythonRegistry("testpypi")
+    governance_path = protected_governance(
+        campaign, registry, monkeypatch, getattr(request, "param", {})
+    )
     op, original = construct(
         campaign,
         target=OLD_TARGET,
         tree=OLD_TREE,
         profile=registry.profile_digest,
+        governance_sha256=digest(governance_path),
     )
     root = op.directory.parent
     sidecar = root / "read-continuation"
@@ -124,7 +151,7 @@ def continuation_fixture(campaign, native_pair, monkeypatch):
     )
     (sidecar / "protocol.md").write_text("Accepted corrected read protocol")
     binding = {
-        "schema": "testpypi-read-continuation-v1",
+        "schema": "testpypi-read-continuation-v2",
         "purpose": "resolve-terminal-wheel-only",
         **{
             key: original[key]
@@ -145,6 +172,7 @@ def continuation_fixture(campaign, native_pair, monkeypatch):
         "original_ledger_sha256": digest(op.ledger_path),
         "original_started": STARTED,
         "original_deadline": DEADLINE,
+        "audit_deadline": AUDIT_DEADLINE,
         "governance_expiry": EXPIRY.isoformat(),
         "caller_source": "f" * 40,
         "caller_tree": "e" * 40,
@@ -162,7 +190,7 @@ def continuation_fixture(campaign, native_pair, monkeypatch):
     }
     save_json(sidecar / "binding.json", binding)
     admission = {
-        "schema": "testpypi-read-continuation-admission-v1",
+        "schema": "testpypi-read-continuation-admission-v2",
         "reviewer": REVIEWER,
         "result": "passed",
         "binding_sha256": digest(sidecar / "binding.json"),
@@ -175,6 +203,7 @@ def continuation_fixture(campaign, native_pair, monkeypatch):
                 "original_binding_sha256",
                 "original_ledger_sha256",
                 "original_deadline",
+                "audit_deadline",
                 "governance_sha256",
                 "profile",
                 "frozen_inputs_sha256",
@@ -218,25 +247,31 @@ def continuation_fixture(campaign, native_pair, monkeypatch):
             ),
         ),
     )
-    monkeypatch.setattr(
-        read_continuation,
-        "PythonInputs",
-        lambda *_args: SimpleNamespace(
+    reader_calls = []
+
+    def reader_inputs(*args):
+        reader_calls.append(args)
+        return SimpleNamespace(
             decision=lambda: decision, content=lambda role: role.encode()
-        ),
-    )
-    clock = [datetime(2026, 9, 28, 23, tzinfo=UTC)]
+        )
+
+    monkeypatch.setattr(read_continuation, "PythonInputs", reader_inputs)
+    clock = [datetime(2026, 9, 29, 3, tzinfo=UTC)]
     calls, replies = [], []
 
     def wire(url, headers, maximum_bytes):
         calls.append((url, headers, maximum_bytes))
         assert replies
-        return replies.pop(0)
+        reply = replies.pop(0)
+        if isinstance(reply, BaseException):
+            raise reply
+        return reply
 
     def caller():
         return Continuation(root, now=lambda: clock[0], wire=wire)
 
     return SimpleNamespace(
+        governance_path=governance_path,
         root=root,
         sidecar=sidecar,
         binding=binding,
@@ -250,6 +285,7 @@ def continuation_fixture(campaign, native_pair, monkeypatch):
         registry=registry,
         pair=native_pair,
         verified=verified,
+        reader_calls=reader_calls,
     )
 
 
@@ -278,7 +314,23 @@ def test_readonly_continuation_preserves_original_authority_and_exposes_no_mutat
         )
     )
     completion = caller.step()
+    assert datetime.fromisoformat(DEADLINE) < fixture.clock[0] < EXPIRY
     assert completion["destination_state"] == "wheel-only"
+    assert datetime.fromisoformat(completion["completed"]) < EXPIRY
+    for name, schema in (
+        ("binding", "testpypi-read-continuation-v2"),
+        ("independent-admission", "testpypi-read-continuation-admission-v2"),
+        ("initialization", "testpypi-read-continuation-initialization-v2"),
+        ("ledger", "testpypi-read-continuation-ledger-v2"),
+        ("completion", "testpypi-read-continuation-completion-v2"),
+    ):
+        record = read(fixture.sidecar / f"{name}.json")
+        assert record["schema"] == schema
+        assert record["original_deadline"] == DEADLINE
+        assert record["audit_deadline"] == AUDIT_DEADLINE
+    assert read(fixture.root / "operation/inputs/outcome.json") == {
+        "outcome": "failed"
+    }
     assert (
         completion["original_ledger_sha256"] == hashes["operation/ledger.json"]
     )
@@ -311,7 +363,7 @@ def test_continuation_tampering_or_expiry_blocks_before_network(
     """Unchanged owner authority still requires exact original and independent facts."""
     fixture = continuation_fixture
     if fault == "deadline":
-        fixture.clock[0] = datetime.fromisoformat(DEADLINE)
+        fixture.clock[0] = datetime.fromisoformat(AUDIT_DEADLINE)
     elif fault in ("original-ledger", "original-binding"):
         path = fixture.root / (
             "operation/ledger.json"
@@ -338,10 +390,11 @@ def test_continuation_tampering_or_expiry_blocks_before_network(
     if fault == "deadline":
         assert not (fixture.sidecar / "initialization.json").exists()
         assert fixture.verified == []
+        assert fixture.reader_calls == []
 
 
 def pending_continuation(fixture):
-    """Retain a genuinely admitted pending read before its original deadline."""
+    """Retain a genuinely admitted pending read before its independent audit deadline."""
     fixture.replies.append(response(index(fixture.registry, (), 100)))
     with pytest.raises(ReadPending):
         fixture.caller().step()
@@ -366,7 +419,8 @@ def test_expired_admitted_pending_continuation_records_stop_without_more_work(
     files = sidecar_bytes(fixture)
     campaign_before = fixture.campaign.read()
     calls, verified = list(fixture.calls), list(fixture.verified)
-    fixture.clock[0] = datetime.fromisoformat(DEADLINE)
+    readers = list(fixture.reader_calls)
+    fixture.clock[0] = datetime.fromisoformat(AUDIT_DEADLINE)
     with pytest.raises(ReadStopped, match="original read deadline exhausted"):
         fixture.caller().step()
     after = read(fixture.sidecar / "ledger.json")
@@ -394,11 +448,18 @@ def test_expired_admitted_pending_continuation_records_stop_without_more_work(
         assert digest(fixture.root / name) == expected
     assert fixture.calls == calls
     assert fixture.verified == verified
+    assert fixture.reader_calls == readers
     assert not (fixture.sidecar / "completion.json").exists()
 
 
 @pytest.mark.parametrize(
-    "fault", ["malformed-ledger", "unbound-initialization", "changed-binding"]
+    "fault",
+    [
+        "malformed-ledger",
+        "unbound-initialization",
+        "changed-binding",
+        "changed-governance",
+    ],
 )
 def test_expired_continuation_cannot_rewrite_malformed_or_unbound_state(
     continuation_fixture,
@@ -413,6 +474,10 @@ def test_expired_continuation_cannot_rewrite_malformed_or_unbound_state(
         value = read(fixture.sidecar / "initialization.json")
         value["binding_sha256"] = "f" * 64
         save_json(fixture.sidecar / "initialization.json", value)
+    elif fault == "changed-governance":
+        fixture.governance_path.write_bytes(
+            fixture.governance_path.read_bytes() + b"\n"
+        )
     else:
         value = read(fixture.sidecar / "binding.json")
         value["original_ledger_sha256"] = "f" * 64
@@ -420,13 +485,15 @@ def test_expired_continuation_cannot_rewrite_malformed_or_unbound_state(
     files = sidecar_bytes(fixture)
     campaign_before = fixture.campaign.read()
     calls, verified = list(fixture.calls), list(fixture.verified)
-    fixture.clock[0] = datetime.fromisoformat(DEADLINE)
+    readers = list(fixture.reader_calls)
+    fixture.clock[0] = datetime.fromisoformat(AUDIT_DEADLINE)
     with pytest.raises((ReadStopped, AssertionError, ValueError)):
         fixture.caller().step()
     assert sidecar_bytes(fixture) == files
     assert fixture.campaign.read() == campaign_before
     assert fixture.calls == calls
     assert fixture.verified == verified
+    assert fixture.reader_calls == readers
 
 
 def test_expired_completed_continuation_keeps_original_completion_unchanged(
@@ -443,7 +510,8 @@ def test_expired_completed_continuation_keeps_original_completion_unchanged(
     fixture.caller().step()
     files = sidecar_bytes(fixture)
     calls, verified = list(fixture.calls), list(fixture.verified)
-    fixture.clock[0] = datetime.fromisoformat(DEADLINE)
+    readers = list(fixture.reader_calls)
+    fixture.clock[0] = datetime.fromisoformat(AUDIT_DEADLINE)
     with pytest.raises(ReadStopped, match="original read deadline exhausted"):
         fixture.caller().step()
     assert sidecar_bytes(fixture) == files
@@ -454,6 +522,7 @@ def test_expired_completed_continuation_keeps_original_completion_unchanged(
     )
     assert fixture.calls == calls
     assert fixture.verified == verified
+    assert fixture.reader_calls == readers
 
 
 def test_unknown_continuation_state_blocks_new_version_scenario(
@@ -493,6 +562,8 @@ def test_exact_continuation_closure_allows_new_version_without_refilling_effects
         dispatch_resolved=True,
         destination_state="wheel-only",
         native_audit_complete=True,
+        read_continuation_original_deadline=DEADLINE,
+        read_continuation_audit_deadline=AUDIT_DEADLINE,
         conclusion="exact-partial",
         ledger_sha256=digest(fixture.root / "operation/ledger.json"),
         **{
@@ -545,6 +616,8 @@ def test_wheel_only_continuation_cannot_adopt_known_complete_closure(
         dispatch_resolved=True,
         destination_state="complete",
         native_audit_complete=True,
+        read_continuation_original_deadline=DEADLINE,
+        read_continuation_audit_deadline=AUDIT_DEADLINE,
         conclusion="terminal-complete",
         outcome_sha256=digest(fixture.root / "operation/inputs/outcome.json"),
         files_sha256={
