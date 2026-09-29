@@ -82,13 +82,21 @@ def main() -> None:
         output = directory / "registry-audit"
         purpose = gate["purpose"]
         assert purpose in ("diagnostic", "seed-proof", "recovery-proof")
-        expected = originals if purpose == "recovery-proof" else originals[:1]
+        expected = originals[:1] if purpose == "seed-proof" else originals
         result_path = directory / "inputs/result.json"
         baseline = (
             successful_index(json.loads(result_path.read_bytes()))
             if result_path.exists()
             else None
         )
+        if (
+            baseline is None
+            and (directory / "inputs/observation.json").exists()
+        ):
+            prior = inputs.observation().native
+            if prior.files:
+                assert prior.index_response is not None
+                baseline = prior.index_response.body
         audit = RegistryAudit(
             output,
             state,
@@ -97,6 +105,7 @@ def main() -> None:
             expected,
             save=op.save,
             baseline=baseline,
+            purpose=purpose,
         )
         observation = audit.step()
         (output / "observation.json").write_bytes(

@@ -392,3 +392,131 @@ def test_gate_path_escape_is_rejected(campaign) -> None:
     )
     with pytest.raises(AssertionError):
         gate(directory, "independent-execution-gate.json", binding, "execution")
+
+
+def failed_recovery(campaign):
+    """Retain failed publication evidence and both original reservations."""
+    seed, binding = construct(campaign)
+    with seed.deadline():
+        campaign.reserve_upload("01", "01", TARGET)
+    close(campaign, seed, binding)
+    op, binding = construct(campaign, attempt="02", mode="none")
+    with op.deadline():
+        campaign.reserve_upload("01", "02", TARGET)
+        op.ledger["run"] = 102
+        op.save()
+    outcome = op.directory / "inputs/outcome.json"
+    outcome.parent.mkdir(exist_ok=True)
+    save_json(outcome, {"outcome": "failed", "reason": "ambiguous upload"})
+    facts = {
+        "destination_state": "complete",
+        "outcome_sha256": digest(outcome),
+        "files_sha256": {"operation/inputs/outcome.json": digest(outcome)},
+    }
+    return op, binding, outcome, facts
+
+
+def test_known_complete_failure_allows_only_new_version_without_success_promotion(
+    campaign,
+):
+    """Exact diagnosis closes failure without rewriting Outcome or spent effects."""
+    op, binding, outcome, facts = failed_recovery(campaign)
+    ledger_before = op.ledger_path.read_bytes()
+    outcome_before = outcome.read_bytes()
+    close(campaign, op, binding, "terminal-complete", **facts)
+    closed = campaign.read()
+    assert closed["stopped"] is False
+    assert (
+        closed["scenarios"][0]["attempts"][1]["closure"] == "terminal-complete"
+    )
+    proof = read(op.directory.parent / "independent-closure-gate.json")
+    assert (
+        not {
+            "seed_proof_accepted",
+            "recovery_proof_accepted",
+            "clean_consumers",
+        }
+        & proof.keys()
+    )
+    construct(campaign, scenario="02", version="0.1.0b32")
+    state = campaign.read()
+    assert [s["version"] for s in state["scenarios"]] == [
+        "0.1.0b31",
+        "0.1.0b32",
+    ]
+    assert [
+        a["uploads_reserved"] for s in state["scenarios"] for a in s["attempts"]
+    ] == [["wheel"], ["sdist"], []]
+    assert state["scenarios"][0] == closed["scenarios"][0]
+    assert op.ledger_path.read_bytes() == ledger_before
+    assert outcome.read_bytes() == outcome_before
+    assert read(outcome)["outcome"] == "failed"
+    assert state["stopped"] is False
+
+
+@pytest.mark.parametrize(
+    ("scenario", "attempt", "mode"),
+    [
+        ("01", "03", "none"),
+        ("01", "03", "stop-after-wheel"),
+        ("02", "01", "stop-after-wheel"),
+    ],
+)
+def test_known_complete_failure_rejects_same_version_successor(
+    campaign, scenario, attempt, mode
+):
+    """Neither same-version recovery nor a renamed same-version scenario is admitted."""
+    op, binding, _outcome, facts = failed_recovery(campaign)
+    close(campaign, op, binding, "terminal-complete", **facts)
+    before = campaign.read()
+    prepare(campaign, scenario=scenario, attempt=attempt, mode=mode)
+    with pytest.raises(AssertionError):
+        campaign.reserve(scenario, attempt)
+    assert campaign.read() == before
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("destination_state", "unknown"),
+        ("destination_state", "wheel-only"),
+        ("native_audit_complete", False),
+        ("terminal", False),
+        ("publisher_quiescent", False),
+        ("dispatch_resolved", False),
+        ("run", 999),
+        ("outcome_sha256", "f" * 64),
+        ("outcome_sha256", None),
+        ("files_sha256", {}),
+    ],
+)
+def test_known_complete_closure_requires_exact_evidence_and_resolved_run(
+    campaign, field, value
+):
+    """Incomplete state or unbound original evidence cannot justify a successor."""
+    op, binding, outcome, facts = failed_recovery(campaign)
+    original_outcome = outcome.read_bytes()
+    before = campaign.read()
+    facts[field] = value
+    with pytest.raises((AssertionError, KeyError)):
+        close(campaign, op, binding, "terminal-complete", **facts)
+    assert campaign.read() == before
+    assert outcome.read_bytes() == original_outcome
+    prepare(campaign, scenario="02", version="0.1.0b32")
+    with pytest.raises(AssertionError, match="unresolved"):
+        campaign.reserve("02", "01")
+    assert campaign.read() == before
+
+
+def test_changed_failed_outcome_after_complete_closure_blocks_successor(
+    campaign,
+):
+    """Known-complete closure cannot erase or retroactively promote failure."""
+    op, binding, outcome, facts = failed_recovery(campaign)
+    close(campaign, op, binding, "terminal-complete", **facts)
+    before = campaign.read()
+    save_json(outcome, {"outcome": "success"})
+    prepare(campaign, scenario="02", version="0.1.0b32")
+    with pytest.raises(AssertionError):
+        campaign.reserve("02", "01")
+    assert campaign.read() == before

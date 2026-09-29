@@ -239,7 +239,23 @@ class Campaign:
         else:
             assert digest(ledger) == attempt["ledger_sha256"]
         self._verify_continuation(directory, proof)
+        if proof["conclusion"] == "terminal-complete":
+            self._verify_known_complete(directory, proof)
         return proof
+
+    @staticmethod
+    def _verify_known_complete(directory: Any, proof: Any) -> None:
+        """Retain known complete diagnosis without rewriting the original Outcome."""
+        assert proof["destination_state"] == "complete"
+        assert proof["native_audit_complete"] is True
+        outcome = directory / "operation/inputs/outcome.json"
+        assert proof["outcome_sha256"] == (
+            digest(outcome) if outcome.exists() else None
+        )
+        if outcome.exists():
+            assert proof["files_sha256"][
+                "operation/inputs/outcome.json"
+            ] == digest(outcome)
 
     @staticmethod
     def _verify_continuation(directory: Any, proof: Any) -> None:
@@ -290,12 +306,17 @@ class Campaign:
                     "no-dispatch",
                     "terminal-no-upload",
                     "exact-partial",
+                    "terminal-complete",
                 )
                 assert closure["destination_state"] in (
                     "absent",
                     "wheel-only",
                     "complete",
                 )
+                if closure["conclusion"] == "terminal-complete":
+                    assert scenario_id != previous_scenario["id"], (
+                        "known-complete closure requires a new-version scenario"
+                    )
             if not scenarios or scenario_id != scenarios[-1]["id"]:
                 assert len(scenarios) < 5
                 assert scenario_id == f"{len(scenarios) + 1:02}"
@@ -431,6 +452,7 @@ class Campaign:
                 "no-dispatch",
                 "terminal-no-upload",
                 "exact-partial",
+                "terminal-complete",
                 "audited-success",
             )
             ledger_path = directory / "operation/ledger.json"
@@ -464,6 +486,8 @@ class Campaign:
                 if conclusion == "exact-partial":
                     assert proof["destination_state"] == "wheel-only"
                     assert proof["native_audit_complete"] is True
+                if conclusion == "terminal-complete":
+                    self._verify_known_complete(directory, proof)
                 if conclusion == "audited-success":
                     assert binding["mode"] == "none"
                     assert proof["destination_state"] == "complete"

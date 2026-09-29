@@ -299,6 +299,8 @@ class Operator:
         requests.append(entry)
         self.save()  # Reserve every reached slot before credentials or transport.
         connection = None
+        response_status = None
+        response_headers = {}
         try:
             headers = {
                 "Accept": "application/vnd.github+json" if api else "*/*",
@@ -338,6 +340,7 @@ class Operator:
                 headers,
             )
             response = connection.getresponse()
+            response_status = response.status
             response_headers = dict(response.getheaders())
             header_path = self.directory / (stem + ".headers.json")
             header_path.write_text(
@@ -368,7 +371,6 @@ class Operator:
                 sha256=hashlib.sha256(content).hexdigest(),
                 body=body_path.name,
             )
-            self.save()
             self.remaining()
             assert len(content) <= body_limit, (
                 "operator response budget exceeded"
@@ -382,6 +384,8 @@ class Operator:
                     reset_errors=response.status
                     not in (301, 302, 303, 307, 308),
                 )
+            else:
+                self.save()
             assert response.status in (200, 201, 204) or (
                 category in ("artifact", "log")
                 and response.status in (301, 302, 303, 307, 308)
@@ -397,13 +401,18 @@ class Operator:
                     body=partial.name,
                     retained_sha256=hashlib.sha256(retained).hexdigest(),
                 )
-            self.save()
             if pacer is not None and not isinstance(
                 error, (ReadPending, ReadStopped)
             ):
                 pacer.after(
-                    "github" if poll else "transfer", error=error, github=api
+                    "github" if poll else "transfer",
+                    status=response_status,
+                    headers=response_headers,
+                    error=error,
+                    github=api,
                 )
+            else:
+                self.save()
             raise
         finally:
             if connection is not None:

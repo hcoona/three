@@ -42,17 +42,35 @@ def successful_index(result: dict) -> bytes | None:
     return selected
 
 
-def classify(observation: Any, expected: tuple, baseline: bytes | None) -> str:
+def classify(
+    observation: Any,
+    expected: tuple,
+    baseline: bytes | None,
+    *,
+    diagnostic: bool = False,
+) -> str:
     """Require exact bytes; accept only demonstrable regression as pending."""
     assert all(item in expected for item in observation.files), (
         "conflicting target distribution"
     )
     if observation.files == expected:
         return "complete"
+    if diagnostic and baseline is None:
+        return "complete"
     assert baseline is not None, (
         "incompatible state without successful baseline"
     )
     before = parse_json_strict(baseline)
+    baseline_files = {item["filename"]: item for item in before["files"]}
+    missing = {item.filename for item in expected} - {
+        item.filename for item in observation.files
+    }
+    if diagnostic:
+        known = {item.filename for item in expected} & baseline_files.keys()
+        assert known, "successful baseline lacks admitted target files"
+        missing &= known
+        if not missing:
+            return "complete"
     response = observation.index_response
     assert response is not None and response.status == 200, (
         "unexplained target disappearance"
@@ -64,10 +82,6 @@ def classify(observation: Any, expected: tuple, baseline: bytes | None) -> str:
         "non-regressed incompatible target state"
     )
     # A prior successful index must actually contain the missing expected file.
-    missing = {item.filename for item in expected} - {
-        item.filename for item in observation.files
-    }
-    baseline_files = {item["filename"]: item for item in before["files"]}
     assert missing and missing <= baseline_files.keys(), (
         "serial alone cannot establish target regression"
     )
@@ -133,6 +147,7 @@ class RegistryAudit:
         now: Any = None,
         wire: Any = None,
         baseline: bytes | None = None,
+        purpose: str = "exact-inventory",
     ) -> None:
         """Bind the retained audit and injected deterministic dependencies."""
         self.directory = Path(directory)
@@ -144,6 +159,14 @@ class RegistryAudit:
         self.now = now or (lambda: datetime.now(UTC))
         self.wire = wire or https_get
         self.baseline = baseline
+        assert purpose in (
+            "exact-inventory",
+            "diagnostic",
+            "seed-proof",
+            "recovery-proof",
+        )
+        self.purpose = purpose
+        assert self.ledger.setdefault("purpose", purpose) == purpose
         assert registry.name == "testpypi"
         assert originals and originals[0].variant == "wheel"
         self.directory.mkdir(exist_ok=True)
@@ -251,6 +274,7 @@ class RegistryAudit:
             )
             scheduler.after(
                 "registry" if index else "transfer",
+                status=getattr(error, "retained_status", None),
                 headers=response_headers,
                 error=error,
             )
@@ -308,7 +332,6 @@ class RegistryAudit:
             content_type=safe_headers.get("content-type", ""),
             finished=self.now().isoformat(),
         )
-        self.save()
         return safe_headers
 
     def step(self) -> Any:
@@ -322,7 +345,10 @@ class RegistryAudit:
                 self.registry, self.originals[0].witness, self
             )
             classification = classify(
-                observation, self.originals, self.baseline
+                observation,
+                self.originals,
+                self.baseline,
+                diagnostic=self.purpose == "diagnostic",
             )
             if self.ledger["classification"] == "complete":
                 assert classification == "complete"
@@ -345,6 +371,14 @@ class RegistryAudit:
             self.ledger["classification"] = (
                 "complete" if classification == "complete" else "pending"
             )
+            if classification == "complete":
+                variants = tuple(item.variant for item in observation.files)
+                self.ledger["destination_state"] = {
+                    (): "absent",
+                    ("wheel",): "wheel-only",
+                    ("sdist",): "sdist-only",
+                    ("wheel", "sdist"): "complete",
+                }[variants]
             self.save()
             if classification == "regressed":
                 self.ledger["current_responses"] = {}

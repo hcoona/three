@@ -54,8 +54,10 @@ def deadline_guard(deadline: str, *, now: Any = None) -> Any:
 def transient(status: Any, headers: Any, error: Any, *, github: bool) -> bool:
     """Retry only explicit temporary transport/service and rate failures."""
     headers = {k.lower(): v for k, v in (headers or {}).items()}
-    if error is not None:
-        return not isinstance(error, ssl.SSLError) and isinstance(
+    transient_error = (
+        error is not None
+        and not isinstance(error, ssl.SSLError)
+        and isinstance(
             error,
             (
                 TimeoutError,
@@ -65,7 +67,10 @@ def transient(status: Any, headers: Any, error: Any, *, github: bool) -> bool:
                 RemoteDisconnected,
             ),
         )
-    return status in (408, 429, 500, 502, 503, 504) or (
+    )
+    if error is not None and not transient_error:
+        return False
+    retryable_status = status in (408, 429, 500, 502, 503, 504) or (
         github
         and status == 403
         and (
@@ -73,6 +78,20 @@ def transient(status: Any, headers: Any, error: Any, *, github: bool) -> bool:
             or "retry-after" in headers
         )
     )
+    if retryable_status:
+        return True
+    if status is not None and status not in (
+        200,
+        201,
+        204,
+        301,
+        302,
+        303,
+        307,
+        308,
+    ):
+        return False
+    return transient_error
 
 
 class ReadPacer:

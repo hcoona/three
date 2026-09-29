@@ -132,6 +132,8 @@ def test_valid_regression_resets_only_error_streak(clock):
         (403, None),
         (None, ssl.SSLError("invalid trust")),
         (None, ValueError("invalid content")),
+        (503, ssl.SSLError("invalid trust after status")),
+        (200, ValueError("invalid authoritative content")),
     ],
 )
 def test_hard_failures_stop_before_any_retry(clock, status, error):

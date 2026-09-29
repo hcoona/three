@@ -220,6 +220,8 @@ def test_terminal_controls_reject_missing_ambiguous_or_changed_original(
         ("seed-proof", ["wheel"]),
         ("recovery-proof", ["wheel", "sdist"]),
         ("diagnostic", ["wheel"]),
+        ("diagnostic", []),
+        ("diagnostic", ["wheel", "sdist"]),
     ],
 )
 def test_native_audit_separates_diagnostic_and_proof_consumer_requirements(
@@ -320,11 +322,14 @@ def test_native_audit_separates_diagnostic_and_proof_consumer_requirements(
         """The native parser journey is exercised by test_registry_read."""
 
         def __init__(
-            self, output, _state, _deadline, _registry, expected, **_kwargs
+            self, output, _state, _deadline, _registry, expected, **kwargs
         ):
             output.mkdir(exist_ok=True)
             audits.append(
-                tuple(distribution.variant for distribution in expected)
+                (
+                    tuple(distribution.variant for distribution in expected),
+                    kwargs.get("purpose"),
+                )
             )
 
         def step(self):
@@ -346,7 +351,12 @@ def test_native_audit_separates_diagnostic_and_proof_consumer_requirements(
 
     monkeypatch.setattr(module, "qualify_python_consumer", consumer)
     module.main()
-    assert audits == [tuple(variants)]
+    assert audits == [
+        (
+            ("wheel",) if purpose == "seed-proof" else ("wheel", "sdist"),
+            purpose,
+        )
+    ]
     assert consumers == (
         ["wheel", "sdist"] if purpose == "recovery-proof" else []
     )

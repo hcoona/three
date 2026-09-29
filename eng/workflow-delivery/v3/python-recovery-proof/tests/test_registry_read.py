@@ -94,7 +94,13 @@ def audit_fixture(tmp_path, native_pair):
             raise response
         return response
 
-    def construct(*, deadline=None, originals=None, baseline=None):
+    def construct(
+        *,
+        deadline=None,
+        originals=None,
+        baseline=...,
+        purpose="exact-inventory",
+    ):
         ledger = read(path)
         return RegistryAudit(
             tmp_path / "audit",
@@ -105,7 +111,10 @@ def audit_fixture(tmp_path, native_pair):
             save=lambda: save_json(path, ledger),
             now=lambda: clock[0],
             wire=wire,
-            baseline=baseline or index(registry, native_pair[:1], 200),
+            baseline=index(registry, native_pair[:1], 200)
+            if baseline is ...
+            else baseline,
+            purpose=purpose,
         )
 
     return SimpleNamespace(
@@ -205,7 +214,8 @@ def test_equal_or_newer_serial_without_exact_inventory_cannot_complete_proof(
     assert len(fixture.calls) == 1
 
 
-def test_conflicting_download_bytes_stop_native_audit(audit_fixture):
+@pytest.mark.parametrize("purpose", ["exact-inventory", "diagnostic"])
+def test_conflicting_download_bytes_stop_native_audit(audit_fixture, purpose):
     """Matching index metadata cannot replace distribution byte verification."""
     fixture = audit_fixture
     fixture.replies.extend(
@@ -215,7 +225,7 @@ def test_conflicting_download_bytes_stop_native_audit(audit_fixture):
         ]
     )
     with pytest.raises((AssertionError, ValueError)):
-        fixture.construct().step()
+        fixture.construct(purpose=purpose).step()
     assert read(fixture.path)["classification"] == "stopped"
     assert len(fixture.calls) == 2
     assert not (fixture.root / "audit/completion.json").exists()
@@ -302,3 +312,93 @@ def test_transient_file_read_resumes_same_index_identity_and_digest(
         503,
         200,
     ]
+
+
+def test_diagnostic_absence_without_result_or_baseline_records_known_state(
+    audit_fixture,
+):
+    """Pre-upload diagnosis resolves absence without publication proof."""
+    fixture = audit_fixture
+    fixture.replies.append(response(index(fixture.registry, (), 100)))
+    observation = fixture.construct(
+        originals=fixture.pair, baseline=None, purpose="diagnostic"
+    ).step()
+    ledger = read(fixture.path)
+    assert observation.classification == "absent"
+    assert observation.files == ()
+    assert ledger["classification"] == "complete"
+    assert ledger["purpose"] == "diagnostic"
+    assert ledger["destination_state"] == "absent"
+    assert "proof_accepted" not in ledger
+    assert [entry["kind"] for entry in ledger["requests"]] == ["index"]
+
+
+def test_diagnostic_pair_preserves_failed_outcome_without_proof_promotion(
+    audit_fixture,
+):
+    """A failed run may leave a pair that can be diagnosed exactly."""
+    fixture = audit_fixture
+    failed = fixture.root / "failed-outcome.json"
+    failed.write_text('{"outcome":"failed"}')
+    failed_digest = digest(failed)
+    fixture.replies.extend(
+        [
+            response(index(fixture.registry, fixture.pair, 201)),
+            response(fixture.pair[0].content),
+            response(fixture.pair[1].content),
+        ]
+    )
+    with pytest.raises(ReadPending):
+        fixture.construct(
+            originals=fixture.pair, baseline=None, purpose="diagnostic"
+        ).step()
+    fixture.clock[0] += timedelta(seconds=30)
+    observation = fixture.construct(
+        originals=fixture.pair, baseline=None, purpose="diagnostic"
+    ).step()
+    ledger = read(fixture.path)
+    assert observation.files == fixture.pair
+    assert ledger["classification"] == "complete"
+    assert ledger["purpose"] == "diagnostic"
+    assert ledger["destination_state"] == "complete"
+    assert "proof_accepted" not in ledger
+    assert digest(failed) == failed_digest
+    assert [entry["kind"] for entry in ledger["requests"]] == [
+        "index",
+        "file",
+        "file",
+    ]
+
+
+def test_diagnostic_regressed_absence_after_successful_wheel_remains_pending(
+    audit_fixture,
+):
+    """Diagnostic purpose cannot turn a stale index into current absence."""
+    fixture = audit_fixture
+    fixture.replies.append(response(index(fixture.registry, (), 100)))
+    with pytest.raises(ReadPending):
+        fixture.construct(originals=fixture.pair, purpose="diagnostic").step()
+    ledger = read(fixture.path)
+    assert ledger["classification"] == "pending"
+    assert ledger["purpose"] == "diagnostic"
+    assert "destination_state" not in ledger
+    assert [entry["classification"] for entry in ledger["observations"]] == [
+        "regressed"
+    ]
+    assert len(fixture.calls) == 1
+
+
+@pytest.mark.parametrize("purpose", ["seed-proof", "recovery-proof"])
+def test_proof_purposes_cannot_accept_diagnostic_absence(
+    audit_fixture, purpose
+):
+    """Neither hosted proof predicate accepts a merely known absent target."""
+    fixture = audit_fixture
+    fixture.replies.append(response(index(fixture.registry, (), 100)))
+    originals = fixture.pair[:1] if purpose == "seed-proof" else fixture.pair
+    with pytest.raises(AssertionError, match="baseline"):
+        fixture.construct(
+            originals=originals, baseline=None, purpose=purpose
+        ).step()
+    assert read(fixture.path)["classification"] == "stopped"
+    assert len(fixture.calls) == 1

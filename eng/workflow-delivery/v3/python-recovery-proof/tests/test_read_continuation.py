@@ -404,6 +404,52 @@ def test_exact_continuation_closure_allows_new_version_without_refilling_effects
     }
 
 
+def test_wheel_only_continuation_cannot_adopt_known_complete_closure(
+    continuation_fixture,
+):
+    """The historical b31 sidecar remains restricted to exact wheel-only state."""
+    fixture = continuation_fixture
+    fixture.replies.extend(
+        [
+            response(index(fixture.registry, fixture.pair[:1], 201)),
+            response(fixture.pair[0].content),
+        ]
+    )
+    fixture.caller().step()
+    write_gate(
+        fixture.root,
+        fixture.original,
+        "closure",
+        run=RUN,
+        terminal=True,
+        publisher_quiescent=True,
+        dispatch_resolved=True,
+        destination_state="complete",
+        native_audit_complete=True,
+        conclusion="terminal-complete",
+        outcome_sha256=digest(fixture.root / "operation/inputs/outcome.json"),
+        files_sha256={
+            "operation/inputs/outcome.json": digest(
+                fixture.root / "operation/inputs/outcome.json"
+            )
+        },
+        ledger_sha256=digest(fixture.root / "operation/ledger.json"),
+        **{
+            f"read_continuation_{name}_sha256": digest(
+                fixture.sidecar / f"{name}.json"
+            )
+            for name in ("binding", "ledger", "completion")
+        },
+    )
+    before = fixture.campaign.read()
+    with pytest.raises(AssertionError):
+        fixture.campaign.close("01", "01")
+    assert fixture.campaign.read() == before
+    assert read(fixture.root / "operation/inputs/outcome.json") == {
+        "outcome": "failed"
+    }
+
+
 def test_caller_admission_rejects_a_reader_imported_outside_its_pinned_checkout(
     tmp_path, monkeypatch
 ):
