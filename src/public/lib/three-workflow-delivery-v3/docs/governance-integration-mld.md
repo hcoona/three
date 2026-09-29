@@ -376,7 +376,11 @@ authorizations.
 `refs/heads/main`. Provider/Build/Quality run credential-free in their separate
 execution zone; planning and readback consume artifacts as data. `hcoona` is
 sole writer/operator and explicit reviewer, with no malicious-writer isolation
-claim. Actor, reviewer, ownership and access changes reopen trust review.
+claim. Production PyPI accepts administrator bypass within that sole-admin
+boundary; TestPyPI requires it disabled. Configuration attestation and protected
+admission retain the actual strict Boolean. This posture does not admit a bypass
+event as native Approval or waive the current-run reviewer/artifact bindings.
+Actor, reviewer, ownership and access changes reopen trust review.
 
 TestPyPI and PyPI each have an independent protected admission source binding
 project name, registry origin, OIDC audience, repository owner/name, workflow

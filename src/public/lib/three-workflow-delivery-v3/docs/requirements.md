@@ -964,7 +964,11 @@ They define a new Python scope, not implemented support or an operation grant.
   restoration. Preserve earlier failed generations without reclassification.
 - **WD-PY-007:** `hcoona` is the sole accepted writer/operator and explicit
   Approval reviewer. Self-approval confirms intent, not independent security
-  review. Live uses protected-main targets and same-revision reviewed control.
+  review. Production PyPI accepts administrator bypass enabled or disabled
+  within this sole-administrator/writer trust boundary; TestPyPI requires it
+  disabled. Retain the actual Boolean configuration. Bypass availability does
+  not replace current-run Approval or artifact-bound Authorization.
+  Live uses protected-main targets and same-revision reviewed control.
   Separate project-bound OIDC publishers and protected Environments bind
   TestPyPI and PyPI; no static-token fallback is admitted. Provider, Build,
   Quality, Observation and Finalization receive no publication capability.
