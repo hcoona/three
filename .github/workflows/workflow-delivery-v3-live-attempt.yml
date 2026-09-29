@@ -96,7 +96,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: .config/uv/uv.toml
       - name: Download Release Intent by artifact ID
@@ -213,7 +213,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: .config/uv/uv.toml
       - name: Install exact toolchain
@@ -340,7 +340,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: .config/uv/uv.toml
       - name: Install exact toolchain
@@ -488,7 +488,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: .config/uv/uv.toml
       - name: Install exact toolchain
@@ -589,7 +589,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: .config/uv/uv.toml
       - name: Install exact toolchain
@@ -806,7 +806,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: .config/uv/uv.toml
       - name: Download Qualification Snapshot by artifact ID
@@ -974,7 +974,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: .config/uv/uv.toml
       - name: Download Observation authority by artifact ID
@@ -1145,7 +1145,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: .config/uv/uv.toml
       - name: Download Intent Model and Eligibility by artifact ID
@@ -1362,7 +1362,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: .config/uv/uv.toml
       - name: Download authorization closure by artifact ID
@@ -1487,7 +1487,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: .config/uv/uv.toml
       - name: Download exact-satisfied closure by artifact ID
@@ -1599,7 +1599,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: .config/uv/uv.toml
       - name: Install tool manager without target tool installation
@@ -1898,7 +1898,7 @@ jobs:
           ref: ${{ github.sha }}
       - name: Install uv
         if: always()
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: .config/uv/uv.toml
       - name: Download Intent Model Eligibility and Attempt by artifact ID
