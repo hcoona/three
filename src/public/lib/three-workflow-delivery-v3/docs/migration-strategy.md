@@ -118,8 +118,10 @@ exists for failed-evidence consumers, not new operation requests.
    resource facts persist unless changed or contradicted. The bootstrap/native
    workflow registrations do not register the normal workflow.
 4. If a project does not exist, its separately scoped establishment must close
-   the resource prerequisite. The TestPyPI [bootstrap protocol](./validation/python-bootstrap.md)
-   owns its first-project path. Independently audited ownership/configuration
+   the resource prerequisite. The destination-bound [bootstrap protocol](./validation/python-bootstrap.md)
+   owns each first-project path; extending its TestPyPI-only implementation to
+   PyPI requires protected disabled delivery before production configuration or
+   execution. Independently audited ownership/configuration
    after partial bootstrap can establish resource facts, but cannot establish
    bootstrap completion, refill a failed version or supply normal-Live evidence.
 5. Execute separately authorized TestPyPI Buddy publication and completion audit,

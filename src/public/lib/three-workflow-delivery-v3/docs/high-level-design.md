@@ -336,7 +336,9 @@ implementation, configuration/admission and actual publication at each destinati
 
 First-project bootstrap has a separate manual control entry and evidence
 lifecycle under `WD-PY-009`. It reuses the Python build and transport mechanisms
-with a distinct first-project purpose. Its independently audited ownership and
+with a distinct first-project purpose. Each operation selects one destination
+and its own account, request, publisher and Environment; the same manual entry
+does not combine registry authority. Its independently audited ownership and
 configuration can establish the existing-project resource prerequisite for
 normal admission even after partial bootstrap, without claiming bootstrap
 completion. The partial version stays untouched; normal publication supplies

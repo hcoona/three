@@ -677,6 +677,9 @@ fresh destination consumers under `destination-bootstrap` provenance. It reuses
 the same adapter obligations without adopting CI or normal Release Evidence.
 Local coverage of the [bootstrap protocol](./validation/python-bootstrap.md)
 cannot establish account configuration or service behavior.
+Destination-binding coverage must reject swapped accounts, slots, Environments,
+profiles, OIDC audiences, transport origins and retained evidence between TestPyPI
+and PyPI before any capability is requested.
 
 ## CI Qualification Plan
 

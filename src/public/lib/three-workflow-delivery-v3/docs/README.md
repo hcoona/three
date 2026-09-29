@@ -263,6 +263,9 @@ publication gates.
 
 The [bootstrap protocol](./validation/python-bootstrap.md) defines the separately
 authorized first-project resource path under `WD-PY-009`. The
+same stable bootstrap entry has destination-bound TestPyPI and production PyPI
+contracts; production support requires its protected disabled implementation.
+The
 [Delivery Wave](../../../../../docs/delivery-wave.md) determines current work
 authorization. The protocol
 also owns the [tooling interface](./validation/python-bootstrap.md#tooling-interface);

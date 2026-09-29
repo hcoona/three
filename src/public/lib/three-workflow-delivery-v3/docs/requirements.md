@@ -982,9 +982,13 @@ They define a new Python scope, not implemented support or an operation grant.
   authentication/access changes or dispatch. npm/NuGet remain complete and
   their spent operation grants remain spent.
 
-- **WD-PY-009:** TestPyPI first-project bootstrap is a separate, explicitly
-  authorized prerequisite using one project-name-bound pending OIDC publisher,
+- **WD-PY-009:** First-project bootstrap at either selected Python destination
+  is a separate, explicitly authorized prerequisite using one
+  destination/project-name-bound pending OIDC publisher,
   one original qualified wheel/sdist pair and current-run owner approval.
+  Each request binds exactly one of TestPyPI or production PyPI, its account,
+  profile, protected request slot and Environment; no cross-destination
+  configuration, credential, artifact or evidence adoption is allowed.
   A pending publisher does not establish ownership or reserve the project name.
   Bootstrap requires its own accepted finite protocol, immutable authority and
   mutation evidence, conservative initial-state gate and independently reviewed

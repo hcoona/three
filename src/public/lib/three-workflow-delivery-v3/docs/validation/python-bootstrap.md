@@ -1,4 +1,4 @@
-# TestPyPI First-Project Bootstrap Protocol
+# Python First-Project Bootstrap Protocol
 
 ## Purpose and Authority
 
@@ -12,21 +12,38 @@ Current work authorization is determined by the
 [Wave](../../../../../../docs/delivery-wave.md). Configuration and execution
 need separate concrete owner authorization.
 
-The only destination is TestPyPI project `hcoona-release-smoke-python`, using
-`workflow-delivery-v3-bootstrap-python.yml` in `hcoona/three` (1102295886),
-Environment `workflow-delivery-v3-python-testpypi`, and audience `testpypi`.
-GitHub operator/reviewer `hcoona` (712433) and TestPyPI username `Backspace7980`
-are distinct service identities reported by the same owner. Username disclosure
-establishes neither account control nor project ownership. The prospective
-publisher is project-name-bound and pending; it is not ownership evidence.
-No wildcard, static token, other project or PyPI destination is supported.
+Each operation selects exactly one destination for project
+`hcoona-release-smoke-python`, using the stable
+`workflow-delivery-v3-bootstrap-python.yml` in `hcoona/three` (1102295886).
+GitHub operator/reviewer `hcoona` (712433) and the selected registry account are
+distinct service identities reported by the same owner.
+
+| Registry selector | Account         | Environment                            | Audience   | Protected request slot                                         |
+| ----------------- | --------------- | -------------------------------------- | ---------- | -------------------------------------------------------------- |
+| `testpypi`        | `Backspace7980` | `workflow-delivery-v3-python-testpypi` | `testpypi` | `.github/workflow-delivery/bootstrap/python-request.json`      |
+| `pypi`            | `Sherry7290`    | `workflow-delivery-v3-python-pypi`     | `pypi`     | `.github/workflow-delivery/bootstrap/python-pypi-request.json` |
+
+The [registry profiles](../hcoona-release-smoke-python-lld.md#registry-and-credential-profiles)
+own exact endpoints, file hosts and operation-profile digests. Username disclosure
+establishes neither account control nor project ownership. The [owner-reported](https://github.com/hcoona/three/issues/843#issuecomment-5894932481)
+production project `hcoona-release-smoke`, workflow `release-official.yml` and
+Environment `release` are different resources and supply no authority here;
+their configuration is outside this protocol. The prospective publisher is
+project-name-bound and pending; it is not ownership evidence. No wildcard,
+static token or other project is supported.
+
+The existing TestPyPI implementation and historical failed generation retain
+their original identity. The production row is a design extension requiring
+protected disabled implementation before configuration or execution; it does not
+claim that production tooling or resources already exist. No spent TestPyPI
+generation or publisher registration is reopened by this extension.
 
 ## Configuration and Request Prerequisites
 
 A later configuration request must specify the exact pending publisher tuple
-above and Environment settings: sole reviewer `hcoona`, self-review permitted,
+for the selected row above and Environment settings: sole reviewer `hcoona`, self-review permitted,
 no administrator bypass, zero wait, protected main only, and sentinel
-`WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-python-testpypi/v1`.
+`WDV3_APPROVAL_ENVIRONMENT_MARKER=<selected-environment>/v1`.
 It must bound each proposed configuration write and readback. It must obtain
 the owner's explicit sole account-control and smoke-only/no-production-use
 confirmation. The user performs private website steps; no password, token,
@@ -40,8 +57,7 @@ attestation is the evidence basis and its limitations remain explicit. Do not
 claim independent direct service observation from an owner-provided statement.
 Incomplete configuration prevents formation of an executable request.
 
-One prospective request is protected at
-`.github/workflow-delivery/bootstrap/python-request.json`, initially `null`.
+One prospective request is protected at each selected slot above, initially `null`.
 The closed request binds schema `workflow-delivery/v3/python-bootstrap-request`,
 fresh 32-hex generation, exact account/project/registry, profile digest, one
 protected-main ancestor commit and its public prerelease version, original wheel
@@ -51,15 +67,29 @@ It does not assert pre-existing project ownership. No placeholder or pending
 configuration is an executable request. A later protected change may populate
 it only under the separate operational grant; preparation leaves it null.
 
-Manual dispatch binds the exact protected tooling SHA and request digest.
+Manual dispatch binds an explicit closed `testpypi` or `pypi` selector, exact
+protected tooling SHA and request digest. Every hosted phase loads only that
+selector's protected slot and rejects a request whose registry, account,
+Environment, sentinel or profile differs. Missing/unknown selectors cannot
+fall back to TestPyPI or another slot. Only the selected row's exact tuple is
+admitted; arbitrary account names, Environments and endpoints are rejected.
 Only the accepted actor/repository, protected `refs/heads/main`, unchanged
 GitHub workflow/checkout SHA, ancestor target and run attempt one are admitted.
 A generation is consumed by its one dispatch, including cancellation or failure;
 no workflow rerun, replacement dispatch or refill is permitted. The operator
 records the actual run in the work carrier and retires the slot before another
 separately authorized request. Workflow concurrency shares the physical
-TestPyPI project key with native and normal publication and does not cancel an
+selected registry's project key with normal publication and does not cancel an
 in-progress writer. This does not constrain a malicious accepted writer.
+The publisher Environment is selected from the same closed dispatch registry;
+the prepare dependency and every phase's request check must pass before that
+selection can lead to a capability request. Normal publication keeps
+`workflow-delivery-v3-python-smoke.yml`; bootstrap remains a separate publisher
+tuple. Prepare the two exact production registrations together in the later
+configuration proposal rather than changing workflow filenames between stages:
+the bootstrap pending publisher precedes project creation, while the normal
+publisher is added to the established project before normal admission. Do not
+create competing pending publishers for the same project name.
 
 ## Build and Immutable Authority
 
@@ -110,7 +140,7 @@ and monotonic values from different processes/runners are never compared.
 Runner UTC is part of the accepted control trust base, not an external clock
 attestation or new synchronization service.
 
-One actual Actions assertion and one TestPyPI mint exchange are memory-only.
+One actual Actions assertion and one selected-registry mint exchange are memory-only.
 No credential is persisted or logged. The pinned 30-second socket timeout bounds
 an already admitted in-flight request; expiry forbids new publisher requests,
 not completion of that request or credential-free evidence archival. P4 is a
@@ -138,7 +168,11 @@ Environment deployment candidates permit at most five status reads. All raw
 responses are retained with status, content type, actual URL and digest, subject
 to credential screening. Use the existing profile's HTTPS origins, response-size
 limits, TLS/client pins and multipart mapping; public downloads carry no token.
-All file entries across the whole project must equal the expected inventory;
+Live transport and replay classify every index, file, upload and mint URL and
+OIDC audience against the selected request's existing registry profile. They
+must reject an otherwise valid operation for the other registry. Neither
+transport defaults nor a journal's URL may override the request selection.
+All file entries across the whole selected project must equal the expected inventory;
 extra, malformed, yanked, foreign or conflicting files stop progress.
 
 Immutable evidence transport uses at most five original artifact creations:
@@ -179,13 +213,15 @@ Independent provenance review binds the artifacts to the actual protected run,
 request and current Environment approval, checks the fresh destination evidence,
 and separately reviews the project's actual owner and converted publisher state
 under authorized account-side evidence collection. Public file presence alone
-cannot establish owner `Backspace7980`. Unexpected owner/publisher state or
+cannot establish the selected account's ownership. Unexpected owner/publisher state or
 unavailable evidence blocks all dependent work even if both files are visible.
 The bootstrap publisher remains a configured capability until explicitly changed;
-no removal is inferred. The owner has also confirmed the native registration.
-Carry these resource facts forward unless changed or contradicted, without
-routine reconfirmation. The distinct normal workflow registration still needs
-its own later configuration grant; neither existing tuple supplies it.
+no removal is inferred. The owner's existing TestPyPI confirmations, including
+its historical native registration, remain scoped to TestPyPI. Carry those
+resource facts forward unless changed or contradicted, without routine
+reconfirmation. Production PyPI needs its own selected account/owner and
+converted-publisher evidence. The distinct normal workflow registration still
+needs its own configuration grant; a bootstrap tuple cannot supply it.
 
 Bootstrap completion still requires the full audit above. A failed bootstrap
 may instead supply independently reviewed actual ownership/configuration only
@@ -197,19 +233,21 @@ account-side evidence; missing or unexpected facts block continuation.
 
 Normal admission independently closes its normal publisher registration,
 current trust/configuration and accepted source-evidence basis. No duplicate/race
-suite is required. A separately authorized TestPyPI Buddy Attempt builds and
+suite is required. A separately authorized normal Attempt at the selected destination builds and
 qualifies its own pair at an eligible version, preserves pre-existing files and
-obtains its own Approval, publication/readback and clean-consumer audit. PyPI
-Official retains an independent admission and Attempt. Both Governance
-sources remain disabled pending those separately authorized stages; both native
-slots remain null. Bootstrap grants no activation or normal publication.
+obtains its own Approval, publication/readback and clean-consumer audit. Completed
+TestPyPI Buddy evidence supplies no production admission or Official Attempt.
+The selected Governance source remains disabled pending its independently
+authorized admission; bootstrap does not change the other destination's state.
+Both native slots remain null. Bootstrap grants no activation or normal publication.
 TestPyPI pruning and other accepted availability limits remain; later absence
 does not authorize restoration.
 
 ## Tooling Interface
 
-`three_workflow_delivery_v3.acceptance.python_bootstrap` implements the closed
-bootstrap phases. The manual workflow at
+`three_workflow_delivery_v3.acceptance.python_bootstrap` owns the closed
+bootstrap phases. Its existing implementation is TestPyPI-only until the
+destination extension is protected-delivered. The stable manual workflow at
 `.github/workflows/workflow-delivery-v3-bootstrap-python.yml` separates prepare,
 publisher and audit jobs. The protected bootstrap request admits only a
 separately authorized operation; installing this tooling alone does not configure
@@ -219,7 +257,7 @@ After local locked dependency and NBGV preparation, the operator can build a
 prospective original pair from a protected-main ancestor without registry access:
 
 ```bash
-uv run --no-sync --package three-workflow-delivery-v3 \
+mise exec -- uv run --no-sync --package three-workflow-delivery-v3 \
   python -m three_workflow_delivery_v3.acceptance.python_bootstrap build-fixtures \
   --root '<full-history-checkout>' --target '<protected-main-ancestor-sha>' \
   --output '<new-external-fixture-bundle>'
@@ -230,8 +268,9 @@ source/version/original-digest summary supplies the later operational proposal;
 it is not an executable request or proof of account readiness. Existing output
 paths reject rather than overwrite retained evidence.
 
-Hosted `prepare`, `authorize`, `marker`, `execute` and `audit` require exact
-protected request/tooling identities. Bundle input flags `--prepared`,
+Hosted `prepare`, `authorize`, `marker`, `execute` and `audit` require explicit
+`--registry`, the exact selected protected request and tooling identities.
+Bundle input flags `--prepared`,
 `--authorization`, `--marker` and `--result` bind corresponding original artifact
 references supplied by the workflow. `archive` and `digest` seal surviving
 sanitized bytes for the five original artifact creations. Authorize and execute
@@ -241,8 +280,16 @@ surviving evidence if fresh readback or either consumer fails; that artifact is
 not a successful bootstrap verdict.
 
 The registry-offline `replay` command reads all five original downloaded bundles
-and their explicit reference document through `--references`. It replays raw
-proof and registry observations, timing, lineage and retained consumer evidence.
+and their explicit reference document through `--references`. It derives the
+selected registry from the retained closed request and replays raw proof and
+registry observations, timing, lineage and retained consumer evidence.
+Every bundle must bind the same request/profile. Replay never reads a current
+request slot or selects a destination from a raw response URL. The request's
+existing schema and field set remain unchanged; only the closed destination
+tuples expand. Existing TestPyPI request bytes and historical verdicts retain
+their original meaning. Historical delivery evidence remains replayable with
+its pinned original reader; current code does not retroactively supply missing
+captures or change a failed verdict.
 It grants no operational capability and does not freshly observe ownership or
 registry state. `--help` gives the exact CLI inputs; actual dispatch and operator
 artifact retrieval remain separately bounded by the later operational request.
@@ -260,3 +307,11 @@ stop before excess requests, and audit rejects forged lineage or incomplete raw
 responses. Real local Provider/Build/consumer integration establishes deterministic
 original bytes; it does not establish service behavior. Retain independent
 review of protected tooling and actual later operational evidence separately.
+Exercise both destination bindings without network access: complete phase and
+replay success, publisher ordering and both partial-failure paths; swapped
+account/slot/Environment/profile/audience and foreign registry URL rejection;
+unknown or absent dispatch selection; contradictory artifact/request bindings.
+Check the workflow's closed selector, selected Environment/concurrency and null
+request slots. Reuse real current-toolchain Provider/Build/consumer integration
+for the unchanged archive path; simulated PyPI transport establishes no native
+production behavior or resource ownership.

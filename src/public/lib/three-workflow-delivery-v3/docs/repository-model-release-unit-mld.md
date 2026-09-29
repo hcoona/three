@@ -146,6 +146,8 @@ source/Build/consumer evidence are separate from normal Release Evidence;
 this adds no version source or new project abstraction. Retired native fixtures
 cannot become normal Release artifacts. Platform reliance changes admission,
 not the Model, version source or original two-file Build contract.
+The bootstrap request binds its selected destination; neither byte equality nor
+the shared Release Unit permits adopting another destination's qualified pair.
 
 ## Technical Facts
 
