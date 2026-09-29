@@ -59,6 +59,52 @@ ends a grant. Git and the proposing PR retain the reason and history.
   deletion/rollback, duplicate/race probing, spent-operation revival or host
   trust/profile change. Preserve failed outcomes and all prior evidence.
 
+### Establish the Python smoke project on production PyPI
+
+- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
+- **Accepted inputs:** the owner's production end-to-end delegation and
+  production bypass decision, accepted `WD-PY-006` platform reliance and
+  `WD-PY-009` first-project protocol, protected destination-bound bootstrap
+  implementation through [#937](https://github.com/hcoona/three/pull/937), and
+  [independently admitted exact Pending Publisher/GitHub configuration](https://github.com/hcoona/three/issues/843#issuecomment-5899412557).
+  The [concrete operation protocol](https://github.com/hcoona/three/issues/843#issuecomment-5899417487)
+  binds its original source, file hashes, profile, evidence and finite effects.
+- **Advancement and outcome:** protected-deliver one fresh PyPI bootstrap
+  request for the fixed source and original pair, execute its one first-project
+  generation, independently audit the exact native run and actual owner/converted
+  publisher facts, and retire the consumed slot through protected delivery.
+  Remove this entry after terminal audit and slot retirement or lifetime expiry.
+- **Effects and delivery:** permit scoped local validation, ordinary CI,
+  independent review/triage, Issue/PR evidence retention and protected delivery;
+  one dispatch at the exact protected request/tooling identity and one
+  current-run pending-deployment approval after review of immutable preparation.
+  Subject is only `hcoona-release-smoke-python` on PyPI, account `Sherry7290`,
+  repository `hcoona/three`, stable `workflow-delivery-v3-bootstrap-python.yml`,
+  Environment `workflow-delivery-v3-python-pypi` (23047309006).
+- **Concrete boundaries:** original source
+  `bdb97b9898ba95404d00e2d5f10362fc83f444c2`, prerelease `0.1.0b43`, exact
+  original wheel/sdist hashes and owner/configuration references in the reviewed
+  concrete protocol; one fresh generation with one dispatch and Approval, at
+  most two upload POSTs, fifteen index GETs, five file GETs, sixteen proof GETs,
+  one assertion, one mint and five immutable artifacts. Preserve the single
+  600-second authorization window, accepted pending-observation rules and all
+  original counters across restarts. Operator reads follow the concrete
+  protocol's paced deadline/size/complete-inventory limits without owner-refilled
+  read quotas. Both initial index responses must actually be 404. Wheel
+  publication/readback precedes sdist; fresh final pair and two clean consumers
+  are mandatory. Read evidence cannot renew mutation limits.
+- **Prerequisites and exclusions:** admit configuration and protected request
+  before dispatch; independently review actual prepare bytes before current-run
+  Approval. Accept production bypass true under `WD-PY-007` without treating
+  bypass as Approval. Carry forward unchanged account/pending facts; only actual
+  newly established ownership/conversion requires a later owner report. No
+  additional configuration mutation, unrelated project or TestPyPI effect,
+  static token, duplicate/race probe, rerun/replacement dispatch, refill,
+  replacement version, deletion/rollback, host-trust change or automatic partial
+  completion. Failure remains failed and stops later uploads. Normal production
+  Governance and Official publication retain their distinct later gates and
+  receive no permission from this first-project operation.
+
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
