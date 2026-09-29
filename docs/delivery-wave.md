@@ -22,7 +22,7 @@ ends a grant. Git and the proposing PR retain the reason and history.
 - **Advancement and outcome:** first reconcile Python requirements and applicable
   architecture/configuration contracts with that owner decision, preserving
   current-run artifact authorization and other destinations' accepted contracts.
-  Review and protected-deliver that design before proposing the separately
+  Review and protected-deliver that design before executing the separately
   authorized disabled implementation; configuration admission waits for both.
   Then establish the exact production bootstrap pending
   publisher and GitHub Environment configuration, independently admit that
