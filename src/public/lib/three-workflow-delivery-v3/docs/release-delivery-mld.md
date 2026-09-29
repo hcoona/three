@@ -293,6 +293,9 @@ request, approval, durable marker, two-file execution result and audit follow
 nor a pending publisher can bypass normal-Live admission. A successful
 bootstrap establishes only the separately audited prerequisite project state;
 it supplies no normal-Live Outcome or automatic admission.
+The selected destination is immutable across every bootstrap phase. A failure
+cannot switch registries, reuse another destination's request or refill its
+spent generation. Normal Official publication still needs its own fresh Attempt.
 
 ## Domain Model
 

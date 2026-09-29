@@ -434,18 +434,20 @@ them at the mutation boundary. Provisioning, authentication and each real
 publication require their separately accepted grants. This design changes no
 platform configuration and supplies none of those grants.
 
-`WD-PY-009` bootstrap has a separate protected, initially null request and
+`WD-PY-009` bootstrap has a separate protected, initially null request per destination and
 pending-publisher configuration attestation; it cannot use ready Governance or
 claim pre-existing project ownership. Its Environment-approved authority and
 durable marker precede OIDC acquisition. Independently reviewed postcreation
 ownership and publisher conversion can establish resource facts after partial
 bootstrap, but not bootstrap completion or normal admission. Carry forward the
-owner-confirmed Sole Owner and existing bootstrap/native publisher tuples
+owner-confirmed TestPyPI Sole Owner and existing bootstrap/native publisher tuples
 unless changed or contradicted; do not routinely ask for reconfirmation.
 The normal workflow's distinct publisher and current trust/configuration still
 require their own review. The [bootstrap protocol](./validation/python-bootstrap.md)
-defines the resource boundary; normal-Live Governance remains disabled pending
-the later implementation and admission deliveries.
+defines the resource boundary. A production account report does not inherit
+TestPyPI ownership or configuration evidence. The selected destination's normal-Live
+Governance remains disabled pending its own later admission delivery; no other
+destination's accepted state changes through bootstrap preparation.
 
 ## Runtime Permission and Authority Model
 

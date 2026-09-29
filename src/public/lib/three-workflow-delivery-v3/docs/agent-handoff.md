@@ -27,6 +27,16 @@ operations, publication, or another npm proving run.
 
 ## Starting a New Session
 
+Production PyPI preparation follows the current [Wave](../../../../../docs/delivery-wave.md).
+The [first-project protocol](./validation/python-bootstrap.md) extends the
+destination-bound design to PyPI; implementation must follow its protected
+acceptance with the production request null and Governance blocked. The owner
+reported account `Sherry7290` and a different `hcoona-release-smoke` project;
+neither that project nor its `release-official.yml`/`release` publisher is this
+slice's resource. Preserve the stable V3 workflow filenames. Account-control,
+project creation and normal publisher admission remain separate evidence gates;
+do not ask the owner to modify unrelated or existing TestPyPI resources.
+
 The [hosted partial-publication recovery](./validation/python-hosted-recovery.md)
 is independently complete for TestPyPI `0.1.0b39`: a fresh Attempt rebuilt both
 archives byte-identically, retained the existing wheel and uploaded only the

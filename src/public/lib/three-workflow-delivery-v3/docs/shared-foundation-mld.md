@@ -579,6 +579,9 @@ workflow identity; bootstrap retains its own request type, initial-state rules,
 finite schedule and evidence verdict. Retired native readers preserve historical
 contracts without becoming an admission or alternate publication path. No
 generic publication policy is introduced.
+Its existing destination profile is passed explicitly through live transport
+and deterministic replay. The closed request selects the profile; a caller URL,
+ambient default or evidence from another destination cannot select it implicitly.
 
 ## NuGet Mechanism Extension
 

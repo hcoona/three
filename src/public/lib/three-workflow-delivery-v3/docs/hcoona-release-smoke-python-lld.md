@@ -419,7 +419,13 @@ No further hosted operation or production PyPI admission follows from this proof
 
 ## First-Project Bootstrap
 
-`WD-PY-009` has a distinct manual workflow and protected request, initially null.
+`WD-PY-009` uses the stable distinct manual workflow
+`workflow-delivery-v3-bootstrap-python.yml` for either destination, with a closed
+explicit registry selector and separate protected requests, initially null.
+The request must match that selector before preparation and at every later phase;
+the publisher Environment and project concurrency key select the same registry.
+Changing a selector cannot redirect an artifact or grant access to another
+request slot. No normal-workflow rename or existing publisher change is needed.
 The [bootstrap protocol](./validation/python-bootstrap.md) owns exact resources,
 source/artifact provenance, pending-publisher and initial-404 boundaries,
 immutable authority/marker transport, finite requests, failure semantics and
