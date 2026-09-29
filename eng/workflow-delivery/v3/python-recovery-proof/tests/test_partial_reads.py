@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import base_operator
 import pytest
 import read_policy
+import registry_read
 from base_operator import Operator
 from campaign import read
 from read_policy import ReadPending, ReadStopped
@@ -135,3 +136,127 @@ def test_partial_registry_response_preserves_known_status_and_received_evidence(
         assert ledger["classification"] == "pending"
     else:
         assert ledger["classification"] == "stopped"
+
+
+@pytest.mark.parametrize("status", [None, 200, 503])
+def test_registry_deadline_retains_received_facts_and_rethrows_without_retry(
+    audit_fixture, monkeypatch, status
+):
+    """Termination preserves received evidence and the original deadline."""
+    fixture = audit_fixture
+    deadline = fixture.clock[0] + timedelta(seconds=60)
+    terminated = base_operator.OperatorDeadlineExceeded(
+        "original deadline exhausted"
+    )
+    calls, closed = [], []
+
+    class DeadlineReply(Reply):
+        def read(self, size):
+            if self.offset:
+                fixture.clock[0] = deadline
+                raise terminated
+            return super().read(size)
+
+    class Connection:
+        def __init__(self, host, **_kwargs):
+            self.host = host
+
+        def request(self, method, path, **_kwargs):
+            calls.append((method, self.host, path))
+
+        def getresponse(self):
+            if status is None:
+                fixture.clock[0] = deadline
+                raise terminated
+            return DeadlineReply(
+                status,
+                b"received partial index",
+                [
+                    ("Content-Type", "application/vnd.pypi.simple.v1+json"),
+                    ("Retry-After", "180"),
+                    ("Set-Cookie", "must-not-be-retained"),
+                ],
+            )
+
+        def close(self):
+            closed.append(self.host)
+
+    monkeypatch.setattr(
+        registry_read.http.client, "HTTPSConnection", Connection
+    )
+    caller = fixture.construct(deadline=deadline.isoformat())
+    caller.wire = registry_read.https_get
+    with pytest.raises(base_operator.OperatorDeadlineExceeded) as error:
+        caller.step()
+    assert error.value is terminated
+    assert terminated.retained_status == status
+    expected_body = b"" if status is None else b"received partial index"
+    assert terminated.retained_body == expected_body
+    ledger = read(fixture.path)
+    assert len(ledger["requests"]) == 1
+    entry = ledger["requests"][0]
+    assert entry["status"] == status
+    assert entry["error"] == "OperatorDeadlineExceeded"
+    assert (caller.directory / entry["body"]).read_bytes() == expected_body
+    assert read(caller.directory / entry["headers"]) == (
+        {}
+        if status is None
+        else {
+            "content-type": "application/vnd.pypi.simple.v1+json",
+            "retry-after": "180",
+        }
+    )
+    assert ledger["classification"] == "stopped"
+    assert not ledger.get("observations")
+    assert not ledger.get("current_responses")
+    assert "destination_state" not in ledger
+    assert caller.deadline == deadline.isoformat()
+    assert fixture.clock[0] == deadline
+    assert calls == [
+        ("GET", "test.pypi.org", "/simple/hcoona-release-smoke-python/")
+    ]
+    assert closed == ["test.pypi.org"]
+    resumed = fixture.construct(deadline=deadline.isoformat())
+    resumed.wire = registry_read.https_get
+    with pytest.raises(ReadStopped):
+        resumed.step()
+    assert read(fixture.path) == ledger
+    assert len(calls) == 1
+
+
+def test_registry_wire_terminating_partial_bytes_remain_bounded(monkeypatch):
+    """Exception-provided partial bytes cannot bypass the raw response bound."""
+    terminated = base_operator.OperatorDeadlineExceeded(
+        "original deadline exhausted"
+    )
+    terminated.partial = b"more-partial-bytes-than-admitted"
+    closed = []
+
+    class DeadlineReply(Reply):
+        def read(self, size):
+            if self.offset:
+                raise terminated
+            return super().read(size)
+
+    class Connection:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def request(self, *_args, **_kwargs):
+            pass
+
+        def getresponse(self):
+            return DeadlineReply(200, b"part")
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(
+        registry_read.http.client, "HTTPSConnection", Connection
+    )
+    with pytest.raises(base_operator.OperatorDeadlineExceeded) as error:
+        registry_read.https_get("https://test.pypi.org/simple/example/", {}, 8)
+    assert error.value is terminated
+    assert terminated.retained_status == 200
+    assert terminated.retained_body == b"partmore-"
+    assert closed == [True]

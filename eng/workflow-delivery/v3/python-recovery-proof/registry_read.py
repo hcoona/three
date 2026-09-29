@@ -120,11 +120,11 @@ def https_get(url: str, headers: dict, maximum_bytes: int) -> tuple:
                 break
             content.extend(chunk)
         return status, response_headers, bytes(content)
-    except Exception as error:
+    except BaseException as error:
         partial = getattr(error, "partial", b"")
-        error.retained_body = bytes(content) + (
-            partial if isinstance(partial, bytes) else b""
-        )
+        error.retained_body = (
+            bytes(content) + (partial if isinstance(partial, bytes) else b"")
+        )[: maximum_bytes + 1]
         error.retained_headers = response_headers
         error.retained_status = status
         raise
@@ -261,7 +261,7 @@ class RegistryAudit:
             status, received_headers, content = self.wire(
                 url, headers, maximum_bytes
             )
-        except Exception as error:
+        except BaseException as error:
             entry.update(
                 error=type(error).__name__, finished=self.now().isoformat()
             )
@@ -270,8 +270,14 @@ class RegistryAudit:
                 entry,
                 getattr(error, "retained_status", None),
                 response_headers,
-                getattr(error, "retained_body", b""),
+                getattr(error, "retained_body", b"")[: maximum_bytes + 1],
             )
+            if not isinstance(error, Exception):
+                reason = f"terminating registry read: {type(error).__name__}"
+                scheduler.state["stopped"] = reason
+                self.ledger.update(classification="stopped", reason=reason)
+                self.save()
+                raise
             scheduler.after(
                 "registry" if index else "transfer",
                 status=getattr(error, "retained_status", None),
