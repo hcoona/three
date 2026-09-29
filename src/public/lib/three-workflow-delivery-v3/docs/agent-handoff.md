@@ -29,12 +29,14 @@ operations, publication, or another npm proving run.
 
 Production PyPI preparation follows the current [Wave](../../../../../docs/delivery-wave.md).
 The [first-project protocol](./validation/python-bootstrap.md) extends the
-destination-bound design to PyPI; implementation must follow its protected
-acceptance with the production request null and Governance blocked. The owner
+destination-bound tooling to PyPI; both bootstrap request slots remain null
+and production Governance remains blocked. The owner
 reported account `Sherry7290` and a different `hcoona-release-smoke` project;
 neither that project nor its `release-official.yml`/`release` publisher is this
-slice's resource. Preserve the stable V3 workflow filenames. Account-control,
-project creation and normal publisher admission remain separate evidence gates;
+slice's resource. Preserve the stable V3 workflow filenames. The owner confirmed sole control of `Sherry7290` in the
+[account-control report](https://github.com/hcoona/three/issues/843#issuecomment-5895091575).
+Carry that fact forward unless changed or contradicted. Project creation and
+normal publisher admission remain separate evidence gates;
 do not ask the owner to modify unrelated or existing TestPyPI resources.
 
 The [hosted partial-publication recovery](./validation/python-hosted-recovery.md)

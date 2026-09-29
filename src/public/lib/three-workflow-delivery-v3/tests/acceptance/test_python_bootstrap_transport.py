@@ -18,17 +18,22 @@ from three_workflow_delivery_v3.canonical import parse_json_strict
 
 from ..adapters.test_pypi import FakeHttp
 
-REGISTRY = PythonRegistry("testpypi")
 WINDOW = {"created-at": 1000, "deadline": 1600}
 
 
-def request_tuple(kind):
+@pytest.fixture(params=["testpypi", "pypi"])
+def registry(request):
+    """Bind transport to one explicit closed destination."""
+    return PythonRegistry(request.param)
+
+
+def request_tuple(kind, registry):
     """Independent expected transport routes and exact ceilings."""
     routes = {
-        "index": ("GET", REGISTRY.index_url, None, MAX_INDEX_BYTES),
+        "index": ("GET", registry.index_url, None, MAX_INDEX_BYTES),
         "file": (
             "GET",
-            f"https://{REGISTRY.file_host}/packages/original.whl",
+            f"https://{registry.file_host}/packages/original.whl",
             None,
             MAX_FILE_BYTES,
         ),
@@ -40,19 +45,19 @@ def request_tuple(kind):
         ),
         "upload": (
             "POST",
-            REGISTRY.upload_url,
+            registry.upload_url,
             b"original-multipart",
             MAX_RESPONSE_BYTES,
         ),
         "mint": (
             "POST",
-            REGISTRY.origin + "/_/oidc/mint-token",
+            registry.origin + "/_/oidc/mint-token",
             b"redacted-assertion",
             MAX_RESPONSE_BYTES,
         ),
         "oidc": (
             "GET",
-            "https://run.actions.githubusercontent.com/idtoken?audience=testpypi",
+            f"https://run.actions.githubusercontent.com/idtoken?audience={registry.name}",
             None,
             MAX_RESPONSE_BYTES,
         ),
@@ -77,7 +82,7 @@ def request_tuple(kind):
     ],
 )
 def test_bootstrap_every_phase_budget_blocks_before_limit_plus_one(
-    phase, kind, limit
+    registry, phase, kind, limit
 ):
     """Each actual attempt, including token acquisition, has its own ceiling."""
     retained = {}
@@ -93,8 +98,9 @@ def test_bootstrap_every_phase_budget_blocks_before_limit_plus_one(
         retained.__setitem__,
         window=None if phase == "audit" else WINDOW,
         clock=lambda: 1000,
+        registry=registry,
     )
-    arguments = request_tuple(kind)
+    arguments = request_tuple(kind, registry)
     for _ in range(limit):
         assert journal.request(*arguments).status == HTTPStatus.OK
     with pytest.raises(ValueError, match="budget exhausted"):
@@ -102,7 +108,10 @@ def test_bootstrap_every_phase_budget_blocks_before_limit_plus_one(
     journal.close()
     assert len(http.calls) == limit
     replay = ReplayTransport(
-        retained, phase, window=None if phase == "audit" else WINDOW
+        retained,
+        phase,
+        window=None if phase == "audit" else WINDOW,
+        registry=registry,
     )
     for _ in range(limit):
         if kind in {"oidc", "mint"}:
@@ -115,22 +124,29 @@ def test_bootstrap_every_phase_budget_blocks_before_limit_plus_one(
         assert b"redacted-assertion" not in b"".join(retained.values())
 
 
-def test_bootstrap_monotonic_guard_can_only_shorten_authority():
+def test_bootstrap_monotonic_guard_can_only_shorten_authority(registry):
     """UTC remaining time cannot override an expired local monotonic guard."""
     http = FakeHttp()
     journal = JournalTransport(
-        http, "authorize", lambda *_: None, window=WINDOW, clock=lambda: 1000
+        http,
+        "authorize",
+        lambda *_: None,
+        window=WINDOW,
+        clock=lambda: 1000,
+        registry=registry,
     )
     journal.monotonic = lambda: journal.monotonic_deadline
     with pytest.raises(ValueError, match="monotonic deadline"):
-        journal.request(*request_tuple("index"))
+        journal.request(*request_tuple("index", registry))
     assert http.calls == []
 
 
 @pytest.mark.parametrize(
     ("finish", "accepted"), [(1030.0, True), (1030.001, False), (999.0, False)]
 )
-def test_bootstrap_request_completion_bound_is_enforced_live(finish, accepted):
+def test_bootstrap_request_completion_bound_is_enforced_live(
+    registry, finish, accepted
+):
     """The original response survives an overlong request but cannot succeed."""
     now = [1000.0]
     retained = {}
@@ -148,51 +164,157 @@ def test_bootstrap_request_completion_bound_is_enforced_live(finish, accepted):
         retained.__setitem__,
         window=WINDOW,
         clock=lambda: now[0],
+        registry=registry,
     )
     if accepted:
-        assert journal.request(*request_tuple("upload")).status == HTTPStatus.OK
+        assert (
+            journal.request(*request_tuple("upload", registry)).status
+            == HTTPStatus.OK
+        )
     else:
         with pytest.raises(ValueError, match="completion bound"):
-            journal.request(*request_tuple("upload"))
+            journal.request(*request_tuple("upload", registry))
     journal.close()
     assert retained["http/0.body"] == b"original late response"
     assert parse_json_strict(retained["requests.json"])[0]["finish"] == finish
     if not accepted:
         with pytest.raises(ValueError, match="timing"):
-            ReplayTransport(retained, "execute", window=WINDOW)
+            ReplayTransport(
+                retained, "execute", window=WINDOW, registry=registry
+            )
 
 
-def test_bootstrap_audit_has_separate_read_only_budget_after_expiry():
+def test_bootstrap_audit_has_separate_read_only_budget_after_expiry(registry):
     """P4 may observe after the publisher deadline without renewing uploads."""
     retained = {}
     http = FakeHttp(
         PythonHttpResponse(200, b"fresh original observation", "text/plain")
     )
     journal = JournalTransport(
-        http, "audit", retained.__setitem__, clock=lambda: 5000
+        http,
+        "audit",
+        retained.__setitem__,
+        clock=lambda: 5000,
+        registry=registry,
     )
     assert (
-        journal.request(*request_tuple("index")).body
+        journal.request(*request_tuple("index", registry)).body
         == b"fresh original observation"
     )
     with pytest.raises(ValueError, match="budget"):
-        journal.request(*request_tuple("upload"))
+        journal.request(*request_tuple("upload", registry))
     journal.close()
     assert len(http.calls) == 1
     assert parse_json_strict(retained["requests.json"])[0]["start"] == 5000  # noqa: PLR2004
 
 
-def test_bootstrap_replay_rejects_unused_responses_within_budget():
+def test_bootstrap_replay_rejects_unused_responses_within_budget(registry):
     """Unused allowance does not excuse unexplained original HTTP responses."""
     retained = {}
     http = FakeHttp(PythonHttpResponse(200, b"original index", "text/plain"))
     journal = JournalTransport(
-        http, "execute", retained.__setitem__, window=WINDOW, clock=lambda: 1000
+        http,
+        "execute",
+        retained.__setitem__,
+        window=WINDOW,
+        clock=lambda: 1000,
+        registry=registry,
     )
-    journal.request(*request_tuple("index"))
+    journal.request(*request_tuple("index", registry))
     journal.close()
-    replay = ReplayTransport(retained, "execute", window=WINDOW)
+    replay = ReplayTransport(
+        retained, "execute", window=WINDOW, registry=registry
+    )
     with pytest.raises(ValueError, match="unconsumed bootstrap responses"):
         replay.finished()
-    assert replay.request(*request_tuple("index")).body == b"original index"
+    assert (
+        replay.request(*request_tuple("index", registry)).body
+        == b"original index"
+    )
     replay.finished()
+
+
+@pytest.mark.parametrize("kind", ["index", "file", "upload", "mint", "oidc"])
+def test_bootstrap_transport_rejects_foreign_destination_before_http(
+    registry, kind
+):
+    """No URL or assertion audience may select the other destination."""
+    other = PythonRegistry(
+        "pypi" if registry.name == "testpypi" else "testpypi"
+    )
+    http = FakeHttp()
+    retained = {}
+    journal = JournalTransport(
+        http,
+        "execute",
+        retained.__setitem__,
+        registry=registry,
+        window=WINDOW,
+        clock=lambda: 1000,
+    )
+    with pytest.raises(ValueError, match="bootstrap"):
+        journal.request(*request_tuple(kind, other))
+    assert http.calls == []
+    assert journal.records == []
+    assert retained == {}
+
+
+@pytest.mark.parametrize("kind", ["index", "file", "upload", "mint", "oidc"])
+def test_bootstrap_replay_rejects_foreign_registry_journal(registry, kind):
+    """Otherwise valid raw foreign records cannot choose replay authority."""
+    other = PythonRegistry(
+        "pypi" if registry.name == "testpypi" else "testpypi"
+    )
+    retained = {}
+    http = FakeHttp(PythonHttpResponse(200, b"original response", "text/plain"))
+    journal = JournalTransport(
+        http,
+        "execute",
+        retained.__setitem__,
+        registry=other,
+        window=WINDOW,
+        clock=lambda: 1000,
+    )
+    journal.request(*request_tuple(kind, other))
+    journal.close()
+    admitted = ReplayTransport(
+        retained, "execute", registry=other, window=WINDOW
+    )
+    if kind in {"mint", "oidc"}:
+        admitted.credential(kind)
+    else:
+        assert (
+            admitted.request(*request_tuple(kind, other)).status
+            == HTTPStatus.OK
+        )
+    admitted.finished()
+    with pytest.raises(ValueError, match="bootstrap"):
+        ReplayTransport(retained, "execute", registry=registry, window=WINDOW)
+    assert len(http.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "query", ["", "?audience=unknown", "?audience=pypi&audience=testpypi"]
+)
+def test_bootstrap_transport_rejects_missing_unknown_or_duplicate_audience(
+    registry, query
+):
+    """Assertion URLs require exactly the one selected audience."""
+    http = FakeHttp()
+    journal = JournalTransport(
+        http,
+        "execute",
+        lambda *_: None,
+        registry=registry,
+        window=WINDOW,
+        clock=lambda: 1000,
+    )
+    with pytest.raises(ValueError, match="bootstrap"):
+        journal.request(
+            "GET",
+            "https://run.actions.githubusercontent.com/idtoken" + query,
+            {},
+            None,
+            MAX_RESPONSE_BYTES,
+        )
+    assert http.calls == []

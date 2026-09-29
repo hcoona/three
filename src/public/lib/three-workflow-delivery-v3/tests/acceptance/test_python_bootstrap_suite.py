@@ -5,10 +5,10 @@
 
 from collections import Counter
 from dataclasses import replace
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from three_workflow_delivery_v3.acceptance.python_bootstrap_contract import (
-    SENTINEL,
     WORKFLOW,
 )
 from three_workflow_delivery_v3.acceptance.python_bootstrap_suite import (
@@ -79,10 +79,9 @@ def proof_responses(request):
     ]
 
 
-def observation_responses(fixtures, variants=("wheel", "sdist")):
+def observation_responses(fixtures, variants=("wheel", "sdist"), *, registry):
     """Use actual original bytes behind the finite registry HTTP boundary."""
     items = [fixtures.distributions[variant] for variant in variants]
-    registry = bootstrap_request(fixtures).registry
     return [
         _index([_entry(registry, item) for item in items]),
         *[
@@ -99,7 +98,7 @@ class Scenario:
     facts.
     """
 
-    def __init__(self, fixtures, root):
+    def __init__(self, fixtures, root, registry_name="testpypi"):
         """Build one finite local artifact DAG with a.
 
         Build one finite local artifact DAG with a controllable
@@ -111,14 +110,18 @@ class Scenario:
         self.monotonic_now = 2000.0
         self.waits = []
         self.context = BootstrapContext(
-            bootstrap_request(fixtures), RUN, TOOLING, {}
+            bootstrap_request(fixtures, registry_name), RUN, TOOLING, {}
         )
         self.environment = hosted_environment()
         self.environment["GITHUB_WORKFLOW_REF"] = (
             f"hcoona/three/{WORKFLOW}@refs/heads/main"
         )
-        self.environment["WDV3_APPROVAL_ENVIRONMENT_MARKER"] = SENTINEL
-        self.prepared = self.artifact("prepared", prepared_files(fixtures))
+        self.environment["WDV3_APPROVAL_ENVIRONMENT_MARKER"] = (
+            self.context.request.sentinel
+        )
+        self.prepared = self.artifact(
+            "prepared", prepared_files(fixtures, registry_name)
+        )
         self.consumers = []
 
     def clock(self):
@@ -195,9 +198,15 @@ class Scenario:
                 200, canonicalize({"token": _TOKEN}), "application/json"
             ),
             _OK,
-            *observation_responses(self.fixtures, ("wheel",)),
+            *observation_responses(
+                self.fixtures,
+                ("wheel",),
+                registry=self.context.request.registry,
+            ),
             _OK,
-            *observation_responses(self.fixtures),
+            *observation_responses(
+                self.fixtures, registry=self.context.request.registry
+            ),
         ]
 
     def execute(self, responses=None):
@@ -226,7 +235,12 @@ class Scenario:
         artifact.
         """
         self.audit_http = FakeHttp(
-            *(responses or observation_responses(self.fixtures))
+            *(
+                responses
+                or observation_responses(
+                    self.fixtures, registry=self.context.request.registry
+                )
+            )
         )
         audit(
             self.context,
@@ -255,10 +269,10 @@ class Scenario:
         )
 
 
-@pytest.fixture
-def scenario(bootstrap_fixtures, tmp_path, deny_real_registry):  # noqa: ARG001
+@pytest.fixture(params=["testpypi", "pypi"])
+def scenario(request, bootstrap_fixtures, tmp_path, deny_real_registry):  # noqa: ARG001
     """Never permit accidental real registry traffic from a modeled scenario."""
-    return Scenario(bootstrap_fixtures, tmp_path)
+    return Scenario(bootstrap_fixtures, tmp_path, request.param)
 
 
 def test_bootstrap_success_preserves_closed_sequence_and_budgets(scenario):
@@ -311,6 +325,49 @@ def test_bootstrap_success_preserves_closed_sequence_and_budgets(scenario):
         "file",
         "file",
     ]
+    registry = scenario.context.request.registry
+    expected_origin, expected_upload, expected_host = {
+        "testpypi": (
+            "https://test.pypi.org",
+            "https://test.pypi.org/legacy/",
+            "test-files.pythonhosted.org",
+        ),
+        "pypi": (
+            "https://pypi.org",
+            "https://upload.pypi.org/legacy/",
+            "files.pythonhosted.org",
+        ),
+    }[registry.name]
+    for record in records:
+        if record["kind"] == "index":
+            assert (
+                record["url"]
+                == expected_origin + "/simple/hcoona-release-smoke-python/"
+            )
+        elif record["kind"] == "upload":
+            assert record["url"] == expected_upload
+        elif record["kind"] == "mint":
+            assert record["url"] == expected_origin + "/_/oidc/mint-token"
+        elif record["kind"] == "file":
+            assert urlsplit(record["url"]).netloc == expected_host
+        elif record["kind"] == "oidc":
+            assert parse_qs(urlsplit(record["url"]).query)["audience"] == [
+                registry.name
+            ]
+    for files, prefix in (
+        (scenario.prepared, ""),
+        (scenario.authorization, ""),
+        (scenario.marked, ""),
+        (scenario.result, "execution/"),
+        (scenario.audited, ""),
+    ):
+        assert (
+            files[prefix + "request.json"] == scenario.context.request.content
+        )
+        assert (
+            parse_canonical_json(files[prefix + "binding.json"])["profile"]
+            == registry.profile
+        )
     assert len(scenario.context.references) == 5
     assert {item.variant for item in scenario.consumers} == {"wheel", "sdist"}
     assert [item.content for item in scenario.consumers] == [
@@ -334,7 +391,11 @@ def test_bootstrap_success_preserves_closed_sequence_and_budgets(scenario):
 def delayed_responses(scenario, p2_pending, p3_pending):
     """Insert approved pending replies before the two original readbacks."""
     immediate = scenario.execution_responses()
-    wheel_index = observation_responses(scenario.fixtures, ("wheel",))[0]
+    wheel_index = observation_responses(
+        scenario.fixtures,
+        ("wheel",),
+        registry=scenario.context.request.registry,
+    )[0]
     return [
         *immediate[:12],
         *([_ABSENT] * p2_pending),
@@ -703,7 +764,9 @@ def test_bootstrap_audit_requires_fresh_pair_and_two_consumers(
     """
     scenario.authorize()
     scenario.execute()
-    replies = observation_responses(scenario.fixtures)
+    replies = observation_responses(
+        scenario.fixtures, registry=scenario.context.request.registry
+    )
     if change == "index":
         replies[0] = _ABSENT
     elif change == "download":
@@ -799,3 +862,40 @@ def test_bootstrap_full_p4_remains_valid_after_publisher_expiry(scenario):
         "created-at": 1000,
         "deadline": 1600,
     }
+
+
+@pytest.mark.parametrize(
+    "role", ["prepared", "authorization", "marker", "result", "audit"]
+)
+@pytest.mark.parametrize("change", ["profile", "request"])
+def test_bootstrap_replay_rejects_foreign_profile_bundle(
+    scenario, role, change
+):
+    """Valid artifact containers cannot join another destination's authority."""
+    scenario.authorize()
+    scenario.execute()
+    scenario.audit()
+    request = scenario.context.request
+    other = bootstrap_request(
+        scenario.fixtures,
+        "pypi" if request.registry.name == "testpypi" else "testpypi",
+    )
+    attribute = {
+        "prepared": "prepared",
+        "authorization": "authorization",
+        "marker": "marked",
+        "result": "result",
+        "audit": "audited",
+    }[role]
+    files = dict(getattr(scenario, attribute))
+    prefix = "execution/" if role == "result" else ""
+    if change == "request":
+        files[prefix + "request.json"] = other.content
+    else:
+        binding = parse_canonical_json(files[prefix + "binding.json"])
+        binding["profile"] = other.registry.profile
+        files[prefix + "binding.json"] = canonicalize(binding)
+    # Re-archive and verify actual artifact digests before content replay.
+    setattr(scenario, attribute, scenario.artifact(role, files))
+    with pytest.raises(ValueError, match=r"binding|identity|lineage|request"):
+        scenario.replay()

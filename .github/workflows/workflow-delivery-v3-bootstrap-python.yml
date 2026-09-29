@@ -1,8 +1,13 @@
 # Preparation delivery leaves the protected bootstrap request null.
-name: Workflow Delivery v3 TestPyPI bootstrap
+name: Workflow Delivery v3 Python bootstrap
 'on':
   workflow_dispatch:
     inputs:
+      registry:
+        description: Exact separately authorized destination
+        type: choice
+        required: true
+        options: [testpypi, pypi]
       request_digest:
         description: Exact separately authorized protected bootstrap request SHA-256
         type: string
@@ -13,18 +18,20 @@ name: Workflow Delivery v3 TestPyPI bootstrap
         required: true
 permissions: {}
 concurrency:
-  group: wdv3-python-project-testpypi
+  group: wdv3-python-project-${{ inputs.registry }}
   cancel-in-progress: false
 defaults:
   run:
     shell: bash
 env:
+  WDV3_REGISTRY: ${{ inputs.registry }}
   WDV3_REQUEST_DIGEST: ${{ inputs.request_digest }}
   WDV3_TOOLING_SHA: ${{ inputs.tooling_sha }}
 jobs:
   prepare:
     if: >-
       github.event_name == 'workflow_dispatch' &&
+      (inputs.registry == 'testpypi' || inputs.registry == 'pypi') &&
       github.repository == 'hcoona/three' && github.repository_id == '1102295886' &&
       github.actor == 'hcoona' && github.actor_id == '712433' &&
       github.ref == 'refs/heads/main' && github.ref_protected &&
@@ -47,7 +54,7 @@ jobs:
       - name: Restore pinned NBGV
         run: dotnet tool restore
       - name: Qualify exact original pair and write reviewer summary
-        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap prepare --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --output .wdv3/python-bootstrap-prepare-r${{ github.run_id }}.zip
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap prepare --registry "$WDV3_REGISTRY" --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --output .wdv3/python-bootstrap-prepare-r${{ github.run_id }}.zip
       - name: Bind original prepare payload bytes
         id: prepare-seal
         run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap digest --output .wdv3/python-bootstrap-prepare-r${{ github.run_id }}.zip
@@ -71,13 +78,14 @@ jobs:
     needs: prepare
     if: >-
       github.event_name == 'workflow_dispatch' &&
+      (inputs.registry == 'testpypi' || inputs.registry == 'pypi') &&
       github.repository == 'hcoona/three' && github.repository_id == '1102295886' &&
       github.actor == 'hcoona' && github.actor_id == '712433' &&
       github.ref == 'refs/heads/main' && github.ref_protected &&
       github.sha == inputs.tooling_sha && github.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: workflow-delivery-v3-python-testpypi
+    environment: workflow-delivery-v3-python-${{ inputs.registry }}
     permissions:
       contents: read
       actions: read
@@ -106,7 +114,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           WDV3_APPROVAL_ENVIRONMENT_MARKER: ${{ vars.WDV3_APPROVAL_ENVIRONMENT_MARKER }}
-        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap authorize --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-bootstrap-prepare-r${{ github.run_id }}.zip --output .wdv3/bootstrap-result/authorization
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap authorize --registry "$WDV3_REGISTRY" --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-bootstrap-prepare-r${{ github.run_id }}.zip --output .wdv3/bootstrap-result/authorization
       - name: Archive surviving authorization evidence
         run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap archive --directory .wdv3/bootstrap-result/authorization --output .wdv3/python-bootstrap-authorization-r${{ github.run_id }}.zip
       - name: Bind original authorization payload bytes
@@ -135,7 +143,7 @@ jobs:
         env:
           WDV3_AUTHORIZATION_REFERENCE: >-
             {"artifact-id":${{ steps.authorization-upload.outputs.artifact-id }},"artifact-digest":"sha256:${{ steps.authorization-upload.outputs.artifact-digest }}","artifact-url":"${{ steps.authorization-upload.outputs.artifact-url }}","payload-path":"python-bootstrap-authorization-r${{ github.run_id }}.zip","payload-digest":"${{ steps.authorization-seal.outputs.digest }}"}
-        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap marker --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-bootstrap-prepare-r${{ github.run_id }}.zip --authorization .wdv3/input/python-bootstrap-authorization-r${{ github.run_id }}.zip --output .wdv3/python-bootstrap-marker-r${{ github.run_id }}.zip
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap marker --registry "$WDV3_REGISTRY" --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-bootstrap-prepare-r${{ github.run_id }}.zip --authorization .wdv3/input/python-bootstrap-authorization-r${{ github.run_id }}.zip --output .wdv3/python-bootstrap-marker-r${{ github.run_id }}.zip
       - name: Bind original marker payload bytes
         id: marker-seal
         run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap digest --output .wdv3/python-bootstrap-marker-r${{ github.run_id }}.zip
@@ -166,7 +174,7 @@ jobs:
             {"artifact-id":${{ steps.authorization-upload.outputs.artifact-id }},"artifact-digest":"sha256:${{ steps.authorization-upload.outputs.artifact-digest }}","artifact-url":"${{ steps.authorization-upload.outputs.artifact-url }}","payload-path":"python-bootstrap-authorization-r${{ github.run_id }}.zip","payload-digest":"${{ steps.authorization-seal.outputs.digest }}"}
           WDV3_MARKER_REFERENCE: >-
             {"artifact-id":${{ steps.marker-upload.outputs.artifact-id }},"artifact-digest":"sha256:${{ steps.marker-upload.outputs.artifact-digest }}","artifact-url":"${{ steps.marker-upload.outputs.artifact-url }}","payload-path":"python-bootstrap-marker-r${{ github.run_id }}.zip","payload-digest":"${{ steps.marker-seal.outputs.digest }}"}
-        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap execute --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-bootstrap-prepare-r${{ github.run_id }}.zip --authorization .wdv3/input/python-bootstrap-authorization-r${{ github.run_id }}.zip --marker .wdv3/input/python-bootstrap-marker-r${{ github.run_id }}.zip --output .wdv3/bootstrap-result/execution
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap execute --registry "$WDV3_REGISTRY" --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-bootstrap-prepare-r${{ github.run_id }}.zip --authorization .wdv3/input/python-bootstrap-authorization-r${{ github.run_id }}.zip --marker .wdv3/input/python-bootstrap-marker-r${{ github.run_id }}.zip --output .wdv3/bootstrap-result/execution
       - name: Archive surviving result evidence
         if: always()
         run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap archive --directory .wdv3/bootstrap-result --output .wdv3/python-bootstrap-result-r${{ github.run_id }}.zip
@@ -203,6 +211,7 @@ jobs:
     needs: [prepare, publisher]
     if: >-
       github.event_name == 'workflow_dispatch' &&
+      (inputs.registry == 'testpypi' || inputs.registry == 'pypi') &&
       github.repository == 'hcoona/three' && github.repository_id == '1102295886' &&
       github.actor == 'hcoona' && github.actor_id == '712433' &&
       github.ref == 'refs/heads/main' && github.ref_protected &&
@@ -262,7 +271,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Replay exact original effects and freshly consume both distributions
-        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap audit --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-bootstrap-prepare-r${{ github.run_id }}.zip --authorization .wdv3/input/python-bootstrap-authorization-r${{ github.run_id }}.zip --marker .wdv3/input/python-bootstrap-marker-r${{ github.run_id }}.zip --result .wdv3/input/python-bootstrap-result-r${{ github.run_id }}.zip --output .wdv3/bootstrap-audit
+        run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap audit --registry "$WDV3_REGISTRY" --request-digest "$WDV3_REQUEST_DIGEST" --tooling-sha "$WDV3_TOOLING_SHA" --prepared .wdv3/input/python-bootstrap-prepare-r${{ github.run_id }}.zip --authorization .wdv3/input/python-bootstrap-authorization-r${{ github.run_id }}.zip --marker .wdv3/input/python-bootstrap-marker-r${{ github.run_id }}.zip --result .wdv3/input/python-bootstrap-result-r${{ github.run_id }}.zip --output .wdv3/bootstrap-audit
       - name: Archive surviving audit evidence
         if: always()
         run: python -m three_workflow_delivery_v3.acceptance.python_bootstrap archive --directory .wdv3/bootstrap-audit --output .wdv3/python-bootstrap-audit-r${{ github.run_id }}.zip

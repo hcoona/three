@@ -32,10 +32,9 @@ their configuration is outside this protocol. The prospective publisher is
 project-name-bound and pending; it is not ownership evidence. No wildcard,
 static token or other project is supported.
 
-The existing TestPyPI implementation and historical failed generation retain
-their original identity. The production row is a design extension requiring
-protected disabled implementation before configuration or execution; it does not
-claim that production tooling or resources already exist. No spent TestPyPI
+Both destination bindings are implemented with their protected request slots
+null. This tooling supplies no configuration or execution authority. The
+historical TestPyPI generation retains its original identity; no spent
 generation or publisher registration is reopened by this extension.
 
 ## Configuration and Request Prerequisites
@@ -246,8 +245,7 @@ does not authorize restoration.
 ## Tooling Interface
 
 `three_workflow_delivery_v3.acceptance.python_bootstrap` owns the closed
-bootstrap phases. Its existing implementation is TestPyPI-only until the
-destination extension is protected-delivered. The stable manual workflow at
+bootstrap phases with explicit destination selection. The stable manual workflow at
 `.github/workflows/workflow-delivery-v3-bootstrap-python.yml` separates prepare,
 publisher and audit jobs. The protected bootstrap request admits only a
 separately authorized operation; installing this tooling alone does not configure

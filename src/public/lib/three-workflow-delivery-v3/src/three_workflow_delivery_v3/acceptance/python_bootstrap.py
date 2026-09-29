@@ -1,4 +1,4 @@
-"""Explicit local and hosted entry points for the closed TestPyPI bootstrap."""
+"""Local and hosted entry points for destination-bound Python bootstrap."""
 
 from __future__ import annotations
 
@@ -37,7 +37,10 @@ from three_workflow_delivery_v3.acceptance.python_native_github import (
     git_output,
     validate_hosted_targets,
 )
-from three_workflow_delivery_v3.adapters.pypi import PythonHttpsTransport
+from three_workflow_delivery_v3.adapters.pypi import (
+    PythonHttpsTransport,
+    PythonRegistry,
+)
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonicalize,
@@ -70,6 +73,9 @@ def _parser() -> argparse.ArgumentParser:
     for command, roles in _INPUTS.items():
         phase = commands.add_parser(command)
         phase.add_argument("--root", type=Path, default=Path())
+        phase.add_argument(
+            "--registry", choices=("testpypi", "pypi"), required=True
+        )
         phase.add_argument("--request-digest", required=True)
         phase.add_argument("--tooling-sha", required=True)
         phase.add_argument("--output", type=Path, required=True)
@@ -148,7 +154,7 @@ def _summary(
         facts: dict[str, JsonValue] = {
             "repository": "hcoona/three",
             "repository-id": 1102295886,
-            "oidc-audience": "testpypi",
+            "oidc-audience": request.registry.name,
             "request": request.document,
             "request-digest": request.digest,
             "tooling-sha": tooling,
@@ -159,7 +165,7 @@ def _summary(
         }
         with Path(output).open("a") as stream:
             stream.write(
-                "TestPyPI first-project bootstrap "
+                f"{request.registry.name} first-project bootstrap "
                 "(separate owner grant required)\n\n"
                 "```json\n" + canonicalize(facts).decode() + "\n```\n\n"
                 "At most 2 uploads, 15 index reads, 5 file reads, "
@@ -175,7 +181,9 @@ def _summary(
 
 
 def _hosted(args: argparse.Namespace) -> None:
-    request = load_bootstrap_request(args.root, args.request_digest)
+    request = load_bootstrap_request(
+        args.root, args.request_digest, PythonRegistry(args.registry)
+    )
     run_id = validate_hosted_targets(
         args.root,
         os.environ,

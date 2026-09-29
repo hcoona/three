@@ -36,9 +36,11 @@ def _denied(*_args, **_kwargs):
     pytest.fail("Rejected bootstrap CLI input reached a capability boundary")
 
 
-def _hosted_args(command, output):
+def _hosted_args(command, output, registry_name="testpypi"):
     args = [
         command,
+        "--registry",
+        registry_name,
         "--root",
         str(_ROOT),
         "--request-digest",
@@ -53,9 +55,11 @@ def _hosted_args(command, output):
     return args
 
 
+@pytest.mark.parametrize("registry_name", ["testpypi", "pypi"])
 @pytest.mark.parametrize("command", _HOSTED)
 def test_bootstrap_cli_null_slot_blocks_before_hosted_or_network(
     command,
+    registry_name,
     tmp_path,
     monkeypatch,
     capsys,
@@ -64,13 +68,15 @@ def test_bootstrap_cli_null_slot_blocks_before_hosted_or_network(
     monkeypatch.setattr(python_bootstrap, "validate_hosted_targets", _denied)
     monkeypatch.setattr(python_bootstrap, "PythonHttpsTransport", _denied)
     output = tmp_path / "uncreated"
-    assert python_bootstrap.main(_hosted_args(command, output)) == 1
+    assert (
+        python_bootstrap.main(_hosted_args(command, output, registry_name)) == 1
+    )
     assert not output.exists()
     assert "grants no retry" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
-    "flag", ["--registry", "--account", "--project", "--run-id", "--deadline"]
+    "flag", ["--account", "--project", "--run-id", "--deadline"]
 )
 def test_bootstrap_cli_has_no_hosted_authority_override(
     flag, tmp_path, monkeypatch
@@ -287,3 +293,27 @@ def test_bootstrap_cli_replays_all_five_original_bundles_offline(
         "live-enabled": False,
         "evidence": "supplied-facts-only",
     }
+
+
+@pytest.mark.parametrize("command", _HOSTED)
+@pytest.mark.parametrize("selector", [None, "unknown"])
+def test_bootstrap_cli_requires_closed_registry_selection(
+    command, selector, tmp_path, monkeypatch
+):
+    """Missing or unknown selection cannot fall back before hosted admission."""
+    for name in (
+        "load_bootstrap_request",
+        "validate_hosted_targets",
+        "PythonHttpsTransport",
+    ):
+        monkeypatch.setattr(python_bootstrap, name, _denied)
+    output = tmp_path / "uncreated"
+    args = _hosted_args(command, output)
+    if selector is None:
+        del args[1:3]
+    else:
+        args[2] = selector
+    with pytest.raises(SystemExit) as error:
+        python_bootstrap.main(args)
+    assert error.value.code == 2  # noqa: PLR2004 - argparse invalid-input exit
+    assert not output.exists()

@@ -30,14 +30,14 @@ if TYPE_CHECKING:
     from three_workflow_delivery_v3.adapters.pypi import PythonHttpTransport
     from three_workflow_delivery_v3.adapters.python import PythonDistribution
 
-REGISTRY = PythonRegistry("testpypi")
 
-
-def require_absent(http: PythonHttpTransport) -> None:
+def require_absent(
+    http: PythonHttpTransport, *, registry: PythonRegistry
+) -> None:
     """P0/P1 require the exact project-level 404 prerequisite."""
     response = http.request(
         "GET",
-        REGISTRY.index_url,
+        registry.index_url,
         {"Accept": "application/vnd.pypi.simple.v1+json"},
         None,
         MAX_INDEX_BYTES,
@@ -50,8 +50,12 @@ def require_absent(http: PythonHttpTransport) -> None:
 
 class _IndexReadback:
     def __init__(
-        self, response: PythonHttpResponse, http: PythonHttpTransport
+        self,
+        response: PythonHttpResponse,
+        http: PythonHttpTransport,
+        registry: PythonRegistry,
     ) -> None:
+        self.registry = registry
         self.response = response
         self.http = http
         self.used = False
@@ -67,7 +71,7 @@ class _IndexReadback:
         if not self.used:
             require(
                 method == "GET"
-                and url == REGISTRY.index_url
+                and url == self.registry.index_url
                 and maximum_bytes == MAX_INDEX_BYTES,
                 "bootstrap index readback differs",
             )
@@ -80,13 +84,14 @@ def capture_exact(
     http: PythonHttpTransport,
     originals: tuple[PythonDistribution, ...],
     *,
+    registry: PythonRegistry,
     response: PythonHttpResponse | None = None,
 ) -> tuple[PythonDistribution, ...]:
     """Reject any foreign project inventory before downloading an exact set."""
     if response is None:
         response = http.request(
             "GET",
-            REGISTRY.index_url,
+            registry.index_url,
             {"Accept": "application/vnd.pypi.simple.v1+json"},
             None,
             MAX_INDEX_BYTES,
@@ -109,7 +114,7 @@ def capture_exact(
         "bootstrap complete project inventory differs",
     )
     observation = read_python_index(
-        REGISTRY, originals[0].witness, _IndexReadback(response, http)
+        registry, originals[0].witness, _IndexReadback(response, http, registry)
     )
     require(
         {item.filename: item.content for item in observation.files}
@@ -124,6 +129,7 @@ def upload_pair(  # noqa: PLR0913 - fixed execution and offline replay seams
     originals: dict[str, PythonDistribution],
     token: str,
     *,
+    registry: PythonRegistry,
     retain: Callable[[str, bytes], None],
     deadline: float | None,
     clock: Callable[[], float] = time.monotonic,
@@ -136,14 +142,14 @@ def upload_pair(  # noqa: PLR0913 - fixed execution and offline replay seams
     for ordinal, (item, expected) in enumerate(
         ((wheel, (wheel,)), (sdist, (wheel, sdist)))
     ):
-        response = upload_python_once(REGISTRY, item, token, http)
+        response = upload_python_once(registry, item, token, http)
         require(
             response.status == HTTPStatus.OK
             and response.classification == "definitive-success",
             "bootstrap original upload failed or ambiguous",
         )
         basis = ObservationBasis(
-            REGISTRY,
+            registry,
             f"bootstrap-p{ordinal + 2}",
             item,
             previous,
@@ -173,4 +179,4 @@ def upload_pair(  # noqa: PLR0913 - fixed execution and offline replay seams
                     "stopped-at"
                 ],
             )
-        capture_exact(http, expected, response=previous)
+        capture_exact(http, expected, registry=registry, response=previous)

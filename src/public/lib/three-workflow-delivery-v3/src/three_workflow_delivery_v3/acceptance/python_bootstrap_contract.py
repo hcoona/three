@@ -34,9 +34,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 WORKFLOW = ".github/workflows/workflow-delivery-v3-bootstrap-python.yml"
-SLOT_PATH = ".github/workflow-delivery/bootstrap/python-request.json"
-ACCOUNT = "Backspace7980"
-SENTINEL = "workflow-delivery-v3-python-testpypi/v1"
+SLOT_PATHS = {
+    "testpypi": ".github/workflow-delivery/bootstrap/python-request.json",
+    "pypi": ".github/workflow-delivery/bootstrap/python-pypi-request.json",
+}
+ACCOUNTS = {"testpypi": "Backspace7980", "pypi": "Sherry7290"}
 WINDOW_SECONDS = 600
 
 
@@ -67,8 +69,7 @@ class BootstrapRequest:
         )
         require(
             doc["schema"] == "workflow-delivery/v3/python-bootstrap-request"
-            and doc["registry"] == "testpypi"
-            and doc["account"] == ACCOUNT
+            and doc["account"] == ACCOUNTS[self.registry.name]
             and doc["project"] == PYTHON_RELEASE_UNIT
             and doc["workflow"] == WORKFLOW
             and doc["profile-digest"] == self.registry.profile_digest,
@@ -99,7 +100,7 @@ class BootstrapRequest:
         positive(environment["id"])
         require(
             environment["name"] == self.registry.environment
-            and environment["sentinel"] == SENTINEL,
+            and environment["sentinel"] == self.sentinel,
             "bootstrap Environment differs",
         )
         for name in ("authorization", "configuration"):
@@ -121,8 +122,13 @@ class BootstrapRequest:
 
     @property
     def registry(self) -> PythonRegistry:
-        """Return the only admitted bootstrap destination."""
-        return PythonRegistry("testpypi")
+        """Return the closed destination selected by the retained request."""
+        return PythonRegistry(python_text(self.document["registry"]))
+
+    @property
+    def sentinel(self) -> str:
+        """Bind approval proof to the selected destination Environment."""
+        return f"{self.registry.environment}/v1"
 
     @property
     def digest(self) -> str:
@@ -136,14 +142,15 @@ class BootstrapRequest:
 
 
 def load_bootstrap_request(
-    root: Path, expected_digest: str
+    root: Path, expected_digest: str, registry: PythonRegistry
 ) -> BootstrapRequest:
     """Read the protected slot without overrides or placeholder fallback."""
-    value = parse_json_strict((root / SLOT_PATH).read_bytes())
+    value = parse_json_strict((root / SLOT_PATHS[registry.name]).read_bytes())
     require(value is not None, "bootstrap request slot is disabled")
     request = BootstrapRequest(canonicalize(value))
     require(
-        request.digest == expected_digest, "bootstrap request digest differs"
+        request.registry == registry and request.digest == expected_digest,
+        "bootstrap request selection or digest differs",
     )
     return request
 

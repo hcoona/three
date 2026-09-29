@@ -7,7 +7,10 @@ import pytest
 from three_workflow_delivery_v3.acceptance.python_bootstrap_capture import (
     capture_exact,
 )
-from three_workflow_delivery_v3.adapters.pypi import PythonHttpResponse
+from three_workflow_delivery_v3.adapters.pypi import (
+    PythonHttpResponse,
+    PythonRegistry,
+)
 from three_workflow_delivery_v3.canonical import parse_json_strict
 
 from ..adapters.test_pypi import FakeHttp, _entry, _index
@@ -17,6 +20,7 @@ from .test_python_bootstrap_fixture import bootstrap_request
 bootstrap_fixtures = fixture_tests.bootstrap_fixtures
 
 
+@pytest.mark.parametrize("registry_name", ["testpypi", "pypi"])
 @pytest.mark.parametrize(
     "change",
     [
@@ -28,16 +32,17 @@ bootstrap_fixtures = fixture_tests.bootstrap_fixtures
         "yanked",
         "wrong-hash",
         "foreign-host",
+        "other-registry-host",
         "bad-type",
         "redirect",
     ],
 )
 def test_bootstrap_complete_capture_rejects_unexpected_project_inventory(  # noqa: C901
-    bootstrap_fixtures, change
+    bootstrap_fixtures, change, registry_name
 ):
     """Complete project inventory cannot be filtered into apparent success."""
     originals = tuple(bootstrap_fixtures.distributions.values())
-    registry = bootstrap_request(bootstrap_fixtures).registry
+    registry = bootstrap_request(bootstrap_fixtures, registry_name).registry
     entries = [_entry(registry, item) for item in originals]
     if change == "other-version":
         other = dict(entries[0])
@@ -57,6 +62,13 @@ def test_bootstrap_complete_capture_rejects_unexpected_project_inventory(  # noq
         entries[0]["hashes"] = {"sha256": "f" * 64}
     elif change == "foreign-host":
         entries[0]["url"] = "https://evil.example/packages/file.whl"
+    elif change == "other-registry-host":
+        other = PythonRegistry(
+            "pypi" if registry.name == "testpypi" else "testpypi"
+        )
+        entries[0]["url"] = entries[0]["url"].replace(
+            registry.file_host, other.file_host
+        )
     response = _index(entries)
     if change == "bad-type":
         response = PythonHttpResponse(200, response.body, "text/html")
@@ -73,7 +85,7 @@ def test_bootstrap_complete_capture_rejects_unexpected_project_inventory(  # noq
         ValueError,
         match=r"bootstrap|Python|native|fixture|consumer|source|foreign",
     ):
-        capture_exact(http, originals)
+        capture_exact(http, originals, registry=registry)
     assert len(http.calls) == (2 if change == "wrong-hash" else 1)
     assert all(call[0] == "GET" for call in http.calls)
     if change not in {"redirect", "bad-type"}:

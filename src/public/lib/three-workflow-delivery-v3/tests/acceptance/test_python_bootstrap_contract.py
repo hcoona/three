@@ -7,8 +7,10 @@ from dataclasses import replace
 
 import pytest
 from three_workflow_delivery_v3.acceptance.python_bootstrap_contract import (
+    SLOT_PATHS,
     BootstrapRequest,
     authority_window,
+    load_bootstrap_request,
 )
 from three_workflow_delivery_v3.acceptance.python_bootstrap_transport import (
     JournalTransport,
@@ -148,6 +150,7 @@ def test_bootstrap_authority_expiry_blocks_next_request():
         retained.__setitem__,
         window={"created-at": 1000, "deadline": 1600},
         clock=lambda: now[0],
+        registry=PythonRegistry("testpypi"),
     )
     url = PythonRegistry("testpypi").index_url
     assert journal.request("GET", url, {}, None, MAX_INDEX_BYTES).status == 404
@@ -157,7 +160,10 @@ def test_bootstrap_authority_expiry_blocks_next_request():
     assert len(boundary.calls) == 1
     assert parse_json_strict(retained["requests.json"])[0]["finish"] == 1601
     replay = ReplayTransport(
-        retained, "execute", window={"created-at": 1000, "deadline": 1600}
+        retained,
+        "execute",
+        window={"created-at": 1000, "deadline": 1600},
+        registry=PythonRegistry("testpypi"),
     )
     assert (
         replay.request("GET", url, {}, None, MAX_INDEX_BYTES).body
@@ -176,6 +182,7 @@ def test_bootstrap_effect_budget_counts_failed_attempt_before_send():
         retained.__setitem__,
         window={"created-at": 1000, "deadline": 1600},
         clock=lambda: 1000,
+        registry=PythonRegistry("testpypi"),
     )
     url = PythonRegistry("testpypi").index_url
     with pytest.raises(TimeoutError):
@@ -187,7 +194,10 @@ def test_bootstrap_effect_budget_counts_failed_attempt_before_send():
     assert parse_json_strict(retained["requests.json"])[0]["status"] is None
     with pytest.raises(ValueError, match="unavailable"):
         ReplayTransport(
-            retained, "authorize", window={"created-at": 1000, "deadline": 1600}
+            retained,
+            "authorize",
+            window={"created-at": 1000, "deadline": 1600},
+            registry=PythonRegistry("testpypi"),
         )
 
 
@@ -210,6 +220,7 @@ def test_bootstrap_response_never_retains_reflected_credentials(secret_form):
         window={"created-at": 1000, "deadline": 1600},
         clock=lambda: 1000,
         secrets=("sensitive-test-token",),
+        registry=PythonRegistry("testpypi"),
     )
     with pytest.raises(ValueError, match="unsafe"):
         journal.request(
@@ -222,3 +233,99 @@ def test_bootstrap_response_never_retains_reflected_credentials(secret_form):
     journal.close()
     assert "http/0.body" not in retained
     assert secret_form not in b"".join(retained.values())
+
+
+@pytest.mark.parametrize(
+    ("registry_name", "account", "environment", "slot"),
+    [
+        (
+            "testpypi",
+            "Backspace7980",
+            "workflow-delivery-v3-python-testpypi",
+            ".github/workflow-delivery/bootstrap/python-request.json",
+        ),
+        (
+            "pypi",
+            "Sherry7290",
+            "workflow-delivery-v3-python-pypi",
+            ".github/workflow-delivery/bootstrap/python-pypi-request.json",
+        ),
+    ],
+)
+def test_bootstrap_request_admits_only_closed_destination_tuple(
+    bootstrap_fixtures, registry_name, account, environment, slot
+):
+    """The two accepted rows keep distinct accounts, profiles and slots."""
+    request = bootstrap_request(bootstrap_fixtures, registry_name)
+    assert request.registry == PythonRegistry(registry_name)
+    assert request.document["account"] == account
+    assert request.document["environment"]["name"] == environment
+    assert request.sentinel == environment + "/v1"
+    assert request.document["environment"]["sentinel"] == request.sentinel
+    assert request.document["profile-digest"] == request.registry.profile_digest
+    assert SLOT_PATHS[registry_name] == slot
+
+
+@pytest.mark.parametrize("registry_name", ["testpypi", "pypi"])
+@pytest.mark.parametrize(
+    "field", ["account", "registry", "environment", "sentinel", "profile"]
+)
+def test_bootstrap_request_rejects_swapped_destination_fact(
+    bootstrap_fixtures, registry_name, field
+):
+    """A valid foreign row cannot be mixed into the selected request."""
+    request = bootstrap_request(bootstrap_fixtures, registry_name)
+    other = bootstrap_request(
+        bootstrap_fixtures,
+        "pypi" if registry_name == "testpypi" else "testpypi",
+    )
+    document = request.document
+    if field == "environment":
+        document["environment"]["name"] = other.registry.environment
+    elif field == "sentinel":
+        document["environment"]["sentinel"] = other.sentinel
+    else:
+        key = "profile-digest" if field == "profile" else field
+        document[key] = other.document[key]
+    with pytest.raises(ValueError, match="bootstrap"):
+        BootstrapRequest(canonicalize(document))
+
+
+@pytest.mark.parametrize("registry_name", ["testpypi", "pypi"])
+@pytest.mark.parametrize(
+    "state", ["valid", "null", "other-registry", "wrong-digest"]
+)
+def test_bootstrap_selected_slot_never_borrows_other_destination(
+    bootstrap_fixtures, tmp_path, registry_name, state
+):
+    """Only the selected slot and its exact digest supply authority."""
+    request = bootstrap_request(bootstrap_fixtures, registry_name)
+    other = bootstrap_request(
+        bootstrap_fixtures,
+        "pypi" if registry_name == "testpypi" else "testpypi",
+    )
+    for item in (request, other):
+        path = tmp_path / SLOT_PATHS[item.registry.name]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(item.content)
+    selected = tmp_path / SLOT_PATHS[registry_name]
+    if state == "null":
+        selected.write_bytes(b"null\n")
+    elif state == "other-registry":
+        selected.write_bytes(other.content)
+    digest = (
+        other.digest
+        if state in {"other-registry", "wrong-digest"}
+        else request.digest
+    )
+    if state == "valid":
+        assert (
+            load_bootstrap_request(tmp_path, digest, request.registry)
+            == request
+        )
+    else:
+        with pytest.raises(ValueError, match=r"disabled|selection or digest"):
+            load_bootstrap_request(tmp_path, digest, request.registry)
+    assert (
+        tmp_path / SLOT_PATHS[other.registry.name]
+    ).read_bytes() == other.content
