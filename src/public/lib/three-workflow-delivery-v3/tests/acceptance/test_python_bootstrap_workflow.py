@@ -206,7 +206,8 @@ def test_bootstrap_workflow_closes_and_propagates_selected_destination():
     assert "default" not in selection
     assert workflow["env"]["WDV3_REGISTRY"] == "${{ inputs.registry }}"
     phases = []
-    for job in workflow["jobs"].values():
+    for job_name in ("prepare", "publisher", "audit"):
+        job = workflow["jobs"][job_name]
         assert (
             "(inputs.registry == 'testpypi' || inputs.registry == 'pypi')"
             in job["if"]

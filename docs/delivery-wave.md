@@ -8,49 +8,52 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Prepare Python Official publication on PyPI
+### Configure Python Official publication on PyPI
 
 - **Issue:** [#843](https://github.com/hcoona/three/issues/843).
-- **Accepted inputs:** the owner's [direction to continue with production PyPI](https://github.com/hcoona/three/issues/843#issuecomment-5885105603),
-  accepted Python requirements/design and platform-reliance decision, completed
-  TestPyPI normal publication and partial-recovery evidence, and protected
-  retirement in [#923](https://github.com/hcoona/three/pull/923). The subject
-  remains the smoke-only `hcoona-release-smoke-python` distribution, without
-  production consumers; TestPyPI evidence does not admit the PyPI destination.
-- **Advancement and outcome:** determine the actual PyPI account/project prerequisites;
-  accept any required first-project requirements/design/protocol extension
-  before implementing it; test, independently review and protected-deliver
-  the scoped disabled implementation. Prepare concrete configuration/admission
-  and publication proposals for their separate later Wave authorizations.
-  Remove this entry when the required preparation is independently accepted.
-- **Effects and delivery:** permit public-source research, local locked dependency
-  preparation, builds/tests, ordinary CI, Issue/PR delivery, independent delegated
-  review/triage and protected merges. Obtain owner-provided account/project facts
-  without collecting credentials or an authenticated browser session. Preserve
-  the stable normal workflow and all existing TestPyPI registrations. The
-  existing owner direction covers scoped diagnosis, correction, validation and
-  delivery without repeated approval; it does not make later Wave gates implicit.
-- **Bounds and continuation:** only preparation for repository `hcoona/three`,
-  operator/reviewer `hcoona`, protected `main`, production PyPI project
-  `hcoona-release-smoke-python` and Environment
-  `workflow-delivery-v3-python-pypi` is in scope. Later proposals must separately
-  close concrete configuration diffs/readback, finite cumulative mutation and
-  lifetime bounds, persistent paced/resource-limited evidence reads, fresh
-  current-run authority, independent admission and terminal closure. This
-  preparation grants no operational budget or automatic follow-on effects.
-- **Prerequisites and exclusions:** existing blocked PyPI Governance remains
-  blocked throughout this advancement. Configuration/admission and actual
-  publication require their separate accepted Wave authorizations and domain gates.
-  An absent project requires accepted destination-specific bootstrap contracts
-  and implementation before any bootstrap effect; TestPyPI-only tooling is not
-  executable PyPI authority. No smoke registry observation, configuration change,
-  publisher registration, Approval, OIDC, dispatch or upload is granted here.
-  No duplicate/race proving, intentional fault
-  injection, arbitrary old-version recovery, old artifact/Approval adoption,
-  GitHub rerun, static publisher token, deletion/rollback, broad access grant,
-  host-trust/profile change, unrelated package or TestPyPI mutation. Preserve
-  current-run authority, failed/ambiguous Outcomes, sole-owner trust boundaries,
-  independent reviews and all completed npm/NuGet/TestPyPI histories.
+- **Accepted inputs:** the owner's accepted production direction and end-to-end
+  delegation, accepted destination-bound first-project design in #929 and its
+  independently accepted disabled implementation in [#930](https://github.com/hcoona/three/pull/930), confirmed sole control of
+  PyPI account `Sherry7290`, existing `WD-PY-006` platform reliance and completed
+  TestPyPI evidence. The separate existing `hcoona-release-smoke` project is not
+  this slice's resource.
+- **Advancement and outcome:** establish the exact production bootstrap pending
+  publisher and GitHub Environment configuration, independently admit that
+  configuration, then (only after separately authorized project establishment
+  and owner/converted-publisher evidence) register the stable normal publisher
+  and independently deliver fresh ready production Governance. Remove this
+  entry when configuration/admission is accepted or the lifetime terminates.
+- **Effects and delivery:** permit scoped public-source rechecks, local tests,
+  ordinary CI, independent review/triage and protected delivery. Permit bounded
+  GitHub configuration inventory and exact reviewed mutations for repository
+  `hcoona/three` (1102295886), sole writer/reviewer `hcoona` (712433), protected
+  `main`, project `hcoona-release-smoke-python`, Environment
+  `workflow-delivery-v3-python-pypi`; the owner performs private PyPI website
+  registration without exposing credentials. Existing delegation covers these
+  scoped stages without repeated consent, subject to the [concrete configuration protocol](https://github.com/hcoona/three/issues/843#issuecomment-5895723024).
+- **Concrete boundaries:** first inspect and independently accept the actual
+  before/after diff. Across one seven-day lifetime from the first recorded
+  configuration read, allow at most one Environment create/update, one missing
+  `main` branch-policy creation and one marker create/update, plus one conditional
+  owner-side GitHub website save to disable administrator bypass, one bootstrap
+  pending publisher and one later normal publisher registration by the owner.
+  Require sole reviewer, self-review allowed, zero wait, no administrator bypass,
+  main-only selection, no secrets and marker `<environment>/v1`. Retain the
+  stable bootstrap and normal workflow filenames. Unknown grants or ambiguous
+  writes stop dependent work without resend or automatic repair. Evidence GETs
+  use the concrete protocol's paced, deadline/body-size/inventory bounds rather
+  than owner-refilled request quotas; read evidence cannot renew mutation limits.
+- **Prerequisites and exclusions:** both bootstrap slots remain null and
+  production Governance blocked until their separate applicable gates close.
+  Project establishment requires its own later accepted operation Wave; this
+  entry grants no smoke registry observation, bootstrap request population,
+  current-run Approval, OIDC, dispatch or upload. Normal admission requires
+  actual project ownership, converted bootstrap publisher and exact normal
+  publisher attestation plus complete reviewed GitHub configuration and current
+  source basis. No account/writer/ruleset/Actions permission expansion, wildcard
+  registration, unrelated project change, TestPyPI effect, static token,
+  deletion/rollback, duplicate/race probing, spent-operation revival or host
+  trust/profile change. Preserve failed outcomes and all prior evidence.
 
 ### Restore dependency updates and simplify V3 tooling ownership
 

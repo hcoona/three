@@ -27,7 +27,11 @@ operations, publication, or another npm proving run.
 
 ## Starting a New Session
 
-Production PyPI preparation follows the current [Wave](../../../../../docs/delivery-wave.md).
+Production PyPI configuration and admission follow the current
+[Wave](../../../../../docs/delivery-wave.md) and its linked configuration protocol.
+Project bootstrap and Official publication require separate accepted operation
+Waves and their current-run gates; this stage grants no registry observation,
+request population, Approval, OIDC, dispatch or upload.
 The [first-project protocol](./validation/python-bootstrap.md) extends the
 destination-bound tooling to PyPI; both bootstrap request slots remain null
 and production Governance remains blocked. The owner
