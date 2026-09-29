@@ -192,23 +192,10 @@ class PythonPublicationSnapshot:
 
     observation: PythonRemoteObservation
     observation_reference: ArtifactReference
-    proof_mode: str = "none"
 
     def __post_init__(self) -> None:
         """Materialize only absence, exact subset or exact complete state."""
         _reference(self.observation_reference, self.observation.to_document())
-        if type(self.proof_mode) is not str or self.proof_mode not in {
-            "none",
-            "stop-after-wheel",
-        }:
-            message = "Python hosted proof mode is unsupported"
-            raise ValueError(message)
-        if self.proof_mode == "stop-after-wheel" and (
-            self.registry.name != "testpypi"
-            or self.observation.classification != "absent"
-        ):
-            message = "Python hosted proof requires absent TestPyPI state"
-            raise ValueError(message)
         if self.observation.classification not in {
             "absent",
             "exact-subset",
@@ -267,7 +254,6 @@ class PythonPublicationSnapshot:
             "schema": "workflow-delivery/v3/python-publication-snapshot",
             "attempt": self.attempt.to_document(),
             "observation-reference": self.observation_reference.to_document(),
-            "proof-mode": self.proof_mode,
             "action": action,
             "producer": "prepare-python-publication",
         }
@@ -285,14 +271,7 @@ def render_python_approval_summary(
         f"Version: {decision.snapshot.model.provider.nbgv.pep440_version}",
         f"Destination: {snapshot.registry.origin}",
         f"Profile: {snapshot.registry.profile_digest}",
-        f"Proof mode: {snapshot.proof_mode}",
     ]
-    if snapshot.proof_mode == "stop-after-wheel":
-        lines.append(
-            "Intentionally stop after successful wheel upload and exact "
-            "readback, before any sdist upload. This Attempt must remain "
-            "a failed partial publication."
-        )
     lines.extend(
         f"{i}: {snapshot.dispositions[i]} {a.filename} "
         f"{a.reference.payload_digest}"
@@ -835,10 +814,6 @@ def execute_python_publication(  # noqa: PLR0913, PLR0915
         if status != "succeeded" or not exact:
             break
         present.add(distribution.variant)
-        if snapshot.proof_mode == "stop-after-wheel":
-            # Preserve the real wheel response and readback, leaving sdist
-            # not-attempted in an ordinary durable failed Result.
-            break
         if present == {"wheel", "sdist"}:
             final_digest, final_exact = readback_digest, exact
     return PythonPublicationResult(
@@ -932,12 +907,6 @@ def audit_python_publication_result(  # noqa: C901, PLR0912, PLR0915 - strict or
     """Verify immutable observations against the approved artifacts."""
     snapshot = marker.authorization.bundle.snapshot
     decision = snapshot.observation.decision
-    if (
-        snapshot.proof_mode == "stop-after-wheel"
-        and result.operations[1].status != "not-attempted"
-    ):
-        message = "Python hosted proof cannot attempt sdist upload"
-        raise ValueError(message)
     if result.attempt != marker.attempt:
         message = "Python Result belongs to another Attempt"
         raise ValueError(message)
