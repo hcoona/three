@@ -14,13 +14,14 @@ from typing import Any
 CHECKOUT = Path("/workspace/three-workspaces/design-workflows")
 
 
-def verify(target: Any, tree: Any) -> None:
+def verify(target: Any, tree: Any, *, checkout: Any = None) -> None:
     """Reject a changed checkout or a different installed reader."""
+    checkout = CHECKOUT if checkout is None else Path(checkout).resolve()
 
     def git(*args: Any) -> Any:
         """Validate the git caller boundary."""
         return subprocess.check_output(
-            ["git", *args], cwd=CHECKOUT, text=True, timeout=30
+            ["git", *args], cwd=checkout, text=True, timeout=30
         ).strip()
 
     assert git("rev-parse", "HEAD") == target
@@ -28,7 +29,7 @@ def verify(target: Any, tree: Any) -> None:
     assert not git("status", "--porcelain"), "local reader checkout changed"
     spec = importlib.util.find_spec("three_workflow_delivery_v3")
     expected = (
-        CHECKOUT
+        checkout
         / "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/__init__.py"
     )
     assert spec is not None
