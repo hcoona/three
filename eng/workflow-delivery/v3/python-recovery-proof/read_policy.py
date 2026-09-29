@@ -156,6 +156,9 @@ class ReadPacer:
         service_due = datetime.fromisoformat(
             self.state.get("service_not_before", now.isoformat())
         )
+        poll_due = datetime.fromisoformat(
+            self.state.get("poll_not_before", now.isoformat())
+        )
         try:
             if "retry-after" in headers:
                 value = headers["retry-after"]
@@ -179,14 +182,15 @@ class ReadPacer:
             if "x-poll-interval" in headers:
                 interval = int(headers["x-poll-interval"])
                 assert interval >= 0
-                service_due = max(
-                    service_due,
+                poll_due = max(
+                    poll_due,
                     now + timedelta(seconds=interval),
                 )
         except (ValueError, TypeError, OverflowError, AssertionError):
             self.stop("malformed service pacing header")
-        due = max(due, service_due)
+        due = max(due, service_due, poll_due)
         self.state["service_not_before"] = service_due.isoformat()
+        self.state["poll_not_before"] = poll_due.isoformat()
         self.state["next_not_before"] = due.isoformat()
         if error is None and status in (200, 201, 204, 301, 302, 303, 307, 308):
             if reset_errors:
@@ -199,7 +203,14 @@ class ReadPacer:
         count = self.state.get("consecutive_errors", 0) + 1
         self.state["consecutive_errors"] = count
         gap = (30, 60, 120, 300)[min(count - 1, 3)]
-        due = max(due, now + timedelta(seconds=gap))
+        error_due = max(
+            datetime.fromisoformat(
+                self.state.get("error_not_before", now.isoformat())
+            ),
+            now + timedelta(seconds=gap),
+        )
+        self.state["error_not_before"] = error_due.isoformat()
+        due = max(due, error_due)
         self.state["next_not_before"] = due.isoformat()
         self.save()
         if count >= 5:
