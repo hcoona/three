@@ -507,7 +507,7 @@ def classify(path: str) -> str:  # noqa: C901, PLR0911, PLR0912 - Ordered indepe
                 ".github/workflow-delivery",
             )
         )
-        or path == ".github/lsp.json"
+        or path in {".github/lsp.json", ".github/mcp.json"}
     ):
         return "configuration-source"
     if name in {
