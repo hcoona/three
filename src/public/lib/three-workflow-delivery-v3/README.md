@@ -30,14 +30,12 @@ completion, missing-file uploads and strict terminal audit. Real-build and
 controlled-transport recovery tests preserve prior failures. No hosted recovery
 is claimed. The current Wave authorizes the separate
 [hosted recovery protocol](docs/validation/python-hosted-recovery.md); its
-temporary default-off interruption, persisted evidence-read pacing and original
-publisher-deadline continuation are implemented. The separately admitted
-revision-2 terminal-read lifetime awaits implementation, protected delivery and
-independent exact execution admission.
+temporary default-off interruption, persisted evidence-read pacing and separately
+bound revision-2 terminal-read lifetime are implemented. Protected delivery and
+independent exact execution admission remain prerequisites before use.
 
 The temporary [hosted operator](../../../../eng/workflow-delivery/v3/python-recovery-proof/)
-implements the existing proof stages; its revision-2 continuation update is pending.
-After protected delivery, use hash-matched Python
+implements the accepted protocol. After protected delivery, use hash-matched Python
 sources and a byte-copy of the canonical protocol in a fresh private directory
 outside the clean checkout. Keep campaign state and gate/evidence files there,
 with `WDV3_SCENARIO` and `WDV3_ATTEMPT` selecting the independently admitted

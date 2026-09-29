@@ -31,10 +31,10 @@ from source_checks import CHECKOUT, verify
 from three_workflow_delivery_v3.python_cli import PythonInputs
 
 FIELDS = frozenset(
-    "schema scenario attempt run purpose target tree version mode original_binding_sha256 original_ledger_sha256 original_started original_deadline governance_expiry governance_sha256 profile frozen_inputs_sha256 caller_source caller_tree caller_files_sha256 protocol_sha256 reader_checkout reader_source reader_tree original_evidence_sha256 independent_reviewers".split()
+    "schema scenario attempt run purpose target tree version mode original_binding_sha256 original_ledger_sha256 original_started original_deadline audit_deadline governance_expiry governance_sha256 profile frozen_inputs_sha256 caller_source caller_tree caller_files_sha256 protocol_sha256 reader_checkout reader_source reader_tree original_evidence_sha256 independent_reviewers".split()
 )
 ADMISSION_FIELDS = frozenset(
-    "schema reviewer result binding_sha256 protocol_sha256 caller_source caller_tree original_binding_sha256 original_ledger_sha256 original_deadline governance_sha256 profile frozen_inputs_sha256 dispatch_resolved terminal publisher_quiescent wheel_reservation_preserved files_sha256".split()
+    "schema reviewer result binding_sha256 protocol_sha256 caller_source caller_tree original_binding_sha256 original_ledger_sha256 original_deadline audit_deadline governance_sha256 profile frozen_inputs_sha256 dispatch_resolved terminal publisher_quiescent wheel_reservation_preserved files_sha256".split()
 )
 
 
@@ -45,7 +45,7 @@ def validate_binding(
     sidecar = directory / "read-continuation"
     binding = read(sidecar / "binding.json")
     assert set(binding) == FIELDS
-    assert binding["schema"] == "testpypi-read-continuation-v1"
+    assert binding["schema"] == "testpypi-read-continuation-v2"
     assert binding["purpose"] == "resolve-terminal-wheel-only"
     assert (
         binding["scenario"],
@@ -106,11 +106,22 @@ def validate_binding(
     )
     assert binding["original_deadline"] == "2026-09-29T01:55:15.465230+00:00"
     assert binding["governance_expiry"] == EXPIRY.isoformat()
+    assert binding["audit_deadline"] == EXPIRY.isoformat()
     assert datetime.fromisoformat(binding["original_started"]) <= now
-    expired = now >= min(
-        EXPIRY, datetime.fromisoformat(binding["original_deadline"])
-    )
+    expired = now >= datetime.fromisoformat(binding["audit_deadline"])
     assert expired is expiry_only
+    governance_path = (
+        CHECKOUT
+        / ".github/workflow-delivery/governance/hcoona-release-smoke-python-testpypi.json"
+    )
+    assert digest(governance_path) == binding["governance_sha256"]
+    governance = read(governance_path)
+    assert governance["schema"] == "workflow-delivery/v3/python-governance-v2"
+    assert governance["state"] == "ready"
+    assert governance["live_enabled"] is True
+    assert governance["operation-profile-digest"] == binding["profile"]
+    assert datetime.fromisoformat(governance["expires-at"]) == EXPIRY
+    assert datetime.fromisoformat(governance["inspected-at"]) <= now
     assert original_ledger["run"] == binding["run"]
     assert (
         "registry_audit_started" in original_ledger
@@ -151,7 +162,7 @@ def validate_binding(
     )
     admission = read(sidecar / "independent-admission.json")
     assert set(admission) == ADMISSION_FIELDS
-    assert admission["schema"] == "testpypi-read-continuation-admission-v1"
+    assert admission["schema"] == "testpypi-read-continuation-admission-v2"
     assert (
         admission["reviewer"] in reviewers
         and admission["reviewer"] not in AUTHORS
@@ -165,6 +176,7 @@ def validate_binding(
         "original_binding_sha256",
         "original_ledger_sha256",
         "original_deadline",
+        "audit_deadline",
         "governance_sha256",
         "profile",
         "frozen_inputs_sha256",
@@ -319,19 +331,25 @@ class Continuation:
             binding_digest = digest(self.sidecar / "binding.json")
             initialization_path = self.sidecar / "initialization.json"
             initialization = {
+                "schema": "testpypi-read-continuation-initialization-v2",
                 "binding_sha256": binding_digest,
                 "admission_sha256": digest(
                     self.sidecar / "independent-admission.json"
                 ),
                 "original_deadline": binding["original_deadline"],
+                "audit_deadline": binding["audit_deadline"],
             }
             if ledger_path.exists():
                 assert read(initialization_path) == initialization
                 ledger = read(ledger_path)
+                assert (
+                    ledger["schema"] == "testpypi-read-continuation-ledger-v2"
+                )
                 assert ledger["binding_sha256"] == binding_digest
                 assert (
                     ledger["original_deadline"] == binding["original_deadline"]
                 )
+                assert ledger["audit_deadline"] == binding["audit_deadline"]
                 assert (
                     ledger["original_ledger_sha256"]
                     == binding["original_ledger_sha256"]
@@ -356,12 +374,13 @@ class Continuation:
                 )
                 started = prior[0]["started"]
                 ledger = {
-                    "schema": "testpypi-read-continuation-ledger-v1",
+                    "schema": "testpypi-read-continuation-ledger-v2",
                     "binding_sha256": binding_digest,
                     "admission_sha256": digest(
                         self.sidecar / "independent-admission.json"
                     ),
                     "original_deadline": binding["original_deadline"],
+                    "audit_deadline": binding["audit_deadline"],
                     "original_ledger_sha256": binding["original_ledger_sha256"],
                     "inherited_observations": prior,
                     "requests": [],
@@ -381,14 +400,31 @@ class Continuation:
             completion_path = self.sidecar / "completion.json"
             if completion_path.exists():
                 completion = read(completion_path)
+                assert (
+                    completion["schema"]
+                    == "testpypi-read-continuation-completion-v2"
+                )
+                assert (
+                    completion["original_deadline"]
+                    == binding["original_deadline"]
+                )
+                assert completion["audit_deadline"] == binding["audit_deadline"]
+                assert datetime.fromisoformat(
+                    completion["completed"]
+                ) < datetime.fromisoformat(binding["audit_deadline"])
                 assert completion["binding_sha256"] == binding_digest
                 assert completion["ledger_sha256"] == digest(ledger_path)
+                assert (
+                    completion["original_ledger_sha256"]
+                    == binding["original_ledger_sha256"]
+                )
+                assert ledger["classification"] == "complete"
                 bound_files(self.sidecar, completion["files_sha256"])
                 return completion
             audit = RegistryAudit(
                 self.sidecar,
                 ledger,
-                binding["original_deadline"],
+                binding["audit_deadline"],
                 decision.snapshot.governance.registry,
                 originals[:1],
                 save=lambda: save_json(ledger_path, ledger),
@@ -419,13 +455,17 @@ class Continuation:
                     )
                 }
             )
+            completed = self.now()
+            assert completed < datetime.fromisoformat(binding["audit_deadline"])
             completion = {
-                "schema": "testpypi-read-continuation-completion-v1",
+                "schema": "testpypi-read-continuation-completion-v2",
                 "binding_sha256": binding_digest,
                 "ledger_sha256": digest(ledger_path),
                 "original_ledger_sha256": binding["original_ledger_sha256"],
+                "original_deadline": binding["original_deadline"],
+                "audit_deadline": binding["audit_deadline"],
                 "destination_state": "wheel-only",
-                "completed": self.now().isoformat(),
+                "completed": completed.isoformat(),
                 "files_sha256": files,
             }
             save_json(completion_path, completion)
@@ -434,7 +474,7 @@ class Continuation:
     @contextmanager
     def _deadline(self) -> Any:
         """Enforce the effect deadline and retain only verified existing expiry state."""
-        deadline = "2026-09-29T01:55:15.465230+00:00"
+        deadline = EXPIRY.isoformat()
         try:
             with deadline_guard(deadline, now=self.now):
                 yield
@@ -468,15 +508,18 @@ class Continuation:
         binding_digest = digest(self.sidecar / "binding.json")
         admission_digest = digest(self.sidecar / "independent-admission.json")
         assert read(self.sidecar / "initialization.json") == {
+            "schema": "testpypi-read-continuation-initialization-v2",
             "binding_sha256": binding_digest,
             "admission_sha256": admission_digest,
             "original_deadline": binding["original_deadline"],
+            "audit_deadline": binding["audit_deadline"],
         }
         ledger = read(ledger_path)
-        assert ledger["schema"] == "testpypi-read-continuation-ledger-v1"
+        assert ledger["schema"] == "testpypi-read-continuation-ledger-v2"
         assert ledger["binding_sha256"] == binding_digest
         assert ledger["admission_sha256"] == admission_digest
         assert ledger["original_deadline"] == binding["original_deadline"]
+        assert ledger["audit_deadline"] == binding["audit_deadline"]
         assert (
             ledger["original_ledger_sha256"]
             == binding["original_ledger_sha256"]
