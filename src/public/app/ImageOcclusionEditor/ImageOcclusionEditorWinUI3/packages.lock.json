@@ -307,9 +307,9 @@
       },
       "OpenMcdf": {
         "type": "CentralTransitive",
-        "requested": "[3.2.0, )",
-        "resolved": "3.2.0",
-        "contentHash": "n/iojS7V77YjM6IBbXaP0ZI8EELhJ2j6XRjx9NxMyUtjcM4a0yr0fWqO1y7lgd3CgYwnDugaKlO9c7Os8VxNtg=="
+        "requested": "[3.3.0, )",
+        "resolved": "3.3.0",
+        "contentHash": "a7lcs+yTDzPRRS82KMmU/eVCMKbJrDStD1Yt+6RRZIsDxU006IdxEVkmMLvxt2hB5YS3Imfcxrdwywtv29ogjw=="
       },
       "System.IO.Hashing": {
         "type": "CentralTransitive",
