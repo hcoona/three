@@ -290,14 +290,20 @@ bound to their original reader and revision.
 Blocked v2 retains the exact destination publisher/operator/profile constants,
 `state: blocked`, `live_enabled: false` and null configuration, source revision
 and timestamps. Ready v2 requires `state: ready`, `live_enabled: true`, the
-unchanged strict configuration tuple/attestation, protected source provenance
+strict destination-bound configuration tuple/attestation, protected source provenance
 and a 40-hex `source-evidence-revision` pinning the accepted `WD-PY-006`, its
 owner reliance decision and source findings. Inspection/expiry remains a
 positive UTC interval of at most 90 days; existing observed-at, current-main
 path continuity, freshness and mutation-boundary checks remain mandatory.
 The configuration object keeps its existing closed fields and checks for the
-actual Environment identity, sole reviewer/writer, no bypass, protected-main
-selection, sentinel, no secrets and reviewed project-bound registration.
+actual Environment identity, sole reviewer/writer, protected-main selection,
+sentinel, no secrets and reviewed project-bound registration. The required
+`can-admins-bypass` field is a strict Boolean: PyPI accepts `true` or `false`
+under `WD-PY-007`; TestPyPI accepts only `false`. Preserve the observed value
+in admission and its configuration attestation. Missing, null, numeric or
+string values fail closed. No schema change, omitted field or extra accepted
+administrator is implied. Current-run Approval/Authorization checks remain
+unchanged; an enabled bypass option does not itself satisfy them.
 Nothing in v2 infers configuration from a successful upload or source research.
 
 Migration must first ship both destinations blocked with no authentication,

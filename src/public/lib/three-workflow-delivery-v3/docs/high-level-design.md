@@ -327,7 +327,10 @@ Governance binds separate project OIDC publishers, audiences, protected
 Environments, reviewed configuration and the accepted platform reliance for each destination. The publisher receives
 short-lived authority only after current-Attempt approval, executes no target
 build code and consumes verified immutable artifacts. The sole-writer risk is
-explicit; source research establishes no existing registration or native grant.
+explicit; production PyPI may retain administrator bypass under `WD-PY-007`,
+without replacing current-Attempt Approval or artifact-bound Authorization.
+TestPyPI retains its disabled-bypass contract. Source research establishes no
+existing registration or native grant.
 
 The five MLDs define the model, governance, CI qualification, release state and
 mechanism boundaries. The [Python LLD](./hcoona-release-smoke-python-lld.md)

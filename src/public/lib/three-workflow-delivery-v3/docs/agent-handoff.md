@@ -28,7 +28,12 @@ operations, publication, or another npm proving run.
 ## Starting a New Session
 
 Production PyPI configuration and admission follow the current
-[Wave](../../../../../docs/delivery-wave.md) and its linked configuration protocol.
+[Wave](../../../../../docs/delivery-wave.md) and its linked configuration protocol. The owner accepted production
+administrator bypass under `WD-PY-007` and
+[reported the exact bootstrap Pending Publisher registered](https://github.com/hcoona/three/issues/843#issuecomment-5897947051).
+Carry that attestation forward; do not repeat registration, unchanged-field
+confirmation or the canceled instruction to disable bypass. Design acceptance
+alone does not establish implementation compatibility or configuration admission.
 Project bootstrap and Official publication require separate accepted operation
 Waves and their current-run gates; this stage grants no registry observation,
 request population, Approval, OIDC, dispatch or upload.

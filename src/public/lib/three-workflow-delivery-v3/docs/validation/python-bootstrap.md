@@ -41,7 +41,9 @@ generation or publisher registration is reopened by this extension.
 
 A later configuration request must specify the exact pending publisher tuple
 for the selected row above and Environment settings: sole reviewer `hcoona`, self-review permitted,
-no administrator bypass, zero wait, protected main only, and sentinel
+the destination-specific administrator-bypass policy in
+[Python Governance](../hcoona-release-smoke-python-lld.md#python-governance-v2-migration),
+zero wait, protected main only, and sentinel
 `WDV3_APPROVAL_ENVIRONMENT_MARKER=<selected-environment>/v1`.
 It must bound each proposed configuration write and readback. It must obtain
 the owner's explicit sole account-control and smoke-only/no-production-use
@@ -50,7 +52,10 @@ recovery code or authenticated browser session is collected by the agent.
 
 Authorized configuration evidence must retain sanitized account-side pending
 publisher fields and complete GitHub writer/Environment settings with the actual
-Environment ID. An independent reviewer compares that evidence to the request.
+Environment ID and actual administrator-bypass Boolean. An independent reviewer
+compares that evidence to the request and the selected destination policy.
+This configuration acceptance does not replace current-run owner Approval or
+artifact-bound Authorization; the closed bootstrap request schema is unchanged.
 Where no supported public/runtime account inventory exists, reviewed operator
 attestation is the evidence basis and its limitations remain explicit. Do not
 claim independent direct service observation from an owner-provided statement.

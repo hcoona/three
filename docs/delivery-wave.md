@@ -70,6 +70,28 @@ ends a grant. Git and the proposing PR retain the reason and history.
   deletion/rollback, duplicate/race probing, spent-operation revival or host
   trust/profile change. Preserve failed outcomes and all prior evidence.
 
+### Implement production Python administrator-bypass admission
+
+- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
+- **Accepted inputs:** the owner's production bypass decision and existing
+  end-to-end delegation; accepted `WD-PY-007`, Python Governance design and
+  bootstrap configuration protocol. Execute only after that design is accepted.
+- **Advancement and outcome:** implement and test strict destination-specific
+  `can-admins-bypass` admission: PyPI accepts either Boolean under the sole-owner
+  trust boundary; TestPyPI retains false-only acceptance. Preserve the observed
+  value, closed schema, all other configuration protections and current-run
+  Approval/Authorization. Independently review and protected-deliver the disabled
+  implementation; remove this entry after delivery and acceptance.
+- **Effects and delivery:** permit local locked dependency preparation, affected
+  tests and repository checks, ordinary CI, delegated independent review/triage
+  and protected delivery under the existing owner delegation.
+- **Exclusions:** keep production Governance blocked and both bootstrap requests
+  null. No configuration write, smoke registry observation, OIDC, Approval,
+  dispatch, upload, publisher registration, additional administrator, change to
+  npm/NuGet or TestPyPI contracts, new bypass-event approval mechanism, mutation
+  allowance or renewal of the original configuration lifetime/counters. The
+  separate configuration and operation grants retain their own prerequisites.
+
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).
