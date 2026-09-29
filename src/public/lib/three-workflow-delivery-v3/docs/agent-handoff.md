@@ -27,22 +27,30 @@ operations, publication, or another npm proving run.
 
 ## Starting a New Session
 
-The accepted production PyPI first-project operation follows the current
-[Wave](../../../../../docs/delivery-wave.md) and its linked concrete operation
-protocol, with [independently admitted bootstrap configuration](https://github.com/hcoona/three/issues/843#issuecomment-5899412557).
-The owner accepted administrator bypass under `WD-PY-007` and
-[reported the exact bootstrap Pending Publisher registered](https://github.com/hcoona/three/issues/843#issuecomment-5897947051).
-Carry these facts forward; do not repeat registration, unchanged-field
-confirmation or the canceled instruction to disable bypass. Preserve the
-original finite configuration and operation grants without refill.
+The production PyPI first-project generation is spent. Its
+[actual run](https://github.com/hcoona/three/actions/runs/36640775966) failed after
+wheel upload returned HTTP 200 and all six bounded P2 index reads returned 404.
+The [independent terminal audit](https://github.com/hcoona/three/issues/843#issuecomment-5900585460)
+retains the screened original artifacts, responses and logs in the linked
+[public packet](https://github.com/hcoona/three/issues/843#issuecomment-5900584636).
+No sdist upload or final consumer audit ran. Preserve the original failure and
+partial/unknown effects; do not rerun, refill, replace the version or repeat
+bootstrap. Both protected bootstrap slots are null and normal production
+Governance remains blocked.
 
 The [first-project protocol](./validation/python-bootstrap.md) governs the
-separately authorized request in the PyPI protected slot; the TestPyPI slot
-remains null and normal production Governance remains blocked. Request delivery
-prepares the authorized run; it does not establish dispatch or bootstrap success.
-Execution requires the exact protected tooling/request binding, independent
-review of immutable hosted preparation and current-run Approval/Authorization.
-Administrator bypass does not replace that authority.
+retained evidence and narrower resource audit. Actual newly established owner
+and converted-publisher facts remain required before the separate normal
+publisher/admission path. The [Wave](../../../../../docs/delivery-wave.md)
+retains only its applicable configuration grant, with the original finite
+lifetime and cumulative effects unchanged.
+
+The [independently admitted configuration](https://github.com/hcoona/three/issues/843#issuecomment-5899412557)
+includes the owner's accepted administrator bypass under `WD-PY-007` and
+[exact bootstrap Pending Publisher report](https://github.com/hcoona/three/issues/843#issuecomment-5897947051).
+Carry unchanged facts forward; do not repeat registration, unchanged-field
+confirmation or the canceled instruction to disable bypass. Administrator
+bypass does not replace current-run Approval/Authorization.
 
 The owner confirmed sole control of `Sherry7290` in the
 [account-control report](https://github.com/hcoona/three/issues/843#issuecomment-5895091575).

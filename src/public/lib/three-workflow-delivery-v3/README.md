@@ -19,7 +19,9 @@ The Python slice is the separate `hcoona-release-smoke-python` package. Its
 requirements, HLD/MLDs, brief LLD and source evidence for TestPyPI Buddy followed
 by PyPI Official. TestPyPI publication and fresh clean wheel/sdist consumption
 are [independently complete](docs/validation/python-normal-live-evidence.md)
-for `0.1.0b26`; normal production PyPI publication remains blocked. The
+for `0.1.0b26`; normal production PyPI publication remains blocked. The production
+bootstrap failed at wheel readback; its request is retired and its partial/unknown
+effects remain failed. The
 [handoff](docs/agent-handoff.md#starting-a-new-session) routes current operation
 limits, and the [delivery gates](docs/migration-strategy.md#python-smoke-delivery)
 keep implementation, configuration/admission and publication separately authorized.
