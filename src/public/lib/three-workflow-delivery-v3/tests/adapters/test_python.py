@@ -17,6 +17,7 @@ import tomllib
 import zipfile
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import tomli_w
@@ -24,6 +25,7 @@ from nbgv_python.versioning import normalize_version_field
 from three_workflow_delivery_v3._python_build_backend import (
     HATCHLING_REQUIREMENT,
 )
+from three_workflow_delivery_v3.adapters import python as adapter
 from three_workflow_delivery_v3.adapters.python import (
     WITNESS_PATH,
     PythonBuildRequest,
@@ -626,3 +628,38 @@ def test_real_python_consumer_installs_exact_original_outside_repository(
     assert not Path(installed["module"]).is_relative_to(_ROOT)
     assert (result.rebuilt_wheel is not None) is (variant == "sdist")
     assert b"must-not-survive" not in b"".join(result.command_evidence)
+
+
+@pytest.mark.parametrize("stage", ["provider", "build"])
+def test_python_native_operations_reject_wrong_uv_version(
+    native_python_build, monkeypatch, stage
+):
+    """Using the short version interface must not admit another tool release."""
+    source, provider, request, _, _ = native_python_build
+    if stage == "provider":
+        run_native = python_provider.run_native
+
+        def run(command, cwd):
+            if command == ("uv", "self", "version", "--short"):
+                return "0.0.0\n"
+            return run_native(command, cwd)
+
+        monkeypatch.setattr(python_provider, "run_native", run)
+        with pytest.raises(ValueError, match="UV version mismatch"):
+            provide_python_repository_facts(
+                source,
+                provider.binding,
+                CheckoutMaterialization(0, credentials_persisted=False),
+            )
+    else:
+
+        def run(command, **options):
+            if command[1:] == ("self", "version", "--short"):
+                return subprocess.CompletedProcess(command, 0, b"0.0.0\n", b"")
+            return subprocess.run(
+                command, check=options.pop("check"), **options
+            )
+
+        monkeypatch.setattr(adapter, "subprocess", SimpleNamespace(run=run))
+        with pytest.raises(ValueError, match="UV tool version mismatch"):
+            build_python_distributions(source, request)

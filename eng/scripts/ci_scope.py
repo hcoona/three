@@ -38,6 +38,7 @@ PYTHON_INPUTS = {
     "uv.lock",
     "uv.toml",
     ".python-version",
+    ".config/uv/uv.toml",
     "conftest.py",
     "pytest.ini",
     "eng/scripts/sync_python_version.py",

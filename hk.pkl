@@ -275,6 +275,7 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
         "mise.toml",
         "mise.lock",
         ".python-version",
+        ".config/uv/uv.toml",
         "eng/scripts/sync_python_version.py",
         "src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/_python_runtime.py",
       )
