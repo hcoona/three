@@ -4,6 +4,7 @@
 
 """Known response status remains authoritative after an incomplete body."""
 
+import signal
 from datetime import datetime, timedelta
 
 import base_operator
@@ -304,3 +305,88 @@ def test_github_deadline_preserves_exception_partial_bytes_and_owner_marker(
         resumed.get("repos/hcoona/three/actions/jobs/16", "forbidden-resume")
     assert len(wire.calls) == len(wire.credentials) == 1
     assert read(base.ledger_path) == ledger
+
+
+def test_continuation_guard_preserves_original_stop_and_partial_response(
+    audit_fixture, monkeypatch
+):
+    """The continuation deadline cause survives wire and audit layers."""
+    fixture = audit_fixture
+    deadline = fixture.clock[0] + timedelta(seconds=60)
+    terminated, calls, closed = [], [], []
+
+    class GuardReply(Reply):
+        def read(self, size):
+            if self.offset:
+                fixture.clock[0] = deadline
+                handler = signal.getsignal(signal.SIGALRM)
+                try:
+                    handler(signal.SIGALRM, None)
+                except ReadStopped as error:
+                    terminated.append(error)
+                    raise
+            return super().read(size)
+
+    class Connection:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def request(self, method, _path, **_kwargs):
+            calls.append(method)
+
+        def getresponse(self):
+            return GuardReply(
+                200,
+                b"partial deadline evidence",
+                [("Content-Type", "application/json")],
+            )
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(
+        registry_read.http.client, "HTTPSConnection", Connection
+    )
+    caller = fixture.construct(deadline=deadline.isoformat())
+    caller.wire = registry_read.https_get
+    with (
+        pytest.raises(
+            ReadStopped, match=r"^original read deadline exhausted$"
+        ) as error,
+        read_policy.deadline_guard(
+            deadline.isoformat(), now=lambda: fixture.clock[0]
+        ),
+    ):
+        caller.step()
+    assert error.value is terminated[0]
+    ledger = read(fixture.path)
+    assert (
+        ledger["reason"]
+        == ledger["pacing"]["stopped"]
+        == "original read deadline exhausted"
+    )
+    assert ledger["classification"] == "stopped"
+    assert len(ledger["requests"]) == 1
+    entry = ledger["requests"][0]
+    assert entry["status"] == 200
+    assert entry["error"] == "ReadStopped"
+    assert (
+        caller.directory / entry["body"]
+    ).read_bytes() == b"partial deadline evidence"
+    assert read(caller.directory / entry["headers"]) == {
+        "content-type": "application/json"
+    }
+    assert not ledger.get("observations")
+    assert caller.deadline == deadline.isoformat()
+    assert fixture.clock[0] == deadline
+    assert calls == ["GET"]
+    assert closed == [True]
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+    resumed = fixture.construct(deadline=deadline.isoformat())
+    resumed.wire = registry_read.https_get
+    with pytest.raises(
+        ReadStopped, match=r"^original read deadline exhausted$"
+    ):
+        resumed.step()
+    assert read(fixture.path) == ledger
+    assert calls == ["GET"]

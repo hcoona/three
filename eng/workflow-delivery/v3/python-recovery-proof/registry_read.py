@@ -373,8 +373,14 @@ class RegistryAudit:
                 response_headers,
                 getattr(error, "retained_body", b"")[: maximum_bytes + 1],
             )
-            if not isinstance(error, Exception):
-                reason = f"terminating registry read: {type(error).__name__}"
+            if isinstance(error, ReadStopped) or not isinstance(
+                error, Exception
+            ):
+                reason = (
+                    str(error)
+                    if isinstance(error, ReadStopped)
+                    else f"terminating registry read: {type(error).__name__}"
+                )
                 scheduler.state["stopped"] = reason
                 self.ledger.update(classification="stopped", reason=reason)
                 self.save()
