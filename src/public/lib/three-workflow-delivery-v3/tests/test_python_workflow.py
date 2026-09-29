@@ -466,20 +466,12 @@ def test_python_workflow_evidence_failure_leaves_decision_persistence_reachable(
     assert not steps[stop].get("continue-on-error", False)
 
 
-def test_python_workflow_proof_is_default_off_and_bound_to_actual_input(
-    workflow,
-):
-    """The stable entry discloses only the scoped temporary manual proof."""
-    choice = workflow["on"]["workflow_dispatch"]["inputs"]["recovery-proof"]
-    assert choice["type"] == "choice"
-    assert choice["default"] == "none"
-    assert choice["options"] == ["none", "stop-after-wheel"]
-    assert "fail" in choice["description"]
-    assert "TestPyPI" in choice["description"]
-    assert (
-        workflow["env"]["WDV3_PYTHON_PROOF"]
-        == "${{ inputs.recovery-proof || 'none' }}"
-    )
+def test_python_workflow_has_no_temporary_recovery_proof_control(workflow):
+    """The stable normal entry has no retired interruption selector."""
+    inputs = workflow["on"]["workflow_dispatch"]["inputs"]
+    assert "recovery-proof" not in inputs
+    assert "registry" in inputs
+    assert "WDV3_PYTHON_PROOF" not in workflow.get("env", {})
     assert (
         workflow["env"]["WDV3_REGISTRY"]
         == "${{ inputs.registry || 'testpypi' }}"

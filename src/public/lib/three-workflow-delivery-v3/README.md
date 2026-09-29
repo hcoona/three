@@ -27,30 +27,14 @@ The npm and NuGet smoke objectives remain complete.
 The [partial-publication recovery design](docs/hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
 is implemented: fresh reproducible builds and qualification feed exact-subset
 completion, missing-file uploads and strict terminal audit. Real-build and
-controlled-transport recovery tests preserve prior failures. No hosted recovery
-is claimed. The current Wave authorizes the separate
-[hosted recovery protocol](docs/validation/python-hosted-recovery.md); its
-temporary default-off interruption, persisted evidence-read pacing and separately
-bound revision-2 terminal-read lifetime are implemented. Protected delivery and
-independent exact execution admission remain prerequisites before use.
-
-The temporary [hosted operator](../../../../eng/workflow-delivery/v3/python-recovery-proof/)
-implements the accepted protocol. After protected delivery, use hash-matched Python
-sources and a byte-copy of the canonical protocol in a fresh private directory
-outside the clean checkout. Keep campaign state and gate/evidence files there,
-with `WDV3_SCENARIO` and `WDV3_ATTEMPT` selecting the independently admitted
-operation. The POSIX callers perform dispatch, collection, preparation replay,
-gated approval, terminal replay and gated native audit; independent reviewers
-supply execution, preapproval, diagnostic-read and closure gates. Caller names
-do not grant effects or authorize repeating a failed stage. Windows operators
-need the configured POSIX environment. Remove these temporary callers with
-the interruption control after accepted proof. Run their controlled tests
-explicitly from the repository root, in addition to `mise run test:v3`:
-
-```sh
-uv run --no-sync --package three-workflow-delivery-v3 \
-  pytest eng/workflow-delivery/v3/python-recovery-proof/tests
-```
+controlled-transport recovery tests preserve prior failures. The
+[hosted recovery evidence](docs/validation/python-hosted-recovery.md) establishes
+wheel-present/sdist-missing completion for `0.1.0b39`: two independent builds
+produced identical archives, only the missing sdist was uploaded, and fresh
+native readback and separate clean consumers passed. The campaign stopped at
+its first independently audited success. Its temporary interruption control
+and operators are retired; pinned historical readers preserve evidence replay.
+The inverse subset remains locally tested, without a hosted claim.
 
 The old `governance run-fixed-acceptance-probe` command and fixed-coordinate
 Python producer APIs are retired. `governance admit-acceptance-evidence` and

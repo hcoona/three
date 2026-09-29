@@ -9,6 +9,9 @@ from three_workflow_delivery_v3.adapters.pypi import PythonHttpResponse
 from three_workflow_delivery_v3.adapters.python_observation import (
     response_document,
 )
+from three_workflow_delivery_v3.release.python_publication import (
+    render_python_approval_summary,
+)
 from three_workflow_delivery_v3.release.python_transport import (
     admit_python_publication_snapshot,
     admit_python_qualification_decision,
@@ -101,6 +104,35 @@ def test_python_transport_replays_exact_record_and_predecessors(replay, kind):
     assert type(admitted) is type(record)
     assert admitted == record
     assert admitted.to_document() == record.to_document()
+
+
+@pytest.mark.parametrize("legacy_mode", ["none", "stop-after-wheel"])
+def test_python_transport_rejects_retired_proof_field(replay, legacy_mode):
+    """Historical proof-bearing Snapshots require their pinned reader."""
+    record, parser, arguments = replay["publication"]
+    document = record.to_document()
+    assert "proof-mode" not in document
+    assert parser(document, *arguments) == record
+    document["proof-mode"] = legacy_mode
+    with pytest.raises(ValueError, match="invalid closed Python record fields"):
+        parser(document, *arguments)
+
+
+def test_python_normal_summary_preserves_distribution_and_digest_binding(
+    replay,
+):
+    """Normal Approval discloses the pair and rejects summary substitution."""
+    bundle, _, _ = replay["bundle"]
+    summary = render_python_approval_summary(bundle.snapshot).decode()
+    for artifact in bundle.snapshot.observation.decision.artifacts:
+        assert artifact.filename in summary
+        assert artifact.reference.payload_digest in summary
+    assert "Intentionally stop" not in summary
+    changed = replace(
+        bundle.summary_reference, payload_digest="sha256:" + "f" * 64
+    )
+    with pytest.raises(ValueError, match="Python"):
+        replace(bundle, summary_reference=changed)
 
 
 @pytest.mark.parametrize(

@@ -127,10 +127,8 @@ def independently_qualified_attempt(source, native_provider, run_id):
     return decision, payloads, built.distributions
 
 
-@pytest.mark.parametrize("proof_mode", ["none", "stop-after-wheel"])
 def test_real_python_rebuilt_attempt_completes_partial_publication(
     tmp_path,
-    proof_mode,
     native_python_build,  # noqa: F811 - imported pytest fixture
 ):
     """New native artifacts recover one partial failure without rewriting it."""
@@ -138,7 +136,7 @@ def test_real_python_rebuilt_attempt_completes_partial_publication(
     first_run, recovery_run = 1701, 1702
     first = independently_qualified_attempt(source, provider, first_run)
     marker_a, ref_a, payloads_a, originals_a = prepared_publication(
-        qualified=first, proof_mode=proof_mode
+        qualified=first
     )
     boundary_a = Boundary(
         _OK,
@@ -161,7 +159,7 @@ def test_real_python_rebuilt_attempt_completes_partial_publication(
     assert result_a.result == "failed"
     assert [entry.status for entry in result_a.operations] == [
         "succeeded",
-        "not-attempted" if proof_mode == "stop-after-wheel" else "failed",
+        "failed",
     ]
     assert outcome_a.disposition == "publication-failed"
     assert outcome_a.possibly_mutated is True

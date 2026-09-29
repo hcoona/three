@@ -62,7 +62,6 @@ def hosted(monkeypatch, tmp_path):
         + "@refs/heads/main",
         "GITHUB_OUTPUT": str(tmp_path / "outputs"),
         "GITHUB_JOB": "plan-python-ci",
-        "WDV3_PYTHON_PROOF": "none",
         "WDV3_REGISTRY": "testpypi",
     }
     for key, value in values.items():
@@ -124,7 +123,6 @@ def publication_files(hosted, monkeypatch, request):
     options = getattr(request, "param", ())
     if not isinstance(options, dict):
         options = {"retained": options}
-    monkeypatch.setenv("WDV3_PYTHON_PROOF", options.get("proof_mode", "none"))
     marker, _, _, distributions = prepared_publication(**options)
     authorization = marker.authorization
     bundle = authorization.bundle
@@ -1275,93 +1273,52 @@ def test_python_cli_partial_marker_drift_stops_before_post(
     assert not (hosted / "upload-started").exists()
 
 
-@pytest.mark.parametrize(
-    "publication_files",
-    [{"proof_mode": "none"}, {"proof_mode": "stop-after-wheel"}],
-    indirect=True,
-)
+@pytest.mark.parametrize("legacy_mode", ["none", "stop-after-wheel"])
 @pytest.mark.parametrize("command", ["authorize", "token", "marker", "execute"])
-def test_python_cli_proof_input_mismatch_stops_before_effects(
-    hosted, publication_files, monkeypatch, command
+def test_python_cli_rejects_retired_proof_snapshot_before_effects(
+    hosted, publication_files, legacy_mode, command
 ):
-    """Changing the request cannot override an immutable approved mode."""
+    """Legacy fields fail closed admission before credentials or mutation."""
     refs, marker, _, _ = publication_files
-    stored = marker.authorization.bundle.snapshot.proof_mode
-    monkeypatch.setenv(
-        "WDV3_PYTHON_PROOF",
-        "none" if stored == "stop-after-wheel" else "stop-after-wheel",
+    document = marker.authorization.bundle.snapshot.to_document()
+    document["proof-mode"] = legacy_mode
+    ref = refs["publication"]
+    refs["publication"] = _store(
+        hosted, document, ref["payload-path"], ref["artifact-id"]
+    ).to_document()
+    inputs = python_cli.PythonInputs(
+        hosted, "live-release", canonicalize(refs).decode()
     )
+    # The transport is valid; rejection occurs at the actual closed schema.
+    assert inputs.document("publication") == document
+    with pytest.raises(ValueError, match="invalid closed Python record fields"):
+        inputs.publication()
     assert _run(hosted, command, refs, purpose="live-release") == 1
     assert not (hosted / "result.json").exists()
     assert not (hosted / "upload-started").exists()
     assert not (hosted / "environment").exists()
 
 
-@pytest.mark.parametrize(
-    "scenario", ["pr", "pypi", "unknown", "registry-argument"]
-)
-def test_python_cli_proof_rejects_unsupported_request(
-    hosted, monkeypatch, scenario
-):
-    """Proof rejection precedes Governance, credentials and request outputs."""
-    monkeypatch.setenv("WDV3_PYTHON_PROOF", "stop-after-wheel")
-    if scenario != "pr":
-        _live(monkeypatch)
-    if scenario == "pypi":
-        monkeypatch.setenv("WDV3_REGISTRY", "pypi")
-    elif scenario == "unknown":
-        monkeypatch.setenv("WDV3_PYTHON_PROOF", "other")
-    assert (
-        _run(
-            hosted,
-            "request",
-            purpose="ci-pr-slice-shadow"
-            if scenario == "pr"
-            else "live-release",
-            extra=(
-                "--registry",
-                "pypi"
-                if scenario in {"pypi", "registry-argument"}
-                else "testpypi",
-            ),
-        )
-        == 1
-    )
-    assert not (hosted / "intent.json").exists()
-    assert not (hosted / "governance.json").exists()
-    assert not (hosted / "result.json").exists()
-
-
-@pytest.mark.parametrize(
-    "publication_files",
-    [{"proof_mode": "none"}, {"proof_mode": "stop-after-wheel"}],
-    indirect=True,
-)
-def test_python_cli_prepare_binds_current_proof_input(
+def test_python_cli_prepare_preserves_normal_publication_snapshot(
     hosted, publication_files
 ):
-    """Preparation seals actual mode in the durable Snapshot without effects."""
+    """Normal preparation emits only the current immutable Snapshot shape."""
     refs, marker, _, _ = publication_files
     assert _run(hosted, "prepare", refs, purpose="live-release") == 0
     document = parse_canonical_json((hosted / "result.json").read_bytes())
-    assert (
-        document["proof-mode"]
-        == marker.authorization.bundle.snapshot.proof_mode
-    )
+    assert "proof-mode" not in document
     assert document == marker.authorization.bundle.snapshot.to_document()
 
 
-@pytest.mark.parametrize(
-    "publication_files", [{"proof_mode": "stop-after-wheel"}], indirect=True
-)
-def test_python_cli_proof_persists_truthful_failed_result_before_terminal(
+def test_python_cli_partial_failure_persists_result_before_terminal(
     hosted, publication_files, monkeypatch
 ):
-    """Intentional stop persists failure without failing terminal export."""
+    """A rejected sdist persists truthful failure before terminal export."""
     refs, marker, _, distributions = publication_files
     transport = FakeHttp(
         PythonHttpResponse(200, b"created", "text/plain"),
         *_readback(marker.pre_state.registry, distributions[:1]),
+        PythonHttpResponse(400, b"sdist rejected", "text/plain"),
     )
     monkeypatch.setattr(python_cli, "PythonHttpsTransport", lambda: transport)
     assert _run(hosted, "execute", refs, purpose="live-release") == 0
@@ -1369,16 +1326,20 @@ def test_python_cli_proof_persists_truthful_failed_result_before_terminal(
     assert result["result"] == "failed"
     assert [entry["status"] for entry in result["operations"]] == [
         "succeeded",
-        "not-attempted",
+        "failed",
     ]
-    assert result["mutation-classification"] == "mutated"
+    assert result["mutation-classification"] == "possibly-mutated"
     assert result["mutation-marker-reference"] == refs["marker"]
-    assert [call[0] for call in transport.calls] == ["POST", "GET", "GET"]
+    assert [call[0] for call in transport.calls] == [
+        "POST",
+        "GET",
+        "GET",
+        "POST",
+    ]
     assert transport.responses == []
     result_ref = _store(hosted, result, name="result.json", artifact_id=2001)
     refs["result"] = result_ref.to_document()
     assert _run(hosted, "terminal", refs, purpose="live-release") == 0
-    assert (
-        canonicalize(result_ref.to_document()).decode()
-        in (hosted / "outputs").read_text()
+    assert (hosted / "outputs").read_text().splitlines()[-1] == (
+        "terminal-reference=" + canonicalize(result_ref.to_document()).decode()
     )
