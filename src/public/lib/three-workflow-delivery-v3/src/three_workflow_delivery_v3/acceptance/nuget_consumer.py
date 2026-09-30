@@ -453,7 +453,7 @@ def _steps(  # noqa: PLR0913, PLR0917
     ):
         (workspace / name).write_text("<Project/>", encoding="utf-8")
     (workspace / "global.json").write_text(
-        '{"sdk":{"version":"10.0.300","rollForward":"disable"}}',
+        '{"sdk":{"version":"10.0.401","rollForward":"disable"}}',
         encoding="utf-8",
     )
     (workspace / "nuget.config").write_text(_CONFIG, encoding="utf-8")
@@ -513,7 +513,7 @@ def _steps(  # noqa: PLR0913, PLR0917
         )
 
     _require(
-        run("sdk", ("--version",)).strip() == b"10.0.300",
+        run("sdk", ("--version",)).strip() == b"10.0.401",
         "consumer SDK mismatch",
     )
     graph = workspace / "graph.json"
@@ -708,7 +708,7 @@ def run_nuget_consumer(  # noqa: PLR0913
     _require(
         options.get("rollForward") == "Disable"
         and options.get("framework")
-        == {"name": "Microsoft.NETCore.App", "version": "10.0.8"},
+        == {"name": "Microsoft.NETCore.App", "version": "10.0.12"},
         "consumer runtime configuration mismatch",
     )
     executable = shutil.which("dotnet")

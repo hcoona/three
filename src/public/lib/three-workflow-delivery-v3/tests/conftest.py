@@ -100,10 +100,10 @@ def native_helper(
 
 
 @pytest.fixture(scope="session")
-def frozen_package(
+def frozen_source(
     native_helper: NativeNuGetHelper,
     tmp_path_factory: pytest.TempPathFactory,
-) -> tuple[DotnetBuildResult, Path]:
+) -> tuple[DotnetBuildRequest, object, Path]:
     """Prepare shared native inputs; consumers own all subsequent writes."""
     repo = Path(__file__).resolve().parents[5]
     root = tmp_path_factory.mktemp("dotnet-native")
@@ -113,12 +113,17 @@ def frozen_package(
         env={**os.environ, "GIT_LFS_SKIP_SMUDGE": "1"},
         check=True,
     )
+    shutil.copyfile(repo / "global.json", source / "global.json")
     for path in (repo / DOTNET_PROJECT_ROOT).iterdir():
         if path.is_file():
             destination = source / DOTNET_PROJECT_ROOT / path.name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, destination)
-    subprocess.run(("git", "add", DOTNET_PROJECT_ROOT), cwd=source, check=True)
+    subprocess.run(
+        ("git", "add", DOTNET_PROJECT_ROOT, "global.json"),
+        cwd=source,
+        check=True,
+    )
     subprocess.run(
         (
             "git",
@@ -179,14 +184,28 @@ def frozen_package(
         "sha256:" + "b" * 64,
         "release-simulation",
     )
-    result = build_dotnet_package(
-        DotnetBuildRequest(
-            source,
-            tuple(path for path, _ in inputs),
-            inputs,
-            witness,
-            native_helper,
-            root / "build",
-        )
+    request = DotnetBuildRequest(
+        source,
+        tuple(path for path, _ in inputs),
+        inputs,
+        witness,
+        native_helper,
+        root / "build",
     )
+    return request, provider, root
+
+
+@pytest.fixture(scope="session")
+def frozen_package(frozen_source) -> tuple[DotnetBuildResult, Path]:
+    """Share the original native package; consumers own later writes."""
+    request, _, root = frozen_source
+    result = build_dotnet_package(request)
     return result, root
+
+
+@pytest.fixture(scope="session")
+def native_nuget_reproducibility(frozen_source, tmp_path_factory):
+    """Retain four native original archives for adapter and recovery checks."""
+    from .nuget_repro_fixtures import prepare_reproducibility  # noqa: PLC0415
+
+    return prepare_reproducibility(frozen_source, tmp_path_factory)

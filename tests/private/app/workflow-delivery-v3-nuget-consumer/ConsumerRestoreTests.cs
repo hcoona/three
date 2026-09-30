@@ -402,7 +402,7 @@ public sealed class ConsumerRestoreTests
         Directory.CreateDirectory(Path.Combine(root, "home"));
         File.WriteAllText(
             Path.Combine(root, "global.json"),
-            "{\"sdk\":{\"version\":\"10.0.300\",\"rollForward\":\"disable\"}}"
+            "{\"sdk\":{\"version\":\"10.0.401\",\"rollForward\":\"disable\"}}"
         );
         return root;
     }

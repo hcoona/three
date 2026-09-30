@@ -221,7 +221,7 @@ def inspect_nuget_fixture_pair(
             name
             for name in names
             if re.fullmatch(
-                r"package/services/metadata/core-properties/[0-9a-f]+\.psmdcp",
+                r"package/services/metadata/core-properties/(?:nuget|[0-9a-f]+)\.psmdcp",
                 name,
             )
         )

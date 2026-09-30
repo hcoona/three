@@ -109,7 +109,7 @@ jobs:
       - name: Install pinned .NET SDK and runtime
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
-          dotnet-version: 10.0.300
+          dotnet-version: 10.0.401
       - name: Build and archive only the trusted helper
         run: |
           dotnet build 'src/private/app/workflow-delivery-v3-dotnet-provider/WorkflowDeliveryV3DotnetProvider.csproj' -c Release -p:RestoreLockedMode=true
@@ -168,7 +168,7 @@ jobs:
       - name: Install pinned .NET SDK and runtime
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
-          dotnet-version: 10.0.300
+          dotnet-version: 10.0.401
       - name: Download immutable inputs by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -424,7 +424,7 @@ jobs:
       - name: Install pinned .NET SDK and runtime
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
-          dotnet-version: 10.0.300
+          dotnet-version: 10.0.401
       - name: Download immutable inputs by artifact ID
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:

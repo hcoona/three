@@ -129,7 +129,11 @@ def _ready_document(profile, monkeypatch):
 
 @pytest.fixture
 def native_case(nuget_scenario, monkeypatch, tmp_path):
-    scenario = nuget_scenario
+    return _native_case(nuget_scenario, monkeypatch, tmp_path)
+
+
+def _native_case(scenario, monkeypatch, tmp_path, *, qualify=_qualified):
+    """Compose current-Attempt authority with selected qualification."""
     intent = replace(
         scenario.intent, workflow_path=NUGET_BUDDY_LIVE_WORKFLOW_PATH
     )
@@ -219,7 +223,7 @@ def native_case(nuget_scenario, monkeypatch, tmp_path):
     scenario = replace(
         scenario, intent=intent, binding=binding, snapshot=snapshot
     )
-    artifact, evidence, _calls = _qualified(scenario, monkeypatch, tmp_path)
+    artifact, evidence, _calls = qualify(scenario, monkeypatch, tmp_path)
     decision = finalize_qualification(snapshot, evidence, (artifact,))
     return SimpleNamespace(
         intent=intent,
