@@ -48,9 +48,10 @@ DOTNET_PROJECT_ROOT = f"src/public/lib/{DOTNET_RELEASE_UNIT}"
 DOTNET_PROJECT_PATH = f"{DOTNET_PROJECT_ROOT}/{DOTNET_RELEASE_UNIT}.csproj"
 DOTNET_ENTRY_POINT = DOTNET_PROJECT_PATH
 DOTNET_TOOLCHAIN = (
-    ("dotnet", "10.0.300"),
-    ("msbuild", "18.6.3"),
+    ("dotnet", "10.0.401"),
+    ("msbuild", "18.9.11"),
     ("nbgv", "3.10.94"),
+    # Native interpretation library; the SDK separately owns its pack client.
     ("nuget", "7.9.0"),
 )
 _PAIR_LENGTH = 2
@@ -914,7 +915,7 @@ def evaluate_dotnet_project(  # noqa: C901, PLR0915
     version = run_native(
         ("dotnet", "--version"), repo_root, environment
     ).strip()
-    if version != "10.0.300":
+    if version != "10.0.401":
         message = ".NET SDK does not match the pinned toolchain"
         raise ValueError(message)
     nbgv_version = run_native(
@@ -954,8 +955,8 @@ def evaluate_dotnet_project(  # noqa: C901, PLR0915
     properties = _object(native["Properties"])
     items = _object(native["Items"])
     if (
-        properties.get("NETCoreSdkVersion") != "10.0.300"
-        or properties.get("MSBuildVersion") != "18.6.3"
+        properties.get("NETCoreSdkVersion") != "10.0.401"
+        or properties.get("MSBuildVersion") != "18.9.11"
     ):
         message = "native evaluation used an unsupported toolchain"
         raise ValueError(message)

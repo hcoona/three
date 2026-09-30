@@ -64,7 +64,7 @@ url = "https://github.com/dotenv-linter/dotenv-linter/releases/download/v4.0.0/d
 url_api = "https://api.github.com/repos/dotenv-linter/dotenv-linter/releases/assets/305835598"
 
 [[tools.dotnet]]
-version = "10.0.300"
+version = "10.0.401"
 backend = "core:dotnet"
 
 [[tools.fd]]

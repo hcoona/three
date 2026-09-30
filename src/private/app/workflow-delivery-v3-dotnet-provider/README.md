@@ -10,8 +10,8 @@ owns this component's contracts. Its
 and [handoff](../../../public/lib/three-workflow-delivery-v3/docs/nuget-smoke-research-handoff.md)
 define the native Provider, frozen Build and admission boundaries.
 
-The pinned dependencies are .NET SDK `10.0.300`, runtime `10.0.8`, NuGet
-libraries `7.9.0`, and the SDK's MSBuild `18.6.3` binary-log reader. The
+The pinned dependencies are .NET SDK `10.0.401`, runtime `10.0.12`, NuGet
+libraries `7.9.0`, and the SDK's MSBuild `18.9.11` binary-log reader. The
 project-specific `System.Security.Cryptography.ProtectedData` `10.0.8` central
 version resolves the actual NuGet/MSBuild dependency conflict without changing
 other projects' transitive pins.
@@ -28,7 +28,7 @@ The CLI writes one JSON object and returns nonzero on rejected input:
 ## Frozen-build source contract
 
 The selected smoke project updates its existing NBGV global reference with
-`ExcludeAssets="all"` in frozen mode. SDK `10.0.300`'s `NuGet.targets`
+`ExcludeAssets="all"` in frozen mode. SDK `10.0.401`'s `NuGet.targets`
 converts `GlobalPackageReference` items into `PackageReference` items while
 retaining source item metadata. The conversion explicitly sets only version,
 included assets, and private assets, so the exclusion survives. The resolved
@@ -48,6 +48,11 @@ properties through locked restore, build, and pack. SDK assembly generation
 receives the frozen package, assembly, file, and informational versions;
 `IncludeSourceRevisionInInformationalVersion=false` prevents another suffix.
 Project-local `IncludeSymbols=false` leaves repository symbol policy intact.
+The adapter maps the entire temporary build root, including generated sources,
+to `/_/` and passes the exact witness target commit's Unix committer time as
+`DeterministicTimestamp` through restore, build, and pack. The frozen target
+already binds this timestamp; it is not taken from the runner clock. Pack uses
+`--no-build`, and its official binlog audit rejects compilation.
 
 ## Executable evidence
 
@@ -57,7 +62,12 @@ frozen logs must complete successfully, contain no NBGV task or imported NBGV
 build asset, and preserve the exact locked dependency file. Native inspection
 then verifies the package and assembly versions, declared entries, and exact
 witness. A separate fresh-cache exact-version consumer restores those same
-archive bytes, builds, and invokes the marker API.
+archive bytes, builds, and invokes the marker API. Paired native builds vary
+roots, caches, and source mtimes and compare original nupkg, DLL, and PDB bytes;
+source and timestamp controls must change the package. The Windows CI job
+retains originals and binlogs. Fresh modeled release Attempts join independently
+built originals to new authority and prove exact-byte recovery without a
+registry operation.
 
 Evidence lives in each invocation's explicit evidence directory. A local
 Linux pass establishes the mechanism; the selected Windows workflow still

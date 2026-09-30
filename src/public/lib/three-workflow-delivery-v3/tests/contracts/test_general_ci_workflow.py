@@ -267,7 +267,7 @@ def test_required_general_ci_checks_remain_eligible(
                 "always()" if key == "validation" else "${{ !cancelled() }}"
             )
             assert job["needs"] == (
-                ["conformance", "scholarly-tests"]
+                ["conformance", "scholarly-tests", "nuget-reproducibility"]
                 if key == "validation"
                 else "scope"
             )
@@ -797,10 +797,14 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
 def test_required_validate_rejects_missing_or_failed_consumers(
     workflow, tmp_path
 ):
-    """Keep source and scholarly failures inside the required check."""
+    """Keep every selected validation consumer inside the required check."""
     job = workflow["jobs"]["validation"]
     assert job["name"] == "Validate"
-    assert job["needs"] == ["conformance", "scholarly-tests"]
+    assert job["needs"] == [
+        "conformance",
+        "scholarly-tests",
+        "nuget-reproducibility",
+    ]
     assert job["if"] == "always()"
     step = job["steps"][0]
     assert step["if"] == "always()"
@@ -808,9 +812,14 @@ def test_required_validate_rejects_missing_or_failed_consumers(
     successful = {
         "needs.conformance.result": "success",
         "needs.scholarly-tests.result": "success",
+        "needs.nuget-reproducibility.result": "success",
     }
     scenarios = [successful]
-    for dependency in ("conformance", "scholarly-tests"):
+    for dependency in (
+        "conformance",
+        "scholarly-tests",
+        "nuget-reproducibility",
+    ):
         for result in ("failure", "cancelled", "skipped", ""):
             scenarios.append(
                 successful | {f"needs.{dependency}.result": result}
@@ -827,6 +836,43 @@ def test_required_validate_rejects_missing_or_failed_consumers(
         assert (result.returncode == 0) is (bindings == successful)
         if bindings != successful:
             assert "Required validation did not complete" in result.stderr
+
+
+def test_nuget_reproducibility_selects_native_windows_evidence(workflow):
+    """Required Windows validation covers native bytes and Attempt recovery."""
+    job = workflow["jobs"]["nuget-reproducibility"]
+    assert job["runs-on"].startswith("windows-")
+    assert job["steps"][0]["env"]["APPLICABLE"] == (
+        "${{ needs.scope.outputs.python_dotnet }}"
+    )
+    checkout = _action(job, "actions/checkout")
+    assert checkout["with"]["fetch-depth"] == 0
+    assert checkout["with"]["persist-credentials"] is False
+    execute = next(
+        step for step in job["steps"] if "pytest" in step.get("run", "")
+    )
+    assert execute["shell"] == "pwsh"
+    for path in (
+        "tests/adapters/test_dotnet.py",
+        "tests/release/test_nuget_native_recovery.py",
+    ):
+        assert path in execute["run"]
+    for selector in (
+        "reproduc",
+        "target_timestamp",
+        "negative_controls",
+        "fresh_nuget_attempt",
+    ):
+        assert selector in execute["run"]
+    assert "--basetemp" in execute["run"]
+    assert "--junitxml" in execute["run"]
+    upload = _action(job, "actions/upload-artifact")
+    assert upload["if"] == "always() && steps.scope.outputs.run == 'true'"
+    assert upload["with"]["if-no-files-found"] == "error"
+    assert upload["with"]["path"] == "artifacts/nuget-reproducibility"
+    assert job["env"]["WDV3_NUGET_REPRO_EVIDENCE"] == (
+        "${{ github.workspace }}/artifacts/nuget-reproducibility"
+    )
 
 
 def test_python_scope_guard_rejects_missing_preparation(workflow, tmp_path):

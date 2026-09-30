@@ -886,7 +886,7 @@ _PHASE2_GRAPH_IMPLEMENTATIONS = {
     "nuget-lock-v1": (
         "NuGet.Packaging@7.9.0",
         "NuGet.ProjectModel@7.9.0",
-        "dotnet-runtime@10.0.8",
+        "dotnet-runtime@10.0.12",
     ),
 }
 _PHASE2_LIVE_IMPLEMENTATIONS = tuple(
@@ -2441,7 +2441,7 @@ def test_policy_traverses_candidates_and_graphs_in_deterministic_order(
         "@pnpm/workspace.workspace-manifest-reader@1100.1.8",
         "NuGet.Packaging@7.9.0",
         "NuGet.ProjectModel@7.9.0",
-        "dotnet-runtime@10.0.8",
+        "dotnet-runtime@10.0.12",
         "node@24.19.0",
         "npm-package-arg@14.0.0",
     )

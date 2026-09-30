@@ -70,7 +70,7 @@ jobs:
   validation:
     name: Validate
     runs-on: ubuntu-latest
-    needs: [conformance, scholarly-tests]
+    needs: [conformance, scholarly-tests, nuget-reproducibility]
     if: always()
     steps:
       - name: Require complete validation results
@@ -78,9 +78,10 @@ jobs:
         env:
           CONFORMANCE_RESULT: ${{ needs.conformance.result }}
           SCHOLARLY_RESULT: ${{ needs.scholarly-tests.result }}
+          NUGET_REPRO_RESULT: ${{ needs.nuget-reproducibility.result }}
         run: |
-          if [[ "$CONFORMANCE_RESULT" != 'success' || "$SCHOLARLY_RESULT" != 'success' ]]; then
-            echo "Required validation did not complete: source=$CONFORMANCE_RESULT, scholarly=$SCHOLARLY_RESULT." >&2
+          if [[ "$CONFORMANCE_RESULT" != 'success' || "$SCHOLARLY_RESULT" != 'success' || "$NUGET_REPRO_RESULT" != 'success' ]]; then
+            echo "Required validation did not complete: source=$CONFORMANCE_RESULT, scholarly=$SCHOLARLY_RESULT, nuget=$NUGET_REPRO_RESULT." >&2
             exit 1
           fi
       - name: Reject canceled validation
@@ -621,6 +622,75 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         run: pnpm --dir "${PACKAGE_DIR}" run validate:packed-artifact
 
+      - name: Reject canceled validation
+        if: cancelled()
+        shell: bash
+        run: |
+          echo 'Validation was canceled before a complete result.' >&2
+          exit 1
+
+  nuget-reproducibility:
+    name: NuGet reproducible build (Windows)
+    runs-on: windows-latest
+    needs: scope
+    if: ${{ !cancelled() }}
+    env:
+      WDV3_NUGET_REPRO_EVIDENCE: ${{ github.workspace }}/artifacts/nuget-reproducibility
+    steps:
+      - name: Require successful scope selection
+        id: scope
+        shell: bash
+        env:
+          SELECTION_RESULT: ${{ needs.scope.result }}
+          APPLICABLE: ${{ needs.scope.outputs.python_dotnet }}
+        run: |
+          case "$SELECTION_RESULT:$APPLICABLE" in
+            success:true) echo 'run=true' >> "$GITHUB_OUTPUT" ;;
+            success:false) echo 'run=false' >> "$GITHUB_OUTPUT"; echo 'Not applicable to this change.' ;;
+            *) echo 'Scope selection failed or omitted applicability.' >&2; exit 1 ;;
+          esac
+      - name: Checkout
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup .NET SDK
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Setup Python
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+      - name: Install uv
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: .config/uv/uv.toml
+      - name: Restore .NET tools
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        run: dotnet tool restore
+      - name: Verify original archives and fresh-Attempt recovery
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        shell: pwsh
+        run: |
+          uv run --frozen --package three-workflow-delivery-v3 pytest `
+            src/public/lib/three-workflow-delivery-v3/tests/adapters/test_dotnet.py `
+            src/public/lib/three-workflow-delivery-v3/tests/release/test_nuget_native_recovery.py `
+            -k 'reproduc or target_timestamp or negative_controls or fresh_nuget_attempt' `
+            --basetemp "$env:RUNNER_TEMP/nuget-repro-pytest" `
+            --junitxml "$env:WDV3_NUGET_REPRO_EVIDENCE/junit.xml"
+      - name: Retain original archives and native evidence
+        if: always() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: nuget-reproducibility-windows
+          path: artifacts/nuget-reproducibility
+          if-no-files-found: error
+          retention-days: 30
       - name: Reject canceled validation
         if: cancelled()
         shell: bash

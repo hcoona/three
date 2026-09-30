@@ -339,8 +339,9 @@ def _autocrlf_source(scratch: Path) -> Path:
         destination = seed / path
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(repo / path, destination)
+    shutil.copyfile(repo / "global.json", seed / "global.json")
     (seed / "autocrlf-control.txt").write_bytes(b"unselected\ncontrol\n")
-    _git_bytes(seed, "add", *attributes, "autocrlf-control.txt")
+    _git_bytes(seed, "add", *attributes, "global.json", "autocrlf-control.txt")
     _git_bytes(
         seed,
         "-c",
@@ -692,7 +693,7 @@ def test_nuget_fixture_preparation_uses_offline_sources(
     monkeypatch.setenv("GITHUB_TOKEN", "must-not-reach-fixture")
     execute = dotnet_adapter.run_native
 
-    def guarded(command, cwd, environment, *, diagnostics):
+    def guarded(command, cwd, environment, *, diagnostics=None):
         assert "GITHUB_TOKEN" not in environment
         return execute(command, cwd, environment, diagnostics=diagnostics)
 
@@ -846,6 +847,11 @@ def test_nuget_fixture_inspection_rejects_substitution(  # noqa: C901
                     for entry in source.namelist()
                     if entry.endswith(suffix)
                 )
+                if substitution == "relationships-core-target":
+                    original_entry = (
+                        "package/services/metadata/core-properties/"
+                        "unadmitted.psmdcp"
+                    )
                 assert original_entry != comparison_entry
                 actual_target = f'Target="/{comparison_entry}"'.encode()
                 assert actual_target in content
@@ -905,11 +911,16 @@ def test_nuget_fixture_preparation_stops_on_incomplete_evidence(  # noqa: C901
         ),
     )
 
-    def command(argv, _cwd, _environment, *, diagnostics):
+    execute = dotnet_adapter.run_native
+
+    def command(argv, cwd, environment, *, diagnostics=None):
+        if argv[0] == "git":
+            return execute(argv, cwd, environment, diagnostics=diagnostics)
+        assert diagnostics is not None
         diagnostics.mkdir(parents=True)
         (diagnostics / "stdout.txt").write_text("modeled command evidence")
         if argv[1] == "--version":
-            return "10.0.300"
+            return "10.0.401"
         log = Path(next(item[4:] for item in argv if item.startswith("-bl:")))
         log.write_bytes(b"modeled binlog; not native evidence")
         if argv[1] == "pack":
@@ -1020,3 +1031,319 @@ def test_native_fixture_diagnostics_survive_process_failure(
         assert message in (evidence / "failure.txt").read_text()
     with pytest.raises(FileExistsError):
         dotnet_provider.run_native(command, tmp_path, diagnostics=evidence)
+
+
+def _archive_inventory(package: bytes):
+    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+        return [
+            (
+                item.filename,
+                item.date_time,
+                item.compress_type,
+                item.external_attr,
+                hashlib.sha256(archive.read(item)).hexdigest(),
+            )
+            for item in archive.infolist()
+        ]
+
+
+def test_frozen_reproducibility_preserves_original_archives(
+    native_nuget_reproducibility,
+):
+    """Distinct actual roots and staged mtimes cannot affect original bytes."""
+    campaign = native_nuget_reproducibility
+    first, second = (
+        campaign.results[name] for name in ("first", "second-longer-root")
+    )
+    assert first.package == second.package
+    assert first.manifest == second.manifest
+    assert first.witness == second.witness
+    assert _archive_inventory(first.package) == _archive_inventory(
+        second.package
+    )
+    roots, mtimes, caches = [], [], []
+    inventories = []
+    for label, result in (("first", first), ("second-longer-root", second)):
+        evidence = campaign.evidence / label
+        assert (
+            evidence / result.manifest.basename
+        ).read_bytes() == result.package
+        staged = json.loads((evidence / "staged-inputs.json").read_text())
+        roots.append(staged["root"])
+        mtimes.append(staged["source_mtime"])
+        assert {v["mtime"] for v in staged["files"].values()} == {
+            staged["source_mtime"]
+        }
+        assert {
+            name: value["sha256"] for name, value in staged["files"].items()
+        } == dict(result.source_input_manifest)
+        calls = json.loads((evidence / "commands.json").read_text())
+        caches.append({call["cache"] for call in calls})
+        files = list((evidence / "binaries").iterdir())
+        assert {file.suffix for file in files} == {".dll", ".pdb"}
+        inventories.append({file.name: file.read_bytes() for file in files})
+        with zipfile.ZipFile(io.BytesIO(result.package)) as package:
+            dlls = [
+                name for name in package.namelist() if name.endswith(".dll")
+            ]
+            assert len(dlls) == 1
+            assert package.read(dlls[0]) == inventories[-1][Path(dlls[0]).name]
+    assert roots[0] != roots[1]
+    assert mtimes[0] != mtimes[1]
+    assert caches[0].isdisjoint(caches[1])
+    assert inventories[0] == inventories[1]
+
+
+def test_frozen_reproducibility_retains_native_audits_and_stable_debug_paths(
+    native_nuget_reproducibility,
+):
+    """Official log/PDB readers prove frozen execution and normalized paths."""
+    campaign = native_nuget_reproducibility
+    for label in campaign.results:
+        evidence = campaign.evidence / label
+        for operation in ("restore", "build", "pack"):
+            assert (evidence / f"{operation}.binlog").stat().st_size > 0
+            audit = json.loads(
+                (evidence / f"{operation}-audit.json").read_text()
+            )
+            assert audit["completed"] is True
+            assert audit["succeeded"] is True
+            assert audit["errors"] == []
+            assert audit["nbgvExecuted"] is False
+            if operation == "pack":
+                assert "Csc" not in audit["tasks"]
+        decoded = json.loads((evidence / "debug-paths.json").read_text())
+        pdb = [item for item in decoded if item["kind"] == "portable-pdb"]
+        pe = [item for item in decoded if item["kind"] == "pe-codeview"]
+        assert len(pdb) == len(pe) == 1
+        assert pdb[0]["documents"]
+        assert pe[0]["entries"]
+        paths = [
+            *pdb[0]["documents"],
+            *(item["path"] for item in pe[0]["entries"]),
+        ]
+        assert all(path.replace("\\", "/").startswith("/_/") for path in paths)
+    provider = campaign.requests["first"].helper.audit_binlog(
+        campaign.evidence / "provider/provider.binlog"
+    )
+    assert provider["nbgvExecuted"] is True
+
+
+def test_frozen_reproducibility_uses_target_timestamp(
+    native_nuget_reproducibility,
+):
+    """Target metadata controls timestamps despite varied mtimes."""
+    campaign = native_nuget_reproducibility
+    for label in ("first", "second-longer-root"):
+        calls = json.loads(
+            (campaign.evidence / label / "commands.json").read_text()
+        )
+        operations = [
+            call
+            for call in calls
+            if call["argv"][1] in {"restore", "build", "pack"}
+        ]
+        assert {call["argv"][1] for call in operations} == {
+            "restore",
+            "build",
+            "pack",
+        }
+        for call in operations:
+            assert (
+                f"-property:DeterministicTimestamp={campaign.timestamp}"
+                in call["argv"]
+            )
+            assert "-property:Deterministic=true" in call["argv"]
+        request = campaign.requests[label]
+        assert (
+            int(
+                _git_bytes(
+                    request.source_root,
+                    "show",
+                    "--no-patch",
+                    "--format=%ct",
+                    request.witness.target,
+                ).strip()
+            )
+            == campaign.timestamp
+        )
+
+
+@pytest.mark.parametrize("control", ["source-control", "timestamp-control"])
+def test_frozen_negative_controls_change_original_archive(
+    native_nuget_reproducibility, control
+):
+    """Each control changes output and preserves the frozen witness."""
+    campaign = native_nuget_reproducibility
+    baseline, changed = campaign.results["first"], campaign.results[control]
+    assert baseline.package != changed.package
+    assert baseline.manifest.sha256 != changed.manifest.sha256
+    assert baseline.witness == changed.witness
+    assert baseline.toolchain == changed.toolchain
+    baseline_inputs, control_inputs = (
+        dict(baseline.source_input_manifest),
+        dict(changed.source_input_manifest),
+    )
+    if control == "source-control":
+        assert {
+            name
+            for name in baseline_inputs
+            if baseline_inputs[name] != control_inputs[name]
+        } == {f"{DOTNET_PROJECT_ROOT}/Smoke.cs"}
+    else:
+        assert baseline_inputs == control_inputs
+        before = _archive_inventory(baseline.package)
+        after = _archive_inventory(changed.package)
+        assert [(name, digest) for name, _, _, _, digest in before] == [
+            (name, digest) for name, _, _, _, digest in after
+        ]
+        assert [timestamp for _, timestamp, *_ in before] != [
+            timestamp for _, timestamp, *_ in after
+        ]
+
+
+def test_reproducible_original_archive_passes_clean_consumer(
+    native_nuget_reproducibility,
+):
+    """The exact original archive restores and invokes from a clean cache."""
+    campaign = native_nuget_reproducibility
+    result = campaign.results["first"]
+    consumer = qualify_nuget_restore_build_invoke(
+        result.package,
+        result.expectation,
+        campaign.requests["first"].helper,
+        evidence_directory=campaign.evidence / "clean-consumer",
+    )
+    assert consumer.project_id == DOTNET_RELEASE_UNIT
+    assert consumer.package_sha256 == result.manifest.sha256
+    assert (
+        consumer.witness_sha256
+        == "sha256:" + hashlib.sha256(result.witness).hexdigest()
+    )
+    assert consumer.normalized_version == result.expectation.normalized_version
+
+
+@pytest.mark.parametrize("timestamp", ["not-a-timestamp", "-1", "253402300800"])
+def test_target_timestamp_rejects_invalid_git_metadata(
+    frozen_source, monkeypatch, tmp_path, timestamp
+):
+    """Malformed target metadata cannot fall back to clock or native Build."""
+    request, _, _ = frozen_source
+    request = replace(request, evidence_directory=tmp_path / "forbidden-build")
+
+    def malformed(command, *_args, **_kwargs):
+        assert command[0] == "git", "Invalid timestamp reached a native build"
+        assert request.witness.target in command
+        return timestamp
+
+    monkeypatch.setattr(dotnet_adapter, "run_native", malformed)
+    with pytest.raises(ValueError, match="invalid commit timestamp"):
+        build_dotnet_package(request)
+    assert not request.evidence_directory.exists()
+
+
+def test_target_timestamp_rejects_missing_exact_commit(frozen_source, tmp_path):
+    """A missing witness target cannot fall back to the checkout HEAD."""
+    request, _, _ = frozen_source
+    missing = "f" * 40
+    witness = replace(
+        request.witness,
+        target=missing,
+        nbgv=replace(request.witness.nbgv, git_commit_id=missing),
+    )
+    request = replace(
+        request,
+        witness=witness,
+        evidence_directory=tmp_path / "forbidden-build",
+    )
+    with pytest.raises(ValueError, match="native command failed"):
+        build_dotnet_package(request)
+    assert not request.evidence_directory.exists()
+
+
+@pytest.mark.parametrize("timestamp", [0, 253402300799])
+def test_target_timestamp_accepts_metadata_boundaries(
+    frozen_source, monkeypatch, timestamp
+):
+    """Both admitted timestamp endpoints remain inclusive."""
+    request, _, _ = frozen_source
+    monkeypatch.setattr(
+        dotnet_adapter, "run_native", lambda *_args: f"{timestamp}\n"
+    )
+    assert dotnet_adapter._target_timestamp(request) == timestamp  # noqa: SLF001
+
+
+def test_target_timestamp_ignores_unrelated_checkout_head(
+    frozen_source, tmp_path
+):
+    """A later local commit cannot override the exact frozen target's time."""
+    request, _, _ = frozen_source
+    source = tmp_path / "other-head"
+    _git_bytes(
+        tmp_path,
+        "clone",
+        "--quiet",
+        "--bare",
+        "--shared",
+        str(request.source_root),
+        str(source),
+    )
+    target = request.witness.target
+    expected = int(
+        _git_bytes(source, "show", "--no-patch", "--format=%ct", target).strip()
+    )
+    changed_time = expected + 86400
+    tree = (
+        _git_bytes(source, "rev-parse", f"{target}^{{tree}}").decode().strip()
+    )
+    later = subprocess.run(
+        (
+            "git",
+            "-c",
+            "user.name=Native Test",
+            "-c",
+            "user.email=native-test@example.invalid",
+            "commit-tree",
+            tree,
+            "-p",
+            target,
+            "-m",
+            "Unrelated later checkout",
+        ),
+        cwd=source,
+        env={
+            **os.environ,
+            "GIT_AUTHOR_DATE": f"{changed_time} +0000",
+            "GIT_COMMITTER_DATE": f"{changed_time} +0000",
+        },
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    _git_bytes(source, "update-ref", "HEAD", later)
+    assert (
+        int(
+            _git_bytes(
+                source, "show", "--no-patch", "--format=%ct", "HEAD"
+            ).strip()
+        )
+        == changed_time
+    )
+    assert (
+        dotnet_adapter._target_timestamp(  # noqa: SLF001 - exact-target core behavior
+            replace(request, source_root=source)
+        )
+        == expected
+    )
+    # Local replacement refs must not rewrite immutable target metadata.
+    _git_bytes(source, "replace", target, later)
+    assert (
+        int(_git_bytes(source, "show", "--no-patch", "--format=%ct", target))
+        == changed_time
+    )
+    assert (
+        dotnet_adapter._target_timestamp(  # noqa: SLF001 - exact-target core behavior
+            replace(request, source_root=source)
+        )
+        == expected
+    )

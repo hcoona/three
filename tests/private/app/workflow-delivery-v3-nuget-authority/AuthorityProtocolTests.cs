@@ -73,7 +73,7 @@ public sealed class AuthorityProtocolTests(TestContext testContext)
             "Microsoft.NETCore.App",
             framework.GetProperty("name").GetString());
         Assert.AreEqual(
-            "10.0.8",
+            "10.0.12",
             framework.GetProperty("version").GetString());
 
         string content = Convert.ToBase64String(
@@ -116,7 +116,7 @@ public sealed class AuthorityProtocolTests(TestContext testContext)
         Assert.AreEqual(3, identities.Length);
         Assert.AreEqual("NuGet.Packaging@7.9.0", identities[0]);
         Assert.AreEqual("NuGet.ProjectModel@7.9.0", identities[1]);
-        Assert.AreEqual("dotnet-runtime@10.0.8", identities[2]);
+        Assert.AreEqual("dotnet-runtime@10.0.12", identities[2]);
 
         JsonElement facts = root.GetProperty("facts");
         Assert.AreEqual(1, facts.GetArrayLength());

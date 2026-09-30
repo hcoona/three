@@ -9,7 +9,7 @@
     <PublishTrimmed>false</PublishTrimmed>
     <SelfContained>false</SelfContained>
     <UseAppHost>false</UseAppHost>
-    <RuntimeFrameworkVersion>10.0.8</RuntimeFrameworkVersion>
+    <RuntimeFrameworkVersion>10.0.12</RuntimeFrameworkVersion>
     <RollForward>Disable</RollForward>
   </PropertyGroup>
 

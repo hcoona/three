@@ -48,7 +48,7 @@ def inputs(tmp_path, monkeypatch):
                     "rollForward": "Disable",
                     "framework": {
                         "name": "Microsoft.NETCore.App",
-                        "version": "10.0.8",
+                        "version": "10.0.12",
                     },
                 }
             }
@@ -151,7 +151,7 @@ def _write_http_transcript(directory, request, *, redirect=True):
 def _controlled_command(argv, *, cwd, evidence, **_kwargs):
     label = evidence.directory.name
     if label == "sdk":
-        return b"10.0.300\n"
+        return b"10.0.401\n"
     if label == "graph":
         (cwd / "graph.json").write_bytes(b'{"controlledGraph":true}')
         return b""

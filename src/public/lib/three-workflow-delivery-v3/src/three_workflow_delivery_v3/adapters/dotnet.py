@@ -32,6 +32,8 @@ from three_workflow_delivery_v3.repository.dotnet_provider import (
 
 BUILD_DEFINITION = "dotnet/nuget-package-v1"
 WITNESS_PATH = "workflow-delivery/provenance.json"
+# Last Unix second supported by the pack task's DateTimeOffset input.
+_MAX_COMMIT_TIMESTAMP = 253402300799
 
 
 @dataclass(frozen=True, slots=True)
@@ -307,7 +309,8 @@ def qualify_nuget_artifact_contents(  # noqa: C901
         name
         for name in names
         if re.fullmatch(
-            r"package/services/metadata/core-properties/[0-9a-f]+\.psmdcp", name
+            r"package/services/metadata/core-properties/(?:nuget|[0-9a-f]+)\.psmdcp",
+            name,
         )
     ]
     if len(core) != 1 or set(names) != required | set(core):
@@ -331,7 +334,10 @@ def qualify_nuget_artifact_contents(  # noqa: C901
 
 
 def _frozen_properties(
-    witness: DotnetPackageTargetWitness, intermediate: Path, witness_path: Path
+    witness: DotnetPackageTargetWitness,
+    intermediate: Path,
+    witness_path: Path,
+    timestamp: int,
 ) -> tuple[str, ...]:
     facts = witness.nbgv
     properties = {
@@ -349,6 +355,9 @@ def _frozen_properties(
         "SourceRevisionId": witness.target,
         "Configuration": "Release",
         "RestoreLockedMode": "true",
+        "Deterministic": "true",
+        "PathMap": str(intermediate.parent) + "=/_/",
+        "DeterministicTimestamp": str(timestamp),
     }
     if any(
         ";" in value or "\n" in value or "\r" in value
@@ -359,6 +368,27 @@ def _frozen_properties(
     return tuple(
         f"-property:{key}={value}" for key, value in properties.items()
     )
+
+
+def _target_timestamp(request: DotnetBuildRequest) -> int:
+    """Read the timestamp already bound by the immutable witness target."""
+    value = run_native(
+        (
+            "git",
+            "--no-replace-objects",
+            "show",
+            "--no-patch",
+            "--format=%ct",
+            request.witness.target,
+            "--",
+        ),
+        request.source_root,
+        neutral_dotnet_environment(),
+    ).strip()
+    if not re.fullmatch(r"[0-9]+", value) or int(value) > _MAX_COMMIT_TIMESTAMP:
+        message = "frozen target has an invalid commit timestamp"
+        raise ValueError(message)
+    return int(value)
 
 
 def _capture_build_inputs(request: DotnetBuildRequest) -> dict[str, bytes]:
@@ -523,6 +553,7 @@ def pack_frozen_dotnet_archives(
         raise ValueError(message)
     comparison_properties = comparison.properties if comparison else ()
     dependencies = _offline_build_inputs(dependency_archives or ())
+    timestamp = _target_timestamp(request)
     request.evidence_directory.mkdir(parents=True, exist_ok=False)
     outputs: list[DotnetPackOutput] = []
     with TemporaryDirectory(prefix="wdv3-nuget-build-") as temporary:
@@ -537,7 +568,7 @@ def pack_frozen_dotnet_archives(
         intermediate = root / "frozen-obj"
         output = root / "packages"
         properties = _frozen_properties(
-            request.witness, intermediate, witness_path
+            request.witness, intermediate, witness_path, timestamp
         )
         environment = neutral_dotnet_environment()
         config = stage / "nuget.config"
@@ -577,7 +608,7 @@ def pack_frozen_dotnet_archives(
                 environment,
                 request.evidence_directory / "sdk" if fixture else None,
             ).strip()
-            != "10.0.300"
+            != "10.0.401"
         ):
             message = "Build SDK does not match the frozen toolchain"
             raise ValueError(message)
@@ -625,7 +656,7 @@ def pack_frozen_dotnet_archives(
             _audit_frozen_operation(
                 request.helper,
                 log,
-                forbid_compile=fixture and operation == "pack",
+                forbid_compile=operation == "pack",
             )
             if operation == "pack":
                 archive = _pack_output(Path(options[-1]))
@@ -713,7 +744,7 @@ def qualify_nuget_restore_build_invoke(
             NUGET_PLUGINS_CACHE_PATH=str(root / "plugin-cache"),
         )
         (root / "global.json").write_text(
-            '{"sdk":{"version":"10.0.300","rollForward":"disable"}}',
+            '{"sdk":{"version":"10.0.401","rollForward":"disable"}}',
             encoding="utf-8",
         )
         (root / "nuget.config").write_text(
