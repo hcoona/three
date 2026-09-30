@@ -17,10 +17,12 @@ explains reusable integration lessons and the next-task guide.
 The Python slice is the separate `hcoona-release-smoke-python` package. Its
 [Python design entry](docs/README.md#python-smoke-design) routes the confirmed
 requirements, HLD/MLDs, brief LLD and source evidence for TestPyPI Buddy followed
-by PyPI Official. TestPyPI publication and fresh clean wheel/sdist consumption
+by PyPI Official. Publication and fresh clean wheel/sdist consumption
 are [independently complete](docs/validation/python-normal-live-evidence.md)
-for `0.1.0b26`; production PyPI has independently reviewed ready admission, with normal Official
-publication and its audit still outstanding. The production
+for TestPyPI `0.1.0b26` and production PyPI `0.1.0b53`. The production
+result joins the failed uploading Attempt with a fresh successful
+`exact-satisfied` Attempt and its separate native consumer audit. Both
+completion campaigns are stopped. The production
 bootstrap failed at wheel readback; its request is retired and its partial/unknown
 effects remain failed. The
 [handoff](docs/agent-handoff.md#starting-a-new-session) routes current operation
@@ -55,7 +57,7 @@ The revised
 [platform-reliance design](docs/hcoona-release-smoke-python-lld.md#python-governance-v2-migration)
 is implemented as strict v2. Normal runtime rejects v1 and hybrid admission.
 The [handoff](docs/agent-handoff.md#starting-a-new-session) routes current
-admission evidence, completed TestPyPI audit and separate PyPI gate. The [retired native tooling boundary](docs/validation/python-native-readiness.md)
+admission evidence, both completed destination audits and spent operation limits. The [retired native tooling boundary](docs/validation/python-native-readiness.md)
 retains failed-evidence consumers with both request slots null. No duplicate/race
 suite is a prerequisite. Configuration/admission and actual publication retain
 separate grants and each destination still needs exact readback and clean consumers.

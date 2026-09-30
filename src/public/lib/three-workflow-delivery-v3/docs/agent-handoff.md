@@ -27,6 +27,14 @@ operations, publication, or another npm proving run.
 
 ## Starting a New Session
 
+The Python two-destination publication and clean-consumer objective is
+[independently complete](./validation/python-normal-live-evidence.md): TestPyPI
+`0.1.0b26` and production PyPI `0.1.0b53`. Production joins actual uploads in
+a failed Attempt with a fresh successful `exact-satisfied` Attempt and a new
+native wheel/sdist consumer audit. Both completion campaigns are stopped;
+operation-only callers are retired and all prior failures remain failed.
+No further operation or Ruby work follows automatically from this completion.
+
 Production PyPI has reviewed ready v2 Governance for
 `hcoona-release-smoke-python`, based on the owner's confirmed Sole Owner
 `Sherry7290`, exact associated bootstrap and normal publishers, and independently
@@ -59,11 +67,15 @@ owner-confirmed resource facts closed only the
 Both bootstrap slots are null. No rerun, refill, automatic partial completion,
 replacement bootstrap version or deletion is authorized.
 
-The normal Official Attempt and its exact-byte/clean-consumer audit remain
-outstanding. They require a separately accepted concrete operation under the
-[Wave](../../../../../docs/delivery-wave.md), fresh original Build/Qualification
-and current-run Approval/Authorization. Administrator bypass is not a substitute
-for that authority, and ready Governance is not publication evidence.
+The [production audit](./validation/python-normal-live-evidence.md#production-pypi-completion)
+retains the two distinct normal Attempts, original source/run identities and
+public replay packets. The uploading Attempt remains failed; its successor
+freshly rebuilt and qualified both exact files, used no upload authority and
+passed its own terminal and native consumer audits. Do not reopen the stopped
+campaign, perform more registry reads or reuse its artifacts as new authority.
+Future operations need their own applicable [Wave](../../../../../docs/delivery-wave.md)
+and domain gates. Administrator bypass does not substitute for current-run
+Approval/Authorization when publication requires action.
 
 The [hosted partial-publication recovery](./validation/python-hosted-recovery.md)
 is independently complete for TestPyPI `0.1.0b39`: a fresh Attempt rebuilt both
@@ -73,7 +85,8 @@ The campaign is stopped and its temporary interruption control and operators
 are retired. The [ordinary recovery contract](./hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
 retains both exact single-file subsets; the inverse subset has local evidence
 only. Preserve the stable workflow/publisher/Environment and historical evidence.
-This completion grants no further operation; normal production PyPI publication still requires its separate operation gate.
+This recovery completion grants no further operation and is distinct from the
+completed production audit above.
 
 The npm and NuGet GitHub Packages smoke objectives are complete. Use the
 [NuGet completion evidence](./validation/nuget-normal-live-evidence.md) and
@@ -95,7 +108,8 @@ For the owner's next Workflow Delivery v3 task:
 3. Identify the selected next project, user-visible result and remaining
    requirements from the owner's instruction and current work carrier.
    [Issue #843](https://github.com/hcoona/three/issues/843) tracks Python:
-   TestPyPI first, then production PyPI; Ruby follows Python completion.
+   the completed TestPyPI and production PyPI journey. Ruby requires a separate
+   proposal and selected Wave; completion does not authorize starting it.
    Start with the confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),
    HLD/five MLDs and [Python LLD](./hcoona-release-smoke-python-lld.md), with
    the [source evidence](./research/python-smoke-evidence.md) for claim limits.
@@ -109,10 +123,11 @@ For the owner's next Workflow Delivery v3 task:
    protected Governance files now use strict v2. TestPyPI has reviewed ready
    admission, and its normal publication and fresh clean wheel/sdist consumers
    are [independently complete](./validation/python-normal-live-evidence.md)
-   for `0.1.0b26`. Production PyPI has ready admission; normal Official proving remains outstanding. The duplicate/race producer
-   and hosted workflow are removed. The completion campaign stopped at its first
+   for `0.1.0b26`; production PyPI publication and separate clean consumers are
+   complete for `0.1.0b53`. The duplicate/race producer
+   and hosted workflow are removed. Both completion campaigns stopped at their first
    audited success; no further slot, dispatch, Approval, OIDC, upload or registry
-   audit is authorized. Do not reopen its operator or reuse its artifacts as a
+   audit is authorized. Do not reopen their operators or reuse their artifacts as a
    new Attempt. Future operations need their own applicable Wave and domain gates.
    Preserve the earlier source-bound
    [failed normal Attempt](https://github.com/hcoona/three/actions/runs/36383200978)

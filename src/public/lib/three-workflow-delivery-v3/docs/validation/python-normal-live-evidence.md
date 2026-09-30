@@ -1,13 +1,13 @@
-# Python TestPyPI Normal-Live Evidence
+# Python TestPyPI and PyPI Normal-Live Evidence
 
 ## Completion and scope
 
 `hcoona-release-smoke-python` version `0.1.0b26` completed the TestPyPI
 normal publication and fresh wheel/sdist consumer journey on September 28, 2026. The [independent final audit][final-audit] joins original Approval,
 publication and terminal replay with freshly downloaded exact distributions
-and separate clean consumers. This result completes only the TestPyPI portion
-of `WD-PY-004`; production PyPI admission and outstanding normal publication
-are tracked by the [agent handoff](../agent-handoff.md#starting-a-new-session).
+and separate clean consumers. Production PyPI `0.1.0b53` completed its separate
+[publication and consumer journey](#production-pypi-completion) on September 30, 2026. Together these destination-specific audits complete `WD-PY-004`; they
+preserve all failed Attempts and their original outcomes.
 
 This record owns the runtime completion evidence consumed by the project
 README, document index and agent handoff. V3 maintainers retain the evidence
@@ -16,6 +16,9 @@ and update those consumers when the claim changes. The
 [migration policy](../migration-strategy.md#python-smoke-delivery) retain their
 normative roles. A separate validation carrier preserves exact provenance and
 limits without duplicating it across status pages or the service-source study.
+
+The following table and original evidence sections describe TestPyPI. The
+[production section](#production-pypi-completion) owns the separate PyPI result.
 
 | Requirement              | Evidence                                                                                                                                              |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -128,9 +131,136 @@ and [original audit](https://github.com/hcoona/three/issues/843#issuecomment-586
 remain failed. The [TLS-stopped operation](https://github.com/hcoona/three/issues/843#issuecomment-5862680211),
 failed bootstrap `0.1.0b6` and [native counterexample](../research/python-smoke-evidence.md#retained-identical-duplicate-counterexample)
 remain untouched. This success neither repairs nor relabels their evidence.
-Production PyPI requires its own authorized configuration/admission and real
-publication journey; Issue #843 remains its work carrier.
+The separately authorized production result below supplies its own admission,
+current-run evidence and native consumer audit; TestPyPI artifacts and
+Approvals were not promoted.
 
+## Production PyPI completion
+
+Production `hcoona-release-smoke-python` `0.1.0b53` completed the Official
+publication and fresh clean wheel/sdist consumer journey on September 30, 2026.
+The independently audited result joins actual uploads in a failed Attempt with
+a fresh successful `exact-satisfied` Attempt; it does not relabel the uploading
+Attempt as `published`. The final review and selected replay packet below retain
+original evidence for both conclusions.
+
+### Source and two distinct Attempts
+
+[PR #944](https://github.com/hcoona/three/pull/944) delivered target/tooling
+`c8deca63c9fdcb61082c043cc42a642d668e02e3`, tree
+`e9ab4bc8700b2d739e55887ef00f3e551e04a00b`, after the separate ready admission
+in [#943](https://github.com/hcoona/three/pull/943). Actual-merge
+[CI](https://github.com/hcoona/three/actions/runs/36671061328) passed; this
+Wave-only merge did not schedule CodeQL. Both production Attempts bind that
+same protected source and full-history public-main NBGV `0.1.0-beta.53`,
+height 53, normalized `0.1.0b53`. Ready Governance retains digest
+`38332b18e0f8d40bc1940786bb48d992abdb086b751e6609f1592d64f42ac54f`
+and original expiry `2026-10-06T18:39:51.026223Z`.
+
+[Uploading run `36672822341`, attempt 1][pypi-upload-run] used its own qualified
+pair and current-run Approval/Authorization at the stable normal workflow and
+`workflow-delivery-v3-python-pypi` Environment, ID `23047309006`.
+Both ordered file POSTs returned success. Wheel readback was exact, but after
+the sdist upload the index regressed from serial `41625748` to the older
+`41616320` inventory. Runtime rejected the loss of already verified state.
+The [independent failure audit][pypi-failure] preserves Outcome
+`publication-failed`, `possibly-mutated: true`, SHA-256
+`6f2404435e619c3888d33f91ccc111aa67262162b39571039413cb77af2c04f8`.
+Its successful publisher job did not make Finalizer successful.
+
+A separately reviewed [read-only diagnostic][pypi-diagnostic] later downloaded
+both exact files at index serial `41625754`. It established present state and
+publisher quiescence for the narrow successor, without consumer or successful
+Attempt claims. The original failure and two spent upload reservations remain
+unchanged. The [reviewed continuation][pypi-continuation] changed only the
+external caller's bounded continuation handling; runtime failure policy and
+publication behavior were unchanged.
+
+[Fresh run `36675091575`, attempt 1][pypi-exact-run] rebuilt and qualified both
+formats at the identical source. Its sixteen distinct current-run artifact
+references include its own ExactProof and Outcome; they exclude Bundle,
+Authorization, MutationMarker and Result. The publisher was skipped and the
+approval history was empty. No new approval, OIDC or upload occurred.
+Independent replay of the original Finalizer scalar and current artifact graph
+matched canonical Outcome `exact-satisfied`, SHA-256
+`45b51a4c4ef79696791c6ee3f907dc400a7efbca8ad064375b757697ffd9ed9b`.
+
+| Fresh Build distribution                                | Artifact ID   | SHA-256                                                            |
+| ------------------------------------------------------- | ------------- | ------------------------------------------------------------------ |
+| `hcoona_release_smoke_python-0.1.0b53-py3-none-any.whl` | `11079775543` | `35790e553c4a4996e5021c3423c14d460021a3cfa1e687a558c06278ff12061c` |
+| `hcoona_release_smoke_python-0.1.0b53.tar.gz`           | `11079825461` | `17f8c339644e8664263baa89a98c5b781fe7ada1dfdafc8f8e3d06cd4d6c5275` |
+
+### Fresh native bytes and separate consumers
+
+The final native capture ran from `2026-09-30T05:57:59.219258Z` through
+`2026-09-30T05:57:59.349381Z`: one Simple Index GET and two file GETs, all HTTP 200. Index serial was `41625754`, response SHA-256
+`21faebeca6a7d801fa30c3cf04c424af3e2472ebf54c6f751ca3cff46bb06d87`.
+The newly downloaded 4090-byte wheel and 2927-byte sdist matched both current
+Build hashes above and the preceding uploaded originals byte-for-byte.
+
+Both native downloads were actually consumed in separate newly created
+environments outside the checkout. Archive installation disabled index,
+dependency, cache and source lookup; isolated imports resolved to each new
+environment's `site-packages` and matched version, `project_id()` and exact
+source witness. The sdist used normal PEP 517 build isolation with admitted
+public PyPI build dependencies and rebuilt a byte-identical wheel. All seven
+retained consumer commands exited successfully. Independent offline reader
+replay and final review bind the actual downloads and consumer evidence.
+
+This result is scoped to the admitted CPython 3.14.3/OpenSSL 3.5.5 environment,
+UV 0.12.19 and Hatchling 1.32.4. The existing system CA store was selected only
+per process. It does not establish atomic two-file publication, unlimited PyPI
+retention, universal consumer support or isolation from the accepted sole
+writer. Administrator bypass remains accepted under that sole-writer boundary.
+
+### Closure and public retention
+
+The original production campaign used two fresh dispatches, one Environment
+approval and two total file POST reservations, distributed `[2, 0]` across its
+slots. Slot 01 closed `terminal-exact-pair` while its Outcome remained failed.
+Slot 02 started `2026-09-30T05:48:10.653068Z` with unchanged original deadline
+`2026-09-30T09:48:10.653068Z`; the final independently reviewed closure is
+`audited-success`. The stopped campaign retires the operation-only callers and
+ends all remaining slots. No further registry audit or other smoke effect
+follows from completion. Final slot 02 ledger SHA-256:
+`0005e43dfbf9b32333d0959c1491005caee2be4bda0290a468cd4a4293150585`.
+
+The [independent final audit and packet screening](https://github.com/hcoona/three/issues/843#issuecomment-5905157820)
+join terminal replay, new native consumers and the actual campaign stop.
+The selected 45-file public replay packet is retained in four numbered parts:
+[1](https://github.com/hcoona/three/issues/843#issuecomment-5905156422),
+[2](https://github.com/hcoona/three/issues/843#issuecomment-5905157078),
+[3](https://github.com/hcoona/three/issues/843#issuecomment-5905157368), and
+[4](https://github.com/hcoona/three/issues/843#issuecomment-5905157602).
+Reconstruct it using the same Base64/gzip `sha256-file-map-v1` procedure above.
+
+| Carrier                             | SHA-256                                                            |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| Compressed production replay packet | `4a5c5339709c98fec812aa243ad4e8ef5c4cdcfa648cb8bee917edef61aca387` |
+| Decompressed JSON                   | `7857885b1f7381bcccdb49c091b79d37568ad636a14b36f5e70534bc6695657f` |
+
+The selected packet contains current payloads, literal graph/Finalizer controls,
+selected platform responses, new registry bytes and consumer commands,
+independent reviews/gates, final ledger and stopped campaign. Complete gate
+manifests also identify additional privately retained originals; this selected
+packet does not contain the full raw log/transfer archive. All signed redirect
+headers remain excluded. The failed uploading Attempt's selected originals are
+separately retained in [four parts](https://github.com/hcoona/three/issues/843#issuecomment-5904840067),
+linked with its [diagnostic and closure evidence][pypi-diagnostic]. Existing
+platform provenance and finite-retention limitations remain unchanged.
+
+The earlier production bootstrap `0.1.0b43` remains failed and untouched, with
+both bootstrap slots null. The normal success neither fills that version's
+missing sdist nor repairs its missing consumer evidence. The TestPyPI outcomes
+and limitations above also remain unchanged. Together, the separately audited
+destinations complete the Python `WD-PY-004` journey; future operations and a
+separate Ruby proposal require their own selected scope and gates.
+
+[pypi-upload-run]: https://github.com/hcoona/three/actions/runs/36672822341
+[pypi-exact-run]: https://github.com/hcoona/three/actions/runs/36675091575
+[pypi-failure]: https://github.com/hcoona/three/issues/843#issuecomment-5904797821
+[pypi-diagnostic]: https://github.com/hcoona/three/issues/843#issuecomment-5904905408
+[pypi-continuation]: https://github.com/hcoona/three/issues/843#issuecomment-5904915504
 [run]: https://github.com/hcoona/three/actions/runs/36462600325
 [admission]: https://github.com/hcoona/three/issues/843#issuecomment-5875702720
 [approval]: https://github.com/hcoona/three/issues/843#issuecomment-5874807332

@@ -97,9 +97,11 @@ The Python requirements and design adopt the owner's platform-reliance decision
 under `WD-PY-006`. The [Python LLD](./hcoona-release-smoke-python-lld.md)
 owns the v2 admission contract. Runtime and both protected Governance files
 implement strict v2; implementation delivery alone cannot enable them. TestPyPI
-and production PyPI have separately reviewed ready admission; production Official
-publication and its completion audit remain outstanding. The [handoff](./agent-handoff.md#starting-a-new-session)
-routes current evidence and remaining gates. The [retired native interface](./validation/python-native-readiness.md)
+and production PyPI have separately reviewed ready admission and
+[completed publication/consumer audits](./validation/python-normal-live-evidence.md).
+Production completion retains the failed uploading Attempt and the fresh
+`exact-satisfied` successor as distinct results. The [handoff](./agent-handoff.md#starting-a-new-session)
+routes current evidence and spent operation limits. The [retired native interface](./validation/python-native-readiness.md)
 exists for failed-evidence consumers, not new operation requests.
 
 1. The disabled implementation migrates Python Governance to v2 across
@@ -139,7 +141,7 @@ existing files may be retained while missing files are uploaded. The normal
 workflow/publisher identities and per-file operation profile stay unchanged.
 The [completed TestPyPI recovery evidence](./validation/python-hosted-recovery.md)
 records the bounded hosted result and retirement of its temporary control.
-Its campaign, the normal TestPyPI campaign and historical partial bootstrap
+Its campaign, both normal destination campaigns and historical partial bootstraps
 remain spent. Any future hosted operation needs its own applicable Wave,
 bounded protocol and domain authorization.
 
@@ -147,7 +149,8 @@ No previous smoke grant, artifact or Approval is promoted. Original failures
 remain failed and spent. Revalidate changed prerequisites before dependent work;
 trust in platform behavior does not infer a configuration change or publication
 permission. npm and NuGet completion remain closed. Ruby follows Python's
-two-destination completion audit. Issue/PR carriers retain progress and exact
+two-destination completion audit through a separately selected proposal and Wave.
+Issue/PR carriers retain progress and exact
 delivery evidence; this page owns only migration order and gates.
 
 ## Why v2 Is Not an Incremental Base
