@@ -574,7 +574,7 @@ Destination Definitions and Adapters own:
 Shared Foundation may provide generic clients and binding primitives but does
 not classify projections, plan actions, or decide recovery.
 
-For registry destinations other than the NuGet and Python slices, the Adapter contract must establish:
+For registry destinations other than the NuGet, Python and Ruby slices, the Adapter contract must establish:
 
 - atomic non-overwriting creation against the active package-version
   namespace;
@@ -593,6 +593,10 @@ and is not misrepresented as part of the version-object guarantee.
 Python follows `WD-PY-006` and the [Python delivery design](#python-smoke-delivery),
 including file-level non-replacement and bounded availability rather than an
 atomic two-file version creation guarantee.
+
+Ruby follows `WD-RUBY-005` and the [Ruby release extension](#ruby-release-extension),
+with bounded platform reliance and actual exact-byte/witness evidence rather
+than a native-generation or universal concurrency-guarantee prerequisite.
 
 NuGet instead follows the dependency and evidence basis in `WD-NUGET-006` and
 `WD-NUGET-007`, as realized by the
@@ -1776,3 +1780,16 @@ Lower-layer design may define:
 Lower-layer design must not add first-slice capability groups, a second
 publication Environment, history admission, run-attempt domain bindings,
 GitHub rerun recovery, or a speculative multi-action framework.
+
+## Ruby Release Extension
+
+Ruby reuses one-artifact planning and the scalar mutation marker/Result/Outcome
+DAG, with its own strict action/profile data under
+[`WD-RUBY-004` and `WD-RUBY-005`](./requirements.md#ruby-smoke-slice).
+The [Ruby publication contract](./hcoona-release-smoke-ruby-lld.md#publication-and-recovery)
+owns native missing/exact/conflicting/unknown classification, zero-action fresh
+proof, one-shot upload and bounded post-success visibility. A rejection or
+ambiguous effect cannot become same-Attempt success. Fresh recovery rebuilds and
+qualifies independently; neither Python's two-file action nor another registry's
+duplicate behavior is imported. Bootstrap and normal completion have separate
+purposes and evidence lifetimes. Destination order does not promote artifacts.

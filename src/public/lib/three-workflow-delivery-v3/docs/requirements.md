@@ -52,7 +52,7 @@ claims, and destination API contracts. Workflow Delivery must validate bindings
 that it creates, but it must not reimplement a lower layer merely to prove the
 lower layer's own contract.
 
-For destinations other than the NuGet and Python slices below, live registry publication may rely on a
+For destinations other than the NuGet, Python and Ruby slices below, live registry publication may rely on a
 documented destination contract that version creation is atomic and
 non-overwriting and that exact package state is
 sufficiently durable and observable. Destination Adapter acceptance tests must
@@ -69,6 +69,10 @@ or conflicting evidence required by those requirements keeps NuGet blocked.
 Python follows the separately owner-confirmed file-level dependency and
 evidence basis in [`WD-PY-006`](#python-smoke-slice). It does not assume atomic
 creation of a complete two-file release or inherit NuGet's service evidence.
+
+Ruby follows its explicit platform-dependency and evidence boundary in
+[`WD-RUBY-005`](#ruby-smoke-slice), without inheriting another registry's
+duplicate-response behavior or claiming universal service immutability.
 
 If a required guarantee is unavailable at the layer that must own it, the
 affected capability is unsupported or blocked. Application logic must not
@@ -309,6 +313,8 @@ isolation are separate authority boundaries and remain unchanged.
     that platform permission becomes available after Environment approval,
     while reviewed control enforces the later Authorization-before-token order.
     It is not cryptographic platform enforcement of artifact authorization.
+    Ruby uses the destination-gated publisher ordering under `WD-RUBY-006`,
+    with its distinct GitHub-token and RubyGems.org OIDC permission profiles.
     No `packages: write` or static-token fallback is required or admitted for
     Python. Supported registry configuration checks and protected attestations
     replace GitHub Packages-specific association/access fields; unexposed
@@ -1017,6 +1023,80 @@ They define a new Python scope, not implemented support or an operation grant.
   pre-existing files and complete actual publication and clean-consumer audit.
   Preparation supplies no configuration, dispatch, token or upload permission.
 
+### Ruby Smoke Slice
+
+These requirements realize the owner's [Ruby scope and risk decision](https://github.com/hcoona/three/issues/954#issuecomment-5921061049).
+They specify support to implement and validate, not completed runtime evidence.
+
+- **WD-RUBY-001:** The smoke is `hcoona-release-smoke-ruby`, require path
+  `hcoona_release_smoke_ruby`, with `HcoonaReleaseSmokeRuby.project_id` returning
+  the gem name and `VERSION` matching native installed metadata. It is pure
+  Ruby, platform `ruby`, with one unsigned original `.gem`, no runtime
+  dependencies, native extensions, executables or production consumers.
+  Repository-pinned Ruby on Ubuntu is the initial build/consumer lane.
+- **WD-RUBY-002:** Full-history, exact-target NBGV supplies raw `SemVer2`.
+  The Provider freezes it and RubyGems-native `Gem::Version` normalization,
+  projection/tool identities and source bindings. Empty/whitespace, unsupported
+  syntax and `+` metadata fail; no stripping, fallback field or run suffix is
+  permitted. Build consumes frozen facts and never reevaluates NBGV. Installed
+  code needs no Git, NBGV, .NET or source checkout.
+- **WD-RUBY-003:** Build uses the target committer timestamp, closed inputs and
+  a destination-independent source witness. Before recovery is supported, prove
+  byte equality of whole original packages from two independent clean builds,
+  with changed-source and changed-epoch negative controls. Qualification covers
+  native metadata/content and clean local installation separately. Each Release
+  Attempt builds and qualifies its own artifact; remote acceptance downloads
+  the selected registry's original and installs that file outside the checkout.
+- **WD-RUBY-004:** Complete GitHub Packages Buddy before RubyGems.org Official.
+  Each Attempt binds exactly one destination, coordinate and original gem.
+  Missing state permits one approved upload; fresh exact bytes/witness permit
+  zero-action `exact-satisfied`; conflicting or unknown state blocks. Definitive
+  success, including an HTTP-200 identical replay if accepted by the service,
+  requires exact original-byte/witness readback and does not prove insertion.
+  Rejection or ambiguity remains failed even if later state is exact. Bounded
+  post-success observation may await visibility under the Ruby LLD, never
+  reopen terminal failure or resend. Recovery uses a fresh independently built,
+  qualified and authorized Attempt; no prior artifact or Approval promotion,
+  skip-existing repair, deletion or destructive compensation is permitted.
+- **WD-RUBY-005:** Accept each destination's non-overwrite behavior as a bounded
+  platform dependency under the owner's explicit decision. Do not require a
+  duplicate/race probe, native acceptance generation or provider-authored
+  concurrency guarantee. GitHub Packages Ruby duplicate behavior remains
+  unknown; RubyGems.org's source-observed HTTP-200 path is conditional. Neither
+  establishes universal or deployed immutability. Readback detects observed
+  mismatches; it cannot enforce server immutability or indefinite availability.
+  Validate the application's authority/effect/evidence contracts and actual
+  publication, fresh readback and clean consumption at both destinations.
+  Retain independent evidence outside the registry; disappearance grants no
+  restoration. See the [source limits](./research/ruby-smoke-evidence.md).
+- **WD-RUBY-006:** Reuse the accepted sole-writer/operator boundary with
+  `hcoona` as explicit Approval reviewer. Self-approval confirms intent;
+  independent technical/configuration/audit review remains separate. Use
+  protected-main targets and same-revision reviewed control. Both publishers
+  are destination-Environment gated after credential-free Bundle preparation;
+  verify native current-run Approval and persist Authorization before invoking
+  publication. GitHub Packages uses repository `GITHUB_TOKEN` with write
+  permission only in its publisher; its package-side reach remains an explicit
+  attested limitation. RubyGems.org acquires gem-bound short-lived OIDC
+  credentials only after Authorization, with no static-token fallback.
+  Nonpublisher jobs receive no publication capability. The publisher executes
+  no target gemspec/library/build code. Exact tuple, ownership/access, reviewer
+  protections and actual administrator-bypass setting require independent
+  admission; bypass never substitutes for current-Attempt Approval. This
+  sole-administrator trust boundary permits either bypass setting, without
+  claiming isolation from the accepted writer.
+- **WD-RUBY-007:** First-project bootstrap is separate from normal admission,
+  binds one destination/name/account and original qualified gem, and uses
+  current-run approval plus an accepted finite protocol. A pending publisher
+  neither reserves the name nor proves ownership. Independently audited
+  postcreation configuration may establish only the resource facts observed;
+  failed bootstrap remains failed. Normal publication needs its own fresh
+  Attempt. Requirements, applicable architecture and validation design precede
+  implementation; concrete protected requests and configuration/admission
+  precede external operations. Existing V3 architecture is reused with minimal
+  Ruby contracts, not a required redesign of all layers. The accepted Wave
+  owns effects/ceilings; completed npm, NuGet and Python campaigns stay closed.
+
 ### Evidence, Decisions, and Explanation
 
 - **WD-EVD-001:** Evidence Admission must verify exact ownership, target,
@@ -1085,7 +1165,10 @@ They define a new Python scope, not implemented support or an operation grant.
   and file-level non-replacement: an exactly verified subset may form its
   missing-file completion action under `WD-PY-005`, while unverified partial
   state still blocks. No atomic version-set creation is assumed.
-  For the other supported slices, the authoritative package-version effect must use atomic
+  Ruby follows `WD-RUBY-004` and `WD-RUBY-005`: its non-overwrite basis is
+  a bounded platform dependency, with fresh exact-byte/witness verification
+  and no native-generation prerequisite or universal atomicity claim.
+  For supported slices other than Python and Ruby, the authoritative package-version effect must use atomic
   non-overwriting creation against the active version namespace. Pre-observed
   exact active state produces no action. At mutation linearization, the
   admitted primitive must not replace or alter an active version; competing
@@ -1361,7 +1444,10 @@ They define a new Python scope, not implemented support or an operation grant.
   operational records expire, the affected operation must fail closed.
   Absence from the active destination projection is sufficient
   initial-publication state when the required lower-layer destination contract
-  and active-version native acceptance are established. No retained Intent or
+  and active-version native acceptance are established. Ruby instead uses
+  the explicit evidence basis of `WD-RUBY-004` and `WD-RUBY-005`, without a
+  native acceptance generation; required current-state verification still
+  fails closed. No retained Intent or
   Attempt lineage is required before publication may proceed, and none reserves the
   active-absent coordinate or proves a tombstone absent.
 

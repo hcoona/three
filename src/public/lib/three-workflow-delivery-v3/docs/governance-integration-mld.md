@@ -879,3 +879,23 @@ Lower-layer design may define:
 Lower-layer design must not introduce a first-slice second Environment,
 Environment Profile abstraction, separate post-approval admission authority,
 history-based authority, or exhaustive package-grant claim.
+
+## Ruby Governance Extension
+
+Ruby follows [`WD-RUBY-006` and `WD-RUBY-007`](./requirements.md#ruby-smoke-slice)
+and the [Ruby Governance contract](./hcoona-release-smoke-ruby-lld.md#governance-and-first-project-protocol).
+Separate initially blocked sources bind the platform-reliance basis, exact
+registry/profile, package ownership/access, protected workflow/Environment,
+reviewer, actual bypass setting, finite freshness and protected-path identity.
+A native-generation record is not required or fabricated. Ready admission needs
+independent configuration evidence and never authorizes a dispatch itself.
+
+Both Ruby publishers use the Environment-gated job ordering after immutable
+Bundle preparation. Verify native current-run Approval and persist Authorization
+before action; acquire RubyGems.org OIDC only afterwards. GitHub Packages uses
+repository `packages: write` only in its trusted publisher, acknowledging token
+reach as an attested limitation. Other jobs have no publication capability.
+No target gemspec, build or library executes in either publisher. Separate
+bootstrap/normal workflow tuples and postcreation review prevent a pending
+publisher from becoming assumed ownership. Existing npm/NuGet/Python authority
+and spent operation boundaries remain unchanged.

@@ -54,6 +54,17 @@ effect.
 Before planning or editing v3 work, read the [Workflow Delivery v3 AI Agent Handoff](./agent-handoff.md). It is
 operating guidance, not a second normative specification.
 
+## Ruby Smoke Design
+
+The owner selected the complete Ruby journey under [Issue #954](https://github.com/hcoona/three/issues/954).
+[`WD-RUBY-*`](./requirements.md#ruby-smoke-slice), the [HLD extension](./high-level-design.md#ruby-smoke-extension)
+and [Ruby LLD](./hcoona-release-smoke-ruby-lld.md) define the minimal integration.
+The [source evidence](./research/ruby-smoke-evidence.md) preserves unverified
+GitHub duplicate behavior and RubyGems.org's conditional replay finding.
+The [migration order](./migration-strategy.md#ruby-smoke-delivery) and accepted
+[Wave](../../../../../docs/delivery-wave.md) route execution gates. Design is
+not implemented support, configured ownership or publication completion.
+
 ## Python Smoke Design
 
 The [hosted partial-publication recovery](./validation/python-hosted-recovery.md)
@@ -166,7 +177,8 @@ Read the current v3 documents in this order:
 5. [Migration and Document Policy](./migration-strategy.md)
 6. Applicable slice LLD: [npm](./hcoona-release-smoke-npm-lld.md),
    [NuGet](./hcoona-release-smoke-github-packages-lld.md), or
-   [Python](./hcoona-release-smoke-python-lld.md)
+   [Python](./hcoona-release-smoke-python-lld.md), and
+   [Ruby](./hcoona-release-smoke-ruby-lld.md)
 
 Higher layers constrain lower ones, and the current set must be reconciled if a conflict appears. v1 and v2 may supply
 a mechanism only when a v3 document explicitly requires extraction and revalidation.

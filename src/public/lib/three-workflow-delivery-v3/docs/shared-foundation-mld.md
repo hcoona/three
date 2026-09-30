@@ -1477,3 +1477,15 @@ Lower-layer design must not add a universal Release wrapper, first-slice
 Environment Profile, separate post-approval admission abstraction,
 capability-group manifest or result wrapper, Actions history admission, or
 future OIDC or multiple-action abstractions without a concrete second scenario.
+
+## Ruby Native Mechanisms
+
+Ruby reuses shared frozen-build, artifact, evidence and integrity mechanisms.
+The [Ruby LLD](./hcoona-release-smoke-ruby-lld.md) adds native version projection,
+original `.gem` construction/inspection and isolated consumer mechanisms.
+Executable target metadata and archive parsing stay in unprivileged processes;
+control and publication import bounded strict records. The one-shot HTTP
+transport cannot inherit native `gem push` challenge/scope retries. A Ruby
+profile is distinct from npm, NuGet and Python profiles even when a lower-level
+transport primitive is shared. There is no general Ruby versioning product or
+new context boundary.

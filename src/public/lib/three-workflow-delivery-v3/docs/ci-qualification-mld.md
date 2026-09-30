@@ -1042,3 +1042,14 @@ The first CI LLD must define:
 - artifact and Evidence naming and retention;
 - stable required-check and human-summary rendering; and
 - acceptance tests for every scenario in this MLD.
+
+## Ruby Qualification Extension
+
+Ruby CI and Release share mechanisms but retain independent Plans, artifacts,
+Evidence and Decisions. Content inspection and clean native installation are
+separate obligations under [`WD-RUBY-003`](./requirements.md#ruby-smoke-slice).
+The [Ruby validation basis](./hcoona-release-smoke-ruby-lld.md#reproducibility-and-consumer-acceptance)
+requires original-byte reproducibility and consumers outside the checkout with
+no producer tools. A local install proves artifact usability only; destination
+acceptance must download and consume fresh registry bytes. Controlled service
+substitutes test application behavior without claiming platform support.

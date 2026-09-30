@@ -304,3 +304,11 @@ behavior, and workflow availability supplies no missing native admission.
 
 The documentation records accepted domain constraints and evidence. It grants no
 runtime work and does not renew either spent npm dispatch authorization.
+
+## Ruby Integration Design
+
+The [Ruby requirements](./docs/requirements.md#ruby-smoke-slice) and
+[brief LLD](./docs/hcoona-release-smoke-ruby-lld.md) define the selected
+GitHub Packages then RubyGems.org journey. [Migration gates](./docs/migration-strategy.md#ruby-smoke-delivery)
+separate design, implementation and actual acceptance; this design adds no
+available Ruby command or completed publication claim.
