@@ -104,7 +104,7 @@ finally:
                 "planned_builds": 4,
                 "prior_run_id": "36769964306",
                 "prior_builds": 11,
-                "cumulative_builds": 15,
+                "planned_cumulative_builds": 15,
                 "run_id": os.environ.get("GITHUB_RUN_ID"),
                 "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
                 "recipe_commit": os.environ.get("GITHUB_SHA"),
