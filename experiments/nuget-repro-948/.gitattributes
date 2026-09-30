@@ -1,0 +1,2 @@
+# Keep the small frozen replay packet directly in this experiment commit.
+packet.zip -filter -diff -merge -text
