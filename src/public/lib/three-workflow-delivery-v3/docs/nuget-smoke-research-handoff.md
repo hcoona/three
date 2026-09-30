@@ -2,6 +2,14 @@
 
 ## Status and Authorization
 
+The current reproducible-build advancement is [Issue #948](https://github.com/hcoona/three/issues/948),
+selected by the accepted [Delivery Wave](../../../../../docs/delivery-wave.md).
+Its feasibility experiment and independent evidence review are complete;
+production integration and build-only acceptance follow the
+[LLD mechanism and gates](./hcoona-release-smoke-github-packages-lld.md#reproducible-original-archive).
+This work preserves the completed go-live evidence and grants no new native
+operation or publication. The earlier go-live scope below is historical.
+
 This is an operating handoff. The research delivery and interactive
 requirements confirmation are complete. The canonical confirmed product,
 trust, and acceptance requirements are `WD-NUGET-*` in

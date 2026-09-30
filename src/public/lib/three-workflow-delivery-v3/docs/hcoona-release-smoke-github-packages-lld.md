@@ -83,6 +83,40 @@ does not prove that recomputation was suppressed. Any required adjustment
 stays in the selected project or adapter; global NBGV and symbol policy remain
 unchanged.
 
+### Reproducible original archive
+
+Use the repository-pinned SDK 10.0.401 for the managed net10.0 build. The
+[reviewed feasibility experiment](https://github.com/hcoona/three/issues/948#issuecomment-5918963584)
+establishes the mechanism on Linux and Windows; production admission still
+requires the actual Provider/Adapter validation below. The observed bundled
+NuGet CLI is 7.9.0-rc.42413, not an unqualified final 7.9 client.
+
+Frozen build preparation reads the Unix committer timestamp of the exact
+witness target commit from the source repository. The immutable target already
+binds this value; no independent clock or caller-selected timestamp becomes an
+authority. A missing target or invalid timestamp fails the build. Supply that
+value as `DeterministicTimestamp` to restore/build/pack, together with existing
+frozen version properties and `Deterministic=true`. Map the entire physical
+build root to `/_/` with `PathMap`, including staged source and generated
+intermediate files. Fresh output/cache roots and source mtimes remain free to
+vary. Keep original archive bytes, locked dependencies and canonical witness
+semantics unchanged.
+
+Upgrade the SDK lock authority and regenerate its projections; align the
+Provider, Build, clean consumer and helper runtime admission. The provider
+helper uses Microsoft's `BinaryLogReplayEventSource` from the selected SDK's
+`Microsoft.Build` assembly. Rebuild and validate it against that SDK's native
+logs; no private binary-log parser or fallback audit is introduced. SDK,
+MSBuild, bundled CLI and NuGet library identities remain distinct facts.
+
+This changes build inputs and their validation, not the destination operation.
+The current operation profile binds the CPython HTTP publisher, TLS, adapter
+source and service endpoint; it does not bind the build SDK. Preserve its
+exact identity and native evidence. If implementation changes any bound
+publication input, fail the existing profile gate and obtain separate native
+acceptance before further mutation. Historical publication evidence remains
+historical and cannot certify the new build toolchain.
+
 ## Package Bytes and Witness
 
 The Build Adapter includes canonical UTF-8
@@ -495,6 +529,29 @@ The following evidence is still required before corresponding admission:
 | Service          | Required resource discovery, actual-byte preservation, active duplicate behavior, target witness, and clean destination consumption                                           |
 | Authority        | Fresh authenticated main/review, actor, Approval Environment, package-control, retention, and relevant access readback                                                        |
 | Real publication | A separately authorized fresh run with its own qualification and Approval, authoritative published Outcome, exact destination bytes, consumer evidence, and independent audit |
+
+### Reproducibility regression acceptance
+
+For this build-only advancement, use the actual production Provider, frozen
+Adapter, binlog helper and clean package consumer on Windows. Build the same
+frozen target twice in separate source/intermediate/output/cache roots with
+different source mtimes. Retain original archives, DLL/PDB inventories,
+source/lock/witness digests, native tool identities and restore/build/pack
+binlogs. Compare the complete original archive bytes and packaged/compiler
+DLL bytes; verify stable PDB paths, successful official-library log replay,
+no NBGV task during frozen build, and no compilation during no-build pack.
+Include changed-source and changed-timestamp controls that must change the
+archive. The controls are validation inputs, never live target overrides.
+
+Exercise fresh-Attempt recovery with each Attempt's own rebuilt package:
+identical remote bytes and witness permit exact-satisfied with zero mutation;
+different bytes fail closed. Use controlled destination state for this
+regression and preserve the historical native service evidence. Run affected
+Provider, qualification, consumer, contract and cross-ecosystem regressions.
+Production integration acceptance needs independent technical/evidence review;
+this procedure permits no registry probe, publication or release dispatch.
+Ordinary Windows CI may supply build-only evidence. Any additional hosted
+experiment requires a separately bounded reviewed protocol under the Wave.
 
 ## Delivery Units and Validation
 
