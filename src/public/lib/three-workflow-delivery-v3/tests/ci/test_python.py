@@ -60,6 +60,37 @@ def test_python_ci_rejects_noncanonical_comparison_paths(ci, path):
         replace(ci[0], changed_paths=(path,))
 
 
+@pytest.mark.parametrize("shared_position", [None, "first", "last"])
+def test_python_ci_ruby_paths_preserve_shared_control_precedence(
+    ci, shared_position
+):
+    """Ruby-only changes are unrelated; shared V3 still selects Python."""
+    paths = tuple(
+        f"src/public/lib/hcoona-release-smoke-ruby/{name}"
+        for name in (
+            ".gitignore",
+            "LICENSE",
+            "README.md",
+            "hcoona-release-smoke-ruby.gemspec",
+            "lib/hcoona_release_smoke_ruby.rb",
+            "version.json",
+        )
+    )
+    shared = "src/public/lib/three-workflow-delivery-v3/src/control.py"
+    if shared_position == "first":
+        paths = (shared, *paths)
+    elif shared_position == "last":
+        paths = (*paths, shared)
+    plan = replace(ci[0], changed_paths=paths)
+
+    assert plan.selected is (shared_position is not None)
+    assert plan.to_document()["obligations"] == (
+        list(PYTHON_QUALITY) if shared_position is not None else []
+    )
+    if shared_position is None:
+        assert PythonCiDecision(plan, ()).result == "empty"
+
+
 @pytest.mark.parametrize("purpose", ["live-release", "release-simulation"])
 def test_python_ci_plan_rejects_release_authority(purpose):
     """Release identity cannot enter CI's independent evidence namespace."""
@@ -227,6 +258,11 @@ def test_python_ci_serialized_records_reject_foreign_or_open_shapes(
         ("src/public/lib/new-project/source.py",),
         ("uv.lock", "unrelated/readme.md"),
         ("unrelated/readme.md", "uv.lock"),
+        ("src/public/lib/hcoona-release-smoke-ruby-other/lib/smoke.rb",),
+        (
+            "uv.lock",
+            "src/public/lib/hcoona-release-smoke-ruby-other/lib/smoke.rb",
+        ),
     ],
 )
 def test_python_ci_unknown_paths_block_even_with_affected_input(ci, paths):

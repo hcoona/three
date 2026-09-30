@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/Nerdbank.GitVersioning/main/src/NerdBank.GitVersioning/version.schema.json",
+  "version": "0.1.0-beta.{height}",
+  "pathFilters": [
+    ".",
+    "../three-workflow-delivery-v3",
+    "../../../../mise.toml",
+    "../../../../mise.lock",
+    "../../../../.config/dotnet-tools.json",
+    "../../../../global.json",
+    "../../../../pyproject.toml",
+    "../../../../uv.lock",
+    "../../../../.github/actions",
+    "../../../../eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml",
+    "../../../../.github/workflows/workflow-delivery-v3-ruby-smoke.yml",
+    "../../../../.github/workflows/workflow-delivery-v3-ruby-bootstrap.yml"
+  ],
+  "gitCommitIdShortFixedLength": 7,
+  "gitCommitIdShortAutoMinimum": 7,
+  "publicReleaseRefSpec": ["^refs/heads/main$"],
+  "inherit": false
+}

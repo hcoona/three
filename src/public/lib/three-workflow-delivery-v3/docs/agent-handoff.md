@@ -32,8 +32,10 @@ The owner authorized the complete Ruby journey in [Issue #954](https://github.co
 superseding the original design-only limit. Follow the accepted
 [Wave](../../../../../docs/delivery-wave.md), [Ruby requirements](./requirements.md#ruby-smoke-slice),
 [LLD](./hcoona-release-smoke-ruby-lld.md) and [migration order](./migration-strategy.md#ruby-smoke-delivery).
-No suitable Ruby smoke exists; create the minimal selected gem after design
-acceptance. GitHub Packages precedes RubyGems.org; NBGV and original-byte
+The minimal [Ruby smoke](../../hcoona-release-smoke-ruby/README.md) and internal
+Provider/Build/inspection/consumer foundation are present. Model, workflow and
+destination integration remain pending; source presence is not Live admission.
+GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without
 requiring duplicate/race probes or inheriting another registry's responses.
 

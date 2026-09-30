@@ -629,6 +629,13 @@ bindings:
     carrier: repository-file
     path: src/public/lib/hcoona-release-smoke-python/README.md
     format: markdown
+  - id: ruby-smoke-interface
+    family: project-interfaces
+    namespace: src/public/lib/hcoona-release-smoke-ruby
+    state: current
+    carrier: repository-file
+    path: src/public/lib/hcoona-release-smoke-ruby/README.md
+    format: markdown
   - id: shared-engineering
     family: shared-engineering
     namespace: repository

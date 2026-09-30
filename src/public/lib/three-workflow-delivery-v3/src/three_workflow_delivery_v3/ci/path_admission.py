@@ -53,6 +53,7 @@ _REPOSITORY_ONLY_PREFIXES = (
     "src/private/lib/scholarly-publication/",
     "src/public/lib/hcoona-release-smoke-github-packages/",
     "src/public/lib/hcoona-release-smoke-python/",
+    "src/public/lib/hcoona-release-smoke-ruby/",
     "tests/",
 )
 _REPOSITORY_ONLY_PATHS = frozenset(

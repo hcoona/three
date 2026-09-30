@@ -16,6 +16,7 @@ from three_workflow_delivery_v3.ci.path_admission import (
         "src/private/app/workflow-delivery-v3-dotnet-provider",
         "src/private/app/workflow-delivery-v3-nuget-consumer",
         "src/public/lib/hcoona-release-smoke-github-packages",
+        "src/public/lib/hcoona-release-smoke-ruby",
     ],
 )
 @pytest.mark.parametrize("sibling", [False, True])

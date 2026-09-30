@@ -44,6 +44,17 @@ SHA_C = "c" * 40
 SHA_D = "d" * 40
 PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
 PROJECT_SOURCE = f"{PRODUCT_PATH}/src/index.js"
+RUBY_CHANGED_PATHS = tuple(
+    f"src/public/lib/hcoona-release-smoke-ruby/{name}"
+    for name in (
+        ".gitignore",
+        "LICENSE",
+        "README.md",
+        "hcoona-release-smoke-ruby.gemspec",
+        "lib/hcoona_release_smoke_ruby.rb",
+        "version.json",
+    )
+)
 WORKFLOW_RUN_ID = 7001
 RUN_ATTEMPT = 2
 REPO_ROOT = Path(__file__).resolve().parents[6]
@@ -314,6 +325,61 @@ def test_repository_only_change_selects_root_hk(path: str) -> None:
     assert plan.selected_release_units == ()
     assert plan.selected_variants == ()
     assert plan.selected_outputs == ()
+
+
+def test_ruby_product_changed_set_selects_only_required_root_hk() -> None:
+    """Admit the complete Ruby product without inventing npm obligations."""
+    plan = _plan(changed_paths=RUBY_CHANGED_PATHS)
+
+    assert plan.ready
+    assert plan.changed_paths == tuple(sorted(RUBY_CHANGED_PATHS))
+    assert _selected_lanes(plan) == ("root-hk",)
+    assert plan.selected_project_nodes == ()
+    assert plan.selected_release_units == ()
+    assert plan.selected_variants == ()
+    assert plan.selected_outputs == ()
+    selected = tuple(item for item in plan.obligations if item.selected)
+    assert len(selected) == 1
+    assert selected[0].required
+    assert plan.expected_evidence_ids == (selected[0].expected_evidence_id,)
+
+
+@pytest.mark.parametrize("shared_first", [False, True])
+def test_ruby_and_shared_v3_changes_preserve_complete_npm_selection(
+    *, shared_first: bool
+) -> None:
+    """Shared control remains affected in either mixed changed-set order."""
+    shared = "src/public/lib/three-workflow-delivery-v3/src/control.py"
+    paths = (
+        (shared, *RUBY_CHANGED_PATHS)
+        if shared_first
+        else (*RUBY_CHANGED_PATHS, shared)
+    )
+    plan = _plan(changed_paths=paths)
+
+    assert plan.ready
+    assert _selected_lanes(plan) == CI_LANE_IDS
+    assert plan.selected_project_nodes == (FIRST_SLICE_PACKAGE,)
+    assert plan.selected_release_units == (FIRST_SLICE_RELEASE_UNIT,)
+    assert plan.selected_variants == ("npm-package",)
+    assert plan.selected_outputs == (
+        ("npm-tarball", "primary-package", "npm-tarball"),
+    )
+
+
+def test_ruby_unknown_sibling_blocks_without_partial_npm_scope() -> None:
+    """An admitted product and affected source cannot conceal a sibling."""
+    unknown = "src/public/lib/hcoona-release-smoke-ruby-other/lib/smoke.rb"
+    plan = _plan(changed_paths=(*RUBY_CHANGED_PATHS, PROJECT_SOURCE, unknown))
+
+    assert not plan.ready
+    assert _selected_lanes(plan) == ()
+    assert plan.expected_evidence_ids == ()
+    assert plan.selected_project_nodes == ()
+    assert plan.selected_release_units == ()
+    assert plan.selected_variants == ()
+    assert plan.selected_outputs == ()
+    assert f"changed path is unclassified: {unknown}" in plan.diagnostics
 
 
 def test_manual_slice_validation_always_selects_complete_slice() -> None:
