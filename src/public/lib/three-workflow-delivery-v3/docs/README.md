@@ -64,7 +64,8 @@ The campaign is stopped and its temporary interruption control and operators
 are retired. The [ordinary recovery contract](./hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
 retains both exact single-file subsets; the inverse subset has local evidence
 only. Preserve the stable workflow/publisher/Environment and historical evidence.
-This completion grants no further operation; normal production PyPI publication still requires its separate operation gate.
+This recovery completion grants no further operation. The separate production
+completion evidence below does not reopen this recovery campaign.
 
 [Issue #843](https://github.com/hcoona/three/issues/843) tracks TestPyPI first,
 then PyPI. The owner's confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),
@@ -75,11 +76,12 @@ findings, the retained failed runs and that owner decision.
 The [migration policy](./migration-strategy.md#python-smoke-delivery) routes the
 disabled implementation, configuration/admission and actual publication
 stages. Runtime and both protected files use strict Python Governance v2.
-TestPyPI normal publication and fresh clean wheel/sdist consumption are
+Normal publication and fresh clean wheel/sdist consumption are
 [independently complete](./validation/python-normal-live-evidence.md) for
-`0.1.0b26`. The completion campaign is stopped; earlier failed Attempts remain
-failed and untouched. Production PyPI has reviewed ready admission and still needs its separate
-normal Official Attempt and completion audit. The
+TestPyPI `0.1.0b26` and production PyPI `0.1.0b53`. The production
+completion joins a failed uploading Attempt with a fresh `exact-satisfied`
+Attempt and its native consumer audit. Both completion campaigns are stopped;
+earlier failed Attempts remain failed and untouched. The
 [handoff](./agent-handoff.md#starting-a-new-session) routes current operation limits.
 The [retired native interface](./validation/python-native-readiness.md) retains
 historical evidence-reader consumers only.
@@ -268,8 +270,8 @@ The stable bootstrap entry supports destination-bound TestPyPI and production
 PyPI operations. Both protected bootstrap slots are null after the production
 generation failed at wheel readback. Its original failure and partial/unknown
 effects remain retained; no repeated bootstrap or automatic completion is
-authorized. Production PyPI has reviewed ready Governance; normal Official publication
-and its independent completion audit retain their separate gate.
+authorized. The separately completed [production journey](./validation/python-normal-live-evidence.md#production-pypi-completion)
+does not repair that bootstrap version or revive its request.
 The [Delivery Wave](../../../../../docs/delivery-wave.md) owns current work
 authorization, and the [handoff](./agent-handoff.md#starting-a-new-session)
 routes the accepted operation, configuration and remaining evidence gates.
