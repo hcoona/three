@@ -1,0 +1,41 @@
+name: NuGet reproducibility experiment 948
+
+on:
+  push:
+    branches:
+      - experiment/nuget-repro-948-20260930
+
+permissions:
+  contents: read
+
+jobs:
+  experiment:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE: 'true'
+    steps:
+      - name: Check out experiment recipe without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          lfs: false
+      - name: Select Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.14'
+      - name: Run frozen package comparison
+        shell: pwsh
+        run: |
+          python experiments/nuget-repro-948/campaign.py --root "$env:RUNNER_TEMP/repro948"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain original packages and diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: nuget-repro-windows-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/repro948/export
+          if-no-files-found: error
+          retention-days: 30
