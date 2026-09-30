@@ -5,8 +5,9 @@
 `hcoona-release-smoke-python` version `0.1.0b26` completed the TestPyPI
 normal publication and fresh wheel/sdist consumer journey on September 28, 2026. The [independent final audit][final-audit] joins original Approval,
 publication and terminal replay with freshly downloaded exact distributions
-and separate clean consumers. Production PyPI remains blocked; this result
-completes only the TestPyPI portion of `WD-PY-004`.
+and separate clean consumers. This result completes only the TestPyPI portion
+of `WD-PY-004`; production PyPI admission and outstanding normal publication
+are tracked by the [agent handoff](../agent-handoff.md#starting-a-new-session).
 
 This record owns the runtime completion evidence consumed by the project
 README, document index and agent handoff. V3 maintainers retain the evidence

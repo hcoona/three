@@ -8,57 +8,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Configure Python Official publication on PyPI
-
-- **Issue:** [#843](https://github.com/hcoona/three/issues/843).
-- **Accepted inputs:** the owner's accepted production direction and end-to-end
-  delegation, accepted destination-bound first-project design in #929 and its
-  independently accepted disabled implementation in [#930](https://github.com/hcoona/three/pull/930), confirmed sole control of
-  PyPI account `Sherry7290`, existing `WD-PY-006` platform reliance and completed
-  TestPyPI evidence. The separate existing `hcoona-release-smoke` project is not
-  this slice's resource. The [owner's production bypass decision](https://github.com/hcoona/three/issues/843#issuecomment-5897947051)
-  accepts administrator bypass within the existing sole-`hcoona` trust boundary
-  and reports the requested bootstrap Pending Publisher registered.
-- **Advancement and outcome:** independently admit the owner-reported exact bootstrap Pending Publisher
-  together with the GitHub Environment configuration, and (only after separately authorized project establishment
-  and owner/converted-publisher evidence) register the stable normal publisher
-  and independently deliver fresh ready production Governance. Remove this
-  entry when configuration/admission is accepted or the lifetime terminates.
-- **Effects and delivery:** permit scoped public-source rechecks, local tests,
-  ordinary CI, independent review/triage and protected delivery. Permit bounded
-  GitHub configuration inventory for repository
-  `hcoona/three` (1102295886), sole writer/reviewer `hcoona` (712433), protected
-  `main`, project `hcoona-release-smoke-python`, Environment
-  `workflow-delivery-v3-python-pypi`; the owner performs the later normal PyPI
-  publisher registration without exposing credentials. Existing delegation covers these
-  scoped stages without repeated consent, subject to the [concrete configuration protocol](https://github.com/hcoona/three/issues/843#issuecomment-5895723024).
-- **Concrete boundaries:** preserve the linked protocol's original seven-day
-  lifetime from its first recorded configuration read and all cumulative counts
-  without refill. No additional GitHub configuration writes, bootstrap Pending
-  Publisher registration or website save to disable bypass are authorized.
-  Do not request unchanged-field confirmation. Only the later normal publisher
-  registration remains available, once and after its stated prerequisites.
-  Admit the actual bypass Boolean under accepted `WD-PY-007` and its delivered
-  implementation; this supersedes the linked protocol's false-only condition
-  for production PyPI, without replacing current-run Approval/Authorization.
-  Require sole reviewer, self-review allowed, zero wait,
-  main-only selection, no secrets and marker `<environment>/v1`. Retain the
-  stable bootstrap and normal workflow filenames. Unknown grants or ambiguous
-  writes stop dependent work without resend or automatic repair. Evidence GETs
-  use the concrete protocol's paced, deadline/body-size/inventory bounds rather
-  than owner-refilled request quotas; read evidence cannot renew mutation limits.
-- **Prerequisites and exclusions:** both bootstrap slots remain null and
-  production Governance blocked until their separate applicable gates close.
-  Project establishment requires its own later accepted operation Wave; this
-  entry grants no smoke registry observation, bootstrap request population,
-  current-run Approval, OIDC, dispatch or upload. Normal admission requires
-  actual project ownership, converted bootstrap publisher and exact normal
-  publisher attestation plus complete reviewed GitHub configuration and current
-  source basis. No account/writer/ruleset/Actions permission expansion, wildcard
-  registration, unrelated project change, TestPyPI effect, static token,
-  deletion/rollback, duplicate/race probing, spent-operation revival or host
-  trust/profile change. Preserve failed outcomes and all prior evidence.
-
 ### Restore dependency updates and simplify V3 tooling ownership
 
 - **Issue:** [#823](https://github.com/hcoona/three/issues/823).

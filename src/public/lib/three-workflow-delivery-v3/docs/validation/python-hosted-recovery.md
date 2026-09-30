@@ -18,7 +18,8 @@ owns retirement and ordinary runtime behavior.
 
 The campaign stopped at its first independently audited success. Temporary
 interruption controls and operators are retired; the completed Wave entry is
-removed. This record grants no operation. Production PyPI remains blocked.
+removed. This record grants no operation. The [handoff](../agent-handoff.md#starting-a-new-session)
+routes production PyPI admission and its outstanding publication gate.
 The inverse sdist-present/wheel-missing path has local integration evidence
 only. This intentionally interrupted client operation proves neither a native
 TestPyPI outage nor generic reproducibility across changed build inputs.

@@ -35,19 +35,15 @@ def test_python_blocked_destinations_reject_live(name):
         blocked.require_live(NOW)
 
 
-def test_python_tracked_pypi_remains_explicitly_disabled():
-    """TestPyPI admission cannot enable the production destination."""
-    registry = PythonRegistry("pypi")
-    content = (_ROOT / python_governance_path(registry)).read_bytes()
-    assert parse_canonical_json(content) == blocked_python_governance(registry)
-    blocked = PythonGovernance(registry, content, TARGET, NOW)
-    with pytest.raises(ValueError, match="remains disabled"):
-        blocked.require_live(NOW)
-
-
-def test_python_tracked_testpypi_admission_has_freshness_and_isolation():
-    """Reviewed normal-workflow admission has finite declared-time validity."""
-    registry = PythonRegistry("testpypi")
+@pytest.mark.parametrize(
+    ("name", "environment_id", "can_admins_bypass"),
+    [("testpypi", 22765954016, False), ("pypi", 23047309006, True)],
+)
+def test_python_tracked_admission_has_freshness_and_isolation(
+    name, environment_id, can_admins_bypass
+):
+    """Reviewed normal-workflow admissions have isolated, finite validity."""
+    registry = PythonRegistry(name)
     content = (_ROOT / python_governance_path(registry)).read_bytes()
     doc = parse_canonical_json(content)
     assert doc["schema"] == "workflow-delivery/v3/python-governance-v2"
@@ -58,14 +54,15 @@ def test_python_tracked_testpypi_admission_has_freshness_and_isolation():
         "repository": "hcoona/three",
         "owner-id": 712433,
         "project": "hcoona-release-smoke-python",
-        "registry": "https://test.pypi.org",
-        "audience": "testpypi",
+        "registry": registry.origin,
+        "audience": name,
         "workflow": "workflow-delivery-v3-python-smoke.yml",
-        "environment": "workflow-delivery-v3-python-testpypi",
+        "environment": registry.environment,
         "selected-ref": "refs/heads/main",
     }
     assert doc["configuration"]["publisher-registration"] == doc["publisher"]
-    assert doc["configuration"]["environment-id"] == 22765954016  # noqa: PLR2004 - reviewed Environment identity
+    assert doc["configuration"]["environment-id"] == environment_id
+    assert doc["configuration"]["can-admins-bypass"] is can_admins_bypass
     inspected = datetime.fromisoformat(doc["inspected-at"])
     expires = datetime.fromisoformat(doc["expires-at"])
     # The synthetic source commit exercises parsing, not current-main proof.
@@ -79,8 +76,9 @@ def test_python_tracked_testpypi_admission_has_freshness_and_isolation():
         )
     with pytest.raises(ValueError, match="stale or not current"):
         admitted.require_live(expires)
+    other = PythonRegistry("pypi" if name == "testpypi" else "testpypi")
     with pytest.raises(ValueError, match="authority or profile mismatch"):
-        PythonGovernance(PythonRegistry("pypi"), content, TARGET, inspected)
+        PythonGovernance(other, content, TARGET, inspected)
 
 
 @pytest.mark.parametrize(
