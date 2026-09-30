@@ -8,8 +8,10 @@ resource operation, not a normal-Live Attempt or automatic normal admission.
 The retained failed TestPyPI bootstrap established owner-reviewed resource facts;
 it does not authorize repeating the absent-project path for that existing project.
 The production PyPI generation also failed, at wheel readback. Its consumed
-request is retired; actual owner/converted-publisher evidence is still required
-before it can supply the narrower resource prerequisite.
+request is retired. Independently reviewed owner/converted-publisher evidence
+closed its narrower existing-project resource prerequisite without changing the
+failed verdict. The [handoff](../agent-handoff.md#starting-a-new-session) routes
+normal admission and remaining publication gates.
 The former native suite is retired under `WD-PY-006`.
 Current work authorization is determined by the
 [Wave](../../../../../../docs/delivery-wave.md). Configuration and execution

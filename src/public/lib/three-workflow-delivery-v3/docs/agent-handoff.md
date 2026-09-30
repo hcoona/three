@@ -27,40 +27,43 @@ operations, publication, or another npm proving run.
 
 ## Starting a New Session
 
-The production PyPI first-project generation is spent. Its
+Production PyPI has reviewed ready v2 Governance for
+`hcoona-release-smoke-python`, based on the owner's confirmed Sole Owner
+`Sherry7290`, exact associated bootstrap and normal publishers, and independently
+reviewed GitHub configuration. The [independent admission](https://github.com/hcoona/three/issues/843#issuecomment-5904112737)
+and [original inventory](https://github.com/hcoona/three/issues/843#issuecomment-5904112525)
+retain the exact report bound by the protected Governance digest. Its
+`source-evidence-revision` pins the accepted historical source basis, not the
+current main tip. The protected source pins the accepted
+`WD-PY-006` basis and retains actual administrator bypass `true` under
+`WD-PY-007`. Its expiry remains the original configuration deadline,
+`2026-10-06T18:39:51.026223Z`; admission
+does not renew the configuration lifetime or authorize publication.
+
+Carry account control, project ownership and both publisher tuples forward
+unless changed or contradicted. Preserve repository `hcoona/three`, normal
+workflow `workflow-delivery-v3-python-smoke.yml` and Environment
+`workflow-delivery-v3-python-pypi`. Do not request unchanged-field confirmation,
+repeat registration or ask the owner to disable administrator bypass. The
+separate `hcoona-release-smoke` project and existing TestPyPI resources remain
+outside this production slice.
+
+The first-project generation is spent. Its
 [actual run](https://github.com/hcoona/three/actions/runs/36640775966) failed after
 wheel upload returned HTTP 200 and all six bounded P2 index reads returned 404.
 The [independent terminal audit](https://github.com/hcoona/three/issues/843#issuecomment-5900585460)
-retains the screened original artifacts, responses and logs in the linked
-[public packet](https://github.com/hcoona/three/issues/843#issuecomment-5900584636).
-No sdist upload or final consumer audit ran. Preserve the original failure and
-partial/unknown effects; do not rerun, refill, replace the version or repeat
-bootstrap. Both protected bootstrap slots are null and normal production
-Governance remains blocked.
+and [public original packet](https://github.com/hcoona/three/issues/843#issuecomment-5900584636)
+retain that failure; no sdist upload or final consumer audit ran. Later
+owner-confirmed resource facts closed only the
+[existing-project prerequisite](https://github.com/hcoona/three/issues/843#issuecomment-5902863345).
+Both bootstrap slots are null. No rerun, refill, automatic partial completion,
+replacement bootstrap version or deletion is authorized.
 
-The [first-project protocol](./validation/python-bootstrap.md) governs the
-retained evidence and narrower resource audit. Actual newly established owner
-and converted-publisher facts remain required before the separate normal
-publisher/admission path. The [Wave](../../../../../docs/delivery-wave.md)
-retains only its applicable configuration grant, with the original finite
-lifetime and cumulative effects unchanged.
-
-The [independently admitted configuration](https://github.com/hcoona/three/issues/843#issuecomment-5899412557)
-includes the owner's accepted administrator bypass under `WD-PY-007` and
-[exact bootstrap Pending Publisher report](https://github.com/hcoona/three/issues/843#issuecomment-5897947051).
-Carry unchanged facts forward; do not repeat registration, unchanged-field
-confirmation or the canceled instruction to disable bypass. Administrator
-bypass does not replace current-run Approval/Authorization.
-
-The owner confirmed sole control of `Sherry7290` in the
-[account-control report](https://github.com/hcoona/three/issues/843#issuecomment-5895091575).
-Carry that fact forward unless changed or contradicted. The different
-`hcoona-release-smoke` project and its `release-official.yml`/`release` publisher
-are outside this slice. Preserve `hcoona-release-smoke-python` and the stable
-V3 workflow filenames. Actual newly established project ownership and converted
-bootstrap publisher facts require a later owner report; normal publisher
-registration, ready admission and Official publication retain their distinct
-gates. Do not ask the owner to modify unrelated or existing TestPyPI resources.
+The normal Official Attempt and its exact-byte/clean-consumer audit remain
+outstanding. They require a separately accepted concrete operation under the
+[Wave](../../../../../docs/delivery-wave.md), fresh original Build/Qualification
+and current-run Approval/Authorization. Administrator bypass is not a substitute
+for that authority, and ready Governance is not publication evidence.
 
 The [hosted partial-publication recovery](./validation/python-hosted-recovery.md)
 is independently complete for TestPyPI `0.1.0b39`: a fresh Attempt rebuilt both
@@ -70,7 +73,7 @@ The campaign is stopped and its temporary interruption control and operators
 are retired. The [ordinary recovery contract](./hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
 retains both exact single-file subsets; the inverse subset has local evidence
 only. Preserve the stable workflow/publisher/Environment and historical evidence.
-This completion grants no further operation; normal production PyPI publication remains blocked.
+This completion grants no further operation; normal production PyPI publication still requires its separate operation gate.
 
 The npm and NuGet GitHub Packages smoke objectives are complete. Use the
 [NuGet completion evidence](./validation/nuget-normal-live-evidence.md) and
@@ -106,7 +109,7 @@ For the owner's next Workflow Delivery v3 task:
    protected Governance files now use strict v2. TestPyPI has reviewed ready
    admission, and its normal publication and fresh clean wheel/sdist consumers
    are [independently complete](./validation/python-normal-live-evidence.md)
-   for `0.1.0b26`. Normal production PyPI publication remains blocked. The duplicate/race producer
+   for `0.1.0b26`. Production PyPI has ready admission; normal Official proving remains outstanding. The duplicate/race producer
    and hosted workflow are removed. The completion campaign stopped at its first
    audited success; no further slot, dispatch, Approval, OIDC, upload or registry
    audit is authorized. Do not reopen its operator or reuse its artifacts as a

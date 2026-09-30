@@ -64,7 +64,7 @@ The campaign is stopped and its temporary interruption control and operators
 are retired. The [ordinary recovery contract](./hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
 retains both exact single-file subsets; the inverse subset has local evidence
 only. Preserve the stable workflow/publisher/Environment and historical evidence.
-This completion grants no further operation; normal production PyPI publication remains blocked.
+This completion grants no further operation; normal production PyPI publication still requires its separate operation gate.
 
 [Issue #843](https://github.com/hcoona/three/issues/843) tracks TestPyPI first,
 then PyPI. The owner's confirmed [`WD-PY-*`](./requirements.md#python-smoke-slice),
@@ -78,8 +78,8 @@ stages. Runtime and both protected files use strict Python Governance v2.
 TestPyPI normal publication and fresh clean wheel/sdist consumption are
 [independently complete](./validation/python-normal-live-evidence.md) for
 `0.1.0b26`. The completion campaign is stopped; earlier failed Attempts remain
-failed and untouched. Normal production PyPI publication remains blocked and needs its separate
-configuration/admission and actual publication journey. The
+failed and untouched. Production PyPI has reviewed ready admission and still needs its separate
+normal Official Attempt and completion audit. The
 [handoff](./agent-handoff.md#starting-a-new-session) routes current operation limits.
 The [retired native interface](./validation/python-native-readiness.md) retains
 historical evidence-reader consumers only.
@@ -268,8 +268,8 @@ The stable bootstrap entry supports destination-bound TestPyPI and production
 PyPI operations. Both protected bootstrap slots are null after the production
 generation failed at wheel readback. Its original failure and partial/unknown
 effects remain retained; no repeated bootstrap or automatic completion is
-authorized. Normal production Governance and Official publication remain blocked
-behind their distinct gates.
+authorized. Production PyPI has reviewed ready Governance; normal Official publication
+and its independent completion audit retain their separate gate.
 The [Delivery Wave](../../../../../docs/delivery-wave.md) owns current work
 authorization, and the [handoff](./agent-handoff.md#starting-a-new-session)
 routes the accepted operation, configuration and remaining evidence gates.
