@@ -20,17 +20,17 @@
     "@commitlint/format": "^21.0.0",
     "@commitlint/types": "^21.0.0",
     "@npmcli/package-json": "8.0.0",
-    "@playwright/mcp": "0.0.79",
-    "@pnpm/deps.path": "1101.0.1",
-    "@pnpm/lockfile.fs": "1100.2.5",
-    "@pnpm/lockfile.utils": "1102.1.0",
-    "@pnpm/resolving.npm-resolver": "1104.1.0",
+    "@playwright/mcp": "0.0.82",
+    "@pnpm/deps.path": "1101.0.4",
+    "@pnpm/lockfile.fs": "1100.2.9",
+    "@pnpm/lockfile.utils": "1102.1.4",
+    "@pnpm/resolving.npm-resolver": "1104.2.1",
     "@pnpm/workspace.spec-parser": "1100.0.1",
-    "@pnpm/workspace.workspace-manifest-reader": "1100.1.8",
-    "@upstash/context7-mcp": "3.2.5",
+    "@pnpm/workspace.workspace-manifest-reader": "1100.2.0",
+    "@upstash/context7-mcp": "4.1.1",
     "ap-style-title-case": "^2.0.0",
-    "markdownlint-cli2": "0.23.2",
+    "markdownlint-cli2": "0.23.3",
     "npm-package-arg": "14.0.0",
-    "prettier": "3.9.6"
+    "prettier": "3.9.9"
   }
 }
