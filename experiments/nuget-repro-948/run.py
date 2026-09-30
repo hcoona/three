@@ -130,9 +130,10 @@ def build(  # noqa: C901, PLR0913, PLR0917, PLR0915
             original.replace(
                 '"hcoona-release-smoke-github-packages"',
                 '"hcoona-release-smoke-github-packages-negative-control"',
-            )
+            ),
+            newline="",
         )
-        modified[str(source_file.relative_to(stage))] = digest(
+        modified[source_file.relative_to(stage).as_posix()] = digest(
             source_file.read_bytes()
         )
     source_time = manifest["epoch"] + (ordinal + 1) * 86400

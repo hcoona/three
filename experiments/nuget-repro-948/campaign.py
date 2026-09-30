@@ -27,7 +27,7 @@ export = root / "export"
 export.mkdir()
 completed = []
 try:
-    for sdk in ["10.0.300", "10.0.401"]:
+    for sdk in ["10.0.401"]:
         subprocess.run(
             [
                 sys.executable,
@@ -43,10 +43,6 @@ try:
             timeout=600,
         )
     for sdk, cell in [
-        ("10.0.300", "baseline"),
-        ("10.0.300", "paths-only"),
-        ("10.0.401", "timestamp-only"),
-        ("10.0.401", "paths-only"),
         ("10.0.401", "complete"),
         ("10.0.401", "source-control"),
         ("10.0.401", "timestamp-control"),
@@ -105,7 +101,10 @@ finally:
         json.dumps(
             {
                 "completed_cells": completed,
-                "planned_builds": 12,
+                "planned_builds": 4,
+                "prior_run_id": "36769964306",
+                "prior_builds": 11,
+                "cumulative_builds": 15,
                 "run_id": os.environ.get("GITHUB_RUN_ID"),
                 "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
                 "recipe_commit": os.environ.get("GITHUB_SHA"),
