@@ -200,8 +200,8 @@ isolation are separate authority boundaries and remain unchanged.
   freeze the exact required native version projection emitted by Repository
   Model compilation. A Build Adapter may apply and verify that value but must
   not recompute NBGV, derive another version, or use fallback version fields.
-- **WD-REL-006:** The first-slice npm Release Unit must produce bit-for-bit
-  deterministic bytes for the same target, frozen inputs, Build Definition,
+- **WD-REL-006:** The first-slice npm and second-slice NuGet Release Units must
+  produce bit-for-bit deterministic bytes for the same target, frozen inputs, Build Definition,
   and toolchain. The system is not required to certify this property with a
   duplicate build. A Release Unit that cannot meet this contract is unsupported
   by this slice; publication resume from a sealed artifact for nondeterministic
@@ -814,7 +814,15 @@ establish native platform acceptance.
   native identity comparison governs equivalent coordinates and collisions.
   Native facts must include evaluated package identity, framework, packability,
   relevant configuration, and output scope; unevaluated project XML is not
-  an authority substitute.
+  an authority substitute. The original unsigned primary archive must be
+  byte-identical for the same frozen target, declared source/dependencies,
+  native version, witness, Build Definition and toolchain in the supported
+  Windows environment. Physical build/cache roots and source file mtimes must
+  not affect those bytes. Source and intermediate paths must be stable compiler
+  inputs; the package timestamp must derive from the immutable target commit,
+  never the Attempt or wall clock. Routine releases need not double-build to
+  certify this property. This adds no cross-OS, signing or arbitrary-project
+  guarantee and does not authorize transforming the archive after pack.
 - **WD-NUGET-003:** Live targets must use protected `refs/heads/main` and
   owner-reviewed same-revision control code. Decision code must consume
   admitted facts without evaluating target-defined MSBuild or product code.
@@ -1234,7 +1242,7 @@ They define a new Python scope, not implemented support or an operation grant.
   qualification, destination observation, authorization when an action
   remains, and reporting. It must not reuse an older Attempt's Repository
   Model, Qualification, artifacts, Publication Snapshot, Environment approval,
-  or Publication Authorization. For the first-slice npm unit, identical
+  or Publication Authorization. For the first-slice npm and second-slice NuGet units, identical
   target, frozen inputs, and toolchain must reproduce identical bytes. If
   existing destination bytes differ, the Attempt fails closed into
   reconciliation and separately authorized remediation. Nondeterministic
