@@ -349,6 +349,30 @@ its own complete-pair and consumer evidence. The
 [bootstrap protocol](./validation/python-bootstrap.md) owns this separation and
 its finite operation and evidence boundary.
 
+## Ruby Smoke Extension
+
+The confirmed [`WD-RUBY-*`](./requirements.md#ruby-smoke-slice) adds one
+pure-Ruby Release Unit and one original gem per Attempt, with GitHub Packages
+Buddy before RubyGems.org Official. Existing context boundaries and the shared
+scalar action/Result/Outcome remain. The [Ruby LLD](./hcoona-release-smoke-ruby-lld.md)
+closes native version, build, observation, authentication and evidence contracts.
+
+The Provider evaluates executable gemspecs only in unprivileged target zones,
+freezing exact-target NBGV and RubyGems-native version facts. Shared native
+build/inspection mechanisms materialize a static installed version and witness;
+CI and Release retain separate qualification authority. Original-package
+reproducibility precedes recovery support. Publisher and Finalizer import data,
+never target Ruby code.
+
+Ruby's platform reliance is explicit under `WD-RUBY-005`; GitHub Ruby duplicate
+behavior remains unknown and RubyGems.org's source-observed replay is conditional.
+A one-shot acknowledged upload needs exact readback, rejection/ambiguity stays
+failed, and a fresh independently qualified exact state may need no action.
+No native duplicate/race generation or cross-destination artifact promotion is
+introduced. Both action jobs use destination-gated Approval ordering under
+`WD-RUBY-006`, with GitHub package-write and RubyGems.org OIDC kept separate.
+Configuration and first-project bootstrap remain independently admitted stages.
+
 ## Governance and Trust
 
 ### Context-Owned Planning and Finalization
@@ -1376,6 +1400,7 @@ marker before mutation.
 | `WD-RET-*`        | Platform-aware records, durable destination identities, fail-closed expiration                                                                                                                                  |
 | `WD-SLICE-*`      | Same-revision Buddy control, accepted writer TCB and repository-principal blast radius, static-reference policy, one Approval Environment, Publication Authorization, publisher ordering, and one-PR activation |
 | `WD-NFR-*`        | Context separation, adapter extension model, explanation contract, CI objective                                                                                                                                 |
+| `WD-RUBY-*`       | Ruby Provider, original-gem build/qualification, one-shot destination adapters and separate configuration/first-project admission                                                                               |
 | `WD-PY-*`         | Python Provider, frozen two-format build/qualification, bounded set action, separate OIDC/configuration admission and destination proving                                                                       |
 | `WD-NUGET-*`      | NuGet second-slice Provider, package and consumer qualification, protected-main Governance, destination contract, and independently authorized validation gates                                                 |
 

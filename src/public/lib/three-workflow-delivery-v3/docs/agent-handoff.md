@@ -12,7 +12,8 @@ This is an operating handoff, not a second specification. The current
 [migration policy](./migration-strategy.md), and applicable slice LLD
 ([npm](./hcoona-release-smoke-npm-lld.md) or
 [NuGet](./hcoona-release-smoke-github-packages-lld.md), or
-[Python](./hcoona-release-smoke-python-lld.md)) are authoritative.
+[Python](./hcoona-release-smoke-python-lld.md), or
+[Ruby](./hcoona-release-smoke-ruby-lld.md)) are authoritative.
 
 v3 is the only normative line. Use v1 or v2 only when a v3 document explicitly
 requests mechanism extraction and revalidation. Git and delivery PRs carry
@@ -24,6 +25,27 @@ Repository work authorization and generic contribution procedure route to the
 [contribution guide](../../../../../CONTRIBUTING.md). The domain gates below
 remain additional prerequisites; repository governance does not grant native
 operations, publication, or another npm proving run.
+
+## Ruby Delivery Entry
+
+The owner authorized the complete Ruby journey in [Issue #954](https://github.com/hcoona/three/issues/954),
+superseding the original design-only limit. Follow the accepted
+[Wave](../../../../../docs/delivery-wave.md), [Ruby requirements](./requirements.md#ruby-smoke-slice),
+[LLD](./hcoona-release-smoke-ruby-lld.md) and [migration order](./migration-strategy.md#ruby-smoke-delivery).
+No suitable Ruby smoke exists; create the minimal selected gem after design
+acceptance. GitHub Packages precedes RubyGems.org; NBGV and original-byte
+reproducibility are prerequisites. Use bounded platform reliance without
+requiring duplicate/race probes or inheriting another registry's responses.
+
+The owner confirmed control of RubyGems.org account `Raffle2282`; a pending
+publisher has not been configured. Official source documentation supports new
+gems through pending publishers, without prior manual upload. Account control,
+configured tuples and actual package ownership are distinct facts. Carry the
+confirmed account forward; prepare concrete configuration before asking for
+unavailable account-side action. Current-run Approval and independent audits
+remain required, but routine stage permission has already been delegated.
+This design entry is not a completion or runtime-support claim. Other completed
+language campaigns remain closed.
 
 ## Starting a New Session
 

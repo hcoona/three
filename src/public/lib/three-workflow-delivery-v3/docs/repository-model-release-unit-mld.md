@@ -830,3 +830,15 @@ Repository Model Snapshot and Build Request projection binding defined here.
   Snapshots; and
 - Build Adapter contract tests proving exact frozen-projection application and
   verification without NBGV recomputation, alternative derivation, or fallback.
+
+## Ruby Model Extension
+
+Ruby adds one Project Node, Release Unit and pure `ruby` variant under
+[`WD-RUBY-001` and `WD-RUBY-002`](./requirements.md#ruby-smoke-slice).
+An unprivileged native Provider exports strict gemspec facts and frozen raw
+NBGV/native RubyGems versions; trusted compilation never executes a gemspec.
+The descriptor closes generated version/witness recipes and source/toolchain
+inputs. Both destinations reference the same Build Definition; each Attempt
+produces its own artifact. Native version equivalence and exact metadata
+consistency are admitted facts, not string coercion in publication. See the
+[Ruby LLD](./hcoona-release-smoke-ruby-lld.md#provider-and-build-boundary).

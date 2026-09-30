@@ -448,3 +448,34 @@ This design-document change does not authorize:
 
 Each later boundary requires the separate authorization identified in the
 replacement delivery order.
+
+## Ruby Smoke Delivery
+
+[Issue #954](https://github.com/hcoona/three/issues/954) carries the owner's
+complete Ruby journey. The accepted [Wave](../../../../../docs/delivery-wave.md)
+owns work/effects; [`WD-RUBY-*`](./requirements.md#ruby-smoke-slice), the HLD's
+Ruby extension and [Ruby LLD](./hcoona-release-smoke-ruby-lld.md) own contracts.
+Reuse existing contexts and scalar publication semantics; do not require a
+redesign of all architecture layers solely because the language changes.
+
+1. Accept source findings, requirements, minimal architecture/LLD adaptations
+   and the validation/operation basis through independent review.
+2. Implement the smoke, native Provider/version projection, frozen original-gem
+   build/inspection/consumer, strict destination profiles and disabled control
+   integration. Validate local scenarios and original-byte reproducibility,
+   independently review and protected-deliver before activation.
+3. Close supported endpoint/profile facts and concrete finite configuration
+   and bootstrap requests. Establish only the selected resources and review
+   actual ownership/access/publisher configuration before normal admission.
+4. Protected-deliver ready Governance and a concrete bounded normal request;
+   complete GitHub Packages publication/readback/consumer audit, then repeat
+   independently for RubyGems.org. No earlier artifact/Approval is promoted.
+5. Retain original evidence and independent terminal/consumer audits. Stop each
+   completed campaign, retire temporary operation entries, reconcile support
+   claims and remove the Wave entry when its outcome is accepted.
+
+The owner's existing delegation covers these stages without routine repeat
+confirmation. Missing account/resource facts or new risk/scope still need the
+appropriate input. No stage bypasses its accepted prerequisite. npm, NuGet and
+Python campaigns remain closed; their publisher confirmations cannot establish
+Ruby destination ownership. Failed Ruby Attempts remain failed.
