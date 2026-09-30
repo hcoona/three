@@ -8,57 +8,39 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Restore dependency updates and simplify V3 tooling ownership
+### Make V3 NuGet frozen builds reproducible
 
-- **Issue:** [#823](https://github.com/hcoona/three/issues/823).
-- **Accepted inputs:** the owner's approved dependency-repair scope; current
-  repository governance, V3 requirements and engineering principles; and the
-  diagnosed failures in Renovate PRs #650, #649, #647, #646, #626, #605, #604
-  and #595.
-- **Advancement and outcome:** first deliver the revised V3 tooling dependency
-  contract, then implement and validate scoped Renovate post-update tasks,
-  package-manager-owned lockfile formatting, complete mise lock/projection
-  updates, managed V3 initialization without duplicate dependency admission,
-  and HtmlAgilityPack caller compatibility. Preserve native locked installation
-  and V3-owned source, policy, approval and publication artifact relationships.
-  Record normal local commit and CI timings and refresh the eight named
-  Renovate candidates against the repaired main branch.
-- **Effects and delivery:** permit local dependency preparation, builds and
-  tests, ordinary GitHub Issue/PR/check/comment operations, protected delivery
-  and ordinary CI, independent delegated review, and non-force candidate
-  refresh through Renovate or GitHub. Monitor CI and comments through delivery;
-  run open-code-review-delegate before each merge. Preserve inode cleanup and
-  isolated writable test state.
-- **Exclusions:** no replacement dependency-admission manifest or per-package
-  runtime verification system; no unrelated dependency upgrades, package
-  publication, native acceptance, release dispatch, credentials/access changes,
-  or reactivation of spent smoke operations. Existing publication-profile
-  requirements and independent review obligations remain in force.
-
-### Reduce CI feedback time and superseded work
-
-- **Issue:** [#837](https://github.com/hcoona/three/issues/837).
-- **Accepted inputs:** the owner's approval to investigate and fix the CI
-  execution and process issues identified from #823; current engineering
-  principles, general CI selection, V3 test responsibilities and retained
-  timing evidence.
-- **Advancement and outcome:** diagnose and fix cancellation of superseded
-  ordinary CI, scope Python test preparation to its selected consumers, and
-  investigate the measured V3 .NET adapter and Node provider hotspots before
-  implementing justified scenario-layer or immutable-preparation improvements.
-  Evaluate root-tool trigger granularity and dependent-candidate sequencing;
-  retain simple conservative behavior where finer mechanisms lack benefit.
-  Record confirmed fixes, bounded evidence and justified no-change decisions.
-- **Effects and delivery:** permit public-source research, read-only CI and
-  review inspection, local dependency preparation and isolated tests, ordinary
-  CI and protected Issue/PR delivery, and independent delegated review. Record
-  queue, initialization, execution, commit time and inode observations; monitor
-  CI and comments through delivery and use open-code-review-delegate before
-  each merge. Preserve native dependency ownership, complete required-check
-  results, isolated writable test state and cleanup.
-- **Exclusions:** no publication, native acceptance, release dispatch,
-  credentials/access changes, weakened gates or independent review, broad new
-  test matrix, arbitrary test-count target, duplicate dependency admission or
-  result reuse across incompatible revisions. HK 2 compatibility remains a
-  separate concern under #647/#823. New hosted experiments require a bounded
-  protocol before execution; this entry grants no new native operation.
+- **Issue:** [#948](https://github.com/hcoona/three/issues/948).
+- **Accepted inputs:** the owner's approval to implement the demonstrated
+  reproducible-build mechanism, upgrade the .NET SDK and align its consumers;
+  current V3 NuGet requirements, architecture, recovery and operation-profile
+  contracts; and the independently reviewed
+  [Linux and Windows feasibility evidence](https://github.com/hcoona/three/issues/948#issuecomment-5918963584).
+- **Advancement and outcome:** accept the focused requirement, design and
+  validation alignment, then implement original unsigned NuGet archive
+  reproducibility for the managed smoke's frozen build. Upgrade the repository
+  SDK to the verified 10.0.401 distribution while retaining net10.0; align
+  helper, MSBuild, runtime, tool projections, locks and affected toolchain or
+  profile admission. Apply stable source/intermediate path mapping and a
+  target-derived deterministic package timestamp. Validate the actual
+  production provider/adapter, unchanged frozen version and witness semantics,
+  and fresh-Attempt exact-byte recovery; complete affected regressions and
+  Windows original-archive acceptance with independent review. Retain evidence
+  and close the Issue, then remove this completed entry through protected
+  delivery.
+- **Effects and delivery:** permit local isolated SDK/dependency preparation,
+  builds and tests, ordinary Windows CI and build-only acceptance, required
+  record and configuration alignment, ordinary GitHub Issue/PR/check/comment
+  operations, protected delivery and independent delegated review. Monitor CI
+  and review through acceptance; use open-code-review-delegate before each
+  merge. Retain original packages, binlogs, exact tool identities, paired-build
+  comparisons and source/timestamp negative controls. Additional hosted
+  experiments require a bounded reviewed protocol; spent experiment runs are
+  not reusable grants. Preserve isolated writable test state and inode bounds.
+- **Exclusions:** no package publication, registry probes or native destination
+  acceptance, release dispatch, signing, credentials/access changes, revival of
+  completed smoke operations, separate symbol package, target-framework upgrade,
+  general cross-OS equality promise or custom archive rewriting. Preserve
+  current exact-readback, failed-Attempt, approval and independent-review gates;
+  do not relabel historical artifacts or installed native evidence as proof of
+  the new toolchain.
