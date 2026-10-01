@@ -17,8 +17,8 @@ from three_workflow_delivery_v3.records.artifacts import (
     _digest,
 )
 from three_workflow_delivery_v3.release.ruby_governance import (
-    RUBY_PUBLISHER,
     RubyGovernance,
+    ruby_publisher_job,
 )
 
 if TYPE_CHECKING:
@@ -311,7 +311,7 @@ class RubyPublicationAuthorization:
             "bundle-reference": self.bundle_reference.to_document(),
             "approval-evidence": parse_canonical_json(self.approval_evidence),
             "completed-at": _instant(self.completed_at),
-            "producer": RUBY_PUBLISHER,
+            "producer": ruby_publisher_job(self.bundle.snapshot.registry),
         }
 
 
@@ -368,5 +368,5 @@ class RubyMutationMarker:
             "profile-digest": self.pre_state.registry.profile_digest,
             "pre-state": self.pre_state.to_document(),
             "observed-at": _instant(self.observed_at),
-            "producer": RUBY_PUBLISHER,
+            "producer": ruby_publisher_job(self.pre_state.registry),
         }

@@ -13,7 +13,7 @@ from three_workflow_delivery_v3._ruby_native import (
 )
 
 _ROOT = Path(__file__).resolve().parents[5]
-_WORKFLOW = _ROOT / ".github/workflows/workflow-delivery-v3-ruby-smoke.yml"
+_WORKFLOW = _ROOT / ".github/workflows/workflow-delivery-v3-ruby-ci.yml"
 _RECORD = _ROOT / ".github/actions/workflow-delivery-v3-ruby-record/action.yml"
 _SETUP = _ROOT / ".github/actions/workflow-delivery-v3-ruby-setup/action.yml"
 _RECORD_ACTION = "./.github/actions/workflow-delivery-v3-ruby-record"

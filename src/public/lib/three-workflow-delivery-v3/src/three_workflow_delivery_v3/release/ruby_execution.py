@@ -24,7 +24,9 @@ from three_workflow_delivery_v3.canonical import (
     parse_canonical_json,
 )
 from three_workflow_delivery_v3.records.release import PUBLICATION_RESULT_SCHEMA
-from three_workflow_delivery_v3.release.ruby_governance import RUBY_PUBLISHER
+from three_workflow_delivery_v3.release.ruby_governance import (
+    ruby_publisher_job,
+)
 from three_workflow_delivery_v3.release.ruby_publication import (
     RubyMutationMarker,
     _instant,
@@ -149,7 +151,7 @@ class RubyPublicationResult:
             "error-kind": self.error_kind,
             "result": self.result,
             "mutation-classification": self.mutation_classification,
-            "producer": RUBY_PUBLISHER,
+            "producer": ruby_publisher_job(self.marker.pre_state.registry),
         }
 
     @property

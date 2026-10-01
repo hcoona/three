@@ -16,9 +16,10 @@ and a separate [RubyGems project observer](../src/three_workflow_delivery_v3/ada
 Their closed data contracts do not establish live configuration, source provenance,
 independent approval or an executable caller. Fixed GitHub control/package
 collectors, a supervised configuration transport and durable phase/send counters
-are implemented. The reviewed configuration operator, bootstrap/normal runtime
-assembly and final coupled budgets remain pending. All ten operation slots remain null; both normal Governance
-sources remain blocked. No configuration, account, registry, OIDC or dispatch
+are implemented. The hosted bootstrap/normal caller and its phase, job and maintained-action
+budgets are implemented below. Concrete external configuration/operation callers
+still need their exact independently reviewed launch and before/after plans.
+All ten operation slots remain null; both normal Governance sources remain blocked. No configuration, account, registry, OIDC or dispatch
 effect follows from this partial delivery alone.
 
 GitHub Packages completion precedes RubyGems.org configuration/execution. Exact
@@ -385,17 +386,99 @@ Any failure, exhausted cap or incomplete inventory stops its phase. Later
 read-only diagnosis or scoped correction requires a concrete finite independent
 protocol review under the existing Wave; it cannot refill these allocations.
 
+## Hosted Operation Caller
+
+The separate bootstrap and normal workflows invoke
+`three_workflow_delivery_v3.ruby_operation_cli`. The request input contains exactly
+`request`, `review`, `admission`, `reservation` and `inspection`; normal inspection
+is null. The native request job adds its actual run join and admission time.
+The sole operator establishes independent reviewer provenance and separately
+joins that same actual run to its durable reservation. A digest or different
+reviewer string cannot establish independence.
+
+Provider, Build and qualification precede registry access. Every cross-job edge
+uses explicit current-run artifact IDs and fixed role/producer bindings. Each
+raw upload is downloaded by its returned ID and checked before downstream use;
+missing IDs or required files stop. Authorization and mutation-marker readbacks
+precede credential acquisition. Publisher jobs are distinct for each destination:
+GitHub has package write without OIDC write, and RubyGems has OIDC write without
+package write. The parent writer owns both exchange and upload credentials.
+Exact-satisfied normal publication skips both privileged jobs. Strict domain
+replay determines the terminal record; a separate unprivileged job downloads
+and compares the remote original and runs the clean consumer. Neither record
+claims the independent audit's verdict.
+
+Effect jobs explicitly initialize their shared local GitHub spending history.
+Each immutable uploaded phase claim initializes its registry history once.
+Separate durable membership binds actual run, attempt, job, path and every
+ordinal digest. Readers never create missing histories. Missing whole or partial
+history, aliases and interrupted writes stop before another send. CLI processes
+in one job share the same direct-read history; registry readers cannot reuse an
+ordinal. Fixed phase ownership and the run-attempt-one boundary prevent reuse
+across jobs/reruns. These mechanisms do not authorize recovery.
+
+The hosted HTTPS supervisor caps the complete request, including DNS, TLS,
+headers, body and private pipe reception, at 30 seconds and the phase deadline.
+Child and receiver cleanup each have a five-second cap. It performs raw HTTP in
+a POSIX child while the parent retains writer credential identity. Redirects,
+proxies and retries remain disabled. Registry partitions stay 3/3/20/3/3, with
+the RubyGems bootstrap eligibility operator debit included; native OIDC adds at
+most one request outside those registry partitions. Jobs are capped at 30 minutes,
+outer steps at ten minutes and input checks at one minute. Each phase expires
+within 30 minutes and the request's absolute expiry.
+
+Only preparation, selected publisher, finalizer and final consumer jobs can
+perform direct GitHub reads, sharing a cap of 128 per job across their CLI stages.
+Preparation/consumer read repository, main and collaborator controls; publisher
+also reads the exact run, approval history, exact target/Environment deployments
+and statuses. Lists allow at most five pages of 100 within the same cap.
+Finalizer uses direct controls only for normal zero-action freshness. Artifact
+service operations use the pinned maintained actions, without a custom REST
+artifact-discovery client.
+
+The complete successful path bounds below count checkout invocations C, raw
+uploads U, download invocations D and selected artifact IDs N summed over those
+downloads. Every upload has a separate one-ID download/readback. Destination
+publisher branches are mutually exclusive; failed paths terminate subsets.
+
+| Path               |   C |   U |   D | Sum N | Incoming IDs by job             |
+| ------------------ | --: | --: | --: | ----: | ------------------------------- |
+| Bootstrap          |  10 |  23 |  32 |    96 | 0, 1, 2, 3, 4, 6, 7, 12, 18, 20 |
+| Normal action      |  10 |  28 |  37 |   123 | 0, 2, 3, 5, 6, 8, 9, 15, 22, 25 |
+| Normal zero-action |   9 |  22 |  30 |    87 | 0, 2, 3, 5, 6, 8, 9, 13, 19     |
+
+For the pinned [checkout fetch implementation][ruby-checkout-source],
+[raw upload implementation][ruby-upload-source] and
+[download implementation][ruby-download-source], download logical RPCs are bounded by
+D + 2 Sum N, with at most five attempts per RPC and five stream attempts per
+selected ID. Upload uses 2U logical RPCs with at most five attempts each and
+2U block/block-list operations with at most four attempts each, for stable
+nonempty raw files at most 2 MiB. Upload concurrency is one and its no-progress
+timeout is 60 seconds. Checkout permits at most 6C fetch process starts.
+These operation classes are not a total wire-request or downloaded-byte bound.
+Action service buffers, redirects and retry internals retain their pinned limits;
+local payload validation is not a streaming network cap.
+
+Freshness guards are separate from action checkout. Bootstrap has one preparation,
+four publisher and one consumer guard, each with one isolated control Git read.
+Normal action has the same guard counts, each with two isolated reads for the
+operation envelope and Governance. Normal zero-action has one preparation,
+one finalizer and one consumer guard, each with two reads. Every isolated read
+uses one `ls-remote` and one full fetch plus bounded local validation; each Git
+subprocess has a 120-second timeout. Full relevant history includes touch/revert;
+unrelated main advancement is permitted after dispatch.
+
 ## Remaining Execution Closure
 
-Before configuration, complete and independently review the concrete composition
-of collection/counter schemas, durable pre-send spending and bounded transport/caller,
-actual supported principal/access, full raw evidence provenance and concrete
-before/after plan. Before any operation, close the final runtime DAG and trusted
-caller: per-job controls, actual-run/check/artifact discovery, checkout count C,
-raw uploads U, downloads D and each selected-artifact count N, including upload
-readback and inspection/review edges. Count the 549 reads once and the five
-predispatch main reads per destination only once. Mechanically join cross-process
-bootstrap spending without resetting the 32-send envelope.
+Before configuration, independently review the concrete composition of the
+collection/counter schemas, durable pre-send spending and bounded transport/caller,
+actual supported principal/access, full raw evidence provenance and exact
+before/after plan. Before any operation, close the external sole-operator caller
+and its finite actual-run/check/artifact discovery and approval budgets. Join its
+actual-run reservation to the hosted evidence. Count the 549 configuration reads
+and five predispatch main reads per destination only once. Hosted cross-process
+spending retains the 32-send registry envelope; operator/API/action classes remain
+separate bounds, not a universal network counter.
 
 Use maintained action bounds with finite step/job deadlines; transfer counts or
 artifact size ceilings are not total wire-request/download-byte guarantees.
@@ -426,3 +509,7 @@ reviewer recheck the relied-on deployed contract against these source findings.
 Unknown behavior stops admission pending reviewed reconciliation. Final concrete
 operator review is the fallback review event; immutable pins do not by themselves
 establish current live configuration or deployed implementation identity.
+
+[ruby-checkout-source]: https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/src/git-source-provider.ts#L180
+[ruby-upload-source]: https://github.com/actions/upload-artifact/blob/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/dist/upload/index.js#L124229
+[ruby-download-source]: https://github.com/actions/download-artifact/blob/3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/dist/index.js#L126390

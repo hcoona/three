@@ -24,9 +24,20 @@ if TYPE_CHECKING:
 
 
 RUBY_WORKFLOW = ".github/workflows/workflow-delivery-v3-ruby-smoke.yml"
-RUBY_PUBLISHER = "publish-ruby"
 _MAX_GOVERNANCE_AGE = timedelta(days=90)
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+
+
+def ruby_publisher_job(
+    registry: RubyRegistry, *, bootstrap: bool = False
+) -> str:
+    """Name the actual destination-specific least-privilege publisher job."""
+    return (
+        "publish-ruby"
+        + ("-bootstrap" if bootstrap else "")
+        + "-"
+        + registry.name
+    )
 
 
 def ruby_governance_path(registry: RubyRegistry) -> str:
