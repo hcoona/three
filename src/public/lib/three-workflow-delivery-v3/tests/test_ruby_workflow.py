@@ -1,10 +1,16 @@
 """Ruby PR CI workflow privileges and immutable record transport."""
 
+import os
 import re
+import shutil
 from pathlib import Path
 
 import pytest
 import yaml
+from three_workflow_delivery_v3._ruby_native import (
+    ruby_executable,
+    ruby_profile,
+)
 
 _ROOT = Path(__file__).resolve().parents[5]
 _WORKFLOW = _ROOT / ".github/workflows/workflow-delivery-v3-ruby-smoke.yml"
@@ -313,3 +319,35 @@ def test_ruby_workflow_installs_native_tools_only_for_owning_jobs(workflow):
         )
     }
     assert dotnet == {"discover-ruby"}
+
+
+def test_common_python_ci_keeps_native_ruby_ahead_of_late_mise_shim(
+    tmp_path, monkeypatch
+):
+    """Later shim creation cannot replace the installed native interpreter."""
+    native = ruby_executable()
+    mise = shutil.which("mise")
+    assert mise is not None
+    steps = yaml.safe_load((_ROOT / ".github/workflows/ci.yml").read_text())[
+        "jobs"
+    ]["python-tests"]["steps"]
+    shims = tmp_path / "mise-shims"
+    shims.mkdir()
+    # Setup actions prepend their tool directories. Use the actual workflow
+    # ordering while keeping the competing shim entirely inside this fixture.
+    path = []
+    for step in steps:
+        action = step.get("uses", "").split("@", 1)[0]
+        if action == "ruby/setup-ruby":
+            assert step["with"]["ruby-version"] == "4.0.7"
+            path.insert(0, str(native.parent))
+        elif action == "jdx/mise-action":
+            path.insert(0, str(shims))
+    assert set(path) == {str(native.parent), str(shims)}
+    monkeypatch.setenv("PATH", os.pathsep.join(path))
+    before = ruby_profile(cwd=tmp_path, home=tmp_path / "before-home")
+    (shims / "ruby").symlink_to(Path(mise).resolve())
+    after = ruby_profile(cwd=tmp_path, home=tmp_path / "after-home")
+    assert ruby_executable() == native
+    assert after == before
+    assert (after["ruby"], after["rubygems"]) == ("4.0.7", "4.0.20")

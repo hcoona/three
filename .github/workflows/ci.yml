@@ -743,12 +743,6 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Set up Ruby for V3 native contracts
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_v3 == 'true'
-        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
-        with:
-          ruby-version: '4.0.7'
-
       - name: Set up PNPM
         if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_v3 == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
@@ -816,6 +810,12 @@ jobs:
         env:
           MISE_TASK_RUN_AUTO_INSTALL: 'false'
         run: mise run prepare:static-reference-authorities
+
+      - name: Set up Ruby for V3 native contracts
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_v3 == 'true'
+        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        with:
+          ruby-version: '4.0.7'
 
       - name: Run tests
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
