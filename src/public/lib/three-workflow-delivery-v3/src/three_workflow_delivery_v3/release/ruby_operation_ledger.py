@@ -71,6 +71,16 @@ def initialize_ruby_operation_ledger(directory: Path, campaign: str) -> bytes:
         }
     )
     _durable_new(directory / "campaign.json", content)
+    _durable_new(
+        directory / "events.jsonl",
+        canonicalize(
+            {
+                "schema": "workflow-delivery/v3/ruby-operation-events-v1",
+                "campaign-digest": ruby_digest(content),
+            }
+        )
+        + b"\n",
+    )
     _sync_directory(directory.parent)
     return content
 
@@ -104,6 +114,77 @@ class RubyOperationLedger:
         ):
             message = "Ruby ledger does not describe this finite campaign"
             raise ValueError(message)
+        self._verify_events()
+
+    def _verify_events(self) -> None:
+        journal = self.directory / "events.jsonl"
+        if journal.is_symlink() or not journal.is_file():
+            message = "Ruby operation event journal is missing or replaced"
+            raise ValueError(message)
+        lines = journal.read_bytes().splitlines(keepends=True)
+        header = (
+            canonicalize(
+                {
+                    "schema": "workflow-delivery/v3/ruby-operation-events-v1",
+                    "campaign-digest": ruby_digest(self.content),
+                }
+            )
+            + b"\n"
+        )
+        if not lines or lines[0] != header:
+            message = "Ruby operation event journal has changed"
+            raise ValueError(message)
+        allowed = {
+            slot + suffix
+            for slot in RUBY_OPERATION_SLOTS
+            for suffix in (".json", ".run.json")
+        }
+        allowed.update(
+            {"github-packages.complete.json", "rubygems.complete.json"}
+        )
+        names = {"campaign.json", "events.jsonl"}
+        for line in lines[1:]:
+            if not line.endswith(b"\n"):
+                message = "Ruby operation event reservation is partial"
+                raise ValueError(message)
+            event = ruby_object(
+                parse_canonical_json(line[:-1]), {"name", "digest"}
+            )
+            name = ruby_text(event["name"])
+            path = self.directory / name
+            if (
+                name not in allowed
+                or name in names
+                or path.is_symlink()
+                or not path.is_file()
+                or ruby_digest(path.read_bytes()) != event["digest"]
+            ):
+                message = "Ruby operation reserved event is missing or changed"
+                raise ValueError(message)
+            names.add(name)
+        if {p.name for p in self.directory.iterdir()} != names:
+            message = "Ruby operation ledger has unjoined state"
+            raise ValueError(message)
+
+    def _record(self, name: str, content: bytes) -> None:
+        path = self.directory / name
+        if path.exists() or path.is_symlink():
+            raise FileExistsError(path)
+        reservation = (
+            canonicalize({"name": name, "digest": ruby_digest(content)}) + b"\n"
+        )
+        descriptor = os.open(
+            self.directory / "events.jsonl",
+            os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW,
+        )
+        try:
+            if os.write(descriptor, reservation) != len(reservation):
+                message = "Ruby operation event reservation write was partial"
+                raise OSError(message)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        _durable_new(path, content)
 
     def reserve(
         self,
@@ -146,7 +227,7 @@ class RubyOperationLedger:
                 .replace("+00:00", "Z"),
             }
         )
-        _durable_new(self.directory / (slot + ".json"), reservation)
+        self._record(slot + ".json", reservation)
         return reservation
 
     def join_run(
@@ -177,7 +258,7 @@ class RubyOperationLedger:
                 "run-attempt": 1,
             }
         )
-        _durable_new(self.directory / (slot + ".run.json"), content)
+        self._record(slot + ".run.json", content)
         return content
 
     def stop_destination(self, destination: str, audit: JsonValue) -> None:
@@ -191,10 +272,7 @@ class RubyOperationLedger:
         if destination not in {"github-packages", "rubygems"}:
             message = "Ruby completion selected a foreign destination"
             raise ValueError(message)
-        _durable_new(
-            self.directory / (destination + ".complete.json"),
-            canonicalize(audit),
-        )
+        self._record(destination + ".complete.json", canonicalize(audit))
 
     def _require_present(self) -> None:
         if RubyOperationLedger(self.directory).content != self.content:

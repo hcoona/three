@@ -51,6 +51,40 @@ def _reserve(campaign):
     )
 
 
+def _snapshot(directory):
+    """Capture file bytes and link targets without following links."""
+    return {
+        path.name: ("link", str(path.readlink()))
+        if path.is_symlink()
+        else ("file", path.read_bytes())
+        for path in directory.iterdir()
+    }
+
+
+def _fail_fsync(monkeypatch, directory, phase):
+    """Select journal, event-file, or directory persistence independently."""
+    real_fsync = os.fsync
+    journal_inode = (directory / "events.jsonl").stat().st_ino
+
+    def fail(descriptor):
+        metadata = os.fstat(descriptor)
+        selected = (
+            (phase == "journal" and metadata.st_ino == journal_inode)
+            or (
+                phase == "file"
+                and stat.S_ISREG(metadata.st_mode)
+                and metadata.st_ino != journal_inode
+            )
+            or (phase == "directory" and stat.S_ISDIR(metadata.st_mode))
+        )
+        if selected:
+            message = "controlled durable-write failure"
+            raise OSError(message)
+        return real_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", fail)
+
+
 def test_ruby_ledger_reserves_and_joins_once_with_exact_retained_bytes(
     campaign,
 ):
@@ -177,33 +211,23 @@ def test_ruby_reservation_rejects_unadmitted_ledger_review_or_time(
     assert not (ledger.directory / (SLOT + ".json")).exists()
 
 
-@pytest.mark.parametrize("phase", ["file", "directory"])
+@pytest.mark.parametrize("phase", ["journal", "file", "directory"])
 def test_ruby_reservation_fsync_failure_keeps_slot_spent(
     campaign, monkeypatch, phase
 ):
     """An ambiguous durable write cannot authorize a replacement reservation."""
     ledger, _selected, _admission = campaign
-    real_fsync = os.fsync
-
-    def fail(descriptor):
-        mode = os.fstat(descriptor).st_mode
-        if (phase == "file" and stat.S_ISREG(mode)) or (
-            phase == "directory" and stat.S_ISDIR(mode)
-        ):
-            message = "controlled durable-write failure"
-            raise OSError(message)
-        return real_fsync(descriptor)
-
     with monkeypatch.context() as patch:
-        patch.setattr(os, "fsync", fail)
+        _fail_fsync(patch, ledger.directory, phase)
         with pytest.raises(OSError, match="durable-write"):
             _reserve(campaign)
     path = ledger.directory / (SLOT + ".json")
-    assert path.exists()
-    retained = path.read_bytes()
-    with pytest.raises(FileExistsError):
+    assert path.exists() == (phase != "journal")
+    retained = _snapshot(ledger.directory)
+    expected = ValueError if phase == "journal" else FileExistsError
+    with pytest.raises(expected):
         _reserve(campaign)
-    assert path.read_bytes() == retained
+    assert _snapshot(ledger.directory) == retained
 
 
 def test_ruby_partial_reservation_write_remains_spent(campaign, monkeypatch):
@@ -224,9 +248,13 @@ def test_ruby_partial_reservation_write_remains_spent(campaign, monkeypatch):
         patch.setattr(Path, "open", partial)
         with pytest.raises(OSError, match="partial reservation"):
             _reserve(campaign)
-    with pytest.raises(FileExistsError):
+    retained = _snapshot(ledger.directory)
+    with pytest.raises(
+        ValueError, match="reserved event is missing or changed"
+    ):
         _reserve(campaign)
     assert (ledger.directory / (SLOT + ".json")).read_bytes() == b'{"partial":'
+    assert _snapshot(ledger.directory) == retained
 
 
 @pytest.mark.parametrize("run", [True, 0, -1, "991", 1.0])
@@ -304,23 +332,24 @@ def test_ruby_destination_stop_blocks_remaining_slots_only_for_that_registry(
         ledger.stop_destination("rubygems", audit)
 
 
+@pytest.mark.parametrize("phase", ["journal", "file", "directory"])
 def test_ruby_partial_completion_write_still_stops_destination(
-    campaign, monkeypatch
+    campaign, monkeypatch, phase
 ):
     """A failed completion flush cannot reopen remaining slots."""
     ledger, _selected, _admission = campaign
-
-    def fail(_descriptor):
-        message = "controlled completion flush failure"
-        raise OSError(message)
-
     with monkeypatch.context() as patch:
-        patch.setattr(os, "fsync", fail)
-        with pytest.raises(OSError, match="completion flush"):
+        _fail_fsync(patch, ledger.directory, phase)
+        with pytest.raises(OSError, match="durable-write"):
             ledger.stop_destination("rubygems", {"fixture": "completion"})
-    with pytest.raises(ValueError, match="already complete"):
+    path = ledger.directory / "rubygems.complete.json"
+    assert path.exists() == (phase != "journal")
+    retained = _snapshot(ledger.directory)
+    message = "reserved event" if phase == "journal" else "already complete"
+    with pytest.raises(ValueError, match=message):
         _reserve(campaign)
     assert not (ledger.directory / (SLOT + ".json")).exists()
+    assert _snapshot(ledger.directory) == retained
 
 
 def test_ruby_ledger_cannot_stop_foreign_destination(campaign):
@@ -329,7 +358,8 @@ def test_ruby_ledger_cannot_stop_foreign_destination(campaign):
     with pytest.raises(ValueError, match="foreign destination"):
         ledger.stop_destination("pypi", {})
     assert sorted(path.name for path in ledger.directory.iterdir()) == [
-        "campaign.json"
+        "campaign.json",
+        "events.jsonl",
     ]
 
 
@@ -375,25 +405,27 @@ def test_ruby_failed_initialization_cannot_reconstruct_campaign(
     assert (directory / "campaign.json").read_bytes() == retained
 
 
-def test_ruby_failed_run_join_cannot_replace_actual_run(campaign, monkeypatch):
+@pytest.mark.parametrize("phase", ["journal", "file", "directory"])
+def test_ruby_failed_run_join_cannot_replace_actual_run(
+    campaign, monkeypatch, phase
+):
     """An ambiguous join write cannot be retried with another run."""
     ledger, selected, _admission = campaign
     reservation = _reserve(campaign)
-
-    def fail(_descriptor):
-        message = "controlled run-join failure"
-        raise OSError(message)
-
     with monkeypatch.context() as patch:
-        patch.setattr(os, "fsync", fail)
-        with pytest.raises(OSError, match="run-join failure"):
+        _fail_fsync(patch, ledger.directory, phase)
+        with pytest.raises(OSError, match="durable-write"):
             ledger.join_run(selected, reservation, 991)
     path = ledger.directory / (SLOT + ".run.json")
-    retained = path.read_bytes()
-    with pytest.raises(FileExistsError):
+    assert path.exists() == (phase != "journal")
+    retained = _snapshot(ledger.directory)
+    expected = ValueError if phase == "journal" else FileExistsError
+    with pytest.raises(expected):
         ledger.join_run(selected, reservation, 992)
-    assert path.read_bytes() == retained
-    assert parse_canonical_json(retained)["run-id"] == 991  # noqa: PLR2004
+    assert _snapshot(ledger.directory) == retained
+    assert (ledger.directory / (SLOT + ".json")).read_bytes() == reservation
+    if phase != "journal":
+        assert parse_canonical_json(path.read_bytes())["run-id"] == 991  # noqa: PLR2004
 
 
 def test_ruby_ledger_initialization_syncs_new_directory_parent(
@@ -412,7 +444,12 @@ def test_ruby_ledger_initialization_syncs_new_directory_parent(
     with monkeypatch.context() as patch:
         patch.setattr(os, "fsync", record)
         header = initialize_ruby_operation_ledger(directory, "a" * 32)
-    for path in (tmp_path, directory, directory / "campaign.json"):
+    for path in (
+        tmp_path,
+        directory,
+        directory / "campaign.json",
+        directory / "events.jsonl",
+    ):
         metadata = path.stat()
         assert (metadata.st_dev, metadata.st_ino) in synced
     assert RubyOperationLedger(directory).content == header
@@ -455,7 +492,7 @@ def test_ruby_dangling_completion_marker_still_blocks_new_reservation(campaign):
     ledger, _selected, _admission = campaign
     completion = ledger.directory / "rubygems.complete.json"
     completion.symlink_to(ledger.directory / "missing-audit")
-    with pytest.raises(ValueError, match="already complete"):
+    with pytest.raises(ValueError, match="unjoined state"):
         _reserve(campaign)
     assert completion.is_symlink()
     assert not (ledger.directory / (SLOT + ".json")).exists()
@@ -470,3 +507,264 @@ def test_ruby_reservation_normalizes_aware_time_to_importable_utc(campaign):
         content, selected, admission, review=REVIEW
     )
     assert doc["reserved-at"] == "2026-09-30T12:02:00Z"
+
+
+def _assert_broken_ledger_is_unchanged(campaign, reservation):
+    """Reopen and every existing-object mutation must fail without repair."""
+    ledger, selected, _admission = campaign
+    retained = _snapshot(ledger.directory)
+    actions = (
+        lambda: RubyOperationLedger(ledger.directory),
+        lambda: _reserve(campaign),
+        lambda: ledger.join_run(selected, reservation, 992),
+        lambda: ledger.stop_destination("github-packages", {"fixture": "stop"}),
+    )
+    for action in actions:
+        with pytest.raises(ValueError, match=r"Ruby|JSON|canonical"):
+            action()
+        assert _snapshot(ledger.directory) == retained
+
+
+@pytest.mark.parametrize("role", ["reservation", "run", "completion"])
+@pytest.mark.parametrize("change", ["missing", "changed", "symlink"])
+def test_ruby_lost_recorded_event_cannot_replenish_campaign(
+    campaign, role, change
+):
+    """Loss of a whole event outside the ledger cannot replenish authority."""
+    ledger, selected, _admission = campaign
+    reservation = _reserve(campaign)
+    names = {
+        "reservation": SLOT + ".json",
+        "run": SLOT + ".run.json",
+        "completion": "rubygems.complete.json",
+    }
+    if role == "run":
+        ledger.join_run(selected, reservation, 991)
+    elif role == "completion":
+        ledger.stop_destination("rubygems", {"fixture": "completion"})
+    path = ledger.directory / names[role]
+    original = path.read_bytes()
+    preserved = ledger.directory.parent / ("preserved-" + path.name)
+    path.rename(preserved)
+    if change == "changed":
+        path.write_bytes(original + b"\n")
+    elif change == "symlink":
+        path.symlink_to(preserved)
+    _assert_broken_ledger_is_unchanged(campaign, reservation)
+    assert preserved.read_bytes() == original
+    if change == "missing":
+        assert not path.exists()
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing",
+        "empty",
+        "torn-header",
+        "changed-header",
+        "symlink",
+        "torn-event",
+        "changed-digest",
+        "missing-entry",
+        "duplicate-entry",
+        "foreign-entry",
+        "extra-field",
+        "noncanonical-entry",
+        "extra-member",
+    ],
+)
+def test_ruby_event_journal_damage_blocks_reopen_and_active_operations(
+    campaign, change
+):
+    """A malformed or incomplete membership journal is never reconstructed."""
+    ledger, _selected, _admission = campaign
+    reservation = _reserve(campaign)
+    journal = ledger.directory / "events.jsonl"
+    original = journal.read_bytes()
+    preserved = ledger.directory.parent / "preserved-events.jsonl"
+    journal.rename(preserved)
+    lines = original.splitlines(keepends=True)
+    if change == "symlink":
+        journal.symlink_to(preserved)
+    elif change != "missing":
+        simple_changes = {
+            "empty": b"",
+            "torn-header": lines[0][:-1],
+            "torn-event": original[:-1],
+            "missing-entry": lines[0],
+            "duplicate-entry": original + lines[1],
+            "noncanonical-entry": lines[0] + b" " + lines[1],
+        }
+        content = original
+        if change in simple_changes:
+            content = simple_changes[change]
+        elif change == "changed-header":
+            header = parse_canonical_json(lines[0][:-1])
+            header["campaign-digest"] = DIGEST
+            content = canonicalize(header) + b"\n" + lines[1]
+        elif change == "extra-member":
+            (ledger.directory / "unjoined.json").write_bytes(b"{}")
+        else:
+            event = parse_canonical_json(lines[1][:-1])
+            if change == "changed-digest":
+                event["digest"] = DIGEST
+            elif change == "foreign-entry":
+                event["name"] = "rubygems-normal05.json"
+                (ledger.directory / event["name"]).write_bytes(reservation)
+            else:
+                event["extra"] = True
+            prefix = original if change == "foreign-entry" else lines[0]
+            content = prefix + canonicalize(event) + b"\n"
+        journal.write_bytes(content)
+    _assert_broken_ledger_is_unchanged(campaign, reservation)
+    assert preserved.read_bytes() == original
+    assert (ledger.directory / (SLOT + ".json")).read_bytes() == reservation
+
+
+@pytest.mark.parametrize("failure", ["short-write", "write-then-raise"])
+def test_ruby_interrupted_journal_append_remains_spent(
+    campaign, monkeypatch, failure
+):
+    """A partial append blocks later actions without an event file."""
+    ledger, _selected, _admission = campaign
+    original = (ledger.directory / "events.jsonl").read_bytes()
+    native_write = os.write
+
+    def interrupted(descriptor, content):
+        count = native_write(descriptor, content[:11])
+        if failure == "write-then-raise":
+            message = "controlled interrupted append"
+            raise OSError(message)
+        return count
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "write", interrupted)
+        with pytest.raises(OSError, match=r"partial|interrupted append"):
+            _reserve(campaign)
+    retained = (ledger.directory / "events.jsonl").read_bytes()
+    assert retained.startswith(original)
+    assert len(retained) == len(original) + 11
+    assert not retained.endswith(b"\n")
+    assert not (ledger.directory / (SLOT + ".json")).exists()
+    _assert_broken_ledger_is_unchanged(campaign, b"not-created")
+
+
+def test_ruby_journal_append_failure_before_write_has_no_effect(
+    campaign, monkeypatch
+):
+    """An error before any journal byte cannot return a dispatch reservation."""
+    ledger, _selected, _admission = campaign
+    original = _snapshot(ledger.directory)
+
+    def fail(_descriptor, _content):
+        message = "controlled append failure before write"
+        raise OSError(message)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "write", fail)
+        with pytest.raises(OSError, match="before write"):
+            _reserve(campaign)
+    assert _snapshot(ledger.directory) == original
+    assert RubyOperationLedger(ledger.directory).content == ledger.content
+
+
+@pytest.mark.parametrize("role", ["reservation", "run", "completion"])
+def test_ruby_event_creation_failure_after_journal_append_blocks_campaign(
+    campaign, monkeypatch, role
+):
+    """Journal spending precedes event creation for every durable event role."""
+    ledger, selected, _admission = campaign
+    reservation = _reserve(campaign) if role == "run" else b"not-created"
+    names = {
+        "reservation": SLOT + ".json",
+        "run": SLOT + ".run.json",
+        "completion": "rubygems.complete.json",
+    }
+    native_open = Path.open
+    journal = ledger.directory / "events.jsonl"
+    before = journal.read_bytes()
+
+    def fail(path, *args, **kwargs):
+        mode = args[0] if args else kwargs.get("mode", "r")
+        if path.name == names[role] and mode == "xb":
+            message = "controlled event creation failure"
+            raise OSError(message)
+        return native_open(path, *args, **kwargs)
+
+    actions = {
+        "reservation": lambda: _reserve(campaign),
+        "run": lambda: ledger.join_run(selected, reservation, 991),
+        "completion": lambda: ledger.stop_destination("rubygems", {}),
+    }
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "open", fail)
+        with pytest.raises(OSError, match="event creation"):
+            actions[role]()
+    retained = journal.read_bytes()
+    assert retained.startswith(before)
+    event = parse_canonical_json(retained[len(before) : -1])
+    assert event["name"] == names[role]
+    assert not (ledger.directory / names[role]).exists()
+    _assert_broken_ledger_is_unchanged(campaign, reservation)
+
+
+def test_ruby_all_fixed_slots_progress_and_duplicates_preserve_journal(
+    campaign,
+):
+    """All ten slots remain single-use through reopen and completion."""
+    ledger, _selected, _admission = campaign
+    slots = [
+        f"{destination}-{kind}"
+        for destination in ("github-packages", "rubygems")
+        for kind in (
+            "bootstrap",
+            "normal01",
+            "normal02",
+            "normal03",
+            "normal04",
+        )
+    ]
+    assert parse_canonical_json(ledger.content)["slots"] == slots
+    for run_id, slot in enumerate(slots, start=991):
+        selected = request(slot)
+        admission = canonicalize(
+            admission_document(selected, ruby_digest(ledger.content))
+        )
+        reservation = ledger.reserve(
+            selected, admission, review=REVIEW, now=NOW + timedelta(minutes=2)
+        )
+        run = ledger.join_run(selected, reservation, run_id)
+        assert parse_canonical_json(reservation)["slot"] == slot
+        assert parse_canonical_json(run)["run-id"] == run_id
+        retained = _snapshot(ledger.directory)
+        with pytest.raises(FileExistsError):
+            ledger.reserve(
+                selected,
+                admission,
+                review=REVIEW,
+                now=NOW + timedelta(minutes=3),
+            )
+        with pytest.raises(FileExistsError):
+            ledger.join_run(selected, reservation, run_id + 100)
+        assert _snapshot(ledger.directory) == retained
+        ledger = RubyOperationLedger(ledger.directory)
+    for destination in ("github-packages", "rubygems"):
+        ledger.stop_destination(destination, {"fixture": "completion"})
+        retained = _snapshot(ledger.directory)
+        with pytest.raises(FileExistsError):
+            ledger.stop_destination(destination, {"fixture": "replacement"})
+        assert _snapshot(ledger.directory) == retained
+        ledger = RubyOperationLedger(ledger.directory)
+    lines = (ledger.directory / "events.jsonl").read_bytes().splitlines()
+    events = [parse_canonical_json(line) for line in lines[1:]]
+    assert {event["name"] for event in events} == {
+        *(slot + suffix for slot in slots for suffix in (".json", ".run.json")),
+        "github-packages.complete.json",
+        "rubygems.complete.json",
+    }
+    assert len(events) == 2 * len(slots) + 2
+    for event in events:
+        assert event["digest"] == ruby_digest(
+            (ledger.directory / event["name"]).read_bytes()
+        )
