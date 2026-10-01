@@ -285,6 +285,10 @@ provenance: the reviewed sole-operator boundary and governing carrier must do so
 An arbitrary nonempty review or unequal author/reviewer strings is insufficient.
 
 After independent admission, durably reserve the slot before its sole dispatch.
+The sole-operator ledger journals each reservation, actual-run join and destination
+completion before writing its separate evidence file. Every use verifies the
+complete journal and exact file membership/digests. Missing or partial state
+stops the campaign without reconstructing a reservation or reviving completion.
 Immediately before dispatch, read main once and require main equals T, unchanged
 reviewed caller/configuration/protocol and current inspection. Dispatch within
 60 seconds of that read and before `dispatch-by`. Missing the window stops the
