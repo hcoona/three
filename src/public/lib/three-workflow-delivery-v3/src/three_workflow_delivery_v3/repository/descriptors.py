@@ -818,6 +818,7 @@ def _validate_slice_descriptor_inventory(
         FIRST_SLICE_RELEASE_UNIT,
         NUGET_RELEASE_UNIT,
         "hcoona-release-smoke-python",
+        "hcoona-release-smoke-ruby",
     }
     registered_paths = {
         f"src/public/lib/{unit}/{RELEASE_UNIT_BASENAME}": unit

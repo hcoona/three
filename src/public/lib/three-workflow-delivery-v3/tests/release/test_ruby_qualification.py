@@ -1,0 +1,601 @@
+"""Release qualification preserves current-Attempt lineage."""
+
+from dataclasses import replace
+from functools import partial
+from subprocess import TimeoutExpired
+
+import pytest
+from three_workflow_delivery_v3.adapters.ruby import RubyDistribution
+from three_workflow_delivery_v3.canonical import (
+    canonicalize,
+    parse_canonical_json,
+)
+from three_workflow_delivery_v3.ci.ruby import RubyCiEvidence
+from three_workflow_delivery_v3.records import ruby as ruby_records
+from three_workflow_delivery_v3.records.artifacts import (
+    ArtifactTransportIdentity,
+)
+from three_workflow_delivery_v3.records.release import ReleaseIntent
+from three_workflow_delivery_v3.records.ruby import RubyArtifact
+from three_workflow_delivery_v3.release.ruby_governance import RUBY_WORKFLOW
+from three_workflow_delivery_v3.release.ruby_qualification import (
+    RubyQualificationDecision,
+    RubyQualificationSnapshot,
+    admit_ruby_qualification_decision,
+    qualify_ruby_release,
+    ruby_qualification_evidence_from_document,
+    ruby_qualification_snapshot_from_document,
+)
+from three_workflow_delivery_v3.repository.ruby_model import (
+    RubyRepositoryModelSnapshot,
+)
+from three_workflow_delivery_v3.repository.ruby_provider import RubyNbgvFacts
+
+from ..ruby_integration_fixtures import (
+    admitted,
+    consumer,
+    context,
+    governance,
+    model,
+    reference,
+)
+
+
+def snapshot(source, name="github-packages"):
+    """Bind modeled ready Governance to the explicit protected Live request."""
+    gov = governance(name)
+    ctx = source.context
+    intent = ReleaseIntent(
+        "hcoona/three",
+        RUBY_WORKFLOW,
+        "refs/heads/main",
+        ctx.target,
+        ctx.request_id,
+        "hcoona",
+        ctx.workflow_run_id,
+        "workflow_dispatch",
+        "refs/heads/main",
+        ctx.target,
+        gov.registry.channel,
+        "live",
+        "live-release",
+        "hcoona-release-smoke-ruby",
+    )
+    return RubyQualificationSnapshot(
+        intent, source, reference(source.to_document()), gov
+    )
+
+
+@pytest.fixture
+def qualified(ruby_release_original):
+    """Qualify a separate Release original with controlled consumption."""
+    source, artifact, distribution = ruby_release_original
+    planned = snapshot(source)
+    evidence = qualify_ruby_release(
+        planned, artifact, distribution.content, consumer=consumer
+    )
+    return planned, evidence, artifact, distribution
+
+
+@pytest.mark.parametrize("name", ["github-packages", "rubygems"])
+def test_ruby_release_qualifies_original_for_independent_destination(
+    ruby_release_original, name
+):
+    """Keep independent destination Snapshots and evidence."""
+    source, artifact, distribution = ruby_release_original
+    planned = snapshot(source, name)
+    evidence = qualify_ruby_release(
+        planned, artifact, distribution.content, consumer=consumer
+    )
+    decision = RubyQualificationDecision(planned, evidence)
+    assert decision.result == "passed"
+    assert decision.artifact == artifact
+    assert [e.definition for e in evidence] == [
+        "ruby/gem-contents-v1",
+        "ruby/gem-install-require-v1",
+    ]
+    assert [e.result for e in evidence] == ["passed", "passed"]
+    assert all(e.snapshot_digest == planned.snapshot_digest for e in evidence)
+    assert planned.governance.registry.name == name
+    assert planned.intent.channel == (
+        "buddy" if name == "github-packages" else "official"
+    )
+    assert decision.to_document()["attempt"] == planned.attempt.to_document()
+    assert (
+        planned.snapshot_digest
+        != snapshot(
+            source,
+            "rubygems" if name == "github-packages" else "github-packages",
+        ).snapshot_digest
+    )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "actor",
+        "repository",
+        "selected-ref",
+        "control",
+        "workflow",
+        "request",
+        "run",
+        "destination",
+        "reference",
+        "model-purpose",
+        "target",
+    ],
+)
+def test_ruby_release_requires_exact_protected_current_bindings(change):
+    """Keep admission bound to the current request and registry."""
+    planned = snapshot(model("live-release"))
+    intent_changes = {
+        "actor": {"actor": "foreign"},
+        "repository": {"repository": "hcoona/foreign"},
+        "selected-ref": {
+            "selected_ref": "refs/heads/feature",
+            "workflow_ref": "refs/heads/feature",
+        },
+        "workflow": {
+            "workflow_path": (
+                ".github/workflows/workflow-delivery-v3-ruby-bootstrap.yml"
+            )
+        },
+        "request": {"request_id": "release-request:" + "c" * 64},
+        "run": {"workflow_run_id": 1000},
+        "target": {"target": "c" * 40, "workflow_sha": "c" * 40},
+    }
+    if change in intent_changes:
+        updates = {"intent": replace(planned.intent, **intent_changes[change])}
+    elif change == "control":
+        facts = admitted(
+            replace(context(purpose="live-release"), control="foreign-control")
+        )
+        source = RubyRepositoryModelSnapshot(
+            facts.manifest.context,
+            facts.result,
+            facts.request_reference,
+            facts.result_reference,
+        )
+        updates = {
+            "model": source,
+            "model_reference": reference(source.to_document()),
+        }
+    elif change == "destination":
+        updates = {"governance": governance("rubygems")}
+    elif change == "reference":
+        updates = {"model_reference": reference({})}
+    else:
+        source = model()
+        updates = {
+            "model": source,
+            "model_reference": reference(source.to_document()),
+        }
+    with pytest.raises(ValueError, match="Ruby"):
+        replace(planned, **updates)
+
+
+def test_ruby_release_requires_public_main_nbgv_facts():
+    """Reject private NBGV facts for live main admission."""
+    source = model("live-release")
+    raw = parse_canonical_json(source.provider.nbgv.raw_bytes)
+    raw["PublicRelease"] = False
+    provider = replace(
+        source.provider,
+        nbgv=RubyNbgvFacts(
+            canonicalize(raw), source.provider.nbgv.native_version
+        ),
+    )
+    changed = RubyRepositoryModelSnapshot(
+        source.context,
+        provider,
+        source.request_reference,
+        reference(provider.to_document()),
+    )
+    with pytest.raises(ValueError, match="public-main NBGV"):
+        snapshot(changed)
+
+
+def test_ruby_release_rejects_ci_artifact_and_ci_evidence(
+    qualified, ruby_integration_original
+):
+    """Neither bytes nor successful Evidence from CI provide Release lineage."""
+    planned, evidence, _, _ = qualified
+    _, ci_artifact, ci_distribution = ruby_integration_original
+    with pytest.raises(ValueError, match="current-build"):
+        qualify_ruby_release(
+            planned, ci_artifact, ci_distribution.content, consumer=consumer
+        )
+    ci_evidence = RubyCiEvidence(
+        planned.snapshot_digest,
+        evidence[0].definition,
+        evidence[0].artifact,
+        "passed",
+        evidence[0].detail,
+    )
+    with pytest.raises(ValueError, match="Release Evidence"):
+        RubyQualificationDecision(planned, (ci_evidence, evidence[1]))
+
+
+@pytest.mark.parametrize("count", [0, 1])
+def test_ruby_release_missing_obligations_hide_artifact(qualified, count):
+    """Incomplete qualification exposes no publication artifact."""
+    planned, evidence, _, _ = qualified
+    decision = RubyQualificationDecision(planned, evidence[:count])
+    assert decision.result == "incomplete"
+    with pytest.raises(ValueError, match="successful Qualification"):
+        _ = decision.artifact
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["exception", "artifact-digest", "witness-digest", "project-id", "version"],
+)
+def test_ruby_release_consumer_failure_cannot_expose_artifact(
+    qualified, failure
+):
+    """Retain consumer failure despite successful inspection."""
+    planned, _, artifact, distribution = qualified
+
+    def failed(current):
+        if failure == "exception":
+            message = "controlled consumer failure"
+            raise RuntimeError(message)
+        detail = consumer(current)
+        detail[failure] = "foreign"
+        return detail
+
+    evidence = qualify_ruby_release(
+        planned, artifact, distribution.content, consumer=failed
+    )
+    decision = RubyQualificationDecision(planned, evidence)
+    assert [e.result for e in evidence] == ["passed", "failed"]
+    assert decision.result == "failed"
+    assert parse_canonical_json(evidence[1].detail) == {
+        "error-kind": "RuntimeError" if failure == "exception" else "ValueError"
+    }
+    with pytest.raises(ValueError, match="successful Qualification"):
+        _ = decision.artifact
+
+
+@pytest.mark.parametrize(
+    "change", ["duplicate", "snapshot", "run", "different-build"]
+)
+def test_ruby_release_rejects_cross_attempt_or_conflicting_evidence(
+    qualified, change
+):
+    """All obligations must bind the same original in this exact Attempt."""
+    planned, evidence, artifact, _ = qualified
+    if change == "duplicate":
+        evidence = (*evidence, evidence[0])
+    elif change == "snapshot":
+        evidence = (
+            replace(evidence[0], snapshot_digest="sha256:" + "0" * 64),
+            evidence[1],
+        )
+    else:
+        if change == "run":
+            artifact = replace(
+                artifact,
+                transport=replace(artifact.transport, workflow_run_id=1000),
+            )
+        else:
+            artifact = replace(
+                artifact,
+                reference=replace(
+                    artifact.reference, payload_digest="sha256:" + "0" * 64
+                ),
+            )
+        evidence = (
+            replace(
+                evidence[0],
+                artifact=artifact,
+                detail=canonicalize(
+                    {"digest": artifact.reference.payload_digest}
+                ),
+            ),
+            evidence[1],
+        )
+    with pytest.raises(ValueError, match="Ruby"):
+        RubyQualificationDecision(planned, evidence)
+
+
+def test_ruby_release_records_roundtrip_replays_complete_decision(qualified):
+    """Strict imported predecessors reproduce only their own qualification."""
+    planned, evidence, artifact, _ = qualified
+    imported = ruby_qualification_snapshot_from_document(planned.to_document())
+    imported_evidence = tuple(
+        ruby_qualification_evidence_from_document(e.to_document())
+        for e in evidence
+    )
+    original = RubyQualificationDecision(planned, evidence)
+    admitted = admit_ruby_qualification_decision(
+        original.to_document(), imported, imported_evidence
+    )
+    assert admitted.artifact == artifact
+    assert admitted.result == "passed"
+    assert admitted.decision_digest == original.decision_digest
+    assert admitted.snapshot.intent.mode == "live"
+
+
+@pytest.mark.parametrize("record", ["snapshot", "evidence", "decision"])
+@pytest.mark.parametrize("change", ["schema", "extra", "outcome"])
+def test_ruby_release_importers_reject_foreign_or_tampered_records(
+    qualified, record, change
+):
+    """A foreign namespace, open field or tampered conclusion never imports."""
+    planned, evidence, _, _ = qualified
+    decision = RubyQualificationDecision(planned, evidence)
+    document = {
+        "snapshot": planned.to_document,
+        "evidence": evidence[0].to_document,
+        "decision": decision.to_document,
+    }[record]()
+    if change == "schema":
+        document["schema"] = "workflow-delivery/v3/ruby-ci-evidence"
+    elif change == "extra":
+        document["authority"] = "publication"
+    elif record == "snapshot":
+        document["obligations"] = []
+    else:
+        document["result"] = "incomplete"
+    parse = {
+        "snapshot": ruby_qualification_snapshot_from_document,
+        "evidence": ruby_qualification_evidence_from_document,
+        "decision": partial(
+            admit_ruby_qualification_decision,
+            snapshot=planned,
+            evidence=evidence,
+        ),
+    }[record]
+    with pytest.raises(ValueError, match="Ruby"):
+        parse(document)
+
+
+def test_ruby_release_consumer_timeout_retains_sanitized_failed_evidence(
+    monkeypatch,
+):
+    """Timeout preserves separate failed evidence without native execution."""
+    source = model("live-release")
+    planned = snapshot(source)
+    witness = source.build_request().witness
+    filename = f"hcoona-release-smoke-ruby-{witness.nbgv.native_version}.gem"
+    payload = b"modeled-inspected-original-for-timeout-boundary"
+    distribution = RubyDistribution(filename, payload, witness, b"{}")
+    artifact_ref = replace(
+        reference({}, 801, filename), payload_digest=distribution.digest
+    )
+    transport = ArtifactTransportIdentity(
+        artifact_ref.artifact_id,
+        "ruby-timeout-fixture",
+        artifact_ref.artifact_url,
+        artifact_ref.artifact_digest,
+        "build-ruby",
+        source.context.workflow_run_id,
+        source.context.run_attempt,
+    )
+    artifact = RubyArtifact(
+        filename, len(payload), witness, artifact_ref, transport
+    )
+    monkeypatch.setattr(
+        ruby_records, "inspect_ruby_distribution", lambda *_args: distribution
+    )
+    attempts = []
+
+    def timeout(current):
+        attempts.append(current.digest)
+        raise TimeoutExpired(
+            ["private-native-command"],
+            300,
+            output=b"private-native-stdout",
+            stderr=b"private-native-stderr",
+        )
+
+    evidence = qualify_ruby_release(
+        planned, artifact, payload, consumer=timeout
+    )
+    decision = RubyQualificationDecision(planned, evidence)
+    assert attempts == [distribution.digest]
+    assert [item.result for item in evidence] == ["passed", "failed"]
+    assert [item.definition for item in evidence] == [
+        "ruby/gem-contents-v1",
+        "ruby/gem-install-require-v1",
+    ]
+    assert parse_canonical_json(evidence[0].detail) == {
+        "digest": distribution.digest
+    }
+    assert parse_canonical_json(evidence[1].detail) == {
+        "error-kind": "TimeoutExpired"
+    }
+    assert decision.result == "failed"
+    documents = str([item.to_document() for item in evidence]) + str(
+        decision.to_document()
+    )
+    for sensitive in (
+        "private-native-command",
+        "private-native-stdout",
+        "private-native-stderr",
+    ):
+        assert sensitive not in documents
+
+    with pytest.raises(ValueError, match="successful Qualification"):
+        _ = decision.artifact
+
+
+@pytest.mark.parametrize("boundary", ["constructor", "import"])
+@pytest.mark.parametrize(
+    "detail",
+    [
+        {},
+        None,
+        [],
+        {"digest": None},
+        {"digest": True},
+        {"digest": "sha256:" + "f" * 64},
+        {"digest": "payload", "extra": True},
+        {"error-kind": "ValueError"},
+        "container-digest",
+        "extra-valid",
+    ],
+)
+def test_ruby_release_passed_content_detail_requires_original_digest(
+    qualified, boundary, detail
+):
+    """The passed flag cannot authorize absent or foreign inspection detail."""
+    _planned, evidence, _artifact, _original = qualified
+    item = evidence[0]
+    if detail == "container-digest":
+        assert (
+            item.artifact.artifact_digest
+            != item.artifact.reference.payload_digest
+        )
+        detail = {"digest": item.artifact.artifact_digest}
+    elif detail == "extra-valid":
+        detail = {
+            "digest": item.artifact.reference.payload_digest,
+            "extra": True,
+        }
+    with pytest.raises((ValueError, TypeError)):
+        _admit_detail(item, boundary, detail)
+
+
+@pytest.mark.parametrize("boundary", ["constructor", "import"])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "schema",
+        "artifact-digest",
+        "witness-digest",
+        "project-id",
+        "version",
+        "install-output",
+        "extra",
+        "empty",
+        "container-digest",
+    ],
+)
+def test_ruby_release_passed_consumer_detail_requires_closed_original_binding(
+    qualified, boundary, field
+):
+    """Admission validates every consumer field against the same original."""
+    _planned, evidence, artifact, _original = qualified
+    item = evidence[1]
+    valid = parse_canonical_json(item.detail)
+    if field == "empty":
+        invalid = [{}]
+    elif field == "extra":
+        invalid = [dict(valid, extra="private stdout")]
+    elif field == "container-digest":
+        assert artifact.artifact_digest != artifact.reference.payload_digest
+        invalid = [dict(valid, **{"artifact-digest": artifact.artifact_digest})]
+    else:
+        missing = dict(valid)
+        missing.pop(field)
+        invalid = [
+            missing,
+            dict(valid, **{field: None}),
+            dict(valid, **{field: True}),
+        ]
+        if field != "install-output":
+            invalid.append(dict(valid, **{field: "foreign"}))
+    for detail in invalid:
+        with pytest.raises((ValueError, TypeError)):
+            _admit_detail(item, boundary, detail)
+
+
+@pytest.mark.parametrize("boundary", ["constructor", "import"])
+@pytest.mark.parametrize("obligation", [0, 1])
+def test_ruby_release_failed_detail_requires_only_nonempty_error_kind(
+    qualified, boundary, obligation
+):
+    """Failed Evidence cannot carry success details or unsanitized payloads."""
+    _planned, evidence, _artifact, _original = qualified
+    item = evidence[obligation]
+    invalid = [
+        {},
+        None,
+        [],
+        {"error-kind": ""},
+        {"error-kind": None},
+        {"error-kind": True},
+        {"error-kind": 1},
+        {"error-kind": "ValueError", "stderr": "private output"},
+        parse_canonical_json(item.detail),
+    ]
+    for detail in invalid:
+        with pytest.raises((ValueError, TypeError)):
+            _admit_detail(item, boundary, detail, result="failed")
+
+
+def test_ruby_release_detail_accepts_empty_log_and_custom_sanitized_error(
+    qualified,
+):
+    """No output heuristic or speculative exception allowlist owns success."""
+    planned, evidence, artifact, _original = qualified
+    detail = parse_canonical_json(evidence[1].detail)
+    detail["install-output"] = ""
+    passed = replace(evidence[1], detail=canonicalize(detail))
+    imported = ruby_qualification_evidence_from_document(passed.to_document())
+    assert parse_canonical_json(imported.detail)["install-output"] == ""
+    assert (
+        RubyQualificationDecision(planned, (evidence[0], imported)).result
+        == "passed"
+    )
+    assert parse_canonical_json(evidence[0].detail) == {
+        "digest": artifact.reference.payload_digest
+    }
+    for obligation in (0, 1):
+        failed = replace(
+            evidence[obligation],
+            result="failed",
+            detail=canonicalize({"error-kind": "CustomConsumerFailure"}),
+        )
+        failed = ruby_qualification_evidence_from_document(failed.to_document())
+        assert parse_canonical_json(failed.detail) == {
+            "error-kind": "CustomConsumerFailure"
+        }
+        current = list(evidence)
+        current[obligation] = failed
+        outcome = RubyQualificationDecision(planned, tuple(current))
+        assert outcome.result == "failed"
+        with pytest.raises(ValueError, match="successful Qualification"):
+            _ = outcome.artifact
+
+
+@pytest.mark.parametrize("change", ["missing-output", "typed-output", "extra"])
+def test_ruby_release_malformed_consumer_output_retains_failed_evidence(
+    qualified, change
+):
+    """Producer shape failures become sanitized failure evidence."""
+    planned, _evidence, artifact, original = qualified
+
+    def malformed(current):
+        detail = consumer(current)
+        if change == "missing-output":
+            detail.pop("install-output")
+        elif change == "typed-output":
+            detail["install-output"] = True
+        else:
+            detail["private-output"] = "must not leak"
+        return detail
+
+    evidence = qualify_ruby_release(
+        planned, artifact, original.content, consumer=malformed
+    )
+    assert [item.result for item in evidence] == ["passed", "failed"]
+    assert parse_canonical_json(evidence[1].detail) == {
+        "error-kind": "TypeError" if change == "typed-output" else "ValueError"
+    }
+    outcome = RubyQualificationDecision(planned, evidence)
+    assert outcome.result == "failed"
+    with pytest.raises(ValueError, match="successful Qualification"):
+        _ = outcome.artifact
+
+
+def _admit_detail(item, boundary, detail, *, result="passed"):
+    """Send identical candidate facts through either public admission path."""
+    if boundary == "constructor":
+        return replace(item, result=result, detail=canonicalize(detail))
+    document = item.to_document()
+    document.update(result=result, detail=detail)
+    return ruby_qualification_evidence_from_document(document)

@@ -628,11 +628,13 @@ def test_catalog_command_emits_exact_static_catalog(
         "node/npm-package-v1",
         "dotnet/nuget-package-v1",
         "python/distribution-set-v1",
+        "ruby/gem-v1",
     }
     assert set(output["quality-presets"]) == {
         "node/hcoona-release-smoke-npm-v1",
         "dotnet/hcoona-release-smoke-github-packages-v1",
         "python/hcoona-release-smoke-python-v1",
+        "ruby/hcoona-release-smoke-ruby-v1",
     }
     assert set(output["destination-definitions"]) == {
         "npm/github-packages-hcoona-three-v1",
@@ -640,6 +642,8 @@ def test_catalog_command_emits_exact_static_catalog(
         "nuget/github-packages-hcoona-three-v1",
         "python/testpypi-v1",
         "python/pypi-v1",
+        "ruby/github-packages-v1",
+        "ruby/rubygems-v1",
     }
     build = output["build-definitions"]["python/distribution-set-v1"]
     assert build["operation"] == "python-distribution-set"

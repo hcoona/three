@@ -62,8 +62,10 @@ and [Ruby LLD](./hcoona-release-smoke-ruby-lld.md) define the minimal integratio
 The [source evidence](./research/ruby-smoke-evidence.md) preserves unverified
 GitHub duplicate behavior and RubyGems.org's conditional replay finding.
 The [migration order](./migration-strategy.md#ruby-smoke-delivery) and accepted
-[Wave](../../../../../docs/delivery-wave.md) route execution gates. Design is
-not implemented support, configured ownership or publication completion.
+[Wave](../../../../../docs/delivery-wave.md) route execution gates. The
+[implementation status](../README.md#ruby-build-and-qualification) records the
+build and qualification foundation and remaining integration boundaries. Design
+is not configured ownership, publication or acceptance evidence.
 
 ## Python Smoke Design
 

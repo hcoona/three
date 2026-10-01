@@ -104,6 +104,16 @@ type CatalogRecord = (
 
 BUILD_DEFINITIONS: Mapping[str, BuildDefinition] = MappingProxyType(
     {
+        "ruby/gem-v1": BuildDefinition(
+            logical_id="ruby/gem-v1",
+            ecosystem="ruby",
+            operation="gem-package",
+            implementation_id="ruby/gem-v1",
+            execution_class="target-execution/unprivileged-v1",
+            capability_requirements=(),
+            output_kinds=("ruby-gem",),
+            required_native_projections=("gemVersion",),
+        ),
         "python/distribution-set-v1": BuildDefinition(
             logical_id="python/distribution-set-v1",
             ecosystem="python",
@@ -141,6 +151,22 @@ QUALITY_DEFINITIONS: Mapping[str, QualityDefinition] = MappingProxyType(
     {
         definition.logical_id: definition
         for definition in (
+            QualityDefinition(
+                "ruby/gem-contents-v1",
+                "ruby-gem",
+                "gem-contents",
+                "ruby/gem-contents-v1",
+                "target-execution/unprivileged-v1",
+                (),
+            ),
+            QualityDefinition(
+                "ruby/gem-install-require-v1",
+                "ruby-gem",
+                "gem-install-require",
+                "ruby/gem-install-require-v1",
+                "target-execution/unprivileged-v1",
+                (),
+            ),
             QualityDefinition(
                 "python/distribution-contents-v1",
                 "python-distribution-set",
@@ -235,6 +261,10 @@ QUALITY_DEFINITIONS: Mapping[str, QualityDefinition] = MappingProxyType(
 
 QUALITY_PRESETS: Mapping[str, QualityPreset] = MappingProxyType(
     {
+        "ruby/hcoona-release-smoke-ruby-v1": QualityPreset(
+            logical_id="ruby/hcoona-release-smoke-ruby-v1",
+            required=("ruby/gem-contents-v1", "ruby/gem-install-require-v1"),
+        ),
         "python/hcoona-release-smoke-python-v1": QualityPreset(
             logical_id="python/hcoona-release-smoke-python-v1",
             required=(
@@ -264,6 +294,24 @@ DESTINATION_DEFINITIONS: Mapping[str, DestinationDefinition] = MappingProxyType(
     {
         definition.logical_id: definition
         for definition in (
+            DestinationDefinition(
+                "ruby/github-packages-v1",
+                "ruby",
+                "https://rubygems.pkg.github.com/hcoona",
+                ("buddy",),
+                "side-effect/privileged-v1",
+                ("github/packages-write-v1",),
+                "requires-ruby-governance-admission",
+            ),
+            DestinationDefinition(
+                "ruby/rubygems-v1",
+                "ruby",
+                "https://rubygems.org",
+                ("official",),
+                "side-effect/privileged-v1",
+                ("ruby/trusted-publishing-oidc-v1",),
+                "requires-ruby-governance-admission",
+            ),
             DestinationDefinition(
                 "python/testpypi-v1",
                 "python",
@@ -350,6 +398,14 @@ CAPABILITIES: Mapping[str, CapabilityDefinition] = MappingProxyType(
         definition.logical_id: definition
         for definition in (
             CapabilityDefinition(
+                logical_id="ruby/trusted-publishing-oidc-v1",
+                github_permissions=(
+                    ("contents", "read"),
+                    ("id-token", "write"),
+                ),
+                permits_mutation=True,
+            ),
+            CapabilityDefinition(
                 logical_id="python/trusted-publishing-oidc-v1",
                 github_permissions=(
                     ("contents", "read"),
@@ -394,6 +450,11 @@ CAPABILITIES: Mapping[str, CapabilityDefinition] = MappingProxyType(
 
 RELEASE_POLICIES: Mapping[str, ReleasePolicyRegistration] = MappingProxyType(
     {
+        "hcoona-release-smoke-ruby": ReleasePolicyRegistration(
+            logical_id="hcoona-release-smoke-ruby",
+            release_unit="hcoona-release-smoke-ruby",
+            path="eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml",
+        ),
         "hcoona-release-smoke-python": ReleasePolicyRegistration(
             logical_id="hcoona-release-smoke-python",
             release_unit="hcoona-release-smoke-python",

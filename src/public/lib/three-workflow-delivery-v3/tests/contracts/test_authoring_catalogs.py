@@ -354,11 +354,12 @@ def test_first_slice_authoring_accepts_exact_approved_one_output(
 
 
 def test_static_catalog_contains_exact_admitted_slice_contracts() -> None:
-    """Register the approved npm, NuGet and Python contract inventory."""
+    """Register the approved npm, NuGet, Python and Ruby inventory."""
     assert set(BUILD_DEFINITIONS) == {
         "node/npm-package-v1",
         "dotnet/nuget-package-v1",
         "python/distribution-set-v1",
+        "ruby/gem-v1",
     }
     assert set(QUALITY_DEFINITIONS) == {
         "node/project-build-v1",
@@ -372,11 +373,14 @@ def test_static_catalog_contains_exact_admitted_slice_contracts() -> None:
         "python/distribution-contents-v1",
         "python/wheel-install-import-v1",
         "python/sdist-build-install-import-v1",
+        "ruby/gem-contents-v1",
+        "ruby/gem-install-require-v1",
     }
     assert set(QUALITY_PRESETS) == {
         "node/hcoona-release-smoke-npm-v1",
         "dotnet/hcoona-release-smoke-github-packages-v1",
         "python/hcoona-release-smoke-python-v1",
+        "ruby/hcoona-release-smoke-ruby-v1",
     }
     assert set(DESTINATION_DEFINITIONS) == {
         "npm/github-packages-hcoona-three-v1",
@@ -384,6 +388,8 @@ def test_static_catalog_contains_exact_admitted_slice_contracts() -> None:
         "nuget/github-packages-hcoona-three-v1",
         "python/testpypi-v1",
         "python/pypi-v1",
+        "ruby/github-packages-v1",
+        "ruby/rubygems-v1",
     }
     assert set(EXECUTION_CLASSES) == {
         "control/read-only-v1",
@@ -398,11 +404,13 @@ def test_static_catalog_contains_exact_admitted_slice_contracts() -> None:
         "github/packages-write-v1",
         "npmjs/trusted-publishing-oidc-v1",
         "python/trusted-publishing-oidc-v1",
+        "ruby/trusted-publishing-oidc-v1",
     }
     assert set(RELEASE_POLICIES) == {
         "hcoona-release-smoke-npm",
         "hcoona-release-smoke-github-packages",
         "hcoona-release-smoke-python",
+        "hcoona-release-smoke-ruby",
     }
     assert RELEASE_POLICIES["hcoona-release-smoke-npm"].path == (
         FIRST_SLICE_POLICY_PATH
@@ -429,7 +437,7 @@ def test_catalog_definitions_are_data_only_and_canonically_stable() -> None:
 
     assert second == first
     assert catalog_digest() == (
-        "sha256:811f94bd780fa82cb4358d657271f7cec90a628cd4e10e75607955dd40f09aea"
+        "sha256:8347732ccc0ab807eef5a5ae0a6fcdf329da295ee1ca3eb17d4e2f05e45121b8"
     )
     definition_sections = (
         "build-definitions",
@@ -1348,9 +1356,10 @@ def test_npmjs_destination_uses_hypothetical_trusted_publishing_oidc() -> None:
         "github/packages-write-v1",
         "npmjs/trusted-publishing-oidc-v1",
         "python/trusted-publishing-oidc-v1",
+        "ruby/trusted-publishing-oidc-v1",
     }
     assert catalog_digest() == (
-        "sha256:811f94bd780fa82cb4358d657271f7cec90a628cd4e10e75607955dd40f09aea"
+        "sha256:8347732ccc0ab807eef5a5ae0a6fcdf329da295ee1ca3eb17d4e2f05e45121b8"
     )
 
     npmjs_capability = CAPABILITIES["npmjs/trusted-publishing-oidc-v1"]
@@ -1468,3 +1477,221 @@ def test_python_catalog_destinations_bind_independent_no_tag_profiles(
     assert selected["governance"].endswith(
         f"hcoona-release-smoke-python-{registry_name}.json"
     )
+
+
+def test_ruby_catalog_build_binds_one_original_and_two_required_checks() -> (
+    None
+):
+    """One unprivileged build and both checks bind the same original gem."""
+    build = BUILD_DEFINITIONS["ruby/gem-v1"]
+    assert asdict(build) == {
+        "logical_id": "ruby/gem-v1",
+        "ecosystem": "ruby",
+        "operation": "gem-package",
+        "implementation_id": "ruby/gem-v1",
+        "execution_class": "target-execution/unprivileged-v1",
+        "capability_requirements": (),
+        "output_kinds": ("ruby-gem",),
+        "required_native_projections": ("gemVersion",),
+    }
+    preset = QUALITY_PRESETS["ruby/hcoona-release-smoke-ruby-v1"]
+    assert preset.required == (
+        "ruby/gem-contents-v1",
+        "ruby/gem-install-require-v1",
+    )
+    assert preset.advisory == ()
+    assert tuple(
+        (
+            QUALITY_DEFINITIONS[key].subject,
+            QUALITY_DEFINITIONS[key].operation,
+            QUALITY_DEFINITIONS[key].implementation_id,
+            QUALITY_DEFINITIONS[key].execution_class,
+            QUALITY_DEFINITIONS[key].capability_requirements,
+        )
+        for key in preset.required
+    ) == (
+        (
+            "ruby-gem",
+            "gem-contents",
+            "ruby/gem-contents-v1",
+            "target-execution/unprivileged-v1",
+            (),
+        ),
+        (
+            "ruby-gem",
+            "gem-install-require",
+            "ruby/gem-install-require-v1",
+            "target-execution/unprivileged-v1",
+            (),
+        ),
+    )
+    product_root = REPO_ROOT / "src/public/lib/hcoona-release-smoke-ruby"
+    descriptor = load_release_unit(
+        product_root / "workflow-delivery.release-unit.yml"
+    )
+    assert descriptor.release_unit == "hcoona-release-smoke-ruby"
+    assert tuple(asdict(item) for item in descriptor.builds) == (
+        {
+            "build_id": "ruby-gem",
+            "definition": "ruby/gem-v1",
+            "entry_point": "hcoona-release-smoke-ruby.gemspec",
+            "outputs": (
+                {
+                    "output_id": "gem",
+                    "role": "primary-package",
+                    "kind": "ruby-gem",
+                },
+            ),
+        },
+    )
+    quality = load_quality_selection(
+        product_root / "workflow-delivery.quality.yml"
+    )
+    assert quality.preset_for("ruby") == ("ruby/hcoona-release-smoke-ruby-v1")
+
+
+@pytest.mark.parametrize(
+    ("destination", "channel", "registry", "capability", "suffix"),
+    [
+        (
+            "ruby/github-packages-v1",
+            "buddy",
+            "https://rubygems.pkg.github.com/hcoona",
+            ("github/packages-write-v1", "packages"),
+            "github-packages",
+        ),
+        (
+            "ruby/rubygems-v1",
+            "official",
+            "https://rubygems.org",
+            ("ruby/trusted-publishing-oidc-v1", "id-token"),
+            "rubygems",
+        ),
+    ],
+)
+def test_ruby_catalog_destinations_bind_independent_capabilities_and_governance(
+    destination: str,
+    channel: str,
+    registry: str,
+    capability: tuple[str, str],
+    suffix: str,
+) -> None:
+    """Bind each Ruby destination to its own capability and governance."""
+    capability_id, permission = capability
+    definition = DESTINATION_DEFINITIONS[destination]
+    assert asdict(definition) == {
+        "logical_id": destination,
+        "ecosystem": "ruby",
+        "registry": registry,
+        "supported_channels": (channel,),
+        "execution_class": "side-effect/privileged-v1",
+        "capability_requirements": (capability_id,),
+        "live_mutation_status": "requires-ruby-governance-admission",
+    }
+    assert asdict(CAPABILITIES[capability_id]) == {
+        "logical_id": capability_id,
+        "github_permissions": (("contents", "read"), (permission, "write")),
+        "permits_mutation": True,
+    }
+    registration = RELEASE_POLICIES["hcoona-release-smoke-ruby"]
+    assert asdict(registration) == {
+        "logical_id": "hcoona-release-smoke-ruby",
+        "release_unit": "hcoona-release-smoke-ruby",
+        "path": (
+            "eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml"
+        ),
+    }
+    policy = yaml.safe_load(
+        (REPO_ROOT / registration.path).read_text(encoding="utf-8")
+    )
+    assert set(policy) == {"schema", "release-unit", "quality", "channels"}
+    assert policy["schema"] == "workflow-delivery/v3/ruby-release-policy"
+    assert policy["release-unit"] == "hcoona-release-smoke-ruby"
+    assert policy["quality"] == [
+        "ruby/gem-contents-v1",
+        "ruby/gem-install-require-v1",
+    ]
+    assert set(policy["channels"]) == {"buddy", "official"}
+    assert policy["channels"][channel] == {
+        "destination": destination,
+        "governance": (
+            ".github/workflow-delivery/governance/"
+            f"hcoona-release-smoke-ruby-{suffix}.json"
+        ),
+    }
+
+
+def test_first_slice_authoring_accepts_ruby_at_registered_target_path(
+    tmp_path: Path,
+) -> None:
+    """Discover Ruby from immutable authoring while preserving npm selection."""
+    repo, _ = _first_slice_target(tmp_path)
+    ruby_path = Path("src/public/lib/hcoona-release-smoke-ruby")
+    descriptor_path = ruby_path / "workflow-delivery.release-unit.yml"
+    ruby_descriptor = (REPO_ROOT / descriptor_path).read_text(encoding="utf-8")
+    _write(repo / descriptor_path, ruby_descriptor)
+    _write(
+        repo / ruby_path / "hcoona-release-smoke-ruby.gemspec",
+        'raise "descriptor discovery must not evaluate target Ruby"\n',
+    )
+    target = _commit_all(repo)
+    _write(repo / descriptor_path, "invalid: changed-worktree\n")
+
+    discovered = discover_release_units(repo, target)
+    descriptor, quality, policy = load_first_slice_authoring(repo, target)
+
+    assert tuple(item.release_unit for item in discovered) == (
+        "hcoona-release-smoke-npm",
+        "hcoona-release-smoke-ruby",
+    )
+    assert discovered[1].builds[0].definition == "ruby/gem-v1"
+    assert discovered[1].path == descriptor_path.as_posix()
+    assert descriptor.release_unit == "hcoona-release-smoke-npm"
+    assert quality.preset_for("node") == "node/hcoona-release-smoke-npm-v1"
+    assert policy.release_unit == "hcoona-release-smoke-npm"
+
+
+@pytest.mark.parametrize(
+    ("directory", "unit", "message"),
+    [
+        (
+            "hcoona-release-smoke-ruby-other",
+            "hcoona-release-smoke-ruby-other",
+            "exactly one Release Unit descriptor",
+        ),
+        (
+            "hcoona-release-smoke-ruby-other",
+            "hcoona-release-smoke-ruby",
+            "exactly one Release Unit descriptor",
+        ),
+        (
+            "hcoona-release-smoke-ruby",
+            "hcoona-release-smoke-ruby-other",
+            "descriptor and policy identity mismatch",
+        ),
+    ],
+)
+def test_first_slice_authoring_rejects_ruby_sibling_or_identity_substitution(
+    tmp_path: Path,
+    directory: str,
+    unit: str,
+    message: str,
+) -> None:
+    """Ruby registration grants neither sibling scope nor identity aliases."""
+    repo, _ = _first_slice_target(tmp_path)
+    descriptor_path = (
+        REPO_ROOT
+        / "src/public/lib/hcoona-release-smoke-ruby"
+        / "workflow-delivery.release-unit.yml"
+    )
+    document = _yaml_document(descriptor_path.read_text(encoding="utf-8"))
+    document["release-unit"] = unit
+    product = repo / "src/public/lib" / directory
+    _write_yaml(product / "workflow-delivery.release-unit.yml", document)
+    _write(
+        product / "hcoona-release-smoke-ruby.gemspec", "# Never evaluated.\n"
+    )
+    target = _commit_all(repo)
+
+    with pytest.raises(ValueError, match=message):
+        load_first_slice_authoring(repo, target)
