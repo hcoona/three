@@ -266,7 +266,8 @@ Native registry read budget is at most 32 requests per operation, including
 preflight, before-action, post-success and final consumer reads; each response
 is bounded by its reviewed profile. One OIDC assertion and one exchange are
 allowed only for an action-bearing RubyGems.org operation. Admission/configuration
-inspection has its own finite concrete read budget. Stop on conflicting or
+inspection has finite per-invocation resource bounds, without a cumulative
+authorization ceiling for read-only checks. Stop on conflicting or
 unknown state, failed approval, expiry, profile drift or ambiguous effect.
 
 Persist sanitized original HTTP envelopes, immutable GitHub artifacts, native
@@ -350,8 +351,16 @@ immediately before dispatch; after dispatch require ancestry and relevant-path
 freshness, allowing unrelated main advancement. No separate ancestor-source or
 later-tooling selection is admitted for this bootstrap.
 
-The bootstrap retains its distinct stable workflow, one bootstrap slot per
-destination, selected Environment and first-project configuration source.
+The bootstrap retains its distinct stable workflow, selected Environment and
+first-project configuration source. GitHub Packages permits two distinct lifetime
+slots, including the spent original; RubyGems.org permits one. The additional
+GitHub slot is `github-packages-bootstrap02`. It requires the
+[protocol's exact predecessor binding](./ruby-operation-protocol.md#single-github-bootstrap-successor);
+it cannot replace, refund or re-enable `github-packages-bootstrap`. A successor
+ledger retains cumulative spending across both ledgers and leaves the original
+ledger immutable. All normal slots remain at most four per destination.
+Protected v2 envelope/ledger implementation and independent admission must
+precede enabling the new slot; a design amendment alone does not make it executable.
 Prove whole-project absence through the supported destination-specific read
 contract; a missing version or unavailable inventory is insufficient. Build and
 Qualification produce fresh current-run original bytes before action-bearing

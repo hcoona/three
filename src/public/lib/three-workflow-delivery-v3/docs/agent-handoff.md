@@ -45,32 +45,29 @@ contract coverage. Separate bootstrap/normal manual workflows now connect the
 hosted operation CLI, current-run artifact readbacks, destination-specific
 privileged jobs, strict terminal replay and independent remote consumption.
 The [operation protocol](./ruby-operation-protocol.md) owns concrete phase and
-transfer bounds. GitHub Packages has an independently inspected first-project
-configuration and one enabled bootstrap slot. The other nine slots remain null;
-RubyGems.org remains disabled. Fresh predispatch inspection, independent request
-admission and actual destination acceptance remain pending. Exact-request,
-independent-admission and durable reservation primitives are implemented, with
-Ruby configuration/control paths included in native version and Provider inputs.
-The isolated control reader now covers target ancestry and complete relevant
-input history, including newly added files and touch/revert, without freezing
-unrelated main advancement. Follow the [operation protocol](./ruby-operation-protocol.md) for
-configuration budgets and first-project binding. Candidate configuration,
-inspection/review validators and the separate RubyGems project observer do not
-establish actual resources or raw GitHub owner-inventory provenance. Configuration
-collectors, supervised transport and durable phase/send counters are implemented.
+transfer bounds. GitHub Packages retains independently inspected first-project configuration;
+all operation slots are disabled and both normal Governance sources remain blocked.
+The [owner disposition](https://github.com/hcoona/three/issues/954#issuecomment-5936150680)
+approves one additional GitHub bootstrap and no cumulative count ceiling for
+read-only checks. Follow the [successor protocol](./ruby-operation-protocol.md#single-github-bootstrap-successor)
+and [Ruby LLD](./hcoona-release-smoke-ruby-lld.md#bootstrap-request-binding):
+protected v2 envelope/ledger implementation, independent source/test review,
+activation, fresh native qualification and exact-request admission still precede
+execution. Preserve the failed first run, original campaign and spent reservation;
+no old request, artifact or Approval may be resumed or reused. The independently
+accepted phase-clock fix is delivered; the corrected external raw-basename caller
+still requires admission for its new exact request. Read-only checks retain finite
+per-invocation resource/completeness limits and original evidence, without a
+lifetime read quota or a new permission question solely for more reads.
+The original configuration expiry is `2026-10-08T03:39:53.109710Z` and is not renewed.
 The [accepted configuration inspection](https://github.com/hcoona/three/issues/954#issuecomment-5925550208)
-binds its original source and protocol observations. The current protocol
-separately bounds the INIT-CA-01 supplemental inspection. Configuration expires at
-`2026-10-08T03:39:53.109710Z`. The protected configuration records actual
-administrator bypass as enabled within the accepted sole-writer boundary.
-The external launch requires the existing resolved regular CA file; its prior
-local initialization failed before reservation or service effects. The protocol
-bounds one distinct INIT-CA-01 supplemental inspection for the corrected target;
-its concrete caller/plan and actual evidence still need independent admission.
-Preserve the stopped request, original completed inspection and unreserved
-campaign. Concrete external caller launch, exact-request admission, durable
-reservation and current-run Approval remain required; source activation grants
-no dispatch.
+binds historical source/protocol observations and actual administrator bypass as
+enabled within the accepted sole-writer boundary. Use the existing resolved
+regular CA file with unchanged trust bytes. The current control reader preserves
+full relevant history, including new files and touch/revert, while allowing
+unrelated main advancement. Implementation presence and prior inspections do not
+supply fresh controls, whole-project absence, independent admission or current-run
+Approval for the successor.
 Source presence and controlled-transport tests are not Live admission.
 GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without
