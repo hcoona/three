@@ -6,20 +6,22 @@ This record implements the configuration and first-project admission portion of
 [the Ruby LLD](./hcoona-release-smoke-ruby-lld.md#governance-and-first-project-protocol)
 under [Issue #954](https://github.com/hcoona/three/issues/954) and the accepted
 [Delivery Wave](../../../../../docs/delivery-wave.md). The V3 maintainer maintains
-it for configuration-validator authors, the forthcoming operator and independent
+it for configuration-validator authors, the operator and independent
 admission reviewers. Its distinct consumer is the concrete endpoint, phase and
 request-binding contract; the LLD owns architecture and the Wave owns authority.
 
-This is a **partial operation protocol**. The current source delivery contains
-candidate [first-project validators](../src/three_workflow_delivery_v3/release/ruby_configuration.py)
+This protocol bounds configuration and the hosted/external operation callers.
+The current source delivery contains [first-project validators](../src/three_workflow_delivery_v3/release/ruby_configuration.py)
 and a separate [RubyGems project observer](../src/three_workflow_delivery_v3/adapters/ruby_project.py).
 Their closed data contracts do not establish live configuration, source provenance,
 independent approval or an executable caller. Fixed GitHub control/package
 collectors, a supervised configuration transport and durable phase/send counters
-are implemented. The reviewed configuration operator, bootstrap/normal runtime
-assembly and final coupled budgets remain pending. All ten operation slots remain null; both normal Governance
-sources remain blocked. No configuration, account, registry, OIDC or dispatch
-effect follows from this partial delivery alone.
+are implemented. The hosted bootstrap/normal caller and its phase, job and maintained-action
+budgets are implemented below. The external caller contract fixes actual-run,
+artifact and approval budgets. Concrete callers still need their exact
+independently reviewed source, launch and before/after plans.
+All ten operation slots remain null; both normal Governance sources remain blocked. No configuration, account, registry, OIDC or dispatch
+effect follows from source or protocol delivery alone.
 
 GitHub Packages completion precedes RubyGems.org configuration/execution. Exact
 NBGV, reproducible original gems, current-run Qualification, Approval/Authorization
@@ -83,7 +85,7 @@ phase directories or journal entries, torn appends and inconsistent membership
 stop further use. Interrupted, failed or altered evidence cannot resume a phase
 or fund another.
 The [transport](../src/three_workflow_delivery_v3/platform/ruby_configuration_http.py)
-requires reserve/retain callbacks; the forthcoming operator must retain original
+requires reserve/retain callbacks; the operator must retain original
 responses before asking the ledger to complete a send, including responses that
 arrive after phase expiry. A late response cannot make an expired phase succeed.
 The [collector](../src/three_workflow_delivery_v3/platform/ruby_configuration_github.py)
@@ -158,10 +160,76 @@ Each destination has at most these three single-use mutation roles:
    expected HTTP 200 and exact created identity.
 3. Only if absent, `POST E/variables`, body
    `{"name":"WDV3_APPROVAL_ENVIRONMENT_MARKER","value":"<environment>/v1"}`,
-   expected HTTP 201. A reviewed correction to an existing marker instead uses
+   expected HTTP 201 with a JSON empty object `{}`. Validate the JSON media
+   type and schema; an empty HTTP body is not this response. A reviewed
+   correction to an existing marker instead uses
    `PATCH E/variables/WDV3_APPROVAL_ENVIRONMENT_MARKER`, body
    `{"value":"<environment>/v1"}`, expected HTTP 204. Create and update share
    this one role.
+
+### Exact M01 Read-Only Continuation
+
+The original GitHub configuration campaign's marker-create request received
+documented HTTP 201 and `{}`, but its caller incorrectly required an empty
+body. The original failed receipt and incomplete phase remain unchanged;
+the affirmative service response does not establish current marker value or
+ready configuration. The corrected classifier accepts only a JSON empty
+object for create 201 and retains no-body handling for update 204.
+
+The protected [M01 acknowledgement](../src/three_workflow_delivery_v3/release/ruby_configuration_continuation.py)
+addresses only the exact independently disposed plan, failed records and
+five-phase original journal prefix pinned in its source. It is not a general
+failed-phase recovery mechanism. The normal ledger entry still rejects every
+incomplete prior phase. An explicit acknowledgement permits the original
+unused GitHub read phases below, using the same ledger, phase reservations,
+pre-send accounting and endpoint limits. All three writes remain spent.
+
+An independently reviewed canonical
+`workflow-delivery/v3/ruby-configuration-m01-continuation-v1` acknowledgement
+must exist at the original ledger's sibling
+`<ledger-name>.m01-continuation.json`. Its exact fields are `schema`,
+`plan-digest`, `failed-phase-digest`, `failed-request-digest`,
+`failed-response-digest`, `failed-receipt-digest`, `original-journal-digest`,
+`source-commit`, `caller-digest`, `protocol-digest`, `reviewer`, `author`,
+`reviewed-at`, `carrier` and `verdict`. The original evidence hashes are fixed
+to this incident, while the three corrected source identities bind the clean
+protected descendant checkout, corrected external caller and this protocol.
+The original plan's source, caller, protocol, identity and expiry are never
+rewritten. The corrected caller verifies original caller bytes and the
+original protocol in Git before checking its corrected source/module lineage.
+
+The accepted review follows the retained failure, precedes current time and
+original plan expiry, and cites the governing Issue 954 comment. Author and
+reviewer differ; independent provenance remains a procedural gate, not an
+inference from supplied strings or hashes. The separate external M01 caller
+has no initialization or mutation command. Preserve the original caller bytes
+for source lineage; do not launch that old caller to bypass the failed phase.
+
+The first new phase is `post-configuration-controls`, at most 32 reads. Its
+existing variables inventory establishes marker readback as part of complete
+control inspection; no preliminary diagnostic allowance is added. Independently
+accept those actual originals before later activity. The remaining eligible
+original read phases are `bootstrap-controls` (32), `bootstrap-inventory` (10),
+`bootstrap-main` (1), `postbootstrap-controls` (32),
+`postbootstrap-package` (1), and each original normal01 through normal04 slot's
+`controls` (32), `package` (1) and `main` (1). Their existing purposes, separate
+command admissions, protected-target freshness and independent gates remain.
+These reads cannot activate an operation slot or authorize publication.
+
+Each new phase records the same `continuation-digest` in its journal-bound
+phase identity. The original failed files, original response, plan, journal
+prefix and fixed acknowledgement bytes are rechecked before every active
+send, receipt and finish. Every other prior phase must be fully complete;
+another partial or failed phase stops continuation. Missing or changed
+acknowledgement/evidence cannot be recreated. Completed or started phases
+cannot be reopened, and ordinary GET-only phase validation forbids mutations.
+
+Keep the original plan's absolute expiry and each read phase's at-most-30-minute
+deadline. Do not relabel or complete marker-write, renew the plan, reset a
+counter, create another ledger, transfer quota or repeat any write. A missing,
+mismatched or ambiguous control stops without a corrective write allowance.
+Protected correction delivery and independently reviewed concrete source,
+acknowledgement and read-phase admission must precede actual continuation.
 
 Persist intent, ordinal and exact method/path/body digest before sending.
 Independently verify each definitive response before the next mutation; a failed
@@ -191,9 +259,9 @@ native index cannot substitute.
 Run this inventory once during initial configuration and once during bootstrap
 predispatch inspection, each with its own ten-page allocation. Initial absence
 is preparation; only fresh independently admitted predispatch evidence supports
-the request. The owner credential stays local. The future collector must prove
-raw response/principal/pagination provenance: the current screened-fact validators
-do not implement this observer or establish inventory completeness.
+the request. The owner credential stays local. The collector and reviewed caller must retain and join raw response, principal
+and pagination provenance; screened-fact validators alone do not establish
+inventory completeness.
 
 ### RubyGems.org
 
@@ -385,17 +453,209 @@ Any failure, exhausted cap or incomplete inventory stops its phase. Later
 read-only diagnosis or scoped correction requires a concrete finite independent
 protocol review under the existing Wave; it cannot refill these allocations.
 
+## Hosted Operation Caller
+
+The separate bootstrap and normal workflows invoke
+`three_workflow_delivery_v3.ruby_operation_cli`. The request input contains exactly
+`request`, `review`, `admission`, `reservation` and `inspection`; normal inspection
+is null. The native request job adds its actual run join and admission time.
+The sole operator establishes independent reviewer provenance and separately
+joins that same actual run to its durable reservation. A digest or different
+reviewer string cannot establish independence.
+
+Provider, Build and qualification precede registry access. Every cross-job edge
+uses explicit current-run artifact IDs and fixed role/producer bindings. Each
+raw upload is downloaded by its returned ID and checked before downstream use;
+missing IDs or required files stop. Authorization and mutation-marker readbacks
+precede credential acquisition. Publisher jobs are distinct for each destination:
+GitHub has package write without OIDC write, and RubyGems has OIDC write without
+package write. The parent writer owns both exchange and upload credentials.
+Exact-satisfied normal publication skips both privileged jobs. Strict domain
+replay determines the terminal record; a separate unprivileged job downloads
+and compares the remote original and runs the clean consumer. Neither record
+claims the independent audit's verdict.
+
+Effect jobs explicitly initialize their shared local GitHub spending history.
+Each immutable uploaded phase claim initializes its registry history once.
+Separate durable membership binds actual run, attempt, job, path and every
+ordinal digest. Readers never create missing histories. Missing whole or partial
+history, aliases and interrupted writes stop before another send. CLI processes
+in one job share the same direct-read history; registry readers cannot reuse an
+ordinal. Fixed phase ownership and the run-attempt-one boundary prevent reuse
+across jobs/reruns. These mechanisms do not authorize recovery.
+
+The hosted HTTPS supervisor caps the complete request, including DNS, TLS,
+headers, body and private pipe reception, at 30 seconds and the phase deadline.
+Child and receiver cleanup each have a five-second cap. It performs raw HTTP in
+a POSIX child while the parent retains writer credential identity. Redirects,
+proxies and retries remain disabled. Registry partitions stay 3/3/20/3/3, with
+the RubyGems bootstrap eligibility operator debit included; native OIDC adds at
+most one request outside those registry partitions. Jobs are capped at 30 minutes,
+outer steps at ten minutes and input checks at one minute. Each phase expires
+within 30 minutes and the request's absolute expiry.
+
+Only preparation, selected publisher, finalizer and final consumer jobs can
+perform direct GitHub reads, sharing a cap of 128 per job across their CLI stages.
+Preparation/consumer read repository, main and collaborator controls; publisher
+also reads the exact run, approval history, exact target/Environment deployments
+and statuses. Lists allow at most five pages of 100 within the same cap.
+Finalizer uses direct controls only for normal zero-action freshness. Artifact
+service operations use the pinned maintained actions, without a custom REST
+artifact-discovery client.
+
+The complete successful path bounds below count checkout invocations C, raw
+uploads U, download invocations D and selected artifact IDs N summed over those
+downloads. Every upload has a separate one-ID download/readback. Destination
+publisher branches are mutually exclusive; failed paths terminate subsets.
+
+| Path               |   C |   U |   D | Sum N | Incoming IDs by job             |
+| ------------------ | --: | --: | --: | ----: | ------------------------------- |
+| Bootstrap          |  10 |  23 |  32 |    96 | 0, 1, 2, 3, 4, 6, 7, 12, 18, 20 |
+| Normal action      |  10 |  28 |  37 |   123 | 0, 2, 3, 5, 6, 8, 9, 15, 22, 25 |
+| Normal zero-action |   9 |  22 |  30 |    87 | 0, 2, 3, 5, 6, 8, 9, 13, 19     |
+
+For the pinned [checkout fetch implementation][ruby-checkout-source],
+[raw upload implementation][ruby-upload-source] and
+[download implementation][ruby-download-source], download logical RPCs are bounded by
+D + 2 Sum N, with at most five attempts per RPC and five stream attempts per
+selected ID. Upload uses 2U logical RPCs with at most five attempts each and
+2U block/block-list operations with at most four attempts each, for stable
+nonempty raw files at most 2 MiB. Upload concurrency is one and its no-progress
+timeout is 60 seconds. Checkout permits at most 6C fetch process starts.
+These operation classes are not a total wire-request or downloaded-byte bound.
+Action service buffers, redirects and retry internals retain their pinned limits;
+local payload validation is not a streaming network cap.
+
+Freshness guards are separate from action checkout. Bootstrap has one preparation,
+four publisher and one consumer guard, each with one isolated control Git read.
+Normal action has the same guard counts, each with two isolated reads for the
+operation envelope and Governance. Normal zero-action has one preparation,
+one finalizer and one consumer guard, each with two reads. Every isolated read
+uses one `ls-remote` and one full fetch plus bounded local validation; each Git
+subprocess has a 120-second timeout. Full relevant history includes touch/revert;
+unrelated main advancement is permitted after dispatch.
+
+## External Operation Caller
+
+The sole operator uses a separately retained, independently reviewed caller with
+explicit `initialize`, `preflight`, `reserve`, `dispatch`, `discover`,
+`prepare-review`, `approve`, `terminal` and `complete` commands. No command chains
+mutation stages or supplies its own independent admission. The exact source,
+interpreter, isolated launch, TLS trust, clean protected target/tree, protocol,
+configuration plan, request, admission and finite budget must be bound before
+execution. Imported control modules resolve under that exact target checkout.
+Development overlays are not launch sources.
+
+The request's `caller-digest` binds the external source and
+`github-budget-digest` binds its complete canonical launch manifest. Schema
+`workflow-delivery/v3/ruby-external-budget-v1` contains only `schema`,
+`allocations`, `root`, `directory`, `operation-ledger`,
+`configuration-plan-digest`, `interpreter-digest`, `independent-reviewer`,
+`required-checks`, `launch`, `storage-origin-policy`, `poll-spacing-seconds`,
+`stage-seconds`, `tls-cafile` and `tls-cafile-digest`. Admission fixes absolute
+source/private-state paths, exact required check names and app IDs, and the
+`[interpreter, "-I", caller]` launch. Existing verified system trust is selected
+process-locally; no certificate bypass or host trust change is included.
+
+Initialize private state once, retaining an independent sibling initialization
+anchor and append-before-file membership journal. Verify exact immutable input,
+stage and send membership before each command. A missing directory/member,
+alias, torn append, incomplete stage or repeated command stops without
+reconstruction, refill or resume. The campaign operation ledger reserves the
+slot before the existing configuration caller's unique predispatch main read.
+Dispatch reuses that completed evidence and receipt; it performs no extra main
+read and must meet the existing 60-second and bootstrap dispatch-by limits.
+The RubyGems caller requires the campaign's audited GitHub completion.
+
+Preflight verifies the actual admitted owner and complete required target checks.
+Dispatch sends once; a definitive HTTP 204 response does not itself identify a
+run. Discovery requires exact workflow, event, target, main, actor and native
+attempt-one identity with an unambiguous inventory. Download the explicit-ID
+current-run operation original and join the complete request, admission,
+inspection and reservation before recording the actual native run locally.
+
+Preparation retains the qualified original and complete approval predecessors
+for separate review. The reviewer examines actual originals, authority,
+reservation, expiry and predecessor joins before authoring the approval carrier.
+Approval rechecks the actual run and exact pending Environment and sends once;
+only a definitive HTTP 200 deployment response matching target and Environment
+is accepted. Terminal extraction retains actual run status and available exact
+originals, including failed or incomplete evidence. Local normal completion
+requires a separate accepted terminal audit and strict domain/original/consumer
+replay; bootstrap never completes a destination. Native job success or the
+caller's structural checks cannot supply an independent audit.
+
+Approval and terminal review carriers use the respective schemas
+`workflow-delivery/v3/ruby-external-approval-review-v1` and
+`workflow-delivery/v3/ruby-external-terminal-review-v1`, with exactly `schema`,
+`request-digest`, `run-id`, `target`, `manifest-digest`, `reviewer`, `author`,
+`reviewed-at`, `carrier` and `verdict`. Verdict is `accepted`, the reviewer is
+independently admitted and differs from the author, and the governing carrier is
+an Issue #954 comment. Review follows actual manifest preparation and precedes
+request expiry. The sole-operator procedure must establish genuine authorship;
+unequal strings and supplied hashes do not do so.
+
+### Direct External Calls
+
+Let R be `/repos/hcoona/three`, W the bound workflow, T the exact target, I the
+verified run and A an explicit current-run artifact ID. Caps are per request,
+nontransferable and include failed sends.
+
+| Category            | Method and endpoint                                                                                 |     Cap |
+| ------------------- | --------------------------------------------------------------------------------------------------- | ------: |
+| Principal           | GET `/user`                                                                                         |       1 |
+| Required checks     | GET `R/commits/T/check-runs?filter=latest&per_page=100&page=n`                                      | 5 pages |
+| Dispatch            | POST `R/actions/workflows/W/dispatches`                                                             |       1 |
+| Run discovery       | GET `R/actions/workflows/W/runs?event=workflow_dispatch&branch=main&head_sha=T&per_page=100&page=1` |      10 |
+| Run status          | GET `R/actions/runs/I`                                                                              |     152 |
+| Pending Environment | GET `R/actions/runs/I/pending_deployments`                                                          |      32 |
+| Artifact inventory  | GET `R/actions/runs/I/artifacts?per_page=100&page=1`                                                |      42 |
+| Artifact metadata   | GET `R/actions/artifacts/A`                                                                         |      28 |
+| Raw artifact ticket | GET `R/actions/artifacts/A/zip`                                                                     |      28 |
+| Artifact body       | GET one supported signed storage URL without credentials                                            |      28 |
+| Approval            | POST `R/actions/runs/I/pending_deployments`                                                         |       1 |
+
+The ceiling is 300 GitHub API sends (298 reads and two effects) plus 28 storage
+GETs, totaling 328 direct sends per request. Discovery permits ten observations,
+preparation thirty and terminal 120, at least ten seconds apart. Each stage has
+an original deadline of at most 1,800 seconds, capped by request expiry. Run lists require complete inventories of at most 100 and artifact lists at
+most 28; unknown pagination stops. Unused category headroom cannot transfer. The existing 549 configuration
+reads, ten predispatch main reads within that allocation, hosted action bounds,
+per-job 128 REST reads and registry partitions remain separate and are not
+counted again here.
+
+Hosted raw uploads use `archive:false`: despite the REST route name `/zip`, the
+caller accepts exact raw bytes, without archive inspection or transformation.
+Accept direct HTTP 200 or one HTTP 302 to an HTTPS Azure Blob host matching
+`[a-z0-9]+.blob.core.windows.net`, with no userinfo, nondefault port or fragment.
+The storage request receives no owner Authorization; a second redirect or unknown
+origin stops. Require immutable service SHA-256, size, current run/head/main,
+role/name, unexpired metadata, unique ID and closed basename to match. Each
+original is acquired once; no download-all exists. Changed service behavior
+requires revalidation, not a broader redirect policy.
+
+Each direct HTTPS send uses verified TLS and a complete 30-second supervisor,
+including DNS, headers, body and private pipe reception, capped by the current
+stage/request deadline. Child and receiver cleanup each have a five-second cap.
+Bodies are limited to 2 MiB and retained headers to 64 KiB. No proxy, retry or TLS
+downgrade is supported. Persist intent before send and retain original safe body
+bytes, selected headers, status, times and digests privately. Signed storage
+locations remain in memory; retain only their digests. Reflected credentials or
+signed URLs stop before persistence. Private originals require screening before
+public disclosure. Failures preserve spending and evidence and never authorize a
+second effect.
+
 ## Remaining Execution Closure
 
-Before configuration, complete and independently review the concrete composition
-of collection/counter schemas, durable pre-send spending and bounded transport/caller,
-actual supported principal/access, full raw evidence provenance and concrete
-before/after plan. Before any operation, close the final runtime DAG and trusted
-caller: per-job controls, actual-run/check/artifact discovery, checkout count C,
-raw uploads U, downloads D and each selected-artifact count N, including upload
-readback and inspection/review edges. Count the 549 reads once and the five
-predispatch main reads per destination only once. Mechanically join cross-process
-bootstrap spending without resetting the 32-send envelope.
+Before configuration, independently review the concrete composition of the
+collection/counter schemas, durable pre-send spending and bounded transport/caller,
+actual supported principal/access, full raw evidence provenance and exact
+before/after plan. Before any operation, independently admit the exact external
+sole-operator source, launch and fixed budget manifest described above. Join its
+actual-run reservation to the hosted evidence. Count the 549 configuration reads
+and five predispatch main reads per destination only once. Hosted cross-process
+spending retains the 32-send registry envelope; operator/API/action classes remain
+separate bounds, not a universal network counter.
 
 Use maintained action bounds with finite step/job deadlines; transfer counts or
 artifact size ceilings are not total wire-request/download-byte guarantees.
@@ -426,3 +686,7 @@ reviewer recheck the relied-on deployed contract against these source findings.
 Unknown behavior stops admission pending reviewed reconciliation. Final concrete
 operator review is the fallback review event; immutable pins do not by themselves
 establish current live configuration or deployed implementation identity.
+
+[ruby-checkout-source]: https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/src/git-source-provider.ts#L180
+[ruby-upload-source]: https://github.com/actions/upload-artifact/blob/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/dist/upload/index.js#L124229
+[ruby-download-source]: https://github.com/actions/download-artifact/blob/3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/dist/index.js#L126390

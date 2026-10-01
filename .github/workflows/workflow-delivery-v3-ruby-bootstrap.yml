@@ -1,4 +1,4 @@
-name: Workflow Delivery v3 Ruby normal
+name: Workflow Delivery v3 Ruby bootstrap
 'on':
   workflow_dispatch:
     inputs:
@@ -57,12 +57,6 @@ jobs:
       with:
         role: operation
         path: .wdv3/operation.json
-    - name: Persist and read back provider-request
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: provider-request
-        path: .wdv3/provider-request.json
     - name: Export
       run: python -m three_workflow_delivery_v3.ruby_operation_cli export
       timeout-minutes: 10
@@ -75,7 +69,7 @@ jobs:
       environment: ${{ steps.request.outputs.environment }}
     if: github.event_name == 'workflow_dispatch' && github.repository == 'hcoona/three' && github.ref == 'refs/heads/main'
       && github.actor == 'hcoona' && github.actor_id == '712433' && github.run_attempt == 1
-  discover-ruby:
+  provide-ruby-bootstrap:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -137,16 +131,16 @@ jobs:
       references: ${{ steps.edges.outputs.references }}
       artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
     needs: request-ruby-operation
-  plan-ruby-release:
+  plan-ruby-bootstrap:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
     env:
-      WDV3_REFERENCES: ${{ needs.discover-ruby.outputs.references && needs.discover-ruby.outputs.artifact-ids &&
-        needs.discover-ruby.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.discover-ruby.outputs.references && needs.discover-ruby.outputs.artifact-ids
-        && needs.discover-ruby.outputs.artifact-ids || '' }}
+      WDV3_REFERENCES: ${{ needs.provide-ruby-bootstrap.outputs.references && needs.provide-ruby-bootstrap.outputs.artifact-ids
+        && needs.provide-ruby-bootstrap.outputs.references || '{}' }}
+      WDV3_ARTIFACT_IDS: ${{ needs.provide-ruby-bootstrap.outputs.references && needs.provide-ruby-bootstrap.outputs.artifact-ids
+        && needs.provide-ruby-bootstrap.outputs.artifact-ids || '' }}
     steps:
     - name: Check out exact native target without credentials
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -174,15 +168,6 @@ jobs:
         merge-multiple: true
         skip-decompress: true
         digest-mismatch: error
-    - name: Compile
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli compile --output .wdv3/model.json
-      timeout-minutes: 10
-    - name: Persist and read back model
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: model
-        path: .wdv3/model.json
     - name: Plan
       run: python -m three_workflow_delivery_v3.ruby_operation_cli plan --output .wdv3/plan.json
       timeout-minutes: 10
@@ -200,17 +185,17 @@ jobs:
     outputs:
       references: ${{ steps.edges.outputs.references }}
       artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs: discover-ruby
+    needs: provide-ruby-bootstrap
   build-ruby:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
     env:
-      WDV3_REFERENCES: ${{ needs.plan-ruby-release.outputs.references && needs.plan-ruby-release.outputs.artifact-ids
-        && needs.plan-ruby-release.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.plan-ruby-release.outputs.references && needs.plan-ruby-release.outputs.artifact-ids
-        && needs.plan-ruby-release.outputs.artifact-ids || '' }}
+      WDV3_REFERENCES: ${{ needs.plan-ruby-bootstrap.outputs.references && needs.plan-ruby-bootstrap.outputs.artifact-ids
+        && needs.plan-ruby-bootstrap.outputs.references || '{}' }}
+      WDV3_ARTIFACT_IDS: ${{ needs.plan-ruby-bootstrap.outputs.references && needs.plan-ruby-bootstrap.outputs.artifact-ids
+        && needs.plan-ruby-bootstrap.outputs.artifact-ids || '' }}
     steps:
     - name: Check out exact native target without credentials
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -256,8 +241,8 @@ jobs:
     outputs:
       references: ${{ steps.edges.outputs.references }}
       artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs: plan-ruby-release
-  qualify-ruby-release:
+    needs: plan-ruby-bootstrap
+  qualify-ruby-bootstrap:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -321,16 +306,16 @@ jobs:
       references: ${{ steps.edges.outputs.references }}
       artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
     needs: build-ruby
-  finalize-ruby-qualification:
+  finalize-ruby-bootstrap-qualification:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
     env:
-      WDV3_REFERENCES: ${{ needs.qualify-ruby-release.outputs.references && needs.qualify-ruby-release.outputs.artifact-ids
-        && needs.qualify-ruby-release.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.qualify-ruby-release.outputs.references && needs.qualify-ruby-release.outputs.artifact-ids
-        && needs.qualify-ruby-release.outputs.artifact-ids || '' }}
+      WDV3_REFERENCES: ${{ needs.qualify-ruby-bootstrap.outputs.references && needs.qualify-ruby-bootstrap.outputs.artifact-ids
+        && needs.qualify-ruby-bootstrap.outputs.references || '{}' }}
+      WDV3_ARTIFACT_IDS: ${{ needs.qualify-ruby-bootstrap.outputs.references && needs.qualify-ruby-bootstrap.outputs.artifact-ids
+        && needs.qualify-ruby-bootstrap.outputs.artifact-ids || '' }}
     steps:
     - name: Check out exact native target without credentials
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -382,8 +367,8 @@ jobs:
       references: ${{ steps.edges.outputs.references }}
       artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
       qualification-result: ${{ steps.qualification.outputs.qualification-result }}
-    needs: qualify-ruby-release
-  prepare-ruby-publication:
+    needs: qualify-ruby-bootstrap
+  prepare-ruby-bootstrap-publication:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions: &id001
@@ -392,10 +377,10 @@ jobs:
       deployments: read
       packages: read
     env:
-      WDV3_REFERENCES: ${{ needs.finalize-ruby-qualification.outputs.references && needs.finalize-ruby-qualification.outputs.artifact-ids
-        && needs.finalize-ruby-qualification.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.finalize-ruby-qualification.outputs.references && needs.finalize-ruby-qualification.outputs.artifact-ids
-        && needs.finalize-ruby-qualification.outputs.artifact-ids || '' }}
+      WDV3_REFERENCES: ${{ needs.finalize-ruby-bootstrap-qualification.outputs.references && needs.finalize-ruby-bootstrap-qualification.outputs.artifact-ids
+        && needs.finalize-ruby-bootstrap-qualification.outputs.references || '{}' }}
+      WDV3_ARTIFACT_IDS: ${{ needs.finalize-ruby-bootstrap-qualification.outputs.references && needs.finalize-ruby-bootstrap-qualification.outputs.artifact-ids
+        && needs.finalize-ruby-bootstrap-qualification.outputs.artifact-ids || '' }}
       GITHUB_TOKEN: ${{ github.token }}
     steps:
     - name: Check out exact native target without credentials
@@ -437,46 +422,32 @@ jobs:
         role: phase-eligibility
         path: .wdv3/phase-eligibility.json
     - name: Observe
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli observe --output .wdv3/observation.json
+      run: python -m three_workflow_delivery_v3.ruby_operation_cli observe --output .wdv3/absence.json
       timeout-minutes: 10
-    - name: Persist and read back observation
+    - name: Persist and read back absence
       uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
       timeout-minutes: 10
       with:
-        role: observation
-        path: .wdv3/observation.json
-    - name: Publication
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli publication --output .wdv3/publication.json
-      timeout-minutes: 10
-      id: publication
-    - name: Persist and read back publication
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: publication
-        path: .wdv3/publication.json
+        role: absence
+        path: .wdv3/absence.json
     - name: Summary
       run: python -m three_workflow_delivery_v3.ruby_operation_cli summary --output .wdv3/approval-summary.txt
       timeout-minutes: 10
-      if: steps.publication.outputs.action-required == 'true'
     - name: Persist and read back summary
       uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
       timeout-minutes: 10
       with:
         role: summary
         path: .wdv3/approval-summary.txt
-      if: steps.publication.outputs.action-required == 'true'
     - name: Bundle
       run: python -m three_workflow_delivery_v3.ruby_operation_cli bundle --output .wdv3/approval-bundle.json
       timeout-minutes: 10
-      if: steps.publication.outputs.action-required == 'true'
     - name: Persist and read back bundle
       uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
       timeout-minutes: 10
       with:
         role: bundle
         path: .wdv3/approval-bundle.json
-      if: steps.publication.outputs.action-required == 'true'
     - name: Audit
       run: python -m three_workflow_delivery_v3.ruby_operation_cli audit --output .wdv3/audit-prepare.json
       timeout-minutes: 10
@@ -497,11 +468,11 @@ jobs:
     outputs:
       references: ${{ steps.edges.outputs.references }}
       artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-      action-required: ${{ steps.publication.outputs.action-required }}
+      action-required: 'true'
     needs:
     - request-ruby-operation
-    - finalize-ruby-qualification
-  publish-ruby-github-packages:
+    - finalize-ruby-bootstrap-qualification
+  publish-ruby-bootstrap-github-packages:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -510,10 +481,10 @@ jobs:
       deployments: read
       packages: write
     env:
-      WDV3_REFERENCES: ${{ needs.prepare-ruby-publication.outputs.references && needs.prepare-ruby-publication.outputs.artifact-ids
-        && needs.prepare-ruby-publication.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.prepare-ruby-publication.outputs.references && needs.prepare-ruby-publication.outputs.artifact-ids
-        && needs.prepare-ruby-publication.outputs.artifact-ids || '' }}
+      WDV3_REFERENCES: ${{ needs.prepare-ruby-bootstrap-publication.outputs.references && needs.prepare-ruby-bootstrap-publication.outputs.artifact-ids
+        && needs.prepare-ruby-bootstrap-publication.outputs.references || '{}' }}
+      WDV3_ARTIFACT_IDS: ${{ needs.prepare-ruby-bootstrap-publication.outputs.references && needs.prepare-ruby-bootstrap-publication.outputs.artifact-ids
+        && needs.prepare-ruby-bootstrap-publication.outputs.artifact-ids || '' }}
       GITHUB_TOKEN: ${{ github.token }}
       WDV3_ENVIRONMENT_SENTINEL: ${{ vars.WDV3_APPROVAL_ENVIRONMENT_MARKER }}
     steps:
@@ -567,12 +538,6 @@ jobs:
     - name: Marker
       run: python -m three_workflow_delivery_v3.ruby_operation_cli marker --output .wdv3/mutation-marker.json
       timeout-minutes: 10
-    - name: Persist and read back fresh-governance
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: fresh-governance
-        path: .wdv3/fresh-governance.json
     - name: Persist and read back marker
       uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
       timeout-minutes: 10
@@ -627,12 +592,12 @@ jobs:
       terminal-reference: ${{ steps.edges.outputs.terminal-reference }}
     needs:
     - request-ruby-operation
-    - prepare-ruby-publication
-    if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
+    - prepare-ruby-bootstrap-publication
+    if: needs.prepare-ruby-bootstrap-publication.result == 'success' && needs.prepare-ruby-bootstrap-publication.outputs.action-required
       == 'true' && needs.request-ruby-operation.outputs.destination == 'github-packages'
     environment:
       name: ${{ needs.request-ruby-operation.outputs.environment }}
-  publish-ruby-rubygems:
+  publish-ruby-bootstrap-rubygems:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -641,10 +606,10 @@ jobs:
       deployments: read
       id-token: write
     env:
-      WDV3_REFERENCES: ${{ needs.prepare-ruby-publication.outputs.references && needs.prepare-ruby-publication.outputs.artifact-ids
-        && needs.prepare-ruby-publication.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.prepare-ruby-publication.outputs.references && needs.prepare-ruby-publication.outputs.artifact-ids
-        && needs.prepare-ruby-publication.outputs.artifact-ids || '' }}
+      WDV3_REFERENCES: ${{ needs.prepare-ruby-bootstrap-publication.outputs.references && needs.prepare-ruby-bootstrap-publication.outputs.artifact-ids
+        && needs.prepare-ruby-bootstrap-publication.outputs.references || '{}' }}
+      WDV3_ARTIFACT_IDS: ${{ needs.prepare-ruby-bootstrap-publication.outputs.references && needs.prepare-ruby-bootstrap-publication.outputs.artifact-ids
+        && needs.prepare-ruby-bootstrap-publication.outputs.artifact-ids || '' }}
       GITHUB_TOKEN: ${{ github.token }}
       WDV3_ENVIRONMENT_SENTINEL: ${{ vars.WDV3_APPROVAL_ENVIRONMENT_MARKER }}
     steps:
@@ -698,12 +663,6 @@ jobs:
     - name: Marker
       run: python -m three_workflow_delivery_v3.ruby_operation_cli marker --output .wdv3/mutation-marker.json
       timeout-minutes: 10
-    - name: Persist and read back fresh-governance
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: fresh-governance
-        path: .wdv3/fresh-governance.json
     - name: Persist and read back marker
       uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
       timeout-minutes: 10
@@ -758,40 +717,42 @@ jobs:
       terminal-reference: ${{ steps.edges.outputs.terminal-reference }}
     needs:
     - request-ruby-operation
-    - prepare-ruby-publication
-    if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
+    - prepare-ruby-bootstrap-publication
+    if: needs.prepare-ruby-bootstrap-publication.result == 'success' && needs.prepare-ruby-bootstrap-publication.outputs.action-required
       == 'true' && needs.request-ruby-operation.outputs.destination == 'rubygems'
     environment:
       name: ${{ needs.request-ruby-operation.outputs.environment }}
-  finalize-attempt:
+  finalize-ruby-bootstrap:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions: *id001
     env:
-      WDV3_REFERENCES: ${{ needs.publish-ruby-rubygems.outputs.references && needs.publish-ruby-rubygems.outputs.artifact-ids
-        && needs.publish-ruby-rubygems.outputs.references || needs.publish-ruby-github-packages.outputs.references
-        && needs.publish-ruby-github-packages.outputs.artifact-ids && needs.publish-ruby-github-packages.outputs.references
-        || needs.prepare-ruby-publication.outputs.references && needs.prepare-ruby-publication.outputs.artifact-ids
-        && needs.prepare-ruby-publication.outputs.references || needs.finalize-ruby-qualification.outputs.references
-        && needs.finalize-ruby-qualification.outputs.artifact-ids && needs.finalize-ruby-qualification.outputs.references
-        || needs.qualify-ruby-release.outputs.references && needs.qualify-ruby-release.outputs.artifact-ids && needs.qualify-ruby-release.outputs.references
-        || needs.build-ruby.outputs.references && needs.build-ruby.outputs.artifact-ids && needs.build-ruby.outputs.references
-        || needs.plan-ruby-release.outputs.references && needs.plan-ruby-release.outputs.artifact-ids && needs.plan-ruby-release.outputs.references
-        || needs.discover-ruby.outputs.references && needs.discover-ruby.outputs.artifact-ids && needs.discover-ruby.outputs.references
-        || needs.request-ruby-operation.outputs.references && needs.request-ruby-operation.outputs.artifact-ids
-        && needs.request-ruby-operation.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.publish-ruby-rubygems.outputs.references && needs.publish-ruby-rubygems.outputs.artifact-ids
-        && needs.publish-ruby-rubygems.outputs.artifact-ids || needs.publish-ruby-github-packages.outputs.references
-        && needs.publish-ruby-github-packages.outputs.artifact-ids && needs.publish-ruby-github-packages.outputs.artifact-ids
-        || needs.prepare-ruby-publication.outputs.references && needs.prepare-ruby-publication.outputs.artifact-ids
-        && needs.prepare-ruby-publication.outputs.artifact-ids || needs.finalize-ruby-qualification.outputs.references
-        && needs.finalize-ruby-qualification.outputs.artifact-ids && needs.finalize-ruby-qualification.outputs.artifact-ids
-        || needs.qualify-ruby-release.outputs.references && needs.qualify-ruby-release.outputs.artifact-ids && needs.qualify-ruby-release.outputs.artifact-ids
-        || needs.build-ruby.outputs.references && needs.build-ruby.outputs.artifact-ids && needs.build-ruby.outputs.artifact-ids
-        || needs.plan-ruby-release.outputs.references && needs.plan-ruby-release.outputs.artifact-ids && needs.plan-ruby-release.outputs.artifact-ids
-        || needs.discover-ruby.outputs.references && needs.discover-ruby.outputs.artifact-ids && needs.discover-ruby.outputs.artifact-ids
-        || needs.request-ruby-operation.outputs.references && needs.request-ruby-operation.outputs.artifact-ids
-        && needs.request-ruby-operation.outputs.artifact-ids || '' }}
+      WDV3_REFERENCES: ${{ needs.publish-ruby-bootstrap-rubygems.outputs.references && needs.publish-ruby-bootstrap-rubygems.outputs.artifact-ids
+        && needs.publish-ruby-bootstrap-rubygems.outputs.references || needs.publish-ruby-bootstrap-github-packages.outputs.references
+        && needs.publish-ruby-bootstrap-github-packages.outputs.artifact-ids && needs.publish-ruby-bootstrap-github-packages.outputs.references
+        || needs.prepare-ruby-bootstrap-publication.outputs.references && needs.prepare-ruby-bootstrap-publication.outputs.artifact-ids
+        && needs.prepare-ruby-bootstrap-publication.outputs.references || needs.finalize-ruby-bootstrap-qualification.outputs.references
+        && needs.finalize-ruby-bootstrap-qualification.outputs.artifact-ids && needs.finalize-ruby-bootstrap-qualification.outputs.references
+        || needs.qualify-ruby-bootstrap.outputs.references && needs.qualify-ruby-bootstrap.outputs.artifact-ids
+        && needs.qualify-ruby-bootstrap.outputs.references || needs.build-ruby.outputs.references && needs.build-ruby.outputs.artifact-ids
+        && needs.build-ruby.outputs.references || needs.plan-ruby-bootstrap.outputs.references && needs.plan-ruby-bootstrap.outputs.artifact-ids
+        && needs.plan-ruby-bootstrap.outputs.references || needs.provide-ruby-bootstrap.outputs.references && needs.provide-ruby-bootstrap.outputs.artifact-ids
+        && needs.provide-ruby-bootstrap.outputs.references || needs.request-ruby-operation.outputs.references &&
+        needs.request-ruby-operation.outputs.artifact-ids && needs.request-ruby-operation.outputs.references ||
+        '{}' }}
+      WDV3_ARTIFACT_IDS: ${{ needs.publish-ruby-bootstrap-rubygems.outputs.references && needs.publish-ruby-bootstrap-rubygems.outputs.artifact-ids
+        && needs.publish-ruby-bootstrap-rubygems.outputs.artifact-ids || needs.publish-ruby-bootstrap-github-packages.outputs.references
+        && needs.publish-ruby-bootstrap-github-packages.outputs.artifact-ids && needs.publish-ruby-bootstrap-github-packages.outputs.artifact-ids
+        || needs.prepare-ruby-bootstrap-publication.outputs.references && needs.prepare-ruby-bootstrap-publication.outputs.artifact-ids
+        && needs.prepare-ruby-bootstrap-publication.outputs.artifact-ids || needs.finalize-ruby-bootstrap-qualification.outputs.references
+        && needs.finalize-ruby-bootstrap-qualification.outputs.artifact-ids && needs.finalize-ruby-bootstrap-qualification.outputs.artifact-ids
+        || needs.qualify-ruby-bootstrap.outputs.references && needs.qualify-ruby-bootstrap.outputs.artifact-ids
+        && needs.qualify-ruby-bootstrap.outputs.artifact-ids || needs.build-ruby.outputs.references && needs.build-ruby.outputs.artifact-ids
+        && needs.build-ruby.outputs.artifact-ids || needs.plan-ruby-bootstrap.outputs.references && needs.plan-ruby-bootstrap.outputs.artifact-ids
+        && needs.plan-ruby-bootstrap.outputs.artifact-ids || needs.provide-ruby-bootstrap.outputs.references &&
+        needs.provide-ruby-bootstrap.outputs.artifact-ids && needs.provide-ruby-bootstrap.outputs.artifact-ids ||
+        needs.request-ruby-operation.outputs.references && needs.request-ruby-operation.outputs.artifact-ids &&
+        needs.request-ruby-operation.outputs.artifact-ids || '' }}
       GITHUB_TOKEN: ${{ github.token }}
       WDV3_NEEDS: ${{ toJSON(needs) }}
     steps:
@@ -821,52 +782,11 @@ jobs:
     - name: Initialize
       run: python -m three_workflow_delivery_v3.ruby_operation_cli initialize
       timeout-minutes: 10
-    - name: Claim   phase zero action
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli claim --phase zero-action --output .wdv3/phase-zero-action.json
-      timeout-minutes: 10
-      if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
-        == 'false'
-    - name: Persist and read back phase-zero-action
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: phase-zero-action
-        path: .wdv3/phase-zero-action.json
-      if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
-        == 'false'
-    - name: Zero proof
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli zero-proof --output .wdv3/exact-proof.json
-      timeout-minutes: 10
-      if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
-        == 'false'
-    - name: Persist and read back zero-governance
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: zero-governance
-        path: .wdv3/zero-governance.json
-      if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
-        == 'false'
-    - name: Persist and read back exact-proof
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: exact-proof
-        path: .wdv3/exact-proof.json
-      if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
-        == 'false'
     - name: Finalize
       run: python -m three_workflow_delivery_v3.ruby_operation_cli finalize --output .wdv3/terminal.json
       timeout-minutes: 10
       id: finalize
       if: always()
-    - name: Persist and read back outcome
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: outcome
-        path: .wdv3/outcome.json
-      if: always() && steps.finalize.outputs.outcome-created == 'true'
     - name: Persist and read back terminal
       uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
       timeout-minutes: 10
@@ -897,24 +817,24 @@ jobs:
       terminal-result: ${{ steps.finalize.outputs.terminal-result }}
     needs:
     - request-ruby-operation
-    - discover-ruby
-    - plan-ruby-release
+    - provide-ruby-bootstrap
+    - plan-ruby-bootstrap
     - build-ruby
-    - qualify-ruby-release
-    - finalize-ruby-qualification
-    - prepare-ruby-publication
-    - publish-ruby-github-packages
-    - publish-ruby-rubygems
+    - qualify-ruby-bootstrap
+    - finalize-ruby-bootstrap-qualification
+    - prepare-ruby-bootstrap-publication
+    - publish-ruby-bootstrap-github-packages
+    - publish-ruby-bootstrap-rubygems
     if: always()
-  verify-ruby-operation:
+  verify-ruby-bootstrap-remote:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions: *id001
     env:
-      WDV3_REFERENCES: ${{ needs.finalize-attempt.outputs.references && needs.finalize-attempt.outputs.artifact-ids
-        && needs.finalize-attempt.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.finalize-attempt.outputs.references && needs.finalize-attempt.outputs.artifact-ids
-        && needs.finalize-attempt.outputs.artifact-ids || '' }}
+      WDV3_REFERENCES: ${{ needs.finalize-ruby-bootstrap.outputs.references && needs.finalize-ruby-bootstrap.outputs.artifact-ids
+        && needs.finalize-ruby-bootstrap.outputs.references || '{}' }}
+      WDV3_ARTIFACT_IDS: ${{ needs.finalize-ruby-bootstrap.outputs.references && needs.finalize-ruby-bootstrap.outputs.artifact-ids
+        && needs.finalize-ruby-bootstrap.outputs.artifact-ids || '' }}
       GITHUB_TOKEN: ${{ github.token }}
     steps:
     - name: Check out exact native target without credentials
@@ -984,6 +904,6 @@ jobs:
     outputs:
       references: ${{ steps.edges.outputs.references }}
       artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs: finalize-attempt
-    if: always() && needs.finalize-attempt.result == 'success' && contains(fromJSON('["bootstrap-published","published","exact-satisfied"]'),
-      needs.finalize-attempt.outputs.terminal-result)
+    needs: finalize-ruby-bootstrap
+    if: always() && needs.finalize-ruby-bootstrap.result == 'success' && contains(fromJSON('["bootstrap-published","published","exact-satisfied"]'),
+      needs.finalize-ruby-bootstrap.outputs.terminal-result)

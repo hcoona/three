@@ -320,12 +320,21 @@ remote original gem. The singular publication path binds immutable approval,
 rechecks missing state before its marker, uploads once and admits visibility
 reads only after HTTP 200. Strict replay joins this evidence to the shared
 scalar Attempt Outcome; zero-action completion requires a fresh exact proof.
-The [Ruby CI entry](../../../../.github/workflows/workflow-delivery-v3-ruby-smoke.yml)
+The [Ruby CI entry](../../../../.github/workflows/workflow-delivery-v3-ruby-ci.yml)
 connects exact-target discovery, compilation, original-gem Build and independent
 CI content/consumer qualification. Its CLI accepts only CI purposes; immutable
 upload/readback passes explicit current-run artifact references between jobs.
 The GitHub control adapter checks protected Governance, native approval and the
-fixed RubyGems OIDC audience for forthcoming publication integration.
+fixed RubyGems OIDC audience. Separate manual
+[bootstrap](../../../../.github/workflows/workflow-delivery-v3-ruby-bootstrap.yml)
+and [normal publication](../../../../.github/workflows/workflow-delivery-v3-ruby-smoke.yml)
+workflows connect fresh Provider/Build/qualification, exact immutable artifact
+readbacks, destination-specific publisher permissions and strict terminal replay.
+Their shared operation CLI keeps first-project authority separate from normal
+Governance and skips the privileged job for exact-satisfied publication.
+An unprivileged final job verifies the remote original and a clean consumer.
+Actual configuration, independently admitted requests and destination acceptance
+remain prerequisites; implemented workflows do not establish publication success.
 The protected Ruby operation envelope has ten disabled slots. Strict data
 validators bind a future post-merge request, independent admission and durable
 sole-operator reservation. The local ledger consumes a slot before a caller
@@ -336,13 +345,12 @@ source closure and the smoke's NBGV filters. The control reader can prove
 protected-main ancestry and reject relevant input changes, including new files
 and touch/revert histories, while allowing unrelated main advancement. Hosted
 publication callers must invoke that proof at their admission boundaries.
-The [partial Ruby operation protocol](docs/ruby-operation-protocol.md) specifies
+The [Ruby operation protocol](docs/ruby-operation-protocol.md) specifies
 bounded configuration and first-project admission. Candidate strict bootstrap
 configuration/inspection/review validators and a separate RubyGems project
 observer support that boundary; screened facts do not prove raw GitHub owner
-inventory or reviewer provenance. Fixed configuration collectors, supervised
-transport and durable phase/send counters are implemented; the reviewed
-caller and final runtime/transfer budgets remain pending. All ten slots remain
-null and both protected Governance sources remain blocked. Bootstrap and normal
-publication, actual configuration and destination acceptance remain pending.
+inventory or reviewer provenance. Configuration collectors, supervised transport
+and durable phase/send counters are implemented. Concrete external caller launch,
+configuration/request admission and actual destination acceptance remain pending.
+All ten slots remain null and both protected Governance sources remain blocked.
 Local controlled transports do not establish deployed registry behavior.

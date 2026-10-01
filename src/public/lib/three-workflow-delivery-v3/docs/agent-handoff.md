@@ -41,20 +41,24 @@ Ruby publication snapshots, current-run approval, durable mutation markers and
 strict Result/Outcome replay. The Ruby PR workflow and CI-only CLI connect
 exact-target Build and independent content/consumer qualification through
 explicit immutable artifact edges. GitHub control acquisition has isolated
-contract coverage. Both destinations remain disabled; bootstrap/normal hosted
-publication, configuration and actual acceptance remain pending.
+contract coverage. Separate bootstrap/normal manual workflows now connect the
+hosted operation CLI, current-run artifact readbacks, destination-specific
+privileged jobs, strict terminal replay and independent remote consumption.
+The [operation protocol](./ruby-operation-protocol.md) owns concrete phase and
+transfer bounds. Both destinations remain disabled; live configuration,
+independent request admission and actual acceptance remain pending.
 The protected operation envelope starts with ten disabled slots. Exact-request,
 independent-admission and durable reservation primitives are implemented, with
 Ruby configuration/control paths included in native version and Provider inputs.
 The isolated control reader now covers target ancestry and complete relevant
 input history, including newly added files and touch/revert, without freezing
-unrelated main advancement. Follow the [partial operation protocol](./ruby-operation-protocol.md) for
+unrelated main advancement. Follow the [operation protocol](./ruby-operation-protocol.md) for
 configuration budgets and first-project binding. Candidate configuration,
 inspection/review validators and the separate RubyGems project observer do not
 establish actual resources or raw GitHub owner-inventory provenance. Configuration
 collectors, supervised transport and durable phase/send counters are implemented.
-The reviewed caller and complete runtime/transfer budgets remain pending; all ten
-slots stay null and these mechanisms grant no effects.
+Concrete external caller launch and configuration/request admission remain
+pending; all ten slots stay null and these mechanisms grant no effects.
 Source presence and controlled-transport tests are not Live admission.
 GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without

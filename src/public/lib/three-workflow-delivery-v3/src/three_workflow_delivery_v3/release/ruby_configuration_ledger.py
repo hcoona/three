@@ -20,6 +20,11 @@ from three_workflow_delivery_v3.canonical import (
     canonicalize,
     parse_canonical_json,
 )
+from three_workflow_delivery_v3.release.ruby_configuration_continuation import (
+    M01_ORIGINAL_PHASES,
+    M01_READ_PHASES,
+    RubyConfigurationM01Continuation,
+)
 from three_workflow_delivery_v3.release.ruby_operation_ledger import (
     _durable_new,
     _sync_directory,
@@ -232,7 +237,13 @@ class RubyConfigurationLedger:
             msg = "Ruby configuration phase inventory has unjoined state"
             raise ValueError(msg)
 
-    def begin(self, phase: str, *, now: datetime) -> RubyConfigurationPhase:
+    def begin(
+        self,
+        phase: str,
+        *,
+        now: datetime,
+        continuation: RubyConfigurationM01Continuation | None = None,
+    ) -> RubyConfigurationPhase:
         """Reserve one whole phase before its first possible send."""
         self._require_present()
         self.plan.require_current(now)
@@ -242,6 +253,16 @@ class RubyConfigurationLedger:
         if phase not in limits:
             msg = "Ruby configuration phase is outside its plan"
             raise ValueError(msg)
+        if continuation is not None:
+            continuation.require_current(self.plan, now=now)
+            if phase not in M01_READ_PHASES or (
+                phase != "post-configuration-controls"
+                and not (
+                    self.plan.directory / "post-configuration-controls"
+                ).is_dir()
+            ):
+                msg = "M01 requires the original postconfiguration read first"
+                raise ValueError(msg)
         for path in self.plan.directory.iterdir():
             if path.name in {"plan.json", "phases.jsonl"}:
                 continue
@@ -252,7 +273,7 @@ class RubyConfigurationLedger:
             ):
                 msg = "Ruby configuration ledger has unknown state"
                 raise ValueError(msg)
-            _verify_completed_phase(path, self.plan)
+            self._verify_prior(path, continuation)
         directory = self.plan.directory / phase
         if directory.exists():
             raise FileExistsError(directory)
@@ -267,6 +288,11 @@ class RubyConfigurationLedger:
                 "started-at": _stamp(now),
                 "deadline": _stamp(deadline),
                 "limit": limits[phase],
+                **(
+                    {"continuation-digest": continuation.digest}
+                    if continuation is not None
+                    else {}
+                ),
             }
         )
         reservation = (
@@ -288,7 +314,26 @@ class RubyConfigurationLedger:
         directory.mkdir(mode=0o700)
         _durable_new(directory / "phase.json", content)
         _sync_directory(directory.parent)
-        return RubyConfigurationPhase(self, phase, content)
+        return RubyConfigurationPhase(
+            self, phase, content, continuation=continuation
+        )
+
+    def _verify_prior(
+        self, path: Path, continuation: RubyConfigurationM01Continuation | None
+    ) -> None:
+        """Keep the ordinary completion gate except for exact M01 evidence."""
+        if continuation is not None:
+            if path.name == "marker-write":
+                return  # Already checked against immutable failed originals.
+            if path.name not in M01_ORIGINAL_PHASES:
+                prior = parse_canonical_json(_read(path / "phase.json"))
+                if (
+                    path.name not in M01_READ_PHASES
+                    or prior.get("continuation-digest") != continuation.digest
+                ):
+                    msg = "M01 prior read phase has another acknowledgement"
+                    raise ValueError(msg)
+        _verify_completed_phase(path, self.plan)
 
 
 def _verify_completed_phase(
@@ -354,10 +399,16 @@ class RubyConfigurationPhase:
     """One process owns a phase; crashes leave durable unresumable spending."""
 
     def __init__(
-        self, ledger: RubyConfigurationLedger, name: str, content: bytes
+        self,
+        ledger: RubyConfigurationLedger,
+        name: str,
+        content: bytes,
+        *,
+        continuation: RubyConfigurationM01Continuation | None = None,
     ) -> None:
         """Retain the exclusive phase identity and its local send cursor."""
         self.ledger, self.name, self.content = ledger, name, content
+        self.continuation = continuation
         self.directory = ledger.plan.directory / name
         doc = parse_canonical_json(content)
         self.deadline = _time(doc["deadline"])
@@ -372,6 +423,8 @@ class RubyConfigurationPhase:
     def _current(self, now: datetime) -> None:
         self.ledger._require_present()  # noqa: SLF001 - same ledger implementation
         self.ledger.plan.require_current(now)
+        if self.continuation is not None:
+            self.continuation.require_current(self.ledger.plan, now=now)
         if (
             self._finished
             or self._failed
