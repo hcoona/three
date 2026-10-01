@@ -255,10 +255,10 @@ normal ready Governance to pretend the resource already exists.
 
 Before configuration, bind the exact gem/repository/workflow/Environment and
 account facts in the Issue and independently review their consistency. Normal
-requests use the two-layer protocol below: protected-deliver the operation
-envelope, then independently admit the exact execution binding after its target
-commit exists and before dispatch. Bootstrap uses the separately protected
-request described below. Each request allows one workflow run, rejects
+and bootstrap requests use the two-layer binding below: protected-deliver each
+operation envelope, then independently admit the exact execution binding after
+its target commit exists and before dispatch. Bootstrap retains the distinct
+first-project admission obligations described below. Each request allows one workflow run, rejects
 `run_attempt != 1`, and consumes its slot before dispatch. Wave ceilings are
 cumulative across requests. Requests cannot refill themselves; a failed operation
 does not authorize a resend.
@@ -340,17 +340,28 @@ first-success stop rules remain unchanged.
 
 ### Bootstrap Request Binding
 
-The separate bootstrap protocol may protected-deliver an exact ancestor package
-target with later protected tooling, provided its concrete request explicitly
-binds both identities, their ancestry, source tree/NBGV coordinate, immutable
-original obligations, profile/source hashes, current-run approval, lifetime and
-finite budgets. Dispatch pins the protected tooling revision and request digest.
-It must reject a different resolved tooling SHA before effects, reserve its one
-bootstrap slot durably before dispatch, and retain actual run/attempt identity.
-This is a first-project-only source/control separation, not a normal Release
-Intent or permission to reuse prior Build, Qualification or Approval artifacts.
+Bootstrap uses the [same two-layer request binding](#exact-normal-request-binding):
+protected-deliver its closed envelope, then independently admit canonical exact
+execution bytes outside the one protected-main commit T selected as both package
+source and workflow/control revision. The durable reservation, current-run
+request artifact, actor/main/attempt-one checks, fresh NBGV comparison, finite
+lifetime/budgets and independent admission apply unchanged. Compare main to T
+immediately before dispatch; after dispatch require ancestry and relevant-path
+freshness, allowing unrelated main advancement. No separate ancestor-source or
+later-tooling selection is admitted for this bootstrap.
+
+The bootstrap retains its distinct stable workflow, one bootstrap slot per
+destination, selected Environment and first-project configuration source.
+Prove whole-project absence through the supported destination-specific read
+contract; a missing version or unavailable inventory is insufficient. Build and
+Qualification produce fresh current-run original bytes before action-bearing
+current-run Approval/Authorization. Bootstrap does not use normal ready
+Governance to assert ownership of an absent package. Independently inspect
+postcreation ownership, association/access and publisher conversion before
+normal admission. Sharing request binding does not turn bootstrap into normal
+completion or allow prior artifacts, Approval or a spent slot to be reused.
 Its concrete protocol and implementation require independent review and
-protected delivery before use; this allowance alone is not an executable request.
+protected delivery before use; this binding alone is not an executable request.
 
 ## Validation and Delivery Gates
 
