@@ -439,9 +439,13 @@ unused allowances do not transfer.
 | Postbootstrap and four normal selected-package GETs  |                  5 |                    0 |
 | Immediate main read for each of five operation slots |                  5 |                    5 |
 | Preliminary and postcreation RubyGems owners GETs    |                  0 |                    2 |
-| Total                                                |            **286** |              **263** |
+| Original units subtotal                              |                286 |                  263 |
+| One INIT-CA-01 supplemental inspection               |                 42 |                    0 |
+| Total                                                |            **328** |              **263** |
 
-Total is **549** direct reads: 547 GitHub plus 2 RubyGems configuration reads.
+Total is **591** direct reads: 589 GitHub plus 2 RubyGems configuration reads.
+The additional 42 reads belong only to the once-only INIT-CA-01 unit below;
+all original phase allocations remain unchanged.
 The three bootstrap-operation owners reads are charged only to their existing
 operation partitions. Across the campaign at most five RubyGems owners sends
 are allocated: two configuration plus three bootstrap. Normal slots add none.
@@ -455,6 +459,93 @@ These are prospective maxima, not observed usage or a full campaign wire budget.
 Any failure, exhausted cap or incomplete inventory stops its phase. Later
 read-only diagnosis or scoped correction requires a concrete finite independent
 protocol review under the existing Wave; it cannot refill these allocations.
+
+## INIT-CA-01 Supplemental Predispatch Inspection
+
+The independently disposed [INIT-CA-01 local launch failure][init-ca-stop]
+occurred before external state, credential acquisition, slot reservation or
+network activity. The configured CA path was an existing symbolic link rejected
+by the external caller's regular-file reader. Its existing resolved file contains
+the same admitted trust bytes. The failed invocation and its sealed request stay
+stopped; no hosted Attempt or successful launch is inferred.
+
+Under the existing scoped-correction route, admit at most **one additional
+read-only inspection unit**, named `init-ca-01`, for this exact GitHub bootstrap
+correction. It permits the existing 32-read complete control inspection followed
+by the existing ten-page authenticated owner-package inventory. These are 42
+explicit additional maximum GETs, not unused capacity, repetition or transfer
+from an original phase. No supplemental main read, UI fallback, write,
+credential upgrade, new account or registry probe is included. The cumulative
+configuration/predispatch maximum becomes **591**: GitHub destination 328 and
+RubyGems destination 263, comprising 589 GitHub-service reads and two RubyGems
+configuration reads. The separate external operation's 328-send maximum is
+unchanged and must not be combined with this coincident number.
+
+Retain the original configuration plan, M01 acknowledgement, campaign,
+37 completed GETs, three spent writes and all failure/original evidence. The
+original completed `bootstrap-controls` and `bootstrap-inventory` units remain
+spent, with their old target and observation. Their sealed inspection/request
+must never be edited, rebound or renewed. The original unused `bootstrap-main`
+read retains its immediate-predispatch role. Do not initialize another operation
+campaign or add a bootstrap generation, reservation, dispatch or upload.
+
+Before this unit can execute:
+
+1. Protect-deliver the future budget binding to the existing resolved nonsymlink
+   CA file, preserving its trust-content digest, caller, interpreter, access and
+   effect limits. Use the exact bound file in process-local `SSL_CERT_FILE`;
+   do not modify host trust or relax the caller's reader. Verify the caller's
+   actual local file predicates, including regular-file, nonsymlink, link-count
+   and size checks, in the preparatory launch inspection.
+2. Select the new actual protected target/tree after its required checks and
+   bounded native NBGV/reproducibility prerequisites pass. Retain the current
+   bootstrap generation only while its campaign remains unreserved. Recompute
+   protocol/configuration/envelope identities as needed, preserving historical
+   configuration attestation, accepted facts and the original absolute expiry
+   `2026-10-08T03:39:53.109710Z`.
+3. Independently review the concrete temporary supplemental caller, exact source,
+   isolated launch, canonical plan and evidence bindings. The plan fixes the
+   incident, target/tree, caller/protocol, original configuration plan and M01
+   acknowledgement, stopped request/inspection/review/admission and failure
+   hashes, initialized campaign and header-only event history, complete original
+   configuration history, accepted control baseline, principal/capability
+   review, exact new state location, transport profile and 32/10 allocations.
+   No arbitrary caller or directory supplied at execution can authorize itself.
+
+The supplemental caller uses the existing supervised configuration transport and
+control/absence classifiers, with identical endpoint, TLS, body, retention and
+no-redirect/no-retry rules. It has one explicit initialization and one explicit
+collection invocation; neither starts an operation caller or chains publication.
+Bind a separate private single-use directory with an independently retained
+sibling initialization anchor and append-before-file membership journal. Reserve
+the whole unit before its first send and each category/ordinal before transport;
+retain safe original responses and successful receipts before the next send.
+Recheck the pinned old originals, failure and still-unreserved campaign before
+initialization and every send. Missing, aliased, changed or partial state stops;
+never recreate an anchor, replay a command or select another directory. Failure
+spends this supplemental unit and permits no successor unit. The complete
+inspection has a 30-minute outer deadline, capped by original configuration
+expiry. It never renews the configuration lifetime.
+
+Require actual protected main equal to the corrected target and independently
+accepted unchanged relevant baseline/principal/scopes before owner inventory.
+Complete successful inventory and original pagination must establish whole-project
+absence. A changed control, matching package, unknown response or exhausted
+allowance stops without correction effects. Keep raw private inventories private.
+After independent review of complete originals, seal a new target-bound request
+using the actual supplemental completion time. Preserve the existing ten-minute
+dispatch window, two-hour inspection limit and configuration expiry. The old
+request remains stopped; its observation is never substituted.
+
+Independent exact-request admission precedes external initialization/preflight,
+the existing campaign's sole bootstrap reservation, original M01 `bootstrap-main`
+and one dispatch within 60 seconds. All hosted current-run Qualification,
+Approval/Authorization, original-byte/terminal/clean-consumer audits,
+postcreation facts and normal-completion gates remain unchanged. RubyGems stays
+disabled until independently accepted normal GitHub completion. This one unit
+does not create a general recovery or repeated-inspection mechanism.
+
+[init-ca-stop]: https://github.com/hcoona/three/issues/954#issuecomment-5926665416
 
 ## Hosted Operation Caller
 
@@ -622,8 +713,9 @@ The ceiling is 300 GitHub API sends (298 reads and two effects) plus 28 storage
 GETs, totaling 328 direct sends per request. Discovery permits ten observations,
 preparation thirty and terminal 120, at least ten seconds apart. Each stage has
 an original deadline of at most 1,800 seconds, capped by request expiry. Run lists require complete inventories of at most 100 and artifact lists at
-most 28; unknown pagination stops. Unused category headroom cannot transfer. The existing 549 configuration
-reads, ten predispatch main reads within that allocation, hosted action bounds,
+most 28; unknown pagination stops. Unused category headroom cannot transfer. The 591 configuration
+reads (including the one INIT-CA-01 unit), ten predispatch main reads within
+that allocation, hosted action bounds,
 per-job 128 REST reads and registry partitions remain separate and are not
 counted again here.
 
@@ -655,8 +747,9 @@ collection/counter schemas, durable pre-send spending and bounded transport/call
 actual supported principal/access, full raw evidence provenance and exact
 before/after plan. Before any operation, independently admit the exact external
 sole-operator source, launch and fixed budget manifest described above. Join its
-actual-run reservation to the hosted evidence. Count the 549 configuration reads
-and five predispatch main reads per destination only once. Hosted cross-process
+actual-run reservation to the hosted evidence. Count the 591 configuration reads
+(including the one INIT-CA-01 unit) and five predispatch main reads per
+destination only once. Hosted cross-process
 spending retains the 32-send registry envelope; operator/API/action classes remain
 separate bounds, not a universal network counter.
 
