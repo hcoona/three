@@ -130,7 +130,12 @@ registration is not transferable.
 
 The service's pinned [token exchange controller][exchange] produces a
 `push_rubygem` key with a 15-minute lifetime after issuer, signature, claims
-and publisher checks. Documentation describes gem-scoped short-lived access.
+and publisher checks, returning HTTP 201 (`:created`). The pinned credential
+action [response schema][credential-response] reads `rubygems_api_key`, `name`,
+`scopes`, optional `gem.name` and offset-aware `expires_at`. Pending publication
+may omit the gem field; normal admission requires the selected gem binding.
+These are source-derived response contracts, not a live exchange observation.
+Documentation describes gem-scoped short-lived access.
 This finding supplies neither an account confirmation nor a configured publisher.
 The owner separately confirmed control of account `Raffle2282` in Issue #954;
 no configured pending publisher or package ownership is claimed.
@@ -168,3 +173,4 @@ authorizes probes.
 [native-source]: https://github.com/ruby/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/source.rb#L166
 [fetcher]: https://github.com/ruby/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/remote_fetcher.rb#L149
 [credential-action]: https://github.com/rubygems/configure-rubygems-credentials/blob/8674aee7f9f9055a8b771794d6f1e66b5fad36a9/src/oidc/trustedPublisher.ts
+[credential-response]: https://github.com/rubygems/configure-rubygems-credentials/blob/8674aee7f9f9055a8b771794d6f1e66b5fad36a9/src/oidc/responses.ts

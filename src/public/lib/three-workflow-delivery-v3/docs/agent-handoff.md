@@ -36,8 +36,11 @@ The minimal [Ruby smoke](../../hcoona-release-smoke-ruby/README.md) and internal
 Provider/Build/inspection/consumer foundation are present. The closed Ruby Model,
 single-gem Artifact and separate CI/Release qualification retain current-purpose
 and current-run bindings. Both protected Governance sources remain blocked.
-Registry profiles are data contracts; executable HTTP, CLI, hosted workflows and
-publication integration remain pending. Source presence is not Live admission.
+Bounded native registry readers and one-shot HTTP writers are implemented, with
+Ruby publication snapshots, current-run approval, durable mutation markers and
+strict Result/Outcome replay. Both destinations remain disabled; CLI and hosted
+workflow integration, configuration and actual acceptance remain pending.
+Source presence and controlled-transport tests are not Live admission.
 GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without
 requiring duplicate/race probes or inheriting another registry's responses.

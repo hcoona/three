@@ -37,6 +37,12 @@ artifacts = [
   "src/three_workflow_delivery_v3/release/python_qualification.py",
   "src/three_workflow_delivery_v3/release/python_transport.py",
   "src/three_workflow_delivery_v3/release/ruby_governance.py",
+  "src/three_workflow_delivery_v3/release/ruby_publication.py",
+  "src/three_workflow_delivery_v3/release/ruby_readback.py",
+  "src/three_workflow_delivery_v3/release/ruby_execution.py",
+  "src/three_workflow_delivery_v3/release/ruby_audit.py",
+  "src/three_workflow_delivery_v3/release/ruby_finalizer.py",
+
   "src/three_workflow_delivery_v3/release/ruby_qualification.py",
 ]
 
