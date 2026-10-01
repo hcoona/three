@@ -46,15 +46,16 @@ hosted operation CLI, current-run artifact readbacks, destination-specific
 privileged jobs, strict terminal replay and independent remote consumption.
 The [operation protocol](./ruby-operation-protocol.md) owns concrete phase and
 transfer bounds. GitHub Packages retains independently inspected first-project configuration;
-all operation slots are disabled and both normal Governance sources remain blocked.
+only `github-packages-bootstrap02` is enabled and both normal Governance sources remain blocked.
 The [owner disposition](https://github.com/hcoona/three/issues/954#issuecomment-5936150680)
 approves one additional GitHub bootstrap and no cumulative count ceiling for
 read-only checks. Follow the [successor protocol](./ruby-operation-protocol.md#single-github-bootstrap-successor)
 and [Ruby LLD](./hcoona-release-smoke-ruby-lld.md#bootstrap-request-binding):
-the v2 envelope, successor ledger and inspection validators are implemented with
-all eleven slots disabled. Independently reviewed external caller/collector
-adaptation, protected activation, fresh native qualification and exact-request
-admission still precede execution. Preserve the failed first run, original campaign and spent reservation;
+the v2 envelope enables only the successor slot with the independently reviewed
+external caller, standalone main collector and exact launch budget. The original
+bootstrap and all normal/RubyGems slots remain null. Fresh protected-target native
+qualification, independent exact-launch and predecessor/successor admission,
+complete predispatch inspection and exact-request admission still precede execution. Preserve the failed first run, original campaign and spent reservation;
 no old request, artifact or Approval may be resumed or reused. The independently
 accepted phase-clock fix is delivered; the corrected external raw-basename caller
 still requires admission for its new exact request. Read-only checks retain finite
@@ -62,8 +63,10 @@ per-invocation resource/completeness limits and original evidence, without a
 lifetime read quota or a new permission question solely for more reads.
 The original configuration expiry is `2026-10-08T03:39:53.109710Z` and is not renewed.
 The [accepted configuration inspection](https://github.com/hcoona/three/issues/954#issuecomment-5925550208)
-binds historical source/protocol observations and actual administrator bypass as
-enabled within the accepted sole-writer boundary. Use the existing resolved
+retains historical source/protocol observations and actual administrator bypass as
+enabled within the accepted sole-writer boundary. The protected configuration and
+successor slot bind the current reviewed protocol; this does not refresh the
+historical observation attestation, inspection time or original expiry. Use the existing resolved
 regular CA file with unchanged trust bytes. The current control reader preserves
 full relevant history, including new files and touch/revert, while allowing
 unrelated main advancement. Implementation presence and prior inspections do not

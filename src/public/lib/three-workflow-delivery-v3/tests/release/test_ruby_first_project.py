@@ -1,16 +1,22 @@
 """Bound modeled absence evidence to a real validated operation request."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
+from three_workflow_delivery_v3._ruby_native import ruby_digest
 from three_workflow_delivery_v3.adapters.rubygems import RubyRegistry
 from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.release.ruby_configuration import (
     RubyBootstrapConfiguration,
     RubyFirstProjectInspection,
 )
+from three_workflow_delivery_v3.release.ruby_operation import (
+    RubyOperationEnvelope,
+    RubyOperationRequest,
+    disabled_ruby_operation_envelope,
+)
 
-from ..ruby_integration_fixtures import NOW
+from ..ruby_integration_fixtures import NOW, ROOT
 from .ruby_configuration_fixtures import (
     bootstrap_request,
     configuration,
@@ -18,7 +24,11 @@ from .ruby_configuration_fixtures import (
     inspection,
     inspection_document,
 )
-from .ruby_operation_fixtures import instant
+from .ruby_operation_fixtures import (
+    envelope_document,
+    instant,
+    request_document,
+)
 
 OTHER_DIGEST = "sha256:" + "e" * 64
 
@@ -227,3 +237,84 @@ def test_inspection_requires_current_configuration_when_observed(observed):
     )
     with pytest.raises(ValueError, match="unavailable or stale"):
         RubyFirstProjectInspection(canonicalize(doc), config)
+
+
+def _require_modeled_bootstrap_join(envelope, config, slot, now):
+    """Exercise actual admission with synthetic target, NBGV and absence."""
+    selected = envelope.document["slots"][slot]
+    assert selected["configuration-digest"] == config.digest
+    expires = min(
+        now + timedelta(hours=2),
+        datetime.fromisoformat(selected["expires-at"]),
+        datetime.fromisoformat(config.document["expires-at"]),
+    )
+    request_doc = request_document(envelope, slot)
+    request_doc.update(
+        {"issued-at": instant(now), "expires-at": instant(expires)}
+    )
+    request = RubyOperationRequest(canonicalize(request_doc), envelope)
+    inspected_doc = inspection_document(config)
+    inspected_doc.update(
+        {
+            "schema": "workflow-delivery/v3/ruby-first-project-inspection-v"
+            + ("2" if slot.endswith("-bootstrap02") else "1"),
+            "slot": slot,
+            "generation": selected["generation"],
+            "target": request.document["target"],
+            "control-baseline-digest": config.document["github-controls"][
+                "control-baseline-digest"
+            ],
+            "observed-at": instant(now),
+            "dispatch-by": instant(now + timedelta(minutes=10)),
+            "expires-at": instant(expires),
+        }
+    )
+    inspected = RubyFirstProjectInspection(canonicalize(inspected_doc), config)
+    inspected.require_request(request, now, before_dispatch=True)
+
+
+def test_shipped_enabled_bootstrap_carriers_join_current_protocol():
+    """Shipped carriers must join; modeled facts never prove live readiness."""
+    envelope = RubyOperationEnvelope(
+        (
+            ROOT
+            / ".github/workflow-delivery/requests"
+            / "hcoona-release-smoke-ruby.json"
+        ).read_bytes()
+    )
+    protocol = ruby_digest(
+        (
+            ROOT
+            / "src/public/lib/three-workflow-delivery-v3/docs"
+            / "ruby-operation-protocol.md"
+        ).read_bytes()
+    )
+    for slot, selected in envelope.document["slots"].items():
+        if selected is None or selected["binding"]["kind"] != "bootstrap":
+            continue
+        assert selected["protocol-digest"] == protocol
+        config = RubyBootstrapConfiguration(
+            RubyRegistry(selected["binding"]["destination"]),
+            (ROOT / selected["binding"]["configuration-path"]).read_bytes(),
+        )
+        # Select a modeled instant inside the original windows, not wall time.
+        now = max(
+            datetime.fromisoformat(selected["not-before"]),
+            datetime.fromisoformat(config.document["inspected-at"]),
+        )
+        _require_modeled_bootstrap_join(envelope, config, slot, now)
+
+
+def test_successor_inspection_rejects_coherent_other_protocol():
+    """Rejoined envelope/request hashes cannot replace configuration policy."""
+    config = configuration("github-packages")
+    slot = "github-packages-bootstrap02"
+    document = disabled_ruby_operation_envelope(version=2)
+    selected = envelope_document(slot)["slots"][slot]
+    selected.update(
+        {"configuration-digest": config.digest, "protocol-digest": OTHER_DIGEST}
+    )
+    document["slots"][slot] = selected
+    envelope = RubyOperationEnvelope(canonicalize(document))
+    with pytest.raises(ValueError, match="first-project binding differs"):
+        _require_modeled_bootstrap_join(envelope, config, slot, NOW)
