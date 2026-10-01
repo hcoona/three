@@ -42,6 +42,9 @@ from three_workflow_delivery_v3.repository.node_provider import (
     validate_provider_binding,
     verify_exact_checkout,
 )
+from three_workflow_delivery_v3.repository.ruby_controls import (
+    RUBY_CONTROL_PATHS,
+)
 
 RUBY_GLOBALS = (
     ".config/dotnet-tools.json",
@@ -121,7 +124,11 @@ def ruby_input_candidates(tracked: tuple[str, ...]) -> tuple[str, ...]:
         "eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby",
     )
     paths = tuple(
-        sorted(p for p in tracked if p in RUBY_GLOBALS or p.startswith(roots))
+        sorted(
+            p
+            for p in tracked
+            if p in (*RUBY_GLOBALS, *RUBY_CONTROL_PATHS) or p.startswith(roots)
+        )
     )
     required = {
         *RUBY_GLOBALS,
