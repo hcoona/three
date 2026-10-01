@@ -1,5 +1,6 @@
 """Ruby PR CI workflow privileges and immutable record transport."""
 
+import json
 import os
 import re
 import shutil
@@ -11,6 +12,12 @@ from three_workflow_delivery_v3._ruby_native import (
     ruby_executable,
     ruby_profile,
 )
+from three_workflow_delivery_v3.repository.dotnet_provider import (
+    neutral_dotnet_environment,
+    run_native,
+)
+
+from .ruby_fixtures import repository
 
 _ROOT = Path(__file__).resolve().parents[5]
 _WORKFLOW = _ROOT / ".github/workflows/workflow-delivery-v3-ruby-ci.yml"
@@ -351,3 +358,48 @@ def test_common_python_ci_keeps_native_ruby_ahead_of_late_mise_shim(
     assert ruby_executable() == native
     assert after == before
     assert (after["ruby"], after["rubygems"]) == ("4.0.7", "4.0.20")
+
+
+def test_common_python_ci_keeps_native_nbgv_ahead_of_late_mise_shim(tmp_path):
+    """Late mise shims cannot replace the SDK used by neutral native NBGV."""
+    executable = shutil.which("dotnet")
+    mise = shutil.which("mise")
+    assert executable is not None
+    assert mise is not None
+    native = Path(executable).resolve()
+    source, _, _ = repository(tmp_path / "repository")
+    expected = json.loads((source / ".config/dotnet-tools.json").read_text())[
+        "tools"
+    ]["nbgv"]["version"]
+    steps = yaml.safe_load((_ROOT / ".github/workflows/ci.yml").read_text())[
+        "jobs"
+    ]["python-tests"]["steps"]
+    shims = tmp_path / "mise-shims"
+    shims.mkdir()
+    path = []
+    for step in steps:
+        action = step.get("uses", "").split("@", 1)[0]
+        if action == "actions/setup-dotnet":
+            assert step["uses"] == "actions/setup-dotnet@v6"
+            assert step["with"] == {"global-json-file": "global.json"}
+            assert step["if"] == (
+                "success() && !cancelled() && steps.scope.outputs.run == 'true'"
+                " && needs.scope.outputs.python_dotnet == 'true'"
+            )
+            path.insert(0, str(native.parent))
+        elif action == "jdx/mise-action":
+            path.insert(0, str(shims))
+        elif step.get("name") == "Restore .NET tools":
+            assert str(native.parent) in path
+    assert set(path) == {str(native.parent), str(shims)}
+    environment = neutral_dotnet_environment()
+    environment["PATH"] = os.pathsep.join([*path, os.defpath])
+    before = run_native(("dotnet", "nbgv", "--version"), source, environment)
+    (shims / "dotnet").symlink_to(Path(mise).resolve())
+    after = run_native(("dotnet", "nbgv", "--version"), source, environment)
+    assert (
+        Path(shutil.which("dotnet", path=environment["PATH"])).resolve()
+        == native
+    )
+    assert after == before
+    assert after.strip().split("+", 1)[0] == expected
