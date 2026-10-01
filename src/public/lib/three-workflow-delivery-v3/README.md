@@ -345,7 +345,7 @@ source closure and the smoke's NBGV filters. The control reader can prove
 protected-main ancestry and reject relevant input changes, including new files
 and touch/revert histories, while allowing unrelated main advancement. Hosted
 publication callers must invoke that proof at their admission boundaries.
-The [partial Ruby operation protocol](docs/ruby-operation-protocol.md) specifies
+The [Ruby operation protocol](docs/ruby-operation-protocol.md) specifies
 bounded configuration and first-project admission. Candidate strict bootstrap
 configuration/inspection/review validators and a separate RubyGems project
 observer support that boundary; screened facts do not prove raw GitHub owner

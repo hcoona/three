@@ -52,7 +52,7 @@ independent-admission and durable reservation primitives are implemented, with
 Ruby configuration/control paths included in native version and Provider inputs.
 The isolated control reader now covers target ancestry and complete relevant
 input history, including newly added files and touch/revert, without freezing
-unrelated main advancement. Follow the [partial operation protocol](./ruby-operation-protocol.md) for
+unrelated main advancement. Follow the [operation protocol](./ruby-operation-protocol.md) for
 configuration budgets and first-project binding. Candidate configuration,
 inspection/review validators and the separate RubyGems project observer do not
 establish actual resources or raw GitHub owner-inventory provenance. Configuration

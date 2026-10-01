@@ -6,21 +6,22 @@ This record implements the configuration and first-project admission portion of
 [the Ruby LLD](./hcoona-release-smoke-ruby-lld.md#governance-and-first-project-protocol)
 under [Issue #954](https://github.com/hcoona/three/issues/954) and the accepted
 [Delivery Wave](../../../../../docs/delivery-wave.md). The V3 maintainer maintains
-it for configuration-validator authors, the forthcoming operator and independent
+it for configuration-validator authors, the operator and independent
 admission reviewers. Its distinct consumer is the concrete endpoint, phase and
 request-binding contract; the LLD owns architecture and the Wave owns authority.
 
-This is a **partial operation protocol**. The current source delivery contains
-candidate [first-project validators](../src/three_workflow_delivery_v3/release/ruby_configuration.py)
+This protocol bounds configuration and the hosted/external operation callers.
+The current source delivery contains [first-project validators](../src/three_workflow_delivery_v3/release/ruby_configuration.py)
 and a separate [RubyGems project observer](../src/three_workflow_delivery_v3/adapters/ruby_project.py).
 Their closed data contracts do not establish live configuration, source provenance,
 independent approval or an executable caller. Fixed GitHub control/package
 collectors, a supervised configuration transport and durable phase/send counters
 are implemented. The hosted bootstrap/normal caller and its phase, job and maintained-action
-budgets are implemented below. Concrete external configuration/operation callers
-still need their exact independently reviewed launch and before/after plans.
+budgets are implemented below. The external caller contract fixes actual-run,
+artifact and approval budgets. Concrete callers still need their exact
+independently reviewed source, launch and before/after plans.
 All ten operation slots remain null; both normal Governance sources remain blocked. No configuration, account, registry, OIDC or dispatch
-effect follows from this partial delivery alone.
+effect follows from source or protocol delivery alone.
 
 GitHub Packages completion precedes RubyGems.org configuration/execution. Exact
 NBGV, reproducible original gems, current-run Qualification, Approval/Authorization
@@ -84,7 +85,7 @@ phase directories or journal entries, torn appends and inconsistent membership
 stop further use. Interrupted, failed or altered evidence cannot resume a phase
 or fund another.
 The [transport](../src/three_workflow_delivery_v3/platform/ruby_configuration_http.py)
-requires reserve/retain callbacks; the forthcoming operator must retain original
+requires reserve/retain callbacks; the operator must retain original
 responses before asking the ledger to complete a send, including responses that
 arrive after phase expiry. A late response cannot make an expired phase succeed.
 The [collector](../src/three_workflow_delivery_v3/platform/ruby_configuration_github.py)
@@ -192,9 +193,9 @@ native index cannot substitute.
 Run this inventory once during initial configuration and once during bootstrap
 predispatch inspection, each with its own ten-page allocation. Initial absence
 is preparation; only fresh independently admitted predispatch evidence supports
-the request. The owner credential stays local. The future collector must prove
-raw response/principal/pagination provenance: the current screened-fact validators
-do not implement this observer or establish inventory completeness.
+the request. The owner credential stays local. The collector and reviewed caller must retain and join raw response, principal
+and pagination provenance; screened-fact validators alone do not establish
+inventory completeness.
 
 ### RubyGems.org
 
@@ -468,13 +469,123 @@ uses one `ls-remote` and one full fetch plus bounded local validation; each Git
 subprocess has a 120-second timeout. Full relevant history includes touch/revert;
 unrelated main advancement is permitted after dispatch.
 
+## External Operation Caller
+
+The sole operator uses a separately retained, independently reviewed caller with
+explicit `initialize`, `preflight`, `reserve`, `dispatch`, `discover`,
+`prepare-review`, `approve`, `terminal` and `complete` commands. No command chains
+mutation stages or supplies its own independent admission. The exact source,
+interpreter, isolated launch, TLS trust, clean protected target/tree, protocol,
+configuration plan, request, admission and finite budget must be bound before
+execution. Imported control modules resolve under that exact target checkout.
+Development overlays are not launch sources.
+
+The request's `caller-digest` binds the external source and
+`github-budget-digest` binds its complete canonical launch manifest. Schema
+`workflow-delivery/v3/ruby-external-budget-v1` contains only `schema`,
+`allocations`, `root`, `directory`, `operation-ledger`,
+`configuration-plan-digest`, `interpreter-digest`, `independent-reviewer`,
+`required-checks`, `launch`, `storage-origin-policy`, `poll-spacing-seconds`,
+`stage-seconds`, `tls-cafile` and `tls-cafile-digest`. Admission fixes absolute
+source/private-state paths, exact required check names and app IDs, and the
+`[interpreter, "-I", caller]` launch. Existing verified system trust is selected
+process-locally; no certificate bypass or host trust change is included.
+
+Initialize private state once, retaining an independent sibling initialization
+anchor and append-before-file membership journal. Verify exact immutable input,
+stage and send membership before each command. A missing directory/member,
+alias, torn append, incomplete stage or repeated command stops without
+reconstruction, refill or resume. The campaign operation ledger reserves the
+slot before the existing configuration caller's unique predispatch main read.
+Dispatch reuses that completed evidence and receipt; it performs no extra main
+read and must meet the existing 60-second and bootstrap dispatch-by limits.
+The RubyGems caller requires the campaign's audited GitHub completion.
+
+Preflight verifies the actual admitted owner and complete required target checks.
+Dispatch sends once; a definitive HTTP 204 response does not itself identify a
+run. Discovery requires exact workflow, event, target, main, actor and native
+attempt-one identity with an unambiguous inventory. Download the explicit-ID
+current-run operation original and join the complete request, admission,
+inspection and reservation before recording the actual native run locally.
+
+Preparation retains the qualified original and complete approval predecessors
+for separate review. The reviewer examines actual originals, authority,
+reservation, expiry and predecessor joins before authoring the approval carrier.
+Approval rechecks the actual run and exact pending Environment and sends once;
+only a definitive HTTP 200 deployment response matching target and Environment
+is accepted. Terminal extraction retains actual run status and available exact
+originals, including failed or incomplete evidence. Local normal completion
+requires a separate accepted terminal audit and strict domain/original/consumer
+replay; bootstrap never completes a destination. Native job success or the
+caller's structural checks cannot supply an independent audit.
+
+Approval and terminal review carriers use the respective schemas
+`workflow-delivery/v3/ruby-external-approval-review-v1` and
+`workflow-delivery/v3/ruby-external-terminal-review-v1`, with exactly `schema`,
+`request-digest`, `run-id`, `target`, `manifest-digest`, `reviewer`, `author`,
+`reviewed-at`, `carrier` and `verdict`. Verdict is `accepted`, the reviewer is
+independently admitted and differs from the author, and the governing carrier is
+an Issue #954 comment. Review follows actual manifest preparation and precedes
+request expiry. The sole-operator procedure must establish genuine authorship;
+unequal strings and supplied hashes do not do so.
+
+### Direct External Calls
+
+Let R be `/repos/hcoona/three`, W the bound workflow, T the exact target, I the
+verified run and A an explicit current-run artifact ID. Caps are per request,
+nontransferable and include failed sends.
+
+| Category            | Method and endpoint                                                                                 |     Cap |
+| ------------------- | --------------------------------------------------------------------------------------------------- | ------: |
+| Principal           | GET `/user`                                                                                         |       1 |
+| Required checks     | GET `R/commits/T/check-runs?filter=latest&per_page=100&page=n`                                      | 5 pages |
+| Dispatch            | POST `R/actions/workflows/W/dispatches`                                                             |       1 |
+| Run discovery       | GET `R/actions/workflows/W/runs?event=workflow_dispatch&branch=main&head_sha=T&per_page=100&page=1` |      10 |
+| Run status          | GET `R/actions/runs/I`                                                                              |     152 |
+| Pending Environment | GET `R/actions/runs/I/pending_deployments`                                                          |      32 |
+| Artifact inventory  | GET `R/actions/runs/I/artifacts?per_page=100&page=1`                                                |      42 |
+| Artifact metadata   | GET `R/actions/artifacts/A`                                                                         |      28 |
+| Raw artifact ticket | GET `R/actions/artifacts/A/zip`                                                                     |      28 |
+| Artifact body       | GET one supported signed storage URL without credentials                                            |      28 |
+| Approval            | POST `R/actions/runs/I/pending_deployments`                                                         |       1 |
+
+The ceiling is 300 GitHub API sends (298 reads and two effects) plus 28 storage
+GETs, totaling 328 direct sends per request. Discovery permits ten observations,
+preparation thirty and terminal 120, at least ten seconds apart. Each stage has
+an original deadline of at most 1,800 seconds, capped by request expiry. Run lists require complete inventories of at most 100 and artifact lists at
+most 28; unknown pagination stops. Unused category headroom cannot transfer. The existing 549 configuration
+reads, ten predispatch main reads within that allocation, hosted action bounds,
+per-job 128 REST reads and registry partitions remain separate and are not
+counted again here.
+
+Hosted raw uploads use `archive:false`: despite the REST route name `/zip`, the
+caller accepts exact raw bytes, without archive inspection or transformation.
+Accept direct HTTP 200 or one HTTP 302 to an HTTPS Azure Blob host matching
+`[a-z0-9]+.blob.core.windows.net`, with no userinfo, nondefault port or fragment.
+The storage request receives no owner Authorization; a second redirect or unknown
+origin stops. Require immutable service SHA-256, size, current run/head/main,
+role/name, unexpired metadata, unique ID and closed basename to match. Each
+original is acquired once; no download-all exists. Changed service behavior
+requires revalidation, not a broader redirect policy.
+
+Each direct HTTPS send uses verified TLS and a complete 30-second supervisor,
+including DNS, headers, body and private pipe reception, capped by the current
+stage/request deadline. Child and receiver cleanup each have a five-second cap.
+Bodies are limited to 2 MiB and retained headers to 64 KiB. No proxy, retry or TLS
+downgrade is supported. Persist intent before send and retain original safe body
+bytes, selected headers, status, times and digests privately. Signed storage
+locations remain in memory; retain only their digests. Reflected credentials or
+signed URLs stop before persistence. Private originals require screening before
+public disclosure. Failures preserve spending and evidence and never authorize a
+second effect.
+
 ## Remaining Execution Closure
 
 Before configuration, independently review the concrete composition of the
 collection/counter schemas, durable pre-send spending and bounded transport/caller,
 actual supported principal/access, full raw evidence provenance and exact
-before/after plan. Before any operation, close the external sole-operator caller
-and its finite actual-run/check/artifact discovery and approval budgets. Join its
+before/after plan. Before any operation, independently admit the exact external
+sole-operator source, launch and fixed budget manifest described above. Join its
 actual-run reservation to the hosted evidence. Count the 549 configuration reads
 and five predispatch main reads per destination only once. Hosted cross-process
 spending retains the 32-send registry envelope; operator/API/action classes remain
