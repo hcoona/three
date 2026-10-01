@@ -301,9 +301,9 @@
       },
       "Microsoft.Web.WebView2": {
         "type": "CentralTransitive",
-        "requested": "[1.0.4191.47, )",
-        "resolved": "1.0.4191.47",
-        "contentHash": "Snb6mlTpuz6ZFjWMwIdg28Xp6kAUMy3zaLUyGbFSaw+/AJKlwoX8EiaWJ1eUMfKyJHksPkFjJHl1LIB7kX+0AQ=="
+        "requested": "[1.0.4258.31, )",
+        "resolved": "1.0.4258.31",
+        "contentHash": "sHVZ2MQrHT1J3q5/6csn0fIP27rzpTO/RRC+wPQDrZheB7T4t2n+vVbY6SdCKr4WRV9s/gmBM3PPMWWJtoDzMg=="
       },
       "OpenMcdf": {
         "type": "CentralTransitive",
@@ -372,9 +372,9 @@
       },
       "Microsoft.Web.WebView2": {
         "type": "CentralTransitive",
-        "requested": "[1.0.4191.47, )",
-        "resolved": "1.0.4191.47",
-        "contentHash": "Snb6mlTpuz6ZFjWMwIdg28Xp6kAUMy3zaLUyGbFSaw+/AJKlwoX8EiaWJ1eUMfKyJHksPkFjJHl1LIB7kX+0AQ=="
+        "requested": "[1.0.4258.31, )",
+        "resolved": "1.0.4258.31",
+        "contentHash": "sHVZ2MQrHT1J3q5/6csn0fIP27rzpTO/RRC+wPQDrZheB7T4t2n+vVbY6SdCKr4WRV9s/gmBM3PPMWWJtoDzMg=="
       }
     }
   }
