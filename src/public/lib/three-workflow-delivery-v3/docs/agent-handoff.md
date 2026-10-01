@@ -38,8 +38,11 @@ single-gem Artifact and separate CI/Release qualification retain current-purpose
 and current-run bindings. Both protected Governance sources remain blocked.
 Bounded native registry readers and one-shot HTTP writers are implemented, with
 Ruby publication snapshots, current-run approval, durable mutation markers and
-strict Result/Outcome replay. Both destinations remain disabled; CLI and hosted
-workflow integration, configuration and actual acceptance remain pending.
+strict Result/Outcome replay. The Ruby PR workflow and CI-only CLI connect
+exact-target Build and independent content/consumer qualification through
+explicit immutable artifact edges. GitHub control acquisition has isolated
+contract coverage. Both destinations remain disabled; bootstrap/normal hosted
+publication, configuration and actual acceptance remain pending.
 Source presence and controlled-transport tests are not Live admission.
 GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without

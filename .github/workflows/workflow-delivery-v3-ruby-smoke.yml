@@ -1,0 +1,302 @@
+name: Workflow Delivery v3 Ruby smoke
+'on':
+  pull_request: null
+permissions: {}
+concurrency:
+  group: wdv3-ruby-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash
+env:
+  WDV3_PURPOSE: ci-pr-slice-shadow
+jobs:
+  request-ruby:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out exact target without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
+      - name: request Ruby request
+        id: request
+        run: python -m three_workflow_delivery_v3.ruby_cli request --purpose "${WDV3_PURPOSE}" --output
+          .wdv3/request.json
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Persist and read back request
+        uses: ./.github/actions/workflow-delivery-v3-ruby-record
+        with:
+          role: request
+          path: .wdv3/request.json
+      - name: Expose explicit current-DAG edges
+        id: edges
+        if: always()
+        run: python -m three_workflow_delivery_v3.ruby_cli export --purpose "${WDV3_PURPOSE}"
+    outputs:
+      references: ${{ steps.edges.outputs.references }}
+      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
+    env:
+      WDV3_REFERENCES: '{}'
+  discover-ruby:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact target without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
+        with:
+          native: 'true'
+      - name: Download only explicit predecessor artifact IDs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.request-ruby.outputs.artifact-ids }}
+          path: .wdv3
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.401
+      - name: Restore pinned NBGV
+        run: dotnet tool restore
+      - name: provider Ruby provider
+        id: provider
+        run: python -m three_workflow_delivery_v3.ruby_cli provider --purpose "${WDV3_PURPOSE}" --output
+          .wdv3/provider.json
+      - name: Persist and read back provider
+        uses: ./.github/actions/workflow-delivery-v3-ruby-record
+        with:
+          role: provider
+          path: .wdv3/provider.json
+      - name: Expose explicit current-DAG edges
+        id: edges
+        if: always()
+        run: python -m three_workflow_delivery_v3.ruby_cli export --purpose "${WDV3_PURPOSE}"
+    outputs:
+      references: ${{ steps.edges.outputs.references }}
+      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
+    needs: request-ruby
+    env:
+      WDV3_REFERENCES: ${{ needs.request-ruby.outputs.references }}
+  compile-ruby:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact target without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
+      - name: Download only explicit predecessor artifact IDs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.discover-ruby.outputs.artifact-ids }}
+          path: .wdv3
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: compile Ruby model
+        id: compile
+        run: python -m three_workflow_delivery_v3.ruby_cli compile --purpose "${WDV3_PURPOSE}" --output
+          .wdv3/model.json
+      - name: Persist and read back model
+        uses: ./.github/actions/workflow-delivery-v3-ruby-record
+        with:
+          role: model
+          path: .wdv3/model.json
+      - name: Expose explicit current-DAG edges
+        id: edges
+        if: always()
+        run: python -m three_workflow_delivery_v3.ruby_cli export --purpose "${WDV3_PURPOSE}"
+    outputs:
+      references: ${{ steps.edges.outputs.references }}
+      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
+    needs: discover-ruby
+    env:
+      WDV3_REFERENCES: ${{ needs.discover-ruby.outputs.references }}
+  plan-ruby-ci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact target without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
+      - name: Download only explicit predecessor artifact IDs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.compile-ruby.outputs.artifact-ids }}
+          path: .wdv3
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: plan Ruby ci-plan
+        id: plan
+        run: python -m three_workflow_delivery_v3.ruby_cli plan --purpose "${WDV3_PURPOSE}" --output .wdv3/ci-plan.json
+      - name: Persist and read back ci-plan
+        uses: ./.github/actions/workflow-delivery-v3-ruby-record
+        with:
+          role: ci-plan
+          path: .wdv3/ci-plan.json
+      - name: Expose explicit current-DAG edges
+        id: edges
+        if: always()
+        run: python -m three_workflow_delivery_v3.ruby_cli export --purpose "${WDV3_PURPOSE}"
+    outputs:
+      references: ${{ steps.edges.outputs.references }}
+      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
+    needs: compile-ruby
+    env:
+      WDV3_REFERENCES: ${{ needs.compile-ruby.outputs.references }}
+    if: github.event_name == 'pull_request'
+  build-ruby:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact target without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
+        with:
+          native: 'true'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.plan-ruby-ci.outputs.artifact-ids }}
+          path: .wdv3
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: build Ruby build-report
+        id: build
+        run: python -m three_workflow_delivery_v3.ruby_cli build --purpose "${WDV3_PURPOSE}" --output .wdv3/build-report.json
+      - name: Persist and read back original gem
+        uses: ./.github/actions/workflow-delivery-v3-ruby-record
+        with:
+          role: gem
+          path: ${{ steps.build.outputs.gem-path }}
+      - name: Persist and read back build-report
+        uses: ./.github/actions/workflow-delivery-v3-ruby-record
+        with:
+          role: build-report
+          path: .wdv3/build-report.json
+      - name: Expose explicit current-DAG edges
+        id: edges
+        if: always()
+        run: python -m three_workflow_delivery_v3.ruby_cli export --purpose "${WDV3_PURPOSE}"
+    outputs:
+      references: ${{ steps.edges.outputs.references }}
+      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
+    needs:
+      - plan-ruby-ci
+    env:
+      WDV3_REFERENCES: ${{ needs.plan-ruby-ci.outputs.references }}
+    if: "!cancelled() && (needs.plan-ruby-ci.result == 'success')"
+  qualify-ruby:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact target without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
+        with:
+          native: 'true'
+      - name: Download only explicit predecessor artifact IDs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.build-ruby.outputs.references && needs.build-ruby.outputs.artifact-ids
+            && needs.build-ruby.outputs.artifact-ids || needs.plan-ruby-ci.result == 'success' && needs.plan-ruby-ci.outputs.artifact-ids
+            }}
+          path: .wdv3
+          merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
+      - name: artifacts Ruby artifacts
+        id: artifacts
+        run: python -m three_workflow_delivery_v3.ruby_cli artifacts --purpose "${WDV3_PURPOSE}" --output
+          .wdv3/artifacts.json
+        if: needs.build-ruby.result == 'success'
+        continue-on-error: true
+      - name: Persist and read back artifacts
+        id: artifact-records
+        uses: ./.github/actions/workflow-delivery-v3-ruby-record
+        if: steps.artifacts.outcome == 'success'
+        continue-on-error: true
+        with:
+          role: artifacts
+          path: .wdv3/artifacts.json
+      - name: quality Ruby quality
+        id: quality
+        run: python -m three_workflow_delivery_v3.ruby_cli quality --purpose "${WDV3_PURPOSE}" --output
+          .wdv3/quality.json
+        if: steps.artifact-records.outcome == 'success'
+        continue-on-error: true
+      - name: Persist and read back quality
+        uses: ./.github/actions/workflow-delivery-v3-ruby-record
+        if: steps.quality.outcome == 'success'
+        continue-on-error: true
+        with:
+          role: quality
+          path: .wdv3/quality.json
+      - name: decision Ruby decision
+        id: decision
+        run: python -m three_workflow_delivery_v3.ruby_cli decision --purpose "${WDV3_PURPOSE}" --output
+          .wdv3/decision.json
+        continue-on-error: true
+      - name: Persist and read back decision
+        uses: ./.github/actions/workflow-delivery-v3-ruby-record
+        with:
+          role: decision
+          path: .wdv3/decision.json
+      - name: Require passed qualification
+        env:
+          DECISION: ${{ steps.decision.outputs.qualification-result }}
+        run: test "${DECISION}" = passed
+      - name: Expose explicit current-DAG edges
+        id: edges
+        if: always()
+        run: python -m three_workflow_delivery_v3.ruby_cli export --purpose "${WDV3_PURPOSE}"
+    outputs:
+      references: ${{ steps.edges.outputs.references }}
+      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
+    needs:
+      - build-ruby
+      - plan-ruby-ci
+    if: always() && (needs.plan-ruby-ci.result == 'success')
+    env:
+      WDV3_REFERENCES: ${{ needs.build-ruby.outputs.references && needs.build-ruby.outputs.artifact-ids
+        && needs.build-ruby.outputs.references || needs.plan-ruby-ci.result == 'success' && needs.plan-ruby-ci.outputs.references
+        }}

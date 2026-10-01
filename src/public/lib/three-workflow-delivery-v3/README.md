@@ -320,6 +320,12 @@ remote original gem. The singular publication path binds immutable approval,
 rechecks missing state before its marker, uploads once and admits visibility
 reads only after HTTP 200. Strict replay joins this evidence to the shared
 scalar Attempt Outcome; zero-action completion requires a fresh exact proof.
-The two protected Governance sources remain blocked. CLI, hosted workflows,
-configuration and actual destination acceptance remain pending. Local controlled
-transports do not establish supported deployed registry behavior.
+The [Ruby CI entry](../../../../.github/workflows/workflow-delivery-v3-ruby-smoke.yml)
+connects exact-target discovery, compilation, original-gem Build and independent
+CI content/consumer qualification. Its CLI accepts only CI purposes; immutable
+upload/readback passes explicit current-run artifact references between jobs.
+The GitHub control adapter checks protected Governance, native approval and the
+fixed RubyGems OIDC audience for forthcoming publication integration.
+The two protected Governance sources remain blocked. Bootstrap and normal
+publication callers, configuration and actual destination acceptance remain
+pending. Local controlled transports do not establish deployed registry behavior.

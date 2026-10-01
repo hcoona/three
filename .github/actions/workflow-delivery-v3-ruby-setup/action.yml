@@ -1,0 +1,23 @@
+name: Prepare Ruby V3 control runtime
+description: Install locked control dependencies without installing the smoke project.
+inputs:
+  native:
+    description: Install pinned Ruby only for native discovery, build or inspection.
+    required: false
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      with:
+        version-file: .config/uv/uv.toml
+        github-token: ''
+    - if: inputs.native == 'true'
+      uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8
+      with:
+        ruby-version: '4.0.7'
+        bundler-cache: false
+    - shell: bash
+      run: |
+        uv sync --frozen --package three-workflow-delivery-v3 --no-dev
+        echo "${GITHUB_WORKSPACE}/.venv/bin" >> "${GITHUB_PATH}"
