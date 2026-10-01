@@ -9,6 +9,11 @@ from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.release.ruby_configuration import (
     RubyBootstrapConfiguration,
     RubyFirstProjectInspection,
+    blocked_ruby_bootstrap_configuration,
+)
+from three_workflow_delivery_v3.release.ruby_governance import (
+    RubyGovernance,
+    blocked_ruby_governance,
 )
 from three_workflow_delivery_v3.release.ruby_operation import (
     RubyOperationEnvelope,
@@ -16,7 +21,7 @@ from three_workflow_delivery_v3.release.ruby_operation import (
     disabled_ruby_operation_envelope,
 )
 
-from ..ruby_integration_fixtures import NOW, ROOT
+from ..ruby_integration_fixtures import NOW, ROOT, TARGET
 from .ruby_configuration_fixtures import (
     bootstrap_request,
     configuration,
@@ -289,6 +294,11 @@ def test_shipped_enabled_bootstrap_carriers_join_current_protocol():
             / "ruby-operation-protocol.md"
         ).read_bytes()
     )
+    assert {
+        slot
+        for slot, selected in envelope.document["slots"].items()
+        if selected is not None
+    } == set()
     for slot, selected in envelope.document["slots"].items():
         if selected is None or selected["binding"]["kind"] != "bootstrap":
             continue
@@ -318,3 +328,34 @@ def test_successor_inspection_rejects_coherent_other_protocol():
     envelope = RubyOperationEnvelope(canonicalize(document))
     with pytest.raises(ValueError, match="first-project binding differs"):
         _require_modeled_bootstrap_join(envelope, config, slot, NOW)
+
+
+@pytest.mark.parametrize("destination", ["github-packages", "rubygems"])
+def test_shipped_redirect_correction_blocks_current_carriers(
+    destination,
+):
+    """Disabled slots retain current profiles without stale readiness."""
+    registry = RubyRegistry(destination)
+    control = ROOT / ".github/workflow-delivery"
+    governance_bytes = (
+        control / "governance" / f"hcoona-release-smoke-ruby-{destination}.json"
+    ).read_bytes()
+    governance = RubyGovernance(registry, governance_bytes, TARGET, NOW)
+    assert governance.document == blocked_ruby_governance(registry)
+    assert governance_bytes == canonicalize(governance.document)
+    assert (
+        governance.document["operation-profile-digest"]
+        == registry.profile_digest
+    )
+    with pytest.raises(ValueError):  # noqa: PT011 - blocked ready state
+        governance.require_live(NOW)
+    configuration_bytes = (
+        control
+        / "configuration"
+        / f"hcoona-release-smoke-ruby-{destination}.json"
+    ).read_bytes()
+    config = RubyBootstrapConfiguration(registry, configuration_bytes)
+    assert config.document == blocked_ruby_bootstrap_configuration(registry)
+    assert configuration_bytes == canonicalize(config.document)
+    with pytest.raises(ValueError, match="unavailable or stale"):
+        config.require_current(NOW)

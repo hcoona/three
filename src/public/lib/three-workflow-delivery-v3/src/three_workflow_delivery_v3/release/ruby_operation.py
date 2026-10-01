@@ -44,12 +44,19 @@ RUBY_OPERATION_SLOTS = tuple(
 RUBY_SUCCESSOR_SLOT = "github-packages-bootstrap02"
 RUBY_SUCCESSOR_VERSION = 2
 RUBY_OPERATION_SLOTS_V2 = (*RUBY_OPERATION_SLOTS, RUBY_SUCCESSOR_SLOT)
-RUBY_REGISTRY_PARTITIONS = {
+RUBY_REGISTRY_PARTITIONS_V1 = {
     "eligibility": 3,
     "pre-marker": 3,
     "execute": 20,
     "zero-action": 3,
     "remote-consumer": 3,
+}
+RUBY_REGISTRY_PARTITIONS = {
+    "eligibility": 4,
+    "pre-marker": 4,
+    "execute": 16,
+    "zero-action": 4,
+    "remote-consumer": 4,
 }
 _SHA = re.compile(r"[0-9a-f]{40}\Z")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
@@ -135,7 +142,12 @@ def disabled_ruby_operation_envelope(
         "path": RUBY_ENVELOPE_PATH,
         "maximum-request-lifetime-seconds": 14400,
         "registry-partitions": cast(
-            "JsonValue", dict(RUBY_REGISTRY_PARTITIONS)
+            "JsonValue",
+            dict(
+                RUBY_REGISTRY_PARTITIONS_V1
+                if version == 1
+                else RUBY_REGISTRY_PARTITIONS
+            ),
         ),
         "maximum-uploads": 1,
         "maximum-oidc-assertions": 1,
@@ -216,6 +228,15 @@ class RubyOperationEnvelope:
                 "github-budget-digest",
             ):
                 _digest(enabled[key])
+
+    @property
+    def registry_partitions(self) -> dict[str, int]:
+        """Select admitted envelope caps, preserving legacy defaults."""
+        return dict(
+            RUBY_REGISTRY_PARTITIONS_V1
+            if self.version == 1
+            else RUBY_REGISTRY_PARTITIONS
+        )
 
     @property
     def version(self) -> int:

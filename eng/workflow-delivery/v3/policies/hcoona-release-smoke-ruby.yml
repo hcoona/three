@@ -5,7 +5,7 @@ quality:
   - ruby/gem-install-require-v1
 channels:
   buddy:
-    destination: ruby/github-packages-v1
+    destination: ruby/github-packages-v2
     governance: .github/workflow-delivery/governance/hcoona-release-smoke-ruby-github-packages.json
   official:
     destination: ruby/rubygems-v1

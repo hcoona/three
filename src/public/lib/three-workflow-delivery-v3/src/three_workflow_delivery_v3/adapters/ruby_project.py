@@ -10,7 +10,9 @@ from typing import TYPE_CHECKING
 from three_workflow_delivery_v3._ruby_native import RUBY_RELEASE_UNIT
 from three_workflow_delivery_v3.adapters.ruby_registry import (
     RubyHttpResponse,
+    RubyResponseEvidence,
     ruby_response_document,
+    ruby_screen_response,
 )
 from three_workflow_delivery_v3.adapters.rubygems import RUBY_INDEX_LIMIT
 from three_workflow_delivery_v3.canonical import JsonValue, parse_json_strict
@@ -26,14 +28,17 @@ RUBYGEMS_PROJECT_URL = (
 _ABSENT_BODY = b"This rubygem could not be found."
 
 
-def classify_rubygems_project(response: RubyHttpResponse) -> str:
+def classify_rubygems_project(response: RubyResponseEvidence) -> str:
     """Admit absence only from the supported direct project lookup.
 
     An empty owner array still means that a project object exists. This does
     not validate ownership or publisher registration for normal admission.
     """
     if (
-        type(response.status) is not int
+        not isinstance(response, RubyHttpResponse)
+        or response.location is not None
+        or response.location_invalid
+        or type(response.status) is not int
         or type(response.body) is not bytes
         or len(response.body) > RUBY_INDEX_LIMIT
         or type(response.content_type) is not str
@@ -66,7 +71,7 @@ def classify_rubygems_project(response: RubyHttpResponse) -> str:
 class RubyGemsProjectObservation:
     """One original public response or one failed send; never ownership."""
 
-    response: RubyHttpResponse | None
+    response: RubyResponseEvidence | None
     failure: str | None = None
 
     def __post_init__(self) -> None:
@@ -121,4 +126,4 @@ def observe_rubygems_project(
         return RubyGemsProjectObservation(None, "OSError")
     except ValueError:
         return RubyGemsProjectObservation(None, "ValueError")
-    return RubyGemsProjectObservation(response)
+    return RubyGemsProjectObservation(ruby_screen_response(response))

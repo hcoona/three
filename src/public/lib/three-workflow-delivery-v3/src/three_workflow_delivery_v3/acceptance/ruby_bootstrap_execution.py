@@ -6,7 +6,6 @@ import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from http import HTTPStatus
 from http.client import HTTPException
 from typing import TYPE_CHECKING, cast
 
@@ -21,9 +20,11 @@ from three_workflow_delivery_v3.acceptance.ruby_bootstrap_publication import (
 )
 from three_workflow_delivery_v3.adapters.ruby import qualify_ruby_consumer
 from three_workflow_delivery_v3.adapters.ruby_registry import (
-    RubyHttpResponse,
     RubyRegistryWriter,
+    RubyResponseEvidence,
     ruby_response_document,
+    ruby_screen_response,
+    ruby_upload_accepted,
 )
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
@@ -79,7 +80,7 @@ class RubyBootstrapResult:
     marker_reference: ArtifactReference
     marker_transport: ArtifactTransportIdentity
     status: str
-    response: RubyHttpResponse | None
+    response: RubyResponseEvidence | None
     visibility: tuple[dict[str, JsonValue], ...]
     started_at: datetime
     started_tick: float
@@ -127,7 +128,7 @@ class RubyBootstrapResult:
         )
         if self.response is not None:
             require_bootstrap(
-                (self.response.status == HTTPStatus.OK)
+                ruby_upload_accepted(self.response)
                 == (self.status == "succeeded")
                 and self.completed_at is not None
                 and self.completed_at.tzinfo is not None
@@ -321,7 +322,7 @@ def execute_ruby_bootstrap_publication(  # noqa: C901, PLR0913, PLR0915 - ordere
 
     def finish(  # noqa: PLR0913, PLR0917 - retained terminal fields
         status: str,
-        response: RubyHttpResponse | None = None,
+        response: RubyResponseEvidence | None = None,
         observations: tuple[dict[str, JsonValue], ...] = (),
         completed: datetime | None = None,
         tick: float | None = None,
@@ -367,7 +368,9 @@ def execute_ruby_bootstrap_publication(  # noqa: C901, PLR0913, PLR0915 - ordere
     ) as error:
         return finish("not-attempted", error=_error(error))
     try:
-        response = writer.upload(original, credential, now=now)
+        response = ruby_screen_response(
+            writer.upload(original, credential, now=now)
+        )
     except (
         OSError,
         ValueError,
@@ -378,7 +381,7 @@ def execute_ruby_bootstrap_publication(  # noqa: C901, PLR0913, PLR0915 - ordere
         return finish("unknown", error=_error(error))
     completed, completed_tick = clock(), _number(monotonic())
     _retain(evidence / "upload.json", ruby_response_document(response))
-    if response.status != HTTPStatus.OK:
+    if not ruby_upload_accepted(response):
         return finish(
             "failed", response, completed=completed, tick=completed_tick
         )

@@ -100,7 +100,8 @@ class RubyBootstrapPhaseBudget(RubyRequestBudget):
     ) -> RubyHttpResponse:
         """Spend locally and durably before a send; failures never refund."""
         require_bootstrap(
-            self.used < RUBY_REGISTRY_PARTITIONS[self.phase],
+            self.used
+            < self.run.request.envelope.registry_partitions[self.phase],
             "Ruby bootstrap registry partition exhausted",
         )
         now = self._clock()

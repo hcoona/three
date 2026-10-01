@@ -168,7 +168,7 @@ def phase_claim(
         "run-id": operation.run_id,
         "run-attempt": 1,
         "phase": phase,
-        "maximum": RUBY_REGISTRY_PARTITIONS[phase],
+        "maximum": operation.request.envelope.registry_partitions[phase],
         "operator-spent": 1
         if operation.bootstrap
         and operation.registry.name == "rubygems"
@@ -235,7 +235,9 @@ class PhaseReservation:
         require_bootstrap(
             phase == self.phase
             and now() < self.deadline
-            and 0 < ordinal <= RUBY_REGISTRY_PARTITIONS[phase],
+            and 0
+            < ordinal
+            <= self.operation.request.envelope.registry_partitions[phase],
             "Ruby registry send exceeds its current phase",
         )
         operator_spent = cast("int", self.doc["operator-spent"])

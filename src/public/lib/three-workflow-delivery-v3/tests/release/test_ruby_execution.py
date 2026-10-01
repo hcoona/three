@@ -9,6 +9,7 @@ from three_workflow_delivery_v3.adapters.ruby_registry import (
     RubyHttpResponse,
     RubyRegistryWriter,
     RubyRequestBudget,
+    ruby_response_document,
 )
 from three_workflow_delivery_v3.canonical import parse_canonical_json
 from three_workflow_delivery_v3.release.ruby_audit import (
@@ -79,7 +80,19 @@ def test_ruby_execution_non200_is_failed_without_visibility_or_retry(
         "failed",
         "possibly-mutated",
     )
-    assert result.upload_response is response
+    retained = ruby_response_document(result.upload_response)
+    assert retained == ruby_response_document(response)
+    assert retained["status"] == status
+    assert retained["body-digest"] == (
+        "sha256:20cd938a2ea64f612b3523bc9219130c6fc66cd09b394ea38437488c0b8898b2"
+    )
+    if status == 302:  # noqa: PLR2004 - redirect evidence is screened
+        assert retained["kind"] == "screened"
+        assert "body-base64" not in retained
+        assert b"rejected" not in repr(result.upload_response).encode()
+    else:
+        assert retained["kind"] == "original"
+        assert retained["body-base64"] == "cmVqZWN0ZWQ="
     assert result.visibility == ()
     assert len(transport.requests) == 2  # noqa: PLR2004 - exchange plus upload
     assert timeline.waits == []

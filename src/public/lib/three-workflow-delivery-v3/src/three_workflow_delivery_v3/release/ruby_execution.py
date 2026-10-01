@@ -6,16 +6,17 @@ import math
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from http import HTTPStatus
 from http.client import HTTPException
 from typing import TYPE_CHECKING, cast
 
 from three_workflow_delivery_v3._ruby_native import ruby_text
 from three_workflow_delivery_v3.adapters.ruby_registry import (
-    RubyHttpResponse,
     RubyRegistryReader,
     RubyRegistryWriter,
+    RubyResponseEvidence,
     ruby_response_document,
+    ruby_screen_response,
+    ruby_upload_accepted,
 )
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
@@ -68,7 +69,7 @@ class RubyPublicationResult:
     marker: RubyMutationMarker
     marker_reference: ArtifactReference
     status: str
-    upload_response: RubyHttpResponse | None
+    upload_response: RubyResponseEvidence | None
     visibility: tuple[dict[str, JsonValue], ...]
     authority: bytes
     upload_completed_at: datetime | None = None
@@ -88,12 +89,12 @@ class RubyPublicationResult:
             or (
                 self.status == "succeeded"
                 and response is not None
-                and response.status != HTTPStatus.OK
+                and not ruby_upload_accepted(response)
             )
             or (
                 self.status == "failed"
                 and response is not None
-                and response.status == HTTPStatus.OK
+                and ruby_upload_accepted(response)
             )
             or (self.visibility and self.status != "succeeded")
             or (response is not None) != (self.upload_completed_at is not None)
@@ -242,7 +243,7 @@ def execute_ruby_publication(  # noqa: C901, PLR0913, PLR0915 - bounded ordered 
 
     def result(  # noqa: PLR0913, PLR0917 - terminal evidence fields
         status: str,
-        response: RubyHttpResponse | None = None,
+        response: RubyResponseEvidence | None = None,
         observations: tuple[dict[str, JsonValue], ...] = (),
         completed: datetime | None = None,
         completed_tick: float | None = None,
@@ -265,13 +266,15 @@ def execute_ruby_publication(  # noqa: C901, PLR0913, PLR0915 - bounded ordered 
     except ValueError as error:
         return result("not-attempted", error=type(error).__name__)
     try:
-        response = writer.upload(original, credential, now=now)
+        response = ruby_screen_response(
+            writer.upload(original, credential, now=now)
+        )
     except (OSError, ValueError, TypeError, HTTPException) as error:
         return result("unknown", error=type(error).__name__)
     # Retain the definitive response even if completion crossed a deadline.
     completed, completed_tick = clock(), _number(monotonic())
     retain("upload.json", ruby_response_document(response))
-    if response.status != HTTPStatus.OK:
+    if not ruby_upload_accepted(response):
         return result(
             "failed",
             response,

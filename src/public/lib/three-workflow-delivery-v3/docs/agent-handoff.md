@@ -53,15 +53,17 @@ all original artifacts, ledgers and reservations. Do not rerun, resume, refund,
 reuse Approval or enable another bootstrap.
 
 The [bounded download correction](./ruby-operation-protocol.md#github-gem-download-continuation)
-defines one credential-free GitHub storage continuation and safe redirect
-retention within the existing 32 direct sends. Its separately observed header
-origin/path does not establish downloaded bytes. Protected-deliver and validate
-the corrected implementation with all slots null and current carriers blocked;
-then establish actual package ownership/access, current controls and fresh
-normal attestation before enabling one remaining normal slot. The current
-zero-redirect implementation and spent bootstrap activation do not implement or
-admit the corrected normal route. Four normal slots remain; ordinary current
-Attempt/native/Approval/remote-consumer and independent audit gates still apply.
+is implemented with one explicit credential-free GitHub storage continuation,
+original/screened evidence and strict offline replay within 32 direct sends.
+All eleven operation slots are null; both normal Governance and first-project
+configuration carriers are blocked against current profiles. The old ready
+GitHub configuration and both failed runs remain historical evidence. The
+separately observed header origin/path and local tests do not establish a real
+storage download or exact remote bytes. Protected-deliver and validate this
+inactive implementation, then establish current package ownership/access,
+controls and fresh independent normal attestation before enabling one remaining
+normal slot. Four normal slots remain; ordinary current Attempt/native/Approval/
+remote-consumer and independent audit gates still apply.
 
 The [owner disposition](https://github.com/hcoona/three/issues/954#issuecomment-5936150680)
 permits the consumed second bootstrap and read-only journey checks without a

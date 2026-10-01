@@ -17,9 +17,6 @@ from three_workflow_delivery_v3.canonical import (
     parse_canonical_json,
 )
 from three_workflow_delivery_v3.platform.ruby_github import RubyGitHubRuntime
-from three_workflow_delivery_v3.release.ruby_operation import (
-    RUBY_REGISTRY_PARTITIONS,
-)
 
 from ..ruby_registry_fixtures import ScriptedTransport, json_response
 from .ruby_bootstrap_fixtures import CURRENT, EXPIRED, modeled_plan
@@ -51,14 +48,23 @@ def send(selected):
 
 
 @pytest.mark.parametrize("destination", ["github-packages", "rubygems"])
-@pytest.mark.parametrize("phase", list(RUBY_REGISTRY_PARTITIONS))
+@pytest.mark.parametrize(
+    ("phase", "cap"),
+    [
+        ("eligibility", 3),
+        ("pre-marker", 3),
+        ("execute", 20),
+        ("zero-action", 3),
+        ("remote-consumer", 3),
+    ],
+)
 def test_partition_caps_include_prior_operator_debit_and_reserve_before_send(
-    tmp_path, destination, phase
+    tmp_path, destination, phase, cap
 ):
-    """Reserve each fixed ordinal without borrowing another partition."""
+    """Preserve historical v1 caps, including the prior owners debit."""
     run = modeled_plan(tmp_path, destination).run
+    assert run.request.envelope.version == 1
     debit = int(destination == "rubygems" and phase == "eligibility")
-    cap = RUBY_REGISTRY_PARTITIONS[phase]
     observed = []
 
     class Native:

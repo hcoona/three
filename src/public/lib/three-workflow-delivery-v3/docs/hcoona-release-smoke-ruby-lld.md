@@ -225,7 +225,7 @@ still requires the actual complete downloaded gem bytes and witness. Offline
 replay verifies the screened continuation joins without reconstructing a signed
 URL or claiming to recover its discarded signature. Corrected source/profile,
 evidence replay and finite accounting must be protected-delivered before normal
-activation; the prior zero-redirect implementation does not satisfy this route.
+activation; the implemented correction remains inactive with all slots null.
 
 RubyGems.org uses the documented version inventory and exact-version/platform
 API, then an admitted HTTPS gem download origin. Check native name, version,

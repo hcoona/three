@@ -23,17 +23,23 @@ class ControlledResponse:
         self.body = body
         self.status = status
         self.read_sizes = []
+        self.headers = [("Content-Type", "application/octet-stream")]
 
     def read(self, size):
         """Honor the same bounded read surface used by http.client."""
         self.read_sizes.append(size)
         return self.body[:size]
 
-    def getheader(self, name, default):
-        """Supply only the supported content metadata."""
-        assert name == "Content-Type"
-        assert default == ""
-        return "application/octet-stream"
+    def getheaders(self):
+        """Expose ordered native headers and duplicates to the parser."""
+        return list(self.headers)
+
+    def getheader(self, name, default=""):
+        """Match native case-insensitive combined header lookup."""
+        values = [
+            value for key, value in self.headers if key.lower() == name.lower()
+        ]
+        return ", ".join(values) if values else default
 
 
 class ControlledConnection:
@@ -215,3 +221,52 @@ def test_ruby_request_budget_rejects_invalid_response_without_refund(response):
         budget.request("GET", "https://rubygems.org/index", {}, None, 4)
     assert budget.used == 1
     assert len(transport.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ["single", "empty", "duplicate", "case-duplicate", "limit", "over-limit"],
+)
+def test_redirect_location_requires_one_complete_bounded_header(
+    https_factory, kind
+):
+    """Duplicate and size semantics survive without retaining invalid text."""
+    transport, connection, response, calls = https_factory
+    location = "https://storage.invalid/?sig=synthetic"
+    entries = {
+        "single": [("Location", location)],
+        "empty": [("Location", "")],
+        "duplicate": [("Location", location), ("Location", location)],
+        "case-duplicate": [("Location", location), ("lOcAtIoN", location)],
+        "limit": [("Location", "x" * 8192)],
+        "over-limit": [("Location", "x" * 8193)],
+    }[kind]
+    response.headers.extend(entries)
+    result = transport.request("GET", "https://rubygems.org/index", {}, None, 4)
+    valid = kind in {"single", "limit"}
+    assert result.location_invalid is not valid
+    assert result.location == (entries[0][1] if valid else None)
+    assert result.body == b"data"
+    assert location not in repr(result)
+    assert connection.closed is True
+    assert len(calls) == len(connection.requests) == 1
+
+
+@pytest.mark.parametrize("excess", [0, 1])
+def test_http_accepted_header_bound_is_inclusive(https_factory, excess):
+    """Accept 64KiB of parsed headers and reject the next byte."""
+    transport, connection, response, calls = https_factory
+    # Header accounting includes each name, colon/space and CRLF after parsing.
+    response.headers = [("X", "x" * (65536 - 5 + excess))]
+    if excess:
+        with pytest.raises(ValueError, match="headers exceed"):
+            transport.request("GET", "https://rubygems.org/index", {}, None, 4)
+        assert response.read_sizes == []
+    else:
+        result = transport.request(
+            "GET", "https://rubygems.org/index", {}, None, 4
+        )
+        assert result.body == b"data"
+        assert response.read_sizes == [5]
+    assert connection.closed is True
+    assert len(calls) == len(connection.requests) == 1

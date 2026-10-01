@@ -134,7 +134,7 @@ def successor(predecessor):
 
 
 def test_ruby_v2_envelope_has_only_one_disabled_successor():
-    """The new inventory preserves original slots and effect limits."""
+    """The new inventory preserves slots and fixes versioned send limits."""
     old = RubyOperationEnvelope(
         canonicalize(disabled_ruby_operation_envelope())
     )
@@ -148,11 +148,25 @@ def test_ruby_v2_envelope_has_only_one_disabled_successor():
     assert {
         key: value
         for key, value in new.document.items()
-        if key not in {"slots", "schema"}
+        if key not in {"slots", "schema", "registry-partitions"}
     } == {
         key: value
         for key, value in old.document.items()
-        if key not in {"slots", "schema"}
+        if key not in {"slots", "schema", "registry-partitions"}
+    }
+    assert old.document["registry-partitions"] == {
+        "eligibility": 3,
+        "pre-marker": 3,
+        "execute": 20,
+        "zero-action": 3,
+        "remote-consumer": 3,
+    }
+    assert new.document["registry-partitions"] == {
+        "eligibility": 4,
+        "pre-marker": 4,
+        "execute": 16,
+        "zero-action": 4,
+        "remote-consumer": 4,
     }
     with pytest.raises(ValueError, match="disabled"):
         new.enabled_slot(NEW, NOW)

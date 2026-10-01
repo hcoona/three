@@ -574,7 +574,7 @@ sends; it creates no new phase or observation lifetime. Late completion fails.
 
 ### Protected Rollout and Historical Bindings
 
-Design acceptance alone does not enable the unimplemented route. The corrected
+Design acceptance alone does not enable the route. The inactive corrected
 implementation atomically updates profile, transport, evidence replay, v2
 envelope partitions, hosted phase claims and tests, with all eleven operation
 slots null and both normal Governance sources blocked. Keep the existing v2

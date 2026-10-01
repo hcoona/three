@@ -295,7 +295,7 @@ DESTINATION_DEFINITIONS: Mapping[str, DestinationDefinition] = MappingProxyType(
         definition.logical_id: definition
         for definition in (
             DestinationDefinition(
-                "ruby/github-packages-v1",
+                "ruby/github-packages-v2",
                 "ruby",
                 "https://rubygems.pkg.github.com/hcoona",
                 ("buddy",),
