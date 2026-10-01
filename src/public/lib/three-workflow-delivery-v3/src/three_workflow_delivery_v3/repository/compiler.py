@@ -1590,8 +1590,11 @@ def validate_compilation_context(  # noqa: C901
             FIRST_SLICE_RELEASE_UNIT,
             NUGET_RELEASE_UNIT,
             "hcoona-release-smoke-python",
+            "hcoona-release-smoke-ruby",
         }:
-            message = "simulation compilation requires the first Release Unit"
+            message = (
+                "simulation compilation requires a registered Release Unit"
+            )
             raise ValueError(message)
         if (
             context.release_unit == NUGET_RELEASE_UNIT

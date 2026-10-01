@@ -305,13 +305,16 @@ behavior, and workflow availability supplies no missing native admission.
 The documentation records accepted domain constraints and evidence. It grants no
 runtime work and does not renew either spent npm dispatch authorization.
 
-## Ruby Native Foundation
+## Ruby Build and Qualification
 
 The [Ruby requirements](./docs/requirements.md#ruby-smoke-slice) and
 [brief LLD](./docs/hcoona-release-smoke-ruby-lld.md) define the selected
 GitHub Packages then RubyGems.org journey. [Migration gates](./docs/migration-strategy.md#ruby-smoke-delivery)
 separate implementation and actual acceptance. The [Ruby smoke](../hcoona-release-smoke-ruby/README.md)
-now has exact-target native Provider facts, frozen original-gem Build, bounded
-inspection and isolated installed-consumer functions. These internal interfaces
-are not yet connected to a Model, CLI or publication workflow; destination
-support and actual acceptance remain pending.
+has exact-target native Provider facts, a closed Model, frozen original-gem Build,
+immutable Artifact records and separate CI and Release qualification. Both
+qualification paths require original-package inspection and an isolated native
+installed consumer. Release rejects CI evidence and binds its own current Attempt.
+The two protected Governance sources remain blocked; registry profiles declare
+the selected contracts without executable HTTP transport. CLI, hosted workflows,
+publication integration and actual destination acceptance remain pending.

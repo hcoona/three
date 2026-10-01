@@ -33,8 +33,11 @@ superseding the original design-only limit. Follow the accepted
 [Wave](../../../../../docs/delivery-wave.md), [Ruby requirements](./requirements.md#ruby-smoke-slice),
 [LLD](./hcoona-release-smoke-ruby-lld.md) and [migration order](./migration-strategy.md#ruby-smoke-delivery).
 The minimal [Ruby smoke](../../hcoona-release-smoke-ruby/README.md) and internal
-Provider/Build/inspection/consumer foundation are present. Model, workflow and
-destination integration remain pending; source presence is not Live admission.
+Provider/Build/inspection/consumer foundation are present. The closed Ruby Model,
+single-gem Artifact and separate CI/Release qualification retain current-purpose
+and current-run bindings. Both protected Governance sources remain blocked.
+Registry profiles are data contracts; executable HTTP, CLI, hosted workflows and
+publication integration remain pending. Source presence is not Live admission.
 GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without
 requiring duplicate/race probes or inheriting another registry's responses.

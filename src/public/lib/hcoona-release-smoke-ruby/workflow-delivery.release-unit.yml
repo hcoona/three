@@ -1,0 +1,10 @@
+schema: workflow-delivery/v3/release-unit
+release-unit: hcoona-release-smoke-ruby
+builds:
+  - id: ruby-gem
+    definition: ruby/gem-v1
+    entry-point: hcoona-release-smoke-ruby.gemspec
+    outputs:
+      - id: gem
+        role: primary-package
+        kind: ruby-gem

@@ -1,0 +1,12 @@
+schema: workflow-delivery/v3/ruby-release-policy
+release-unit: hcoona-release-smoke-ruby
+quality:
+  - ruby/gem-contents-v1
+  - ruby/gem-install-require-v1
+channels:
+  buddy:
+    destination: ruby/github-packages-v1
+    governance: .github/workflow-delivery/governance/hcoona-release-smoke-ruby-github-packages.json
+  official:
+    destination: ruby/rubygems-v1
+    governance: .github/workflow-delivery/governance/hcoona-release-smoke-ruby-rubygems.json

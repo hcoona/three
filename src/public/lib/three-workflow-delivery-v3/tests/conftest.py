@@ -209,3 +209,21 @@ def native_nuget_reproducibility(frozen_source, tmp_path_factory):
     from .nuget_repro_fixtures import prepare_reproducibility  # noqa: PLC0415
 
     return prepare_reproducibility(frozen_source, tmp_path_factory)
+
+
+@pytest.fixture(scope="session")
+def ruby_integration_original(tmp_path_factory):
+    """Share one original gem for Model/Artifact/CI contract integration."""
+    from .ruby_integration_fixtures import native_original  # noqa: PLC0415
+
+    return native_original(tmp_path_factory.mktemp("ruby-integration"))
+
+
+@pytest.fixture(scope="session")
+def ruby_release_original(tmp_path_factory):
+    """Build a separate Release-purpose original; CI bytes are not promoted."""
+    from .ruby_integration_fixtures import native_original  # noqa: PLC0415
+
+    return native_original(
+        tmp_path_factory.mktemp("ruby-release-integration"), "live-release"
+    )

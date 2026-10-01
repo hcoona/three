@@ -36,6 +36,8 @@ artifacts = [
   "src/three_workflow_delivery_v3/release/python_readback.py",
   "src/three_workflow_delivery_v3/release/python_qualification.py",
   "src/three_workflow_delivery_v3/release/python_transport.py",
+  "src/three_workflow_delivery_v3/release/ruby_governance.py",
+  "src/three_workflow_delivery_v3/release/ruby_qualification.py",
 ]
 
 [project]
