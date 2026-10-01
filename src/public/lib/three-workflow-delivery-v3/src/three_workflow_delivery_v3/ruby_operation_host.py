@@ -365,10 +365,11 @@ class HostedRubyOperation:
             catalog_digest(),
         )
 
-    def deadline(self) -> datetime:
+    def deadline(self, *, started_at: datetime | None = None) -> datetime:
         """Cap each active hosted phase by the absolute operation expiry."""
+        instant = now() if started_at is None else started_at
         return min(
-            now() + timedelta(minutes=30),
+            instant + timedelta(minutes=30),
             datetime.fromisoformat(
                 ruby_text(self.request.document["expires-at"])
             ),

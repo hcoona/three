@@ -1,10 +1,11 @@
 """Durable spending, fixed phase leases and current authority guards."""
 
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from three_workflow_delivery_v3 import ruby_operation_host as host
 from three_workflow_delivery_v3 import ruby_operation_runtime as module
 from three_workflow_delivery_v3.adapters.ruby_registry import RubyHttpResponse
 from three_workflow_delivery_v3.release.ruby_operation import (
@@ -275,6 +276,70 @@ def test_hosted_phase_claim_cannot_extend_or_rebind_authority(
         case.add("phase-eligibility", doc)
     with pytest.raises(ValueError, match=r"Ruby|ruby"):
         module.PhaseReservation(case.inputs(), "eligibility")
+
+
+@pytest.mark.parametrize("bootstrap", [True, False])
+@pytest.mark.parametrize("expiry_caps_phase", [False, True])
+def test_hosted_advancing_clock_claim_round_trips_with_exact_cap(
+    tmp_path, monkeypatch, bootstrap, expiry_caps_phase
+):
+    """A producer's advancing clock cannot create an invalid phase lease."""
+    case = hosted_case(tmp_path, bootstrap=bootstrap)
+    operation = case.admit(monkeypatch)
+    expiry = datetime.fromisoformat(operation.request.document["expires-at"])
+    instant = expiry - timedelta(minutes=10) if expiry_caps_phase else CURRENT
+
+    def advancing_now():
+        nonlocal instant
+        instant += timedelta(microseconds=1)
+        return instant
+
+    monkeypatch.setattr(module, "now", advancing_now)
+    monkeypatch.setattr(host, "now", advancing_now)
+    monkeypatch.setenv(
+        "GITHUB_JOB", case.inputs().producer("phase-eligibility")
+    )
+    document = module.phase_claim(operation, "eligibility")
+    case.add("phase-eligibility", document)
+    directory = case.directory / "spending" / "eligibility"
+    module.initialize_spending(directory)
+
+    reservation = module.PhaseReservation(case.inputs(), "eligibility")
+
+    claimed = datetime.fromisoformat(document["claimed-at"])
+    expected = expiry if expiry_caps_phase else claimed + timedelta(minutes=30)
+    assert datetime.fromisoformat(document["deadline"]) == expected
+    assert reservation.deadline == expected
+    assert instant > claimed
+    assert module.spending_members(directory) == []
+
+
+@pytest.mark.parametrize("bootstrap", [True, False])
+@pytest.mark.parametrize("boundary", ["overlong", "expired"])
+def test_hosted_phase_claim_rejects_exact_temporal_boundary(
+    tmp_path, monkeypatch, bootstrap, boundary
+):
+    """Reject even one excess microsecond and equality at the deadline."""
+    case = hosted_case(tmp_path, bootstrap=bootstrap)
+    prepare(case, monkeypatch, "eligibility")
+    document = case.inputs().document("phase-eligibility")
+    deadline = datetime.fromisoformat(document["deadline"])
+    if boundary == "overlong":
+        document["deadline"] = (
+            deadline + timedelta(microseconds=1)
+        ).isoformat()
+        case.add("phase-eligibility", document)
+    else:
+        monkeypatch.setattr(module, "now", lambda: deadline)
+        monkeypatch.setattr(host, "now", lambda: deadline)
+
+    with pytest.raises(ValueError, match="Ruby phase claim is expired"):
+        module.PhaseReservation(case.inputs(), "eligibility")
+
+    assert (
+        module.spending_members(case.directory / "spending" / "eligibility")
+        == []
+    )
 
 
 @pytest.mark.parametrize("bootstrap", [True, False])
