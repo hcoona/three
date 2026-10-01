@@ -72,11 +72,13 @@ def test_ruby_protected_envelope_preserves_fixed_authority_and_finite_slots():
         / ".github/workflow-delivery/requests/hcoona-release-smoke-ruby.json"
     )
     doc = RubyOperationEnvelope(path.read_bytes()).document
-    fixed = disabled_ruby_operation_envelope()
+    fixed = disabled_ruby_operation_envelope(version=2)
     assert {key: value for key, value in doc.items() if key != "slots"} == {
         key: value for key, value in fixed.items() if key != "slots"
     }
-    assert set(doc["slots"]) == set(EXPECTED_SLOTS)
+    assert doc["slots"] == dict.fromkeys(
+        (*EXPECTED_SLOTS, "github-packages-bootstrap02")
+    )
 
 
 @pytest.mark.parametrize("slot", EXPECTED_SLOTS)

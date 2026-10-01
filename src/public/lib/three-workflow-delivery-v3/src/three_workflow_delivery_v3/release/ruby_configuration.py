@@ -21,6 +21,7 @@ from three_workflow_delivery_v3.release.ruby_governance import (
     ruby_publisher_tuple,
 )
 from three_workflow_delivery_v3.release.ruby_operation import (
+    RUBY_SUCCESSOR_VERSION,
     RubyOperationRequest,
     ruby_operation_binding,
     validate_ruby_operation_admission,
@@ -227,15 +228,24 @@ class RubyFirstProjectInspection:
         )
         registry = self.configuration.registry
         github = registry.name == "github-packages"
+        successor = (
+            doc["schema"]
+            == "workflow-delivery/v3/ruby-first-project-inspection-v2"
+        )
+        if successor and not github:
+            message = "Ruby successor inspection is only for GitHub Packages"
+            raise ValueError(message)
         observed = _time(doc["observed-at"])
         self.configuration.require_current(observed)
         controls = _controls(
             self.configuration.document["github-controls"], registry
         )
         expected: dict[str, JsonValue] = {
-            "schema": "workflow-delivery/v3/ruby-first-project-inspection-v1",
+            "schema": "workflow-delivery/v3/ruby-first-project-inspection-v"
+            + ("2" if successor else "1"),
             "destination": registry.name,
-            "slot": registry.name + "-bootstrap",
+            "slot": registry.name
+            + ("-bootstrap02" if successor else "-bootstrap"),
             "configuration-digest": self.configuration.digest,
             "control-baseline-digest": controls["control-baseline-digest"],
             "operator-principal": {"login": "hcoona", "id": 712433}
@@ -281,6 +291,13 @@ class RubyFirstProjectInspection:
     ) -> None:
         """Join sealed request without a circular request/inspection hash."""
         doc, selected = self.document, request.document
+        if (
+            doc["schema"]
+            == "workflow-delivery/v3/ruby-first-project-inspection-v2"
+            and request.envelope.version != RUBY_SUCCESSOR_VERSION
+        ):
+            message = "Ruby successor inspection requires its v2 envelope"
+            raise ValueError(message)
         request.envelope.enabled_slot(ruby_text(selected["slot"]), now)
         self.configuration.require_current(now)
         for key in ("target", "slot", "generation", "configuration-digest"):
