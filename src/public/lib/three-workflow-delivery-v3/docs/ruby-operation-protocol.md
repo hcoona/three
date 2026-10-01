@@ -14,10 +14,10 @@ This is a **partial operation protocol**. The current source delivery contains
 candidate [first-project validators](../src/three_workflow_delivery_v3/release/ruby_configuration.py)
 and a separate [RubyGems project observer](../src/three_workflow_delivery_v3/adapters/ruby_project.py).
 Their closed data contracts do not establish live configuration, source provenance,
-independent approval or an executable caller. The GitHub owner-inventory collector,
-configuration collector/operator, persistent configuration-counter and control
-collection schemas, bootstrap/normal runtime assembly and final coupled budgets
-remain pending. All ten operation slots remain null; both normal Governance
+independent approval or an executable caller. Fixed GitHub control/package
+collectors, a supervised configuration transport and durable phase/send counters
+are implemented. The reviewed configuration operator, bootstrap/normal runtime
+assembly and final coupled budgets remain pending. All ten operation slots remain null; both normal Governance
 sources remain blocked. No configuration, account, registry, OIDC or dispatch
 effect follows from this partial delivery alone.
 
@@ -60,10 +60,12 @@ Direct administrative REST uses verified TLS, `https://api.github.com`, JSON
 media type and API version `2022-11-28`. Bound complete bodies to 2 MiB and
 retained header envelopes to 64 KiB; permit no redirect, automatic retry or
 conditional 304. Reject malformed, oversized, truncated or ambiguous responses.
-The completed caller must enforce a 30-second **wall-clock** request deadline,
-further capped by phase/plan expiry. The current RubyGems observer delegates to
-the existing transport's socket timeout; it does not implement that complete
-caller deadline. This missing supervision remains an execution prerequisite.
+The configuration transport supervises each send in a POSIX child with a
+30-second **wall-clock** request deadline, further capped by phase/plan expiry,
+and bounded child cleanup. Its fixed public RubyGems owners role uses
+`https://rubygems.org` without Authorization. The separate RubyGems observer's
+default transport has only a socket timeout; the completed operator must use
+the supervised configuration response with that observer's classifier.
 These limits do not bound browser assets, Actions internals or Git wire traffic.
 
 Retain original HTTP body bytes outside the checkout with sanitized headers,
@@ -72,6 +74,18 @@ ordinal. Exclude authorization, cookies, assertions and tokens. Independently
 inspect complete private owner inventories before publishing screened facts;
 a public digest cannot substitute for that inspection. Do not put unrelated
 package/account inventory into workflow inputs or public evidence.
+
+The [durable ledger](../src/three_workflow_delivery_v3/release/ruby_configuration_ledger.py)
+fixes the plan, phases and request roles and reserves each send before transport.
+Interrupted, failed or altered evidence cannot resume a phase or fund another.
+The [transport](../src/three_workflow_delivery_v3/platform/ruby_configuration_http.py)
+requires reserve/retain callbacks; the forthcoming operator must retain original
+responses before asking the ledger to complete a send, including responses that
+arrive after phase expiry. A late response cannot make an expired phase succeed.
+The [collector](../src/three_workflow_delivery_v3/platform/ruby_configuration_github.py)
+validates complete control and owner-package inventories and preserves private
+originals separately from screened facts. Local collector limits do not replace
+persistent counters or independent inspection.
 
 ## Complete GitHub Control Inspection
 
@@ -120,6 +134,10 @@ reviewers, policies or secrets block. Record the actual Boolean
 Never invent a missing Boolean or send it as an undocumented write field. If REST
 cannot establish it, permit one authenticated settings-page inspection per unit;
 ambiguous state stops. This is a logical UI inspection, not a wire-request bound.
+An absent optional wait-timer rule in a complete valid protection-rule array
+means no configured delay; retain whether zero was explicit or absence-derived.
+A present rule requires integer zero. An unavailable or malformed whole array
+does not establish disabled protection.
 
 ## Bounded Configuration Writes
 
@@ -361,8 +379,8 @@ protocol review under the existing Wave; it cannot refill these allocations.
 
 ## Remaining Execution Closure
 
-Before configuration, complete and independently review the exact collection and
-counter schemas, durable pre-send spending, final bounded transport/caller,
+Before configuration, complete and independently review the concrete composition
+of collection/counter schemas, durable pre-send spending and bounded transport/caller,
 actual supported principal/access, full raw evidence provenance and concrete
 before/after plan. Before any operation, close the final runtime DAG and trusted
 caller: per-job controls, actual-run/check/artifact discovery, checkout count C,

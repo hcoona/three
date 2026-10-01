@@ -52,8 +52,9 @@ unrelated main advancement. Follow the [partial operation protocol](./ruby-opera
 configuration budgets and first-project binding. Candidate configuration,
 inspection/review validators and the separate RubyGems project observer do not
 establish actual resources or raw GitHub owner-inventory provenance. Configuration
-collection/counter schemas, the reviewed caller and complete runtime/transfer
-budgets remain pending; all ten slots stay null and the validators grant no effects.
+collectors, supervised transport and durable phase/send counters are implemented.
+The reviewed caller and complete runtime/transfer budgets remain pending; all ten
+slots stay null and these mechanisms grant no effects.
 Source presence and controlled-transport tests are not Live admission.
 GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without
