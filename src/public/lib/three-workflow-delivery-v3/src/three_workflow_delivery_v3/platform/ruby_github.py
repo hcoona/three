@@ -203,6 +203,7 @@ class RubyGitHubRuntime:
         if (
             not isinstance(run, dict)
             or run.get("head_sha") != intent.target
+            or run.get("head_branch") != "main"
             or type(run.get("run_attempt")) is not int
             or run.get("run_attempt") != 1
             or run.get("event") != "workflow_dispatch"

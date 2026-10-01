@@ -95,6 +95,7 @@ def _approval(name="rubygems"):
     return [
         {
             "head_sha": TARGET,
+            "head_branch": "main",
             "run_attempt": 1,
             "event": "workflow_dispatch",
             "path": RUBY_WORKFLOW,
@@ -468,6 +469,29 @@ def test_ruby_github_approval_binds_exact_current_run_and_native_proof(name):
     assert [row["body"] for row in runtime.observations] == docs
     assert len(transport.requests) == len(docs)
     assert _TOKEN not in canonicalize(runtime.observations).decode()
+
+
+@pytest.mark.parametrize("branch", ["missing", None, "feature/ruby"])
+def test_ruby_github_approval_rejects_missing_or_foreign_native_branch(branch):
+    """A matching commit cannot substitute for the selected main branch."""
+    docs = _approval()
+    if branch == "missing":
+        del docs[0]["head_branch"]
+    else:
+        docs[0]["head_branch"] = branch
+    admitted = governance("rubygems")
+    runtime, transport = _runtime(*docs)
+    with pytest.raises(ValueError, match="native run identity"):
+        runtime.approval(
+            _intent(),
+            admitted,
+            sentinel=admitted.registry.environment + "/v1",
+        )
+    run_path = _REPO + f"/actions/runs/{RUN_ID}"
+    assert [call[1] for call in transport.requests] == [
+        "https://api.github.com" + run_path
+    ]
+    assert runtime.observations == [{"path": run_path, "body": docs[0]}]
 
 
 @pytest.mark.parametrize(
