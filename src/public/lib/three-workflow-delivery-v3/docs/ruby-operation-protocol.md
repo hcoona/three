@@ -160,10 +160,76 @@ Each destination has at most these three single-use mutation roles:
    expected HTTP 200 and exact created identity.
 3. Only if absent, `POST E/variables`, body
    `{"name":"WDV3_APPROVAL_ENVIRONMENT_MARKER","value":"<environment>/v1"}`,
-   expected HTTP 201. A reviewed correction to an existing marker instead uses
+   expected HTTP 201 with a JSON empty object `{}`. Validate the JSON media
+   type and schema; an empty HTTP body is not this response. A reviewed
+   correction to an existing marker instead uses
    `PATCH E/variables/WDV3_APPROVAL_ENVIRONMENT_MARKER`, body
    `{"value":"<environment>/v1"}`, expected HTTP 204. Create and update share
    this one role.
+
+### Exact M01 Read-Only Continuation
+
+The original GitHub configuration campaign's marker-create request received
+documented HTTP 201 and `{}`, but its caller incorrectly required an empty
+body. The original failed receipt and incomplete phase remain unchanged;
+the affirmative service response does not establish current marker value or
+ready configuration. The corrected classifier accepts only a JSON empty
+object for create 201 and retains no-body handling for update 204.
+
+The protected [M01 acknowledgement](../src/three_workflow_delivery_v3/release/ruby_configuration_continuation.py)
+addresses only the exact independently disposed plan, failed records and
+five-phase original journal prefix pinned in its source. It is not a general
+failed-phase recovery mechanism. The normal ledger entry still rejects every
+incomplete prior phase. An explicit acknowledgement permits the original
+unused GitHub read phases below, using the same ledger, phase reservations,
+pre-send accounting and endpoint limits. All three writes remain spent.
+
+An independently reviewed canonical
+`workflow-delivery/v3/ruby-configuration-m01-continuation-v1` acknowledgement
+must exist at the original ledger's sibling
+`<ledger-name>.m01-continuation.json`. Its exact fields are `schema`,
+`plan-digest`, `failed-phase-digest`, `failed-request-digest`,
+`failed-response-digest`, `failed-receipt-digest`, `original-journal-digest`,
+`source-commit`, `caller-digest`, `protocol-digest`, `reviewer`, `author`,
+`reviewed-at`, `carrier` and `verdict`. The original evidence hashes are fixed
+to this incident, while the three corrected source identities bind the clean
+protected descendant checkout, corrected external caller and this protocol.
+The original plan's source, caller, protocol, identity and expiry are never
+rewritten. The corrected caller verifies original caller bytes and the
+original protocol in Git before checking its corrected source/module lineage.
+
+The accepted review follows the retained failure, precedes current time and
+original plan expiry, and cites the governing Issue 954 comment. Author and
+reviewer differ; independent provenance remains a procedural gate, not an
+inference from supplied strings or hashes. The separate external M01 caller
+has no initialization or mutation command. Preserve the original caller bytes
+for source lineage; do not launch that old caller to bypass the failed phase.
+
+The first new phase is `post-configuration-controls`, at most 32 reads. Its
+existing variables inventory establishes marker readback as part of complete
+control inspection; no preliminary diagnostic allowance is added. Independently
+accept those actual originals before later activity. The remaining eligible
+original read phases are `bootstrap-controls` (32), `bootstrap-inventory` (10),
+`bootstrap-main` (1), `postbootstrap-controls` (32),
+`postbootstrap-package` (1), and each original normal01 through normal04 slot's
+`controls` (32), `package` (1) and `main` (1). Their existing purposes, separate
+command admissions, protected-target freshness and independent gates remain.
+These reads cannot activate an operation slot or authorize publication.
+
+Each new phase records the same `continuation-digest` in its journal-bound
+phase identity. The original failed files, original response, plan, journal
+prefix and fixed acknowledgement bytes are rechecked before every active
+send, receipt and finish. Every other prior phase must be fully complete;
+another partial or failed phase stops continuation. Missing or changed
+acknowledgement/evidence cannot be recreated. Completed or started phases
+cannot be reopened, and ordinary GET-only phase validation forbids mutations.
+
+Keep the original plan's absolute expiry and each read phase's at-most-30-minute
+deadline. Do not relabel or complete marker-write, renew the plan, reset a
+counter, create another ledger, transfer quota or repeat any write. A missing,
+mismatched or ambiguous control stops without a corrective write allowance.
+Protected correction delivery and independently reviewed concrete source,
+acknowledgement and read-phase admission must precede actual continuation.
 
 Persist intent, ordinal and exact method/path/body digest before sending.
 Independently verify each definitive response before the next mutation; a failed
