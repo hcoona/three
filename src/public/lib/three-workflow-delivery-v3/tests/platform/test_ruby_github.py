@@ -22,10 +22,19 @@ from three_workflow_delivery_v3.platform.ruby_github import (
     obtain_ruby_oidc_assertion,
 )
 from three_workflow_delivery_v3.records.release import ReleaseIntent
+from three_workflow_delivery_v3.release.governance_git import (
+    GovernanceGitReadError,
+)
 from three_workflow_delivery_v3.release.ruby_governance import (
     RUBY_WORKFLOW,
     blocked_ruby_governance,
     ruby_governance_path,
+)
+from three_workflow_delivery_v3.repository.ruby_controls import (
+    RUBY_ENVELOPE_PATH,
+)
+from three_workflow_delivery_v3.repository.ruby_provider import (
+    is_ruby_input_path,
 )
 
 from ..ruby_integration_fixtures import NOW, RUN_ID, TARGET, governance
@@ -420,6 +429,45 @@ def test_ruby_github_fresh_governance_rejects_changed_admitted_configuration(
     with pytest.raises(ValueError, match=r"drift|changed"):
         runtime.governance(initial.registry, initial=initial)
     assert len(transport.requests) == len(_configuration())
+
+
+def test_ruby_operation_control_binds_exact_envelope_target_and_selector(
+    monkeypatch,
+):
+    """Fresh operation bytes do not assert package ownership or ready state."""
+    content = b'{"opaque-disabled-envelope-fixture":true}'
+    fresh_main = "c" * 40
+    calls = _reader(monkeypatch, content, main_sha=fresh_main)
+    runtime, transport = _runtime()
+    observed = runtime.operation_control(TARGET)
+    assert (observed.main_sha, observed.content) == (fresh_main, content)
+    assert calls == [
+        {"repository": "hcoona/three", "token": _TOKEN},
+        {
+            "repository": "hcoona/three",
+            "ref": "refs/heads/main",
+            "path": RUBY_ENVELOPE_PATH,
+            "eligibility_main_sha": TARGET,
+            "relevant_path": is_ruby_input_path,
+        },
+    ]
+    assert transport.requests == []
+    assert runtime.observations == []
+    assert runtime.requests_used == 0
+
+
+def test_ruby_operation_control_preserves_input_continuity_failure(
+    monkeypatch,
+):
+    """Failed protected history cannot yield an operation envelope."""
+    failure = GovernanceGitReadError("controlled complete-input rejection")
+    _reader(monkeypatch, b"unused", error=failure)
+    runtime, transport = _runtime()
+    with pytest.raises(GovernanceGitReadError) as caught:
+        runtime.operation_control(TARGET)
+    assert caught.value is failure
+    assert transport.requests == []
+    assert runtime.observations == []
 
 
 def test_ruby_github_protected_content_does_not_bypass_runtime_configuration(

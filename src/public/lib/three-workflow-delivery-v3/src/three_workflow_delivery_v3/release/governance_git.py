@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
 _GOVERNANCE_REF = "refs/heads/main"
 _LOCAL_REF = "refs/wdv3/governance-main"
@@ -314,6 +314,7 @@ class IsolatedGovernanceGitReader:
         object_format: str,
         path: str,
         environment: Mapping[str, str],
+        relevant_path: Callable[[str], bool] | None,
     ) -> None:
         self._require_object_id(
             eligibility_main_sha,
@@ -363,6 +364,35 @@ class IsolatedGovernanceGitReader:
             raise GovernanceGitReadError(
                 "Governance protected path changed after eligibility"
             )
+
+        if relevant_path is not None:
+            changed = self._git(
+                git_dir,
+                "log",
+                "--full-history",
+                "--format=",
+                "--name-only",
+                "--no-renames",
+                "-z",
+                "--diff-merges=first-parent",
+                "--root",
+                f"{eligibility_main_sha}..{current_main_sha}",
+                "--",
+                environment=environment,
+                failure="Protected input history is unavailable",
+            ).stdout
+            try:
+                paths = changed.decode("utf-8", "strict").split("\0")
+            except UnicodeDecodeError as error:
+                raise GovernanceGitReadError(
+                    "Protected input history contains an unsupported path"
+                ) from error
+            if any(
+                relevant_path(candidate) for candidate in paths if candidate
+            ):
+                raise GovernanceGitReadError(
+                    "Protected input changed after the selected target"
+                )
 
     def _read_blob(
         self,
@@ -435,8 +465,15 @@ class IsolatedGovernanceGitReader:
         ref: str,
         path: str,
         eligibility_main_sha: str | None = None,
+        relevant_path: Callable[[str], bool] | None = None,
     ) -> GovernanceGitRead:
-        """Read current Governance and optionally prove continuity."""
+        """Read a control blob and optionally prove input continuity."""
+        if relevant_path is not None and (
+            not callable(relevant_path) or eligibility_main_sha is None
+        ):
+            raise GovernanceGitReadError(
+                "Protected input continuity requires a target and selector"
+            )
         if repository != self._repository:
             raise GovernanceGitReadError("Governance repository mismatch")
         if ref != _GOVERNANCE_REF:
@@ -534,6 +571,7 @@ class IsolatedGovernanceGitReader:
                     object_format=object_format,
                     path=path,
                     environment=environment,
+                    relevant_path=relevant_path,
                 )
             return self._read_blob(
                 git_dir,
