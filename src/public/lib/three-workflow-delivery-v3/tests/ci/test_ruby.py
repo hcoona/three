@@ -5,7 +5,10 @@ from subprocess import TimeoutExpired
 
 import pytest
 from three_workflow_delivery_v3.adapters.ruby import RubyDistribution
-from three_workflow_delivery_v3.canonical import parse_canonical_json
+from three_workflow_delivery_v3.canonical import (
+    canonicalize,
+    parse_canonical_json,
+)
 from three_workflow_delivery_v3.ci.ruby import (
     RubyCiDecision,
     RubyCiPlan,
@@ -203,7 +206,16 @@ def test_ruby_ci_rejects_conflicting_evidence_lineage(qualified, change):
                 artifact,
                 transport=replace(artifact.transport, workflow_run_id=1000),
             )
-        evidence = (replace(evidence[0], artifact=artifact), evidence[1])
+        evidence = (
+            replace(
+                evidence[0],
+                artifact=artifact,
+                detail=canonicalize(
+                    {"digest": artifact.reference.payload_digest}
+                ),
+            ),
+            evidence[1],
+        )
     with pytest.raises(ValueError, match="Ruby"):
         RubyCiDecision(plan, evidence)
 
@@ -313,3 +325,176 @@ def test_ruby_ci_consumer_timeout_retains_sanitized_failed_evidence(
         assert sensitive not in documents
 
     assert decision.to_document()["authority"] == "non-authoritative"
+
+
+@pytest.mark.parametrize("boundary", ["constructor", "import"])
+@pytest.mark.parametrize(
+    "detail",
+    [
+        {},
+        None,
+        [],
+        {"digest": None},
+        {"digest": True},
+        {"digest": "sha256:" + "f" * 64},
+        {"digest": "payload", "extra": True},
+        {"error-kind": "ValueError"},
+        "container-digest",
+        "extra-valid",
+    ],
+)
+def test_ruby_ci_passed_content_detail_requires_original_digest(
+    qualified, boundary, detail
+):
+    """The passed flag cannot authorize absent or foreign inspection detail."""
+    _planned, evidence, _artifact, _original = qualified
+    item = evidence[0]
+    if detail == "container-digest":
+        assert (
+            item.artifact.artifact_digest
+            != item.artifact.reference.payload_digest
+        )
+        detail = {"digest": item.artifact.artifact_digest}
+    elif detail == "extra-valid":
+        detail = {
+            "digest": item.artifact.reference.payload_digest,
+            "extra": True,
+        }
+    with pytest.raises((ValueError, TypeError)):
+        _admit_detail(item, boundary, detail)
+
+
+@pytest.mark.parametrize("boundary", ["constructor", "import"])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "schema",
+        "artifact-digest",
+        "witness-digest",
+        "project-id",
+        "version",
+        "install-output",
+        "extra",
+        "empty",
+        "container-digest",
+    ],
+)
+def test_ruby_ci_passed_consumer_detail_requires_closed_original_binding(
+    qualified, boundary, field
+):
+    """Admission validates every consumer field against the same original."""
+    _planned, evidence, artifact, _original = qualified
+    item = evidence[1]
+    valid = parse_canonical_json(item.detail)
+    if field == "empty":
+        invalid = [{}]
+    elif field == "extra":
+        invalid = [dict(valid, extra="private stdout")]
+    elif field == "container-digest":
+        assert artifact.artifact_digest != artifact.reference.payload_digest
+        invalid = [dict(valid, **{"artifact-digest": artifact.artifact_digest})]
+    else:
+        missing = dict(valid)
+        missing.pop(field)
+        invalid = [
+            missing,
+            dict(valid, **{field: None}),
+            dict(valid, **{field: True}),
+        ]
+        if field != "install-output":
+            invalid.append(dict(valid, **{field: "foreign"}))
+    for detail in invalid:
+        with pytest.raises((ValueError, TypeError)):
+            _admit_detail(item, boundary, detail)
+
+
+@pytest.mark.parametrize("boundary", ["constructor", "import"])
+@pytest.mark.parametrize("obligation", [0, 1])
+def test_ruby_ci_failed_detail_requires_only_nonempty_error_kind(
+    qualified, boundary, obligation
+):
+    """Failed Evidence cannot carry success details or unsanitized payloads."""
+    _planned, evidence, _artifact, _original = qualified
+    item = evidence[obligation]
+    invalid = [
+        {},
+        None,
+        [],
+        {"error-kind": ""},
+        {"error-kind": None},
+        {"error-kind": True},
+        {"error-kind": 1},
+        {"error-kind": "ValueError", "stderr": "private output"},
+        parse_canonical_json(item.detail),
+    ]
+    for detail in invalid:
+        with pytest.raises((ValueError, TypeError)):
+            _admit_detail(item, boundary, detail, result="failed")
+
+
+def test_ruby_ci_detail_accepts_empty_log_and_custom_sanitized_error(
+    qualified,
+):
+    """No output heuristic or speculative exception allowlist owns success."""
+    planned, evidence, artifact, _original = qualified
+    detail = parse_canonical_json(evidence[1].detail)
+    detail["install-output"] = ""
+    passed = replace(evidence[1], detail=canonicalize(detail))
+    imported = ruby_ci_evidence_from_document(passed.to_document())
+    assert parse_canonical_json(imported.detail)["install-output"] == ""
+    assert RubyCiDecision(planned, (evidence[0], imported)).result == "passed"
+    assert parse_canonical_json(evidence[0].detail) == {
+        "digest": artifact.reference.payload_digest
+    }
+    for obligation in (0, 1):
+        failed = replace(
+            evidence[obligation],
+            result="failed",
+            detail=canonicalize({"error-kind": "CustomConsumerFailure"}),
+        )
+        failed = ruby_ci_evidence_from_document(failed.to_document())
+        assert parse_canonical_json(failed.detail) == {
+            "error-kind": "CustomConsumerFailure"
+        }
+        current = list(evidence)
+        current[obligation] = failed
+        outcome = RubyCiDecision(planned, tuple(current))
+        assert outcome.result == "failed"
+        assert outcome.to_document()["authority"] == "non-authoritative"
+
+
+@pytest.mark.parametrize("change", ["missing-output", "typed-output", "extra"])
+def test_ruby_ci_malformed_consumer_output_retains_failed_evidence(
+    qualified, change
+):
+    """Producer shape failures become sanitized failure evidence."""
+    planned, _evidence, artifact, original = qualified
+
+    def malformed(current):
+        detail = consumer(current)
+        if change == "missing-output":
+            detail.pop("install-output")
+        elif change == "typed-output":
+            detail["install-output"] = True
+        else:
+            detail["private-output"] = "must not leak"
+        return detail
+
+    evidence = run_ruby_ci_quality(
+        planned, artifact, original.content, consumer=malformed
+    )
+    assert [item.result for item in evidence] == ["passed", "failed"]
+    assert parse_canonical_json(evidence[1].detail) == {
+        "error-kind": "TypeError" if change == "typed-output" else "ValueError"
+    }
+    outcome = RubyCiDecision(planned, evidence)
+    assert outcome.result == "failed"
+
+
+def _admit_detail(item, boundary, detail, *, result="passed"):
+    """Send identical candidate facts through either public admission path."""
+    if boundary == "constructor":
+        return replace(item, result=result, detail=canonicalize(detail))
+    document = item.to_document()
+    document.update(result=result, detail=detail)
+    return ruby_ci_evidence_from_document(document)

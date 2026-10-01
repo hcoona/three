@@ -23,6 +23,7 @@ from three_workflow_delivery_v3.ci.path_admission import is_repository_only_path
 from three_workflow_delivery_v3.records.ruby import (
     RubyArtifact,
     validate_ruby_artifact,
+    validate_ruby_quality_detail,
 )
 from three_workflow_delivery_v3.repository.ruby_model import (
     RUBY_QUALITY,
@@ -143,7 +144,9 @@ class RubyCiEvidence:
         }:
             message = "invalid Ruby CI Evidence obligation or result"
             raise ValueError(message)
-        parse_canonical_json(self.detail)
+        validate_ruby_quality_detail(
+            self.artifact, self.definition, self.result, self.detail
+        )
 
     def to_document(self) -> dict[str, JsonValue]:
         """Serialize a CI-only Evidence identity, never Release evidence."""
@@ -193,19 +196,17 @@ def run_ruby_ci_quality(
     ]
     try:
         detail: dict[str, JsonValue] = consumer(inspected)
-        if (
-            detail.get("schema")
-            != "workflow-delivery/v3/ruby-consumer-evidence"
-            or detail.get("artifact-digest") != inspected.digest
-            or detail.get("witness-digest")
-            != canonical_sha256(inspected.witness.to_document())
-            or detail.get("project-id") != RUBY_RELEASE_UNIT
-            or detail.get("version") != inspected.witness.nbgv.native_version
-        ):
-            message = "Ruby consumer returned foreign artifact evidence"
-            raise ValueError(message)  # noqa: TRY301 - retain failed evidence
+        validate_ruby_quality_detail(
+            artifact, RUBY_QUALITY[1], "passed", canonicalize(detail)
+        )
         outcome = "passed"
-    except (OSError, ValueError, RuntimeError, TimeoutExpired) as error:
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        RuntimeError,
+        TimeoutExpired,
+    ) as error:
         detail = {"error-kind": type(error).__name__}
         outcome = "failed"
     evidence.append(

@@ -17,7 +17,11 @@ from three_workflow_delivery_v3.adapters.ruby import (
     inspect_ruby_distribution,
     ruby_package_target_witness_from_document,
 )
-from three_workflow_delivery_v3.canonical import JsonValue, canonical_sha256
+from three_workflow_delivery_v3.canonical import (
+    JsonValue,
+    canonical_sha256,
+    parse_canonical_json,
+)
 from three_workflow_delivery_v3.records.artifacts import (
     ArtifactReference,
     ArtifactTransportIdentity,
@@ -162,4 +166,43 @@ def validate_ruby_artifact(
         or artifact.witness.target != context.target
     ):
         message = "Ruby artifact purpose or current-build binding mismatch"
+        raise ValueError(message)
+
+
+def validate_ruby_quality_detail(
+    artifact: RubyArtifact, definition: str, result: str, detail: bytes
+) -> None:
+    """Admit intrinsic original-byte and consumer facts for either owner."""
+    document = parse_canonical_json(detail)
+    if result == "failed":
+        error = ruby_object(document, {"error-kind"})
+        ruby_text(error["error-kind"])
+        return
+    if result != "passed":
+        message = "invalid Ruby quality detail result"
+        raise ValueError(message)
+    if definition == "ruby/gem-contents-v1":
+        expected: dict[str, JsonValue] = {
+            "digest": artifact.reference.payload_digest
+        }
+        ruby_object(document, set(expected))
+    elif definition == "ruby/gem-install-require-v1":
+        expected = {
+            "schema": "workflow-delivery/v3/ruby-consumer-evidence",
+            "artifact-digest": artifact.reference.payload_digest,
+            "witness-digest": canonical_sha256(artifact.witness.to_document()),
+            "project-id": RUBY_RELEASE_UNIT,
+            "version": artifact.witness.nbgv.native_version,
+        }
+        consumer = ruby_object(document, set(expected) | {"install-output"})
+        if not isinstance(consumer["install-output"], str):
+            message = "Ruby consumer install output must be text"
+            raise TypeError(message)
+    else:
+        message = "unknown Ruby quality detail definition"
+        raise ValueError(message)
+    if not isinstance(document, dict) or any(
+        document[key] != value for key, value in expected.items()
+    ):
+        message = "Ruby quality detail differs from its original artifact"
         raise ValueError(message)
