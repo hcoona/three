@@ -59,12 +59,18 @@ inspection/review validators and the separate RubyGems project observer do not
 establish actual resources or raw GitHub owner-inventory provenance. Configuration
 collectors, supervised transport and durable phase/send counters are implemented.
 The [accepted configuration inspection](https://github.com/hcoona/three/issues/954#issuecomment-5925550208)
-binds the original source and protocol observations; the current protocol changes
-only their delivery-status summary. Configuration expires at
+binds its original source and protocol observations. The current protocol
+separately bounds the INIT-CA-01 supplemental inspection. Configuration expires at
 `2026-10-08T03:39:53.109710Z`. The protected configuration records actual
 administrator bypass as enabled within the accepted sole-writer boundary.
-Concrete external caller launch, exact-request admission, durable reservation
-and current-run Approval remain required; source activation grants no dispatch.
+The external launch requires the existing resolved regular CA file; its prior
+local initialization failed before reservation or service effects. The protocol
+bounds one distinct INIT-CA-01 supplemental inspection for the corrected target;
+its concrete caller/plan and actual evidence still need independent admission.
+Preserve the stopped request, original completed inspection and unreserved
+campaign. Concrete external caller launch, exact-request admission, durable
+reservation and current-run Approval remain required; source activation grants
+no dispatch.
 Source presence and controlled-transport tests are not Live admission.
 GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without
