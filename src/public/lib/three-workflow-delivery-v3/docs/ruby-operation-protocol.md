@@ -20,10 +20,10 @@ are implemented. The hosted bootstrap/normal caller and its phase, job and maint
 budgets are implemented below. The external caller contract fixes actual-run,
 artifact and approval budgets. Concrete callers still need their exact
 independently reviewed source, launch and before/after plans.
-The GitHub Packages first-project configuration and sole bootstrap slot are
-enabled. The other nine slots remain null; both normal Governance sources remain
-blocked. Fresh predispatch inspection and independent exact-request admission
-remain required. No account, registry, OIDC or dispatch effect follows from
+The GitHub Packages first-project configuration is retained; all operation slots
+are disabled. Both normal Governance sources remain blocked. The single
+GitHub successor below requires protected implementation and activation, fresh
+predispatch inspection and independent exact-request admission. No account, registry, OIDC or dispatch effect follows from
 source or protocol delivery alone.
 
 GitHub Packages completion precedes RubyGems.org configuration/execution. Exact
@@ -59,7 +59,15 @@ ledger location. Its absolute lifetime is at most seven days; each phase has a
 30-minute outer deadline. Reserve phases and sends before transport, including
 failed sends. Counters persist across crashes: no retry, reset, refill, transfer
 or reconstruction after state loss. Missing, stale or unknown state stops.
-Configuration counters are distinct from operation slot reservation.
+Configuration counters are distinct from operation slot reservation. Read-only
+checks have no cumulative authorization ceiling. A stopped read-only invocation
+may be followed by a newly reviewed standalone inspection with new retained
+evidence; it never resumes or reconstructs the failed invocation. Existing
+write plans, reservations, spending and absolute expiries remain immutable.
+Additional reads alone do not require another owner permission request.
+Per-invocation limits below bound execution and completeness, not lifetime
+permission; changing a caller's limits needs ordinary source/protocol review,
+not a new grant for reads.
 
 Direct administrative REST uses verified TLS, `https://api.github.com`, JSON
 media type and API version `2022-11-28`. Bound complete bodies to 2 MiB and
@@ -141,7 +149,7 @@ branch policy for `main` and no tag policy, no custom app protection, and variab
 reviewers, policies or secrets block. Record the actual Boolean
 `can_admins_bypass`; either value is accepted under the existing owner disposition.
 Never invent a missing Boolean or send it as an undocumented write field. If REST
-cannot establish it, permit one authenticated settings-page inspection per unit;
+cannot establish it, use an authenticated settings-page inspection;
 ambiguous state stops. This is a logical UI inspection, not a wire-request bound.
 An absent optional wait-timer rule in a complete valid protection-rule array
 means no configured delay; retain whether zero was explicit or absence-derived.
@@ -171,6 +179,9 @@ Each destination has at most these three single-use mutation roles:
    this one role.
 
 ### Exact M01 Read-Only Continuation
+
+This contract remains for the original retained M01 plan and evidence readers.
+Its single-use phase state is not a cap on new standalone read-only inspections.
 
 The original GitHub configuration campaign's marker-create request received
 documented HTTP 201 and `{}`, but its caller incorrectly required an empty
@@ -333,7 +344,11 @@ After protected target T and required checks exist, produce external
 `workflow-delivery/v3/ruby-first-project-inspection-v1` bytes binding destination,
 bootstrap slot/generation, T, configuration and control-baseline digests, actual
 operator principal, absence kind/verdict, retained evidence-manifest digest and
-observation/deadline fields. GitHub uses `github-owner-package-inventory` with
+observation/deadline fields. The additional GitHub bootstrap uses the strict
+`workflow-delivery/v3/ruby-first-project-inspection-v2` form with the same fields
+and only slot `github-packages-bootstrap02`; v1 remains closed to its original
+per-destination bootstrap slots. The v2 inspection must join a v2 envelope/request
+and the successor ledger, while configuration retains its unchanged native tuple. GitHub uses `github-owner-package-inventory` with
 principal `hcoona` / `712433`; RubyGems uses `rubygems-project-owners` and the
 unauthenticated public endpoint role. The verdict must be `absent`.
 
@@ -400,9 +415,10 @@ with the same repository/Environment and workflow
 Retain the bootstrap registration; do not rewrite it into the normal tuple.
 Unavailable owner interaction leaves dependent admission unavailable.
 
-Each registration allows one page inspection before and one after submission;
-postbootstrap pending-list/conversion allows two more: **six logical page
-inspections and two submissions** maximum. Retain screened tuple/account facts,
+Inspect each registration before and after submission and inspect the
+postbootstrap pending list/conversion. These required read-only observations
+have no cumulative page quota; publisher submissions remain at most two.
+Retain screened tuple/account facts,
 never session material. Public owners evidence supplies actual ownership;
 account views supply registration/conversion. Matching display text alone does
 not replace available stable account identity.
@@ -411,9 +427,9 @@ For GitHub postcreation, use one
 `GET /user/packages/rubygems/hcoona-release-smoke-ruby` under the admitted owner
 credential. Require actual package ID/name/type, owner context, non-null exact
 repository association, visibility and version count. Inspect package settings
-at most twice to establish owner control and effective Actions access for
+to establish owner control and effective Actions access for
 `hcoona/three`. Build metadata and association alone do not prove access.
-Repeat one selected-package GET and at most two settings inspections before
+Repeat the selected-package GET and required settings inspections before
 each normal request. An unmet access condition stops pending a separately
 reviewed scoped correction.
 
@@ -424,128 +440,102 @@ postcreation owners read and converted/normal publisher observations. Actual
 unknown, absent or mismatching facts block readiness. A failed bootstrap remains
 failed even when separate inspection establishes resource facts.
 
-## Cumulative Configuration Allocation
+## Read-Only Inspections and Configuration Effects
 
-Each destination has eight nontransferable, single-use control units: initial,
-post-configuration, bootstrap predispatch, postbootstrap/normal readiness, and
-normal01 through normal04 predispatch. Each permits 32 GitHub reads, yielding
-256 per destination. Missing resources may terminate initial subreads early;
-unused allowances do not transfer.
+Read-only inspection, diagnosis, artifact retrieval and verification for this
+Ruby journey have no cumulative count ceiling under the accepted Wave. The old
+591-read configuration allocation, one-use supplemental allowances and proposed
+43-read addition are not limits on new read-only authority. Retain their original
+plans and actual spending as historical evidence; do not modify those ledgers or
+claim a later inspection completed an old failed phase.
 
-| Direct configuration/predispatch reads               | GitHub destination | RubyGems destination |
-| ---------------------------------------------------- | -----------------: | -------------------: |
-| Eight GitHub control units                           |                256 |                  256 |
-| Two owner package inventories                        |                 20 |                    0 |
-| Postbootstrap and four normal selected-package GETs  |                  5 |                    0 |
-| Immediate main read for each of five operation slots |                  5 |                    5 |
-| Preliminary and postcreation RubyGems owners GETs    |                  0 |                    2 |
-| Original units subtotal                              |                286 |                  263 |
-| One INIT-CA-01 supplemental inspection               |                 42 |                    0 |
-| Total                                                |            **328** |              **263** |
+Each concrete collector invocation still fixes its endpoints, credential roles,
+finite deadline, response sizes, pagination/completeness rules and retained
+originals before use. The existing 32-read control collector and ten-page owner
+inventory are bounded inspection units, not a lifetime quota. Incomplete or
+unknown observations stop admission. Repeating standalone read-only inspection
+uses a new invocation and evidence set; it neither resumes an operation stage nor
+renews configuration, request, phase or approval lifetimes. No endless polling,
+automatic transport retry, access expansion or effect is implicit. Separate
+read-only diagnosis may inspect a failed run without changing its terminal result.
 
-Total is **591** direct reads: 589 GitHub plus 2 RubyGems configuration reads.
-The additional 42 reads belong only to the once-only INIT-CA-01 unit below;
-all original phase allocations remain unchanged.
-The three bootstrap-operation owners reads are charged only to their existing
-operation partitions. Across the campaign at most five RubyGems owners sends
-are allocated: two configuration plus three bootstrap. Normal slots add none.
-Possible writes total six GitHub mutation roles and two RubyGems submissions.
-There is at most one Environment-bypass UI fallback per control unit (eight per
-destination) and two selected-package settings inspections per GitHub
-postbootstrap/normal checkpoint (ten total). These logical UI limits do not claim
-HTTP asset counts. No browser write beyond the RubyGems submissions is included.
+Configuration mutation roles remain limited to six GitHub roles and two RubyGems
+publisher submissions as specified above; original spent roles cannot be repeated.
+Supported read-only UI inspection carries the same identity, privacy and evidence
+requirements and no cumulative page quota. No browser write beyond the admitted
+RubyGems submissions is included. The original GitHub configuration expires at
+`2026-10-08T03:39:53.109710Z`; a read or this amendment never renews it.
 
-These are prospective maxima, not observed usage or a full campaign wire budget.
-Any failure, exhausted cap or incomplete inventory stops its phase. Later
-read-only diagnosis or scoped correction requires a concrete finite independent
-protocol review under the existing Wave; it cannot refill these allocations.
+The completed INIT-CA-01 correction remains in its
+[retained delivery evidence](https://github.com/hcoona/three/pull/971).
+Its exact old request and inspection cannot supply new admission. External
+launches use the existing resolved nonsymlink CA file with pinned trust bytes,
+verified regular-file/link-count/size predicates and process-local trust selection;
+no host trust change or TLS bypass is included.
 
-## INIT-CA-01 Supplemental Predispatch Inspection
+## Single GitHub Bootstrap Successor
 
-The independently disposed [INIT-CA-01 local launch failure][init-ca-stop]
-occurred before external state, credential acquisition, slot reservation or
-network activity. The configured CA path was an existing symbolic link rejected
-by the external caller's regular-file reader. Its existing resolved file contains
-the same admitted trust bytes. The failed invocation and its sealed request stay
-stopped; no hosted Attempt or successful launch is inferred.
+The additional `github-packages-bootstrap02` slot is bound only to the spent
+first bootstrap [run 36836582548](https://github.com/hcoona/three/actions/runs/36836582548).
+That run remains failed; its request, original caller, reservation, campaign,
+partial external state and diagnostic originals remain immutable. No rerun,
+old-stage resume, artifact/Approval adoption, deadline renewal or refund is allowed.
+The confirmed phase-clock defect and prospective raw-basename caller correction
+require their own accepted source and validation; neither proves the failed run's
+first exception or makes the old request executable again.
 
-Under the existing scoped-correction route, admit at most **one additional
-read-only inspection unit**, named `init-ca-01`, for this exact GitHub bootstrap
-correction. It permits the existing 32-read complete control inspection followed
-by the existing ten-page authenticated owner-package inventory. These are 42
-explicit additional maximum GETs, not unused capacity, repetition or transfer
-from an original phase. No supplemental main read, UI fallback, write,
-credential upgrade, new account or registry probe is included. The cumulative
-configuration/predispatch maximum becomes **591**: GitHub destination 328 and
-RubyGems destination 263, comprising 589 GitHub-service reads and two RubyGems
-configuration reads. The separate external operation's 328-send maximum is
-unchanged and must not be combined with this coincident number.
+Protected v2 operation envelopes retain the original ten slot identities and add
+exactly `github-packages-bootstrap02`, routed to the same GitHub bootstrap binding.
+The old GitHub bootstrap slot is permanently null in v2. No RubyGems successor or
+additional normal slot exists. The new slot starts null; enabling it requires
+protected delivery with exact reviewed caller, launch, protocol, configuration,
+generation and original configuration expiry. Retain strict v1 decoding for
+historical evidence; no current successor may use a v1 envelope or ledger.
 
-Retain the original configuration plan, M01 acknowledgement, campaign,
-37 completed GETs, three spent writes and all failure/original evidence. The
-original completed `bootstrap-controls` and `bootstrap-inventory` units remain
-spent, with their old target and observation. Their sealed inspection/request
-must never be edited, rebound or renewed. The original unused `bootstrap-main`
-read retains its immediate-predispatch role. Do not initialize another operation
-campaign or add a bootstrap generation, reservation, dispatch or upload.
+A new v2 campaign ledger binds the original campaign
+`ab85b8ea6a85471fa577ea56f1d326e9`, whose canonical header digest is
+`sha256:0815671babddde664df17a9166200c21b627c0c09685a27b1a53e163a52ea009`,
+and the original reservation digest
+`sha256:5a5b63d110d9d811884c9f05c5fe323abb087c9a990ee21c8ff21664d7331266`.
+Before initialization, independently admit its exact predecessor directory and
+complete member-name/digest inventory, stopped external state, request and run
+provenance. The predecessor must contain precisely the initial campaign/event
+history and that one bootstrap reservation, with no normal reservations or
+completion. Missing, altered, aliased or additional state stops initialization.
 
-Before this unit can execute:
+Initialize exactly one successor at an independently admitted absolute directory,
+with an exclusive durable sibling anchor beside the predecessor directory binding
+the successor path and campaign/header identity. Reserve that anchor before any
+successor state is created. Missing or partial initialization stops without
+reconstruction or selecting another successor. Every use validates the anchor,
+predecessor originals and the successor's append-before-file journal/membership.
+The predecessor reservation is inherited spent state: reserving the old slot is
+always rejected. The successor's one bootstrap and remaining normal/RubyGems
+slots are each one-shot. Together these enforce two lifetime GitHub bootstraps,
+one RubyGems bootstrap and four normal Attempts per destination, without editing
+or resetting the original ledger. Destination completion in the successor stops
+all further reservations for that destination; RubyGems still requires audited
+normal GitHub completion. The concrete v2 schema and validators require independent
+source/tests/record review and protected delivery before initialization or use.
 
-1. Protect-deliver the future budget binding to the existing resolved nonsymlink
-   CA file, preserving its trust-content digest, caller, interpreter, access and
-   effect limits. Use the exact bound file in process-local `SSL_CERT_FILE`;
-   do not modify host trust or relax the caller's reader. Verify the caller's
-   actual local file predicates, including regular-file, nonsymlink, link-count
-   and size checks, in the preparatory launch inspection.
-2. Select the new actual protected target/tree after its required checks and
-   bounded native NBGV/reproducibility prerequisites pass. Retain the current
-   bootstrap generation only while its campaign remains unreserved. Recompute
-   protocol/configuration/envelope identities as needed, preserving historical
-   configuration attestation, accepted facts and the original absolute expiry
-   `2026-10-08T03:39:53.109710Z`.
-3. Independently review the concrete temporary supplemental caller, exact source,
-   isolated launch, canonical plan and evidence bindings. The plan fixes the
-   incident, target/tree, caller/protocol, original configuration plan and M01
-   acknowledgement, stopped request/inspection/review/admission and failure
-   hashes, initialized campaign and header-only event history, complete original
-   configuration history, accepted control baseline, principal/capability
-   review, exact new state location, transport profile and 32/10 allocations.
-   No arbitrary caller or directory supplied at execution can authorize itself.
+After the new implementation and slot activation are protected-delivered, select
+fresh actual T and tree, require passing target checks, exact-target NBGV,
+reproducible original gem builds and a clean local consumer. Independently admit
+the corrected raw-basename caller, exact launch and technical budgets, original
+trust bytes, predecessor/successor identities and current source/profile hashes.
+Current code or old request admission cannot substitute for this gate.
 
-The supplemental caller uses the existing supervised configuration transport and
-control/absence classifiers, with identical endpoint, TLS, body, retention and
-no-redirect/no-retry rules. It has one explicit initialization and one explicit
-collection invocation; neither starts an operation caller or chains publication.
-Bind a separate private single-use directory with an independently retained
-sibling initialization anchor and append-before-file membership journal. Reserve
-the whole unit before its first send and each category/ordinal before transport;
-retain safe original responses and successful receipts before the next send.
-Recheck the pinned old originals, failure and still-unreserved campaign before
-initialization and every send. Missing, aliased, changed or partial state stops;
-never recreate an anchor, replay a command or select another directory. Failure
-spends this supplemental unit and permits no successor unit. The complete
-inspection has a 30-minute outer deadline, capped by original configuration
-expiry. It never renews the configuration lifetime.
-
-Require actual protected main equal to the corrected target and independently
-accepted unchanged relevant baseline/principal/scopes before owner inventory.
-Complete successful inventory and original pagination must establish whole-project
-absence. A changed control, matching package, unknown response or exhausted
-allowance stops without correction effects. Keep raw private inventories private.
-After independent review of complete originals, seal a new target-bound request
-using the actual supplemental completion time. Preserve the existing ten-minute
-dispatch window, two-hour inspection limit and configuration expiry. The old
-request remains stopped; its observation is never substituted.
-
-Independent exact-request admission precedes external initialization/preflight,
-the existing campaign's sole bootstrap reservation, original M01 `bootstrap-main`
-and one dispatch within 60 seconds. All hosted current-run Qualification,
-Approval/Authorization, original-byte/terminal/clean-consumer audits,
-postcreation facts and normal-completion gates remain unchanged. RubyGems stays
-disabled until independently accepted normal GitHub completion. This one unit
-does not create a general recovery or repeated-inspection mechanism.
-
-[init-ca-stop]: https://github.com/hcoona/three/issues/954#issuecomment-5926665416
+Perform a fresh complete control and whole-project-absence inspection with the
+reviewed collectors. Unknown/present project, changed controls, expired
+configuration or incomplete inspection stops without dispatch. Seal a new exact
+request only from that complete evidence; independent admission precedes the new
+slot's durable reservation. A fresh standalone inspection is permitted while no
+slot is reserved, but cannot rebind an already sealed request or refund a reserved
+slot. Immediately read main and dispatch once within 60 seconds and the existing
+ten-minute dispatch window. The inspection's two-hour and original configuration
+expiry caps remain unchanged. Preserve all hosted current-run Qualification,
+Approval/Authorization, exact original-byte, terminal and clean-consumer audits.
+Bootstrap success alone does not complete GitHub or enable RubyGems.
 
 ## Hosted Operation Caller
 
@@ -646,17 +636,35 @@ The request's `caller-digest` binds the external source and
 `allocations`, `root`, `directory`, `operation-ledger`,
 `configuration-plan-digest`, `interpreter-digest`, `independent-reviewer`,
 `required-checks`, `launch`, `storage-origin-policy`, `poll-spacing-seconds`,
-`stage-seconds`, `tls-cafile` and `tls-cafile-digest`. Admission fixes absolute
+`stage-seconds`, `tls-cafile` and `tls-cafile-digest`. Historical v1 admission fixes absolute
 source/private-state paths, exact required check names and app IDs, and the
 `[interpreter, "-I", caller]` launch. Existing verified system trust is selected
 process-locally; no certificate bypass or host trust change is included.
+
+The successor caller uses strict
+`workflow-delivery/v3/ruby-external-budget-v2`: the same fields plus exactly
+`predispatch-main`, an object with `directory` and `collector-digest`. It binds a
+new absolute private read-only evidence directory and the independently reviewed
+collector source, outside the old configuration ledger. The plan fixes T and its
+reviewed source/profile before request sealing; it must not include a request
+hash that would create a request/budget hash cycle. A later immutable main-read
+receipt joins the actual sealed request and reservation digests, exact T,
+configuration-plan/protocol/collector identities, original response digest and
+actual start/completion times. It is produced only after the new reservation and
+retained with its original safe HTTP response. Dispatch validates these joins,
+HTTP 200, exact protected-main T, response completeness and the existing 60-second
+freshness window before its single send. No arbitrary path, old phase receipt or
+pre-reservation main read is accepted. V1 launch/evidence decoding remains only
+for its original admitted requests; it cannot launch bootstrap02. The concrete
+receipt and collector plan schemas must be closed and independently reviewed
+with the caller implementation before activation.
 
 Initialize private state once, retaining an independent sibling initialization
 anchor and append-before-file membership journal. Verify exact immutable input,
 stage and send membership before each command. A missing directory/member,
 alias, torn append, incomplete stage or repeated command stops without
 reconstruction, refill or resume. The campaign operation ledger reserves the
-slot before the existing configuration caller's unique predispatch main read.
+slot before the independently reviewed read-only collector's predispatch main read.
 Dispatch reuses that completed evidence and receipt; it performs no extra main
 read and must meet the existing 60-second and bootstrap dispatch-by limits.
 The RubyGems caller requires the campaign's audited GitHub completion.
@@ -709,13 +717,14 @@ nontransferable and include failed sends.
 | Artifact body       | GET one supported signed storage URL without credentials                                            |      28 |
 | Approval            | POST `R/actions/runs/I/pending_deployments`                                                         |       1 |
 
-The ceiling is 300 GitHub API sends (298 reads and two effects) plus 28 storage
+This caller's per-request execution ceiling is 300 GitHub API sends
+(298 reads and two effects) plus 28 storage
 GETs, totaling 328 direct sends per request. Discovery permits ten observations,
 preparation thirty and terminal 120, at least ten seconds apart. Each stage has
 an original deadline of at most 1,800 seconds, capped by request expiry. Run lists require complete inventories of at most 100 and artifact lists at
-most 28; unknown pagination stops. Unused category headroom cannot transfer. The 591 configuration
-reads (including the one INIT-CA-01 unit), ten predispatch main reads within
-that allocation, hosted action bounds,
+most 28; unknown pagination stops. Unused category headroom cannot transfer. New standalone configuration/diagnostic
+reads have no cumulative authorization ceiling; retained original allocations,
+hosted action bounds,
 per-job 128 REST reads and registry partitions remain separate and are not
 counted again here.
 
@@ -747,9 +756,9 @@ collection/counter schemas, durable pre-send spending and bounded transport/call
 actual supported principal/access, full raw evidence provenance and exact
 before/after plan. Before any operation, independently admit the exact external
 sole-operator source, launch and fixed budget manifest described above. Join its
-actual-run reservation to the hosted evidence. Count the 591 configuration reads
-(including the one INIT-CA-01 unit) and five predispatch main reads per
-destination only once. Hosted cross-process
+actual-run reservation to the hosted evidence. Retain original configuration
+spending without turning historical allocations into a ceiling on further
+standalone read-only checks. Hosted cross-process
 spending retains the 32-send registry envelope; operator/API/action classes remain
 separate bounds, not a universal network counter.
 

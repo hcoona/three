@@ -30,7 +30,8 @@ ends a grant. Git and the proposing PR retain the reason and history.
   requirements, applicable design and validation contracts. Native experiments,
   configuration and publication follow their accepted, concrete protocols and
   protected implementation. Before execution, bind exact targets, coordinates,
-  tool/transport profiles, finite read/effect budgets, stop conditions and
+  tool/transport profiles, finite effect budgets and per-invocation resource
+  limits, stop conditions and
   retained evidence. Preserve current-Attempt Approval/Authorization, independent
   admission/audit and protected-main/check gates; the owner's delegation permits
   completing these routine stages without repeated permission requests.
@@ -49,8 +50,17 @@ ends a grant. Git and the proposing PR retain the reason and history.
   tool preparation, independent delegated review, ordinary Issue/PR/check/comment
   operations, protected delivery and CI. Permit configuration of only this
   smoke's repository/Environment/publisher associations and required access,
-  plus one first-project bootstrap and at most four fresh normal Attempts per
-  destination, each with at most one gem upload. Stop each destination campaign
+  plus at most two first-project bootstraps for GitHub Packages and one for
+  RubyGems.org, and at most four fresh normal Attempts per destination, each
+  with at most one gem upload. The [owner disposition](https://github.com/hcoona/three/issues/954#issuecomment-5936150680)
+  permits one additional GitHub bootstrap with the predecessor binding required
+  by the [Ruby LLD](../src/public/lib/three-workflow-delivery-v3/docs/hcoona-release-smoke-ruby-lld.md#bootstrap-request-binding)
+  and [operation protocol](../src/public/lib/three-workflow-delivery-v3/docs/ruby-operation-protocol.md#single-github-bootstrap-successor).
+  Read-only inspection, diagnosis, retrieval and verification within this journey
+  have no cumulative count ceiling and need no further owner permission solely
+  for additional reads. Retain reviewed per-invocation time, response and
+  pagination limits and stop conditions; reads never confer mutation authority.
+  Stop each destination campaign
   at its first independently audited completion. Hosted dispatch, scoped
   GitHub-token/OIDC use, publication and bounded registry/consumer reads require
   the concrete accepted protocol and protected request described above; these
