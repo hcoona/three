@@ -1,8 +1,10 @@
 """Ruby CI selection and independent two-obligation qualification scenarios."""
 
 from dataclasses import replace
+from subprocess import TimeoutExpired
 
 import pytest
+from three_workflow_delivery_v3.adapters.ruby import RubyDistribution
 from three_workflow_delivery_v3.canonical import parse_canonical_json
 from three_workflow_delivery_v3.ci.ruby import (
     RubyCiDecision,
@@ -11,6 +13,11 @@ from three_workflow_delivery_v3.ci.ruby import (
     ruby_ci_plan_from_document,
     run_ruby_ci_quality,
 )
+from three_workflow_delivery_v3.records import ruby as ruby_records
+from three_workflow_delivery_v3.records.artifacts import (
+    ArtifactTransportIdentity,
+)
+from three_workflow_delivery_v3.records.ruby import RubyArtifact
 from three_workflow_delivery_v3.repository.ruby_model import (
     RUBY_QUALITY,
     RubyRepositoryModelSnapshot,
@@ -239,3 +246,70 @@ def test_ruby_ci_importers_reject_foreign_open_or_coerced_records(
         document["selected" if record == "plan" else "result"] = 1
     with pytest.raises(ValueError, match="Ruby"):
         parse(document)
+
+
+def test_ruby_ci_consumer_timeout_retains_sanitized_failed_evidence(
+    monkeypatch,
+):
+    """Timeout preserves separate failed evidence without native execution."""
+    source = model("ci-pr-slice-shadow")
+    planned = RubyCiPlan(source, reference(source.to_document()), None)
+    witness = source.build_request().witness
+    filename = f"hcoona-release-smoke-ruby-{witness.nbgv.native_version}.gem"
+    payload = b"modeled-inspected-original-for-timeout-boundary"
+    distribution = RubyDistribution(filename, payload, witness, b"{}")
+    artifact_ref = replace(
+        reference({}, 801, filename), payload_digest=distribution.digest
+    )
+    transport = ArtifactTransportIdentity(
+        artifact_ref.artifact_id,
+        "ruby-timeout-fixture",
+        artifact_ref.artifact_url,
+        artifact_ref.artifact_digest,
+        "build-ruby",
+        source.context.workflow_run_id,
+        source.context.run_attempt,
+    )
+    artifact = RubyArtifact(
+        filename, len(payload), witness, artifact_ref, transport
+    )
+    monkeypatch.setattr(
+        ruby_records, "inspect_ruby_distribution", lambda *_args: distribution
+    )
+    attempts = []
+
+    def timeout(current):
+        attempts.append(current.digest)
+        raise TimeoutExpired(
+            ["private-native-command"],
+            300,
+            output=b"private-native-stdout",
+            stderr=b"private-native-stderr",
+        )
+
+    evidence = run_ruby_ci_quality(planned, artifact, payload, consumer=timeout)
+    decision = RubyCiDecision(planned, evidence)
+    assert attempts == [distribution.digest]
+    assert [item.result for item in evidence] == ["passed", "failed"]
+    assert [item.definition for item in evidence] == [
+        "ruby/gem-contents-v1",
+        "ruby/gem-install-require-v1",
+    ]
+    assert parse_canonical_json(evidence[0].detail) == {
+        "digest": distribution.digest
+    }
+    assert parse_canonical_json(evidence[1].detail) == {
+        "error-kind": "TimeoutExpired"
+    }
+    assert decision.result == "failed"
+    documents = str([item.to_document() for item in evidence]) + str(
+        decision.to_document()
+    )
+    for sensitive in (
+        "private-native-command",
+        "private-native-stdout",
+        "private-native-stderr",
+    ):
+        assert sensitive not in documents
+
+    assert decision.to_document()["authority"] == "non-authoritative"

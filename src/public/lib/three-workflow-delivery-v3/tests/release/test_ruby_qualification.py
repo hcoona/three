@@ -2,14 +2,21 @@
 
 from dataclasses import replace
 from functools import partial
+from subprocess import TimeoutExpired
 
 import pytest
+from three_workflow_delivery_v3.adapters.ruby import RubyDistribution
 from three_workflow_delivery_v3.canonical import (
     canonicalize,
     parse_canonical_json,
 )
 from three_workflow_delivery_v3.ci.ruby import RubyCiEvidence
+from three_workflow_delivery_v3.records import ruby as ruby_records
+from three_workflow_delivery_v3.records.artifacts import (
+    ArtifactTransportIdentity,
+)
 from three_workflow_delivery_v3.records.release import ReleaseIntent
+from three_workflow_delivery_v3.records.ruby import RubyArtifact
 from three_workflow_delivery_v3.release.ruby_governance import RUBY_WORKFLOW
 from three_workflow_delivery_v3.release.ruby_qualification import (
     RubyQualificationDecision,
@@ -334,3 +341,73 @@ def test_ruby_release_importers_reject_foreign_or_tampered_records(
     }[record]
     with pytest.raises(ValueError, match="Ruby"):
         parse(document)
+
+
+def test_ruby_release_consumer_timeout_retains_sanitized_failed_evidence(
+    monkeypatch,
+):
+    """Timeout preserves separate failed evidence without native execution."""
+    source = model("live-release")
+    planned = snapshot(source)
+    witness = source.build_request().witness
+    filename = f"hcoona-release-smoke-ruby-{witness.nbgv.native_version}.gem"
+    payload = b"modeled-inspected-original-for-timeout-boundary"
+    distribution = RubyDistribution(filename, payload, witness, b"{}")
+    artifact_ref = replace(
+        reference({}, 801, filename), payload_digest=distribution.digest
+    )
+    transport = ArtifactTransportIdentity(
+        artifact_ref.artifact_id,
+        "ruby-timeout-fixture",
+        artifact_ref.artifact_url,
+        artifact_ref.artifact_digest,
+        "build-ruby",
+        source.context.workflow_run_id,
+        source.context.run_attempt,
+    )
+    artifact = RubyArtifact(
+        filename, len(payload), witness, artifact_ref, transport
+    )
+    monkeypatch.setattr(
+        ruby_records, "inspect_ruby_distribution", lambda *_args: distribution
+    )
+    attempts = []
+
+    def timeout(current):
+        attempts.append(current.digest)
+        raise TimeoutExpired(
+            ["private-native-command"],
+            300,
+            output=b"private-native-stdout",
+            stderr=b"private-native-stderr",
+        )
+
+    evidence = qualify_ruby_release(
+        planned, artifact, payload, consumer=timeout
+    )
+    decision = RubyQualificationDecision(planned, evidence)
+    assert attempts == [distribution.digest]
+    assert [item.result for item in evidence] == ["passed", "failed"]
+    assert [item.definition for item in evidence] == [
+        "ruby/gem-contents-v1",
+        "ruby/gem-install-require-v1",
+    ]
+    assert parse_canonical_json(evidence[0].detail) == {
+        "digest": distribution.digest
+    }
+    assert parse_canonical_json(evidence[1].detail) == {
+        "error-kind": "TimeoutExpired"
+    }
+    assert decision.result == "failed"
+    documents = str([item.to_document() for item in evidence]) + str(
+        decision.to_document()
+    )
+    for sensitive in (
+        "private-native-command",
+        "private-native-stdout",
+        "private-native-stderr",
+    ):
+        assert sensitive not in documents
+
+    with pytest.raises(ValueError, match="successful Qualification"):
+        _ = decision.artifact

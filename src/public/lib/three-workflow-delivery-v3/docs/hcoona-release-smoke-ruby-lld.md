@@ -2,8 +2,10 @@
 
 ## Status and Ownership
 
-This is the Ruby slice design under [Issue #954][issue], not implemented
-support, package ownership, a configured publisher or publication evidence.
+This is the Ruby slice design authority under [Issue #954][issue]. The
+[implementation status](../README.md#ruby-build-and-qualification) records the
+build and qualification foundation and remaining integration boundaries. This
+design is not package ownership, a configured publisher or publication evidence.
 The V3 maintainer maintains this carrier for implementation and acceptance
 reviewers. The [source record](./research/ruby-smoke-evidence.md) distinguishes
 public findings from observations and remaining feasibility gates. The [requirements](./requirements.md#ruby-smoke-slice) and accepted

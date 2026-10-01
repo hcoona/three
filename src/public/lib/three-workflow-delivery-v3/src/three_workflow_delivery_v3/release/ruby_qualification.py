@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from subprocess import TimeoutExpired
 from typing import TYPE_CHECKING, cast
 
 from three_workflow_delivery_v3._ruby_native import (
@@ -217,7 +218,7 @@ def qualify_ruby_release(
             message = "Ruby consumer returned foreign artifact evidence"
             raise ValueError(message)  # noqa: TRY301 - retain failed evidence
         outcome = "passed"
-    except (OSError, ValueError, RuntimeError) as error:
+    except (OSError, ValueError, RuntimeError, TimeoutExpired) as error:
         detail = {"error-kind": type(error).__name__}
         outcome = "failed"
     evidence.append(
