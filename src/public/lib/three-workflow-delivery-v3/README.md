@@ -340,7 +340,8 @@ The [partial Ruby operation protocol](docs/ruby-operation-protocol.md) specifies
 bounded configuration and first-project admission. Candidate strict bootstrap
 configuration/inspection/review validators and a separate RubyGems project
 observer support that boundary; screened facts do not prove raw GitHub owner
-inventory or reviewer provenance. Configuration collection/counters, the reviewed
+inventory or reviewer provenance. Fixed configuration collectors, supervised
+transport and durable phase/send counters are implemented; the reviewed
 caller and final runtime/transfer budgets remain pending. All ten slots remain
 null and both protected Governance sources remain blocked. Bootstrap and normal
 publication, actual configuration and destination acceptance remain pending.
