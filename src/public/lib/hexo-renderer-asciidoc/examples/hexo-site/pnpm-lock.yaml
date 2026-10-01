@@ -28,7 +28,7 @@ importers:
         version: 2.0.0
       hexo-renderer-asciidoc:
         specifier: file:../..
-        version: file:../..(hexo@8.1.2(chokidar@3.6.0))
+        version: file:../..(hexo@8.1.2(chokidar@3.6.0))(highlight.js@11.12.0)
       hexo-renderer-ejs:
         specifier: ^2.0.0
         version: 2.0.0
@@ -47,9 +47,14 @@ packages:
   '@adobe/css-tools@4.3.3':
     resolution: {integrity: sha512-rE0Pygv0sEZ4vBWHlAgJLGDU7Pm8xoO6p3wsEceb7GYAjScrOHpEo8KK/eVkAcnSM+slAEtXjA2JpdjLp4fJQQ==}
 
-  '@asciidoctor/core@4.0.11':
-    resolution: {integrity: sha512-5uWPTLTiPJVQp9q4MllSROM2avdECzoT7oeVw/onT9H2PIdCCtQwKrSTvztwxMbSu/8cqHqZox/2qTBrQN454g==}
+  '@asciidoctor/core@4.1.0':
+    resolution: {integrity: sha512-3PpZu3m0V2lT2jljqsH0LJukaMdm8cpv0tuTMijiiwTBSUrVlEd8NBwzH5iyGlS3yPI6i3ZaaNL6enXelOVpRg==}
     engines: {node: '>=20'}
+    peerDependencies:
+      highlight.js: ^11.0.0
+    peerDependenciesMeta:
+      highlight.js:
+        optional: true
 
   a-sync-waterfall@1.0.1:
     resolution: {integrity: sha512-RYTOHHdWipFUliRFMCS4X2Yn2X8M87V/OpSqWzKKOGhzqyUxzyVmhHDH9sAvG+ZuQf/TAOFsLCpMw09I1ufUnA==}
@@ -784,7 +789,9 @@ snapshots:
 
   '@adobe/css-tools@4.3.3': {}
 
-  '@asciidoctor/core@4.0.11': {}
+  '@asciidoctor/core@4.1.0(highlight.js@11.12.0)':
+    optionalDependencies:
+      highlight.js: 11.12.0
 
   a-sync-waterfall@1.0.1: {}
 
@@ -1101,13 +1108,15 @@ snapshots:
 
   hexo-pagination@4.0.0: {}
 
-  hexo-renderer-asciidoc@file:../..(hexo@8.1.2(chokidar@3.6.0)):
+  hexo-renderer-asciidoc@file:../..(hexo@8.1.2(chokidar@3.6.0))(highlight.js@11.12.0):
     dependencies:
-      '@asciidoctor/core': 4.0.11
+      '@asciidoctor/core': 4.1.0(highlight.js@11.12.0)
       cheerio: 1.2.0
       entities: 8.0.0
       hexo: 8.1.2(chokidar@3.6.0)
       hexo-util: 4.0.0
+    transitivePeerDependencies:
+      - highlight.js
 
   hexo-renderer-ejs@2.0.0:
     dependencies:
