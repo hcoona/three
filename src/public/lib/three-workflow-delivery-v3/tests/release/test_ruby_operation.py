@@ -38,13 +38,11 @@ EXPECTED_SLOTS = tuple(
 )
 
 
-def test_ruby_protected_envelope_has_exact_disabled_finite_campaign():
-    """The shipped carrier supplies no enabled operation by default."""
-    path = (
-        ROOT
-        / ".github/workflow-delivery/requests/hcoona-release-smoke-ruby.json"
+def test_ruby_default_envelope_has_exact_disabled_finite_campaign():
+    """The default factory supplies no enabled operation."""
+    envelope = RubyOperationEnvelope(
+        canonicalize(disabled_ruby_operation_envelope())
     )
-    envelope = RubyOperationEnvelope(path.read_bytes())
     doc = envelope.document
     assert doc == disabled_ruby_operation_envelope()
     assert doc["slots"] == dict.fromkeys(EXPECTED_SLOTS)
@@ -65,6 +63,20 @@ def test_ruby_protected_envelope_has_exact_disabled_finite_campaign():
     for slot in EXPECTED_SLOTS:
         with pytest.raises(ValueError, match="disabled"):
             envelope.enabled_slot(slot, NOW)
+
+
+def test_ruby_protected_envelope_preserves_fixed_authority_and_finite_slots():
+    """Protected activation changes slots without changing campaign bounds."""
+    path = (
+        ROOT
+        / ".github/workflow-delivery/requests/hcoona-release-smoke-ruby.json"
+    )
+    doc = RubyOperationEnvelope(path.read_bytes()).document
+    fixed = disabled_ruby_operation_envelope()
+    assert {key: value for key, value in doc.items() if key != "slots"} == {
+        key: value for key, value in fixed.items() if key != "slots"
+    }
+    assert set(doc["slots"]) == set(EXPECTED_SLOTS)
 
 
 @pytest.mark.parametrize("slot", EXPECTED_SLOTS)

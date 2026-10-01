@@ -45,9 +45,10 @@ contract coverage. Separate bootstrap/normal manual workflows now connect the
 hosted operation CLI, current-run artifact readbacks, destination-specific
 privileged jobs, strict terminal replay and independent remote consumption.
 The [operation protocol](./ruby-operation-protocol.md) owns concrete phase and
-transfer bounds. Both destinations remain disabled; live configuration,
-independent request admission and actual acceptance remain pending.
-The protected operation envelope starts with ten disabled slots. Exact-request,
+transfer bounds. GitHub Packages has an independently inspected first-project
+configuration and one enabled bootstrap slot. The other nine slots remain null;
+RubyGems.org remains disabled. Fresh predispatch inspection, independent request
+admission and actual destination acceptance remain pending. Exact-request,
 independent-admission and durable reservation primitives are implemented, with
 Ruby configuration/control paths included in native version and Provider inputs.
 The isolated control reader now covers target ancestry and complete relevant
@@ -57,8 +58,13 @@ configuration budgets and first-project binding. Candidate configuration,
 inspection/review validators and the separate RubyGems project observer do not
 establish actual resources or raw GitHub owner-inventory provenance. Configuration
 collectors, supervised transport and durable phase/send counters are implemented.
-Concrete external caller launch and configuration/request admission remain
-pending; all ten slots stay null and these mechanisms grant no effects.
+The [accepted configuration inspection](https://github.com/hcoona/three/issues/954#issuecomment-5925550208)
+binds the original source and protocol observations; the current protocol changes
+only their delivery-status summary. Configuration expires at
+`2026-10-08T03:39:53.109710Z`. The protected configuration records actual
+administrator bypass as enabled within the accepted sole-writer boundary.
+Concrete external caller launch, exact-request admission, durable reservation
+and current-run Approval remain required; source activation grants no dispatch.
 Source presence and controlled-transport tests are not Live admission.
 GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without
