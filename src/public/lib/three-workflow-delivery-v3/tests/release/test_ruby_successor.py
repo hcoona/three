@@ -4,12 +4,17 @@
 # ruff: noqa: PLR2004, SLF001
 
 import os
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from three_workflow_delivery_v3._ruby_native import ruby_digest
+from three_workflow_delivery_v3.acceptance.ruby_bootstrap_contract import (
+    RubyBootstrapInputs,
+    admit_ruby_bootstrap,
+)
 from three_workflow_delivery_v3.canonical import (
     canonicalize,
     parse_canonical_json,
@@ -26,7 +31,11 @@ from three_workflow_delivery_v3.release.ruby_operation import (
 )
 
 from ..ruby_integration_fixtures import NOW
-from .ruby_configuration_fixtures import configuration, inspection_document
+from .ruby_configuration_fixtures import (
+    configuration,
+    inspection_document,
+    review_document,
+)
 from .ruby_operation_fixtures import (
     REVIEW,
     admission_document,
@@ -570,3 +579,133 @@ def test_ruby_successor_inspection_cannot_rebind_version_or_destination(change):
     else:
         with pytest.raises(ValueError, match=r"Ruby|JSON|canonical"):
             RubyFirstProjectInspection(canonicalize(document), config)
+
+
+def hosted_chain(case, destination="github-packages"):
+    """Join real local ledger records with modeled hosted inputs."""
+    config = configuration(destination)
+    document = inspection_document(config)
+    slot = destination + "-bootstrap"
+    if destination == "github-packages":
+        slot = NEW
+        document.update(
+            schema="workflow-delivery/v3/ruby-first-project-inspection-v2",
+            slot=slot,
+        )
+    inspected = RubyFirstProjectInspection(canonicalize(document), config)
+    selected = v2_request(slot, config=config)
+    review = canonicalize(review_document(selected, config, inspected))
+    admission = canonicalize(
+        admission_document(selected, ruby_digest(case.ledger.content), review)
+    )
+    reserved = case.ledger.reserve(
+        selected, admission, review=review, now=NOW + timedelta(minutes=2)
+    )
+    inputs = RubyBootstrapInputs(
+        selected, config, inspected, review, admission, reserved
+    )
+    joined = case.ledger.join_run(selected, reserved, 991)
+    return inputs, joined, current_environment(selected)
+
+
+@pytest.mark.parametrize("destination", ["github-packages", "rubygems"])
+def test_hosted_bootstrap_admits_complete_v2_destination_chain(
+    successor, destination
+):
+    """The actual hosted boundary accepts only its exactly joined bootstrap."""
+    inputs, joined, environment = hosted_chain(successor, destination)
+    before = snapshot(successor.target), snapshot(successor.directory)
+    run = admit_ruby_bootstrap(
+        inputs, joined, environment, NOW + timedelta(minutes=2)
+    )
+    assert run.inputs == inputs
+    assert run.request.envelope.version == 2
+    assert run.request.document["slot"] == (
+        NEW if destination == "github-packages" else "rubygems-bootstrap"
+    )
+    assert run.run_id == 991
+    assert run.to_document() == {
+        "schema": "workflow-delivery/v3/ruby-bootstrap-run-v1",
+        "purpose": "destination-bootstrap",
+        "request-digest": inputs.request.digest,
+        "configuration-digest": inputs.configuration.digest,
+        "inspection-digest": ruby_digest(inputs.inspection.content),
+        "review-digest": ruby_digest(inputs.review),
+        "admission-digest": ruby_digest(inputs.admission),
+        "reservation-digest": ruby_digest(inputs.reservation),
+        "run-join-digest": ruby_digest(joined),
+        "target": inputs.request.document["target"],
+        "control": inputs.request.document["target"],
+        "workflow-run-id": 991,
+        "run-attempt": 1,
+    }
+    binding = run.provider_binding()
+    assert binding.request_id == (
+        "ruby-bootstrap:" + inputs.request.document["slot"] + ":" + "c" * 32
+    )
+    assert binding.purpose == "destination-bootstrap"
+    assert binding.producer == "provide-ruby-bootstrap"
+    run.require_current(NOW + timedelta(minutes=3))
+    assert (snapshot(successor.target), snapshot(successor.directory)) == before
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "v1-inspection",
+        "v1-request",
+        "foreign-inspection",
+        "foreign-configuration",
+        "normal-request",
+        "review",
+        "admission",
+        "reservation",
+        "run-join",
+        "native-workflow",
+        "native-attempt",
+    ],
+)
+def test_hosted_successor_rejects_incompatible_chain_at_real_boundary(
+    successor, change
+):
+    """The slot fix cannot bypass version, destination or original joins."""
+    inputs, joined, environment = hosted_chain(successor)
+    if change == "v1-inspection":
+        inspected = RubyFirstProjectInspection(
+            canonicalize(inspection_document(inputs.configuration)),
+            inputs.configuration,
+        )
+        inputs = replace(inputs, inspection=inspected)
+    elif change == "v1-request":
+        inputs = replace(inputs, request=request(OLD))
+    elif change == "foreign-inspection":
+        foreign = configuration("rubygems")
+        inspected = RubyFirstProjectInspection(
+            canonicalize(inspection_document(foreign)), foreign
+        )
+        inputs = replace(inputs, inspection=inspected)
+    elif change == "foreign-configuration":
+        inputs = replace(inputs, configuration=configuration("rubygems"))
+    elif change == "normal-request":
+        inputs = replace(inputs, request=v2_request("github-packages-normal01"))
+    elif change in {"review", "admission", "reservation"}:
+        document = parse_canonical_json(getattr(inputs, change))
+        document["request-digest"] = "sha256:" + "e" * 64
+        inputs = replace(inputs, **{change: canonicalize(document)})
+    elif change == "run-join":
+        document = parse_canonical_json(joined)
+        document["reservation-digest"] = "sha256:" + "e" * 64
+        joined = canonicalize(document)
+    elif change == "native-workflow":
+        environment["GITHUB_WORKFLOW_REF"] = (
+            "hcoona/three/.github/workflows/"
+            "workflow-delivery-v3-ruby-smoke.yml@refs/heads/main"
+        )
+    else:
+        environment["GITHUB_RUN_ATTEMPT"] = "2"
+    before = snapshot(successor.target), snapshot(successor.directory)
+    with pytest.raises(ValueError, match=r"Ruby|canonical|schema|keys"):
+        admit_ruby_bootstrap(
+            inputs, joined, environment, NOW + timedelta(minutes=2)
+        )
+    assert (snapshot(successor.target), snapshot(successor.directory)) == before
