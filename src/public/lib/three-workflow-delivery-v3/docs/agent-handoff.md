@@ -51,9 +51,10 @@ The [owner disposition](https://github.com/hcoona/three/issues/954#issuecomment-
 approves one additional GitHub bootstrap and no cumulative count ceiling for
 read-only checks. Follow the [successor protocol](./ruby-operation-protocol.md#single-github-bootstrap-successor)
 and [Ruby LLD](./hcoona-release-smoke-ruby-lld.md#bootstrap-request-binding):
-protected v2 envelope/ledger implementation, independent source/test review,
-activation, fresh native qualification and exact-request admission still precede
-execution. Preserve the failed first run, original campaign and spent reservation;
+the v2 envelope, successor ledger and inspection validators are implemented with
+all eleven slots disabled. Independently reviewed external caller/collector
+adaptation, protected activation, fresh native qualification and exact-request
+admission still precede execution. Preserve the failed first run, original campaign and spent reservation;
 no old request, artifact or Approval may be resumed or reused. The independently
 accepted phase-clock fix is delivered; the corrected external raw-basename caller
 still requires admission for its new exact request. Read-only checks retain finite

@@ -334,9 +334,10 @@ Their shared operation CLI keeps first-project authority separate from normal
 Governance and skips the privileged job for exact-satisfied publication.
 An unprivileged final job verifies the remote original and a clean consumer.
 GitHub Packages has an independently inspected first-project configuration and
-all operation slots disabled. The approved GitHub successor requires the
-[protocol's protected v2 envelope/ledger implementation](docs/ruby-operation-protocol.md#single-github-bootstrap-successor)
-and fresh independent admission. Fresh predispatch
+all operation slots disabled. The
+[protocol's v2 envelope, successor ledger and inspection validators](docs/ruby-operation-protocol.md#single-github-bootstrap-successor)
+are implemented; the exact external caller, standalone collector, protected
+activation and fresh independent admission remain prerequisites. Fresh predispatch
 inspection, independently admitted requests and destination acceptance remain
 prerequisites; implemented workflows do not establish publication success. Strict data
 validators bind a future post-merge request, independent admission and durable

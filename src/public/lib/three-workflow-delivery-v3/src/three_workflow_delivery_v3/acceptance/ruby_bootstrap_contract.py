@@ -86,7 +86,7 @@ class RubyBootstrapInputs:
         require_bootstrap(
             binding["kind"] == "bootstrap"
             and self.request.document["slot"]
-            == self.configuration.registry.name + "-bootstrap",
+            == self.inspection.document["slot"],
             "Ruby bootstrap cannot admit a normal operation",
         )
         _same(binding, self.configuration.document["binding"])

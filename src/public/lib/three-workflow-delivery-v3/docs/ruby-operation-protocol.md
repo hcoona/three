@@ -515,8 +515,26 @@ slots are each one-shot. Together these enforce two lifetime GitHub bootstraps,
 one RubyGems bootstrap and four normal Attempts per destination, without editing
 or resetting the original ledger. Destination completion in the successor stops
 all further reservations for that destination; RubyGems still requires audited
-normal GitHub completion. The concrete v2 schema and validators require independent
-source/tests/record review and protected delivery before initialization or use.
+normal GitHub completion.
+
+The v2 ledger header retains `schema`, `campaign`, `directory` and `slots`,
+and adds exactly `predecessor`: `directory`, `campaign-digest` and `members`.
+The member map binds the three original filenames to their admitted SHA-256
+digests. The ordered slots retain the original ten followed by
+`github-packages-bootstrap02`; successor events cannot reserve the inherited
+old bootstrap. The existing events-v1 format binds the new header digest.
+
+The sibling `<predecessor-directory-name>.successor.json` uses strict
+`workflow-delivery/v3/ruby-operation-successor-anchor-v1`, with exactly
+`schema`, `predecessor-directory`, `directory`, `campaign` and
+`campaign-digest` (the successor header digest). Initialization exclusively
+creates and syncs this anchor before creating the successor directory.
+Its expected bytes are recomputed only for comparison, never for repair.
+Predecessor members, anchor and successor members must be regular files
+without symbolic or hard-link aliases. Reservation and run joins require
+matching envelope/ledger versions before any journal write.
+The implemented v2 schema and validators require independent source/tests/record
+review and protected delivery before initialization or use.
 
 After the new implementation and slot activation are protected-delivered, select
 fresh actual T and tree, require passing target checks, exact-target NBGV,

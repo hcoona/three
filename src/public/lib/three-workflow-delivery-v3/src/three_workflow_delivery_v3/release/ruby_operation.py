@@ -41,6 +41,9 @@ RUBY_OPERATION_SLOTS = tuple(
     for destination in ("github-packages", "rubygems")
     for kind in ("bootstrap", "normal01", "normal02", "normal03", "normal04")
 )
+RUBY_SUCCESSOR_SLOT = "github-packages-bootstrap02"
+RUBY_SUCCESSOR_VERSION = 2
+RUBY_OPERATION_SLOTS_V2 = (*RUBY_OPERATION_SLOTS, RUBY_SUCCESSOR_SLOT)
 RUBY_REGISTRY_PARTITIONS = {
     "eligibility": 3,
     "pre-marker": 3,
@@ -87,12 +90,12 @@ def _same(actual: JsonValue, expected: JsonValue) -> None:
 
 def ruby_operation_binding(slot: str) -> dict[str, JsonValue]:
     """Resolve a finite slot to its fixed service and workflow tuple."""
-    if slot not in RUBY_OPERATION_SLOTS:
+    if slot not in RUBY_OPERATION_SLOTS_V2:
         message = "Ruby operation slot is outside the finite campaign"
         raise ValueError(message)
     destination, kind = slot.rsplit("-", 1)
     registry = RubyRegistry(destination)
-    bootstrap = kind == "bootstrap"
+    bootstrap = kind == "bootstrap" or slot == RUBY_SUCCESSOR_SLOT
     index = 0 if destination == "github-packages" else 1
     return {
         "repository": "hcoona/three",
@@ -118,10 +121,15 @@ def ruby_operation_binding(slot: str) -> dict[str, JsonValue]:
     }
 
 
-def disabled_ruby_operation_envelope() -> dict[str, JsonValue]:
+def disabled_ruby_operation_envelope(
+    *, version: int = 1
+) -> dict[str, JsonValue]:
     """Describe protected constraints with no executable slot enabled."""
+    if type(version) is not int or version not in (1, 2):
+        message = "Ruby operation envelope version is unsupported"
+        raise ValueError(message)
     return {
-        "schema": "workflow-delivery/v3/ruby-operation-envelope-v1",
+        "schema": f"workflow-delivery/v3/ruby-operation-envelope-v{version}",
         "repository": "hcoona/three",
         "ref": "refs/heads/main",
         "path": RUBY_ENVELOPE_PATH,
@@ -141,7 +149,9 @@ def disabled_ruby_operation_envelope() -> dict[str, JsonValue]:
             "current-run-approval-for-action",
             "exact-remote-original-and-independent-terminal-audit",
         ],
-        "slots": dict.fromkeys(RUBY_OPERATION_SLOTS),
+        "slots": dict.fromkeys(
+            RUBY_OPERATION_SLOTS if version == 1 else RUBY_OPERATION_SLOTS_V2
+        ),
     }
 
 
@@ -153,11 +163,17 @@ class RubyOperationEnvelope:
 
     def __post_init__(self) -> None:
         """Reject unknown fields, modified ceilings and partial slot state."""
-        fixed = disabled_ruby_operation_envelope()
+        fixed = disabled_ruby_operation_envelope(version=self.version)
         doc = ruby_object(parse_canonical_json(self.content), set(fixed))
         for key in fixed.keys() - {"slots"}:
             _same(doc[key], fixed[key])
-        slots = ruby_object(doc["slots"], set(RUBY_OPERATION_SLOTS))
+        slots = ruby_object(doc["slots"], set(ruby_object(fixed["slots"])))
+        if (
+            self.version == RUBY_SUCCESSOR_VERSION
+            and slots["github-packages-bootstrap"] is not None
+        ):
+            message = "Ruby predecessor bootstrap is permanently spent"
+            raise ValueError(message)
         generations: set[str] = set()
         for slot, value in slots.items():
             if value is None:
@@ -202,6 +218,17 @@ class RubyOperationEnvelope:
                 _digest(enabled[key])
 
     @property
+    def version(self) -> int:
+        """Select only the two independently defined closed schemas."""
+        schema = self.document.get("schema")
+        if schema == "workflow-delivery/v3/ruby-operation-envelope-v1":
+            return 1
+        if schema == "workflow-delivery/v3/ruby-operation-envelope-v2":
+            return 2
+        message = "Ruby operation envelope version is unsupported"
+        raise ValueError(message)
+
+    @property
     def document(self) -> dict[str, JsonValue]:
         """Return admitted canonical constraints."""
         return parse_canonical_json(self.content)
@@ -209,7 +236,11 @@ class RubyOperationEnvelope:
     def enabled_slot(self, slot: str, now: datetime) -> dict[str, JsonValue]:
         """Require a currently enabled finite slot without consuming it."""
         ruby_operation_binding(slot)
-        value = ruby_object(self.document["slots"])[slot]
+        slots = ruby_object(self.document["slots"])
+        if slot not in slots:
+            message = "Ruby operation slot is outside this envelope version"
+            raise ValueError(message)
+        value = slots[slot]
         if value is None:
             message = "Ruby operation slot is disabled"
             raise ValueError(message)
