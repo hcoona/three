@@ -48,8 +48,12 @@ independent-admission and durable reservation primitives are implemented, with
 Ruby configuration/control paths included in native version and Provider inputs.
 The isolated control reader now covers target ancestry and complete relevant
 input history, including newly added files and touch/revert, without freezing
-unrelated main advancement. The reviewed dispatch caller, concrete GitHub/transfer
-budgets and runtime assembly remain prerequisites; the data validators do not grant effects.
+unrelated main advancement. Follow the [partial operation protocol](./ruby-operation-protocol.md) for
+configuration budgets and first-project binding. Candidate configuration,
+inspection/review validators and the separate RubyGems project observer do not
+establish actual resources or raw GitHub owner-inventory provenance. Configuration
+collection/counter schemas, the reviewed caller and complete runtime/transfer
+budgets remain pending; all ten slots stay null and the validators grant no effects.
 Source presence and controlled-transport tests are not Live admission.
 GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without

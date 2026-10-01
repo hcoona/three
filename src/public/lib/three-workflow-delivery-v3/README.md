@@ -336,6 +336,12 @@ source closure and the smoke's NBGV filters. The control reader can prove
 protected-main ancestry and reject relevant input changes, including new files
 and touch/revert histories, while allowing unrelated main advancement. Hosted
 publication callers must invoke that proof at their admission boundaries.
-The two protected Governance sources remain blocked. Bootstrap and normal
-publication callers, configuration and actual destination acceptance remain
-pending. Local controlled transports do not establish deployed registry behavior.
+The [partial Ruby operation protocol](docs/ruby-operation-protocol.md) specifies
+bounded configuration and first-project admission. Candidate strict bootstrap
+configuration/inspection/review validators and a separate RubyGems project
+observer support that boundary; screened facts do not prove raw GitHub owner
+inventory or reviewer provenance. Configuration collection/counters, the reviewed
+caller and final runtime/transfer budgets remain pending. All ten slots remain
+null and both protected Governance sources remain blocked. Bootstrap and normal
+publication, actual configuration and destination acceptance remain pending.
+Local controlled transports do not establish deployed registry behavior.
