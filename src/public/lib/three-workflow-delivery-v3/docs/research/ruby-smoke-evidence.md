@@ -3,9 +3,10 @@
 The V3 maintainer maintains this record for Ruby requirements/design reviewers
 and later implementation/admission reviewers under [Issue #954][issue]. It owns
 source findings and their limits, not runtime support, package ownership or
-operation permission. Sources were inspected on 2026-09-30 after the Ruby
-design Wave was accepted. No Ruby package build, registry probe, authentication
-change or publication was performed in this research.
+operation permission. Initial sources were inspected on 2026-09-30 after the
+Ruby design Wave was accepted, without native or service execution. Later runtime
+observations below identify their separate accepted operation and diagnostic
+protocols; they do not convert source findings into universal platform guarantees.
 
 ## Existing Project and Destination Support
 
@@ -118,6 +119,82 @@ posts JSON `jwt` to `/api/v1/oidc/trusted_publisher/exchange_token` after obtain
 a GitHub assertion for the selected audience. Reusing this source contract does
 not attest a configured publisher or permit logging credential response bodies.
 
+## GitHub Download Source Recheck
+
+**Current public-source findings:** on 2026-10-01, four bounded unauthenticated
+HTTPS GETs [independently rechecked][source-recheck] the
+[GitHub Ruby guide][github], package permissions
+and pinned RubyGems 4.0.20 RemoteFetcher and Request sources. All returned HTTP
+200 without redirect following or retries. The guides still document
+conditional authenticated installation and package access; neither inspected
+guide specifies the observed Azure origin/path/query, redirect count or direct
+download status. This is a bounded absence finding about those sources, not a
+promise that no other documentation exists. The separate [postcreation evidence carrier][postcreation-review]
+addresses actual package facts; these source findings do not establish
+package access or readiness.
+
+**Immutable client-source findings:** pinned RemoteFetcher `fetch_http`, lines
+212-238, follows 301/302/303/307 with a `depth > 10` guard and rejects missing
+Location or an HTTPS downgrade. It reapplies configured headers at each hop;
+pinned [Request][native-request] derives Basic authentication from the current
+URI and has bad-response/connection-reset retry paths. These mechanisms do not
+supply a one-hop, credential-free, no-retry contract. The rechecked RemoteFetcher
+body matches the original retained source. Retained public-body SHA256 identities
+bind this recheck:
+
+| Source                     | SHA256                                                             |
+| -------------------------- | ------------------------------------------------------------------ |
+| GitHub Ruby guide          | `91df72a573e1674977d06b0ee8cdd320c6c23579abab5cb63566c6f18514fd34` |
+| GitHub package permissions | `c60274f632dadf283e659ec1096a3217a9159c0ed7bb09115b1cfd63fc724761` |
+| Pinned RemoteFetcher       | `e901acecd1bf018fcd469a6560a92d3e59c271073a4cc0cc1472b8058b188b5a` |
+| Pinned Request             | `f1bc300d45bcd83692417f9ceb7604863ca6c311a7d8e1e3d657332ba96460af` |
+
+Client support is neither GitHub server implementation evidence nor proof of
+storage status, original byte equality, current grants or service immutability.
+
+## GitHub Download Observation
+
+**Runtime observation:** [bootstrap run 36924998743][bootstrap02], attempt 1,
+used protected source `aa925d7b8cf0fa5ca64ec09ee3e309309b8834d5` and uploaded
+`hcoona-release-smoke-ruby` version `0.1.0.pre.beta.20` with HTTP 200. Its first
+visibility observation returned two index HTTP-200 responses followed by an exact
+gem HTTP 302. The zero-redirect implementation classified this as unknown; the
+Result and terminal outcome remain failed. No remote-consumer success or normal
+completion follows from upload acceptance. Both GitHub bootstrap slots are spent.
+The [independent terminal review][bootstrap02-review] retains that failure.
+
+The original 302 HTML contained a short-lived signed storage capability. No
+Location header was retained, so the HTML was not evidence of an observed header.
+Historical originals remain private evidence; no body, encoded body, signed URL
+or capability value is reproduced here. This exposed both an unclosed GitHub
+read contract and a response-retention defect, independently classified as true
+positives in the [screened independent disposition][redirect-triage].
+
+**Separate runtime observation:** an independently reviewed, single authenticated
+GET diagnostic at 2026-10-01T21:10:56.625605Z through
+2026-10-01T21:10:56.873600Z returned HTTP 302 and observed Location origin
+`https://rubygemsregistryv2prod.blob.core.windows.net`, with the exact
+owner/package/version/UUID path and a query. The diagnostic retained only safe
+status, booleans and cryptographic identities; no Location or body, and it
+followed no redirect. The retained diagnostic source object
+`github-ruby-redirect-header-diagnostic.py` has digest
+`sha256:2a2e729bb5adb52b27d131c355796faa15acd311f0f882070d216bdb6d6fc25d`.
+The separate screened actual observation object
+`github-ruby-redirect-header-observation.json` has digest
+`sha256:2bc4b37a876803ea299fd18614f6a38391ea1a21b255f6d39f21ff7b75efe6fc`.
+The [exact screened lineage carrier][header-lineage] joins source, intent,
+observation and independent review identities without retaining signed Location
+or body values in this record.
+
+**Design implication and limit:** a single exact-origin/path, credential-free
+continuation can be designed within the existing 32-send ceiling, with safe
+redirect evidence and fresh normal gates. This observation establishes neither
+storage HTTP 200 nor whole-gem equality, effective Actions permission, permanent
+host/path stability or service immutability. The [operation protocol][redirect]
+owns the bounded route and protected implementation gate; source presence does
+not accept a real download. Changed origin/path/status behavior stops for scoped
+revalidation rather than broadening the allowlist.
+
 ## RubyGems.org Trusted Publishing
 
 **Pinned-source findings:** the [Trusted Publishing guide][trusted] documents
@@ -174,3 +251,11 @@ authorizes probes.
 [fetcher]: https://github.com/ruby/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/remote_fetcher.rb#L149
 [credential-action]: https://github.com/rubygems/configure-rubygems-credentials/blob/8674aee7f9f9055a8b771794d6f1e66b5fad36a9/src/oidc/trustedPublisher.ts
 [credential-response]: https://github.com/rubygems/configure-rubygems-credentials/blob/8674aee7f9f9055a8b771794d6f1e66b5fad36a9/src/oidc/responses.ts
+[bootstrap02]: https://github.com/hcoona/three/actions/runs/36924998743
+[bootstrap02-review]: https://github.com/hcoona/three/issues/954#issuecomment-5940605940
+[redirect]: ../ruby-operation-protocol.md#github-gem-download-continuation
+[redirect-triage]: https://github.com/hcoona/three/issues/954#issuecomment-5940719795
+[postcreation-review]: https://github.com/hcoona/three/issues/954#issuecomment-5940722853
+[native-request]: https://github.com/ruby/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/request.rb#L142
+[source-recheck]: https://github.com/hcoona/three/issues/954#issuecomment-5940809720
+[header-lineage]: https://github.com/hcoona/three/issues/954#issuecomment-5941047932

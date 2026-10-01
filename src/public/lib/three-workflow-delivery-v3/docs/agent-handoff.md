@@ -45,33 +45,34 @@ contract coverage. Separate bootstrap/normal manual workflows now connect the
 hosted operation CLI, current-run artifact readbacks, destination-specific
 privileged jobs, strict terminal replay and independent remote consumption.
 The [operation protocol](./ruby-operation-protocol.md) owns concrete phase and
-transfer bounds. GitHub Packages retains independently inspected first-project configuration;
-only `github-packages-bootstrap02` is enabled and both normal Governance sources remain blocked.
+transfer bounds. Both GitHub bootstrap slots are spent. The second bootstrap
+[run 36924998743](https://github.com/hcoona/three/actions/runs/36924998743) accepted
+its upload but failed during exact gem readback on HTTP 302; neither bootstrap
+has accepted remote consumption or normal completion. Preserve both failures,
+all original artifacts, ledgers and reservations. Do not rerun, resume, refund,
+reuse Approval or enable another bootstrap.
+
+The [bounded download correction](./ruby-operation-protocol.md#github-gem-download-continuation)
+defines one credential-free GitHub storage continuation and safe redirect
+retention within the existing 32 direct sends. Its separately observed header
+origin/path does not establish downloaded bytes. Protected-deliver and validate
+the corrected implementation with all slots null and current carriers blocked;
+then establish actual package ownership/access, current controls and fresh
+normal attestation before enabling one remaining normal slot. The current
+zero-redirect implementation and spent bootstrap activation do not implement or
+admit the corrected normal route. Four normal slots remain; ordinary current
+Attempt/native/Approval/remote-consumer and independent audit gates still apply.
+
 The [owner disposition](https://github.com/hcoona/three/issues/954#issuecomment-5936150680)
-approves one additional GitHub bootstrap and no cumulative count ceiling for
-read-only checks. Follow the [successor protocol](./ruby-operation-protocol.md#single-github-bootstrap-successor)
-and [Ruby LLD](./hcoona-release-smoke-ruby-lld.md#bootstrap-request-binding):
-the v2 envelope enables only the successor slot with the independently reviewed
-external caller, standalone main collector and exact launch budget. The original
-bootstrap and all normal/RubyGems slots remain null. Fresh protected-target native
-qualification, independent exact-launch and predecessor/successor admission,
-complete predispatch inspection and exact-request admission still precede execution. Preserve the failed first run, original campaign and spent reservation;
-no old request, artifact or Approval may be resumed or reused. The independently
-accepted phase-clock fix is delivered; the corrected external raw-basename caller
-still requires admission for its new exact request. Read-only checks retain finite
-per-invocation resource/completeness limits and original evidence, without a
-lifetime read quota or a new permission question solely for more reads.
-The original configuration expiry is `2026-10-08T03:39:53.109710Z` and is not renewed.
-The [accepted configuration inspection](https://github.com/hcoona/three/issues/954#issuecomment-5925550208)
-retains historical source/protocol observations and actual administrator bypass as
-enabled within the accepted sole-writer boundary. The protected configuration and
-successor slot bind the current reviewed protocol; this does not refresh the
-historical observation attestation, inspection time or original expiry. Use the existing resolved
-regular CA file with unchanged trust bytes. The current control reader preserves
-full relevant history, including new files and touch/revert, while allowing
-unrelated main advancement. Implementation presence and prior inspections do not
-supply fresh controls, whole-project absence, independent admission or current-run
-Approval for the successor.
+permits the consumed second bootstrap and read-only journey checks without a
+cumulative ceiling. Each read invocation remains bounded and cannot renew the
+original configuration expiry `2026-10-08T03:39:53.109710Z`. The historical
+[first-project attestation](https://github.com/hcoona/three/issues/954#issuecomment-5925550208)
+and old source/protocol observations remain historical; they cannot attest the
+new transport/profile or package access. Use unchanged admitted trust bytes and
+preserve relevant protected-path freshness, including touch/revert, while
+allowing unrelated main advancement. Signed redirect URLs and response bodies
+must not be copied into public records or fresh evidence.
 Source presence and controlled-transport tests are not Live admission.
 GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without

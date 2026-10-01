@@ -315,8 +315,11 @@ has exact-target native Provider facts, a closed Model, frozen original-gem Buil
 immutable Artifact records and separate CI and Release qualification. Both
 qualification paths require original-package inspection and an isolated native
 installed consumer. Release rejects CI evidence and binds its own current Attempt.
-The native registry readers retain bounded original responses and verify the
-remote original gem. The singular publication path binds immutable approval,
+The native registry readers verify the remote original gem. The current
+implementation retains bounded original responses; the design-only
+[download correction](docs/ruby-operation-protocol.md#github-gem-download-continuation)
+requires explicit screened redirect evidence before the normal GitHub route
+can be admitted. The singular publication path binds immutable approval,
 rechecks missing state before its marker, uploads once and admits visibility
 reads only after HTTP 200. Strict replay joins this evidence to the shared
 scalar Attempt Outcome; zero-action completion requires a fresh exact proof.
@@ -333,15 +336,25 @@ readbacks, destination-specific publisher permissions and strict terminal replay
 Their shared operation CLI keeps first-project authority separate from normal
 Governance and skips the privileged job for exact-satisfied publication.
 An unprivileged final job verifies the remote original and a clean consumer.
-GitHub Packages has an independently inspected first-project configuration.
-Only `github-packages-bootstrap02` is enabled in the protected v2 envelope,
-bound to the reviewed successor caller, standalone main collector and exact
-launch budget; the original bootstrap and all normal/RubyGems slots remain null.
-The [successor protocol](docs/ruby-operation-protocol.md#single-github-bootstrap-successor)
-requires fresh protected-target native qualification, independently admitted
-launch and predecessor/successor identities, complete predispatch inspection
-and exact-request admission before reservation and dispatch. The first failed
-bootstrap remains spent, and the original configuration expiry is unchanged.
+Both GitHub bootstrap slots are spent. The second
+[run 36924998743](https://github.com/hcoona/three/actions/runs/36924998743)
+accepted its upload but failed on HTTP 302 during exact gem readback. Both
+bootstrap outcomes remain failed; neither has accepted remote consumption or
+normal completion. Preserve their original evidence and reservations without
+rerun, refund, old Approval reuse or another bootstrap.
+
+The protected v2 envelope still physically contains the
+`github-packages-bootstrap02` activation; that entry does not authorize reuse
+of its spent slot. All normal and RubyGems slots remain null. The bounded
+credential-free GitHub storage continuation and screened evidence are a
+**design-only correction**, awaiting protected implementation. That delivery
+must set all eleven slots null and current carriers blocked; fresh package
+access/control evidence and independent normal attestation then precede
+protected activation of one remaining normal slot. The original configuration
+expiry remains unchanged. Follow the
+[handoff](docs/agent-handoff.md) and
+[operation protocol](docs/ruby-operation-protocol.md#github-gem-download-continuation)
+for the remaining gates.
 Protected activation and implemented workflows do not establish publication success. Strict data
 validators bind a future post-merge request, independent admission and durable
 sole-operator reservation. The local ledger consumes a slot before a caller
