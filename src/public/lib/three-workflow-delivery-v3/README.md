@@ -315,6 +315,11 @@ has exact-target native Provider facts, a closed Model, frozen original-gem Buil
 immutable Artifact records and separate CI and Release qualification. Both
 qualification paths require original-package inspection and an isolated native
 installed consumer. Release rejects CI evidence and binds its own current Attempt.
-The two protected Governance sources remain blocked; registry profiles declare
-the selected contracts without executable HTTP transport. CLI, hosted workflows,
-publication integration and actual destination acceptance remain pending.
+The native registry readers retain bounded original responses and verify the
+remote original gem. The singular publication path binds immutable approval,
+rechecks missing state before its marker, uploads once and admits visibility
+reads only after HTTP 200. Strict replay joins this evidence to the shared
+scalar Attempt Outcome; zero-action completion requires a fresh exact proof.
+The two protected Governance sources remain blocked. CLI, hosted workflows,
+configuration and actual destination acceptance remain pending. Local controlled
+transports do not establish supported deployed registry behavior.

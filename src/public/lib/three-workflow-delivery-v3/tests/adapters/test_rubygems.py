@@ -1,6 +1,9 @@
 """Closed Ruby destination protocol profiles, without network effects."""
 
+import hashlib
+
 import pytest
+from three_workflow_delivery_v3._ruby_registry import RUBY_REGISTRY_HELPER
 from three_workflow_delivery_v3.adapters.rubygems import RubyRegistry
 from three_workflow_delivery_v3.canonical import canonical_sha256
 
@@ -51,6 +54,18 @@ def test_ruby_registry_freezes_independent_bounded_operation_profile(
         if name == "github-packages"
         else "https://rubygems.org/api/v1/oidc/trusted_publisher/exchange_token",
         "index-protocol": index,
+        "native-index-reader": {
+            "implementation-digest": "sha256:"
+            + hashlib.sha256(RUBY_REGISTRY_HELPER.read_bytes()).hexdigest(),
+            "ruby": "4.0.7",
+            "rubygems": "4.0.20",
+            "entry-budget": 4096,
+            "expanded-byte-budget": 2097152,
+        },
+        "download-base": origin + "/gems/",
+        "token-exchange-status": None if name == "github-packages" else 201,
+        "token-scopes": [] if name == "github-packages" else ["push_rubygem"],
+        "token-lifetime-seconds": None if name == "github-packages" else 900,
         "client": "stdlib/http.client.HTTPSConnection",
         "python": "3.14.3",
         "tls": "OpenSSL 3.5.5 27 Jan 2026",

@@ -7,6 +7,12 @@ from dataclasses import dataclass
 from three_workflow_delivery_v3._ruby_native import (
     RUBY_BYTE_LIMIT,
     RUBY_RELEASE_UNIT,
+    RUBY_VERSION,
+    RUBYGEMS_VERSION,
+)
+from three_workflow_delivery_v3._ruby_registry import (
+    RUBY_INDEX_ENTRY_LIMIT,
+    ruby_registry_reader_digest,
 )
 from three_workflow_delivery_v3.canonical import JsonValue, canonical_sha256
 
@@ -76,6 +82,17 @@ class RubyRegistry:
             "index-protocol": "rubygems-marshal-4.8"
             if github
             else "rubygems-json-v1-v2",
+            "native-index-reader": {
+                "implementation-digest": ruby_registry_reader_digest(),
+                "ruby": RUBY_VERSION,
+                "rubygems": RUBYGEMS_VERSION,
+                "entry-budget": RUBY_INDEX_ENTRY_LIMIT,
+                "expanded-byte-budget": RUBY_INDEX_LIMIT,
+            },
+            "download-base": self.origin + "/gems/",
+            "token-exchange-status": None if github else 201,
+            "token-scopes": [] if github else ["push_rubygem"],
+            "token-lifetime-seconds": None if github else 900,
             "client": "stdlib/http.client.HTTPSConnection",
             "python": "3.14.3",
             "tls": "OpenSSL 3.5.5 27 Jan 2026",

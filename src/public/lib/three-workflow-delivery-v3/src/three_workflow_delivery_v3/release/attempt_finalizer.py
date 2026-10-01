@@ -87,6 +87,9 @@ if TYPE_CHECKING:
     from three_workflow_delivery_v3.release.python_finalizer import (
         PythonFinalizationInputs,
     )
+    from three_workflow_delivery_v3.release.ruby_finalizer import (
+        RubyFinalizationInputs,
+    )
     from three_workflow_delivery_v3.repository.descriptors import ReleasePolicy
 
 _PLATFORM_OUTCOMES = frozenset({"success", "failure", "cancelled", "skipped"})
@@ -550,7 +553,9 @@ def _admit_result(
 
 
 def finalize_attempt_outcome(  # noqa: C901, PLR0912, PLR0913, PLR0915
-    inputs: FinalizationInputs | PythonFinalizationInputs,
+    inputs: FinalizationInputs
+    | PythonFinalizationInputs
+    | RubyFinalizationInputs,
     *,
     current: ReleaseAdmissionBindings,
     run_attempt: int,
@@ -567,6 +572,21 @@ def finalize_attempt_outcome(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
     if type(inputs) is PythonFinalizationInputs:
         return finalize_python_attempt_outcome(
+            inputs,
+            current=current,
+            run_attempt=run_attempt,
+            publisher_conclusion=publisher_conclusion,
+            publication_step_outcome=publication_step_outcome,
+            publication_terminal_reference=publication_terminal_reference,
+            observation_conclusion=observation_conclusion,
+        )
+    from three_workflow_delivery_v3.release.ruby_finalizer import (  # noqa: PLC0415
+        RubyFinalizationInputs,
+        finalize_ruby_attempt_outcome,
+    )
+
+    if type(inputs) is RubyFinalizationInputs:
+        return finalize_ruby_attempt_outcome(
             inputs,
             current=current,
             run_attempt=run_attempt,
