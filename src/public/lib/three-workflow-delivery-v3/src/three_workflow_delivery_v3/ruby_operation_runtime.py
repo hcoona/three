@@ -160,7 +160,8 @@ def phase_claim(
     require_bootstrap(
         phase in RUBY_REGISTRY_PARTITIONS, "Unknown Ruby registry phase"
     )
-    operation.require_current(now())
+    claimed_at = now()
+    operation.require_current(claimed_at)
     return {
         "schema": "workflow-delivery/v3/ruby-hosted-phase-claim-v1",
         "request-digest": operation.request.digest,
@@ -173,8 +174,8 @@ def phase_claim(
         and operation.registry.name == "rubygems"
         and phase == "eligibility"
         else 0,
-        "claimed-at": now().isoformat(),
-        "deadline": operation.deadline().isoformat(),
+        "claimed-at": claimed_at.isoformat(),
+        "deadline": operation.deadline(started_at=claimed_at).isoformat(),
         "reservation-digest": canonical_sha256(
             operation.document["reservation"]
         ),
