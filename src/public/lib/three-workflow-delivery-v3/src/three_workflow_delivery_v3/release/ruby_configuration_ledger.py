@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -151,6 +152,16 @@ def initialize_ruby_configuration_ledger(
     plan.require_current(now)
     plan.directory.mkdir(mode=0o700)
     _durable_new(plan.directory / "plan.json", plan.content)
+    _durable_new(
+        plan.directory / "phases.jsonl",
+        canonicalize(
+            {
+                "schema": "workflow-delivery/v3/ruby-configuration-phases-v1",
+                "plan-digest": ruby_digest(plan.content),
+            }
+        )
+        + b"\n",
+    )
     _sync_directory(plan.directory.parent)
 
 
@@ -176,6 +187,50 @@ class RubyConfigurationLedger:
         ):
             msg = "Ruby configuration ledger lost its admitted plan"
             raise ValueError(msg)
+        lines = _read(self.plan.directory / "phases.jsonl").splitlines(
+            keepends=True
+        )
+        header = (
+            canonicalize(
+                {
+                    "schema": (
+                        "workflow-delivery/v3/ruby-configuration-phases-v1"
+                    ),
+                    "plan-digest": ruby_digest(self.plan.content),
+                }
+            )
+            + b"\n"
+        )
+        if not lines or lines[0] != header:
+            msg = "Ruby configuration phase inventory is missing or changed"
+            raise ValueError(msg)
+        limits = configuration_phase_limits(
+            ruby_text(self.plan.document["destination"])
+        )
+        names = {"plan.json", "phases.jsonl"}
+        for line in lines[1:]:
+            if not line.endswith(b"\n"):
+                msg = "Ruby configuration phase reservation is partial"
+                raise ValueError(msg)
+            entry = ruby_object(
+                parse_canonical_json(line[:-1]), {"phase", "phase-digest"}
+            )
+            name = ruby_text(entry["phase"])
+            path = self.plan.directory / name
+            if (
+                name not in limits
+                or name in names
+                or path.is_symlink()
+                or not path.is_dir()
+                or ruby_digest(_read(path / "phase.json"))
+                != entry["phase-digest"]
+            ):
+                msg = "Ruby configuration reserved phase is missing or changed"
+                raise ValueError(msg)
+            names.add(name)
+        if {path.name for path in self.plan.directory.iterdir()} != names:
+            msg = "Ruby configuration phase inventory has unjoined state"
+            raise ValueError(msg)
 
     def begin(self, phase: str, *, now: datetime) -> RubyConfigurationPhase:
         """Reserve one whole phase before its first possible send."""
@@ -188,7 +243,7 @@ class RubyConfigurationLedger:
             msg = "Ruby configuration phase is outside its plan"
             raise ValueError(msg)
         for path in self.plan.directory.iterdir():
-            if path.name == "plan.json":
+            if path.name in {"plan.json", "phases.jsonl"}:
                 continue
             if (
                 path.name not in limits
@@ -199,7 +254,8 @@ class RubyConfigurationLedger:
                 raise ValueError(msg)
             _verify_completed_phase(path, self.plan)
         directory = self.plan.directory / phase
-        directory.mkdir(mode=0o700)
+        if directory.exists():
+            raise FileExistsError(directory)
         deadline = min(
             now + timedelta(minutes=30), _time(self.plan.document["expires-at"])
         )
@@ -213,6 +269,23 @@ class RubyConfigurationLedger:
                 "limit": limits[phase],
             }
         )
+        reservation = (
+            canonicalize({"phase": phase, "phase-digest": ruby_digest(content)})
+            + b"\n"
+        )
+        # A torn append or missing phase remains spent and stops reopening.
+        descriptor = os.open(
+            self.plan.directory / "phases.jsonl",
+            os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW,
+        )
+        try:
+            if os.write(descriptor, reservation) != len(reservation):
+                msg = "Ruby configuration phase reservation write was partial"
+                raise OSError(msg)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        directory.mkdir(mode=0o700)
         _durable_new(directory / "phase.json", content)
         _sync_directory(directory.parent)
         return RubyConfigurationPhase(self, phase, content)

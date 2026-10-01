@@ -543,3 +543,199 @@ def test_failed_plan_flush_cannot_be_reinitialized(tmp_path, monkeypatch):
     assert plan.directory.exists()
     with pytest.raises(FileExistsError):
         initialize_ruby_configuration_ledger(plan, now=NOW)
+
+
+@pytest.mark.parametrize("destination", ["github-packages", "rubygems"])
+@pytest.mark.parametrize("state", ["reserved", "completed"])
+def test_lost_whole_spent_phase_blocks_reopen_reuse_and_other_phase(
+    tmp_path, destination, state
+):
+    """Missing member state cannot renew a previously consumed mutation role."""
+    selected = ledger(tmp_path / "ledger", destination)
+    phase = selected.begin("marker-write", now=NOW)
+    reservation = phase.spend(*mutation(destination, "marker-write"), now=NOW)
+    if state == "completed":
+        phase.complete_send(reservation, EVIDENCE, successful=True, now=NOW)
+        phase.finish(now=NOW)
+    originals = {
+        path.name: path.read_bytes() for path in phase.directory.iterdir()
+    }
+    journal = (selected.plan.directory / "phases.jsonl").read_bytes()
+    preserved = tmp_path / "preserved-spent-phase"
+    phase.directory.rename(preserved)
+    with pytest.raises(ValueError, match="reserved phase is missing"):
+        RubyConfigurationLedger(selected.plan)
+    for role in ("marker-write", "bootstrap-main"):
+        with pytest.raises(ValueError, match="reserved phase is missing"):
+            selected.begin(role, now=NOW + timedelta(seconds=1))
+        assert not (selected.plan.directory / role).exists()
+    with pytest.raises(ValueError, match="reserved phase is missing"):
+        phase.spend(*mutation(destination, "marker-write"), now=NOW)
+    assert {
+        path.name: path.read_bytes() for path in preserved.iterdir()
+    } == originals
+    assert (selected.plan.directory / "phases.jsonl").read_bytes() == journal
+    assert (
+        selected.plan.directory / "plan.json"
+    ).read_bytes() == selected.plan.content
+    assert parse_canonical_json(reservation)["ordinal"] == 1
+    assert not (preserved / "02.request.json").exists()
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing",
+        "empty",
+        "partial-header",
+        "partial-entry",
+        "wrong-plan",
+        "missing-entry",
+        "duplicate-entry",
+        "wrong-phase-digest",
+        "symlink",
+    ],
+)
+def test_missing_partial_or_unjoined_phase_journal_stops_all_ledger_use(
+    tmp_path, change
+):
+    """Missing or inconsistent inventory cannot be silently reconstructed."""
+    selected = ledger(tmp_path / "ledger")
+    phase = selected.begin("initial-controls", now=NOW)
+    complete_get(phase)
+    path = selected.plan.directory / "phases.jsonl"
+    original = path.read_bytes()
+    preserved = tmp_path / "preserved-phases.jsonl"
+    path.rename(preserved)
+    lines = original.splitlines(keepends=True)
+    replacements = {
+        "empty": b"",
+        "partial-header": lines[0][:-1],
+        "partial-entry": original[:-1],
+        "missing-entry": lines[0],
+        "duplicate-entry": original + lines[1],
+    }
+    if change == "symlink":
+        path.symlink_to(preserved)
+    elif change in replacements:
+        path.write_bytes(replacements[change])
+    elif change in {"wrong-plan", "wrong-phase-digest"}:
+        index = 0 if change == "wrong-plan" else 1
+        record = parse_canonical_json(lines[index][:-1])
+        record["plan-digest" if index == 0 else "phase-digest"] = (
+            "sha256:" + "e" * 64
+        )
+        lines[index] = canonicalize(record) + b"\n"
+        path.write_bytes(b"".join(lines))
+    with pytest.raises(ValueError, match=r"Ruby|canonical"):
+        RubyConfigurationLedger(selected.plan)
+    with pytest.raises(ValueError, match=r"Ruby|canonical"):
+        selected.begin("bootstrap-main", now=NOW)
+    with pytest.raises(ValueError, match=r"Ruby|canonical"):
+        phase.spend("GET", "/user", None, now=NOW)
+    with pytest.raises(ValueError, match=r"Ruby|canonical"):
+        phase.finish(now=NOW)
+    assert preserved.read_bytes() == original
+    assert not (selected.plan.directory / "bootstrap-main").exists()
+    assert not (phase.directory / "02.request.json").exists()
+    assert not (phase.directory / "complete.json").exists()
+
+
+@pytest.mark.parametrize(
+    "failure", ["partial-append", "append-fsync", "mkdir", "phase-write"]
+)
+def test_interrupted_phase_journal_transition_cannot_reallocate(  # noqa: C901 - four durable transition failures
+    tmp_path, monkeypatch, failure
+):
+    """A partial journal or interrupted directory creation remains terminal."""
+    selected = ledger(tmp_path / "ledger")
+    journal_path = selected.plan.directory / "phases.jsonl"
+    header = journal_path.read_bytes()
+    directory = selected.plan.directory / "marker-write"
+    native_write, native_fsync = os.write, os.fsync
+    native_mkdir, native_open = Path.mkdir, Path.open
+
+    def write(descriptor, content):
+        if failure == "partial-append":
+            return native_write(descriptor, content[:7])
+        return native_write(descriptor, content)
+
+    def fsync(descriptor):
+        if failure == "append-fsync":
+            message = "controlled journal flush failure"
+            raise OSError(message)
+        return native_fsync(descriptor)
+
+    def mkdir(path, *args, **kwargs):
+        if failure == "mkdir" and path == directory:
+            message = "controlled phase directory failure"
+            raise OSError(message)
+        return native_mkdir(path, *args, **kwargs)
+
+    def opened(path, *args, **kwargs):
+        if failure == "phase-write" and path == directory / "phase.json":
+            with native_open(path, "xb") as stream:
+                stream.write(b'{"partial":')
+            message = "controlled phase file failure"
+            raise OSError(message)
+        return native_open(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "write", write)
+        patch.setattr(os, "fsync", fsync)
+        patch.setattr(Path, "mkdir", mkdir)
+        patch.setattr(Path, "open", opened)
+        with pytest.raises(OSError, match=r"partial|controlled"):
+            selected.begin("marker-write", now=NOW)
+    retained = journal_path.read_bytes()
+    assert retained.startswith(header)
+    assert len(retained) > len(header)
+    if failure == "partial-append":
+        assert not retained.endswith(b"\n")
+    else:
+        entry = parse_canonical_json(retained.splitlines()[1])
+        assert entry["phase"] == "marker-write"
+        assert entry["phase-digest"].startswith("sha256:")
+    for role in ("marker-write", "bootstrap-main"):
+        with pytest.raises(ValueError, match=r"Ruby|canonical|Expecting"):
+            selected.begin(role, now=NOW + timedelta(seconds=1))
+    with pytest.raises(ValueError, match=r"Ruby|canonical|Expecting"):
+        RubyConfigurationLedger(selected.plan)
+    assert journal_path.read_bytes() == retained
+    assert not (directory / "01.request.json").exists()
+    assert not (selected.plan.directory / "bootstrap-main").exists()
+
+
+def test_phase_journal_preserves_normal_progression_without_quota_transfer(
+    tmp_path,
+):
+    """Completed phases retain membership and fixed later allocations."""
+    selected = ledger(tmp_path / "ledger")
+    first = selected.begin("initial-controls", now=NOW)
+    complete_get(first)
+    first.finish(now=NOW)
+    second = RubyConfigurationLedger(selected.plan).begin(
+        "marker-write", now=NOW
+    )
+    reservation = second.spend(
+        *mutation("github-packages", "marker-write"), now=NOW
+    )
+    second.complete_send(reservation, EVIDENCE, successful=True, now=NOW)
+    with pytest.raises(ValueError, match="exhausted"):
+        second.spend(*mutation("github-packages", "marker-write"), now=NOW)
+    second.finish(now=NOW)
+    following = RubyConfigurationLedger(selected.plan).begin(
+        "bootstrap-main", now=NOW
+    )
+    assert (first.limit, second.limit, following.limit) == (32, 1, 1)
+    lines = (selected.plan.directory / "phases.jsonl").read_bytes().splitlines()
+    assert parse_canonical_json(lines[0]) == {
+        "schema": "workflow-delivery/v3/ruby-configuration-phases-v1",
+        "plan-digest": ruby_digest(selected.plan.content),
+    }
+    assert [parse_canonical_json(line) for line in lines[1:]] == [
+        {"phase": phase.name, "phase-digest": ruby_digest(phase.content)}
+        for phase in (first, second, following)
+    ]
+    assert not (second.directory / "02.request.json").exists()
+    assert (second.directory / "01.request.json").read_bytes() == reservation

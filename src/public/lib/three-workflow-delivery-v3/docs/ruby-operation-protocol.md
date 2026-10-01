@@ -77,7 +77,11 @@ package/account inventory into workflow inputs or public evidence.
 
 The [durable ledger](../src/three_workflow_delivery_v3/release/ruby_configuration_ledger.py)
 fixes the plan, phases and request roles and reserves each send before transport.
-Interrupted, failed or altered evidence cannot resume a phase or fund another.
+A root append-only journal reserves each phase before directory creation and
+joins its immutable phase digest to the complete directory inventory. Missing
+phase directories or journal entries, torn appends and inconsistent membership
+stop further use. Interrupted, failed or altered evidence cannot resume a phase
+or fund another.
 The [transport](../src/three_workflow_delivery_v3/platform/ruby_configuration_http.py)
 requires reserve/retain callbacks; the forthcoming operator must retain original
 responses before asking the ledger to complete a send, including responses that
