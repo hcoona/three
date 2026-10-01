@@ -1,5 +1,6 @@
 """One-shot credential exchange and immutable binary upload boundaries."""
 
+from copy import copy
 from dataclasses import replace
 from datetime import timedelta
 
@@ -161,16 +162,16 @@ def test_ruby_writer_uploads_original_once_and_preserves_raw_status(
     """Preserve raw status for Release without inventing adapter success."""
     original = ruby_release_original[2]
     response = RubyHttpResponse(status, b"controlled result")
-    writer, transport = _writer(response, name=name)
-    credentials = {
-        "rubygems": RubyPublishingCredential(
-            WRITE_TOKEN, NOW + timedelta(minutes=1)
-        ),
-        "github-packages": WRITE_TOKEN,
-    }
-    actual = writer.upload(original, credentials[name], now=NOW)
+    responses = (
+        [json_response(token_document(), 201)] if name == "rubygems" else []
+    )
+    writer, transport = _writer(*responses, response, name=name)
+    credential = (
+        writer.exchange(ASSERTION, now=NOW) if responses else WRITE_TOKEN
+    )
+    actual = writer.upload(original, credential, now=NOW)
     assert actual is response
-    assert transport.requests == [
+    assert transport.requests[len(responses) :] == [
         (
             "POST",
             RubyRegistry(name).upload_url,
@@ -183,8 +184,8 @@ def test_ruby_writer_uploads_original_once_and_preserves_raw_status(
         )
     ]
     with pytest.raises(ValueError, match="already spent"):
-        writer.upload(original, credentials[name], now=NOW)
-    assert len(transport.requests) == 1
+        writer.upload(original, credential, now=NOW)
+    assert len(transport.requests) == len(responses) + 1
 
 
 @pytest.mark.parametrize("name", ["rubygems", "github-packages"])
@@ -193,19 +194,21 @@ def test_ruby_upload_interruption_cannot_replay_original(
 ):
     """An exception after send remains spent even if its outcome is unknown."""
     original = ruby_release_original[2]
-    writer, transport = _writer(OSError("controlled interruption"), name=name)
-    credential = {
-        "rubygems": RubyPublishingCredential(
-            WRITE_TOKEN, NOW + timedelta(minutes=1)
-        ),
-        "github-packages": WRITE_TOKEN,
-    }[name]
+    responses = (
+        [json_response(token_document(), 201)] if name == "rubygems" else []
+    )
+    writer, transport = _writer(
+        *responses, OSError("controlled interruption"), name=name
+    )
+    credential = (
+        writer.exchange(ASSERTION, now=NOW) if responses else WRITE_TOKEN
+    )
     with pytest.raises(OSError, match="interruption"):
         writer.upload(original, credential, now=NOW)
     with pytest.raises(ValueError, match="already spent"):
         writer.upload(original, credential, now=NOW)
-    assert len(transport.requests) == 1
-    assert transport.requests[0][3] == original.content
+    assert len(transport.requests) == len(responses) + 1
+    assert transport.requests[-1][3] == original.content
 
 
 @pytest.mark.parametrize(
@@ -349,4 +352,82 @@ def test_rubygems_exchange_invalid_receipt_clock_stays_spent(completed):
         writer.exchange(ASSERTION, now=NOW, monotonic=lambda: next(ticks))
     with pytest.raises(ValueError, match="already spent"):
         writer.exchange(ASSERTION, now=NOW)
+    assert len(transport.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "origin", ["constructed", "copy", "replace", "other-writer"]
+)
+def test_rubygems_upload_requires_exact_same_writer_exchange_object(
+    ruby_release_original, origin
+):
+    """Equal token values cannot substitute for the validated issued object."""
+    writer, transport = _writer(json_response(token_document(), 201))
+    issued = writer.exchange(ASSERTION, now=NOW)
+    if origin == "constructed":
+        credential = RubyPublishingCredential(issued.value, issued.expires_at)
+    elif origin == "copy":
+        credential = copy(issued)
+    elif origin == "replace":
+        credential = replace(issued)
+    else:
+        other, other_transport = _writer(json_response(token_document(), 201))
+        credential = other.exchange(ASSERTION, now=NOW)
+        assert len(other_transport.requests) == 1
+    assert credential == issued
+    assert credential is not issued
+    with pytest.raises(ValueError, match="credential"):
+        writer.upload(ruby_release_original[2], credential, now=NOW)
+    assert len(transport.requests) == 1
+    assert transport.requests[0][1].endswith("/exchange_token")
+
+
+def test_rubygems_constructed_credential_cannot_skip_exchange(
+    ruby_release_original,
+):
+    """A plausible long-lived token cannot enter the binary upload API."""
+    writer, transport = _writer()
+    credential = RubyPublishingCredential(
+        WRITE_TOKEN, NOW + timedelta(days=365)
+    )
+    with pytest.raises(ValueError, match="credential"):
+        writer.upload(ruby_release_original[2], credential, now=NOW)
+    assert transport.requests == []
+
+
+@pytest.mark.parametrize(
+    "response",
+    [json_response(token_document(), 401), OSError("private-exchange-failure")],
+)
+def test_rubygems_failed_exchange_cannot_be_followed_by_static_upload(
+    ruby_release_original, response
+):
+    """Failed exchange never authorizes a directly constructed fallback key."""
+    writer, transport = _writer(response)
+    with pytest.raises((ValueError, OSError)):
+        writer.exchange(ASSERTION, now=NOW)
+    with pytest.raises(ValueError, match="credential"):
+        writer.upload(
+            ruby_release_original[2],
+            RubyPublishingCredential(WRITE_TOKEN, NOW + timedelta(minutes=1)),
+            now=NOW,
+        )
+    assert len(transport.requests) == 1
+    assert transport.requests[0][1].endswith("/exchange_token")
+
+
+@pytest.mark.parametrize("when", ["expiry", "after-expiry", "naive"])
+def test_rubygems_issued_credential_still_requires_current_aware_time(
+    ruby_release_original, when
+):
+    """Provenance cannot bypass expiry or timezone admission."""
+    writer, transport = _writer(json_response(token_document(), 201))
+    credential = writer.exchange(ASSERTION, now=NOW)
+    now = {
+        "expiry": credential.expires_at,
+        "after-expiry": credential.expires_at + timedelta(seconds=1),
+        "naive": NOW.replace(tzinfo=None),
+    }[when]
+    with pytest.raises(ValueError, match="credential"):
+        writer.upload(ruby_release_original[2], credential, now=now)
     assert len(transport.requests) == 1

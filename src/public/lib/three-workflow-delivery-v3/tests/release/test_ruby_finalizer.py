@@ -3,8 +3,11 @@
 from copy import deepcopy
 from dataclasses import replace
 from datetime import timedelta
+from http.client import RemoteDisconnected
+from subprocess import TimeoutExpired
 
 import pytest
+from three_workflow_delivery_v3.adapters import ruby_registry
 from three_workflow_delivery_v3.adapters.ruby_registry import RubyHttpResponse
 from three_workflow_delivery_v3.canonical import canonicalize
 from three_workflow_delivery_v3.records.release_transport import (
@@ -131,6 +134,54 @@ def test_ruby_result_finalizes_through_shared_scalar_dispatch(
     assert outcome.direct_predecessor.kind == "publication-result"
     assert outcome.direct_predecessor.reference == result_ref
     assert outcome.attempt == case.marker.attempt
+
+
+@pytest.mark.parametrize("stage", ["request", "interpretation"])
+def test_ruby_unknown_native_readback_finalizes_failed_possibly_mutated(
+    ruby_publication_cases, tmp_path, monkeypatch, stage
+):
+    """An attested runtime failure closes the attempt without promotion."""
+    case = ruby_publication_cases["rubygems"]
+    native_candidates = ruby_registry.ruby_registry_candidates
+
+    def candidates(version, *, entries=None, **kwargs):
+        if entries:
+            raise TimeoutExpired(
+                ["private-command"], 1, output=b"private-output"
+            )
+        return native_candidates(version, entries=entries, **kwargs)
+
+    responses = [RubyHttpResponse(200, b"accepted")]
+    responses += (
+        [RemoteDisconnected("private-failure")]
+        if stage == "request"
+        else case.exact_responses()[:1]
+    )
+    with monkeypatch.context() as patch:
+        if stage == "interpretation":
+            patch.setattr(ruby_registry, "ruby_registry_candidates", candidates)
+        result, transport, timeline = execute(case, tmp_path, responses)
+    native = result.visibility[0]["native"]
+    assert native["classification"] == "unknown"
+    assert native["failure-stage"] == stage
+    assert native["failure-kind"] == (
+        "HTTPException" if stage == "request" else "SubprocessError"
+    )
+    assert result.result == "failed"
+    assert result.visibility[0]["exact"] is False
+    assert len(transport.requests) == 3  # noqa: PLR2004 - exchange, upload, read
+    assert timeline.waits == []
+    result_ref = reference(result.to_document(), 920)
+    inputs = replace(
+        _inputs(case),
+        terminal=(result, result_ref),
+        result_marker=(case.marker, result.marker_reference),
+    )
+    outcome = _finalize(inputs)
+    assert outcome.disposition == "publication-failed"
+    assert outcome.possibly_mutated is True
+    assert outcome.direct_predecessor.reference == result_ref
+    assert b"private-" not in canonicalize(result.to_document())
 
 
 @pytest.mark.parametrize("conclusion", ["success", "failure", "cancelled"])

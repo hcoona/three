@@ -327,7 +327,12 @@ def test_ruby_reader_network_failure_retains_prior_noncredential_responses(
     reader, transport = _reader("github-packages", first, failure)
     observed = reader.observe(ruby_release_original[2])
     assert observed.classification == "unknown"
-    assert observed.failure_kind == type(failure).__name__
+    assert observed.failure_kind == (
+        "HTTPException"
+        if isinstance(failure, http.client.HTTPException)
+        else "OSError"
+    )
+    assert observed.failure_stage == "request"
     assert tuple(response for _, response in observed.responses) == (first,)
     assert len(transport.requests) == TWO_READS
     assert READ_TOKEN.encode() not in canonicalize(observed.to_document())

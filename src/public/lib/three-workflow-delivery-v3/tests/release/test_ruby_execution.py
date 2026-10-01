@@ -44,9 +44,14 @@ def test_ruby_execution_publishes_one_original_and_retains_exact_evidence(
     assert result.mutation_classification == "mutated"
     assert len(result.visibility) == 1
     assert result.visibility[0]["exact"] is True
-    assert transport.requests[0][0] == "POST"
-    assert transport.requests[0][3] == case.original.content
-    assert all(request[0] == "GET" for request in transport.requests[1:])
+    offset = int(name == "rubygems")
+    if offset:
+        assert transport.requests[0][1].endswith("/exchange_token")
+    assert transport.requests[offset][0] == "POST"
+    assert transport.requests[offset][3] == case.original.content
+    assert all(
+        request[0] == "GET" for request in transport.requests[offset + 1 :]
+    )
     assert timeline.waits == []
     assert (
         parse_canonical_json((tmp_path / "claim.json").read_bytes())
@@ -76,7 +81,7 @@ def test_ruby_execution_non200_is_failed_without_visibility_or_retry(
     )
     assert result.upload_response is response
     assert result.visibility == ()
-    assert len(transport.requests) == 1
+    assert len(transport.requests) == 2  # noqa: PLR2004 - exchange plus upload
     assert timeline.waits == []
     audit_ruby_publication_result(result, case.original.content)
 
@@ -103,7 +108,7 @@ def test_ruby_execution_lost_upload_response_retains_unknown_without_replay(
     assert result.error_kind == type(error).__name__
     assert result.upload_response is None
     assert result.visibility == ()
-    assert len(transport.requests) == 1
+    assert len(transport.requests) == 2  # noqa: PLR2004 - exchange plus upload
     with pytest.raises(FileExistsError):
         execute(case, tmp_path, [RubyHttpResponse(200, b"must not send")])
     audit_ruby_publication_result(result, case.original.content)
@@ -153,7 +158,7 @@ def test_ruby_visibility_allows_exact_within_six_reads_and_ten_second_spacing(
         100.0 + 10 * i for i in range(pending + 1)
     ]
     assert timeline.waits == [10.0] * pending
-    assert len(transport.requests) == pending + 4
+    assert len(transport.requests) == pending + 5
     audit_ruby_publication_result(result, case.original.content)
 
 
@@ -172,7 +177,7 @@ def test_ruby_visibility_six_missing_reads_end_failed_without_seventh(
     assert result.mutation_classification == "mutated"
     assert len(result.visibility) == 6  # noqa: PLR2004 - operation limit
     assert timeline.waits == [10.0] * 5
-    assert len(transport.requests) == 7  # noqa: PLR2004 - one POST plus six reads
+    assert len(transport.requests) == 8  # noqa: PLR2004 - exchange, upload, six reads
     audit_ruby_publication_result(result, case.original.content)
 
 
@@ -191,7 +196,7 @@ def test_ruby_visibility_stops_at_outer_deadline_or_sixty_second_window(
     )
     assert result.result == "failed"
     assert len(result.visibility) == 1
-    assert len(transport.requests) == 2  # noqa: PLR2004 - one POST plus one read
+    assert len(transport.requests) == 3  # noqa: PLR2004 - exchange, upload, read
     audit_ruby_publication_result(result, case.original.content)
 
 
@@ -225,7 +230,7 @@ def test_ruby_visibility_unperformed_wait_cannot_create_close_spaced_reads(
     assert result.result == "failed"
     assert result.error_kind == "ValueError"
     assert len(result.visibility) == 1
-    assert len(transport.requests) == 2  # noqa: PLR2004 - blocked before next read
+    assert len(transport.requests) == 3  # noqa: PLR2004 - exchange, upload, one read
 
 
 @pytest.mark.parametrize("state", ["conflicting", "unknown"])
@@ -247,7 +252,7 @@ def test_ruby_visibility_conflict_or_unknown_is_terminal(
     assert result.visibility[0]["native"]["classification"] == state
     assert result.visibility[0]["exact"] is False
     assert timeline.waits == []
-    assert len(transport.requests) == 2  # noqa: PLR2004 - no followup after terminal state
+    assert len(transport.requests) == 3  # noqa: PLR2004 - exchange, upload, terminal read
     audit_ruby_publication_result(result, case.original.content)
 
 
@@ -297,10 +302,12 @@ def test_ruby_visibility_network_failure_is_replayable_failed_evidence(
     assert result.result == "failed"
     assert result.mutation_classification == "mutated"
     assert result.visibility[0]["native"]["classification"] == "unknown"
-    assert (
-        result.visibility[0]["native"]["failure-kind"] == type(error).__name__
+    assert result.visibility[0]["native"]["failure-kind"] == (
+        "HTTPException"
+        if isinstance(error, http.client.HTTPException)
+        else "OSError"
     )
-    assert len(transport.requests) == 2  # noqa: PLR2004 - one send and failed read
+    assert len(transport.requests) == 3  # noqa: PLR2004 - exchange, upload, failed read
     assert timeline.waits == []
     audit_ruby_publication_result(result, case.original.content)
 
@@ -379,7 +386,8 @@ def test_ruby_authority_drift_after_claim_blocks_before_upload(
     assert result.status == "not-attempted"
     assert result.result == "failed"
     assert result.mutation_classification == "not-mutated"
-    assert transport.requests == []
+    assert len(transport.requests) == 1
+    assert transport.requests[0][1].endswith("/exchange_token")
     assert (tmp_path / "claim.json").exists()
 
 

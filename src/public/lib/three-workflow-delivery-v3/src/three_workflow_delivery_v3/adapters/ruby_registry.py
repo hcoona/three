@@ -50,6 +50,23 @@ if TYPE_CHECKING:
 _MIN_HTTP_STATUS = 100
 _MAX_HTTP_STATUS = 599
 
+# Order matters: RemoteDisconnected belongs to both HTTPException and OSError.
+RUBY_OBSERVATION_FAILURES = {
+    "HTTPException": http.client.HTTPException,
+    "OSError": OSError,
+    "SubprocessError": subprocess.SubprocessError,
+    "ValueError": ValueError,
+    "TypeError": TypeError,
+}
+
+
+def _failure_kind(error: Exception) -> str:
+    for name, family in RUBY_OBSERVATION_FAILURES.items():
+        if isinstance(error, family):
+            return name
+    message = "unsupported Ruby observation failure family"
+    raise TypeError(message)
+
 
 @dataclass(frozen=True, slots=True)
 class RubyHttpResponse:
@@ -209,6 +226,7 @@ class RubyRegistryObservation:
     responses: tuple[tuple[str, RubyHttpResponse], ...]
     distribution: RubyDistribution | None = None
     failure_kind: str | None = None
+    failure_stage: str | None = None
 
     def to_document(self) -> dict[str, JsonValue]:
         """Retain replayable public/index evidence, excluding credentials."""
@@ -218,6 +236,7 @@ class RubyRegistryObservation:
             "version": self.version,
             "classification": self.classification,
             "failure-kind": self.failure_kind,
+            "failure-stage": self.failure_stage,
             "responses": [
                 {"url": url, "response": ruby_response_document(response)}
                 for url, response in self.responses
@@ -259,6 +278,7 @@ class RubyRegistryReader:
     def observe(self, expected: RubyDistribution) -> RubyRegistryObservation:
         """Resolve native equality and compare the downloaded original gem."""
         responses: list[tuple[str, RubyHttpResponse]] = []
+        self._failure_stage = "interpretation"
         try:
             return self._observe(expected, responses)
         except (
@@ -273,7 +293,8 @@ class RubyRegistryReader:
                 expected.witness.nbgv.native_version,
                 "unknown",
                 tuple(responses),
-                failure_kind=type(error).__name__,
+                failure_kind=_failure_kind(error),
+                failure_stage=self._failure_stage,
             )
 
     def _observe(
@@ -314,10 +335,12 @@ class RubyRegistryReader:
         limit: int,
         responses: list[tuple[str, RubyHttpResponse]],
     ) -> RubyHttpResponse:
+        self._failure_stage = "request"
         response = self.budget.request(
             "GET", url, dict(self._headers), None, limit
         )
         responses.append((url, response))
+        self._failure_stage = "interpretation"
         return response
 
     def _github_candidates(
@@ -430,6 +453,7 @@ class RubyRegistryWriter:
         self.budget = budget
         self._exchange_spent = False
         self._upload_spent = False
+        self._issued_credential: RubyPublishingCredential | None = None
 
     def exchange(
         self,
@@ -498,9 +522,11 @@ class RubyRegistryWriter:
                 "RubyGems token response differs from the bounded publisher"
             )
             raise ValueError(message)
-        return RubyPublishingCredential(
+        credential = RubyPublishingCredential(
             _secret(ruby_text(document.get("rubygems_api_key"))), expires
         )
+        self._issued_credential = credential
+        return credential
 
     def upload(
         self,
@@ -516,6 +542,7 @@ class RubyRegistryWriter:
         if self.registry.name == "rubygems":
             if (
                 type(credential) is not RubyPublishingCredential
+                or credential is not self._issued_credential
                 or now.tzinfo is None
                 or now >= credential.expires_at
             ):

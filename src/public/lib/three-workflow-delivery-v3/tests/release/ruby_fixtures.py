@@ -10,7 +10,6 @@ from three_workflow_delivery_v3._ruby_native import (
 )
 from three_workflow_delivery_v3.adapters.ruby_registry import (
     RubyHttpResponse,
-    RubyPublishingCredential,
     RubyRegistryReader,
     RubyRegistryWriter,
     RubyRequestBudget,
@@ -37,6 +36,7 @@ from three_workflow_delivery_v3.release.ruby_qualification import (
 
 from ..ruby_integration_fixtures import NOW, consumer, governance, reference
 from ..ruby_registry_fixtures import (
+    ASSERTION,
     READ_TOKEN,
     VERSION,
     WRITE_TOKEN,
@@ -45,6 +45,7 @@ from ..ruby_registry_fixtures import (
     json_response,
     metadata,
     native_index,
+    token_document,
 )
 
 
@@ -251,21 +252,26 @@ def execute(  # noqa: PLR0913 - controlled publication scenario inputs
 ):
     """Execute the real adapter/Release boundary with offline transport only."""
     timeline = VirtualClock() if timeline is None else timeline
+    if case.registry.name == "rubygems":
+        responses = [json_response(token_document(), 201), *responses]
+        delays = [0, *delays]
     transport = TimedTransport(timeline, responses, delays)
     budget = RubyRequestBudget(transport)
-    credential = {
-        "rubygems": RubyPublishingCredential(
-            WRITE_TOKEN, NOW + timedelta(minutes=15)
-        ),
-        "github-packages": WRITE_TOKEN,
-    }[case.registry.name]
+    writer = RubyRegistryWriter(case.registry, budget)
+    credential = (
+        writer.exchange(
+            ASSERTION, now=timeline.utc, monotonic=timeline.monotonic
+        )
+        if case.registry.name == "rubygems"
+        else WRITE_TOKEN
+    )
     result = execute_ruby_publication(
         case.marker,
         reference(case.marker.to_document(), 907),
         case.original.content if payload is None else payload,
         credential=credential,
         reader=case.reader(budget),
-        writer=RubyRegistryWriter(case.registry, budget),
+        writer=writer,
         claim_path=tmp_path / "claim.json",
         deadline=timeline.utc + timedelta(seconds=deadline_seconds),
         clock=timeline.clock,

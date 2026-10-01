@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import base64
-from http.client import BadStatusLine, HTTPException, IncompleteRead
 from typing import TYPE_CHECKING, cast
 
 from three_workflow_delivery_v3._ruby_native import ruby_object
 from three_workflow_delivery_v3.adapters.ruby_registry import (
+    RUBY_OBSERVATION_FAILURES,
     RubyHttpResponse,
     RubyRegistryObservation,
     RubyRegistryReader,
@@ -51,29 +51,44 @@ class _ReplayTransport:
         maximum_bytes: int,
     ) -> RubyHttpResponse:
         if self.used >= len(self.entries):
-            # A failed send has no complete response. Reproduce only its
-            # sanitized class, never claim that this proves a network cause.
-            if self.failure == "BadStatusLine":
-                raise BadStatusLine("")  # noqa: EM101 - no native exception body
-            if self.failure == "IncompleteRead":
-                raise IncompleteRead(b"")  # noqa: EM101 - no partial body
-            errors = {
-                "OSError": OSError,
-                "TimeoutError": TimeoutError,
-                "ConnectionError": ConnectionError,
-                "HTTPException": HTTPException,
-                "ValueError": ValueError,
-                "TypeError": TypeError,
-            }
-            error = errors.get(str(self.failure), ValueError)
+            # Only a validated finite family can reproduce an attested failure.
             message = "Ruby readback lacks the next native response"
-            raise error(message)
+            if isinstance(self.failure, str):
+                raise RUBY_OBSERVATION_FAILURES[self.failure](message)
+            raise ValueError(message)
         entry = ruby_object(self.entries[self.used], {"url", "response"})
         if method != "GET" or body is not None or entry["url"] != url:
             message = "Ruby readback response order or origin mismatch"
             raise ValueError(message)
+        response = ruby_response_from_document(entry["response"], maximum_bytes)
         self.used += 1
-        return ruby_response_from_document(entry["response"], maximum_bytes)
+        return response
+
+
+class _ReplayReader(RubyRegistryReader):
+    """Preserve attested interpretation failure after its validated prefix."""
+
+    interpretation_failure: str | None = None
+    response_count: int = 0
+
+    def _get(
+        self,
+        url: str,
+        limit: int,
+        responses: list[tuple[str, RubyHttpResponse]],
+    ) -> RubyHttpResponse:
+        response = super()._get(url, limit, responses)
+        if (
+            self.interpretation_failure is not None
+            and len(responses) == self.response_count
+        ):
+            # Native timeout/filesystem failure need not recur offline. This
+            # attests only unknown state, never the underlying failure cause.
+            message = "retained Ruby interpretation failure"
+            raise RUBY_OBSERVATION_FAILURES[self.interpretation_failure](
+                message
+            )
+        return response
 
 
 def ruby_response_from_document(
@@ -115,6 +130,7 @@ def replay_ruby_observation(
             "version",
             "classification",
             "failure-kind",
+            "failure-stage",
             "responses",
             "artifact-digest",
         },
@@ -126,14 +142,35 @@ def replay_ruby_observation(
     ):
         message = "Ruby readback response inventory is invalid"
         raise ValueError(message)
-    transport = _ReplayTransport(entries, doc["failure-kind"])
-    reader = RubyRegistryReader(
+    failure = doc["failure-kind"]
+    stage = doc["failure-stage"]
+    if failure is None:
+        valid_failure = stage is None and doc["classification"] != "unknown"
+    else:
+        valid_failure = (
+            isinstance(failure, str)
+            and failure in RUBY_OBSERVATION_FAILURES
+            and stage in ("request", "interpretation")
+            and doc["classification"] == "unknown"
+            and doc["artifact-digest"] is None
+            and (stage != "interpretation" or bool(entries))
+        )
+    if not valid_failure:
+        message = "Ruby readback failure family or stage is invalid"
+        raise ValueError(message)
+    transport = _ReplayTransport(
+        entries, failure if stage == "request" else None
+    )
+    reader = _ReplayReader(
         registry,
         RubyRequestBudget(transport),
         github_read_token="offline-replay"
         if registry.name == "github-packages"
         else None,
     )
+    reader.response_count = len(entries)
+    if stage == "interpretation":
+        reader.interpretation_failure = cast("str", failure)
     result = reader.observe(expected)
     if transport.used != len(entries) or canonicalize(
         result.to_document()
