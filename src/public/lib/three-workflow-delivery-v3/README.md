@@ -326,6 +326,16 @@ CI content/consumer qualification. Its CLI accepts only CI purposes; immutable
 upload/readback passes explicit current-run artifact references between jobs.
 The GitHub control adapter checks protected Governance, native approval and the
 fixed RubyGems OIDC audience for forthcoming publication integration.
+The protected Ruby operation envelope has ten disabled slots. Strict data
+validators bind a future post-merge request, independent admission and durable
+sole-operator reservation. The local ledger consumes a slot before a caller
+may dispatch and never repairs missing state or replaces a reservation. These
+mechanisms do not themselves dispatch or prove independent approval. Ruby
+Governance, envelope and configuration paths participate in the Provider's
+source closure and the smoke's NBGV filters. The control reader can prove
+protected-main ancestry and reject relevant input changes, including new files
+and touch/revert histories, while allowing unrelated main advancement. Hosted
+publication callers must invoke that proof at their admission boundaries.
 The two protected Governance sources remain blocked. Bootstrap and normal
 publication callers, configuration and actual destination acceptance remain
 pending. Local controlled transports do not establish deployed registry behavior.

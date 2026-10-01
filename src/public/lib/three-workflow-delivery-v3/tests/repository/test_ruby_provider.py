@@ -11,14 +11,52 @@ from three_workflow_delivery_v3.canonical import (
 from three_workflow_delivery_v3.repository.node_provider import (
     CheckoutMaterialization,
 )
+from three_workflow_delivery_v3.repository.ruby_controls import (
+    RUBY_CONTROL_PATHS,
+)
 from three_workflow_delivery_v3.repository.ruby_provider import (
+    RUBY_GLOBALS,
     RubyNbgvFacts,
+    is_ruby_input_path,
     provide_ruby_repository_facts,
+    ruby_input_candidates,
     ruby_nbgv_facts_from_document,
     ruby_provider_result_from_document,
 )
 
 from ..ruby_fixtures import EPOCH, RUN_ID, binding, commit, git, repository
+
+
+def test_ruby_freshness_selector_preserves_exact_provider_candidate_boundary(
+    native_provider,
+):
+    """New path selection shares the existing manifest scope and ordering."""
+    existing = tuple(
+        path for path, _ in native_provider[2].source_input_manifest
+    )
+    introduced = (
+        "src/public/lib/hcoona-release-smoke-ruby/lib/new.rb",
+        "src/public/lib/three-workflow-delivery-v3/src/new_module.py",
+        ".github/actions/workflow-delivery-v3-ruby-new/action.yml",
+        ".github/workflows/workflow-delivery-v3-ruby-new.yml",
+        "eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby-new.yaml",
+        *RUBY_CONTROL_PATHS,
+    )
+    excluded = (
+        "src/public/lib/hcoona-release-smoke-python/new.py",
+        "src/public/lib/three-workflow-delivery-v3/tests/new_test.py",
+        ".github/actions/workflow-delivery-v3-python-new/action.yml",
+        ".github/workflows/workflow-delivery-v3-python-new.yml",
+        ".github/workflow-delivery/configuration/foreign-ruby.json",
+        "src/public/lib/three-workflow-delivery-v3/docs/unrelated.md",
+        "docs/delivery-wave.md",
+    )
+    expected = tuple(sorted({*existing, *introduced}))
+    tracked = tuple(reversed((*expected, *excluded)))
+    assert all(is_ruby_input_path(path) for path in (*expected, *RUBY_GLOBALS))
+    assert not any(is_ruby_input_path(path) for path in excluded)
+    assert ruby_input_candidates(tracked) == expected
+    assert ruby_input_candidates(tuple(reversed(existing))) == existing
 
 
 def raw(semver="0.1.0-beta.7"):

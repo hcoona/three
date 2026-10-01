@@ -19,12 +19,19 @@ from three_workflow_delivery_v3.canonical import (
     parse_json_strict,
 )
 from three_workflow_delivery_v3.release.governance_git import (
+    GovernanceGitRead,
     IsolatedGovernanceGitReader,
 )
 from three_workflow_delivery_v3.release.ruby_governance import (
     RUBY_WORKFLOW,
     RubyGovernance,
     ruby_governance_path,
+)
+from three_workflow_delivery_v3.repository.ruby_controls import (
+    RUBY_ENVELOPE_PATH,
+)
+from three_workflow_delivery_v3.repository.ruby_provider import (
+    is_ruby_input_path,
 )
 
 if TYPE_CHECKING:
@@ -112,6 +119,22 @@ class RubyGitHubRuntime:
                 return result
         message = "Ruby GitHub control inventory exceeds its page budget"
         raise ValueError(message)
+
+    def operation_control(self, target: str) -> GovernanceGitRead:
+        """Read the protected envelope with full input history since target.
+
+        This covers bootstrap and normal requests without asserting normal
+        package ownership. Callers separately validate envelope/admission bytes.
+        """
+        return IsolatedGovernanceGitReader(
+            repository="hcoona/three", token=self._token
+        ).read(
+            repository="hcoona/three",
+            ref="refs/heads/main",
+            path=RUBY_ENVELOPE_PATH,
+            eligibility_main_sha=target,
+            relevant_path=is_ruby_input_path,
+        )
 
     def governance(
         self,

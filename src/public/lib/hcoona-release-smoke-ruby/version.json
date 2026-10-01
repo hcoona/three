@@ -13,7 +13,12 @@
     "../../../../.github/actions",
     "../../../../eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml",
     "../../../../.github/workflows/workflow-delivery-v3-ruby-smoke.yml",
-    "../../../../.github/workflows/workflow-delivery-v3-ruby-bootstrap.yml"
+    "../../../../.github/workflows/workflow-delivery-v3-ruby-bootstrap.yml",
+    "../../../../.github/workflow-delivery/governance/hcoona-release-smoke-ruby-github-packages.json",
+    "../../../../.github/workflow-delivery/governance/hcoona-release-smoke-ruby-rubygems.json",
+    "../../../../.github/workflow-delivery/requests/hcoona-release-smoke-ruby.json",
+    "../../../../.github/workflow-delivery/configuration/hcoona-release-smoke-ruby-github-packages.json",
+    "../../../../.github/workflow-delivery/configuration/hcoona-release-smoke-ruby-rubygems.json"
   ],
   "gitCommitIdShortFixedLength": 7,
   "gitCommitIdShortAutoMinimum": 7,

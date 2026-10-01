@@ -42,6 +42,9 @@ from three_workflow_delivery_v3.repository.node_provider import (
     validate_provider_binding,
     verify_exact_checkout,
 )
+from three_workflow_delivery_v3.repository.ruby_controls import (
+    RUBY_CONTROL_PATHS,
+)
 
 RUBY_GLOBALS = (
     ".config/dotnet-tools.json",
@@ -111,8 +114,8 @@ def ruby_nbgv_facts_from_document(value: JsonValue) -> RubyNbgvFacts:
     return result
 
 
-def ruby_input_candidates(tracked: tuple[str, ...]) -> tuple[str, ...]:
-    """Close the smoke, version lineage, native tooling and control inputs."""
+def is_ruby_input_path(path: str) -> bool:
+    """Select existing and newly introduced Ruby source/control inputs."""
     roots = (
         RUBY_ROOT + "/",
         "src/public/lib/three-workflow-delivery-v3/src/",
@@ -120,9 +123,14 @@ def ruby_input_candidates(tracked: tuple[str, ...]) -> tuple[str, ...]:
         ".github/workflows/workflow-delivery-v3-ruby-",
         "eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby",
     )
-    paths = tuple(
-        sorted(p for p in tracked if p in RUBY_GLOBALS or p.startswith(roots))
+    return path in (*RUBY_GLOBALS, *RUBY_CONTROL_PATHS) or path.startswith(
+        roots
     )
+
+
+def ruby_input_candidates(tracked: tuple[str, ...]) -> tuple[str, ...]:
+    """Close the smoke, version lineage, native tooling and control inputs."""
+    paths = tuple(sorted(p for p in tracked if is_ruby_input_path(p)))
     required = {
         *RUBY_GLOBALS,
         f"{RUBY_ROOT}/version.json",

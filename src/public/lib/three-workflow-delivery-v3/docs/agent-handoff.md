@@ -43,6 +43,13 @@ exact-target Build and independent content/consumer qualification through
 explicit immutable artifact edges. GitHub control acquisition has isolated
 contract coverage. Both destinations remain disabled; bootstrap/normal hosted
 publication, configuration and actual acceptance remain pending.
+The protected operation envelope starts with ten disabled slots. Exact-request,
+independent-admission and durable reservation primitives are implemented, with
+Ruby configuration/control paths included in native version and Provider inputs.
+The isolated control reader now covers target ancestry and complete relevant
+input history, including newly added files and touch/revert, without freezing
+unrelated main advancement. The reviewed dispatch caller, concrete GitHub/transfer
+budgets and runtime assembly remain prerequisites; the data validators do not grant effects.
 Source presence and controlled-transport tests are not Live admission.
 GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without
