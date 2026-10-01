@@ -83,10 +83,8 @@ def test_ruby_protected_envelope_preserves_fixed_authority_and_finite_slots():
     } == dict.fromkeys(EXPECTED_SLOTS)
     assert {
         slot for slot, selected in doc["slots"].items() if selected is not None
-    } == {successor}
-    assert doc["slots"][successor]["binding"] == ruby_operation_binding(
-        successor
-    )
+    } == set()
+    assert doc["slots"][successor] is None
 
 
 @pytest.mark.parametrize("slot", EXPECTED_SLOTS)
@@ -580,3 +578,38 @@ def test_ruby_reservation_import_cannot_rebind_or_extend_admission(change):
         validate_ruby_operation_reservation(
             content, selected, admission, review=REVIEW
         )
+
+
+def test_current_v2_partition_claims_use_four_four_sixteen_four_four():
+    """The current route fits the unchanged total without borrowing phases."""
+    document = disabled_ruby_operation_envelope(version=2)
+    assert document["registry-partitions"] == {
+        "eligibility": 4,
+        "pre-marker": 4,
+        "execute": 16,
+        "zero-action": 4,
+        "remote-consumer": 4,
+    }
+    assert sum(document["registry-partitions"].values()) == 32  # noqa: PLR2004
+    document["registry-partitions"].update(
+        eligibility=3,
+        execute=20,
+        **{"pre-marker": 3, "zero-action": 3, "remote-consumer": 3},
+    )
+    with pytest.raises(ValueError, match="closed authority"):
+        RubyOperationEnvelope(canonicalize(document))
+
+
+def test_historical_github_profile_cannot_admit_current_slot():
+    """The immutable old profile digest cannot authorize the corrected route."""
+    historical = (
+        "sha256:"
+        "932c433bda993aed22398930aab6c5dee4cba6b4db061db64deb35f13b9e9cd8"
+    )
+    assert RubyRegistry("github-packages").profile_digest != historical
+    document = envelope_document("github-packages-normal01", version=2)
+    document["slots"]["github-packages-normal01"]["binding"][
+        "operation-profile-digest"
+    ] = historical
+    with pytest.raises(ValueError, match="closed authority"):
+        RubyOperationEnvelope(canonicalize(document))

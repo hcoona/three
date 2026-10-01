@@ -18,7 +18,11 @@ from three_workflow_delivery_v3.canonical import (
     canonicalize,
     parse_canonical_json,
 )
+from three_workflow_delivery_v3.release.ruby_readback import (
+    ruby_response_from_document,
+)
 
+from ..adapters import test_ruby_registry_redirect as redirect_cases
 from ..release.ruby_fixtures import TimedTransport, VirtualClock
 from ..ruby_integration_fixtures import consumer
 from ..ruby_registry_fixtures import (
@@ -667,3 +671,45 @@ def test_nonmissing_invalid_visibility_stops_without_another_observation(
     assert result.visibility[0]["exact"] is False
     assert len(native.requests) == 5  # noqa: PLR2004 - exchange/upload/one observation
     assert timeline.waits == []
+
+
+@pytest.mark.parametrize("destination", ["github-packages", "rubygems"])
+@pytest.mark.parametrize("status", [200, 302])
+def test_bootstrap_unexpected_upload_location_is_screened_and_terminal(
+    bootstrap_cases, tmp_path, destination, status
+):
+    """Bootstrap retains the response but rejects upload Location."""
+    case = bootstrap_cases[destination]
+    result, native, timeline, _events = execute_case(
+        case,
+        tmp_path,
+        [
+            RubyHttpResponse(
+                status,
+                redirect_cases.REDIRECT_BODY,
+                redirect_cases.LOCATION,
+                location=redirect_cases.LOCATION,
+            )
+        ],
+    )
+    assert result.result == "failed"
+    assert result.response.status == status
+    assert result.visibility == ()
+    assert timeline.waits == []
+    assert len(native.requests) == (2 if destination == "rubygems" else 1)
+    doc = result.to_document()
+    assert result.status == "failed"
+    assert doc["mutation-classification"] == "possibly-mutated"
+    parsed = replace(
+        result, response=ruby_response_from_document(doc["response"])
+    )
+    assert parsed.to_document() == doc
+    with pytest.raises(ValueError, match="HTTP response"):
+        replace(parsed, status="succeeded")
+    assert doc["normal-live-completion"] is False
+    retained = canonicalize(doc) + b"".join(
+        path.read_bytes()
+        for path in (tmp_path / "claim.json-observations").iterdir()
+    )
+    assert redirect_cases.CAPABILITY.encode() not in retained
+    assert WRITE_TOKEN.encode() not in retained

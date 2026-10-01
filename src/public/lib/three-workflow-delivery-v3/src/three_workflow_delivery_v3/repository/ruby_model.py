@@ -19,6 +19,7 @@ from three_workflow_delivery_v3.adapters.ruby import (
     RubyBuildRequest,
     RubyPackageTargetWitness,
 )
+from three_workflow_delivery_v3.adapters.rubygems import RubyRegistry
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
     canonical_sha256,
@@ -76,7 +77,9 @@ def ruby_policy_document() -> dict[str, JsonValue]:
             "dict[str, JsonValue]",
             {
                 channel: {
-                    "destination": f"ruby/{registry}-v1",
+                    "destination": RubyRegistry(registry).profile[
+                        "destination"
+                    ],
                     "governance": (
                         ".github/workflow-delivery/governance/"
                         f"hcoona-release-smoke-ruby-{registry}.json"

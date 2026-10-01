@@ -26,9 +26,9 @@ def instant(value):
     return value.isoformat().replace("+00:00", "Z")
 
 
-def envelope_document(slot=SLOT):
+def envelope_document(slot=SLOT, *, version=1):
     """Enable one finite slot only within a local modeled envelope."""
-    doc = deepcopy(disabled_ruby_operation_envelope())
+    doc = deepcopy(disabled_ruby_operation_envelope(version=version))
     doc["slots"][slot] = {
         "binding": ruby_operation_binding(slot),
         "generation": GENERATION,

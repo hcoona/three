@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 from urllib.parse import urlsplit
 
 from three_workflow_delivery_v3._ruby_native import (
@@ -32,14 +32,18 @@ from three_workflow_delivery_v3.adapters.ruby import (
 )
 from three_workflow_delivery_v3.adapters.rubygems import (
     RUBY_GEM_LIMIT,
+    RUBY_GITHUB_STORAGE_ORIGIN,
+    RUBY_HTTP_HEADER_LIMIT,
     RUBY_HTTP_RESPONSE_LIMIT,
     RUBY_HTTP_TIMEOUT,
     RUBY_INDEX_LIMIT,
+    RUBY_LOCATION_LIMIT,
     RUBY_REGISTRY_REQUEST_LIMIT,
     RubyRegistry,
 )
 from three_workflow_delivery_v3.canonical import (
     JsonValue,
+    canonical_sha256,
     canonicalize,
     parse_json_strict,
 )
@@ -49,6 +53,8 @@ if TYPE_CHECKING:
 
 _MIN_HTTP_STATUS = 100
 _MAX_HTTP_STATUS = 599
+_ASCII_SPACE = 0x20
+_ASCII_DELETE = 0x7F
 
 # Order matters: RemoteDisconnected belongs to both HTTPException and OSError.
 RUBY_OBSERVATION_FAILURES = {
@@ -74,7 +80,9 @@ class RubyHttpResponse:
 
     status: int
     body: bytes = field(repr=False)
-    content_type: str = ""
+    content_type: str = field(default="", repr=False)
+    location: str | None = field(default=None, repr=False, compare=False)
+    location_invalid: bool = field(default=False, repr=False, compare=False)
 
 
 class RubyHttpTransport(Protocol):
@@ -137,12 +145,42 @@ class RubyHttpsTransport:
             path = parsed.path + ("?" + parsed.query if parsed.query else "")
             connection.request(method, path, body=body, headers=headers)
             response = connection.getresponse()
+            received_headers = response.getheaders()
+            if (
+                sum(
+                    len(name.encode("latin-1"))
+                    + len(value.encode("latin-1"))
+                    + 4
+                    for name, value in received_headers
+                )
+                > RUBY_HTTP_HEADER_LIMIT
+            ):
+                message = "Ruby HTTP headers exceed their accepted byte budget"
+                raise ValueError(message)
+            locations = [
+                value
+                for name, value in received_headers
+                if name.lower() == "location"
+            ]
+            invalid_location = len(locations) > 1 or any(
+                not value or len(value.encode("latin-1")) > RUBY_LOCATION_LIMIT
+                for value in locations
+            )
+            location = (
+                locations[0]
+                if len(locations) == 1 and not invalid_location
+                else None
+            )
             content = response.read(maximum_bytes + 1)
             if len(content) > maximum_bytes:
                 message = "Ruby HTTP response exceeds its byte budget"
                 raise ValueError(message)
             return RubyHttpResponse(
-                response.status, content, response.getheader("Content-Type", "")
+                response.status,
+                content,
+                response.getheader("Content-Type", ""),
+                location,
+                invalid_location,
             )
         finally:
             connection.close()
@@ -177,6 +215,15 @@ class RubyRequestBudget:
             or not _MIN_HTTP_STATUS <= response.status <= _MAX_HTTP_STATUS
             or type(response.body) is not bytes
             or len(response.body) > maximum_bytes
+            or not isinstance(response.content_type, str)
+            or (
+                response.location is not None
+                and (
+                    not isinstance(response.location, str)
+                    or len(response.location.encode()) > RUBY_LOCATION_LIMIT
+                )
+            )
+            or type(response.location_invalid) is not bool
         ):
             message = "invalid or excessive Ruby HTTP response"
             raise ValueError(message)
@@ -194,9 +241,12 @@ def _secret(value: str) -> str:
     return value
 
 
-def _json(response: RubyHttpResponse) -> JsonValue:
+def _json(response: RubyResponseEvidence) -> JsonValue:
     if (
-        response.status != HTTPStatus.OK
+        not isinstance(response, RubyHttpResponse)
+        or response.location is not None
+        or response.location_invalid
+        or response.status != HTTPStatus.OK
         or response.content_type.split(";", 1)[0].strip() != "application/json"
     ):
         message = (
@@ -206,13 +256,184 @@ def _json(response: RubyHttpResponse) -> JsonValue:
     return parse_json_strict(response.body)
 
 
-def ruby_response_document(response: RubyHttpResponse) -> dict[str, JsonValue]:
-    """Encode only a caller-approved noncredential HTTP envelope."""
+_SAFE_MEDIA = frozenset(
+    {
+        "",
+        "application/json",
+        "application/octet-stream",
+        "application/gzip",
+        "application/x-gzip",
+        "text/plain",
+        "text/html",
+        "other",
+    }
+)
+
+
+def ruby_safe_media(value: str) -> str:
+    """Keep a closed classification, never arbitrary reflected header text."""
+    media = value.split(";", 1)[0].strip().lower()
+    return media if media in _SAFE_MEDIA else "other"
+
+
+@dataclass(frozen=True, slots=True)
+class RubyScreenedResponse:
+    """Retained digest evidence whose suppressed body is not an original."""
+
+    status: int
+    content_type: str
+    body_size: int
+    body_digest: str
+    location_digest: str | None
+    reason: str
+    safe_origin: str | None = None
+    safe_path: str | None = None
+
+
+RubyResponseEvidence = RubyHttpResponse | RubyScreenedResponse
+RubyResponseEntry = tuple[
+    str | dict[str, JsonValue], RubyResponseEvidence | None
+]
+
+
+def ruby_storage_path(origin: str, path: str, version: str) -> None:
+    """Validate the same exact safe routing facts in live and offline reads."""
+    prefix = "/rubygemsregistryv2prod/blobs/712433/" + RUBY_RELEASE_UNIT
+    pattern = re.escape(prefix + "/" + version + "/") + (
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    )
+    if (
+        not re.fullmatch(r"[0-9]+(?:\.[0-9A-Za-z]+)*", version)
+        or origin != RUBY_GITHUB_STORAGE_ORIGIN
+        or not re.fullmatch(pattern, path)
+    ):
+        message = "Ruby storage route differs from the exact coordinate"
+        raise ValueError(message)
+
+
+def ruby_storage_location(
+    location: str | None, version: str
+) -> tuple[str, str]:
+    """Admit one opaque signed URI without normalization or capability echo."""
+    message = "Ruby storage Location is unsupported"
+    if (
+        not isinstance(location, str)
+        or not location
+        or len(location) > RUBY_LOCATION_LIMIT
+        or not location.isascii()
+        or any(
+            ord(c) <= _ASCII_SPACE or ord(c) == _ASCII_DELETE for c in location
+        )
+        or "\\" in location
+        or "#" in location
+    ):
+        raise ValueError(message)
+    try:
+        parsed = urlsplit(location)
+        host = RUBY_GITHUB_STORAGE_ORIGIN.removeprefix("https://")
+        valid = (
+            parsed.scheme == "https"
+            and parsed.netloc in {host, host + ":443"}
+            and bool(parsed.query)
+            and "%" not in parsed.path
+        )
+    except ValueError:
+        raise ValueError(message) from None
+    if not valid:
+        raise ValueError(message)
+    ruby_storage_path(RUBY_GITHUB_STORAGE_ORIGIN, parsed.path, version)
+    return RUBY_GITHUB_STORAGE_ORIGIN, parsed.path
+
+
+def ruby_screen_response(
+    response: RubyResponseEvidence,
+    *,
+    reason: str | None = None,
+    route: tuple[str, str] | None = None,
+) -> RubyResponseEvidence:
+    """Remove capability-bearing material before any evidence append."""
+    if isinstance(response, RubyScreenedResponse):
+        return response
+    if reason is None:
+        if response.location_invalid:
+            reason = "invalid-location"
+        elif (
+            HTTPStatus.MULTIPLE_CHOICES
+            <= response.status
+            < HTTPStatus.BAD_REQUEST
+        ):
+            reason = "redirect"
+        elif response.location is not None:
+            reason = "unexpected-location"
+        else:
+            return RubyHttpResponse(
+                response.status,
+                response.body,
+                ruby_safe_media(response.content_type),
+            )
+    return RubyScreenedResponse(
+        response.status,
+        ruby_safe_media(response.content_type),
+        len(response.body),
+        ruby_digest(response.body),
+        None
+        if response.location is None
+        else ruby_digest(response.location.encode()),
+        reason,
+        None if route is None else route[0],
+        None if route is None else route[1],
+    )
+
+
+def ruby_upload_accepted(response: RubyResponseEvidence) -> bool:
+    """Only an original HTTP 200 without Location admits visibility reads."""
+    return (
+        isinstance(response, RubyHttpResponse)
+        and response.status == HTTPStatus.OK
+        and response.location is None
+        and not response.location_invalid
+    )
+
+
+def ruby_response_document(
+    response: RubyResponseEvidence,
+) -> dict[str, JsonValue]:
+    """Serialize the explicit safe evidence arm, never an ephemeral Location."""
+    response = ruby_screen_response(response)
+    if isinstance(response, RubyScreenedResponse):
+        return {
+            "kind": "screened",
+            "status": response.status,
+            "content-type": response.content_type,
+            "body-size": response.body_size,
+            "body-digest": response.body_digest,
+            "location-digest": response.location_digest,
+            "reason": response.reason,
+            "safe-origin": response.safe_origin,
+            "safe-path": response.safe_path,
+        }
     return {
+        "kind": "original",
         "status": response.status,
         "content-type": response.content_type,
         "body-base64": base64.b64encode(response.body).decode("ascii"),
         "body-digest": ruby_digest(response.body),
+    }
+
+
+def ruby_continuation_request(
+    response: RubyScreenedResponse,
+) -> dict[str, JsonValue]:
+    """Join one storage request to its screened, attested redirect response."""
+    return {
+        "method": "GET",
+        "origin": response.safe_origin,
+        "path": response.safe_path,
+        "credentials": "none",
+        "location-digest": response.location_digest,
+        "redirect-response-digest": canonical_sha256(
+            ruby_response_document(response)
+        ),
     }
 
 
@@ -223,7 +444,7 @@ class RubyRegistryObservation:
     registry: RubyRegistry
     version: str
     classification: str
-    responses: tuple[tuple[str, RubyHttpResponse], ...]
+    responses: tuple[RubyResponseEntry, ...]
     distribution: RubyDistribution | None = None
     failure_kind: str | None = None
     failure_stage: str | None = None
@@ -231,15 +452,24 @@ class RubyRegistryObservation:
     def to_document(self) -> dict[str, JsonValue]:
         """Retain replayable public/index evidence, excluding credentials."""
         return {
-            "schema": "workflow-delivery/v3/ruby-registry-observation",
+            "schema": "workflow-delivery/v3/ruby-registry-observation-v2",
             "registry": self.registry.name,
             "version": self.version,
             "classification": self.classification,
             "failure-kind": self.failure_kind,
             "failure-stage": self.failure_stage,
             "responses": [
-                {"url": url, "response": ruby_response_document(response)}
-                for url, response in self.responses
+                {
+                    **(
+                        {"url": request}
+                        if isinstance(request, str)
+                        else {"request": request}
+                    ),
+                    "response": None
+                    if response is None
+                    else ruby_response_document(response),
+                }
+                for request, response in self.responses
             ],
             "artifact-digest": None
             if self.distribution is None
@@ -277,7 +507,7 @@ class RubyRegistryReader:
 
     def observe(self, expected: RubyDistribution) -> RubyRegistryObservation:
         """Resolve native equality and compare the downloaded original gem."""
-        responses: list[tuple[str, RubyHttpResponse]] = []
+        responses: list[RubyResponseEntry] = []
         self._failure_stage = "interpretation"
         try:
             return self._observe(expected, responses)
@@ -300,7 +530,7 @@ class RubyRegistryReader:
     def _observe(
         self,
         expected: RubyDistribution,
-        responses: list[tuple[str, RubyHttpResponse]],
+        responses: list[RubyResponseEntry],
     ) -> RubyRegistryObservation:
         version = expected.witness.nbgv.native_version
         if self.registry.name == "github-packages":
@@ -333,25 +563,30 @@ class RubyRegistryReader:
         self,
         url: str,
         limit: int,
-        responses: list[tuple[str, RubyHttpResponse]],
-    ) -> RubyHttpResponse:
+        responses: list[RubyResponseEntry],
+    ) -> RubyResponseEvidence:
         self._failure_stage = "request"
         response = self.budget.request(
             "GET", url, dict(self._headers), None, limit
         )
-        responses.append((url, response))
+        responses.append((url, ruby_screen_response(response)))
         self._failure_stage = "interpretation"
         return response
 
     def _github_candidates(
-        self, version: str, responses: list[tuple[str, RubyHttpResponse]]
+        self, version: str, responses: list[RubyResponseEntry]
     ) -> tuple[dict[str, JsonValue], ...]:
         candidates: list[dict[str, JsonValue]] = []
         for index in ("specs.4.8.gz", "prerelease_specs.4.8.gz"):
             response = self._get(
                 self.registry.origin + "/" + index, RUBY_INDEX_LIMIT, responses
             )
-            if response.status != HTTPStatus.OK:
+            if (
+                not isinstance(response, RubyHttpResponse)
+                or response.location is not None
+                or response.location_invalid
+                or response.status != HTTPStatus.OK
+            ):
                 message = "GitHub Ruby native inventory is unavailable"
                 raise ValueError(message)
             candidates.extend(
@@ -360,13 +595,18 @@ class RubyRegistryReader:
         return tuple(candidates)
 
     def _rubygems_candidates(
-        self, version: str, responses: list[tuple[str, RubyHttpResponse]]
+        self, version: str, responses: list[RubyResponseEntry]
     ) -> tuple[dict[str, JsonValue], ...]:
         response = self._get(
             f"{self.registry.origin}/api/v1/versions/{RUBY_RELEASE_UNIT}.json",
             RUBY_INDEX_LIMIT,
             responses,
         )
+        if isinstance(response, RubyScreenedResponse) or (
+            response.location is not None or response.location_invalid
+        ):
+            message = "RubyGems inventory cannot redirect"
+            raise ValueError(message)
         if response.status == HTTPStatus.NOT_FOUND:
             return ()
         inventory = _json(response)
@@ -391,7 +631,7 @@ class RubyRegistryReader:
     def _download(
         self,
         expected: RubyDistribution,
-        responses: list[tuple[str, RubyHttpResponse]],
+        responses: list[RubyResponseEntry],
     ) -> RubyDistribution | None:
         url = f"{self.registry.origin}/gems/{expected.filename}"
         metadata_sha = None
@@ -418,7 +658,17 @@ class RubyRegistryReader:
                 message = "RubyGems metadata has conflicting identity or state"
                 raise ValueError(message)
         response = self._get(url, RUBY_GEM_LIMIT, responses)
-        if response.status != HTTPStatus.OK:
+        if (
+            self.registry.name == "github-packages"
+            and response.status == HTTPStatus.FOUND
+        ):
+            return self._continue_download(expected, responses, response)
+        if (
+            not isinstance(response, RubyHttpResponse)
+            or response.location is not None
+            or response.location_invalid
+            or response.status != HTTPStatus.OK
+        ):
             message = "Ruby registry original gem download failed"
             raise ValueError(message)
         if (
@@ -432,6 +682,60 @@ class RubyRegistryReader:
         return inspect_ruby_distribution(
             expected.filename, response.body, expected.witness
         )
+
+    def _continue_download(
+        self,
+        expected: RubyDistribution,
+        responses: list[RubyResponseEntry],
+        response: RubyResponseEvidence,
+    ) -> RubyDistribution | None:
+        if (
+            not isinstance(response, RubyHttpResponse)
+            or response.location_invalid
+        ):
+            message = "Ruby storage redirect is unavailable"
+            raise ValueError(message)
+        route = ruby_storage_location(
+            response.location, expected.witness.nbgv.native_version
+        )
+        screened = cast(
+            "RubyScreenedResponse", ruby_screen_response(response, route=route)
+        )
+        responses[-1] = (responses[-1][0], screened)
+        logical = ruby_continuation_request(screened)
+        self._failure_stage = "request"
+        responses.append((logical, None))
+        storage = self.budget.request(
+            "GET", cast("str", response.location), {}, None, RUBY_GEM_LIMIT
+        )
+        self._failure_stage = "interpretation"
+        # Retain a safe failure before parsing; replace only verified bytes.
+        responses[-1] = (
+            logical,
+            ruby_screen_response(storage, reason="storage-unverified"),
+        )
+        if (
+            storage.status != HTTPStatus.OK
+            or storage.location is not None
+            or storage.location_invalid
+        ):
+            responses[-1] = (
+                logical,
+                ruby_screen_response(storage, reason="storage-error"),
+            )
+            message = "Ruby storage original gem download failed"
+            raise ValueError(message)
+        if storage.body != expected.content:
+            responses[-1] = (
+                logical,
+                ruby_screen_response(storage, reason="storage-mismatch"),
+            )
+            return None
+        distribution = inspect_ruby_distribution(
+            expected.filename, storage.body, expected.witness
+        )
+        responses[-1] = (logical, ruby_screen_response(storage))
+        return distribution
 
 
 @dataclass(frozen=True, slots=True)
@@ -498,7 +802,9 @@ class RubyRegistryWriter:
             raise ValueError(message)
         received_at = now + timedelta(seconds=completed - started)
         if (
-            response.status != HTTPStatus.CREATED
+            response.location is not None
+            or response.location_invalid
+            or response.status != HTTPStatus.CREATED
             or response.content_type.split(";", 1)[0].strip()
             != "application/json"
         ):

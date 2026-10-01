@@ -49,7 +49,14 @@ def test_hosted_phase_partitions_spend_fixed_nontransferable_caps(
     debit = int(
         bootstrap and destination == "rubygems" and phase == "eligibility"
     )
-    cap = RUBY_REGISTRY_PARTITIONS[phase]
+    cap = {
+        "eligibility": 3,
+        "pre-marker": 3,
+        "execute": 20,
+        "zero-action": 3,
+        "remote-consumer": 3,
+    }[phase]
+    assert case.request.envelope.document["registry-partitions"][phase] == cap
     transport = ScriptedTransport(
         *[RubyHttpResponse(200, b"ok") for _ in range(cap - debit)]
     )
@@ -394,3 +401,120 @@ def test_hosted_authority_guard_actually_rechecks_full_history_every_time(
     assert (
         sum(item[0] == "operation-control" for item in calls) == ORIGINAL_SPENDS
     )
+
+
+@pytest.mark.parametrize(
+    "phase", ["eligibility", "pre-marker", "zero-action", "remote-consumer"]
+)
+@pytest.mark.parametrize("storage_failure", [False, True])
+def test_four_send_exact_observer_fits_each_current_nonexecute_phase(
+    tmp_path, monkeypatch, ruby_release_original, phase, storage_failure
+):
+    """Each send persists its own ordinal before any signed storage request."""
+    from three_workflow_delivery_v3._ruby_native import (  # noqa: PLC0415
+        RUBY_RELEASE_UNIT,
+    )
+    from three_workflow_delivery_v3.canonical import (  # noqa: PLC0415
+        parse_canonical_json,
+    )
+
+    from .adapters.test_ruby_registry_redirect import (  # noqa: PLC0415
+        CAPABILITY,
+        LOCATION,
+        REDIRECT_BODY,
+    )
+    from .ruby_registry_fixtures import VERSION, native_index  # noqa: PLC0415
+
+    case = hosted_case(
+        tmp_path,
+        destination="github-packages",
+        bootstrap=False,
+        envelope_version=2,
+    )
+    prepare(case, monkeypatch, phase)
+    original = ruby_release_original[2]
+    directory = case.directory / "spending" / phase
+    replies = [
+        RubyHttpResponse(200, native_index(tmp_path, [])),
+        RubyHttpResponse(
+            200, native_index(tmp_path, [[RUBY_RELEASE_UNIT, VERSION, "ruby"]])
+        ),
+        RubyHttpResponse(302, REDIRECT_BODY, "text/html", location=LOCATION),
+        OSError("synthetic storage failure")
+        if storage_failure
+        else RubyHttpResponse(200, original.content),
+    ]
+    ordinals = []
+
+    class PredebitTransport(ScriptedTransport):
+        def request(self, *args):
+            members = module.spending_members(directory)
+            current = parse_canonical_json(
+                (directory / f"{len(members):03}.json").read_bytes()
+            )
+            ordinals.append(current["ordinal"])
+            assert len(members) == len(self.requests) + 1
+            assert (
+                current["phase-claim-reference"]
+                == case.inputs().reference("phase-" + phase).to_document()
+            )
+            return super().request(*args)
+
+    transport = PredebitTransport(*replies)
+    monkeypatch.setattr(
+        module, "RubyOperationHttpsTransport", lambda _: transport
+    )
+    reader = module.registry_reader(case.inputs(), phase, "synthetic-job-token")
+    observed = reader.observe(original)
+    assert observed.classification == (
+        "unknown" if storage_failure else "exact"
+    )
+    assert ordinals == [1, 2, 3, 4]
+    assert len(transport.requests) == 4  # noqa: PLR2004
+    assert transport.requests[-1][1:3] == (LOCATION, {})
+    assert len(module.spending_members(directory)) == 4  # noqa: PLR2004
+    assert all(
+        CAPABILITY.encode() not in path.read_bytes()
+        for path in directory.iterdir()
+    )
+    reopened = module.registry_reader(
+        case.inputs(), phase, "synthetic-job-token"
+    )
+    with pytest.raises(
+        ValueError, match=r"partition|exceeds|already spent|incomplete"
+    ):
+        send(reopened.budget)
+    assert len(transport.requests) == 4  # noqa: PLR2004
+
+
+def test_current_execute_cap_is_sixteen_with_no_refund_or_phase_borrow(
+    tmp_path, monkeypatch
+):
+    """The current execute partition stops at sixteen durable direct sends."""
+    case = hosted_case(
+        tmp_path,
+        destination="github-packages",
+        bootstrap=False,
+        envelope_version=2,
+    )
+    prepare(case, monkeypatch, "execute")
+    transport = ScriptedTransport(
+        *[RubyHttpResponse(200, b"ok")] * 15, OSError("last attempted send")
+    )
+    monkeypatch.setattr(
+        module, "RubyOperationHttpsTransport", lambda _: transport
+    )
+    reader = module.registry_reader(
+        case.inputs(), "execute", "synthetic-job-token"
+    )
+    for _ in range(15):
+        assert send(reader.budget).body == b"ok"
+    with pytest.raises(OSError, match="last attempted send"):
+        send(reader.budget)
+    assert (
+        len(module.spending_members(case.directory / "spending" / "execute"))
+        == 16  # noqa: PLR2004 - current execute ceiling
+    )
+    with pytest.raises(ValueError, match=r"partition|exceeds"):
+        send(reader.budget)
+    assert len(transport.requests) == 16  # noqa: PLR2004

@@ -10,6 +10,8 @@ from three_workflow_delivery_v3.adapters.ruby_registry import (
     RubyHttpResponse,
     RubyRegistryReader,
     RubyRequestBudget,
+    RubyScreenedResponse,
+    ruby_response_document,
 )
 from three_workflow_delivery_v3.adapters.rubygems import RubyRegistry
 from three_workflow_delivery_v3.canonical import canonicalize
@@ -96,7 +98,9 @@ def test_rubygems_package_not_found_establishes_missing(ruby_release_original):
     reader, transport = _reader("rubygems", response)
     observed = reader.observe(ruby_release_original[2])
     assert observed.classification == "missing"
-    assert observed.responses[0][1] == response
+    assert ruby_response_document(
+        observed.responses[0][1]
+    ) == ruby_response_document(response)
     assert len(transport.requests) == 1
 
 
@@ -120,9 +124,9 @@ def test_ruby_registry_exact_requires_downloaded_inspected_original(
     assert observed.classification == "exact"
     assert observed.distribution == original
     assert observed.failure_kind is None
-    assert tuple(response for _, response in observed.responses) == tuple(
-        responses
-    )
+    assert tuple(
+        ruby_response_document(response) for _, response in observed.responses
+    ) == tuple(ruby_response_document(response) for response in responses)
     assert (
         transport.requests[-1][1]
         == RubyRegistry(name).origin + "/gems/" + original.filename
@@ -231,9 +235,14 @@ def test_github_both_indexes_must_succeed_before_missing(
     observed = reader.observe(ruby_release_original[2])
     assert observed.classification == "unknown"
     assert observed.failure_kind == "ValueError"
-    assert tuple(response for _, response in observed.responses) == tuple(
-        responses
-    )
+    assert tuple(
+        ruby_response_document(response) for _, response in observed.responses
+    ) == tuple(ruby_response_document(response) for response in responses)
+    if status in {301, 302}:
+        assert isinstance(observed.responses[-1][1], RubyScreenedResponse)
+        assert "body-base64" not in ruby_response_document(
+            observed.responses[-1][1]
+        )
     assert len(transport.requests) == len(responses)
 
 
@@ -257,7 +266,9 @@ def test_rubygems_unverified_inventory_remains_unknown(
     reader, transport = _reader("rubygems", response)
     observed = reader.observe(ruby_release_original[2])
     assert observed.classification == "unknown"
-    assert observed.responses[0][1] == response
+    assert ruby_response_document(
+        observed.responses[0][1]
+    ) == ruby_response_document(response)
     assert observed.distribution is None
     assert len(transport.requests) == 1
 
@@ -346,7 +357,9 @@ def test_ruby_reader_parser_failure_retains_original_response(
     reader, transport = _reader("github-packages", response)
     observed = reader.observe(ruby_release_original[2])
     assert observed.classification == "unknown"
-    assert observed.responses[0][1] == response
+    assert ruby_response_document(
+        observed.responses[0][1]
+    ) == ruby_response_document(response)
     assert (
         observed.to_document()["responses"][0]["response"]["body-base64"]
         == base64.b64encode(response.body).decode()

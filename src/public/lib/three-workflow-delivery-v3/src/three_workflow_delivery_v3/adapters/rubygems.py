@@ -21,6 +21,11 @@ RUBY_HTTP_RESPONSE_LIMIT = 64 * 1024
 RUBY_INDEX_LIMIT = 2 * 1024 * 1024
 RUBY_GEM_LIMIT = RUBY_BYTE_LIMIT
 RUBY_REGISTRY_REQUEST_LIMIT = 32
+RUBY_HTTP_HEADER_LIMIT = 64 * 1024
+RUBY_LOCATION_LIMIT = 8 * 1024
+RUBY_GITHUB_STORAGE_ORIGIN = (
+    "https://rubygemsregistryv2prod.blob.core.windows.net"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,7 +70,7 @@ class RubyRegistry:
         github = self.name == "github-packages"
         return {
             "schema": "workflow-delivery/v3/ruby-destination-operation-profile",
-            "destination": f"ruby/{self.name}-v1",
+            "destination": f"ruby/{self.name}-v{2 if github else 1}",
             "project": RUBY_RELEASE_UNIT,
             "channel": self.channel,
             "registry": self.origin,
@@ -100,6 +105,21 @@ class RubyRegistry:
             "verify-certificates": True,
             "proxy": False,
             "redirects": 0,
+            "download-continuation": {
+                "status": 302,
+                "maximum-hops": 1,
+                "origin": RUBY_GITHUB_STORAGE_ORIGIN,
+                "path": "/rubygemsregistryv2prod/blobs/712433/"
+                + RUBY_RELEASE_UNIT
+                + "/<native-version>/<lowercase-uuid>",
+                "credentials": "none",
+                "automatic": False,
+            }
+            if github
+            else None,
+            "response-evidence": "original-or-screened-v2",
+            "header-byte-budget": RUBY_HTTP_HEADER_LIMIT,
+            "location-byte-budget": RUBY_LOCATION_LIMIT,
             "retries": 0,
             "timeout-seconds": RUBY_HTTP_TIMEOUT,
             "response-byte-budget": RUBY_HTTP_RESPONSE_LIMIT,

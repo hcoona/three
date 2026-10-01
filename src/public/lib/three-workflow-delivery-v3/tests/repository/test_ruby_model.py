@@ -280,7 +280,7 @@ def test_ruby_model_request_preserves_purpose_source_profile_and_destinations(
         "hcoona-release-smoke-ruby": ["ruby-gem"]
     }
     channels = parsed.to_document()["release-policy"]["channels"]
-    assert channels["buddy"]["destination"] == "ruby/github-packages-v1"
+    assert channels["buddy"]["destination"] == "ruby/github-packages-v2"
     assert channels["official"]["destination"] == "ruby/rubygems-v1"
     assert channels["buddy"]["governance"] != channels["official"]["governance"]
 

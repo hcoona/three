@@ -16,6 +16,7 @@ from three_workflow_delivery_v3.adapters.ruby_registry import (
 from three_workflow_delivery_v3.adapters.rubygems import RUBY_INDEX_LIMIT
 
 from ..ruby_registry_fixtures import ScriptedTransport, json_response
+from . import test_ruby_registry_redirect as redirects
 
 ABSENT = RubyHttpResponse(
     404, b"This rubygem could not be found.", "text/plain"
@@ -140,3 +141,25 @@ def test_project_observation_rejects_contradictory_evidence(response, failure):
     """Project observation rejects contradictory evidence."""
     with pytest.raises(ValueError, match="contradictory evidence"):
         RubyGemsProjectObservation(response, failure)
+
+
+@pytest.mark.parametrize("status", [200, 302, 404])
+def test_project_location_is_screened_without_absence_or_ownership_claim(
+    status,
+):
+    """Location cannot turn an owners response into project-state evidence."""
+    response = RubyHttpResponse(
+        status,
+        redirects.REDIRECT_BODY,
+        redirects.LOCATION,
+        location=redirects.LOCATION,
+    )
+    transport = ScriptedTransport(response)
+    observed = observe_rubygems_project(RubyRequestBudget(transport))
+    assert observed.classification == "unknown"
+    assert len(transport.requests) == 1
+    document = observed.to_document()["response"]
+    assert document["kind"] == "screened"
+    assert document["status"] == status
+    assert "body-base64" not in document
+    redirects.assert_screened(observed)

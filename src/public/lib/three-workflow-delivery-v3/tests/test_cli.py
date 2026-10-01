@@ -642,7 +642,7 @@ def test_catalog_command_emits_exact_static_catalog(
         "nuget/github-packages-hcoona-three-v1",
         "python/testpypi-v1",
         "python/pypi-v1",
-        "ruby/github-packages-v1",
+        "ruby/github-packages-v2",
         "ruby/rubygems-v1",
     }
     build = output["build-definitions"]["python/distribution-set-v1"]

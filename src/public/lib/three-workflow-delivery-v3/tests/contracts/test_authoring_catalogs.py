@@ -388,7 +388,7 @@ def test_static_catalog_contains_exact_admitted_slice_contracts() -> None:
         "nuget/github-packages-hcoona-three-v1",
         "python/testpypi-v1",
         "python/pypi-v1",
-        "ruby/github-packages-v1",
+        "ruby/github-packages-v2",
         "ruby/rubygems-v1",
     }
     assert set(EXECUTION_CLASSES) == {
@@ -437,7 +437,7 @@ def test_catalog_definitions_are_data_only_and_canonically_stable() -> None:
 
     assert second == first
     assert catalog_digest() == (
-        "sha256:8347732ccc0ab807eef5a5ae0a6fcdf329da295ee1ca3eb17d4e2f05e45121b8"
+        "sha256:61a0ab6d3632e5d59ee77bb58b2353e9aa6d68a945aa5a85a98600334f702b11"
     )
     definition_sections = (
         "build-definitions",
@@ -1359,7 +1359,7 @@ def test_npmjs_destination_uses_hypothetical_trusted_publishing_oidc() -> None:
         "ruby/trusted-publishing-oidc-v1",
     }
     assert catalog_digest() == (
-        "sha256:8347732ccc0ab807eef5a5ae0a6fcdf329da295ee1ca3eb17d4e2f05e45121b8"
+        "sha256:61a0ab6d3632e5d59ee77bb58b2353e9aa6d68a945aa5a85a98600334f702b11"
     )
 
     npmjs_capability = CAPABILITIES["npmjs/trusted-publishing-oidc-v1"]
@@ -1554,7 +1554,7 @@ def test_ruby_catalog_build_binds_one_original_and_two_required_checks() -> (
     ("destination", "channel", "registry", "capability", "suffix"),
     [
         (
-            "ruby/github-packages-v1",
+            "ruby/github-packages-v2",
             "buddy",
             "https://rubygems.pkg.github.com/hcoona",
             ("github/packages-write-v1", "packages"),

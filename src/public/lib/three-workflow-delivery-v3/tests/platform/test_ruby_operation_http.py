@@ -10,10 +10,13 @@ from three_workflow_delivery_v3.adapters import ruby_registry
 from three_workflow_delivery_v3.adapters.ruby_registry import RubyHttpResponse
 from three_workflow_delivery_v3.platform import ruby_operation_http as module
 
+from ..adapters import test_ruby_registry_redirect as redirect_cases
 from ..adapters.test_ruby_registry_transport import (
     ControlledConnection,
     ControlledResponse,
 )
+
+indexes = redirect_cases.indexes
 
 
 @pytest.fixture(autouse=True)
@@ -109,7 +112,7 @@ def test_supervised_timeout_kills_and_reaps_child_without_retry(
         ),
     ],
 )
-@pytest.mark.parametrize("location", ["body", "content-type"])
+@pytest.mark.parametrize("location", ["body", "content-type", "location"])
 def test_supervised_response_never_returns_reflected_credentials(
     monkeypatch, authorization, reflection, location
 ):
@@ -118,6 +121,9 @@ def test_supervised_response_never_returns_reflected_credentials(
         500,
         reflection if location == "body" else b"failure",
         reflection.decode() if location == "content-type" else "text/plain",
+        location="https://storage.invalid/?sig=" + reflection.decode()
+        if location == "location"
+        else None,
     )
     monkeypatch.setattr(
         ruby_registry.RubyHttpsTransport, "request", lambda *_: response
@@ -216,3 +222,70 @@ def test_supervised_empty_native_fields_remain_valid(monkeypatch):
     assert transport().request(
         "GET", "https://rubygems.org/index", {}, None, 10
     ) == RubyHttpResponse(204, b"", "")
+
+
+def test_supervised_redirect_location_is_private_bounded_ipc(
+    monkeypatch, tmp_path
+):
+    """One real child passes Location in memory without continuation."""
+    location = "https://storage.invalid/?sig=synthetic-private-capability"
+    response = ControlledResponse(body=b"redirect", status=302)
+    response.headers.append(("Location", location))
+    calls = tmp_path / "sends"
+
+    def connect(*_args, **_kwargs):
+        with calls.open("a") as stream:
+            stream.write("send\n")
+        return ControlledConnection(response)
+
+    monkeypatch.setattr(ruby_registry.http.client, "HTTPSConnection", connect)
+    before = {child.pid for child in multiprocessing.active_children()}
+    result = transport().request(
+        "GET", "https://rubygems.org/index", {}, None, 100
+    )
+    assert result.location == location
+    assert result.location_invalid is False
+    assert location not in repr(result)
+    assert calls.read_text() == "send\n"
+    assert {child.pid for child in multiprocessing.active_children()} == before
+
+
+def test_each_redirect_send_is_separately_supervised_and_credential_scoped(
+    monkeypatch, tmp_path, ruby_release_original, indexes
+):
+    """The reader crosses four child pipes without credential reuse."""
+    original = ruby_release_original[2]
+    calls = tmp_path / "sends"
+    replies = [
+        ControlledResponse(indexes["empty"], 200),
+        ControlledResponse(indexes["exact"], 200),
+        ControlledResponse(redirect_cases.REDIRECT_BODY, 302),
+        ControlledResponse(original.content, 200),
+    ]
+    replies[2].headers.append(("Location", redirect_cases.LOCATION))
+
+    class RecordingConnection(ControlledConnection):
+        def request(self, method, path, *, body, headers):
+            with calls.open("a") as stream:
+                stream.write(str(bool(headers.get("Authorization"))) + "\n")
+            super().request(method, path, body=body, headers=headers)
+
+    def connect(*_args, **_kwargs):
+        count = len(calls.read_text().splitlines()) if calls.exists() else 0
+        return RecordingConnection(replies[count])
+
+    monkeypatch.setattr(ruby_registry.http.client, "HTTPSConnection", connect)
+    budget = ruby_registry.RubyRequestBudget(transport())
+    reader = ruby_registry.RubyRegistryReader(
+        redirect_cases.RubyRegistry("github-packages"),
+        budget,
+        github_read_token="synthetic-job-token",  # noqa: S106 - nonsecret fixture
+    )
+    before = {child.pid for child in multiprocessing.active_children()}
+    observed = reader.observe(original)
+    assert observed.classification == "exact"
+    assert observed.distribution == original
+    assert budget.used == 4  # noqa: PLR2004
+    assert calls.read_text().splitlines() == ["True", "True", "True", "False"]
+    assert {child.pid for child in multiprocessing.active_children()} == before
+    redirect_cases.assert_screened(observed)

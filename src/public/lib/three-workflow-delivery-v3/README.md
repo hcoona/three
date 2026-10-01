@@ -315,11 +315,11 @@ has exact-target native Provider facts, a closed Model, frozen original-gem Buil
 immutable Artifact records and separate CI and Release qualification. Both
 qualification paths require original-package inspection and an isolated native
 installed consumer. Release rejects CI evidence and binds its own current Attempt.
-The native registry readers verify the remote original gem. The current
-implementation retains bounded original responses; the design-only
+The native registry readers verify the remote original gem. The implemented
 [download correction](docs/ruby-operation-protocol.md#github-gem-download-continuation)
-requires explicit screened redirect evidence before the normal GitHub route
-can be admitted. The singular publication path binds immutable approval,
+permits one explicit credential-free GitHub storage continuation, retaining
+original verified gem bytes and screened redirect evidence. Strict offline
+replay verifies its safe route and response joins without retaining signed URLs. The singular publication path binds immutable approval,
 rechecks missing state before its marker, uploads once and admits visibility
 reads only after HTTP 200. Strict replay joins this evidence to the shared
 scalar Attempt Outcome; zero-action completion requires a fresh exact proof.
@@ -343,15 +343,13 @@ bootstrap outcomes remain failed; neither has accepted remote consumption or
 normal completion. Preserve their original evidence and reservations without
 rerun, refund, old Approval reuse or another bootstrap.
 
-The protected v2 envelope still physically contains the
-`github-packages-bootstrap02` activation; that entry does not authorize reuse
-of its spent slot. All normal and RubyGems slots remain null. The bounded
-credential-free GitHub storage continuation and screened evidence are a
-**design-only correction**, awaiting protected implementation. That delivery
-must set all eleven slots null and current carriers blocked; fresh package
-access/control evidence and independent normal attestation then precede
-protected activation of one remaining normal slot. The original configuration
-expiry remains unchanged. Follow the
+The protected v2 envelope has all eleven slots null. Both destinations' normal
+Governance and first-project configuration carriers are blocked against current
+profiles. The bounded download implementation is inactive: protected delivery
+and checks, fresh package access/control evidence and independent normal
+attestation precede activation of one remaining normal slot. Neither the
+observed redirect header nor local tests establish a successful real storage
+download or remote consumer. The original configuration expiry remains unchanged. Follow the
 [handoff](docs/agent-handoff.md) and
 [operation protocol](docs/ruby-operation-protocol.md#github-gem-download-continuation)
 for the remaining gates.

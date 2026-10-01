@@ -39,7 +39,10 @@ def test_ruby_registry_freezes_independent_bounded_operation_profile(
     assert registry.upload_url == origin + "/api/v1/gems"
     assert profile == {
         "schema": "workflow-delivery/v3/ruby-destination-operation-profile",
-        "destination": f"ruby/{name}-v1",
+        "destination": {
+            "github-packages": "ruby/github-packages-v2",
+            "rubygems": "ruby/rubygems-v1",
+        }[name],
         "project": "hcoona-release-smoke-ruby",
         "channel": channel,
         "registry": origin,
@@ -73,6 +76,22 @@ def test_ruby_registry_freezes_independent_bounded_operation_profile(
         "verify-certificates": True,
         "proxy": False,
         "redirects": 0,
+        "download-continuation": {
+            "status": 302,
+            "maximum-hops": 1,
+            "origin": "https://rubygemsregistryv2prod.blob.core.windows.net",
+            "path": (
+                "/rubygemsregistryv2prod/blobs/712433/"
+                "hcoona-release-smoke-ruby/<native-version>/<lowercase-uuid>"
+            ),
+            "credentials": "none",
+            "automatic": False,
+        }
+        if name == "github-packages"
+        else None,
+        "response-evidence": "original-or-screened-v2",
+        "header-byte-budget": 65536,
+        "location-byte-budget": 8192,
         "retries": 0,
         "timeout-seconds": 30,
         "response-byte-budget": 65536,

@@ -16,8 +16,10 @@ from three_workflow_delivery_v3.adapters.ruby_registry import (
     RubyHttpsTransport,
 )
 from three_workflow_delivery_v3.adapters.rubygems import (
+    RUBY_HTTP_HEADER_LIMIT,
     RUBY_HTTP_TIMEOUT,
     RUBY_INDEX_LIMIT,
+    RUBY_LOCATION_LIMIT,
 )
 from three_workflow_delivery_v3.canonical import canonicalize, parse_json_strict
 
@@ -61,7 +63,11 @@ def _perform(  # noqa: PLR0913, PLR0917 - one fixed raw request
                     authorization.removeprefix("Basic "), validate=True
                 )
                 credential_parts.extend([decoded, decoded.split(b":", 1)[-1]])
-        response_text = response.body + response.content_type.encode()
+        response_text = (
+            response.body
+            + response.content_type.encode()
+            + (response.location or "").encode()
+        )
         if any(part and part in response_text for part in credential_parts):
             output.send_bytes(canonicalize({"failure": "unsafe-response"}))
             return
@@ -70,6 +76,8 @@ def _perform(  # noqa: PLR0913, PLR0917 - one fixed raw request
                 {
                     "status": response.status,
                     "content-type": response.content_type,
+                    "location": response.location,
+                    "location-invalid": response.location_invalid,
                     "body-base64": base64.b64encode(response.body).decode(
                         "ascii"
                     ),
@@ -176,9 +184,26 @@ class RubyOperationHttpsTransport:
                 doc.get("body-base64"),
             )
             if (
-                set(doc) != {"status", "content-type", "body-base64"}
+                set(doc)
+                != {
+                    "status",
+                    "content-type",
+                    "body-base64",
+                    "location",
+                    "location-invalid",
+                }
                 or not isinstance(content_type, str)
                 or not isinstance(encoded, str)
+                or len(content_type.encode()) > RUBY_HTTP_HEADER_LIMIT
+                or type(doc.get("location-invalid")) is not bool
+                or (
+                    doc.get("location") is not None
+                    and (
+                        not isinstance(doc["location"], str)
+                        or len(cast("str", doc["location"]).encode())
+                        > RUBY_LOCATION_LIMIT
+                    )
+                )
             ):
                 message = "Ruby supervised HTTP response is malformed"
                 raise ValueError(message)
@@ -186,6 +211,8 @@ class RubyOperationHttpsTransport:
                 cast("int", doc.get("status")),
                 base64.b64decode(encoded, validate=True),
                 content_type,
+                cast("str | None", doc["location"]),
+                cast("bool", doc["location-invalid"]),
             )
             if (
                 type(response.status) is not int

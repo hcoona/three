@@ -21,6 +21,7 @@ from three_workflow_delivery_v3.release.ruby_operation import (
 from three_workflow_delivery_v3.release.ruby_operation_ledger import (
     RubyOperationLedger,
     initialize_ruby_operation_ledger,
+    initialize_ruby_successor_ledger,
 )
 from three_workflow_delivery_v3.repository.ruby_controls import (
     RUBY_ENVELOPE_PATH,
@@ -29,9 +30,11 @@ from three_workflow_delivery_v3.ruby_operation_host import HostedRubyArtifacts
 
 from .acceptance.ruby_bootstrap_fixtures import CURRENT, modeled_plan
 from .release.ruby_operation_fixtures import (
+    REVIEW,
     admission_document,
     current_environment,
     envelope_document,
+    request,
     request_document,
 )
 from .ruby_integration_fixtures import governance
@@ -169,7 +172,9 @@ def bootstrap_case_from_run(root, directory, run):
     return HostedCase(root, directory, run.request, raw, {}, run)
 
 
-def hosted_case(root, *, destination="rubygems", bootstrap=True):
+def hosted_case(
+    root, *, destination="rubygems", bootstrap=True, envelope_version=1
+):
     """Build coherent admission without sockets, accounts or service effects."""
     source = root / "source"
     source.mkdir(parents=True)
@@ -189,13 +194,37 @@ def hosted_case(root, *, destination="rubygems", bootstrap=True):
         return bootstrap_case_from_run(source, directory, run)
     gov = governance(destination)
     slot = destination + "-normal01"
-    envelope_doc = envelope_document(slot)
+    envelope_doc = envelope_document(slot, version=envelope_version)
     envelope_doc["slots"][slot]["configuration-digest"] = gov.digest
     envelope = RubyOperationEnvelope(canonicalize(envelope_doc))
     selected = RubyOperationRequest(
         canonicalize(request_document(envelope, slot)), envelope
     )
-    header = initialize_ruby_operation_ledger(root / "ledger", "f" * 32)
+    if envelope_version == 2:  # noqa: PLR2004 - explicit successor fixture
+        predecessor_root = root / "predecessor-ledger"
+        predecessor_header = initialize_ruby_operation_ledger(
+            predecessor_root, "a" * 32
+        )
+        old_request = request("github-packages-bootstrap")
+        RubyOperationLedger(predecessor_root).reserve(
+            old_request,
+            canonicalize(
+                admission_document(old_request, ruby_digest(predecessor_header))
+            ),
+            review=REVIEW,
+            now=CURRENT,
+        )
+        header = initialize_ruby_successor_ledger(
+            root / "ledger",
+            "f" * 32,
+            predecessor_directory=predecessor_root,
+            predecessor_members={
+                path.name: ruby_digest(path.read_bytes())
+                for path in predecessor_root.iterdir()
+            },
+        )
+    else:
+        header = initialize_ruby_operation_ledger(root / "ledger", "f" * 32)
     admission = admission_document(selected, ruby_digest(header))
     review = {
         "schema": "workflow-delivery/v3/ruby-operation-admission-review-v1",
