@@ -254,13 +254,14 @@ bootstrap creates only the selected associated gem. Bootstrap never uses
 normal ready Governance to pretend the resource already exists.
 
 Before configuration, bind the exact gem/repository/workflow/Environment and
-account facts in the Issue and independently review their consistency. Before
-any bootstrap or normal dispatch, protected-deliver one immutable request with
-exact target/coordinate, original artifact obligations, profile and source
-hashes, actor/reviewer, lifetime and finite HTTP/GitHub operation budgets. Each
-request allows one workflow run, rejects `run_attempt != 1`, and consumes its
-slot before effects. Wave ceilings are cumulative across requests. Requests
-cannot refill themselves; a failed operation does not authorize a resend.
+account facts in the Issue and independently review their consistency. Normal
+requests use the two-layer protocol below: protected-deliver the operation
+envelope, then independently admit the exact execution binding after its target
+commit exists and before dispatch. Bootstrap uses the separately protected
+request described below. Each request allows one workflow run, rejects
+`run_attempt != 1`, and consumes its slot before dispatch. Wave ceilings are
+cumulative across requests. Requests cannot refill themselves; a failed operation
+does not authorize a resend.
 Native registry read budget is at most 32 requests per operation, including
 preflight, before-action, post-success and final consumer reads; each response
 is bounded by its reviewed profile. One OIDC assertion and one exchange are
@@ -277,6 +278,79 @@ bootstrap can establish only separately verified resource facts; it cannot
 claim normal completion. Keep failed versions untouched. Stop each destination
 campaign at first independently audited normal completion and retire temporary
 operators without deleting the stable publisher/workflow binding.
+
+### Exact Normal Request Binding
+
+A Git commit cannot contain its own final SHA. Normal Release still requires
+one exact protected-main commit T as both source and workflow/control revision;
+selecting an older package target with newer normal tooling is not an escape.
+The protected envelope and its concrete execution binding have distinct roles:
+
+1. Protected-deliver the closed envelope schema and validator, exact repository,
+   main ref, workflow, destination, Environment, package, actor and reviewer;
+   source/profile constraints, original-gem obligations, finite lifetime and
+   cumulative request/effect ceilings; and uniquely identified finite slots.
+   Slots start disabled/null. Enabling a slot requires protected delivery within
+   the remaining Wave ceiling. The envelope selects the actual protected
+   workflow revision; it does not try to contain its own eventual commit SHA.
+2. After protected T and its required checks exist, seal canonical request bytes
+   outside that commit. Bind T as source and control, its source tree, raw/native
+   NBGV coordinate, envelope/profile/source hashes, destination, slot/generation,
+   obligations, actor/reviewer, absolute expiry and finite budgets. Independently
+   review the exact bytes and caller, retain their hashes and review evidence,
+   and admit only a request inside the accepted envelope. The Issue retains
+   screened evidence; it supplies neither new authority nor a substitute for
+   protected delivery. The accepted Wave and envelope remain the authority.
+
+The concrete operator protocol must identify the reviewed caller and durable
+ledger, the independent admission carrier and reviewer, exact budget allocation
+across jobs/operator/consumer, and how their bindings reach runtime. These are
+execution prerequisites, not details that an arbitrary workflow input may
+supply after dispatch. The accepted sole writer/operator is trusted to enforce
+this reviewed admission boundary; a supplied digest proves byte identity only,
+not independent approval or prior slot reservation.
+
+The admitted operator durably reserves the unique slot before its one dispatch,
+retaining the request and review identity. Failure or an uncertain response
+leaves the slot spent. Bind the one actual run when known; never reconstruct or
+refill a missing ledger, rerun the workflow, replace the dispatch, extend expiry
+or rebind the request to a later target. Before dispatch, check current main
+still equals T. A race selecting a different actual run target fails before
+registry effects and still spends the slot.
+
+The workflow receives the exact canonical request identity and retains the
+request as an immutable current-run artifact. Before registry access, validate
+it against the protected envelope and admitted operator evidence, including
+slot, destination, actor, main ref, attempt one and target equal to both
+`GITHUB_SHA` and `GITHUB_WORKFLOW_SHA`. Admission review and the actual run must
+be joined before publication authority is available. Compare the freshly
+derived NBGV coordinate to the request. Build and Qualification produce new
+current-run originals; the external request cannot nominate prior artifacts or
+replace Approval. Action-bearing current-run Approval follows review of the
+actual original gem, qualified DAG, binding and reserved slot.
+
+After dispatch, retain pinned T and establish protected-main ancestry and
+relevant protected-path freshness. Unrelated later main commits are permitted;
+a relevant path touch, including touch/revert, invalidates admission. Do not
+replace that rule with whole-main equality during approval or finalization.
+Fresh requests may use only remaining slots after independent admission.
+The one-upload, one-assertion/exchange, 32-registry-request ceiling, separate
+finite GitHub/configuration budgets, original-byte audit, terminal failure and
+first-success stop rules remain unchanged.
+
+### Bootstrap Request Binding
+
+The separate bootstrap protocol may protected-deliver an exact ancestor package
+target with later protected tooling, provided its concrete request explicitly
+binds both identities, their ancestry, source tree/NBGV coordinate, immutable
+original obligations, profile/source hashes, current-run approval, lifetime and
+finite budgets. Dispatch pins the protected tooling revision and request digest.
+It must reject a different resolved tooling SHA before effects, reserve its one
+bootstrap slot durably before dispatch, and retain actual run/attempt identity.
+This is a first-project-only source/control separation, not a normal Release
+Intent or permission to reuse prior Build, Qualification or Approval artifacts.
+Its concrete protocol and implementation require independent review and
+protected delivery before use; this allowance alone is not an executable request.
 
 ## Validation and Delivery Gates
 

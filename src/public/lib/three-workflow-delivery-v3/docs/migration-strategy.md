@@ -467,8 +467,10 @@ redesign of all architecture layers solely because the language changes.
 3. Close supported endpoint/profile facts and concrete finite configuration
    and bootstrap requests. Establish only the selected resources and review
    actual ownership/access/publisher configuration before normal admission.
-4. Protected-deliver ready Governance and a concrete bounded normal request;
-   complete GitHub Packages publication/readback/consumer audit, then repeat
+4. Protected-deliver ready Governance and the normal operation envelope, then
+   seal and independently admit its exact bounded execution request under the
+   [Ruby request protocol](./hcoona-release-smoke-ruby-lld.md#exact-normal-request-binding).
+   Complete GitHub Packages publication/readback/consumer audit, then repeat
    independently for RubyGems.org. No earlier artifact/Approval is promoted.
 5. Retain original evidence and independent terminal/consumer audits. Stop each
    completed campaign, retire temporary operation entries, reconcile support
