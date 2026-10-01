@@ -309,7 +309,7 @@ historical 3/3/20/3/3 claims. RubyGems owners reads compose as follows:
 | Normal eligibility         |            0 | Full existing three-send exact observer                                                         |
 | Any final remote consumer  |            0 | Full existing three-send exact observer                                                         |
 
-A successful exact observer requires version inventory, exact-version metadata
+A successful RubyGems exact observer requires version inventory, exact-version metadata
 and original-gem download: preserve all three sends and their native equivalent
 coordinate/platform, yanked, identity, SHA and original-byte checks. Do not infer
 a two-send exact observer from the one-send missing-coordinate case. Share the

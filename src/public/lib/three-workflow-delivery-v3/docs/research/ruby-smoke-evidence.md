@@ -176,8 +176,15 @@ GET diagnostic at 2026-10-01T21:10:56.625605Z through
 `https://rubygemsregistryv2prod.blob.core.windows.net`, with the exact
 owner/package/version/UUID path and a query. The diagnostic retained only safe
 status, booleans and cryptographic identities; no Location or body, and it
-followed no redirect. Its source digest is
+followed no redirect. The retained diagnostic source object
+`github-ruby-redirect-header-diagnostic.py` has digest
 `sha256:2a2e729bb5adb52b27d131c355796faa15acd311f0f882070d216bdb6d6fc25d`.
+The separate screened actual observation object
+`github-ruby-redirect-header-observation.json` has digest
+`sha256:2bc4b37a876803ea299fd18614f6a38391ea1a21b255f6d39f21ff7b75efe6fc`.
+The [exact screened lineage carrier][header-lineage] joins source, intent,
+observation and independent review identities without retaining signed Location
+or body values in this record.
 
 **Design implication and limit:** a single exact-origin/path, credential-free
 continuation can be designed within the existing 32-send ceiling, with safe
@@ -251,3 +258,4 @@ authorizes probes.
 [postcreation-review]: https://github.com/hcoona/three/issues/954#issuecomment-5940722853
 [native-request]: https://github.com/ruby/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/request.rb#L142
 [source-recheck]: https://github.com/hcoona/three/issues/954#issuecomment-5940809720
+[header-lineage]: https://github.com/hcoona/three/issues/954#issuecomment-5941047932
