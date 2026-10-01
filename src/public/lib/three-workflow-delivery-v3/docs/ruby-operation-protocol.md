@@ -294,15 +294,17 @@ method proves historical nonexistence, deleted history, atomic reservation or
 future exclusivity. Unexpected deployed behavior stops and triggers source/profile
 revalidation; pinned source alone is not a deployed-service observation.
 
-The operation envelope retains its **32-send** partitioning: eligibility 3,
-pre-marker 3, execute 20, zero-action 3 and remote-consumer 3. RubyGems owners
-reads compose as follows:
+The corrected operation envelope retains **32 direct sends**, partitioned as
+eligibility 4, pre-marker 4, execute 16, zero-action 4 and remote-consumer 4.
+The [download continuation](#github-gem-download-continuation) proves these bounds
+and defines their protected implementation gate; they do not modify spent
+historical 3/3/20/3/3 claims. RubyGems owners reads compose as follows:
 
 | Phase                      | Owners reads | Other reads / allocation                                                                        |
 | -------------------------- | -----------: | ----------------------------------------------------------------------------------------------- |
 | Preliminary configuration  |            1 | Separate durable configuration allocation                                                       |
-| Bootstrap eligibility      |            2 | Operator predispatch 1 + runtime 1; missing-coordinate inventory 1 completes the partition of 3 |
-| Bootstrap pre-marker       |            1 | Missing-coordinate inventory 1; third send unused                                               |
+| Bootstrap eligibility      |            2 | Operator predispatch 1 + runtime 1; missing-coordinate inventory 1 uses 3 of the partition of 4 |
+| Bootstrap pre-marker       |            1 | Missing-coordinate inventory 1; two sends unused                                                |
 | Postcreation configuration |            1 | Separate durable configuration allocation after independent terminal inspection                 |
 | Normal eligibility         |            0 | Full existing three-send exact observer                                                         |
 | Any final remote consumer  |            0 | Full existing three-send exact observer                                                         |
@@ -473,6 +475,135 @@ launches use the existing resolved nonsymlink CA file with pinned trust bytes,
 verified regular-file/link-count/size predicates and process-local trust selection;
 no host trust change or TLS bypass is included.
 
+## GitHub Gem Download Continuation
+
+This correction follows the actual failed bootstrap and separately bounded
+[header observation](./research/ruby-smoke-evidence.md#github-download-observation).
+Both GitHub bootstrap slots remain spent. It grants no third bootstrap, retry,
+normal readiness or acceptance of a failed run. Protected implementation and
+independent source/evidence/tests review precede the remaining normal route.
+
+### Exact Route and Credential Boundary
+
+The GitHub destination profile becomes `ruby/github-packages-v2`. Its upload
+POST still accepts only HTTP 200 and permits zero redirects/retries. Index reads
+never follow redirects. The constructed exact gem GET may return direct HTTP 200
+or one HTTP 302 with one nonempty Location, at most 8 KiB. The only admitted
+storage origin is `https://rubygemsregistryv2prod.blob.core.windows.net` and path is
+`/rubygemsregistryv2prod/blobs/712433/hcoona-release-smoke-ruby/<native-version>/<uuid>`.
+The version equals this Attempt's qualified coordinate; UUID is lowercase hex
+in 8-4-4-4-12 form. Reject alternative containers/owners/packages/versions, path
+suffixes, dot segments, doubled slashes and encoded authority/path characters.
+
+Require an absolute ASCII HTTPS URI, no userinfo, fragment, controls, whitespace,
+backslash, authority alias or nondefault port. Do not normalize rejected routes
+into accepted ones. The signed query is nonempty, opaque and memory-only;
+service signature/expiry validation remains Azure's responsibility. Duplicate,
+missing, oversized or malformed Location leaves the observation unknown. The
+64 KiB accepted-header ceiling applies after the pinned HTTP parser's finite
+line/count bounds; it is not a claim about preallocation wire enforcement.
+
+The reader explicitly requests one continuation through the same phase budget;
+the transport never follows automatically. Use a fresh credential-free header
+map, without Authorization, Cookie, proxy authentication, Referer or ambient
+credentials. Only storage HTTP 200 can supply gem bytes. Second redirect,
+unsupported route, error, timeout or bound exhaustion is terminal unknown, with
+no retry or alternate source. RubyGems.org and GitHub Actions artifact downloads
+retain their separate contracts; neither lends an allowlist to this route.
+
+### Ephemeral Responses and Replayable Safe Evidence
+
+Location belongs only to the in-memory HTTP response/continuation and bounded
+private supervisor pipe. Exclude it from repr, exceptions, retained request
+URLs, artifact records and logs. Retained HTTP evidence has explicit `original`
+and `screened` arms. Only original carries the complete body. Screened retains
+status, fixed media classification, body size/digest, optional Location digest,
+fixed reason and validated safe origin/path or null; it carries no Location,
+query, HTML, unbounded header text or echoed rejected origin/path. Its digest
+identifies screened evidence, not a nonexistent retained raw envelope.
+
+Screen before appending any observation, upload response, Result, audit or
+terminal record. Every 3xx or response carrying Location is screened even when
+rejected, including POST, index and RubyGems responses. Preserve definitive
+status and ordinary safe upload response semantics; unexpected Location does
+not add an accepted upload contract. Retain reflected job-credential screening.
+
+Storage error bodies and second redirects are screened regardless of route
+validity. A storage HTTP-200 body is retained as original gem bytes only after
+whole-byte equality and native witness/content inspection against the qualified
+artifact. Mismatching bytes retain a screened status/size/digest and mismatch
+reason, proving no exactness without retaining a possible capability-bearing
+error page. No URL replacement, normalized archive or metadata-only success
+substitutes for the actual original matching gem.
+
+New observations use `ruby-registry-observation-v2` with a closed retained-entry
+union. The initial gem response entry binds the canonical registry URL. A
+storage request entry binds GET, safe exact origin/path, `credentials: none`,
+Location digest and the preceding screened redirect-response digest. It never
+contains the signed request URL. Both sends remain visible in order, including
+failed or late sends. Offline replay uses the same pure route validator and a
+narrow internal continuation seam to consume these joins and original matching
+gem bytes; it does not fabricate a signed URL. It attests protected capture of
+the discarded Location's digest, not verification of its signature. Screened
+invalid redirects reproduce only unknown state. Missing, reordered or unused
+entries reject replay. Historical raw evidence cannot grant new redirect access.
+
+### Fixed Counts and Unchanged Deadlines
+
+| Observation or execute path                           |       Direct sends |
+| ----------------------------------------------------- | -----------------: |
+| GitHub missing: both native indexes                   |                  2 |
+| GitHub exact: indexes and direct gem                  |                  3 |
+| GitHub exact: indexes, registry 302 and storage GET   |                  4 |
+| GitHub upload, five missing observations, sixth exact | 1 + 5 * 2 + 4 = 15 |
+| GitHub upload, six missing observations               |     1 + 6 * 2 = 13 |
+| RubyGems missing / exact observer                     |              1 / 3 |
+| RubyGems exchange, upload, five missing, sixth exact  | 1 + 1 + 5 + 3 = 10 |
+
+The first exact, conflicting or unknown observation terminates visibility; six
+four-send exact observations are impossible. A failing attempted continuation
+also spends its ordinal. Fixed caps 4/4/16/4/4 sum to 32; spare execute headroom
+cannot fund another observation, upload or retry. Each direct send reserves
+durable state before I/O, without transfer, process reset or refund.
+
+Preserve six observations, at least ten seconds between pending missing reads,
+and the 60-second window from definitive upload completion. Each direct HTTP
+send retains the complete 30-second supervisor, bounded by the same phase and
+request deadlines. The two-hop download is two separately supervised/spent
+sends; it creates no new phase or observation lifetime. Late completion fails.
+
+### Protected Rollout and Historical Bindings
+
+Design acceptance alone does not enable the unimplemented route. The corrected
+implementation atomically updates profile, transport, evidence replay, v2
+envelope partitions, hosted phase claims and tests, with all eleven operation
+slots null and both normal Governance sources blocked. Keep the existing v2
+successor ledger, eleven slot identities and spent reservations unchanged. No
+new ledger or successor is needed. Existing claim `maximum` remains joined to
+the exact request; new envelope/profile/request digests bind the new values.
+Preserve historical v1 default bounds and audit failed v2 runs with their pinned
+original source/profile, without reinterpreting old claims as the new budget.
+
+Regenerate blocked current carriers against current profile identities. Replace
+the spent GitHub first-project-ready carrier with its existing blocked form,
+retaining the old ready bytes/attestation privately and in Git as historical
+evidence. Do not relabel its source revision, inspection or attestation as fresh.
+RubyGems bootstrap remains blocked. A blocked form supplies no renewed lifetime;
+the original absolute ceiling `2026-10-08T03:39:53.109710Z` still bounds subsequent
+GitHub admission.
+
+After protected implementation and exact checks, independently inspect current
+postcreation controls, package ownership and authenticated effective Actions
+access. A fresh independent normal attestation binds actual facts and current
+source/profile/protocol; only then may normal Governance and one remaining
+normal slot be protected-enabled. Both bootstrap slots remain null. New expiry
+cannot exceed the original ceiling. At actual protected normal target T,
+re-establish NBGV, reproducible original gem builds, negative controls and clean
+consumer, current package/settings evidence and exact request admission before
+one reservation/dispatch. Current Approval, exact remote original and independent
+terminal/consumer audit remain mandatory. The uploaded bootstrap gem/witness and
+old Approval do not qualify the new normal Attempt.
+
 ## Single GitHub Bootstrap Successor
 
 The additional `github-packages-bootstrap02` slot is bound only to the spent
@@ -589,8 +720,10 @@ across jobs/reruns. These mechanisms do not authorize recovery.
 The hosted HTTPS supervisor caps the complete request, including DNS, TLS,
 headers, body and private pipe reception, at 30 seconds and the phase deadline.
 Child and receiver cleanup each have a five-second cap. It performs raw HTTP in
-a POSIX child while the parent retains writer credential identity. Redirects,
-proxies and retries remain disabled. Registry partitions stay 3/3/20/3/3, with
+a POSIX child while the parent retains writer credential identity. Automatic redirects,
+proxies and retries remain disabled. The sole supported registry download
+continuation and corrected 4/4/16/4/4 partitions follow the
+[bounded GitHub download contract](#github-gem-download-continuation), with
 the RubyGems bootstrap eligibility operator debit included; native OIDC adds at
 most one request outside those registry partitions. Jobs are capped at 30 minutes,
 outer steps at ten minutes and input checks at one minute. Each phase expires

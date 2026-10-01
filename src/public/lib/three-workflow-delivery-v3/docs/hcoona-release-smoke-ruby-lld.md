@@ -198,7 +198,8 @@ and a 60-second admission window from upload-response completion, within
 unchanged outer authority deadlines. Downloads and metadata reads have separate
 finite request/byte limits in the protected profile. Conflicting state,
 transport/parser/download failure or exhausted bounds is terminal. Preserve
-all original responses and ordering. A fresh independently qualified Attempt
+all safe original responses, explicitly screened redirect/error evidence and
+ordering. A fresh independently qualified Attempt
 may later find exact state; the failed uploading Attempt remains failed.
 
 ## Native Registry and Credential Profiles
@@ -209,17 +210,32 @@ GitHub Packages uses its authenticated RubyGems protocol. Native
 capability; serialized native index data never executes in the trusted
 publisher. The exact `.gem` URL is constructed from the admitted registry base
 and `gems/<native-filename>` path, not an arbitrary metadata URL. The reviewed
-profile must close actual supported endpoint/redirect behavior before activation;
-a missing supported read contract leaves GitHub Live disabled. No npm/NuGet
-endpoint or duplicate-response assumption is imported.
+profile admits direct HTTP 200 or exactly one HTTP 302 from that constructed gem
+URL to the exact credential-free HTTPS storage origin and coordinate path in the
+[operation protocol](./ruby-operation-protocol.md#github-gem-download-continuation).
+Both direct sends spend the same phase budget before I/O. Uploads and indexes
+never follow redirects. A second or unsupported redirect remains unknown; no
+npm/NuGet or GitHub Actions artifact-download allowlist is imported.
+
+Signed Location and HTML remain in memory only. Before evidence retention,
+screen every redirect, including rejected redirects, and capability-bearing
+storage failures. Distinguish screened status/route-policy/digest evidence from
+original response bytes; a suppressed body is not an empty original. Exactness
+still requires the actual complete downloaded gem bytes and witness. Offline
+replay verifies the screened continuation joins without reconstructing a signed
+URL or claiming to recover its discarded signature. Corrected source/profile,
+evidence replay and finite accounting must be protected-delivered before normal
+activation; the prior zero-redirect implementation does not satisfy this route.
 
 RubyGems.org uses the documented version inventory and exact-version/platform
 API, then an admitted HTTPS gem download origin. Check native name, version,
 platform, yanked status, SHA and exact bytes. No additional platforms, alternate
 spellings, yanked or unverified records are accepted. Registry metadata alone
 cannot satisfy exactness. HTTPS verification stays enabled; credentials never
-cross a redirect origin. Download redirects, if the observed supported API
-requires them, need an explicit finite allowlist without credentials. No
+cross a redirect origin. RubyGems.org retains its separately admitted direct
+download route and does not inherit the GitHub storage allowlist. A changed
+RubyGems download contract requires its own observed supported route and explicit
+finite credential-free admission. No
 unbounded pagination or automatic retry is admitted.
 
 For RubyGems.org, request one GitHub OIDC assertion with audience
