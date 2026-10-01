@@ -20,8 +20,11 @@ are implemented. The hosted bootstrap/normal caller and its phase, job and maint
 budgets are implemented below. The external caller contract fixes actual-run,
 artifact and approval budgets. Concrete callers still need their exact
 independently reviewed source, launch and before/after plans.
-All ten operation slots remain null; both normal Governance sources remain blocked. No configuration, account, registry, OIDC or dispatch
-effect follows from source or protocol delivery alone.
+The GitHub Packages first-project configuration and sole bootstrap slot are
+enabled. The other nine slots remain null; both normal Governance sources remain
+blocked. Fresh predispatch inspection and independent exact-request admission
+remain required. No account, registry, OIDC or dispatch effect follows from
+source or protocol delivery alone.
 
 GitHub Packages completion precedes RubyGems.org configuration/execution. Exact
 NBGV, reproducible original gems, current-run Qualification, Approval/Authorization

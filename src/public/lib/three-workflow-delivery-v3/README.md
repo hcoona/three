@@ -333,9 +333,10 @@ readbacks, destination-specific publisher permissions and strict terminal replay
 Their shared operation CLI keeps first-project authority separate from normal
 Governance and skips the privileged job for exact-satisfied publication.
 An unprivileged final job verifies the remote original and a clean consumer.
-Actual configuration, independently admitted requests and destination acceptance
-remain prerequisites; implemented workflows do not establish publication success.
-The protected Ruby operation envelope has ten disabled slots. Strict data
+GitHub Packages has an independently inspected first-project configuration and
+one enabled bootstrap slot; the other nine slots remain null. Fresh predispatch
+inspection, independently admitted requests and destination acceptance remain
+prerequisites; implemented workflows do not establish publication success. Strict data
 validators bind a future post-merge request, independent admission and durable
 sole-operator reservation. The local ledger consumes a slot before a caller
 may dispatch and never repairs missing state or replaces a reservation. These
@@ -351,6 +352,8 @@ configuration/inspection/review validators and a separate RubyGems project
 observer support that boundary; screened facts do not prove raw GitHub owner
 inventory or reviewer provenance. Configuration collectors, supervised transport
 and durable phase/send counters are implemented. Concrete external caller launch,
-configuration/request admission and actual destination acceptance remain pending.
-All ten slots remain null and both protected Governance sources remain blocked.
+exact-request admission and actual destination acceptance remain pending.
+Both protected normal Governance sources remain blocked; RubyGems.org remains
+disabled. The [handoff](docs/agent-handoff.md#ruby-delivery-entry) routes the
+accepted inspection, finite configuration lifetime and remaining execution gates.
 Local controlled transports do not establish deployed registry behavior.
