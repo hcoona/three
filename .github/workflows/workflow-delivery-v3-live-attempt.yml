@@ -217,7 +217,7 @@ jobs:
         with:
           version-file: .config/uv/uv.toml
       - name: Install exact toolchain
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
         with:
           experimental: true
           install: true
@@ -344,7 +344,7 @@ jobs:
         with:
           version-file: .config/uv/uv.toml
       - name: Install exact toolchain
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
         with:
           experimental: true
           install: true
@@ -492,7 +492,7 @@ jobs:
         with:
           version-file: .config/uv/uv.toml
       - name: Install exact toolchain
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
         with:
           experimental: true
           install: true
@@ -593,7 +593,7 @@ jobs:
         with:
           version-file: .config/uv/uv.toml
       - name: Install exact toolchain
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
         with:
           experimental: true
           install: true
@@ -1603,7 +1603,7 @@ jobs:
         with:
           version-file: .config/uv/uv.toml
       - name: Install tool manager without target tool installation
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
         with:
           install: false
           working_directory: ${{ runner.temp }}
