@@ -1092,8 +1092,9 @@ They specify support to implement and validate, not completed runtime evidence.
   postcreation configuration may establish only the resource facts observed;
   failed bootstrap remains failed. Normal publication needs its own fresh
   Attempt. Requirements, applicable architecture and validation design precede
-  implementation; concrete protected requests and configuration/admission
-  precede external operations. Existing V3 architecture is reused with minimal
+  implementation; protected operation envelopes, independently admitted exact
+  requests and configuration/admission precede external operations, as defined
+  by the [Ruby request protocol](./hcoona-release-smoke-ruby-lld.md#governance-and-first-project-protocol). Existing V3 architecture is reused with minimal
   Ruby contracts, not a required redesign of all layers. The accepted Wave
   owns effects/ceilings; completed npm, NuGet and Python campaigns stay closed.
 
