@@ -333,13 +333,16 @@ readbacks, destination-specific publisher permissions and strict terminal replay
 Their shared operation CLI keeps first-project authority separate from normal
 Governance and skips the privileged job for exact-satisfied publication.
 An unprivileged final job verifies the remote original and a clean consumer.
-GitHub Packages has an independently inspected first-project configuration and
-all operation slots disabled. The
-[protocol's v2 envelope, successor ledger and inspection validators](docs/ruby-operation-protocol.md#single-github-bootstrap-successor)
-are implemented; the exact external caller, standalone collector, protected
-activation and fresh independent admission remain prerequisites. Fresh predispatch
-inspection, independently admitted requests and destination acceptance remain
-prerequisites; implemented workflows do not establish publication success. Strict data
+GitHub Packages has an independently inspected first-project configuration.
+Only `github-packages-bootstrap02` is enabled in the protected v2 envelope,
+bound to the reviewed successor caller, standalone main collector and exact
+launch budget; the original bootstrap and all normal/RubyGems slots remain null.
+The [successor protocol](docs/ruby-operation-protocol.md#single-github-bootstrap-successor)
+requires fresh protected-target native qualification, independently admitted
+launch and predecessor/successor identities, complete predispatch inspection
+and exact-request admission before reservation and dispatch. The first failed
+bootstrap remains spent, and the original configuration expiry is unchanged.
+Protected activation and implemented workflows do not establish publication success. Strict data
 validators bind a future post-merge request, independent admission and durable
 sole-operator reservation. The local ledger consumes a slot before a caller
 may dispatch and never repairs missing state or replaces a reservation. These

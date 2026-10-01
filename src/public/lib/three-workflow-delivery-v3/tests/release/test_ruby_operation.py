@@ -76,8 +76,16 @@ def test_ruby_protected_envelope_preserves_fixed_authority_and_finite_slots():
     assert {key: value for key, value in doc.items() if key != "slots"} == {
         key: value for key, value in fixed.items() if key != "slots"
     }
-    assert doc["slots"] == dict.fromkeys(
-        (*EXPECTED_SLOTS, "github-packages-bootstrap02")
+    successor = "github-packages-bootstrap02"
+    assert set(doc["slots"]) == {*EXPECTED_SLOTS, successor}
+    assert {
+        slot: doc["slots"][slot] for slot in EXPECTED_SLOTS
+    } == dict.fromkeys(EXPECTED_SLOTS)
+    assert {
+        slot for slot, selected in doc["slots"].items() if selected is not None
+    } == {successor}
+    assert doc["slots"][successor]["binding"] == ruby_operation_binding(
+        successor
     )
 
 
