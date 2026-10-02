@@ -78,7 +78,7 @@ def test_ruby_protected_envelope_preserves_fixed_authority_and_finite_slots():
     }
     successor = "github-packages-bootstrap02"
     assert set(doc["slots"]) == {*EXPECTED_SLOTS, successor}
-    enabled = "github-packages-normal02"
+    enabled = "rubygems-bootstrap"
     assert {
         slot for slot, selected in doc["slots"].items() if selected is not None
     } == {enabled}
@@ -89,16 +89,16 @@ def test_ruby_protected_envelope_preserves_fixed_authority_and_finite_slots():
     } == dict.fromkeys({*EXPECTED_SLOTS, successor} - {enabled})
     binding = doc["slots"][enabled]["binding"]
     assert binding == ruby_operation_binding(enabled)
-    assert binding["kind"] == "normal"
-    assert binding["destination"] == "github-packages"
-    assert binding["workflow"] == "workflow-delivery-v3-ruby-smoke.yml"
+    assert binding["kind"] == "bootstrap"
+    assert binding["destination"] == "rubygems"
+    assert binding["workflow"] == "workflow-delivery-v3-ruby-bootstrap.yml"
     assert binding["configuration-path"] == (
-        ".github/workflow-delivery/governance/"
-        "hcoona-release-smoke-ruby-github-packages.json"
+        ".github/workflow-delivery/configuration/"
+        "hcoona-release-smoke-ruby-rubygems.json"
     )
     assert (
         binding["operation-profile-digest"]
-        == RubyRegistry("github-packages").profile_digest
+        == RubyRegistry("rubygems").profile_digest
     )
 
 
