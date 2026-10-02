@@ -35,8 +35,9 @@ superseding the original design-only limit. Follow the accepted
 The minimal [Ruby smoke](../../hcoona-release-smoke-ruby/README.md) and internal
 Provider/Build/inspection/consumer foundation are present. The closed Ruby Model,
 single-gem Artifact and separate CI/Release qualification retain current-purpose
-and current-run bindings. GitHub normal Governance is ready for the single
-`github-packages-normal02` slot; RubyGems Governance remains blocked.
+and current-run bindings. GitHub normal completion is independently accepted;
+the RubyGems bootstrap activation leaves RubyGems normal Governance
+blocked.
 Bounded native registry readers and one-shot HTTP writers are implemented, with
 Ruby publication snapshots, current-run approval, durable mutation markers and
 strict Result/Outcome replay. The Ruby PR workflow and CI-only CLI connect
@@ -56,39 +57,40 @@ reuse Approval or enable another bootstrap.
 The [bounded download correction](./ruby-operation-protocol.md#github-gem-download-continuation)
 is implemented with one explicit credential-free GitHub storage continuation,
 original/screened evidence and strict offline replay within 32 direct sends.
-Only `github-packages-normal02` is enabled, joined to ready GitHub normal
-Governance and fresh independent package/access/control attestation. The other
-ten slots, RubyGems normal Governance and both first-project configuration
-carriers remain disabled. The old ready GitHub bootstrap configuration and both
-failed runs remain historical evidence. The independently accepted
-[download diagnostic](https://github.com/hcoona/three/issues/954#issuecomment-5942814694)
-establishes exact downloaded original bytes, not normal completion.
-After this activation's protected delivery and exact checks, use its actual
-normal target T for new NBGV, reproducible builds, negative controls and a clean
-consumer. Fresh before-request package/controls evidence and independent exact
-request admission must precede the one normal02 reservation and dispatch.
-Current-run Qualification, Approval, remote original/consumer and independent
-terminal audit remain mandatory; activation does not spend a slot or complete
-an Attempt. Two further unused GitHub normal slots remain disabled.
+GitHub normal02 [run 36963838994](https://github.com/hcoona/three/actions/runs/36963838994)
+has [accepted terminal evidence](https://github.com/hcoona/three/issues/954#issuecomment-5945664659)
+and [independent destination completion](https://github.com/hcoona/three/issues/954#issuecomment-5945688860).
+Stop the GitHub destination and preserve its completed ledger join and originals.
+Normal01 [run 36950349853](https://github.com/hcoona/three/actions/runs/36950349853)
+remains spent, unapproved and cancelled. Neither cancellation nor completion
+refunds a slot or permits reuse of old Approval. Both failed bootstrap outcomes
+remain failed. Historical ready GitHub Governance supplies no further operation
+grant.
 
-Normal01 is spent and unapproved; its last observed
-[run 36950349853](https://github.com/hcoona/three/actions/runs/36950349853)
-was waiting for Environment approval. Its sealed independent reviewer could not
-be recovered after the session transfer. Preserve its request, budget, review,
-originals and ledger without substituting reviewer identity or claiming terminal
-failure. Normal02 binds a fresh independent reviewer and distinct operation
-evidence. This protected-envelope change invalidates normal01 freshness; it does
-not cancel the hosted run. Before sealing the time-limited normal02 request or
-dispatching, establish actual availability of the shared destination concurrency
-group. Request expiry alone does not end an Environment wait. Any required run
-retirement needs its own admitted disposition. Keep
-[PR #988](https://github.com/hcoona/three/pull/988) on hold until independently
-accepted GitHub normal completion.
+The protected v2 activation enables only `rubygems-bootstrap` against
+independently attested first-project-ready configuration. All other ten slots,
+GitHub first-project configuration and RubyGems normal Governance remain disabled.
+Keep the existing successor ledger and all eleven slot identities unchanged.
+The RubyGems configuration expiry is `2026-10-09T04:41:08.045005Z` and cannot be
+renewed by activation or subsequent reads. At the actual protected target,
+re-establish NBGV, reproducible original builds, negative controls and a clean
+consumer, then obtain fresh controls/project-absence evidence and independent
+exact bootstrap request admission. Establish actual workflow concurrency
+availability before reservation and dispatch. Current-run Qualification,
+Approval, exact remote original/consumer and independent terminal audit remain
+mandatory. Activation does not spend a slot or establish RubyGems publication.
+
+[PR #988](https://github.com/hcoona/three/pull/988) is delivered at
+`bd6ef815aea9e4cf1496a924462339b89a0158e9`, with accepted
+[main CI](https://github.com/hcoona/three/actions/runs/36965391900) and
+[CodeQL](https://github.com/hcoona/three/actions/runs/36965391892).
+Its owners-response Location rejection preserves the RubyGems absence gate;
+source delivery does not itself establish current project absence.
 
 The [owner disposition](https://github.com/hcoona/three/issues/954#issuecomment-5936150680)
 permits the consumed second bootstrap and read-only journey checks without a
 cumulative ceiling. Each read invocation remains bounded and cannot renew the
-original configuration expiry `2026-10-08T03:39:53.109710Z`. The historical
+original GitHub configuration expiry `2026-10-08T03:39:53.109710Z`. The historical
 [first-project attestation](https://github.com/hcoona/three/issues/954#issuecomment-5925550208)
 and old source/protocol observations remain historical; they cannot attest the
 new transport/profile or package access. Use unchanged admitted trust bytes and
@@ -100,15 +102,19 @@ GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without
 requiring duplicate/race probes or inheriting another registry's responses.
 
-The owner confirmed control of RubyGems.org account `Raffle2282`; a pending
-publisher has not been configured. Official source documentation supports new
-gems through pending publishers, without prior manual upload. Account control,
-configured tuples and actual package ownership are distinct facts. Carry the
-confirmed account forward; prepare concrete configuration before asking for
-unavailable account-side action. Current-run Approval and independent audits
-remain required, but routine stage permission has already been delegated.
-This design entry is not a completion or runtime-support claim. Other completed
-language campaigns remain closed.
+The owner confirmed control of RubyGems.org account `Raffle2282` and reports
+two existing pending publisher tuples for the bootstrap and normal workflows.
+Carry these facts forward without repeated account confirmation or publisher
+recreation. The bootstrap tuple supports the first-project path; the pending
+normal tuple does not establish its conversion to an existing-gem association.
+After bootstrap, independently observe actual gem ownership and both
+required publisher associations before ready normal Governance and a normal
+request. Official documentation's pending-publisher support, account control,
+registration and actual package ownership remain distinct evidence.
+Current-run Approval and independent audits remain required; routine stage
+permission has already been delegated.
+This activation is not a RubyGems completion or runtime-support claim. Other
+completed language campaigns remain closed.
 
 ## Starting a New Session
 

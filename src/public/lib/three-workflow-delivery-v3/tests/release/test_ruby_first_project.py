@@ -281,7 +281,7 @@ def _require_modeled_bootstrap_join(envelope, config, slot, now):
     inspected.require_request(request, now, before_dispatch=True)
 
 
-def test_shipped_github_normal_carrier_joins_current_protocol_and_governance():
+def test_shipped_rubygems_bootstrap_joins_protocol_and_configuration():
     """Retained-time joins test shipped policy, not live operation readiness."""
     envelope = RubyOperationEnvelope(
         (
@@ -290,7 +290,8 @@ def test_shipped_github_normal_carrier_joins_current_protocol_and_governance():
             / "hcoona-release-smoke-ruby.json"
         ).read_bytes()
     )
-    selected = envelope.document["slots"]["github-packages-normal02"]
+    slot = "rubygems-bootstrap"
+    selected = envelope.document["slots"][slot]
     protocol = ruby_digest(
         (
             ROOT
@@ -300,26 +301,25 @@ def test_shipped_github_normal_carrier_joins_current_protocol_and_governance():
     )
     assert selected["protocol-digest"] == protocol
     content = (ROOT / selected["binding"]["configuration-path"]).read_bytes()
-    document = parse_canonical_json(content)
+    config = RubyBootstrapConfiguration(RubyRegistry("rubygems"), content)
+    document = config.document
+    assert document["protocol-digest"] == protocol
+    assert selected["configuration-digest"] == config.digest
     inspected = datetime.fromisoformat(document["inspected-at"])
-    # TARGET is modeled provenance; actual protected delivery is audited apart.
-    governance = RubyGovernance(
-        RubyRegistry("github-packages"), content, TARGET, inspected
-    )
-    assert selected["configuration-digest"] == governance.digest
     start = datetime.fromisoformat(selected["not-before"])
     expires = datetime.fromisoformat(selected["expires-at"])
-    governance_expires = datetime.fromisoformat(document["expires-at"])
+    configuration_expires = datetime.fromisoformat(document["expires-at"])
     now = max(start, inspected)
-    assert start <= now < expires <= governance_expires
-    assert inspected <= now < governance_expires
+    assert start <= now < expires <= configuration_expires
+    assert inspected <= now < configuration_expires
     assert expires <= start + timedelta(days=7)
-    assert governance_expires <= inspected + timedelta(days=7)
-    assert governance_expires <= datetime.fromisoformat(
-        "2026-10-08T03:39:53.109710Z"
+    assert configuration_expires <= inspected + timedelta(days=7)
+    assert configuration_expires <= datetime.fromisoformat(
+        "2026-10-09T04:41:08.045005Z"
     )
-    assert envelope.enabled_slot("github-packages-normal02", now) == selected
-    governance.require_live(now)
+    assert envelope.enabled_slot(slot, now) == selected
+    config.require_current(now)
+    _require_modeled_bootstrap_join(envelope, config, slot, now)
 
 
 def test_successor_inspection_rejects_coherent_other_protocol():
@@ -338,10 +338,10 @@ def test_successor_inspection_rejects_coherent_other_protocol():
 
 
 @pytest.mark.parametrize("destination", ["github-packages", "rubygems"])
-def test_shipped_normal_activation_preserves_destination_and_bootstrap_gates(
+def test_shipped_rubygems_bootstrap_preserves_destination_and_normal_gates(
     destination,
 ):
-    """Only GitHub normal is ready; all bootstrap carriers remain blocked."""
+    """RubyGems bootstrap readiness cannot enable normal publication."""
     registry = RubyRegistry(destination)
     control = ROOT / ".github/workflow-delivery"
     governance_bytes = (
@@ -373,7 +373,13 @@ def test_shipped_normal_activation_preserves_destination_and_bootstrap_gates(
         / f"hcoona-release-smoke-ruby-{destination}.json"
     ).read_bytes()
     config = RubyBootstrapConfiguration(registry, configuration_bytes)
-    assert config.document == blocked_ruby_bootstrap_configuration(registry)
     assert configuration_bytes == canonicalize(config.document)
-    with pytest.raises(ValueError, match="unavailable or stale"):
-        config.require_current(NOW)
+    if destination == "github-packages":
+        assert config.document == blocked_ruby_bootstrap_configuration(registry)
+        with pytest.raises(ValueError, match="unavailable or stale"):
+            config.require_current(NOW)
+    else:
+        assert config.document["state"] == "first-project-ready"
+        config.require_current(
+            datetime.fromisoformat(config.document["inspected-at"])
+        )

@@ -225,9 +225,15 @@ still requires the actual complete downloaded gem bytes and witness. Offline
 replay verifies the screened continuation joins without reconstructing a signed
 URL or claiming to recover its discarded signature. Corrected source/profile,
 evidence replay and finite accounting were protected-delivered before normal
-activation. Only `github-packages-normal02` is enabled against independently
-attested ready Governance; exact-target request admission and normal completion
-remain separate gates.
+activation. GitHub normal02 now has
+[independently accepted destination completion](https://github.com/hcoona/three/issues/954#issuecomment-5945688860)
+and that destination is stopped. The activation enables only
+`rubygems-bootstrap` against independently attested first-project-ready
+configuration, expiring at `2026-10-09T04:41:08.045005Z`. All other slots remain
+null and RubyGems normal Governance remains blocked. Preserve the existing
+successor ledger, failed GitHub bootstraps, spent cancelled normal01 and all
+original evidence. Actual-target native qualification, fresh project/control
+inspection and independent exact-request admission remain separate gates.
 
 RubyGems.org uses the documented version inventory and exact-version/platform
 API, then an admitted HTTPS gem download origin. Check native name, version,
@@ -264,10 +270,13 @@ available. Non-action jobs have no OIDC or package-write permissions.
 
 The bootstrap uses a distinct stable workflow
 `workflow-delivery-v3-ruby-bootstrap.yml` and the selected destination's
-Environment. RubyGems.org therefore needs a distinct pending publisher tuple
-for this workflow and a normal publisher tuple for
-`workflow-delivery-v3-ruby-smoke.yml` after creation. The controlled account is
-`Raffle2282`; owner confirmation establishes account control only. GitHub's
+Environment. RubyGems.org requires a distinct bootstrap publisher tuple and a
+normal tuple for `workflow-delivery-v3-ruby-smoke.yml`. The owner reports both
+pending tuples already configured under controlled account `Raffle2282`;
+preserve them without recreation or repeated account confirmation. Pending
+registration does not prove actual gem ownership or an existing-gem normal
+publisher association. Observe those facts after bootstrap before
+normal admission. GitHub's
 bootstrap creates only the selected associated gem. Bootstrap never uses
 normal ready Governance to pretend the resource already exists.
 

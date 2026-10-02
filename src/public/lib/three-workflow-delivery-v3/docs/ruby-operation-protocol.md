@@ -20,20 +20,22 @@ are implemented. The hosted bootstrap/normal caller and its phase, job and maint
 budgets are implemented below. The external caller contract fixes actual-run,
 artifact and approval budgets. Concrete callers still need their exact
 independently reviewed source, launch and before/after plans.
-GitHub normal Governance is ready and only `github-packages-normal02` is enabled.
-The other ten operation slots, both first-project configuration carriers and
-RubyGems normal Governance remain disabled. Both GitHub bootstrap slots are
-spent; their historical evidence and the successor ledger remain unchanged.
-Normal01 remains spent and unapproved with its sealed evidence preserved. Its
-last observed hosted run was waiting; disabling its slot does not terminate that
-run or establish failure. Normal02 requires a fresh independent reviewer and
-distinct evidence directories within the existing campaign. Establish actual
-shared workflow concurrency availability before sealing its time-limited request
-or dispatching. Local expiry is not hosted termination; any required retirement
-of the prior run needs a separately admitted disposition.
-The enabled normal slot still requires actual protected-target qualification,
-fresh predispatch controls and independent exact-request admission. No account,
-registry, OIDC or dispatch effect follows from source or protocol delivery alone.
+GitHub normal02 [run 36963838994](https://github.com/hcoona/three/actions/runs/36963838994)
+has [independently accepted destination completion](https://github.com/hcoona/three/issues/954#issuecomment-5945688860).
+That destination is stopped. Preserve both failed GitHub bootstrap outcomes,
+spent unapproved cancelled normal01, completed normal02 and all original evidence
+and reservations. Historical ready GitHub Governance does not reopen execution.
+
+The protected v2 activation enables only `rubygems-bootstrap` against
+independently attested first-project-ready configuration. All other ten slots,
+GitHub first-project configuration and RubyGems normal Governance remain disabled.
+The successor ledger and all eleven slot identities remain unchanged. RubyGems
+configuration expires at `2026-10-09T04:41:08.045005Z`; neither activation nor
+reads renew that ceiling. The enabled bootstrap still requires actual
+protected-target native qualification, fresh predispatch controls/project
+absence and independent exact-request admission. Establish actual workflow
+concurrency availability before reservation and dispatch. No account, registry,
+OIDC or dispatch effect follows from source or protocol delivery alone.
 
 GitHub Packages completion precedes RubyGems.org configuration/execution. Exact
 NBGV, reproducible original gems, current-run Qualification, Approval/Authorization
@@ -54,9 +56,12 @@ establishes the first project; it is not normal completion.
 | Account                 | `hcoona`, GitHub ID `712433`                    | Confirmed account `Raffle2282`                      |
 | Runtime publisher       | Repository job token                            | One short-lived gem/pending-publisher OIDC exchange |
 
-Account control is already confirmed. Actual project ownership and service
-registration still require observation. Do not collect credentials, repeat
-unchanged account confirmation, install secrets or export the local owner
+Account control is already confirmed. The owner reports both bootstrap and
+normal pending publisher tuples; preserve them without recreation. Pending
+registration is distinct from actual project ownership and post-bootstrap
+existing-gem publisher association, which still require observation. Do not
+collect credentials, repeat unchanged account confirmation, install secrets or
+export the local owner
 credential to Actions. Unsupported current credential capabilities stop the
 selected plan; no scope upgrade or static-token fallback is included.
 
@@ -587,8 +592,10 @@ Design acceptance alone does not enable the route. The corrected implementation
 was protected-delivered with atomic profile, transport, evidence replay, v2
 envelope partition, hosted phase claim and test updates, all eleven operation
 slots null and both normal Governance sources blocked. The subsequent normal
-activation enables only `github-packages-normal02` against independently attested
-ready GitHub Governance; the other ten slots remain null. Keep the existing v2
+activation enabled `github-packages-normal02` against independently attested
+ready GitHub Governance. That normal run is independently complete and the
+GitHub destination is stopped. The RubyGems activation enables only
+`rubygems-bootstrap`; all other ten slots remain null. Keep the existing v2
 successor ledger, eleven slot identities and spent reservations unchanged. No
 new ledger or successor is needed. Existing claim `maximum` remains joined to
 the exact request; new envelope/profile/request digests bind the new values.
@@ -599,22 +606,25 @@ The inactive delivery regenerated blocked carriers against current profile
 identities and replaced the spent GitHub first-project-ready carrier with its
 existing blocked form. Retain the old ready bytes/attestation privately and in
 Git as historical evidence; do not relabel its source revision, inspection or
-attestation as fresh. Both bootstrap configuration carriers and RubyGems normal
-Governance remain blocked. A blocked form supplies no renewed lifetime;
-the original absolute ceiling `2026-10-08T03:39:53.109710Z` still bounds subsequent
-GitHub admission.
+attestation as fresh. GitHub bootstrap configuration remains blocked and its
+original absolute ceiling `2026-10-08T03:39:53.109710Z` is not renewed. RubyGems
+normal Governance remains blocked; its distinct first-project-ready
+configuration retains the ceiling `2026-10-09T04:41:08.045005Z`. Neither record
+changes the completed GitHub destination or admits RubyGems normal operation.
 
-After protected implementation and exact checks, independently inspect current
-postcreation controls, package ownership and authenticated effective Actions
-access. A fresh independent normal attestation binds actual facts and current
-source/profile/protocol; only then may normal Governance and one remaining
-normal slot be protected-enabled. Both bootstrap slots remain null. New expiry
-cannot exceed the original ceiling. At actual protected normal target T,
-re-establish NBGV, reproducible original gem builds, negative controls and clean
-consumer, current package/settings evidence and exact request admission before
-one reservation/dispatch. Current Approval, exact remote original and independent
-terminal/consumer audit remain mandatory. The uploaded bootstrap gem/witness and
-old Approval do not qualify the new normal Attempt.
+The GitHub normal activation required protected implementation and exact checks,
+then independent inspection of current postcreation controls, package ownership
+and authenticated effective Actions access. A fresh independent normal
+attestation bound actual facts and current source/profile/protocol before ready
+normal Governance and one remaining normal slot were protected-enabled. Both
+GitHub bootstrap slots remained null and expiry could not exceed the original
+ceiling. Actual protected normal target T required fresh NBGV, reproducible
+original gem builds, negative controls and a clean consumer, current
+package/settings evidence and exact request admission before one reservation
+and dispatch. Current Approval, exact remote original and independent
+terminal/consumer audit were mandatory. The uploaded bootstrap gem/witness and
+old Approval did not qualify that normal Attempt. Its accepted completion does
+not authorize further GitHub operations.
 
 ## Single GitHub Bootstrap Successor
 
