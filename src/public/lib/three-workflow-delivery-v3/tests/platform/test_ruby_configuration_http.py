@@ -10,6 +10,10 @@ from http import HTTPStatus
 
 import pytest
 from three_workflow_delivery_v3._ruby_native import ruby_digest
+from three_workflow_delivery_v3.adapters.ruby_project import (
+    classify_rubygems_project,
+)
+from three_workflow_delivery_v3.adapters.ruby_registry import RubyHttpResponse
 from three_workflow_delivery_v3.canonical import (
     canonicalize,
     parse_canonical_json,
@@ -184,6 +188,7 @@ def _fake_https(  # noqa: PLR0913 - independent transport fixture axes
     *,
     body=b"{}",
     status=200,
+    content_type="application/json",
     headers=(),
     error=False,
     hostname="api.github.com",
@@ -197,7 +202,7 @@ def _fake_https(  # noqa: PLR0913 - independent transport fixture axes
             return dict(headers).get(name)
 
         def getheaders(self):
-            return [("Content-Type", "application/json"), *headers]
+            return [("Content-Type", content_type), *headers]
 
     class Connection:
         def __init__(self, actual_hostname, port, *, timeout, context):
@@ -399,17 +404,42 @@ def test_raw_header_and_chunk_trailer_limits_are_bounded():
         native.read(BODY_LIMIT + 1)
 
 
-def test_public_rubygems_owners_send_uses_registry_origin_without_credentials(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize(
+    ("status", "body", "content_type", "classification"),
+    [
+        (404, b"This rubygem could not be found.", "text/plain", "absent"),
+        (200, b"[]", "application/json", "present"),
+        (200, b'[{"handle":"fixture-owner"}]', "application/json", "present"),
+    ],
+)
+def test_public_rubygems_owners_send_uses_registry_origin_without_credentials(  # noqa: PLR0913, PLR0917 - direct project response cases
+    tmp_path, monkeypatch, status, body, content_type, classification
 ):
     """The allocated project read reaches RubyGems with only public headers."""
     log = tmp_path / "controlled-public-request.jsonl"
-    _fake_https(monkeypatch, log, hostname="rubygems.org", body=b"[]")
+    _fake_https(
+        monkeypatch,
+        log,
+        hostname="rubygems.org",
+        status=status,
+        body=body,
+        content_type=content_type,
+    )
     reserved, retained = [], []
     request = RubyConfigurationRequest("rubygems", "rubygems-project-owners")
     result = _transport(reserved, retained).send(request)
-    assert result.status == HTTPStatus.OK
+    assert result.status == status
     assert result.failure is None
+    assert result.body == body
+    assert result.header("content-type") == content_type
+    assert (
+        classify_rubygems_project(
+            RubyHttpResponse(
+                result.status, result.body, result.header("content-type")
+            )
+        )
+        == classification
+    )
     assert (
         result.document()["url"]
         == "https://rubygems.org/api/v1/gems/hcoona-release-smoke-ruby/owners.json"
@@ -428,6 +458,149 @@ def test_public_rubygems_owners_send_uses_registry_origin_without_credentials(
     ]
     assert reserved == [request]
     assert retained == [result]
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        (404, b"This rubygem could not be found.", "text/plain"),
+        (200, b"[]", "application/json"),
+    ],
+    ids=["absent", "present"],
+)
+@pytest.mark.parametrize(
+    "headers",
+    [
+        (("Location", "https://example.invalid/owners"),),
+        (("location", "https://example.invalid/owners"),),
+        (("lOcAtIoN", "https://example.invalid/owners"),),
+        (("Location", ""),),
+        (("Location", "not a URL"),),
+        (("Location", "https://example.invalid/" + TOKEN),),
+        (("Location", ""), ("location", "https://example.invalid/owners")),
+    ],
+    ids=[
+        "canonical",
+        "lower",
+        "mixed",
+        "empty",
+        "malformed",
+        "token",
+        "duplicate",
+    ],
+)
+def test_public_rubygems_owners_location_is_durable_sanitized_failure(
+    tmp_path, monkeypatch, capfd, headers, reply
+):
+    """An anomalous project reply spends once and cannot establish absence."""
+    selected = ledger(tmp_path / "ledger", "rubygems")
+    phase = selected.begin("initial-owners", now=datetime.now(UTC))
+    log = tmp_path / "requests.jsonl"
+    _fake_https(
+        monkeypatch,
+        log,
+        hostname="rubygems.org",
+        status=reply[0],
+        body=reply[1],
+        content_type=reply[2],
+        headers=headers,
+    )
+    reservations, retained = [], []
+
+    def reserve(request):
+        original = phase.spend(
+            request.method, request.path, request.body, now=datetime.now(UTC)
+        )
+        reservations.append(original)
+        assert (phase.directory / "01.request.json").read_bytes() == original
+        assert not log.exists()
+        return ruby_digest(original)
+
+    def retain(original):
+        retained.append(original)
+        assert len(log.read_text().splitlines()) == 1
+        phase.complete_send(
+            reservations[0],
+            canonicalize(original.document()),
+            successful=original.failure is None,
+            now=datetime.now(UTC),
+        )
+
+    transport = RubyConfigurationTransport(
+        TOKEN, deadline=phase.deadline, reserve=reserve, retain=retain
+    )
+    request = RubyConfigurationRequest("rubygems", "rubygems-project-owners")
+    result = transport.send(request)
+    assert result.failure == "transport"
+    assert result.status is None
+    assert result.body == b""
+    assert result.headers == ()
+    assert (
+        classify_rubygems_project(
+            RubyHttpResponse(
+                result.status, result.body, result.header("content-type")
+            )
+        )
+        == "unknown"
+    )
+    assert len(reservations) == 1
+    assert result.receipt == ruby_digest(reservations[0])
+    assert retained == [result]
+    evidence = (phase.directory / "01.evidence.json").read_bytes()
+    assert evidence == canonicalize(result.document())
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    assert calls == [
+        {
+            "method": "GET",
+            "path": request.path,
+            "body": None,
+            "headers": {
+                "Accept": "application/json",
+                "User-Agent": "three-workflow-delivery-v3",
+            },
+        }
+    ]
+    with pytest.raises(ValueError, match="failed"):
+        transport.send(request)
+    with pytest.raises(ValueError, match="failed"):
+        phase.finish(now=datetime.now(UTC))
+    assert len(log.read_text().splitlines()) == 1
+    assert not (phase.directory / "02.request.json").exists()
+    output = capfd.readouterr()
+    diagnostics = evidence.decode() + repr(result) + output.out + output.err
+    assert TOKEN not in diagnostics
+    for _, value in headers:
+        if value:
+            assert value not in diagnostics
+
+
+@pytest.mark.parametrize("destination", ["github-packages", "rubygems"])
+@pytest.mark.parametrize("status", [200, 302])
+def test_nonowners_configuration_location_preserves_original_without_following(
+    tmp_path, monkeypatch, destination, status
+):
+    """The owners guard does not change GitHub control response handling."""
+    log = tmp_path / "requests.jsonl"
+    _fake_https(
+        monkeypatch,
+        log,
+        status=status,
+        headers=(("Location", "https://example.invalid/" + TOKEN),),
+    )
+    reserved, retained = [], []
+    request = RubyConfigurationRequest(destination, "principal")
+    result = _transport(reserved, retained).send(request)
+    assert result.status == status
+    assert result.failure is None
+    assert result.body == b"{}"
+    assert result.headers == (("content-type", "application/json"),)
+    assert reserved == [request]
+    assert retained == [result]
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    assert len(calls) == 1
+    assert calls[0]["path"] == "/user"
+    assert calls[0]["headers"]["Authorization"] == "Bearer " + TOKEN
+    assert TOKEN not in str(result.document())
 
 
 @pytest.mark.parametrize("valid_owner", [False, True])

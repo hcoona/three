@@ -323,7 +323,7 @@ class _Response(http.client.HTTPResponse):
             setattr(self, "fp", original)  # noqa: B010 - restore stdlib internal file protocol
 
 
-def _perform(  # noqa: C901 - one TLS send and sanitized response boundary
+def _perform(  # noqa: C901, PLR0912 - one TLS send and sanitized response boundary
     request: RubyConfigurationRequest, token: str, output: Path
 ) -> None:
     """Execute only in the supervised child; never retain exception strings."""
@@ -365,6 +365,8 @@ def _perform(  # noqa: C901 - one TLS send and sanitized response boundary
         selected: dict[str, str] = {}
         for original_key, value in response.getheaders():
             key = original_key.lower()
+            if request.role == "rubygems-project-owners" and key == "location":
+                _reject("RubyGems owners response cannot redirect")
             if key in _HEADERS:
                 if key in selected:
                     _reject("Repeated retained Ruby configuration header")
