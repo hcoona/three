@@ -290,7 +290,7 @@ def test_shipped_github_normal_carrier_joins_current_protocol_and_governance():
             / "hcoona-release-smoke-ruby.json"
         ).read_bytes()
     )
-    selected = envelope.document["slots"]["github-packages-normal01"]
+    selected = envelope.document["slots"]["github-packages-normal02"]
     protocol = ruby_digest(
         (
             ROOT
@@ -318,7 +318,7 @@ def test_shipped_github_normal_carrier_joins_current_protocol_and_governance():
     assert governance_expires <= datetime.fromisoformat(
         "2026-10-08T03:39:53.109710Z"
     )
-    assert envelope.enabled_slot("github-packages-normal01", now) == selected
+    assert envelope.enabled_slot("github-packages-normal02", now) == selected
     governance.require_live(now)
 
 

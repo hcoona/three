@@ -36,7 +36,7 @@ The minimal [Ruby smoke](../../hcoona-release-smoke-ruby/README.md) and internal
 Provider/Build/inspection/consumer foundation are present. The closed Ruby Model,
 single-gem Artifact and separate CI/Release qualification retain current-purpose
 and current-run bindings. GitHub normal Governance is ready for the single
-`github-packages-normal01` slot; RubyGems Governance remains blocked.
+`github-packages-normal02` slot; RubyGems Governance remains blocked.
 Bounded native registry readers and one-shot HTTP writers are implemented, with
 Ruby publication snapshots, current-run approval, durable mutation markers and
 strict Result/Outcome replay. The Ruby PR workflow and CI-only CLI connect
@@ -56,7 +56,7 @@ reuse Approval or enable another bootstrap.
 The [bounded download correction](./ruby-operation-protocol.md#github-gem-download-continuation)
 is implemented with one explicit credential-free GitHub storage continuation,
 original/screened evidence and strict offline replay within 32 direct sends.
-Only `github-packages-normal01` is enabled, joined to ready GitHub normal
+Only `github-packages-normal02` is enabled, joined to ready GitHub normal
 Governance and fresh independent package/access/control attestation. The other
 ten slots, RubyGems normal Governance and both first-project configuration
 carriers remain disabled. The old ready GitHub bootstrap configuration and both
@@ -66,10 +66,24 @@ establishes exact downloaded original bytes, not normal completion.
 After this activation's protected delivery and exact checks, use its actual
 normal target T for new NBGV, reproducible builds, negative controls and a clean
 consumer. Fresh before-request package/controls evidence and independent exact
-request admission must precede the one normal01 reservation and dispatch.
+request admission must precede the one normal02 reservation and dispatch.
 Current-run Qualification, Approval, remote original/consumer and independent
 terminal audit remain mandatory; activation does not spend a slot or complete
-an Attempt. Three further GitHub normal slots remain disabled.
+an Attempt. Two further unused GitHub normal slots remain disabled.
+
+Normal01 is spent and unapproved; its last observed
+[run 36950349853](https://github.com/hcoona/three/actions/runs/36950349853)
+was waiting for Environment approval. Its sealed independent reviewer could not
+be recovered after the session transfer. Preserve its request, budget, review,
+originals and ledger without substituting reviewer identity or claiming terminal
+failure. Normal02 binds a fresh independent reviewer and distinct operation
+evidence. This protected-envelope change invalidates normal01 freshness; it does
+not cancel the hosted run. Before sealing the time-limited normal02 request or
+dispatching, establish actual availability of the shared destination concurrency
+group. Request expiry alone does not end an Environment wait. Any required run
+retirement needs its own admitted disposition. Keep
+[PR #988](https://github.com/hcoona/three/pull/988) on hold until independently
+accepted GitHub normal completion.
 
 The [owner disposition](https://github.com/hcoona/three/issues/954#issuecomment-5936150680)
 permits the consumed second bootstrap and read-only journey checks without a

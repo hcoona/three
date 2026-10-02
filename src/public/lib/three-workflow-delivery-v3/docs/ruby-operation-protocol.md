@@ -20,10 +20,17 @@ are implemented. The hosted bootstrap/normal caller and its phase, job and maint
 budgets are implemented below. The external caller contract fixes actual-run,
 artifact and approval budgets. Concrete callers still need their exact
 independently reviewed source, launch and before/after plans.
-GitHub normal Governance is ready and only `github-packages-normal01` is enabled.
+GitHub normal Governance is ready and only `github-packages-normal02` is enabled.
 The other ten operation slots, both first-project configuration carriers and
 RubyGems normal Governance remain disabled. Both GitHub bootstrap slots are
 spent; their historical evidence and the successor ledger remain unchanged.
+Normal01 remains spent and unapproved with its sealed evidence preserved. Its
+last observed hosted run was waiting; disabling its slot does not terminate that
+run or establish failure. Normal02 requires a fresh independent reviewer and
+distinct evidence directories within the existing campaign. Establish actual
+shared workflow concurrency availability before sealing its time-limited request
+or dispatching. Local expiry is not hosted termination; any required retirement
+of the prior run needs a separately admitted disposition.
 The enabled normal slot still requires actual protected-target qualification,
 fresh predispatch controls and independent exact-request admission. No account,
 registry, OIDC or dispatch effect follows from source or protocol delivery alone.
@@ -580,7 +587,7 @@ Design acceptance alone does not enable the route. The corrected implementation
 was protected-delivered with atomic profile, transport, evidence replay, v2
 envelope partition, hosted phase claim and test updates, all eleven operation
 slots null and both normal Governance sources blocked. The subsequent normal
-activation enables only `github-packages-normal01` against independently attested
+activation enables only `github-packages-normal02` against independently attested
 ready GitHub Governance; the other ten slots remain null. Keep the existing v2
 successor ledger, eleven slot identities and spent reservations unchanged. No
 new ledger or successor is needed. Existing claim `maximum` remains joined to

@@ -225,7 +225,7 @@ still requires the actual complete downloaded gem bytes and witness. Offline
 replay verifies the screened continuation joins without reconstructing a signed
 URL or claiming to recover its discarded signature. Corrected source/profile,
 evidence replay and finite accounting were protected-delivered before normal
-activation. Only `github-packages-normal01` is enabled against independently
+activation. Only `github-packages-normal02` is enabled against independently
 attested ready Governance; exact-target request admission and normal completion
 remain separate gates.
 

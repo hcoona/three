@@ -343,7 +343,7 @@ bootstrap outcomes remain failed; neither has accepted remote consumption or
 normal completion. Preserve their original evidence and reservations without
 rerun, refund, old Approval reuse or another bootstrap.
 
-The protected v2 envelope enables only `github-packages-normal01`, bound to
+The protected v2 envelope enables only `github-packages-normal02`, bound to
 ready GitHub normal Governance and the current download profile. The other ten
 slots, both first-project configuration carriers and RubyGems normal Governance
 remain disabled. Independent current package/control inspection and the
@@ -351,7 +351,10 @@ remain disabled. Independent current package/control inspection and the
 establish the reviewed configuration and original-byte download; they do not
 establish normal publication or remote-consumer completion. At the actual
 protected activation target, re-establish native qualification and fresh request
-admission before one reservation and dispatch. The original configuration expiry
+admission before one reservation and dispatch. Normal01 remains spent and
+unapproved, with its original sealed evidence preserved. Establish actual shared
+workflow concurrency availability before sealing or dispatching normal02; a
+local request expiry does not terminate the old hosted run. The original configuration expiry
 remains unchanged. Follow the
 [handoff](docs/agent-handoff.md) and
 [operation protocol](docs/ruby-operation-protocol.md#github-gem-download-continuation)
