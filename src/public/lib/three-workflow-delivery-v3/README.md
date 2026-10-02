@@ -349,18 +349,22 @@ and [destination completion](https://github.com/hcoona/three/issues/954#issuecom
 The GitHub destination is stopped. Normal01 remains spent, unapproved and
 cancelled; preserve all original evidence and reservations.
 
-The protected v2 activation enables only `rubygems-bootstrap`, joined
-to independently attested RubyGems first-project-ready configuration. The other
-ten slots, GitHub first-project configuration and RubyGems normal Governance
-remain disabled; historical ready GitHub Governance does not reopen its completed
-destination. Keep the existing successor ledger and all eleven slot identities.
-RubyGems configuration expires at `2026-10-09T04:41:08.045005Z`; activation cannot
-renew it or the original GitHub configuration lifetime. At the actual protected
-activation target, re-establish native qualification, fresh controls and project
-absence, then independently admit the exact bootstrap request before reservation
-and dispatch. Preserve both owner-reported pending publishers. After bootstrap, observe existing-gem ownership and
-publisher association before RubyGems normal admission. Follow the
-[handoff](docs/agent-handoff.md) and
+The protected v2 activation enables only `rubygems-normal01` against
+independently attested ready RubyGems normal Governance. All other ten slots
+remain null, and both spent first-project configuration carriers are blocked.
+Preserve the existing successor ledger and all eleven slot identities.
+RubyGems configuration expires at `2026-10-09T04:41:08.045005Z`; activation and
+reads cannot renew it. The bootstrap remains spent, failed and mutated:
+its upload returned HTTP 200, but six visibility reads returned HTTP 404 and
+its remote consumer did not run. The
+[independent terminal and ownership audit](https://github.com/hcoona/three/issues/954#issuecomment-5946865237)
+retains that outcome. Later sole ownership and both owner-reported existing-gem
+publisher associations establish postcreation facts without changing the failure.
+Normal publication still requires actual protected-target native qualification,
+fresh controls and independent exact-request admission, current-run Approval,
+exact remote original bytes and independent terminal/consumer acceptance.
+Establish actual workflow concurrency availability before reservation and dispatch.
+Follow the [handoff](docs/agent-handoff.md) and
 [operation protocol](docs/ruby-operation-protocol.md) for the remaining gates.
 Protected activation and implemented workflows do not establish publication success. Strict data
 validators bind a future post-merge request, independent admission and durable
@@ -377,9 +381,7 @@ bounded configuration and first-project admission. Candidate strict bootstrap
 configuration/inspection/review validators and a separate RubyGems project
 observer support that boundary; screened facts do not prove raw GitHub owner
 inventory or reviewer provenance. Configuration collectors, supervised transport
-and durable phase/send counters are implemented. Concrete external caller launch,
-exact-request admission and actual RubyGems destination acceptance remain pending.
-The RubyGems bootstrap activation does not establish publication or
-normal completion. The [handoff](docs/agent-handoff.md#ruby-delivery-entry) routes the
+and durable phase/send counters are implemented. Actual RubyGems normal request admission and destination acceptance remain
+pending. The normal activation does not establish publication or completion. The [handoff](docs/agent-handoff.md#ruby-delivery-entry) routes the
 accepted inspection, finite configuration lifetime and remaining execution gates.
 Local controlled transports do not establish deployed registry behavior.

@@ -36,8 +36,8 @@ The minimal [Ruby smoke](../../hcoona-release-smoke-ruby/README.md) and internal
 Provider/Build/inspection/consumer foundation are present. The closed Ruby Model,
 single-gem Artifact and separate CI/Release qualification retain current-purpose
 and current-run bindings. GitHub normal completion is independently accepted;
-the RubyGems bootstrap activation leaves RubyGems normal Governance
-blocked.
+RubyGems normal01 is activated against independently attested postcreation
+configuration.
 Bounded native registry readers and one-shot HTTP writers are implemented, with
 Ruby publication snapshots, current-run approval, durable mutation markers and
 strict Result/Outcome replay. The Ruby PR workflow and CI-only CLI connect
@@ -67,18 +67,21 @@ refunds a slot or permits reuse of old Approval. Both failed bootstrap outcomes
 remain failed. Historical ready GitHub Governance supplies no further operation
 grant.
 
-The protected v2 activation enables only `rubygems-bootstrap` against
-independently attested first-project-ready configuration. All other ten slots,
-GitHub first-project configuration and RubyGems normal Governance remain disabled.
-Keep the existing successor ledger and all eleven slot identities unchanged.
-The RubyGems configuration expiry is `2026-10-09T04:41:08.045005Z` and cannot be
-renewed by activation or subsequent reads. At the actual protected target,
-re-establish NBGV, reproducible original builds, negative controls and a clean
-consumer, then obtain fresh controls/project-absence evidence and independent
-exact bootstrap request admission. Establish actual workflow concurrency
-availability before reservation and dispatch. Current-run Qualification,
-Approval, exact remote original/consumer and independent terminal audit remain
-mandatory. Activation does not spend a slot or establish RubyGems publication.
+The protected v2 activation enables only `rubygems-normal01` against
+independently attested ready RubyGems normal Governance. All other ten slots
+remain null, and both spent first-project configuration carriers are blocked.
+Preserve the existing successor ledger and all eleven slot identities.
+RubyGems configuration expires at `2026-10-09T04:41:08.045005Z`; activation and
+reads cannot renew it. The bootstrap remains spent, failed and mutated:
+its upload returned HTTP 200, but six visibility reads returned HTTP 404 and
+its remote consumer did not run. The
+[independent terminal and ownership audit](https://github.com/hcoona/three/issues/954#issuecomment-5946865237)
+retains that outcome. Later sole ownership and both owner-reported existing-gem
+publisher associations establish postcreation facts without changing the failure.
+Normal publication still requires actual protected-target native qualification,
+fresh controls and independent exact-request admission, current-run Approval,
+exact remote original bytes and independent terminal/consumer acceptance.
+Establish actual workflow concurrency availability before reservation and dispatch.
 
 [PR #988](https://github.com/hcoona/three/pull/988) is delivered at
 `bd6ef815aea9e4cf1496a924462339b89a0158e9`, with accepted
@@ -102,18 +105,20 @@ GitHub Packages precedes RubyGems.org; NBGV and original-byte
 reproducibility are prerequisites. Use bounded platform reliance without
 requiring duplicate/race probes or inheriting another registry's responses.
 
-The owner confirmed control of RubyGems.org account `Raffle2282` and reports
-two existing pending publisher tuples for the bootstrap and normal workflows.
-Carry these facts forward without repeated account confirmation or publisher
-recreation. The bootstrap tuple supports the first-project path; the pending
-normal tuple does not establish its conversion to an existing-gem association.
-After bootstrap, independently observe actual gem ownership and both
-required publisher associations before ready normal Governance and a normal
-request. Official documentation's pending-publisher support, account control,
-registration and actual package ownership remain distinct evidence.
+The owner confirmed control of RubyGems.org account `Raffle2282`; the actual
+postcreation owners response establishes sole owner ID `238631`. Both exact
+existing-gem bootstrap and normal publisher associations are now owner-confirmed.
+The original two pending submissions remain spent. The owner explicitly created
+one supplemental existing-gem normal association after reporting only bootstrap
+had converted. Preserve both current associations and that bounded completed
+owner disposition; do not request unchanged account confirmation or recreate
+publishers. The other pending entry's lifecycle is unverified and supplies no
+normal authority. The account report is owner-authenticated UI evidence, not an
+independently replayed browser observation. Its acceptance does not renew the
+original configuration expiry or establish normal publication completion.
 Current-run Approval and independent audits remain required; routine stage
 permission has already been delegated.
-This activation is not a RubyGems completion or runtime-support claim. Other
+This normal activation is not a RubyGems completion or runtime-support claim. Other
 completed language campaigns remain closed.
 
 ## Starting a New Session

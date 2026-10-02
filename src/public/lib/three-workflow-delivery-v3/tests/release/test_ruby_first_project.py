@@ -16,7 +16,6 @@ from three_workflow_delivery_v3.release.ruby_configuration import (
 )
 from three_workflow_delivery_v3.release.ruby_governance import (
     RubyGovernance,
-    blocked_ruby_governance,
 )
 from three_workflow_delivery_v3.release.ruby_operation import (
     RubyOperationEnvelope,
@@ -281,7 +280,7 @@ def _require_modeled_bootstrap_join(envelope, config, slot, now):
     inspected.require_request(request, now, before_dispatch=True)
 
 
-def test_shipped_rubygems_bootstrap_joins_protocol_and_configuration():
+def test_shipped_rubygems_normal_joins_protocol_and_governance():
     """Retained-time joins test shipped policy, not live operation readiness."""
     envelope = RubyOperationEnvelope(
         (
@@ -290,7 +289,7 @@ def test_shipped_rubygems_bootstrap_joins_protocol_and_configuration():
             / "hcoona-release-smoke-ruby.json"
         ).read_bytes()
     )
-    slot = "rubygems-bootstrap"
+    slot = "rubygems-normal01"
     selected = envelope.document["slots"][slot]
     protocol = ruby_digest(
         (
@@ -301,11 +300,12 @@ def test_shipped_rubygems_bootstrap_joins_protocol_and_configuration():
     )
     assert selected["protocol-digest"] == protocol
     content = (ROOT / selected["binding"]["configuration-path"]).read_bytes()
-    config = RubyBootstrapConfiguration(RubyRegistry("rubygems"), content)
-    document = config.document
-    assert document["protocol-digest"] == protocol
-    assert selected["configuration-digest"] == config.digest
+    document = parse_canonical_json(content)
     inspected = datetime.fromisoformat(document["inspected-at"])
+    governance = RubyGovernance(
+        RubyRegistry("rubygems"), content, TARGET, inspected
+    )
+    assert selected["configuration-digest"] == governance.digest
     start = datetime.fromisoformat(selected["not-before"])
     expires = datetime.fromisoformat(selected["expires-at"])
     configuration_expires = datetime.fromisoformat(document["expires-at"])
@@ -318,8 +318,8 @@ def test_shipped_rubygems_bootstrap_joins_protocol_and_configuration():
         "2026-10-09T04:41:08.045005Z"
     )
     assert envelope.enabled_slot(slot, now) == selected
-    config.require_current(now)
-    _require_modeled_bootstrap_join(envelope, config, slot, now)
+    governance.require_live(now)
+    assert selected["binding"]["kind"] == "normal"
 
 
 def test_successor_inspection_rejects_coherent_other_protocol():
@@ -338,30 +338,19 @@ def test_successor_inspection_rejects_coherent_other_protocol():
 
 
 @pytest.mark.parametrize("destination", ["github-packages", "rubygems"])
-def test_shipped_rubygems_bootstrap_preserves_destination_and_normal_gates(
-    destination,
-):
-    """RubyGems bootstrap readiness cannot enable normal publication."""
+def test_shipped_normal_governance_preserves_blocked_bootstrap(destination):
+    """Ready normal configuration never revives a spent bootstrap."""
     registry = RubyRegistry(destination)
     control = ROOT / ".github/workflow-delivery"
     governance_bytes = (
         control / "governance" / f"hcoona-release-smoke-ruby-{destination}.json"
     ).read_bytes()
     document = parse_canonical_json(governance_bytes)
-    observed = (
-        datetime.fromisoformat(document["inspected-at"])
-        if destination == "github-packages"
-        else NOW
-    )
+    observed = datetime.fromisoformat(document["inspected-at"])
     governance = RubyGovernance(registry, governance_bytes, TARGET, observed)
-    if destination == "github-packages":
-        assert governance.document["live_enabled"] is True
-        assert governance.document["state"] == "ready"
-        governance.require_live(observed)
-    else:
-        assert governance.document == blocked_ruby_governance(registry)
-        with pytest.raises(ValueError):  # noqa: PT011 - blocked ready state
-            governance.require_live(observed)
+    assert governance.document["live_enabled"] is True
+    assert governance.document["state"] == "ready"
+    governance.require_live(observed)
     assert governance_bytes == canonicalize(governance.document)
     assert (
         governance.document["operation-profile-digest"]
@@ -374,12 +363,6 @@ def test_shipped_rubygems_bootstrap_preserves_destination_and_normal_gates(
     ).read_bytes()
     config = RubyBootstrapConfiguration(registry, configuration_bytes)
     assert configuration_bytes == canonicalize(config.document)
-    if destination == "github-packages":
-        assert config.document == blocked_ruby_bootstrap_configuration(registry)
-        with pytest.raises(ValueError, match="unavailable or stale"):
-            config.require_current(NOW)
-    else:
-        assert config.document["state"] == "first-project-ready"
-        config.require_current(
-            datetime.fromisoformat(config.document["inspected-at"])
-        )
+    assert config.document == blocked_ruby_bootstrap_configuration(registry)
+    with pytest.raises(ValueError, match="unavailable or stale"):
+        config.require_current(NOW)
