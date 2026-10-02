@@ -4,13 +4,20 @@ import shutil
 from copy import deepcopy
 from dataclasses import replace
 from datetime import timedelta
+from http import HTTPStatus
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from three_workflow_delivery_v3 import ruby_operation_cli as cli
 from three_workflow_delivery_v3 import ruby_operation_host as host
 from three_workflow_delivery_v3 import ruby_operation_runtime as runtime
-from three_workflow_delivery_v3.adapters.ruby_registry import RubyHttpResponse
+from three_workflow_delivery_v3.adapters.ruby_registry import (
+    RubyHttpResponse,
+    RubyRegistryReader,
+    RubyRequestBudget,
+)
+from three_workflow_delivery_v3.adapters.rubygems import RubyRegistry
 from three_workflow_delivery_v3.canonical import canonicalize, parse_json_strict
 from three_workflow_delivery_v3.repository.node_provider import (
     CheckoutMaterialization,
@@ -28,6 +35,7 @@ from .ruby_fixtures import ROOT, binding, commit, git, repository
 from .ruby_hosted_fixtures import hosted_case, reseal_normal
 from .ruby_registry_fixtures import (
     ASSERTION,
+    WRITE_TOKEN,
     ScriptedTransport,
     json_response,
     native_index,
@@ -218,7 +226,7 @@ def reject_cancelled_or_missing_result(
 
 
 @pytest.mark.parametrize("action", [True, False])
-def test_normal_hosted_action_or_exact_satisfied(  # noqa: PLR0915 - complete cross-job journey
+def test_normal_hosted_action_or_exact_satisfied(  # noqa: C901, PLR0915 - complete cross-job journey
     normal_case, monkeypatch, action
 ):
     """Strict records drive distinct action and exact-satisfied outcomes."""
@@ -377,6 +385,16 @@ def test_normal_hosted_action_or_exact_satisfied(  # noqa: PLR0915 - complete cr
             RubyOperationRecords(case.inputs()).normal_result().result
             == "published"
         )
+        receipt_path = case.directory / "exchange-receipt.json"
+        if native.registry.name == "rubygems":
+            receipt = parse_json_strict(receipt_path.read_bytes())
+            assert receipt["result"] == "accepted"
+            assert receipt["response-received"] is True
+            assert receipt["http-status"] == HTTPStatus.CREATED
+            assert WRITE_TOKEN not in str(receipt)
+            assert ASSERTION not in str(receipt)
+        else:
+            assert not receipt_path.exists()
         reject_foreign_edge(
             case,
             monkeypatch,
@@ -447,3 +465,76 @@ def test_normal_hosted_action_or_exact_satisfied(  # noqa: PLR0915 - complete cr
     assert remote["independent-audit"] is False
     assert remote["outcome-reference"] == case.references["outcome"]
     assert events.count("authority") == (6 if action else 3)
+
+
+@pytest.mark.parametrize("received", [False, True])
+def test_normal_execute_exchange_failure_retains_receipt_in_audit(
+    tmp_path, monkeypatch, received
+):
+    """Actual CLI finally/audit retains failure without an upload."""
+    failure = OSError("private transport failure " + WRITE_TOKEN)
+    response = (
+        json_response({**token_document(), "gem": None}, 201)
+        if received
+        else failure
+    )
+    transport = ScriptedTransport(response)
+    registry = RubyRegistry("rubygems")
+    reader = RubyRegistryReader(registry, RubyRequestBudget(transport))
+    inputs = Mock(directory=tmp_path)
+    inputs.reference.return_value.to_document.return_value = {
+        "test-marker": True
+    }
+    operation = Mock(bootstrap=False, registry=registry)
+    records = Mock(inputs=inputs, operation=operation)
+    guard = Mock(return_value={"test-authority": True})
+    monkeypatch.setenv("GITHUB_TOKEN", "test-github-token")
+    monkeypatch.setenv("GITHUB_JOB", "publish-ruby-rubygems")
+    monkeypatch.setattr(
+        cli,
+        "PhaseReservation",
+        lambda *_: SimpleNamespace(deadline=CURRENT + timedelta(minutes=1)),
+    )
+    monkeypatch.setattr(cli, "registry_reader", lambda *_: reader)
+    monkeypatch.setattr(cli, "HostedRubyGitHub", lambda *_: object())
+    monkeypatch.setattr(cli, "RubyOperationHttpsTransport", lambda *_: object())
+    monkeypatch.setattr(cli, "authority_guard", lambda *_: guard)
+    monkeypatch.setattr(cli, "obtain_ruby_oidc_assertion", lambda *_: ASSERTION)
+    monkeypatch.setattr(cli, "now", lambda: CURRENT)
+    output = tmp_path / "result.json"
+    with pytest.raises(ValueError if received else OSError) as caught:
+        cli._execute(records, output)  # noqa: SLF001 - isolate execute/audit boundary
+    if not received:
+        assert caught.value is failure
+    receipt_path = tmp_path / "exchange-receipt.json"
+    receipt_bytes = receipt_path.read_bytes()
+    receipt = parse_json_strict(receipt_bytes)
+    assert receipt["result"] == (
+        "gem-invalid" if received else "request-failed"
+    )
+    assert receipt["response-received"] is received
+    assert receipt["http-status"] == (201 if received else None)
+    assert len(transport.requests) == 1
+    assert not output.exists()
+    assert not (tmp_path / "upload-authority.json").exists()
+    assert not (tmp_path / "upload-claim.json").exists()
+    assert guard.call_count == 1
+    with pytest.raises(FileExistsError):
+        cli._execute(records, output)  # noqa: SLF001 - isolate execute/audit boundary
+    assert receipt_path.read_bytes() == receipt_bytes
+    assert len(transport.requests) == 1
+    monkeypatch.setattr(cli, "HostedRubyArtifacts", lambda *_: inputs)
+    audit = tmp_path / "audit.json"
+    assert (
+        cli.main(
+            ["audit", "--directory", str(tmp_path), "--output", str(audit)]
+        )
+        == 0
+    )
+    retained = parse_json_strict(audit.read_bytes())
+    assert retained["evidence"]["exchange-receipt.json"] == receipt
+    assert "upload-authority.json" not in retained["evidence"]
+    assert all(
+        secret not in str(retained)
+        for secret in (WRITE_TOKEN, ASSERTION, "private transport failure")
+    )

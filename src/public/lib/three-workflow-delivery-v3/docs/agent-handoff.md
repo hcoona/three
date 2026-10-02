@@ -36,7 +36,7 @@ The minimal [Ruby smoke](../../hcoona-release-smoke-ruby/README.md) and internal
 Provider/Build/inspection/consumer foundation are present. The closed Ruby Model,
 single-gem Artifact and separate CI/Release qualification retain current-purpose
 and current-run bindings. GitHub normal completion is independently accepted;
-RubyGems normal01 is activated against independently attested postcreation
+RubyGems normal02 is activated against independently attested postcreation
 configuration.
 Bounded native registry readers and one-shot HTTP writers are implemented, with
 Ruby publication snapshots, current-run approval, durable mutation markers and
@@ -67,7 +67,15 @@ refunds a slot or permits reuse of old Approval. Both failed bootstrap outcomes
 remain failed. Historical ready GitHub Governance supplies no further operation
 grant.
 
-The protected v2 activation enables only `rubygems-normal01` against
+RubyGems normal01 [run 37048644631](https://github.com/hcoona/three/actions/runs/37048644631)
+failed at credential exchange before the upload path. Its
+[independently accepted terminal failure](https://github.com/hcoona/three/issues/954#issuecomment-5959278358)
+remains spent and conservatively possibly mutated with unknown disposition.
+The discarded response prevents identifying the runtime cause. The correction
+aligns the optional `gem` response contract and retains credential-free exchange
+diagnostics; it does not reinterpret the old result or refund its slot.
+
+The protected v2 activation enables only `rubygems-normal02` against
 independently attested ready RubyGems normal Governance. All other ten slots
 remain null, and both spent first-project configuration carriers are blocked.
 Preserve the existing successor ledger and all eleven slot identities.

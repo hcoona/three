@@ -758,13 +758,23 @@ class RubyRegistryWriter:
         self._exchange_spent = False
         self._upload_spent = False
         self._issued_credential: RubyPublishingCredential | None = None
+        self._exchange_receipt: dict[str, JsonValue] | None = None
 
-    def exchange(
+    @property
+    def exchange_receipt(self) -> dict[str, JsonValue] | None:
+        """Return a credential-free snapshot of the first exchange boundary."""
+        return (
+            None
+            if self._exchange_receipt is None
+            else dict(self._exchange_receipt)
+        )
+
+    def exchange(  # noqa: PLR0915 - ordered one-shot exchange and screened receipt
         self,
         assertion: str,
         *,
         now: datetime,
-        bootstrap: bool = False,
+        bootstrap: bool = False,  # noqa: ARG002 - shared response contract
         monotonic: Callable[[], float] = time.monotonic,
     ) -> RubyPublishingCredential:
         """Exchange once without retaining credential-bearing bodies."""
@@ -784,6 +794,15 @@ class RubyRegistryWriter:
             message = "Ruby token exchange requires a finite monotonic clock"
             raise ValueError(message)
         self._exchange_spent = True
+        receipt: dict[str, JsonValue] = {
+            "schema": "workflow-delivery/v3/ruby-exchange-receipt-v1",
+            "started-at": now.isoformat(),
+            "elapsed-ms": None,
+            "response-received": False,
+            "http-status": None,
+            "result": "request-failed",
+        }
+        self._exchange_receipt = receipt
         response = self.budget.request(
             "POST",
             self.registry.origin
@@ -792,6 +811,10 @@ class RubyRegistryWriter:
             canonicalize({"jwt": assertion}),
             RUBY_HTTP_RESPONSE_LIMIT,
         )
+        # The budget validates status before returning a complete response.
+        receipt["response-received"] = True
+        receipt["http-status"] = response.status
+        receipt["result"] = "clock-invalid"
         completed = monotonic()
         if (
             type(completed) not in {int, float}
@@ -800,7 +823,11 @@ class RubyRegistryWriter:
         ):
             message = "Ruby token exchange clock regressed or is not finite"
             raise ValueError(message)
+        elapsed = completed - started
+        if elapsed <= RUBY_HTTP_TIMEOUT:
+            receipt["elapsed-ms"] = int(elapsed * 1000)
         received_at = now + timedelta(seconds=completed - started)
+        receipt["result"] = "http-invalid"
         if (
             response.location is not None
             or response.location_invalid
@@ -810,28 +837,41 @@ class RubyRegistryWriter:
         ):
             message = "RubyGems token exchange failed"
             raise ValueError(message)
+        receipt["result"] = "json-invalid"
         document = ruby_object(parse_json_strict(response.body))
+        receipt["result"] = "name-invalid"
         ruby_text(document.get("name"))
+        receipt["result"] = "expiry-invalid"
         expires = datetime.fromisoformat(ruby_text(document.get("expires_at")))
-        gem = document.get("gem")
         if (
-            document.get("scopes") != ["push_rubygem"]
-            or expires.tzinfo is None
+            expires.tzinfo is None
             or not received_at < expires <= received_at + timedelta(minutes=15)
-            or (gem is None and not bootstrap)
-            or (
-                gem is not None
-                and ruby_object(gem).get("name") != RUBY_RELEASE_UNIT
-            )
         ):
             message = (
                 "RubyGems token response differs from the bounded publisher"
             )
             raise ValueError(message)
+        receipt["result"] = "scope-invalid"
+        if document.get("scopes") != ["push_rubygem"]:
+            message = (
+                "RubyGems token response differs from the bounded publisher"
+            )
+            raise ValueError(message)
+        receipt["result"] = "gem-invalid"
+        if (
+            "gem" in document
+            and ruby_object(document["gem"]).get("name") != RUBY_RELEASE_UNIT
+        ):
+            message = (
+                "RubyGems token response differs from the bounded publisher"
+            )
+            raise ValueError(message)
+        receipt["result"] = "credential-invalid"
         credential = RubyPublishingCredential(
             _secret(ruby_text(document.get("rubygems_api_key"))), expires
         )
         self._issued_credential = credential
+        receipt["result"] = "accepted"
         return credential
 
     def upload(

@@ -26,7 +26,15 @@ That destination is stopped. Preserve both failed GitHub bootstrap outcomes,
 spent unapproved cancelled normal01, completed normal02 and all original evidence
 and reservations. Historical ready GitHub Governance does not reopen execution.
 
-The protected v2 activation enables only `rubygems-normal01` against
+RubyGems normal01 [run 37048644631](https://github.com/hcoona/three/actions/runs/37048644631)
+failed at credential exchange before the upload path. Its
+[independently accepted terminal failure](https://github.com/hcoona/three/issues/954#issuecomment-5959278358)
+remains spent and conservatively possibly mutated with unknown disposition.
+The discarded response prevents identifying the runtime cause. The correction
+aligns the optional `gem` response contract and retains credential-free exchange
+diagnostics; it does not reinterpret the old result or refund its slot.
+
+The protected v2 activation enables only `rubygems-normal02` against
 independently attested ready RubyGems normal Governance. All other ten slots
 remain null, and both spent first-project configuration carriers are blocked.
 Preserve the existing successor ledger and all eleven slot identities.
@@ -46,6 +54,24 @@ GitHub Packages completion precedes RubyGems.org configuration/execution. Exact
 NBGV, reproducible original gems, current-run Qualification, Approval/Authorization
 and independent terminal/consumer audits retain the LLD's gates. Bootstrap
 establishes the first project; it is not normal completion.
+
+The hosted audit retains `exchange-receipt.json` for a started token exchange,
+including failed validation. Normal execution retains it at the input root;
+bootstrap retains it in the existing upload-claim observations directory.
+The fixed `ruby-exchange-receipt-v1` schema contains `started-at`, `elapsed-ms`,
+`response-received`, `http-status` and `result`. Elapsed milliseconds truncate
+only a finite nonnegative duration within the existing 30-second transport
+window; other durations remain null without changing expiry checks. A status
+is retained only after a complete response passes the existing bounded transport
+validation. `response-received: false` means that boundary did not return, not
+that no request was sent or no remote key was created. Fixed result codes are
+`request-failed`, `clock-invalid`, `http-invalid`, `json-invalid`, `name-invalid`,
+`expiry-invalid`, `scope-invalid`, `gem-invalid`, `credential-invalid` and
+`accepted`. No receipt is fabricated for an earlier OIDC assertion failure.
+The receipt grants no upload authority; persistence failure stops before upload.
+It retains no response body, body hash, assertion, key, arbitrary header or field,
+signed URL or exception message. A prohibited second exchange preserves the
+first receipt and remains rejected.
 
 ## Fixed Configuration
 
@@ -612,7 +638,7 @@ slots null and both normal Governance sources blocked. The subsequent normal
 activation enabled `github-packages-normal02` against independently attested
 ready GitHub Governance. That normal run is independently complete and the
 GitHub destination is stopped. The RubyGems normal activation enables only
-`rubygems-normal01`; all other ten slots remain null, including the spent bootstrap. Keep the existing v2
+`rubygems-normal02`; all other ten slots remain null, including the spent bootstrap. Keep the existing v2
 successor ledger, eleven slot identities and spent reservations unchanged. No
 new ledger or successor is needed. Existing claim `maximum` remains joined to
 the exact request; new envelope/profile/request digests bind the new values.

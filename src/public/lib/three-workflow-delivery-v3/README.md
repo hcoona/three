@@ -349,7 +349,14 @@ and [destination completion](https://github.com/hcoona/three/issues/954#issuecom
 The GitHub destination is stopped. Normal01 remains spent, unapproved and
 cancelled; preserve all original evidence and reservations.
 
-The protected v2 activation enables only `rubygems-normal01` against
+RubyGems normal01 [run 37048644631](https://github.com/hcoona/three/actions/runs/37048644631)
+failed at credential exchange before upload; its
+[independently accepted failure](https://github.com/hcoona/three/issues/954#issuecomment-5959278358)
+remains spent with unknown disposition. The optional-gem response correction and
+credential-free exchange receipt support a fresh attempt without reinterpreting
+the discarded old response.
+
+The protected v2 activation enables only `rubygems-normal02` against
 independently attested ready RubyGems normal Governance. All other ten slots
 remain null, and both spent first-project configuration carriers are blocked.
 Preserve the existing successor ledger and all eleven slot identities.
