@@ -28,116 +28,26 @@ operations, publication, or another npm proving run.
 
 ## Ruby Delivery Entry
 
-The owner authorized the complete Ruby journey in [Issue #954](https://github.com/hcoona/three/issues/954),
-superseding the original design-only limit. Follow the accepted
-[Wave](../../../../../docs/delivery-wave.md), [Ruby requirements](./requirements.md#ruby-smoke-slice),
-[LLD](./hcoona-release-smoke-ruby-lld.md) and [migration order](./migration-strategy.md#ruby-smoke-delivery).
-The minimal [Ruby smoke](../../hcoona-release-smoke-ruby/README.md) and internal
-Provider/Build/inspection/consumer foundation are present. The closed Ruby Model,
-single-gem Artifact and separate CI/Release qualification retain current-purpose
-and current-run bindings. GitHub normal completion is independently accepted;
-RubyGems normal03 is activated against independently attested postcreation
-configuration.
-Bounded native registry readers and one-shot HTTP writers are implemented, with
-Ruby publication snapshots, current-run approval, durable mutation markers and
-strict Result/Outcome replay. The Ruby PR workflow and CI-only CLI connect
-exact-target Build and independent content/consumer qualification through
-explicit immutable artifact edges. GitHub control acquisition has isolated
-contract coverage. Separate bootstrap/normal manual workflows now connect the
-hosted operation CLI, current-run artifact readbacks, destination-specific
-privileged jobs, strict terminal replay and independent remote consumption.
-The [operation protocol](./ruby-operation-protocol.md) owns concrete phase and
-transfer bounds. Both GitHub bootstrap slots are spent. The second bootstrap
-[run 36924998743](https://github.com/hcoona/three/actions/runs/36924998743) accepted
-its upload but failed during exact gem readback on HTTP 302; neither bootstrap
-has accepted remote consumption or normal completion. Preserve both failures,
-all original artifacts, ledgers and reservations. Do not rerun, resume, refund,
-reuse Approval or enable another bootstrap.
+The [Ruby normal Live evidence](./validation/ruby-normal-live-evidence.md)
+records independently accepted GitHub Packages and RubyGems.org publication,
+exact original-byte/witness readback, clean remote consumers and durable
+destination stops. Both destination campaigns are complete and stopped. All eleven
+protected envelope slots are null; campaign-specific external operation and
+configuration callers are retired from invocation use. Stable workflows, publisher bindings,
+validators and evidence readers remain for their existing consumers.
+The evidence record preserves failed bootstraps, cancelled GitHub normal01,
+failed RubyGems normal01 and normal02's successful publication with failed
+workflow closure. Completion refunds no slot and authorizes no further
+dispatch, Approval, publication or configuration. Historical Governance
+and its original expiry remain unchanged.
 
-The [bounded download correction](./ruby-operation-protocol.md#github-gem-download-continuation)
-is implemented with one explicit credential-free GitHub storage continuation,
-original/screened evidence and strict offline replay within 32 direct sends.
-GitHub normal02 [run 36963838994](https://github.com/hcoona/three/actions/runs/36963838994)
-has [accepted terminal evidence](https://github.com/hcoona/three/issues/954#issuecomment-5945664659)
-and [independent destination completion](https://github.com/hcoona/three/issues/954#issuecomment-5945688860).
-Stop the GitHub destination and preserve its completed ledger join and originals.
-Normal01 [run 36950349853](https://github.com/hcoona/three/actions/runs/36950349853)
-remains spent, unapproved and cancelled. Neither cancellation nor completion
-refunds a slot or permits reuse of old Approval. Both failed bootstrap outcomes
-remain failed. Historical ready GitHub Governance supplies no further operation
-grant.
-
-RubyGems normal01 [run 37048644631](https://github.com/hcoona/three/actions/runs/37048644631)
-failed at credential exchange before the upload path. Its
-[independently accepted terminal failure](https://github.com/hcoona/three/issues/954#issuecomment-5959278358)
-remains spent and conservatively possibly mutated with unknown disposition.
-The discarded response prevents identifying the runtime cause. The correction
-aligns the optional `gem` response contract and retains credential-free exchange
-diagnostics; it does not reinterpret the old result or refund its slot.
-
-RubyGems normal02 [run 37064697630](https://github.com/hcoona/three/actions/runs/37064697630)
-published `0.1.0.pre.beta.30` with exact original-byte readback, but its finalizer
-could not read back the newly uploaded terminal artifact and its remote consumer
-was skipped. The [independent terminal audit and failure disposition](https://github.com/hcoona/three/issues/954#issuecomment-5961727799)
-preserve successful publication separately from failed workflow closure and
-incomplete destination verification. The action-visible artifact list lacked
-the uploaded ID; its underlying cause remains unknown. Normal02 remains spent.
-A fresh normal03 uses the unchanged runtime implementation and fresh qualification,
-request, Approval and artifacts; it cannot adopt beta.30's evidence as completion.
-
-The protected v2 activation enables only `rubygems-normal03` against
-independently attested ready RubyGems normal Governance. All other ten slots
-remain null, and both spent first-project configuration carriers are blocked.
-Preserve the existing successor ledger and all eleven slot identities.
-RubyGems configuration expires at `2026-10-09T04:41:08.045005Z`; activation and
-reads cannot renew it. The bootstrap remains spent, failed and mutated:
-its upload returned HTTP 200, but six visibility reads returned HTTP 404 and
-its remote consumer did not run. The
-[independent terminal and ownership audit](https://github.com/hcoona/three/issues/954#issuecomment-5946865237)
-retains that outcome. Later sole ownership and both owner-reported existing-gem
-publisher associations establish postcreation facts without changing the failure.
-Normal publication still requires actual protected-target native qualification,
-fresh controls and independent exact-request admission, current-run Approval,
-exact remote original bytes and independent terminal/consumer acceptance.
-Establish actual workflow concurrency availability before reservation and dispatch.
-
-[PR #988](https://github.com/hcoona/three/pull/988) is delivered at
-`bd6ef815aea9e4cf1496a924462339b89a0158e9`, with accepted
-[main CI](https://github.com/hcoona/three/actions/runs/36965391900) and
-[CodeQL](https://github.com/hcoona/three/actions/runs/36965391892).
-Its owners-response Location rejection preserves the RubyGems absence gate;
-source delivery does not itself establish current project absence.
-
-The [owner disposition](https://github.com/hcoona/three/issues/954#issuecomment-5936150680)
-permits the consumed second bootstrap and read-only journey checks without a
-cumulative ceiling. Each read invocation remains bounded and cannot renew the
-original GitHub configuration expiry `2026-10-08T03:39:53.109710Z`. The historical
-[first-project attestation](https://github.com/hcoona/three/issues/954#issuecomment-5925550208)
-and old source/protocol observations remain historical; they cannot attest the
-new transport/profile or package access. Use unchanged admitted trust bytes and
-preserve relevant protected-path freshness, including touch/revert, while
-allowing unrelated main advancement. Signed redirect URLs and response bodies
-must not be copied into public records or fresh evidence.
-Source presence and controlled-transport tests are not Live admission.
-GitHub Packages precedes RubyGems.org; NBGV and original-byte
-reproducibility are prerequisites. Use bounded platform reliance without
-requiring duplicate/race probes or inheriting another registry's responses.
-
-The owner confirmed control of RubyGems.org account `Raffle2282`; the actual
-postcreation owners response establishes sole owner ID `238631`. Both exact
-existing-gem bootstrap and normal publisher associations are now owner-confirmed.
-The original two pending submissions remain spent. The owner explicitly created
-one supplemental existing-gem normal association after reporting only bootstrap
-had converted. Preserve both current associations and that bounded completed
-owner disposition; do not request unchanged account confirmation or recreate
-publishers. The other pending entry's lifecycle is unverified and supplies no
-normal authority. The account report is owner-authenticated UI evidence, not an
-independently replayed browser observation. Its acceptance does not renew the
-original configuration expiry or establish normal publication completion.
-Current-run Approval and independent audits remain required; routine stage
-permission has already been delegated.
-This normal activation is not a RubyGems completion or runtime-support claim. Other
-completed language campaigns remain closed.
+[Issue #954](https://github.com/hcoona/three/issues/954) retains the completed
+work carrier. The [Ruby LLD](./hcoona-release-smoke-ruby-lld.md) and
+[operation protocol](./ruby-operation-protocol.md) retain contracts and
+historical replay boundaries. Preserve the existing successor ledger,
+original evidence, owner-reported account facts and both publisher
+associations. Do not repeat account setup, native qualification or any
+spent operation. Further work needs its own accepted authority.
 
 ## Starting a New Session
 

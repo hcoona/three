@@ -61,11 +61,13 @@ The owner selected the complete Ruby journey under [Issue #954](https://github.c
 and [Ruby LLD](./hcoona-release-smoke-ruby-lld.md) define the minimal integration.
 The [source evidence](./research/ruby-smoke-evidence.md) preserves unverified
 GitHub duplicate behavior and RubyGems.org's conditional replay finding.
-The [migration order](./migration-strategy.md#ruby-smoke-delivery) and accepted
-[Wave](../../../../../docs/delivery-wave.md) route execution gates. The
-[implementation status](../README.md#ruby-build-and-qualification) records the
-build and qualification foundation and remaining integration boundaries. Design
-is not configured ownership, publication or acceptance evidence.
+The [accepted normal Live evidence](./validation/ruby-normal-live-evidence.md)
+records both destination completions, retained failures and evidence limits.
+The [current status](../README.md#ruby-build-and-qualification) and
+[handoff](./agent-handoff.md#ruby-delivery-entry) record stopped campaigns,
+all-null request slots and retired external callers. The
+[migration order](./migration-strategy.md#ruby-smoke-delivery) remains the
+delivery contract; future work requires its own accepted Wave authority.
 
 ## Python Smoke Design
 

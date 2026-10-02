@@ -4,7 +4,8 @@
 
 This record implements the configuration and first-project admission portion of
 [the Ruby LLD](./hcoona-release-smoke-ruby-lld.md#governance-and-first-project-protocol)
-under [Issue #954](https://github.com/hcoona/three/issues/954) and the accepted
+for the completed [Issue #954](https://github.com/hcoona/three/issues/954)
+campaign. Further work requires the accepted
 [Delivery Wave](../../../../../docs/delivery-wave.md). The V3 maintainer maintains
 it for configuration-validator authors, the operator and independent
 admission reviewers. Its distinct consumer is the concrete endpoint, phase and
@@ -18,47 +19,23 @@ independent approval or an executable caller. Fixed GitHub control/package
 collectors, a supervised configuration transport and durable phase/send counters
 are implemented. The hosted bootstrap/normal caller and its phase, job and maintained-action
 budgets are implemented below. The external caller contract fixes actual-run,
-artifact and approval budgets. Concrete callers still need their exact
-independently reviewed source, launch and before/after plans.
-GitHub normal02 [run 36963838994](https://github.com/hcoona/three/actions/runs/36963838994)
-has [independently accepted destination completion](https://github.com/hcoona/three/issues/954#issuecomment-5945688860).
-That destination is stopped. Preserve both failed GitHub bootstrap outcomes,
-spent unapproved cancelled normal01, completed normal02 and all original evidence
-and reservations. Historical ready GitHub Governance does not reopen execution.
+artifact and approval budgets.
 
-RubyGems normal01 [run 37048644631](https://github.com/hcoona/three/actions/runs/37048644631)
-failed at credential exchange before the upload path. Its
-[independently accepted terminal failure](https://github.com/hcoona/three/issues/954#issuecomment-5959278358)
-remains spent and conservatively possibly mutated with unknown disposition.
-The discarded response prevents identifying the runtime cause. The correction
-aligns the optional `gem` response contract and retains credential-free exchange
-diagnostics; it does not reinterpret the old result or refund its slot.
+The [Ruby normal Live evidence](./validation/ruby-normal-live-evidence.md)
+records independently accepted GitHub Packages and RubyGems.org publication,
+exact original-byte/witness readback, clean remote consumers and durable
+destination stops. Both destination campaigns are complete and stopped. All eleven
+protected envelope slots are null; campaign-specific external operation and
+configuration callers are retired from invocation use. Stable workflows, publisher bindings,
+validators and evidence readers remain for their existing consumers.
+The evidence record preserves failed bootstraps, cancelled GitHub normal01,
+failed RubyGems normal01 and normal02's successful publication with failed
+workflow closure. Completion refunds no slot and authorizes no further
+dispatch, Approval, publication or configuration. Historical Governance
+and its original expiry remain unchanged.
 
-RubyGems normal02 [run 37064697630](https://github.com/hcoona/three/actions/runs/37064697630)
-published `0.1.0.pre.beta.30` with exact original-byte readback, but its finalizer
-could not read back the newly uploaded terminal artifact and its remote consumer
-was skipped. The [independent terminal audit and failure disposition](https://github.com/hcoona/three/issues/954#issuecomment-5961727799)
-preserve successful publication separately from failed workflow closure and
-incomplete destination verification. The action-visible artifact list lacked
-the uploaded ID; its underlying cause remains unknown. Normal02 remains spent.
-A fresh normal03 uses the unchanged runtime implementation and fresh qualification,
-request, Approval and artifacts; it cannot adopt beta.30's evidence as completion.
-
-The protected v2 activation enables only `rubygems-normal03` against
-independently attested ready RubyGems normal Governance. All other ten slots
-remain null, and both spent first-project configuration carriers are blocked.
-Preserve the existing successor ledger and all eleven slot identities.
-RubyGems configuration expires at `2026-10-09T04:41:08.045005Z`; activation and
-reads cannot renew it. The bootstrap remains spent, failed and mutated:
-its upload returned HTTP 200, but six visibility reads returned HTTP 404 and
-its remote consumer did not run. The
-[independent terminal and ownership audit](https://github.com/hcoona/three/issues/954#issuecomment-5946865237)
-retains that outcome. Later sole ownership and both owner-reported existing-gem
-publisher associations establish postcreation facts without changing the failure.
-Normal publication still requires actual protected-target native qualification,
-fresh controls and independent exact-request admission, current-run Approval,
-exact remote original bytes and independent terminal/consumer acceptance.
-Establish actual workflow concurrency availability before reservation and dispatch.
+The retained contracts below support source understanding and evidence replay;
+they grant no new campaign operation.
 
 GitHub Packages completion precedes RubyGems.org configuration/execution. Exact
 NBGV, reproducible original gems, current-run Qualification, Approval/Authorization
@@ -647,11 +624,11 @@ envelope partition, hosted phase claim and test updates, all eleven operation
 slots null and both normal Governance sources blocked. The subsequent normal
 activation enabled `github-packages-normal02` against independently attested
 ready GitHub Governance. That normal run is independently complete and the
-GitHub destination is stopped. The RubyGems normal activation enables only
-`rubygems-normal03`; all other ten slots remain null, including the spent bootstrap. Keep the existing v2
-successor ledger, eleven slot identities and spent reservations unchanged. No
-new ledger or successor is needed. Existing claim `maximum` remains joined to
-the exact request; new envelope/profile/request digests bind the new values.
+GitHub destination is stopped. RubyGems subsequently completed under its
+independently accepted normal evidence. Both destinations are stopped, all
+eleven protected slots are null and campaign-specific external callers are
+retired from invocation use. Keep the existing v2 successor ledger, exact slot identities and
+every spent reservation; no replacement ledger or renewed request is created.
 Preserve historical v1 default bounds and audit failed v2 runs with their pinned
 original source/profile, without reinterpreting old claims as the new budget.
 
@@ -661,10 +638,10 @@ existing blocked form. Retain the old ready bytes/attestation privately and in
 Git as historical evidence; do not relabel its source revision, inspection or
 attestation as fresh. GitHub bootstrap configuration remains blocked and its
 original absolute ceiling `2026-10-08T03:39:53.109710Z` is not renewed. RubyGems
-normal Governance is ready under independently accepted postcreation evidence;
+normal Governance retains its historical ready postcreation evidence;
 its spent first-project configuration is blocked. The original RubyGems ceiling
-`2026-10-09T04:41:08.045005Z` remains unchanged. Neither record changes the
-completed GitHub destination or supplies a normal request or current-run Approval.
+`2026-10-09T04:41:08.045005Z` remains unchanged. Neither historical carrier reopens either stopped destination
+or supplies a normal request or current-run Approval.
 
 The GitHub normal activation required protected implementation and exact checks,
 then independent inspection of current postcreation controls, package ownership

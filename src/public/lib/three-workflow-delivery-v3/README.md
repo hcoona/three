@@ -336,69 +336,15 @@ readbacks, destination-specific publisher permissions and strict terminal replay
 Their shared operation CLI keeps first-project authority separate from normal
 Governance and skips the privileged job for exact-satisfied publication.
 An unprivileged final job verifies the remote original and a clean consumer.
-Both GitHub bootstrap slots are spent. The second
-[run 36924998743](https://github.com/hcoona/three/actions/runs/36924998743)
-accepted its upload but failed on HTTP 302 during exact gem readback. Both
-bootstrap outcomes remain failed; neither has accepted remote consumption or
-normal completion. Preserve their original evidence and reservations without
-rerun, refund, old Approval reuse or another bootstrap.
-
-GitHub normal02 [run 36963838994](https://github.com/hcoona/three/actions/runs/36963838994)
-has [independently accepted terminal evidence](https://github.com/hcoona/three/issues/954#issuecomment-5945664659)
-and [destination completion](https://github.com/hcoona/three/issues/954#issuecomment-5945688860).
-The GitHub destination is stopped. Normal01 remains spent, unapproved and
-cancelled; preserve all original evidence and reservations.
-
-RubyGems normal01 [run 37048644631](https://github.com/hcoona/three/actions/runs/37048644631)
-failed at credential exchange before upload; its
-[independently accepted failure](https://github.com/hcoona/three/issues/954#issuecomment-5959278358)
-remains spent with unknown disposition. The optional-gem response correction and
-credential-free exchange receipt support a fresh attempt without reinterpreting
-the discarded old response.
-
-RubyGems normal02 [run 37064697630](https://github.com/hcoona/three/actions/runs/37064697630)
-published `0.1.0.pre.beta.30` with exact original-byte readback, but its finalizer
-could not read back the newly uploaded terminal artifact and its remote consumer
-was skipped. The [independent terminal audit and failure disposition](https://github.com/hcoona/three/issues/954#issuecomment-5961727799)
-preserve successful publication separately from failed workflow closure and
-incomplete destination verification. The action-visible artifact list lacked
-the uploaded ID; its underlying cause remains unknown. Normal02 remains spent.
-A fresh normal03 uses the unchanged runtime implementation and fresh qualification,
-request, Approval and artifacts; it cannot adopt beta.30's evidence as completion.
-
-The protected v2 activation enables only `rubygems-normal03` against
-independently attested ready RubyGems normal Governance. All other ten slots
-remain null, and both spent first-project configuration carriers are blocked.
-Preserve the existing successor ledger and all eleven slot identities.
-RubyGems configuration expires at `2026-10-09T04:41:08.045005Z`; activation and
-reads cannot renew it. The bootstrap remains spent, failed and mutated:
-its upload returned HTTP 200, but six visibility reads returned HTTP 404 and
-its remote consumer did not run. The
-[independent terminal and ownership audit](https://github.com/hcoona/three/issues/954#issuecomment-5946865237)
-retains that outcome. Later sole ownership and both owner-reported existing-gem
-publisher associations establish postcreation facts without changing the failure.
-Normal publication still requires actual protected-target native qualification,
-fresh controls and independent exact-request admission, current-run Approval,
-exact remote original bytes and independent terminal/consumer acceptance.
-Establish actual workflow concurrency availability before reservation and dispatch.
-Follow the [handoff](docs/agent-handoff.md) and
-[operation protocol](docs/ruby-operation-protocol.md) for the remaining gates.
-Protected activation and implemented workflows do not establish publication success. Strict data
-validators bind a future post-merge request, independent admission and durable
-sole-operator reservation. The local ledger consumes a slot before a caller
-may dispatch and never repairs missing state or replaces a reservation. These
-mechanisms do not themselves dispatch or prove independent approval. Ruby
-Governance, envelope and configuration paths participate in the Provider's
-source closure and the smoke's NBGV filters. The control reader can prove
-protected-main ancestry and reject relevant input changes, including new files
-and touch/revert histories, while allowing unrelated main advancement. Hosted
-publication callers must invoke that proof at their admission boundaries.
-The [Ruby operation protocol](docs/ruby-operation-protocol.md) specifies
-bounded configuration and first-project admission. Candidate strict bootstrap
-configuration/inspection/review validators and a separate RubyGems project
-observer support that boundary; screened facts do not prove raw GitHub owner
-inventory or reviewer provenance. Configuration collectors, supervised transport
-and durable phase/send counters are implemented. Actual RubyGems normal request admission and destination acceptance remain
-pending. The normal activation does not establish publication or completion. The [handoff](docs/agent-handoff.md#ruby-delivery-entry) routes the
-accepted inspection, finite configuration lifetime and remaining execution gates.
-Local controlled transports do not establish deployed registry behavior.
+The [Ruby normal Live evidence](docs/validation/ruby-normal-live-evidence.md)
+records independently accepted GitHub Packages and RubyGems.org publication,
+exact original-byte/witness readback, clean remote consumers and durable
+destination stops. Both destination campaigns are complete and stopped. All eleven
+protected envelope slots are null; campaign-specific external operation and
+configuration callers are retired from invocation use. Stable workflows, publisher bindings,
+validators and evidence readers remain for their existing consumers.
+The evidence record preserves failed bootstraps, cancelled GitHub normal01,
+failed RubyGems normal01 and normal02's successful publication with failed
+workflow closure. Completion refunds no slot and authorizes no further
+dispatch, Approval, publication or configuration. Historical Governance
+and its original expiry remain unchanged.

@@ -3,7 +3,6 @@
 from datetime import datetime, timedelta
 
 import pytest
-from three_workflow_delivery_v3._ruby_native import ruby_digest
 from three_workflow_delivery_v3.adapters.rubygems import RubyRegistry
 from three_workflow_delivery_v3.canonical import (
     canonicalize,
@@ -280,8 +279,8 @@ def _require_modeled_bootstrap_join(envelope, config, slot, now):
     inspected.require_request(request, now, before_dispatch=True)
 
 
-def test_shipped_rubygems_normal_joins_protocol_and_governance():
-    """Retained-time joins test shipped policy, not live operation readiness."""
+def test_retired_rubygems_slot_preserves_historical_governance():
+    """Retired slots preserve historical Governance and reject requests."""
     envelope = RubyOperationEnvelope(
         (
             ROOT
@@ -290,36 +289,25 @@ def test_shipped_rubygems_normal_joins_protocol_and_governance():
         ).read_bytes()
     )
     slot = "rubygems-normal03"
-    selected = envelope.document["slots"][slot]
-    protocol = ruby_digest(
-        (
-            ROOT
-            / "src/public/lib/three-workflow-delivery-v3/docs"
-            / "ruby-operation-protocol.md"
-        ).read_bytes()
-    )
-    assert selected["protocol-digest"] == protocol
-    content = (ROOT / selected["binding"]["configuration-path"]).read_bytes()
+    assert envelope.document["slots"][slot] is None
+    content = (
+        ROOT
+        / ".github/workflow-delivery/governance"
+        / "hcoona-release-smoke-ruby-rubygems.json"
+    ).read_bytes()
     document = parse_canonical_json(content)
     inspected = datetime.fromisoformat(document["inspected-at"])
     governance = RubyGovernance(
         RubyRegistry("rubygems"), content, TARGET, inspected
     )
-    assert selected["configuration-digest"] == governance.digest
-    start = datetime.fromisoformat(selected["not-before"])
-    expires = datetime.fromisoformat(selected["expires-at"])
     configuration_expires = datetime.fromisoformat(document["expires-at"])
-    now = max(start, inspected)
-    assert start <= now < expires <= configuration_expires
-    assert inspected <= now < configuration_expires
-    assert expires <= start + timedelta(days=7)
     assert configuration_expires <= inspected + timedelta(days=7)
     assert configuration_expires <= datetime.fromisoformat(
         "2026-10-09T04:41:08.045005Z"
     )
-    assert envelope.enabled_slot(slot, now) == selected
-    governance.require_live(now)
-    assert selected["binding"]["kind"] == "normal"
+    governance.require_live(inspected)
+    with pytest.raises(ValueError, match="disabled"):
+        envelope.enabled_slot(slot, inspected)
 
 
 def test_successor_inspection_rejects_coherent_other_protocol():
