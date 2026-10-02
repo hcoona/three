@@ -289,7 +289,7 @@ def test_shipped_rubygems_normal_joins_protocol_and_governance():
             / "hcoona-release-smoke-ruby.json"
         ).read_bytes()
     )
-    slot = "rubygems-normal02"
+    slot = "rubygems-normal03"
     selected = envelope.document["slots"][slot]
     protocol = ruby_digest(
         (

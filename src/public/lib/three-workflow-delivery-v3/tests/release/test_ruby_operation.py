@@ -78,7 +78,7 @@ def test_ruby_protected_envelope_preserves_fixed_authority_and_finite_slots():
     }
     successor = "github-packages-bootstrap02"
     assert set(doc["slots"]) == {*EXPECTED_SLOTS, successor}
-    enabled = "rubygems-normal02"
+    enabled = "rubygems-normal03"
     assert {
         slot for slot, selected in doc["slots"].items() if selected is not None
     } == {enabled}

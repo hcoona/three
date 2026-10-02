@@ -36,7 +36,7 @@ The minimal [Ruby smoke](../../hcoona-release-smoke-ruby/README.md) and internal
 Provider/Build/inspection/consumer foundation are present. The closed Ruby Model,
 single-gem Artifact and separate CI/Release qualification retain current-purpose
 and current-run bindings. GitHub normal completion is independently accepted;
-RubyGems normal02 is activated against independently attested postcreation
+RubyGems normal03 is activated against independently attested postcreation
 configuration.
 Bounded native registry readers and one-shot HTTP writers are implemented, with
 Ruby publication snapshots, current-run approval, durable mutation markers and
@@ -75,7 +75,17 @@ The discarded response prevents identifying the runtime cause. The correction
 aligns the optional `gem` response contract and retains credential-free exchange
 diagnostics; it does not reinterpret the old result or refund its slot.
 
-The protected v2 activation enables only `rubygems-normal02` against
+RubyGems normal02 [run 37064697630](https://github.com/hcoona/three/actions/runs/37064697630)
+published `0.1.0.pre.beta.30` with exact original-byte readback, but its finalizer
+could not read back the newly uploaded terminal artifact and its remote consumer
+was skipped. The [independent terminal audit and failure disposition](https://github.com/hcoona/three/issues/954#issuecomment-5961727799)
+preserve successful publication separately from failed workflow closure and
+incomplete destination verification. The action-visible artifact list lacked
+the uploaded ID; its underlying cause remains unknown. Normal02 remains spent.
+A fresh normal03 uses the unchanged runtime implementation and fresh qualification,
+request, Approval and artifacts; it cannot adopt beta.30's evidence as completion.
+
+The protected v2 activation enables only `rubygems-normal03` against
 independently attested ready RubyGems normal Governance. All other ten slots
 remain null, and both spent first-project configuration carriers are blocked.
 Preserve the existing successor ledger and all eleven slot identities.
