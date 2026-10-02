@@ -5,7 +5,10 @@ from datetime import datetime, timedelta
 import pytest
 from three_workflow_delivery_v3._ruby_native import ruby_digest
 from three_workflow_delivery_v3.adapters.rubygems import RubyRegistry
-from three_workflow_delivery_v3.canonical import canonicalize
+from three_workflow_delivery_v3.canonical import (
+    canonicalize,
+    parse_canonical_json,
+)
 from three_workflow_delivery_v3.release.ruby_configuration import (
     RubyBootstrapConfiguration,
     RubyFirstProjectInspection,
@@ -278,8 +281,8 @@ def _require_modeled_bootstrap_join(envelope, config, slot, now):
     inspected.require_request(request, now, before_dispatch=True)
 
 
-def test_shipped_enabled_bootstrap_carriers_join_current_protocol():
-    """Shipped carriers must join; modeled facts never prove live readiness."""
+def test_shipped_github_normal_carrier_joins_current_protocol_and_governance():
+    """Retained-time joins test shipped policy, not live operation readiness."""
     envelope = RubyOperationEnvelope(
         (
             ROOT
@@ -287,6 +290,7 @@ def test_shipped_enabled_bootstrap_carriers_join_current_protocol():
             / "hcoona-release-smoke-ruby.json"
         ).read_bytes()
     )
+    selected = envelope.document["slots"]["github-packages-normal01"]
     protocol = ruby_digest(
         (
             ROOT
@@ -294,25 +298,28 @@ def test_shipped_enabled_bootstrap_carriers_join_current_protocol():
             / "ruby-operation-protocol.md"
         ).read_bytes()
     )
-    assert {
-        slot
-        for slot, selected in envelope.document["slots"].items()
-        if selected is not None
-    } == set()
-    for slot, selected in envelope.document["slots"].items():
-        if selected is None or selected["binding"]["kind"] != "bootstrap":
-            continue
-        assert selected["protocol-digest"] == protocol
-        config = RubyBootstrapConfiguration(
-            RubyRegistry(selected["binding"]["destination"]),
-            (ROOT / selected["binding"]["configuration-path"]).read_bytes(),
-        )
-        # Select a modeled instant inside the original windows, not wall time.
-        now = max(
-            datetime.fromisoformat(selected["not-before"]),
-            datetime.fromisoformat(config.document["inspected-at"]),
-        )
-        _require_modeled_bootstrap_join(envelope, config, slot, now)
+    assert selected["protocol-digest"] == protocol
+    content = (ROOT / selected["binding"]["configuration-path"]).read_bytes()
+    document = parse_canonical_json(content)
+    inspected = datetime.fromisoformat(document["inspected-at"])
+    # TARGET is modeled provenance; actual protected delivery is audited apart.
+    governance = RubyGovernance(
+        RubyRegistry("github-packages"), content, TARGET, inspected
+    )
+    assert selected["configuration-digest"] == governance.digest
+    start = datetime.fromisoformat(selected["not-before"])
+    expires = datetime.fromisoformat(selected["expires-at"])
+    governance_expires = datetime.fromisoformat(document["expires-at"])
+    now = max(start, inspected)
+    assert start <= now < expires <= governance_expires
+    assert inspected <= now < governance_expires
+    assert expires <= start + timedelta(days=7)
+    assert governance_expires <= inspected + timedelta(days=7)
+    assert governance_expires <= datetime.fromisoformat(
+        "2026-10-08T03:39:53.109710Z"
+    )
+    assert envelope.enabled_slot("github-packages-normal01", now) == selected
+    governance.require_live(now)
 
 
 def test_successor_inspection_rejects_coherent_other_protocol():
@@ -331,24 +338,35 @@ def test_successor_inspection_rejects_coherent_other_protocol():
 
 
 @pytest.mark.parametrize("destination", ["github-packages", "rubygems"])
-def test_shipped_redirect_correction_blocks_current_carriers(
+def test_shipped_normal_activation_preserves_destination_and_bootstrap_gates(
     destination,
 ):
-    """Disabled slots retain current profiles without stale readiness."""
+    """Only GitHub normal is ready; all bootstrap carriers remain blocked."""
     registry = RubyRegistry(destination)
     control = ROOT / ".github/workflow-delivery"
     governance_bytes = (
         control / "governance" / f"hcoona-release-smoke-ruby-{destination}.json"
     ).read_bytes()
-    governance = RubyGovernance(registry, governance_bytes, TARGET, NOW)
-    assert governance.document == blocked_ruby_governance(registry)
+    document = parse_canonical_json(governance_bytes)
+    observed = (
+        datetime.fromisoformat(document["inspected-at"])
+        if destination == "github-packages"
+        else NOW
+    )
+    governance = RubyGovernance(registry, governance_bytes, TARGET, observed)
+    if destination == "github-packages":
+        assert governance.document["live_enabled"] is True
+        assert governance.document["state"] == "ready"
+        governance.require_live(observed)
+    else:
+        assert governance.document == blocked_ruby_governance(registry)
+        with pytest.raises(ValueError):  # noqa: PT011 - blocked ready state
+            governance.require_live(observed)
     assert governance_bytes == canonicalize(governance.document)
     assert (
         governance.document["operation-profile-digest"]
         == registry.profile_digest
     )
-    with pytest.raises(ValueError):  # noqa: PT011 - blocked ready state
-        governance.require_live(NOW)
     configuration_bytes = (
         control
         / "configuration"

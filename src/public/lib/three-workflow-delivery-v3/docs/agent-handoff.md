@@ -35,7 +35,8 @@ superseding the original design-only limit. Follow the accepted
 The minimal [Ruby smoke](../../hcoona-release-smoke-ruby/README.md) and internal
 Provider/Build/inspection/consumer foundation are present. The closed Ruby Model,
 single-gem Artifact and separate CI/Release qualification retain current-purpose
-and current-run bindings. Both protected Governance sources remain blocked.
+and current-run bindings. GitHub normal Governance is ready for the single
+`github-packages-normal01` slot; RubyGems Governance remains blocked.
 Bounded native registry readers and one-shot HTTP writers are implemented, with
 Ruby publication snapshots, current-run approval, durable mutation markers and
 strict Result/Outcome replay. The Ruby PR workflow and CI-only CLI connect
@@ -55,15 +56,20 @@ reuse Approval or enable another bootstrap.
 The [bounded download correction](./ruby-operation-protocol.md#github-gem-download-continuation)
 is implemented with one explicit credential-free GitHub storage continuation,
 original/screened evidence and strict offline replay within 32 direct sends.
-All eleven operation slots are null; both normal Governance and first-project
-configuration carriers are blocked against current profiles. The old ready
-GitHub configuration and both failed runs remain historical evidence. The
-separately observed header origin/path and local tests do not establish a real
-storage download or exact remote bytes. Protected-deliver and validate this
-inactive implementation, then establish current package ownership/access,
-controls and fresh independent normal attestation before enabling one remaining
-normal slot. Four normal slots remain; ordinary current Attempt/native/Approval/
-remote-consumer and independent audit gates still apply.
+Only `github-packages-normal01` is enabled, joined to ready GitHub normal
+Governance and fresh independent package/access/control attestation. The other
+ten slots, RubyGems normal Governance and both first-project configuration
+carriers remain disabled. The old ready GitHub bootstrap configuration and both
+failed runs remain historical evidence. The independently accepted
+[download diagnostic](https://github.com/hcoona/three/issues/954#issuecomment-5942814694)
+establishes exact downloaded original bytes, not normal completion.
+After this activation's protected delivery and exact checks, use its actual
+normal target T for new NBGV, reproducible builds, negative controls and a clean
+consumer. Fresh before-request package/controls evidence and independent exact
+request admission must precede the one normal01 reservation and dispatch.
+Current-run Qualification, Approval, remote original/consumer and independent
+terminal audit remain mandatory; activation does not spend a slot or complete
+an Attempt. Three further GitHub normal slots remain disabled.
 
 The [owner disposition](https://github.com/hcoona/three/issues/954#issuecomment-5936150680)
 permits the consumed second bootstrap and read-only journey checks without a

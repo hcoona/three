@@ -1,12 +1,15 @@
 """Independent Ruby Governance source and protection admission scenarios."""
 
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 from three_workflow_delivery_v3.adapters.rubygems import RubyRegistry
-from three_workflow_delivery_v3.canonical import canonicalize
+from three_workflow_delivery_v3.canonical import (
+    canonicalize,
+    parse_canonical_json,
+)
 from three_workflow_delivery_v3.release.ruby_governance import (
     RubyGovernance,
     blocked_ruby_governance,
@@ -19,22 +22,32 @@ ROOT = Path(__file__).resolve().parents[6]
 
 
 @pytest.mark.parametrize("name", ["github-packages", "rubygems"])
-def test_ruby_checked_in_governance_stays_independently_blocked(name):
-    """Keep both tracked destinations disabled for live access."""
+def test_ruby_checked_in_governance_preserves_destination_activation(name):
+    """Only GitHub normal is ready at the retained inspection instant."""
     registry = RubyRegistry(name)
     content = (ROOT / ruby_governance_path(registry)).read_bytes()
-    admitted = RubyGovernance(registry, content, TARGET, NOW)
-    assert content == canonicalize(blocked_ruby_governance(registry))
-    assert admitted.document["live_enabled"] is False
-    assert admitted.document["state"] == "blocked"
+    document = parse_canonical_json(content)
+    observed = (
+        datetime.fromisoformat(document["inspected-at"])
+        if name == "github-packages"
+        else NOW
+    )
+    admitted = RubyGovernance(registry, content, TARGET, observed)
+    assert content == canonicalize(admitted.document)
+    if name == "github-packages":
+        assert admitted.document["live_enabled"] is True
+        assert admitted.document["state"] == "ready"
+        admitted.require_live(observed)
+    else:
+        assert admitted.document == blocked_ruby_governance(registry)
+        with pytest.raises(ValueError, match="remains disabled"):
+            admitted.require_live(observed)
     assert admitted.document["publisher"]["environment"] == registry.environment
-    with pytest.raises(ValueError, match="remains disabled"):
-        admitted.require_live(NOW)
     other = RubyRegistry(
         "rubygems" if name == "github-packages" else "github-packages"
     )
     with pytest.raises(ValueError, match="authority or profile"):
-        RubyGovernance(other, content, TARGET, NOW)
+        RubyGovernance(other, content, TARGET, observed)
 
 
 @pytest.mark.parametrize("name", ["github-packages", "rubygems"])

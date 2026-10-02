@@ -20,11 +20,13 @@ are implemented. The hosted bootstrap/normal caller and its phase, job and maint
 budgets are implemented below. The external caller contract fixes actual-run,
 artifact and approval budgets. Concrete callers still need their exact
 independently reviewed source, launch and before/after plans.
-The GitHub Packages first-project configuration is retained; all operation slots
-are disabled. Both normal Governance sources remain blocked. The single
-GitHub successor below requires protected implementation and activation, fresh
-predispatch inspection and independent exact-request admission. No account, registry, OIDC or dispatch effect follows from
-source or protocol delivery alone.
+GitHub normal Governance is ready and only `github-packages-normal01` is enabled.
+The other ten operation slots, both first-project configuration carriers and
+RubyGems normal Governance remain disabled. Both GitHub bootstrap slots are
+spent; their historical evidence and the successor ledger remain unchanged.
+The enabled normal slot still requires actual protected-target qualification,
+fresh predispatch controls and independent exact-request admission. No account,
+registry, OIDC or dispatch effect follows from source or protocol delivery alone.
 
 GitHub Packages completion precedes RubyGems.org configuration/execution. Exact
 NBGV, reproducible original gems, current-run Qualification, Approval/Authorization
@@ -574,21 +576,24 @@ sends; it creates no new phase or observation lifetime. Late completion fails.
 
 ### Protected Rollout and Historical Bindings
 
-Design acceptance alone does not enable the route. The inactive corrected
-implementation atomically updates profile, transport, evidence replay, v2
-envelope partitions, hosted phase claims and tests, with all eleven operation
-slots null and both normal Governance sources blocked. Keep the existing v2
+Design acceptance alone does not enable the route. The corrected implementation
+was protected-delivered with atomic profile, transport, evidence replay, v2
+envelope partition, hosted phase claim and test updates, all eleven operation
+slots null and both normal Governance sources blocked. The subsequent normal
+activation enables only `github-packages-normal01` against independently attested
+ready GitHub Governance; the other ten slots remain null. Keep the existing v2
 successor ledger, eleven slot identities and spent reservations unchanged. No
 new ledger or successor is needed. Existing claim `maximum` remains joined to
 the exact request; new envelope/profile/request digests bind the new values.
 Preserve historical v1 default bounds and audit failed v2 runs with their pinned
 original source/profile, without reinterpreting old claims as the new budget.
 
-Regenerate blocked current carriers against current profile identities. Replace
-the spent GitHub first-project-ready carrier with its existing blocked form,
-retaining the old ready bytes/attestation privately and in Git as historical
-evidence. Do not relabel its source revision, inspection or attestation as fresh.
-RubyGems bootstrap remains blocked. A blocked form supplies no renewed lifetime;
+The inactive delivery regenerated blocked carriers against current profile
+identities and replaced the spent GitHub first-project-ready carrier with its
+existing blocked form. Retain the old ready bytes/attestation privately and in
+Git as historical evidence; do not relabel its source revision, inspection or
+attestation as fresh. Both bootstrap configuration carriers and RubyGems normal
+Governance remain blocked. A blocked form supplies no renewed lifetime;
 the original absolute ceiling `2026-10-08T03:39:53.109710Z` still bounds subsequent
 GitHub admission.
 

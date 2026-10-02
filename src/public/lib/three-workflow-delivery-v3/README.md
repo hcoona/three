@@ -343,13 +343,16 @@ bootstrap outcomes remain failed; neither has accepted remote consumption or
 normal completion. Preserve their original evidence and reservations without
 rerun, refund, old Approval reuse or another bootstrap.
 
-The protected v2 envelope has all eleven slots null. Both destinations' normal
-Governance and first-project configuration carriers are blocked against current
-profiles. The bounded download implementation is inactive: protected delivery
-and checks, fresh package access/control evidence and independent normal
-attestation precede activation of one remaining normal slot. Neither the
-observed redirect header nor local tests establish a successful real storage
-download or remote consumer. The original configuration expiry remains unchanged. Follow the
+The protected v2 envelope enables only `github-packages-normal01`, bound to
+ready GitHub normal Governance and the current download profile. The other ten
+slots, both first-project configuration carriers and RubyGems normal Governance
+remain disabled. Independent current package/control inspection and the
+[bounded download diagnostic](https://github.com/hcoona/three/issues/954#issuecomment-5942814694)
+establish the reviewed configuration and original-byte download; they do not
+establish normal publication or remote-consumer completion. At the actual
+protected activation target, re-establish native qualification and fresh request
+admission before one reservation and dispatch. The original configuration expiry
+remains unchanged. Follow the
 [handoff](docs/agent-handoff.md) and
 [operation protocol](docs/ruby-operation-protocol.md#github-gem-download-continuation)
 for the remaining gates.
@@ -370,7 +373,7 @@ observer support that boundary; screened facts do not prove raw GitHub owner
 inventory or reviewer provenance. Configuration collectors, supervised transport
 and durable phase/send counters are implemented. Concrete external caller launch,
 exact-request admission and actual destination acceptance remain pending.
-Both protected normal Governance sources remain blocked; RubyGems.org remains
-disabled. The [handoff](docs/agent-handoff.md#ruby-delivery-entry) routes the
+GitHub normal Governance is ready for the single enabled slot; RubyGems.org
+remains disabled. The [handoff](docs/agent-handoff.md#ruby-delivery-entry) routes the
 accepted inspection, finite configuration lifetime and remaining execution gates.
 Local controlled transports do not establish deployed registry behavior.

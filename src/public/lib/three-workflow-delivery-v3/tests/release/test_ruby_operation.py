@@ -78,13 +78,28 @@ def test_ruby_protected_envelope_preserves_fixed_authority_and_finite_slots():
     }
     successor = "github-packages-bootstrap02"
     assert set(doc["slots"]) == {*EXPECTED_SLOTS, successor}
-    assert {
-        slot: doc["slots"][slot] for slot in EXPECTED_SLOTS
-    } == dict.fromkeys(EXPECTED_SLOTS)
+    enabled = "github-packages-normal01"
     assert {
         slot for slot, selected in doc["slots"].items() if selected is not None
-    } == set()
-    assert doc["slots"][successor] is None
+    } == {enabled}
+    assert {
+        slot: selected
+        for slot, selected in doc["slots"].items()
+        if slot != enabled
+    } == dict.fromkeys({*EXPECTED_SLOTS, successor} - {enabled})
+    binding = doc["slots"][enabled]["binding"]
+    assert binding == ruby_operation_binding(enabled)
+    assert binding["kind"] == "normal"
+    assert binding["destination"] == "github-packages"
+    assert binding["workflow"] == "workflow-delivery-v3-ruby-smoke.yml"
+    assert binding["configuration-path"] == (
+        ".github/workflow-delivery/governance/"
+        "hcoona-release-smoke-ruby-github-packages.json"
+    )
+    assert (
+        binding["operation-profile-digest"]
+        == RubyRegistry("github-packages").profile_digest
+    )
 
 
 @pytest.mark.parametrize("slot", EXPECTED_SLOTS)
