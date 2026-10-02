@@ -227,13 +227,15 @@ URL or claiming to recover its discarded signature. Corrected source/profile,
 evidence replay and finite accounting were protected-delivered before normal
 activation. GitHub normal02 now has
 [independently accepted destination completion](https://github.com/hcoona/three/issues/954#issuecomment-5945688860)
-and that destination is stopped. The activation enables only
-`rubygems-bootstrap` against independently attested first-project-ready
-configuration, expiring at `2026-10-09T04:41:08.045005Z`. All other slots remain
-null and RubyGems normal Governance remains blocked. Preserve the existing
-successor ledger, failed GitHub bootstraps, spent cancelled normal01 and all
-original evidence. Actual-target native qualification, fresh project/control
-inspection and independent exact-request admission remain separate gates.
+and that destination is stopped. Only `rubygems-normal01` is enabled against
+independently attested ready normal Governance, expiring at
+`2026-10-09T04:41:08.045005Z`. All other slots remain null; both spent bootstrap
+configuration carriers are blocked. Preserve the existing successor ledger and
+all failed, cancelled and completed outcomes. The RubyGems bootstrap remains
+failed and mutated; later sole ownership and owner-confirmed existing-gem
+publisher associations supply postcreation facts only. Actual-target native
+qualification, fresh controls and independent normal request admission remain
+separate gates.
 
 RubyGems.org uses the documented version inventory and exact-version/platform
 API, then an admitted HTTPS gem download origin. Check native name, version,

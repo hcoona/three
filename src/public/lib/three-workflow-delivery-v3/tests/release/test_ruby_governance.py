@@ -23,25 +23,16 @@ ROOT = Path(__file__).resolve().parents[6]
 
 @pytest.mark.parametrize("name", ["github-packages", "rubygems"])
 def test_ruby_checked_in_governance_preserves_destination_activation(name):
-    """Only GitHub normal is ready at the retained inspection instant."""
+    """Both destinations retain independently attested normal configuration."""
     registry = RubyRegistry(name)
     content = (ROOT / ruby_governance_path(registry)).read_bytes()
     document = parse_canonical_json(content)
-    observed = (
-        datetime.fromisoformat(document["inspected-at"])
-        if name == "github-packages"
-        else NOW
-    )
+    observed = datetime.fromisoformat(document["inspected-at"])
     admitted = RubyGovernance(registry, content, TARGET, observed)
     assert content == canonicalize(admitted.document)
-    if name == "github-packages":
-        assert admitted.document["live_enabled"] is True
-        assert admitted.document["state"] == "ready"
-        admitted.require_live(observed)
-    else:
-        assert admitted.document == blocked_ruby_governance(registry)
-        with pytest.raises(ValueError, match="remains disabled"):
-            admitted.require_live(observed)
+    assert admitted.document["live_enabled"] is True
+    assert admitted.document["state"] == "ready"
+    admitted.require_live(observed)
     assert admitted.document["publisher"]["environment"] == registry.environment
     other = RubyRegistry(
         "rubygems" if name == "github-packages" else "github-packages"

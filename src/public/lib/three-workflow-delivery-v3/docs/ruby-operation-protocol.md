@@ -26,16 +26,21 @@ That destination is stopped. Preserve both failed GitHub bootstrap outcomes,
 spent unapproved cancelled normal01, completed normal02 and all original evidence
 and reservations. Historical ready GitHub Governance does not reopen execution.
 
-The protected v2 activation enables only `rubygems-bootstrap` against
-independently attested first-project-ready configuration. All other ten slots,
-GitHub first-project configuration and RubyGems normal Governance remain disabled.
-The successor ledger and all eleven slot identities remain unchanged. RubyGems
-configuration expires at `2026-10-09T04:41:08.045005Z`; neither activation nor
-reads renew that ceiling. The enabled bootstrap still requires actual
-protected-target native qualification, fresh predispatch controls/project
-absence and independent exact-request admission. Establish actual workflow
-concurrency availability before reservation and dispatch. No account, registry,
-OIDC or dispatch effect follows from source or protocol delivery alone.
+The protected v2 activation enables only `rubygems-normal01` against
+independently attested ready RubyGems normal Governance. All other ten slots
+remain null, and both spent first-project configuration carriers are blocked.
+Preserve the existing successor ledger and all eleven slot identities.
+RubyGems configuration expires at `2026-10-09T04:41:08.045005Z`; activation and
+reads cannot renew it. The bootstrap remains spent, failed and mutated:
+its upload returned HTTP 200, but six visibility reads returned HTTP 404 and
+its remote consumer did not run. The
+[independent terminal and ownership audit](https://github.com/hcoona/three/issues/954#issuecomment-5946865237)
+retains that outcome. Later sole ownership and both owner-reported existing-gem
+publisher associations establish postcreation facts without changing the failure.
+Normal publication still requires actual protected-target native qualification,
+fresh controls and independent exact-request admission, current-run Approval,
+exact remote original bytes and independent terminal/consumer acceptance.
+Establish actual workflow concurrency availability before reservation and dispatch.
 
 GitHub Packages completion precedes RubyGems.org configuration/execution. Exact
 NBGV, reproducible original gems, current-run Qualification, Approval/Authorization
@@ -56,10 +61,13 @@ establishes the first project; it is not normal completion.
 | Account                 | `hcoona`, GitHub ID `712433`                    | Confirmed account `Raffle2282`                      |
 | Runtime publisher       | Repository job token                            | One short-lived gem/pending-publisher OIDC exchange |
 
-Account control is already confirmed. The owner reports both bootstrap and
-normal pending publisher tuples; preserve them without recreation. Pending
-registration is distinct from actual project ownership and post-bootstrap
-existing-gem publisher association, which still require observation. Do not
+Account control and sole gem ownership are established. The owner confirms
+both exact existing-gem bootstrap and normal publisher associations; preserve
+them without recreation. The original two pending submissions remain historical
+spending. The owner subsequently authorized and created one supplemental
+existing-gem normal association after only bootstrap was associated. The other
+pending entry's lifecycle remains unverified and is not needed to establish the
+now-confirmed existing-gem associations. Do not
 collect credentials, repeat unchanged account confirmation, install secrets or
 export the local owner
 credential to Actions. Unsupported current credential capabilities stop the
@@ -433,13 +441,16 @@ alone is insufficient. Retain both registrations; do not rewrite the bootstrap
 registration into the normal tuple. If the required association cannot be
 established, dependent normal admission remains unavailable.
 
-Submit a genuinely missing entry only within concrete existing authorization and
-the original remaining cumulative allowance of at most two publisher submissions.
-The two owner-reported submissions count toward that allowance; this procedure
-does not reset it or grant a third submission or recovery action. Inspect each
-registration before and after any authorized submission and inspect the
-postbootstrap pending list/conversion. These required read-only observations
-have no cumulative page quota.
+The original allowance of two pending publisher submissions is spent. After the
+owner observed only the converted bootstrap association, the owner explicitly
+authorized and created one supplemental existing-gem normal association for the
+exact smoke tuple above. This completed exception does not reset either original
+submission or grant another submission, replacement or recovery action. Retain
+the owner's before/after association reports with their actual provenance;
+do not claim an independently replayed browser observation. Both required
+existing-gem associations are now owner-confirmed. Read-only inspections have no
+cumulative page quota; the remaining pending entry's unverified lifecycle does
+not negate the established existing-gem associations.
 Retain screened tuple/account facts,
 never session material. Public owners evidence supplies actual ownership;
 account views supply registration/conversion. Matching display text alone does
@@ -481,11 +492,11 @@ renews configuration, request, phase or approval lifetimes. No endless polling,
 automatic transport retry, access expansion or effect is implicit. Separate
 read-only diagnosis may inspect a failed run without changing its terminal result.
 
-Configuration mutation roles remain limited to six GitHub roles and two RubyGems
-publisher submissions as specified above; original spent roles cannot be repeated.
-Supported read-only UI inspection carries the same identity, privacy and evidence
-requirements and no cumulative page quota. No browser write beyond the admitted
-RubyGems submissions is included. The original GitHub configuration expires at
+Configuration mutation roles retain the six GitHub roles and original two
+RubyGems publisher submissions, plus the single completed owner-authorized
+supplemental normal association described above. All spent roles remain spent;
+no further publisher write is granted. Supported read-only UI inspection carries
+the same identity, privacy and evidence requirements and no cumulative page quota. The original GitHub configuration expires at
 `2026-10-08T03:39:53.109710Z`; a read or this amendment never renews it.
 
 The completed INIT-CA-01 correction remains in its
@@ -600,8 +611,8 @@ envelope partition, hosted phase claim and test updates, all eleven operation
 slots null and both normal Governance sources blocked. The subsequent normal
 activation enabled `github-packages-normal02` against independently attested
 ready GitHub Governance. That normal run is independently complete and the
-GitHub destination is stopped. The RubyGems activation enables only
-`rubygems-bootstrap`; all other ten slots remain null. Keep the existing v2
+GitHub destination is stopped. The RubyGems normal activation enables only
+`rubygems-normal01`; all other ten slots remain null, including the spent bootstrap. Keep the existing v2
 successor ledger, eleven slot identities and spent reservations unchanged. No
 new ledger or successor is needed. Existing claim `maximum` remains joined to
 the exact request; new envelope/profile/request digests bind the new values.
@@ -614,9 +625,10 @@ existing blocked form. Retain the old ready bytes/attestation privately and in
 Git as historical evidence; do not relabel its source revision, inspection or
 attestation as fresh. GitHub bootstrap configuration remains blocked and its
 original absolute ceiling `2026-10-08T03:39:53.109710Z` is not renewed. RubyGems
-normal Governance remains blocked; its distinct first-project-ready
-configuration retains the ceiling `2026-10-09T04:41:08.045005Z`. Neither record
-changes the completed GitHub destination or admits RubyGems normal operation.
+normal Governance is ready under independently accepted postcreation evidence;
+its spent first-project configuration is blocked. The original RubyGems ceiling
+`2026-10-09T04:41:08.045005Z` remains unchanged. Neither record changes the
+completed GitHub destination or supplies a normal request or current-run Approval.
 
 The GitHub normal activation required protected implementation and exact checks,
 then independent inspection of current postcreation controls, package ownership
