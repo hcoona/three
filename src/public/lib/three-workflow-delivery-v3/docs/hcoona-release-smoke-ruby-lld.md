@@ -224,8 +224,10 @@ original response bytes; a suppressed body is not an empty original. Exactness
 still requires the actual complete downloaded gem bytes and witness. Offline
 replay verifies the screened continuation joins without reconstructing a signed
 URL or claiming to recover its discarded signature. Corrected source/profile,
-evidence replay and finite accounting must be protected-delivered before normal
-activation; the implemented correction remains inactive with all slots null.
+evidence replay and finite accounting were protected-delivered before normal
+activation. Only `github-packages-normal01` is enabled against independently
+attested ready Governance; exact-target request admission and normal completion
+remain separate gates.
 
 RubyGems.org uses the documented version inventory and exact-version/platform
 API, then an admitted HTTPS gem download origin. Check native name, version,
