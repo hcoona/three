@@ -3,8 +3,8 @@
 ## Status and Ownership
 
 This is the Ruby slice design authority under [Issue #954][issue]. The
-[implementation status](../README.md#ruby-build-and-qualification) records the
-build and qualification foundation and remaining integration boundaries. This
+[implementation status](../README.md#ruby-build-and-qualification) records
+completed publication, campaign retirement and retained evidence limits. This
 design is not package ownership, a configured publisher or publication evidence.
 The V3 maintainer maintains this carrier for implementation and acceptance
 reviewers. The [source record](./research/ruby-smoke-evidence.md) distinguishes
