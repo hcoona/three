@@ -238,7 +238,7 @@ class RubyBootstrapResult:
         }
 
 
-def execute_ruby_bootstrap_publication(  # noqa: C901, PLR0913, PLR0915 - ordered one-shot boundary
+def execute_ruby_bootstrap_publication(  # noqa: C901, PLR0912, PLR0913, PLR0915 - ordered one-shot boundary
     marker: RubyBootstrapMarker,
     marker_reference: ArtifactReference,
     marker_transport: ArtifactTransportIdentity,
@@ -351,10 +351,17 @@ def execute_ruby_bootstrap_publication(  # noqa: C901, PLR0913, PLR0915 - ordere
         if assertion is not None:
             jwt = assertion()
             now, _ = current()
-            credential = writer.exchange(
-                jwt, now=now, bootstrap=True, monotonic=monotonic
-            )
-            del jwt
+            try:
+                credential = writer.exchange(
+                    jwt, now=now, bootstrap=True, monotonic=monotonic
+                )
+            finally:
+                del jwt
+                if writer.exchange_receipt is not None:
+                    _retain(
+                        evidence / "exchange-receipt.json",
+                        writer.exchange_receipt,
+                    )
         else:
             credential = cast("str", github_token)
         _retain(evidence / "upload-authority.json", check_authority())

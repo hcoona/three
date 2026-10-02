@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from datetime import timedelta
+from http import HTTPStatus
 from http.client import BadStatusLine
 
 import pytest
@@ -171,6 +172,7 @@ def test_one_original_uses_one_writer_after_marker_and_retains_bound_result(
     directory = tmp_path / "claim.json-observations"
     assert sorted(path.name for path in directory.iterdir()) == [
         "credential-authority.json",
+        *(["exchange-receipt.json"] if destination == "rubygems" else []),
         "result.json",
         "upload-authority.json",
         "upload.json",
@@ -180,6 +182,17 @@ def test_one_original_uses_one_writer_after_marker_and_retains_bound_result(
         parse_canonical_json((directory / "result.json").read_bytes())
         == result.to_document()
     )
+    if destination == "rubygems":
+        assert parse_canonical_json(
+            (directory / "exchange-receipt.json").read_bytes()
+        ) == {
+            "schema": "workflow-delivery/v3/ruby-exchange-receipt-v1",
+            "started-at": CURRENT.isoformat(),
+            "elapsed-ms": 0,
+            "response-received": True,
+            "http-status": 201,
+            "result": "accepted",
+        }
     retained = b"".join(path.read_bytes() for path in directory.iterdir())
     assert WRITE_TOKEN.encode() not in retained
     assert ASSERTION.encode() not in retained
@@ -599,6 +612,29 @@ def test_exchange_failure_prevents_upload_without_credential_fallback(
     assert events.count("assertion") == 1
     assert len(native.requests) == 1
     assert native.requests[0][1].endswith("/exchange_token")
+    receipt = parse_canonical_json(
+        (
+            tmp_path / "claim.json-observations" / "exchange-receipt.json"
+        ).read_bytes()
+    )
+    assert receipt == {
+        "schema": "workflow-delivery/v3/ruby-exchange-receipt-v1",
+        "started-at": CURRENT.isoformat(),
+        "elapsed-ms": None if isinstance(response, OSError) else 0,
+        "response-received": not isinstance(response, OSError),
+        "http-status": None
+        if isinstance(response, OSError)
+        else response.status,
+        "result": "request-failed"
+        if isinstance(response, OSError)
+        else "http-invalid"
+        if response.status == HTTPStatus.UNAUTHORIZED
+        else "name-invalid",
+    }
+    assert all(
+        secret not in str(receipt)
+        for secret in (WRITE_TOKEN, ASSERTION, "private", "denied")
+    )
     assert "private" not in str(result.to_document())
     assert (tmp_path / "claim.json").is_file()
 

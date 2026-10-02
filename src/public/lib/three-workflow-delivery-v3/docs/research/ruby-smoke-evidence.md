@@ -209,8 +209,14 @@ The service's pinned [token exchange controller][exchange] produces a
 `push_rubygem` key with a 15-minute lifetime after issuer, signature, claims
 and publisher checks, returning HTTP 201 (`:created`). The pinned credential
 action [response schema][credential-response] reads `rubygems_api_key`, `name`,
-`scopes`, optional `gem.name` and offset-aware `expires_at`. Pending publication
-may omit the gem field; normal admission requires the selected gem binding.
+`scopes`, optional `gem.name` and offset-aware `expires_at`. The `gem` field
+may be omitted for both pending and existing-gem publishers; explicit JSON null
+is not the optional object described by the action schema. The service creates
+publisher-owned keys separately from classic ownership: the [API-key model][api-key]
+delegates `rubygem` through optional ownership, while the [GitHub publisher][github-publisher]
+authorizes associated gems through `owns_gem?`. Normal admission still requires
+the selected gem/repository/workflow/Environment registration binding. An omitted
+response field supplies no token-scope evidence.
 These are source-derived response contracts, not a live exchange observation.
 Documentation describes gem-scoped short-lived access.
 This finding supplies neither an account confirmation nor a configured publisher.
@@ -259,3 +265,5 @@ authorizes probes.
 [native-request]: https://github.com/ruby/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/request.rb#L142
 [source-recheck]: https://github.com/hcoona/three/issues/954#issuecomment-5940809720
 [header-lineage]: https://github.com/hcoona/three/issues/954#issuecomment-5941047932
+[api-key]: https://github.com/rubygems/rubygems.org/blob/36e040d0c8a3282959bff078894a5d458f991472/app/models/api_key.rb#L14
+[github-publisher]: https://github.com/rubygems/rubygems.org/blob/36e040d0c8a3282959bff078894a5d458f991472/app/models/oidc/trusted_publisher/github_action.rb#L195

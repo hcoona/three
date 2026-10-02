@@ -478,8 +478,16 @@ def _execute(records: RubyOperationRecords, output: Path) -> None:
     if operation.registry.name == "rubygems":
         assertion = obtain_ruby_oidc_assertion("rubygems.org", os.environ, oidc)
         operation.require_current(now())
-        credential = writer.exchange(assertion, now=now())
-        del assertion
+        try:
+            credential = writer.exchange(assertion, now=now())
+        finally:
+            del assertion
+            if writer.exchange_receipt is not None:
+                write(
+                    inputs.directory / "exchange-receipt.json",
+                    writer.exchange_receipt,
+                    exclusive=True,
+                )
     else:
         credential = token
     write(
@@ -876,6 +884,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0912, PLR0915
                     )
             for name in (
                 "credential-claim.json",
+                "exchange-receipt.json",
                 "upload-claim.json",
                 "credential-authority.json",
                 "upload-authority.json",

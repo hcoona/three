@@ -58,19 +58,46 @@ def test_rubygems_exchange_accepts_bounded_token_and_hides_secrets(bootstrap):
 
 
 @pytest.mark.parametrize("bootstrap", [False, True])
-def test_rubygems_exchange_allows_missing_gem_only_for_bootstrap(bootstrap):
-    """A pending registration does not weaken subsequent established scope."""
+def test_rubygems_exchange_allows_omitted_gem_for_both_modes(bootstrap):
+    """Optional response scope does not replace the reviewed registration."""
     document = token_document()
     del document["gem"]
     writer, transport = _writer(json_response(document, 201))
-    if bootstrap:
-        assert (
-            writer.exchange(ASSERTION, now=NOW, bootstrap=True).value
-            == WRITE_TOKEN
-        )
-    else:
-        with pytest.raises(ValueError, match="bounded publisher"):
-            writer.exchange(ASSERTION, now=NOW)
+    credential = writer.exchange(ASSERTION, now=NOW, bootstrap=bootstrap)
+    assert credential.value == WRITE_TOKEN
+    assert credential.expires_at == NOW + timedelta(minutes=15)
+    assert writer.exchange_receipt["result"] == "accepted"
+    with pytest.raises(ValueError, match="already spent"):
+        writer.exchange(ASSERTION, now=NOW, bootstrap=bootstrap)
+    assert len(transport.requests) == 1
+
+
+@pytest.mark.parametrize("bootstrap", [False, True])
+@pytest.mark.parametrize(
+    "gem",
+    [
+        None,
+        {},
+        [],
+        "hcoona-release-smoke-ruby",
+        {"name": None},
+        {"name": "another-gem"},
+    ],
+)
+def test_rubygems_exchange_rejects_present_invalid_gem_in_both_modes(
+    bootstrap, gem
+):
+    """Omission is distinct from every malformed present optional member."""
+    document = token_document()
+    document["gem"] = gem
+    writer, transport = _writer(json_response(document, 201))
+    with pytest.raises(
+        ValueError, match=r"invalid Ruby record|bounded publisher"
+    ):
+        writer.exchange(ASSERTION, now=NOW, bootstrap=bootstrap)
+    assert writer.exchange_receipt["result"] == "gem-invalid"
+    with pytest.raises(ValueError, match="already spent"):
+        writer.exchange(ASSERTION, now=NOW, bootstrap=bootstrap)
     assert len(transport.requests) == 1
 
 
@@ -353,6 +380,14 @@ def test_rubygems_exchange_invalid_receipt_clock_stays_spent(completed):
     with pytest.raises(ValueError, match="already spent"):
         writer.exchange(ASSERTION, now=NOW)
     assert len(transport.requests) == 1
+    assert writer.exchange_receipt == {
+        "schema": "workflow-delivery/v3/ruby-exchange-receipt-v1",
+        "started-at": NOW.isoformat(),
+        "elapsed-ms": None,
+        "response-received": True,
+        "http-status": 201,
+        "result": "clock-invalid",
+    }
 
 
 @pytest.mark.parametrize(
@@ -430,4 +465,159 @@ def test_rubygems_issued_credential_still_requires_current_aware_time(
     }[when]
     with pytest.raises(ValueError, match="credential"):
         writer.upload(ruby_release_original[2], credential, now=now)
+    assert len(transport.requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "result"),
+    [
+        ("name", "", "name-invalid"),
+        ("expires_at", "invalid-date", "expiry-invalid"),
+        ("scopes", ["push_rubygem", "yank_rubygem"], "scope-invalid"),
+        ("gem", {"name": "wrong-gem"}, "gem-invalid"),
+        ("rubygems_api_key", "bad\ncredential", "credential-invalid"),
+        ("unrecognized", "arbitrary-private-response", "accepted"),
+    ],
+)
+def test_rubygems_exchange_receipt_is_closed_and_stage_specific(
+    field, value, result
+):
+    """Only fixed outcomes survive the credential-bearing response."""
+    document = token_document()
+    document[field] = value
+    writer, transport = _writer(json_response(document, 201))
+    ticks = iter([100.0, 100.1259])
+    if result == "accepted":
+        assert (
+            writer.exchange(
+                ASSERTION, now=NOW, monotonic=lambda: next(ticks)
+            ).value
+            == WRITE_TOKEN
+        )
+    else:
+        with pytest.raises(
+            ValueError,
+            match=r"invalid|malformed|bounded publisher|Invalid isoformat",
+        ):
+            writer.exchange(ASSERTION, now=NOW, monotonic=lambda: next(ticks))
+    assert writer.exchange_receipt == {
+        "schema": "workflow-delivery/v3/ruby-exchange-receipt-v1",
+        "started-at": NOW.isoformat(),
+        "elapsed-ms": 125,
+        "response-received": True,
+        "http-status": 201,
+        "result": result,
+    }
+    assert next(ticks, None) is None
+    receipt = dict(writer.exchange_receipt)
+    external_view = writer.exchange_receipt
+    external_view["result"] = "caller-tampering"
+    assert writer.exchange_receipt == receipt
+    with pytest.raises(ValueError, match="already spent"):
+        writer.exchange(ASSERTION, now=NOW)
+    assert writer.exchange_receipt == receipt
+    assert len(transport.requests) == 1
+    assert all(
+        secret not in str(receipt)
+        for secret in (
+            ASSERTION,
+            WRITE_TOKEN,
+            "arbitrary-private-response",
+            "bad\ncredential",
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("response", "result"),
+    [
+        (
+            RubyHttpResponse(401, b"private-response", "application/json"),
+            "http-invalid",
+        ),
+        (
+            RubyHttpResponse(201, b"private-response", "application/json"),
+            "json-invalid",
+        ),
+        (RubyHttpResponse(201, b"[]", "application/json"), "json-invalid"),
+        (RubyHttpResponse(201, b"{}", "text/private-media"), "http-invalid"),
+        (
+            RubyHttpResponse(
+                201,
+                b"{}",
+                "application/json",
+                location="https://private.invalid/token",
+            ),
+            "http-invalid",
+        ),
+    ],
+)
+def test_rubygems_exchange_receipt_screens_http_and_json_rejections(
+    response, result
+):
+    """Response receipt and safe status survive rejected headers or bodies."""
+    writer, transport = _writer(response)
+    ticks = iter([100.0, 100.0])
+    with pytest.raises(
+        ValueError, match=r"exchange failed|invalid|Expecting value"
+    ):
+        writer.exchange(ASSERTION, now=NOW, monotonic=lambda: next(ticks))
+    assert writer.exchange_receipt == {
+        "schema": "workflow-delivery/v3/ruby-exchange-receipt-v1",
+        "started-at": NOW.isoformat(),
+        "elapsed-ms": 0,
+        "response-received": True,
+        "http-status": response.status,
+        "result": result,
+    }
+    assert len(transport.requests) == 1
+
+
+def test_rubygems_exchange_receipt_preserves_transport_exception_and_spending():
+    """An absent HTTP response is not a received rejection or token issuance."""
+    failure = OSError("private-exchange-failure " + WRITE_TOKEN)
+    writer, transport = _writer(failure)
+    assert writer.exchange_receipt is None
+    ticks = iter([100.0])
+    with pytest.raises(OSError, match="private-exchange-failure") as caught:
+        writer.exchange(ASSERTION, now=NOW, monotonic=lambda: next(ticks))
+    assert caught.value is failure
+    assert writer.exchange_receipt == {
+        "schema": "workflow-delivery/v3/ruby-exchange-receipt-v1",
+        "started-at": NOW.isoformat(),
+        "elapsed-ms": None,
+        "response-received": False,
+        "http-status": None,
+        "result": "request-failed",
+    }
+    receipt = dict(writer.exchange_receipt)
+    external_view = writer.exchange_receipt
+    external_view["result"] = "caller-tampering"
+    assert writer.exchange_receipt == receipt
+    with pytest.raises(ValueError, match="already spent"):
+        writer.exchange(ASSERTION, now=NOW)
+    assert writer.exchange_receipt == receipt
+    assert len(transport.requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("elapsed", "expected_ms"), [(30.0, 30000), (30.001, None)]
+)
+def test_rubygems_exchange_receipt_bounds_elapsed_without_extra_clock_reads(
+    elapsed,
+    expected_ms,
+):
+    """Long durations do not grow an unbounded diagnostic numeric field."""
+    document = token_document()
+    document["expires_at"] = (
+        NOW + timedelta(seconds=elapsed, minutes=1)
+    ).isoformat()
+    writer, transport = _writer(json_response(document, 201))
+    ticks = iter([100.0, 100.0 + elapsed])
+    assert (
+        writer.exchange(ASSERTION, now=NOW, monotonic=lambda: next(ticks)).value
+        == WRITE_TOKEN
+    )
+    assert writer.exchange_receipt["elapsed-ms"] == expected_ms
+    assert writer.exchange_receipt["result"] == "accepted"
     assert len(transport.requests) == 1

@@ -227,7 +227,7 @@ URL or claiming to recover its discarded signature. Corrected source/profile,
 evidence replay and finite accounting were protected-delivered before normal
 activation. GitHub normal02 now has
 [independently accepted destination completion](https://github.com/hcoona/three/issues/954#issuecomment-5945688860)
-and that destination is stopped. Only `rubygems-normal01` is enabled against
+and that destination is stopped. Only `rubygems-normal02` is enabled against
 independently attested ready normal Governance, expiring at
 `2026-10-09T04:41:08.045005Z`. All other slots remain null; both spent bootstrap
 configuration carriers are blocked. Preserve the existing successor ledger and
@@ -253,6 +253,16 @@ For RubyGems.org, request one GitHub OIDC assertion with audience
 `https://rubygems.org/api/v1/oidc/trusted_publisher/exchange_token` with JSON
 `jwt`. Validate the short-lived response before one upload; retain only
 sanitized timing/status and binding evidence, never assertion/token bodies.
+The optional response `gem` may be absent for either lifecycle; any present value
+must be an object naming the selected gem. Registration attestation and current
+authority supply the binding, not an omitted response field. Retain the first
+exchange's fixed credential-free receipt through the existing hosted audit on
+success or failure, before upload authority/action. It records trusted start time,
+bounded elapsed milliseconds or null, whether a complete validated response
+returned, its integer HTTP status when available, and a fixed validation code.
+No complete response does not establish no send or no remote key creation.
+No bodies, body hashes, arbitrary headers/fields or exception text are retained.
+Diagnostic timing does not alter token expiry validation or permit another exchange.
 Expiry cannot renew Approval and a token failure cannot trigger static fallback.
 GitHub Packages authentication uses the job's repository token and expected
 actor with no token in command arguments or persisted native configuration.
