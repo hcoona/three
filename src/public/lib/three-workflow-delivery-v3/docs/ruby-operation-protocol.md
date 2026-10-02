@@ -416,24 +416,30 @@ originals; they never consume the bootstrap ownership placeholder.
 
 After concrete protocol/configuration review, use the owner's authenticated
 `Raffle2282` session at
-`https://rubygems.org/profile/oidc/pending_trusted_publishers`. Create at most one
-GitHub pending publisher with gem `hcoona-release-smoke-ruby`, repository owner
-`hcoona`, repository `three`, workflow `workflow-delivery-v3-ruby-bootstrap.yml`
-and Environment `workflow-delivery-v3-ruby-rubygems`. Leave Workflow Repository
-Owner/Name unset: there is no cross-repository reusable workflow. Inspect/reuse
-an exact existing entry; an incompatible entry or materially different form
-stops. No manual gem upload or deletion/recreation is included.
+`https://rubygems.org/profile/oidc/pending_trusted_publishers` to inspect and reuse
+both exact existing pending or converted GitHub publisher entries. Both use gem
+`hcoona-release-smoke-ruby`, repository owner `hcoona`, repository `three` and
+Environment `workflow-delivery-v3-ruby-rubygems`. The bootstrap workflow is
+`workflow-delivery-v3-ruby-bootstrap.yml`; the normal workflow is
+`workflow-delivery-v3-ruby-smoke.yml`. Workflow Repository Owner/Name remain unset:
+there is no cross-repository reusable workflow. An incompatible entry or
+materially different form stops. No manual gem upload, duplicate submission or
+deletion/recreation is included.
 
 After bootstrap, independently inspect actual owner `Raffle2282` and conversion
-to an existing-gem bootstrap publisher. Then add at most one normal publisher
-with the same repository/Environment and workflow
-`workflow-delivery-v3-ruby-smoke.yml`, leaving cross-repository fields unset.
-Retain the bootstrap registration; do not rewrite it into the normal tuple.
-Unavailable owner interaction leaves dependent admission unavailable.
+to an existing-gem bootstrap publisher, and establish the existing-gem normal
+publisher association for the exact normal tuple above. A pending normal entry
+alone is insufficient. Retain both registrations; do not rewrite the bootstrap
+registration into the normal tuple. If the required association cannot be
+established, dependent normal admission remains unavailable.
 
-Inspect each registration before and after submission and inspect the
+Submit a genuinely missing entry only within concrete existing authorization and
+the original remaining cumulative allowance of at most two publisher submissions.
+The two owner-reported submissions count toward that allowance; this procedure
+does not reset it or grant a third submission or recovery action. Inspect each
+registration before and after any authorized submission and inspect the
 postbootstrap pending list/conversion. These required read-only observations
-have no cumulative page quota; publisher submissions remain at most two.
+have no cumulative page quota.
 Retain screened tuple/account facts,
 never session material. Public owners evidence supplies actual ownership;
 account views supply registration/conversion. Matching display text alone does
