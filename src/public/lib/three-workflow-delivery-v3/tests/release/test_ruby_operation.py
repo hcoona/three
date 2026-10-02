@@ -66,7 +66,7 @@ def test_ruby_default_envelope_has_exact_disabled_finite_campaign():
 
 
 def test_ruby_protected_envelope_preserves_fixed_authority_and_finite_slots():
-    """Protected activation changes slots without changing campaign bounds."""
+    """Protected retirement disables slots without changing campaign bounds."""
     path = (
         ROOT
         / ".github/workflow-delivery/requests/hcoona-release-smoke-ruby.json"
@@ -78,28 +78,7 @@ def test_ruby_protected_envelope_preserves_fixed_authority_and_finite_slots():
     }
     successor = "github-packages-bootstrap02"
     assert set(doc["slots"]) == {*EXPECTED_SLOTS, successor}
-    enabled = "rubygems-normal03"
-    assert {
-        slot for slot, selected in doc["slots"].items() if selected is not None
-    } == {enabled}
-    assert {
-        slot: selected
-        for slot, selected in doc["slots"].items()
-        if slot != enabled
-    } == dict.fromkeys({*EXPECTED_SLOTS, successor} - {enabled})
-    binding = doc["slots"][enabled]["binding"]
-    assert binding == ruby_operation_binding(enabled)
-    assert binding["kind"] == "normal"
-    assert binding["destination"] == "rubygems"
-    assert binding["workflow"] == "workflow-delivery-v3-ruby-smoke.yml"
-    assert binding["configuration-path"] == (
-        ".github/workflow-delivery/governance/"
-        "hcoona-release-smoke-ruby-rubygems.json"
-    )
-    assert (
-        binding["operation-profile-digest"]
-        == RubyRegistry("rubygems").profile_digest
-    )
+    assert doc["slots"] == dict.fromkeys({*EXPECTED_SLOTS, successor})
 
 
 @pytest.mark.parametrize("slot", EXPECTED_SLOTS)

@@ -223,24 +223,14 @@ storage failures. Distinguish screened status/route-policy/digest evidence from
 original response bytes; a suppressed body is not an empty original. Exactness
 still requires the actual complete downloaded gem bytes and witness. Offline
 replay verifies the screened continuation joins without reconstructing a signed
-URL or claiming to recover its discarded signature. Corrected source/profile,
-evidence replay and finite accounting were protected-delivered before normal
-activation. GitHub normal02 now has
-[independently accepted destination completion](https://github.com/hcoona/three/issues/954#issuecomment-5945688860)
-and that destination is stopped. Only `rubygems-normal03` is enabled against
-independently attested ready normal Governance, expiring at
-`2026-10-09T04:41:08.045005Z`. All other slots remain null; both spent bootstrap
-configuration carriers are blocked. Preserve the existing successor ledger and
-all failed, cancelled and completed outcomes. The RubyGems bootstrap remains
-failed and mutated; later sole ownership and owner-confirmed existing-gem
-publisher associations supply postcreation facts only. Actual-target native
-qualification, fresh controls and independent normal request admission remain
-separate gates. RubyGems normal02 published beta.30 with exact readback, but
-failed terminal-artifact readback and skipped the remote consumer; preserve its
-spent publication and incomplete closure under the
-[independent audit and disposition](https://github.com/hcoona/three/issues/954#issuecomment-5961727799).
-The fresh normal03 uses unchanged runtime code and cannot reuse prior artifacts
-or Approval.
+URL or claiming to recover its discarded signature. The [accepted normal Live evidence](./validation/ruby-normal-live-evidence.md)
+records completion and durable stops for both destinations. All eleven
+protected request slots are null and campaign-specific external callers
+are retired from invocation use. Historical ready normal Governance, blocked bootstrap
+configuration, original expiries and the existing successor ledger remain
+preserved. Earlier failed, cancelled and incomplete outcomes remain as
+recorded; later completion does not reuse their artifacts or Approval or
+renew their authority.
 
 RubyGems.org uses the documented version inventory and exact-version/platform
 API, then an admitted HTTPS gem download origin. Check native name, version,
