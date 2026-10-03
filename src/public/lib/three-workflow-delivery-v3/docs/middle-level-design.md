@@ -49,9 +49,23 @@ concurrency; Environments and destination trust configuration own authorization.
 The CLI owns selecting its required work, using those facilities correctly and
 interpreting the resulting business state.
 
+The HLD's [native integration boundary](./high-level-design.md#native-integrations)
+governs every ecosystem module. Call a maintained ecosystem library in its native
+language, or a supported tool interface, when that is how the required semantics
+are exposed. A helper is part of this application and its selected control
+revision, not another policy service. Transfer typed results only at an actual
+process or runner boundary; field spelling and internal interfaces may change
+with their producers and consumers without compatibility aliases.
+
 ## Repository Facts and Impact Selection
 
 ### Minimum Facts
+
+Repository-maintained dependency locks are valid and synchronized with their
+native manifests. Analysis consumes that existing repository guarantee; it does
+not introduce another lock-validation or admission protocol. Reading facts for
+a revision must still address that revision's committed inputs rather than
+silently substitute a different installed state.
 
 Repository analysis returns the following facts, with their source revision and
 any relevant coverage limitation:
@@ -67,8 +81,11 @@ any relevant coverage limitation:
 Keep build-input dependencies and quality-consumer relationships distinguishable.
 A test project can implement another project's checks without becoming an input
 to that product's package or version. Resolve native references and imports using
-the ecosystem's supported metadata interface; do not recreate MSBuild conditional
-evaluation or package-manager resolution in a generic graph parser.
+the ecosystem's supported metadata interface. Converting native identities and
+edges into Workflow values is adaptation; interpreting dependency specifiers,
+conditional imports or version-file inheritance is native evaluation and follows
+the HLD boundary. Combining already resolved edges across revisions and computing
+their impact closure remain Workflow responsibilities.
 
 Use ordinary typed values inside one invocation. Do not require a Provider Request
 Manifest, Fact Bundle, admission token or immutable Repository Model aggregate.

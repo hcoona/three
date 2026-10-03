@@ -16,6 +16,12 @@ resolver, quality YAML resolver, check executor or Release command yet. Existing
 workflows still use their current implementations. Synthetic graph tests establish
 selection and collection behavior, not native ecosystem or repository-wide coverage.
 
+New ecosystem integrations follow the HLD's
+[native integration boundary](../../../public/lib/three-workflow-delivery-v3/docs/high-level-design.md#native-integrations).
+The C# entry point may invoke a helper using an ecosystem's native library.
+The implemented selection/result core consumes resolved facts and does not
+interpret ecosystem manifests, dependency specifiers or version inheritance.
+
 Native integrations must supply complete ownership and reverse-consumer facts for
 their declared scope, including base and candidate relations, selected quality
 presets and all required variants. They must report incomplete evaluation or
