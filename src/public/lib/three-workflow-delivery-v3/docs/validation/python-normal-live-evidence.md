@@ -13,7 +13,7 @@ This record owns the runtime completion evidence consumed by the project
 README, document index and agent handoff. V3 maintainers retain the evidence
 and update those consumers when the claim changes. The
 [requirements](../requirements.md#python-smoke-slice) and
-[migration policy](../migration-strategy.md#python-smoke-delivery) retain their
+[migration policy](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#python-smoke-delivery) retain their
 normative roles. A separate validation carrier preserves exact provenance and
 limits without duplicating it across status pages or the service-source study.
 

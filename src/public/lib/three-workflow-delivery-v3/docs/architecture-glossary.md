@@ -344,7 +344,7 @@ caller-selected `index` or `worktree` feedback mode. That policy remains
 internal to Source-Tree Conformance and creates no separate CI obligation or
 Evidence record. Project tests have the separate execution owner defined by
 the [CI MLD](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/ci-qualification-mld.md#control-package-tests). The
-[execution migration](./migration-strategy.md#ci-execution-ownership-cutover)
+[execution migration](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#ci-execution-ownership-cutover)
 records the replacement of the former HK test owner.
 
 ### Static-Reference Policy

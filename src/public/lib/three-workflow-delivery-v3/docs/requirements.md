@@ -17,9 +17,10 @@ markers, not continuing obligations.
 These requirements govern new contraction work. The
 [HLD](./high-level-design.md) defines the replacement architecture and order;
 the [middle-level design](./middle-level-design.md) defines its component,
-selection, execution, transfer and outcome contracts. Neither claims that the
-implementation has been cut over. The existing glossary, ecosystem LLDs and
-migration document, together with the
+selection, execution, transfer and outcome contracts. The
+[implementation plan](./migration-strategy.md) maps their concrete callers and
+validation dependencies. These documents do not claim implementation cutover.
+The existing glossary, ecosystem LLDs and pinned former migration plan, together with the
 [pinned former MLDs](./README.md#normative-hierarchy), describe the pre-contraction
 implementation and retained evidence contracts for their actual consumers.
 They do not prescribe the

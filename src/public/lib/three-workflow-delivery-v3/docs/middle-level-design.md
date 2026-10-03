@@ -429,34 +429,10 @@ Consequently the rewrite must add supported native ownership/dependency coverage
 and observation-based completion while removing obsolete proof machinery. A
 literal class-for-class language port would preserve the current limitations.
 
-| Existing source/caller group                                                                             | Target treatment and migration dependency                                                                                                              |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `repository/*_provider.py`, `compiler.py`, `*_model.py`, `descriptors.py`                                | Replace smoke model/admission types with native facts and declarations; retain useful extraction; close supported graph coverage before CI cutover     |
-| `ci/`, `records/ci.py`, V3 CI workflows                                                                  | Replace fixed slice/path admission with meaningful selection and required-result accounting; migrate one complete supported journey                    |
-| `adapters/{node,dotnet,python,ruby}.py`                                                                  | Share actual build/inspection/consumer code; remove custom witness and version-recomputation bans while preserving native versions and reproducibility |
-| `release/` preparation, publication and finalizers                                                       | Implement the common state table; migrate complete preparation/dry-run behavior before publication callers                                             |
-| Destination adapters and readback modules                                                                | Keep concrete native semantics and bounded sanitized I/O; enumerate each destination's completion/consumer conditions before its caller changes        |
-| `records/`, bind/export/admit CLI commands and record composite actions                                  | Replace proof genealogy with actual transfers; update producing and receiving workflow steps together                                                  |
-| Governance readers, `.github/workflow-delivery/governance/`, approval proof jobs                         | Retire dynamic runtime admission; preserve actual native permission/Environment integration and historical evidence                                    |
-| Private .NET provider and NuGet consumer helpers/tests                                                   | Consolidate code/test ownership in the private application while preserving actual unprivileged process boundaries and native fixtures                 |
-| Static-reference modules/scripts, NuGet authority host and HK scanner gate                               | Retire together with their imports, test contracts, tool dependencies and caller wiring                                                                |
-| Four smoke products and their native consumer fixtures                                                   | Retain real package/consumer scenarios without special trust or smoke-only runtime admission rules                                                     |
-| Public `nbgv-python` and backend consumers                                                               | Keep the independent public component; preserve its native version/backend integration                                                                 |
-| Acceptance, bootstrap, profile, Ruby operation/configuration tools and workflows                         | Keep historical source/evidence readable; do not port campaign machinery into ordinary Release or revive spent operations                              |
-| Root CI/HK, `eng/scripts/ci_scope.py`, Python runtime/backend sync scripts, workspace/tool configuration | Update concrete selection/test/tool consumers with their replacement; no duplicate CI owner or stale dependency                                        |
-
-Python paths above are under
-`src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/`
-unless another root is shown. The project inventory and every workflow/CLI caller
-must be resolved concretely for the cutover group; this grouped map is not a claim
-that [#984](https://github.com/hcoona/three/issues/984) is complete.
-
-Implement directly at the final private location. First close native analysis and
-a complete supported CI journey; then common Release preparation/dry run and
-destination/result behavior; switch bounded whole callers and retire their old
-surfaces. Add concrete command/JSON fields, runner mappings, destination read limits
-and retention with each reviewed integration. Internal formats may break; current
-callers change together. No mandatory legacy reader is added to the new core.
+The [implementation plan](./migration-strategy.md) owns the concrete project and
+CLI/workflow caller inventory, integration payloads, destination conditions,
+behavior/evidence mapping and dependency-ordered transitions. Keep that mapping
+with actual caller changes; do not maintain a second inventory here.
 
 Old records or code survive only for actual consumers. Pin historical source when
 it serves an evidence reader, preserving original outcomes and provenance. Retiring

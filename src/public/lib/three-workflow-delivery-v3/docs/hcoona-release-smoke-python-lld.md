@@ -27,7 +27,7 @@ Implementation, configuration/admission and publication require their separate
 [Wave](../../../../../docs/delivery-wave.md) authorization and domain gates.
 
 The [source record](./research/python-smoke-evidence.md) owns service findings
-and limits. The [migration policy](./migration-strategy.md#python-smoke-delivery)
+and limits. The [migration policy](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#python-smoke-delivery)
 owns staged delivery. No existing npm/NuGet permission is reused.
 
 ## Package and Build Contract

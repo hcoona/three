@@ -10,10 +10,12 @@ validation or permission to reopen a completed campaign.
 
 The [middle-level design](./middle-level-design.md) owns the component,
 selection, execution, transfer and outcome contracts for this architecture.
+The [implementation plan](./migration-strategy.md) maps concrete projects/callers,
+integration contracts and retirement dependencies.
 The [Wave](../../../../../docs/delivery-wave.md) authorizes the bounded work;
 the [handoff](./agent-handoff.md) retains operational limits. The
-[pinned former MLDs](./README.md#normative-hierarchy), old glossary, migration
-record and ecosystem LLDs describe the existing
+[pinned former MLDs and migration plan](./README.md#normative-hierarchy),
+old glossary and ecosystem LLDs describe the existing
 runtime and its evidence consumers under the
 [requirements transition](./requirements.md#requirements-and-implementation-transition).
 Their aggregate models and record chains are not contracts for this replacement.

@@ -31,7 +31,7 @@ must report which files and execution mode they actually covered.
 
 [Issue #817](https://github.com/hcoona/three/issues/817) separates source
 checks from project tests. The v3
-[migration contract](../../src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#ci-execution-ownership-cutover)
+[migration contract](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#ci-execution-ownership-cutover)
 owns its runtime and native-admission boundary.
 
 HK checks source/configuration conformance, including file checks, lock and

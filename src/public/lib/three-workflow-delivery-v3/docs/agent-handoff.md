@@ -11,12 +11,14 @@ This is an operating handoff, not a second specification. The
 [HLD](./high-level-design.md) govern new contraction design. The
 [middle-level design](./middle-level-design.md) defines component, selection,
 execution, transfer and outcome contracts. The HLD owns terminology and
-implementation order; implementation has not yet been cut over. The
+implementation order. The [implementation plan](./migration-strategy.md) identifies
+concrete callers, integration contracts and retirement dependencies.
+Implementation has not yet been cut over. The
 [requirements transition](./requirements.md#requirements-and-implementation-transition)
 defines the retained implementation/evidence scope of the old
 [glossary](./architecture-glossary.md),
 [pinned former MLDs](./README.md#normative-hierarchy),
-[migration policy](./migration-strategy.md), and applicable slice LLD
+[migration policy](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md), and applicable slice LLD
 ([npm](./hcoona-release-smoke-npm-lld.md) or
 [NuGet](./hcoona-release-smoke-github-packages-lld.md), or
 [Python](./hcoona-release-smoke-python-lld.md), or
@@ -43,7 +45,7 @@ operations, publication, or another npm proving run.
 The [Wave](../../../../../docs/delivery-wave.md) authorizes the full contraction
 tracked by [#984](https://github.com/hcoona/three/issues/984) and its coordinated
 work under [#983](https://github.com/hcoona/three/issues/983). Start with the
-requirements, replacement HLD and middle-level design, then close affected implementation contracts
+requirements, replacement HLD, middle-level design and implementation plan, then close affected integration details
 before implementation, validation, caller cutover and retirement. Preserve permanent requirement IDs
 and the existing consumers of historical evidence. The Wave's effects boundary
 does not reopen any completed ecosystem campaign or authorize a new publication.
@@ -181,7 +183,7 @@ For the owner's next Workflow Delivery v3 task:
    and the separate [TLS-stopped operation](https://github.com/hcoona/three/issues/843#issuecomment-5862680211).
    Process-local selection of the existing system CA store enabled the later
    operator connection; do not disable TLS validation or change host trust.
-   The [migration order](./migration-strategy.md#python-smoke-delivery) owns
+   The [migration order](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#python-smoke-delivery) owns
    these stages; design acceptance grants no configuration, OIDC or dispatch.
    Carry forward Backspace7980's confirmed Sole Owner status and all three configured
    TestPyPI publisher tuples (bootstrap, retired native and normal smoke workflows, repository
@@ -734,10 +736,11 @@ mutation and triggers read-only investigation rather than retry.
 
 After Git inspection, read this handoff, the [project entry](./README.md),
 [requirements](./requirements.md), replacement [HLD](./high-level-design.md) and
-[middle-level design](./middle-level-design.md). Use its
+[middle-level design](./middle-level-design.md), then the
+[implementation plan](./migration-strategy.md). Use the MLD's
 [transfer contracts](./middle-level-design.md#data-crossing-boundaries) and the HLD's
 [implementation order](./high-level-design.md#implementation-and-retirement-order)
-for new work. Load the relevant existing glossary, pinned former MLD, migration section, LLD
+for new work. Load the relevant existing glossary, pinned former MLD/migration section, LLD
 and source only to understand an actual implementation or evidence consumer.
 The [document portal](./README.md#normative-hierarchy) routes those baseline
 records. Do not preload all historical designs or treat npm contracts as a
