@@ -350,8 +350,9 @@ The revised candidate keeps the native filter reachability above, including its
 peer dimensions, and complements it with full wanted-lock `list` JSON. Use
 `--depth Infinity` for that complementary view so a resolved local input below
 another package is not dropped. Obtain existing publish-directory configuration
-with `pnpm --dir <discovered-directory> pkg get publishConfig --json`; an absent
-property produces no output and means no additional publish directory.
+with `pnpm --dir <discovered-directory> pkg get publishConfig.directory --json`.
+An absent directory field produces no output; other publish settings do not add
+an output-directory association.
 
 For each discovered source directory and its declared publish directory, form
 the pinned native coordinate encoding, such as
