@@ -5,7 +5,10 @@ records. Start with the [document set](docs/README.md) and
 [agent handoff](docs/agent-handoff.md) for the authority order, current evidence,
 and operating limits.
 
-The [contraction requirements](docs/requirements.md) govern replacement work.
+The [contraction requirements](docs/requirements.md) and replacement
+[HLD](docs/high-level-design.md) govern new design. The HLD specifies the internal
+C# application under `src/private/app/workflow-delivery/`, its boundary contracts
+and cutover order; the runtime described below has not yet been replaced.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
 that the existing runtime already satisfies the contraction requirements.
@@ -13,7 +16,9 @@ that the existing runtime already satisfies the contraction requirements.
 Workflow v3 is repository-specific tooling, with no PyPI distribution or
 third-party Python API support commitment. Its Python modules and same-revision
 callers may evolve together. Compatibility obligations follow the CLI/workflow,
-serialized and domain contracts defined in the project records.
+serialized and domain contracts for the existing implementation. The replacement
+may break these internal formats/APIs while updating or retiring active callers;
+it has no mandatory legacy compatibility or replay product.
 
 New sessions start at the [handoff entry](docs/agent-handoff.md#starting-a-new-session).
 The [NuGet delivery retrospective](docs/research/nuget-delivery-retrospective.md)

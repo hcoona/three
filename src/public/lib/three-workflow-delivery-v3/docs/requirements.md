@@ -14,13 +14,15 @@ markers, not continuing obligations.
 
 ## Requirements and Implementation Transition
 
-These requirements govern new contraction work. The existing HLD, glossary,
-five MLDs, ecosystem LLDs and migration document describe the pre-contraction
-implementation and its retained evidence contracts until their affected scope
-is explicitly reconciled. They do not prescribe the replacement architecture or
-reinstate a requirement retired here. Their references to confirmed requirements
-and architecture refer to that implementation baseline, not completed conformity
-to this page.
+These requirements govern new contraction work. The
+[HLD](./high-level-design.md) defines the replacement architecture, its boundary
+contracts and implementation order. It does not claim that the implementation
+has been cut over. The existing glossary, five MLDs, ecosystem LLDs and migration
+document remain descriptions of the pre-contraction implementation and retained
+evidence contracts while they have those consumers. They do not prescribe the
+replacement or reinstate retired requirements. Their references to confirmed
+requirements and architecture refer to that baseline; affected HLD references
+use its pinned historical version.
 
 For interpreting existing code and historical evidence, use the
 [pinned pre-contraction requirements][implementation-requirements] with those

@@ -7,9 +7,12 @@ The [document-set entry](./README.md) states the authority boundary and source
 provenance for these records.
 
 This is an operating handoff, not a second specification. The
-[requirements](./requirements.md) govern new contraction work. The
+[requirements](./requirements.md) and replacement
+[HLD](./high-level-design.md) govern new contraction design. The HLD owns its
+terminology, boundary contracts, validation basis and implementation order;
+implementation has not yet been cut over. The
 [requirements transition](./requirements.md#requirements-and-implementation-transition)
-defines the retained implementation/evidence scope of the [HLD](./high-level-design.md),
+defines the retained implementation/evidence scope of the old
 [glossary](./architecture-glossary.md), five MLDs,
 [migration policy](./migration-strategy.md), and applicable slice LLD
 ([npm](./hcoona-release-smoke-npm-lld.md) or
@@ -18,7 +21,9 @@ defines the retained implementation/evidence scope of the [HLD](./high-level-des
 [Ruby](./hcoona-release-smoke-ruby-lld.md)). They do not yet demonstrate
 conformity to the contraction requirements. The operating details below retain
 the existing implementation and historical campaign limits; they do not
-reinstate superseded requirements for replacement design.
+reinstate superseded requirements for replacement design. The owner accepted
+[Windows feasibility as an assumption](./research/contraction-feasibility.md#decision-and-evidence-scope)
+and skipped a separate experiment; do not restore it as a pending gate.
 
 v3 is the only normative line. Use v1 or v2 only when a v3 document explicitly
 requests mechanism extraction and revalidation. Git and delivery PRs carry
@@ -36,8 +41,8 @@ operations, publication, or another npm proving run.
 The [Wave](../../../../../docs/delivery-wave.md) authorizes the full contraction
 tracked by [#984](https://github.com/hcoona/three/issues/984) and its coordinated
 work under [#983](https://github.com/hcoona/three/issues/983). Start with the
-requirements, then reconcile architecture and contracts before implementation,
-validation, caller cutover and retirement. Preserve permanent requirement IDs
+requirements and replacement HLD, then close affected implementation contracts
+before implementation, validation, caller cutover and retirement. Preserve permanent requirement IDs
 and the existing consumers of historical evidence. The Wave's effects boundary
 does not reopen any completed ecosystem campaign or authorize a new publication.
 
@@ -725,25 +730,15 @@ mutation and triggers read-only investigation rather than retry.
 
 ## Required Reading Order
 
-After the initial Git inspection, use this authority order for relevant
-decisions. The NuGet research handoff provides decision-specific starting
-sections; do not preload every historical appendix or treat the npm LLD as a
-NuGet specification:
-
-1. this handoff and the [v3 entry point](./README.md);
-2. [Requirements](./requirements.md);
-3. [High-Level Design](./high-level-design.md);
-4. [Architecture Glossary](./architecture-glossary.md);
-5. [Repository Model and Release Unit MLD](./repository-model-release-unit-mld.md);
-6. [Governance Integration MLD](./governance-integration-mld.md);
-7. [CI Qualification MLD](./ci-qualification-mld.md);
-8. [Release Delivery MLD](./release-delivery-mld.md);
-9. [Shared Foundation MLD](./shared-foundation-mld.md);
-10. [Migration and Document Policy](./migration-strategy.md);
-11. the applicable slice LLD:
-    [npm](./hcoona-release-smoke-npm-lld.md) or
-    [NuGet](./hcoona-release-smoke-github-packages-lld.md); and
-12. current repository code only for implementation facts.
+After Git inspection, read this handoff, the [project entry](./README.md),
+[requirements](./requirements.md) and replacement [HLD](./high-level-design.md).
+Use its [data contracts](./high-level-design.md#data-crossing-boundaries) and
+[implementation order](./high-level-design.md#implementation-and-retirement-order)
+for new work. Load the relevant existing glossary, MLD, migration section, LLD
+and source only to understand an actual implementation or evidence consumer.
+The [document portal](./README.md#normative-hierarchy) routes those baseline
+records. Do not preload all historical designs or treat npm contracts as a
+specification for another ecosystem.
 
 Do not infer policy from stale runtime behavior or archived designs.
 
@@ -796,11 +791,13 @@ applicable documentation and repository gates but keeps the same validate-before
 
 ### Architecture and Design
 
-- Preserve the waterfall gates: interactive requirements confirmation, HLD,
-  MLDs, brief LLD, development, then test and review.
+- Confirm requirements, affected architecture, concrete boundary contracts and
+  validation basis before implementation and caller cutover. A fixed number of
+  MLDs or matching CI/Release documents is not required.
 - Keep design contract-bounded; do not silently infer policy or expand channels, destinations, credentials, services,
   authority, abstractions, or external resources.
-- CI Qualification and Release Delivery remain peer contexts; Shared Foundation owns mechanisms, not business policy.
+- CI and Release retain distinct responsibilities in one internal application;
+  share concrete native mechanisms without symmetric domain frameworks.
 - Rely on documented lower-layer guarantees. If one is absent, block the capability rather than simulate a weaker one.
   The NuGet-specific dependency and evidence basis follows `WD-NUGET-006`;
   do not reintroduce its superseded service-statement prerequisite. Python
@@ -812,8 +809,9 @@ applicable documentation and repository gates but keeps the same validate-before
 ### Testing and Review
 
 - Use scenario-first tests for business behavior.
-- Use strict unit, contract, golden, and negative-binding tests for schemas, canonicalization, identity, concurrency,
-  authorization, mutation ordering, and fail-closed core contracts.
+- Use focused unit tests for impact/outcome logic and contract tests for actual
+  transfers, qualification and effect boundaries. Do not preserve tests whose
+  only purpose is enforcing retired record chains or duplicating native approval.
 - Use real integration tests at GitHub, Git, npm, NBGV, HK, or destination contract boundaries.
 - Avoid brittle tests for ordinary implementation detail.
 - Run complete affected tests, HK, and hooks before independent multi-review; adjudicate findings atomically and return

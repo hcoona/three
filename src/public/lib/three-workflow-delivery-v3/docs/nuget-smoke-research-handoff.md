@@ -4,7 +4,9 @@
 > implementation. Its authority for existing code and retained evidence, and the
 > requirements-first order for replacement work, are defined by the
 > [requirements transition](./requirements.md#requirements-and-implementation-transition).
-> It is not yet a design demonstrating conformity to the contraction requirements.
+> New architecture, terminology and cutover direction are owned by the
+> [replacement HLD](./high-level-design.md). This record remains only for its
+> existing implementation and evidence consumers; it does not constrain the replacement.
 
 ## Status and Authorization
 
@@ -160,13 +162,13 @@ Keep these facts in the working context:
 
 Load deeper context by decision, in v3 authority order:
 
-| Decision                                      | Read next                                                                                                                                                            |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product boundary and trust                    | [Requirements](./requirements.md): `WD-NFR-003`, `WD-AUTH-*`, `WD-SEC-*`, and the explicit scope of `WD-SLICE-*`; [Governance MLD](./governance-integration-mld.md)  |
-| Provider, native version, and Build ownership | [HLD](./high-level-design.md#shared-foundation); [Repository Model MLD](./repository-model-release-unit-mld.md); [Shared Foundation MLD](./shared-foundation-mld.md) |
-| Qualification and consumer acceptance         | [CI Qualification MLD](./ci-qualification-mld.md)                                                                                                                    |
-| Observation, action, and terminal evidence    | [Release Delivery MLD](./release-delivery-mld.md)                                                                                                                    |
-| Historical mechanism reuse                    | [Migration policy](./migration-strategy.md), then only the permitted historical mechanism                                                                            |
+| Decision                                      | Read next                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product boundary and trust                    | [Requirements](./requirements.md): `WD-NFR-003`, `WD-AUTH-*`, `WD-SEC-*`, and the explicit scope of `WD-SLICE-*`; [Governance MLD](./governance-integration-mld.md)                                                                                                                             |
+| Provider, native version, and Build ownership | [HLD](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md#shared-foundation); [Repository Model MLD](./repository-model-release-unit-mld.md); [Shared Foundation MLD](./shared-foundation-mld.md) |
+| Qualification and consumer acceptance         | [CI Qualification MLD](./ci-qualification-mld.md)                                                                                                                                                                                                                                               |
+| Observation, action, and terminal evidence    | [Release Delivery MLD](./release-delivery-mld.md)                                                                                                                                                                                                                                               |
+| Historical mechanism reuse                    | [Migration policy](./migration-strategy.md), then only the permitted historical mechanism                                                                                                                                                                                                       |
 
 Use the [glossary](./architecture-glossary.md) for terminology. The npm LLD is
 evidence of the first slice, not a NuGet specification. Do not preload its
@@ -380,7 +382,7 @@ this summary routes the next agent to that authority.
 The subsequent implementation is authorized as described above. A descriptor
 alone cannot enable NuGet: native acceptance tooling and evidence, and
 protected activation remain necessary after disabled workflow integration.
-The [HLD extension](./high-level-design.md#nuget-second-slice-extension)
+The [HLD extension](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md#nuget-second-slice-extension)
 assigns ownership. Local tests or historical package versions cannot supply
 missing native or real-publication evidence. The confirmed requirements alone
 are not authorization; the subsequent explicit delegation supplies execution

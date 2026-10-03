@@ -14,16 +14,18 @@ and its route to the [NuGet delivery retrospective](./research/nuget-delivery-re
 
 Workflow Delivery v3 is active and is the only normative Workflow Delivery design line.
 
-The [requirements](./requirements.md) now own the repository-internal contraction
-behavior. The [requirements and implementation transition](./requirements.md#requirements-and-implementation-transition)
-defines the scope of the existing HLD, glossary, MLDs, LLDs and migration record:
-they describe the pre-contraction implementation and retained evidence until
-their affected scope is reconciled. The implementation status and completed
-campaign facts below do not claim conformity to the contraction requirements.
-The [Wave](../../../../../docs/delivery-wave.md) covers the full contraction;
-requirements precede architecture, contracts and implementation.
+The [requirements](./requirements.md) own contraction behavior. The replacement
+[HLD](./high-level-design.md) defines the smaller internal C# architecture,
+boundary contracts and implementation order. The
+[feasibility record](./research/contraction-feasibility.md) distinguishes local
+observations from the owner's accepted Windows assumption. The
+[transition](./requirements.md#requirements-and-implementation-transition) keeps
+the old glossary, MLDs, LLDs and migration record scoped to existing code and
+retained evidence. The implementation and completed campaigns described below
+do not claim conformity to the replacement. The
+[Wave](../../../../../docs/delivery-wave.md) covers the full contraction.
 
-The user-approved replacement normal-Live baseline is merged across the
+The pre-contraction normal-Live baseline was merged across the
 requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
 The implementation includes active-only Observation, fresh
 exact-satisfied finalization proof, profile-bound one-shot publication,
@@ -66,7 +68,7 @@ operating guidance, not a second normative specification.
 ## Ruby Smoke Design
 
 The owner selected the complete Ruby journey under [Issue #954](https://github.com/hcoona/three/issues/954).
-[`WD-RUBY-*`](./requirements.md#ruby-smoke-slice), the [HLD extension](./high-level-design.md#ruby-smoke-extension)
+[`WD-RUBY-*`](./requirements.md#ruby-smoke-slice), the [HLD extension](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md#ruby-smoke-extension)
 and [Ruby LLD](./hcoona-release-smoke-ruby-lld.md) define the minimal integration.
 The [source evidence](./research/ruby-smoke-evidence.md) preserves unverified
 GitHub duplicate behavior and RubyGems.org's conditional replay finding.
@@ -176,27 +178,31 @@ the npm slice's exceptions or evidence.
 
 ## Normative Hierarchy
 
-Read the v3 documents in this order, applying the
-[requirements transition](./requirements.md#requirements-and-implementation-transition)
-to the implementation-baseline records:
+New design starts with the [requirements](./requirements.md), then the
+replacement [HLD](./high-level-design.md), including its terminology, transfer
+contracts and implementation order. Local observations and the Windows assumption
+are recorded in [contraction feasibility](./research/contraction-feasibility.md).
 
-1. [Requirements](./requirements.md)
-2. [High-Level Design](./high-level-design.md)
-3. [Architecture Glossary](./architecture-glossary.md)
-4. Middle-level designs:
+Load these implementation-baseline records only for their existing code or
+historical-evidence consumers, under the
+[transition](./requirements.md#requirements-and-implementation-transition):
+
+1. [Pre-contraction glossary](./architecture-glossary.md)
+2. Existing middle-level designs:
     - [Repository Model and Release Unit](./repository-model-release-unit-mld.md)
     - [Governance Integration](./governance-integration-mld.md)
     - [CI Qualification](./ci-qualification-mld.md)
     - [Release Delivery](./release-delivery-mld.md)
     - [Shared Foundation](./shared-foundation-mld.md)
-5. [Migration and Document Policy](./migration-strategy.md)
-6. Applicable slice LLD: [npm](./hcoona-release-smoke-npm-lld.md),
+3. [Pre-contraction migration policy](./migration-strategy.md)
+4. Applicable slice LLD: [npm](./hcoona-release-smoke-npm-lld.md),
    [NuGet](./hcoona-release-smoke-github-packages-lld.md), or
    [Python](./hcoona-release-smoke-python-lld.md), and
    [Ruby](./hcoona-release-smoke-ruby-lld.md)
 
-Higher layers constrain lower ones, and the current set must be reconciled if a conflict appears. v1 and v2 may supply
-a mechanism only when a v3 document explicitly requires extraction and revalidation.
+Their historical HLD references remain pinned to the implementation source;
+they cannot fill a replacement-design gap with a retired requirement. v1/v2
+mechanisms need explicit v3 extraction and revalidation before reuse.
 
 ## Current First Slice
 
