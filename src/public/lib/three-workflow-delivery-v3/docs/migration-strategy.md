@@ -5,7 +5,8 @@
 > requirements-first order for replacement work, are defined by the
 > [requirements transition](./requirements.md#requirements-and-implementation-transition).
 > New architecture, terminology and cutover direction are owned by the
-> [replacement HLD](./high-level-design.md). This record remains only for its
+> [replacement HLD](./high-level-design.md) and
+> [middle-level design](./middle-level-design.md). This record remains only for its
 > existing implementation and evidence consumers; it does not constrain the replacement.
 
 ## Decision
@@ -431,9 +432,10 @@ trigger inventory, or file/surface/finding counts.
 
 ## Documentation Selection
 
-The current [requirements](./requirements.md) and replacement
-[HLD](./high-level-design.md) govern contraction work. The retained glossary,
-MLDs, this migration record and pinned former HLD govern only their existing
+The current [requirements](./requirements.md), replacement
+[HLD](./high-level-design.md) and [middle-level design](./middle-level-design.md)
+govern contraction work. The retained glossary, pinned former MLDs,
+this migration record and pinned former HLD govern only their existing
 implementation and evidence consumers under the
 [requirements transition](./requirements.md#requirements-and-implementation-transition).
 They do not constrain the replacement architecture. Archived v1 and v2 material
