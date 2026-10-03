@@ -87,6 +87,12 @@ conditional imports or version-file inheritance is native evaluation and follows
 the HLD boundary. Combining already resolved edges across revisions and computing
 their impact closure remain Workflow responsibilities.
 
+Use existing native project/output metadata for identity association. The
+PNPM [directory adaptation candidate](./research/pnpm-native-planning.md#directory-coordinate-adaptation-candidate)
+tests joining resolved coordinates to discovered roots and native publish
+directories without a second dependency declaration. Its evidence limits remain
+separate from acceptance of an implemented reader.
+
 Use ordinary typed values inside one invocation. Do not require a Provider Request
 Manifest, Fact Bundle, admission token or immutable Repository Model aggregate.
 When native evaluation requires another process or runner, transfer the relevant
