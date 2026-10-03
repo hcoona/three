@@ -305,18 +305,19 @@ CycloneDX retained the same coordinate as a component version and package URL.
 Neither queried view returned a separate source-directory field. This is not a
 claim that the CLI exposes no useful information: the coordinate is visible.
 However, a complete source join cannot be claimed from these observations or
-by matching package names. The [package-info source][pkg-info] can select a
-metadata version instead of a path-bearing package-key version; the rendered
-version field is not a typed directory-resolution contract.
+by matching package names. Follow-up source inspection corrects the initial
+version-overwrite concern: the pinned [lock writer][directory-version] explicitly
+excludes directory resolutions from metadata `version`. For these directory
+records, [package information][pkg-info] therefore renders the package-key
+coordinate. This correction is source evidence, not another runtime observation.
 
 The selected filter/list composition therefore does not yet establish complete
 coverage for every required local-input shape. The owner's CLI choice remains
-unchanged. A proposed disposition is to use the MLD's existing
-[extra-input contract](../middle-level-design.md#minimum-facts)
-for source/generated-output relationships unavailable from native project facts,
-and reject relevant scope when the needed declaration is absent. That proposal
-requires owner disposition before this shape is accepted for implementation; it
-does not authorize a coordinate parser, custom resolver or full-run fallback.
+unchanged. The owner directed further CLI research without duplicate declarations
+or unnecessary complexity. The candidate below uses the existing native
+publish-directory configuration; this known relationship does not need a second
+Workflow declaration. The MLD's extra-input contract remains for relationships
+actually unavailable from native metadata.
 
 The source assessment and local composition have not established an unavoidable
 gap in every supported CLI interface.
@@ -324,6 +325,107 @@ If a required source identity or relation cannot be obtained through supported
 native interfaces, follow the [HLD boundary](../high-level-design.md#native-integrations)
 and return that concrete gap to the owner. Do not fill it with custom parsing or
 weaken selective CI to a full-run fallback.
+
+## Directory Coordinate Adaptation Candidate
+
+Additional immutable source findings at the same PNPM release establish:
+
+- The [local resolver][local-coordinate] normalizes copied directory coordinates
+  relative to the lockfile directory, uses forward slashes, and can preserve an
+  explicitly absolute input when configured. The
+  [directory resolution writer][local-resolution] retains that same directory.
+- The [lock writer][directory-version] omits metadata `version` for directory
+  resolutions. [Package information][pkg-info] then uses the package-key version;
+  [its formatter][coordinate-format] emits `file:<path>` without the peer suffix.
+  The virtual-store installation path need not be decoded.
+- Package information emits `resolved` for tarball resolutions and omits it for
+  directory resolutions. Absence alone is not a directory type discriminator:
+  other native resolution kinds also omit it.
+- Native [`pkg get`][pkg-command] can read `publishConfig.directory` through
+  PNPM's manifest reader. A non-recursive query in each discovered source
+  directory preserves that directory's identity. The recursive report is keyed
+  by package name and is unsuitable as a general directory join.
+
+The revised candidate keeps the native filter reachability above, including its
+peer dimensions, and complements it with full wanted-lock `list` JSON. Use
+`--depth Infinity` for that complementary view so a resolved local input below
+another package is not dropped. Obtain existing publish-directory configuration
+with `pnpm --dir <discovered-directory> pkg get publishConfig.directory --json`.
+An absent directory field produces no output; other publish settings do not add
+an output-directory association.
+
+For each discovered source directory and its declared publish directory, form
+the pinned native coordinate encoding, such as
+`file:packages/publisher/dist`, and compare the whole value with returned
+`version` fields that have no `resolved` field. Native link paths can likewise be
+compared with those known directories. Preserve exact source-directory identity,
+reject ambiguous ownership and retain the initiating project's relation to each
+matched producer. Combine these relations with native filter reachability and
+the base/candidate impact algorithm. Do not use package names, installation-path
+decoding, directory-prefix guesses or an unmatched field's prefix to infer a
+producer. A local tarball is an archive input, not its same-named source project.
+
+This is output adaptation: PNPM has already selected and resolved the dependency.
+Workflow associates its returned identity with known project/output identities.
+It does not parse manifest dependency specifiers, implement aliases or ranges,
+read lock YAML, or resolve a missing dependency. Ordinary repository path handling
+and encoding a known identity do not constitute a second dependency resolver.
+The HLD's native ownership boundary remains in force. Unmatched relevant inputs
+and ambiguous ownership still cannot justify exclusion.
+
+The source-backed candidate has moderate confidence until the identity joins are
+observed. Existing observations already expose the nested directory coordinate;
+native publish-metadata queries, actual injected snapshots, peer contexts and
+tarball distinction require the bounded follow-up below. No native reader or
+complete extraction recipe is accepted merely by documenting this candidate.
+
+## Bounded Directory Join Follow-up Protocol
+
+This is a distinct follow-up to the exhausted original preparation budget, not
+permission to repeat or refill that execution. It becomes executable only when
+accepted through repository delivery under the contraction Wave. Its consumer
+is the decision whether the directory adaptation above avoids a second manually
+maintained declaration while retaining meaningful impact selection.
+
+- **Subject and environment:** PNPM 12.8.1 on the active Linux x86_64 host. Record
+  executable identity/hash, environment, accepted protocol revision, exact
+  commands, elapsed times, exit codes, fixture inputs and JSON output. Windows
+  remains an accepted assumption and is not tested here.
+- **Isolation and inputs:** at most two disposable workspace copies outside the
+  checkout, starting from the retained local fixture inputs of PR #1007. At most
+  32 local package manifests, including output/peer fixture manifests, and one
+  locally assembled tarball. No scripts, hooks, credentials or registry inputs.
+  Use empty fixture-local npmrc auth input and isolated store/state directories;
+  leave repository locks and installed state unchanged.
+- **Preparation:** at most three native preparation commands, each bounded to
+  120 seconds: two script-disabled offline lock generations for base/candidate
+  and, only if needed, one script-disabled offline base install. Use native
+  `injectWorkspacePackages` configuration to seek actual directory snapshots;
+  include two local peer-provider contexts, a publish-directory alias, a space
+  in an output path and a local tarball. Change/remove a publish-directory
+  relation in the candidate. Fixture file creation and tarball assembly use only
+  the finite local inputs. A missing cache/registry input or invalid lock stops
+  the affected case; do not repair it online or edit generated locks.
+- **Queries and checks:** at most 60 read-only `list`/filter/`pkg get` queries,
+  each bounded to 30 seconds. Compare native metadata and directory coordinates
+  with known source/output identities, retaining unrelated projects as negative
+  controls. Check actual injected/peer shapes from generated output rather than
+  equating a manifest declaration with runtime coverage. Observe the composed
+  producer/consumer relation in each revision and retention of removed base
+  relations. Keep native source findings distinct from experiment observations;
+  source inspection suffices for interfaces that clearly cannot answer the join.
+- **Stop and limits:** unexpected external effects, malformed output, crashes,
+  ambiguous joins or exhausted bounds stop the affected execution. A required
+  relation still unavailable after the supported composition blocks dependent
+  implementation and returns the concrete gap to the owner. No custom resolver,
+  Node/LibNode helper, duplicate declaration or silent full-run fallback follows.
+- **Evidence and cleanup:** retain sanitized inputs, native locks, runner,
+  commands, outputs and comparison results in the governing PR before removing
+  only generated disposable state. Leave source caches available for review.
+  No external experiment, publication, hosted dispatch, authentication,
+  access/configuration or host-trust changes. Conclusions cover only the pinned
+  CLI composition and observed shapes; peer/injection cases that do not actually
+  materialize remain unobserved rather than inferred successes.
 
 Reevaluate the selected CLI composition when the repository's PNPM pin changes
 or concrete integration exposes a missing fact. Recheck embedded-runtime facts
@@ -366,3 +468,8 @@ or dependency-upgrade review is the fallback review point.
 [recursive-selection]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/recursive.rs
 [project-graph-view]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/workspace/src/projects_graph_view.rs
 [list-linked-projects]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/list/linked_projects.rs
+[directory-version]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/package-manager/src/dependencies_graph_to_lockfile/packages.rs#L215-L236
+[local-coordinate]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/resolving-local-resolver/src/parse_bare_specifier.rs#L123-L161
+[local-resolution]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/resolving-local-resolver/src/local_resolver.rs#L216-L269
+[coordinate-format]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/lockfile/src/pkg_ver_peer.rs#L7-L40
+[pkg-command]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/pkg.rs#L162-L238

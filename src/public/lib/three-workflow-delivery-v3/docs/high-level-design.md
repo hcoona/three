@@ -151,6 +151,12 @@ protocol-prefix heuristics, or replay a native evaluator's rules in another
 language. Workflow owns impact selection, its quality and unit declarations,
 request constraints and business result evaluation.
 
+Adapting a native resolved identity is permitted: decode its supported output
+format or compare it with the encoding of a known project/output identity. This
+does not authorize interpreting unresolved dependency declarations or guessing a
+missing producer from a protocol prefix. Reuse native output-directory metadata
+when available rather than requiring a duplicate Workflow declaration.
+
 Before implementing an integration, identify the native interface and verify
 that its output supports the required scope and errors. A successful call does
 not imply that a partial listing covers the whole required dependency graph.
