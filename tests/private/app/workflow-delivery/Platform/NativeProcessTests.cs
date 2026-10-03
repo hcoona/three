@@ -38,11 +38,11 @@ public sealed class NativeProcessTests
     [TestMethod]
     public async Task RunPreservesLeadingUtf8BomAsNativeData()
     {
-        using var fixture = RawOutputFixture();
         const string expected = "\uFEFF雪\0";
 
-        string output = await fixture.RunAsync(TestContext.CancellationToken,
-            Convert.ToBase64String(Encoding.UTF8.GetBytes(expected)));
+        string output = await RunRawOutputAsync(
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(expected)),
+            TestContext.CancellationToken);
 
         Assert.AreEqual(expected, output);
     }
@@ -54,15 +54,18 @@ public sealed class NativeProcessTests
     [DataRow("//4AAA==")]
     public async Task RunRejectsInvalidUtf8WithoutSwitchingEncoding(string bytes)
     {
-        using var fixture = RawOutputFixture();
-
         await Assert.ThrowsExactlyAsync<DecoderFallbackException>(
-            () => fixture.RunAsync(TestContext.CancellationToken, bytes));
+            () => RunRawOutputAsync(bytes, TestContext.CancellationToken));
     }
 
-    private static ProcessFixture RawOutputFixture() => new(
-        "$bytes = [Convert]::FromBase64String($args[0]); " +
-        "[Console]::OpenStandardOutput().Write($bytes, 0, $bytes.Length)");
+    private static Task<string> RunRawOutputAsync(string payload, CancellationToken token)
+    {
+        string script = "$bytes = [Convert]::FromBase64String('" + payload + "'); " +
+            "[Console]::OpenStandardOutput().Write($bytes, 0, $bytes.Length)";
+        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        return NativeProcess.RunAsync("pwsh", Path.GetTempPath(),
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], token);
+    }
 
     [TestMethod]
     public async Task RunCancellationTerminatesOwnedProcess()
