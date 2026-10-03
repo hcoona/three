@@ -34,7 +34,12 @@ internal static class NativeProcess
         {
             throw new InvalidDataException("Native query executable is unavailable.", exception);
         }
-        Task<string> stdout = ReadAsync(process.StandardOutput, timeout.Token);
+        // Process's built-in reader detects BOMs even with a supplied encoding.
+        // Native path output must retain an initial U+FEFF and reject invalid bytes.
+        using var output = new StreamReader(process.StandardOutput.BaseStream,
+            new UTF8Encoding(false, true), detectEncodingFromByteOrderMarks: false,
+            leaveOpen: true);
+        Task<string> stdout = ReadAsync(output, timeout.Token);
         Task<string> stderr = ReadAsync(process.StandardError, timeout.Token);
         Task exit = process.WaitForExitAsync(timeout.Token);
         Task[] tasks = [stdout, stderr, exit];

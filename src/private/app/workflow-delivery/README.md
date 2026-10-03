@@ -11,8 +11,8 @@ architecture authority.
 ## Current Scope
 
 The application selects CI checks from supplied, resolved repository facts and
-collects candidate-bound check results. Its internal PNPM graph reader supplies
-one input to repository analysis. Complete native fact assembly, Git event
+collects candidate-bound check results. Its internal PNPM graph and Git readers
+supply inputs to repository analysis. Complete native fact assembly, Git event
 resolution, quality YAML resolution, check execution and Release commands remain
 pending. Existing workflows still use their current implementations.
 
@@ -67,6 +67,29 @@ Actual PNPM reader execution,
 complete ownership/shared-input expansion, quality/version facts, base/candidate
 assembly and caller cutover are still pending. The root project is retained as
 `.` here; this graph is not directly accepted as the CI core's project facts.
+
+### Git Revision and Path Component
+
+[`GitReader`](Repository/GitReader.cs) resolves caller-selected references to native
+full commit IDs, reads recursive committed entries with their modes/object types,
+and compares two endpoints to return changed paths. Both deleted and added rename
+paths remain visible. The event caller chooses the comparison; this reader does
+not substitute a merge base or inspect dirty/untracked worktree files.
+
+All queries disable lazy fetching and replacement refs. Inventory and comparison
+return root-relative paths even when invoked in a subdirectory or under conflicting
+diff settings. Symlink and gitlink metadata remain distinct; submodule contents
+are not traversed. Missing required revisions/tree objects fail the operation.
+There is no object-completeness or history audit.
+
+The shared process helper decodes stdout as strict UTF-8 with BOM detection
+disabled, preserving an initial U+FEFF filename and rejecting invalid bytes.
+NUL framing preserves whitespace, tabs, newlines, case and Unicode spelling.
+Later CI fact assembly still owns path representability and ownership rules.
+Queries retain the shared process deadline, output and cleanup bounds above.
+The [native contract evidence](../../../public/lib/three-workflow-delivery-v3/docs/research/git-native-facts.md)
+and real isolated Git/process tests cover this component. It is not complete
+repository facts, event resolution, revision checkout management or caller cutover.
 
 ## Commands and Transfers
 
