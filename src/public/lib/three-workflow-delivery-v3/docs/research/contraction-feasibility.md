@@ -4,9 +4,18 @@
 
 The [replacement HLD](../high-level-design.md) permits native NBGV execution
 during build and consolidates the .NET provider and native-consumer helpers.
-This record preserves the local observations informing those choices and the
-owner's Windows assumption. It is not a live-publication or cutover acceptance
-record and does not reopen any completed ecosystem campaign.
+This record preserves unadmitted local author observations and the owner's
+Windows assumption. The architecture choices rest on accepted requirements and
+owner decisions, not on empirical admission of this packet. This is not a
+live-publication or cutover acceptance record and does not reopen any completed
+ecosystem campaign.
+
+The owner requested technical validation, and the accepted Wave permitted its
+local build/test effects. However, the retained carriers do not establish
+acceptance of the concrete experiment protocol before execution. The observations
+therefore remain working results, not admitted empirical justification for the
+architecture or cutover. Retaining or reviewing them does not retroactively
+establish that missing acceptance.
 
 On 2026-10-03, after reviewing the Linux results, the owner directed that the
 separate Windows feasibility check be skipped and work proceed assuming
@@ -117,13 +126,15 @@ separate CLI invocations; restore tests referenced the same combined assembly.
 Simultaneous restore and project evaluation in one privileged process was neither
 tested nor proposed.
 
-## Architectural Inference and Limits
+## Working Inference and Limits
 
-The observed Linux path supports permitting native NBGV recomputation while
-retaining ordinary deterministic build inputs. It supports consolidating the
-two helpers' dependency closure without merging real permission/process
-boundaries. These are bounded feasibility inferences, not proof for every project,
-platform or future dependency combination.
+As an author inference, the observed Linux path suggests that native NBGV
+recomputation can retain ordinary deterministic build inputs and that the two
+helpers' dependency closure can be consolidated without merging real
+permission/process boundaries. These inferences retain the evidence-admission
+limit above; they are not accepted empirical justification for the design or
+proof for every project, platform or future dependency combination. Ordinary
+implementation validation remains necessary for the selected architecture.
 
 The earlier [reproducible-build change][repro-pr] and its
 [independent acceptance][repro-review] remain evidence for the frozen Windows

@@ -180,8 +180,10 @@ witness. Configure and inspect the chosen carrier; availability is not automatic
 Provenance does not replace required destination byte/state comparison.
 Different-commit packages may differ despite equal versions.
 
-The [feasibility record](./research/contraction-feasibility.md) separates local
-observations from assumptions. The owner chose to skip a separate Windows
+The [feasibility record](./research/contraction-feasibility.md) retains unadmitted
+local author observations separately from accepted assumptions. Those observations
+do not supply admitted empirical justification for this owner-selected design.
+The owner chose to skip a separate Windows
 feasibility run and proceed assuming native NBGV and the combined helpers are
 viable there. This is not a passed Windows observation or a deferred experiment
 gate. Actual failures in ordinary implementation or CI still require correction
