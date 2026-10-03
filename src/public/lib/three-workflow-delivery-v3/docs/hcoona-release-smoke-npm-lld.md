@@ -1,5 +1,11 @@
 # `hcoona-release-smoke-npm` Live Buddy Low-Level Design
 
+> **Implementation baseline:** This record describes the pre-contraction
+> implementation. Its authority for existing code and retained evidence, and the
+> requirements-first order for replacement work, are defined by the
+> [requirements transition](./requirements.md#requirements-and-implementation-transition).
+> It is not yet a design demonstrating conformity to the contraction requirements.
+
 ## 1. Status and Authorization Boundary
 
 **Status:** real normal-Live publication and independent proving audit completed, dated 2026-09-09.

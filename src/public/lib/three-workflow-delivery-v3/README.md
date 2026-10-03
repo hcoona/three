@@ -5,6 +5,11 @@ records. Start with the [document set](docs/README.md) and
 [agent handoff](docs/agent-handoff.md) for the authority order, current evidence,
 and operating limits.
 
+The [contraction requirements](docs/requirements.md) govern replacement work.
+The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
+scopes the implementation descriptions and evidence below; they are not a claim
+that the existing runtime already satisfies the contraction requirements.
+
 Workflow v3 is repository-specific tooling, with no PyPI distribution or
 third-party Python API support commitment. Its Python modules and same-revision
 callers may evolve together. Compatibility obligations follow the CLI/workflow,
