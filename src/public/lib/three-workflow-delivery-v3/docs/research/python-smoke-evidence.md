@@ -123,7 +123,7 @@ necessarily fails.
 documents static and dynamic version configuration. Its
 [environment version source](https://hatch.pypa.io/latest/plugins/version-source/env/)
 reads a named environment variable. Those are available backend mechanisms, not empirical evidence of V3
-consumer behavior. The [Python Model](../repository-model-release-unit-mld.md#python-smoke-model)
+consumer behavior. The [Python Model](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/repository-model-release-unit-mld.md#python-smoke-model)
 selects isolated static metadata materialization; the later build and clean
 sdist consumer must validate that choice without re-resolving NBGV, ambient
 overrides or an undeclared Git requirement.

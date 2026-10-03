@@ -5,7 +5,8 @@
 > requirements-first order for replacement work, are defined by the
 > [requirements transition](./requirements.md#requirements-and-implementation-transition).
 > New architecture, terminology and cutover direction are owned by the
-> [replacement HLD](./high-level-design.md). This record remains only for its
+> [replacement HLD](./high-level-design.md) and
+> [middle-level design](./middle-level-design.md). This record remains only for its
 > existing implementation and evidence consumers; it does not constrain the replacement.
 
 ## Status
@@ -236,7 +237,7 @@ for one action-bearing Attempt.
 There is no first-slice Capability Environment. A generic Environment Profile
 is deferred until a concrete second policy demonstrates independent semantics.
 The Python OIDC slice supplies the concrete channel-specific Environment
-case under [Python Governance](./governance-integration-mld.md#python-smoke-governance);
+case under [Python Governance](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/governance-integration-mld.md#python-smoke-governance);
 external destination trust validates that Environment in its OIDC tuple.
 
 ### Environment Configuration Sentinel
@@ -286,7 +287,7 @@ an exact existing subset. It is one business action with non-atomic file
 operations, not a registry transaction. One marker precedes the
 set and one Result records its controlled terminal state, including partial
 failure; scalar terminal transport is unchanged. See the
-[Python delivery design](./release-delivery-mld.md#python-smoke-delivery).
+[Python delivery design](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/release-delivery-mld.md#python-smoke-delivery).
 
 ### Official
 
@@ -342,7 +343,7 @@ Whenever root HK runs, its lightweight static-reference policy runs in the
 caller-selected `index` or `worktree` feedback mode. That policy remains
 internal to Source-Tree Conformance and creates no separate CI obligation or
 Evidence record. Project tests have the separate execution owner defined by
-the [CI MLD](./ci-qualification-mld.md#control-package-tests). The
+the [CI MLD](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/ci-qualification-mld.md#control-package-tests). The
 [execution migration](./migration-strategy.md#ci-execution-ownership-cutover)
 records the replacement of the former HK test owner.
 

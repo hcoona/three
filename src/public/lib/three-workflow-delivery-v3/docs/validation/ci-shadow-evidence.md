@@ -1,6 +1,6 @@
 # CI Shadow Evidence and Its Limits
 
-The [CI Qualification MLD](../ci-qualification-mld.md) and
+The [CI Qualification MLD](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/ci-qualification-mld.md) and
 [first-slice LLD](../hcoona-release-smoke-npm-lld.md) own current CI semantics.
 These observations distinguish a failing canonical shadow Decision from a
 successful enclosing check under the one-time pre-coexistence projection.

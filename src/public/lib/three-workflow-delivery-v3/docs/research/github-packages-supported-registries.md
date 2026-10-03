@@ -46,7 +46,7 @@ release requirements discussion.
 ## Related Pages
 
 - [Workflow Delivery v3 Requirements](../requirements.md)
-- [Workflow Delivery v3 Release Delivery MLD](../release-delivery-mld.md)
+- [Workflow Delivery v3 Release Delivery MLD](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/release-delivery-mld.md)
 
 ## Source Location
 

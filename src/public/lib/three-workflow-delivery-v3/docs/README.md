@@ -15,12 +15,13 @@ and its route to the [NuGet delivery retrospective](./research/nuget-delivery-re
 Workflow Delivery v3 is active and is the only normative Workflow Delivery design line.
 
 The [requirements](./requirements.md) own contraction behavior. The replacement
-[HLD](./high-level-design.md) defines the smaller internal C# architecture,
-boundary contracts and implementation order. The
+[HLD](./high-level-design.md) defines the smaller internal C# architecture and
+implementation order. The [middle-level design](./middle-level-design.md) closes
+component, selection, execution, transfer and outcome contracts. The
 [feasibility record](./research/contraction-feasibility.md) distinguishes local
 observations from the owner's accepted Windows assumption. The
 [transition](./requirements.md#requirements-and-implementation-transition) keeps
-the old glossary, MLDs, LLDs and migration record scoped to existing code and
+the old glossary, pinned former MLDs, LLDs and migration record scoped to existing code and
 retained evidence. The implementation and completed campaigns described below
 do not claim conformity to the replacement. The
 [Wave](../../../../../docs/delivery-wave.md) covers the full contraction.
@@ -179,8 +180,10 @@ the npm slice's exceptions or evidence.
 ## Normative Hierarchy
 
 New design starts with the [requirements](./requirements.md), then the
-replacement [HLD](./high-level-design.md), including its terminology, transfer
-contracts and implementation order. Local observations and the Windows assumption
+replacement [HLD](./high-level-design.md) and
+[middle-level design](./middle-level-design.md). The HLD owns architecture and
+implementation order; the MLD owns common component and behavior contracts.
+Local observations and the Windows assumption
 are recorded in [contraction feasibility](./research/contraction-feasibility.md).
 
 Load these implementation-baseline records only for their existing code or
@@ -188,20 +191,24 @@ historical-evidence consumers, under the
 [transition](./requirements.md#requirements-and-implementation-transition):
 
 1. [Pre-contraction glossary](./architecture-glossary.md)
-2. Existing middle-level designs:
-    - [Repository Model and Release Unit](./repository-model-release-unit-mld.md)
-    - [Governance Integration](./governance-integration-mld.md)
-    - [CI Qualification](./ci-qualification-mld.md)
-    - [Release Delivery](./release-delivery-mld.md)
-    - [Shared Foundation](./shared-foundation-mld.md)
+2. Former middle-level designs, pinned at `72939154ab9ebfb8d313908c551fb66eeefae499`
+   for existing runtime and evidence readers:
+    - [Repository Model and Release Unit](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/repository-model-release-unit-mld.md)
+    - [Governance Integration](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/governance-integration-mld.md)
+    - [CI Qualification](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/ci-qualification-mld.md)
+    - [Release Delivery](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/release-delivery-mld.md)
+    - [Shared Foundation](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/shared-foundation-mld.md)
 3. [Pre-contraction migration policy](./migration-strategy.md)
 4. Applicable slice LLD: [npm](./hcoona-release-smoke-npm-lld.md),
    [NuGet](./hcoona-release-smoke-github-packages-lld.md), or
    [Python](./hcoona-release-smoke-python-lld.md), and
    [Ruby](./hcoona-release-smoke-ruby-lld.md)
 
-Their historical HLD references remain pinned to the implementation source;
-they cannot fill a replacement-design gap with a retired requirement. v1/v2
+The five former MLD files are retired from the current tree. Their original
+content, anchors and inter-document links remain at the pinned Git revision;
+no historical contract is rewritten as the replacement design. Their historical
+HLD references remain pinned to the implementation source. They cannot fill a
+replacement-design gap with a retired requirement. v1/v2
 mechanisms need explicit v3 extraction and revalidation before reuse.
 
 ## Current First Slice

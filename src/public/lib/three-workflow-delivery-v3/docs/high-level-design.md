@@ -8,9 +8,12 @@ decisions. The implementation has not been cut over to this design. Acceptance
 of this document does not claim implementation conformity, native publication
 validation or permission to reopen a completed campaign.
 
+The [middle-level design](./middle-level-design.md) owns the component,
+selection, execution, transfer and outcome contracts for this architecture.
 The [Wave](../../../../../docs/delivery-wave.md) authorizes the bounded work;
-the [handoff](./agent-handoff.md) retains operational limits. Existing MLDs,
-the old glossary, migration record and ecosystem LLDs describe the existing
+the [handoff](./agent-handoff.md) retains operational limits. The
+[pinned former MLDs](./README.md#normative-hierarchy), old glossary, migration
+record and ecosystem LLDs describe the existing
 runtime and its evidence consumers under the
 [requirements transition](./requirements.md#requirements-and-implementation-transition).
 Their aggregate models and record chains are not contracts for this replacement.
@@ -398,8 +401,10 @@ successful impact selection. Package validation covers native versions, complete
 files, clean consumption and same-input reproducibility without cross-commit or
 old/new-format byte equality.
 
-Before each implementation scope, specify concrete command/transfer fields,
-native fact extraction coverage, adapter operations/read bounds, runner mapping
+The [middle-level design](./middle-level-design.md) closes common selection,
+quality, package/consumer, Release-state and transfer behavior. Before each
+implementation scope, specify concrete command/transfer fields, native fact
+extraction coverage, destination completion conditions/read bounds, runner mapping
 and retention. Validate/review them with their caller group. These are bounded
 implementation contracts, not new frameworks or automatic owner questions.
 New behavior, trust-boundary or material scope/cost conflicts return for owner

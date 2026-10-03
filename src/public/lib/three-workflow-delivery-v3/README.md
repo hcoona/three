@@ -6,9 +6,11 @@ records. Start with the [document set](docs/README.md) and
 and operating limits.
 
 The [contraction requirements](docs/requirements.md) and replacement
-[HLD](docs/high-level-design.md) govern new design. The HLD specifies the internal
-C# application under `src/private/app/workflow-delivery/`, its boundary contracts
-and cutover order; the runtime described below has not yet been replaced.
+[HLD](docs/high-level-design.md) govern new design. The
+[middle-level design](docs/middle-level-design.md) defines component, selection,
+execution, transfer and outcome contracts for the internal C# application under
+`src/private/app/workflow-delivery/`. The HLD owns the cutover order;
+the runtime described below has not yet been replaced.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
 that the existing runtime already satisfies the contraction requirements.
