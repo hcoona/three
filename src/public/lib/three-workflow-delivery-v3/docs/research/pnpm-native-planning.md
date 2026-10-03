@@ -373,11 +373,10 @@ and encoding a known identity do not constitute a second dependency resolver.
 The HLD's native ownership boundary remains in force. Unmatched relevant inputs
 and ambiguous ownership still cannot justify exclusion.
 
-The source-backed candidate has moderate confidence until the identity joins are
-observed. Existing observations already expose the nested directory coordinate;
-native publish-metadata queries, actual injected snapshots, peer contexts and
-tarball distinction require the bounded follow-up below. No native reader or
-complete extraction recipe is accepted merely by documenting this candidate.
+The follow-up below observes these identity joins for the pinned CLI and local
+fixture shapes. It supports this composition without a duplicate declaration;
+it does not accept a native reader or arbitrary extraction coverage. Existing
+observations and immutable source findings retain their separate evidence levels.
 
 ## Bounded Directory Join Follow-up Protocol
 
@@ -426,6 +425,54 @@ maintained declaration while retaining meaningful impact selection.
   access/configuration or host-trust changes. Conclusions cover only the pinned
   CLI composition and observed shapes; peer/injection cases that do not actually
   materialize remain unobserved rather than inferred successes.
+
+## Directory Join Observations
+
+The follow-up protocol was accepted in
+[PR #1008](https://github.com/hcoona/three/pull/1008), commit
+`73d47a43edf76749e78a8b92702e15d6d5555411`, and executed on 2026-10-03 with
+the same PNPM 12.8.1 executable as the first observation set. Two isolated local
+workspaces used 30 base manifests, one local tarball, two offline/script-disabled
+lock generations and 38 read-only queries. No install, registry access, scripts,
+hooks or credentials were needed. The delivery PR retains sanitized inputs,
+native locks, runner, exact commands/outputs, environment/hash and comparisons;
+generated state is removed only after durable retention.
+
+The observation runner combines native filter reachability with full wanted-lock
+list JSON and exact known-directory/coordinate matches. Four source directories
+per revision are queried for publish metadata in this finite fixture; only the
+publisher declares a directory. This is a local composition probe, not the C#
+reader or a claim that every project's metadata was evaluated by that reader.
+
+| Scenario                                                           | Observed result                                                                                                                                                                             |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `file:` dependency on a publish directory with a space in its path | Native `version` retains the directory coordinate; exact association selects the source publisher, which native filter closure alone omits                                                  |
+| Publish-directory alias and explicit `link:` input                 | Both associate with the source publisher; no name or manifest-specifier join is needed                                                                                                      |
+| Existing native publish metadata                                   | Direct `pkg get publishConfig.directory --json` returns `dist output` in base and `build output` in candidate; an access-only `publishConfig` yields no output                              |
+| New injected peer library in two local provider contexts           | Native locks contain two directory snapshots; list returns two distinct installation identities with the same `file:packages/peer-lib` coordinate, both associating with the source library |
+| Same-named local tarball                                           | List returns ordinary version `1.0.0` and `resolved: file:fixtures/publisher.tgz`; it is not associated with the source publisher                                                           |
+| Transitive consumer and unrelated control                          | The composed base relation includes the publisher below a consumer that filter closure alone omits; the unrelated project has no local source relation                                      |
+| Removed file relation and changed publish directory                | Candidate drops the removed relation, updated alias/link targets still associate with the producer, and the base/candidate union retains the old consumer relation                          |
+
+All 18 recorded adaptation comparisons matched their expected values; there were
+no ambiguous directory joins. This does not certify the native resolver or
+complete input coverage. The two new peer-library snapshots are actual wanted-lock
+observations, not installed-package qualification. Reused core entries remained
+links despite injection declarations, so they do not demonstrate conversion of
+an existing link into an injected snapshot. The pre-existing workspace publisher
+link also retained its old directory spelling while native filter reachability
+continued to identify the source publisher. Do not infer link regeneration or
+installation success from these observations.
+
+The resulting recommendation has high confidence for the observed shared-root
+lock layout: implement native filter/list composition with existing publish
+metadata and exact identity association. No second PNPM dependency/output
+declaration, helper runtime or custom resolver is needed for these cases. The
+remaining reader work is ordinary application integration, revision/root handling,
+ownership ambiguity and unsupported relevant inputs. Dedicated lock layouts,
+absolute-path preservation and other unobserved shapes must not inherit this
+runtime coverage. The existing rule remains: unresolved required scope blocks
+planning rather than broadening execution silently.
 
 Reevaluate the selected CLI composition when the repository's PNPM pin changes
 or concrete integration exposes a missing fact. Recheck embedded-runtime facts
