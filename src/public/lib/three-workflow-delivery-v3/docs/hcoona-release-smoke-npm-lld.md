@@ -4,7 +4,9 @@
 > implementation. Its authority for existing code and retained evidence, and the
 > requirements-first order for replacement work, are defined by the
 > [requirements transition](./requirements.md#requirements-and-implementation-transition).
-> It is not yet a design demonstrating conformity to the contraction requirements.
+> New architecture, terminology and cutover direction are owned by the
+> [replacement HLD](./high-level-design.md). This record remains only for its
+> existing implementation and evidence consumers; it does not constrain the replacement.
 
 ## 1. Status and Authorization Boundary
 
@@ -36,7 +38,10 @@ audited real publication, not standing authorization for another run.
 
 ### 1.1 Normative precedence
 
-The current v3 `requirements.md`, `high-level-design.md`, medium-level designs, `architecture-glossary.md`, and `migration-strategy.md` are normative. This LLD closes first-slice implementation detail without weakening them.
+This LLD closes pre-contraction implementation detail under the historical
+requirements and [pinned HLD](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md). The existing MLDs, glossary and migration
+record retain the same baseline scope. The replacement requirements and HLD
+own new design; this LLD cannot reinstate removed mechanisms.
 
 Unless changed here, preserve purpose-first routing; request-local same-revision Provider and Repository Model behavior; NBGV; Build Definition, Release Unit, qualification, Observation, Official, simulation, concurrency, and remediation contracts. Simulation retains its current run-attempt identity and rerun behavior.
 

@@ -4,7 +4,9 @@
 > implementation. Its authority for existing code and retained evidence, and the
 > requirements-first order for replacement work, are defined by the
 > [requirements transition](./requirements.md#requirements-and-implementation-transition).
-> It is not yet a design demonstrating conformity to the contraction requirements.
+> New architecture, terminology and cutover direction are owned by the
+> [replacement HLD](./high-level-design.md). This record remains only for its
+> existing implementation and evidence consumers; it does not constrain the replacement.
 
 ## Status
 
@@ -23,7 +25,7 @@ publication authority.
 
 It realizes the
 [Workflow Delivery v3 Requirements](./requirements.md),
-[High-Level Design](./high-level-design.md), and
+[High-Level Design](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md), and
 [Architecture Glossary](./architecture-glossary.md).
 
 Current first-slice activation, protected delivery, and proving status are

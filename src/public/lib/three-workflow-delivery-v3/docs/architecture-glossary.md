@@ -4,15 +4,16 @@
 > implementation. Its authority for existing code and retained evidence, and the
 > requirements-first order for replacement work, are defined by the
 > [requirements transition](./requirements.md#requirements-and-implementation-transition).
-> It is not yet a design demonstrating conformity to the contraction requirements.
+> New architecture, terminology and cutover direction are owned by the
+> [replacement HLD](./high-level-design.md). This record remains only for its
+> existing implementation and evidence consumers; it does not constrain the replacement.
 
 ## Status
 
 Architecture version: **v3**.
 
-This is the normative glossary for the clean v3 implementation line. It records
-the approved current architecture rather than completed rollout or retry
-ceremony.
+This glossary describes the pre-contraction implementation and its retained
+evidence vocabulary. New-design terms are defined by the replacement HLD.
 
 Current first-slice activation, protected delivery, and proving status are
 maintained in the [operating handoff](./agent-handoff.md).

@@ -4,7 +4,9 @@
 > implementation. Its authority for existing code and retained evidence, and the
 > requirements-first order for replacement work, are defined by the
 > [requirements transition](./requirements.md#requirements-and-implementation-transition).
-> It is not yet a design demonstrating conformity to the contraction requirements.
+> New architecture, terminology and cutover direction are owned by the
+> [replacement HLD](./high-level-design.md). This record remains only for its
+> existing implementation and evidence consumers; it does not constrain the replacement.
 
 ## Decision
 
@@ -429,9 +431,14 @@ trigger inventory, or file/surface/finding counts.
 
 ## Documentation Selection
 
-Current v3 requirements, HLD, glossary, MLDs, and concise transition policy are
-normative. Archived v1 and v2 material may supply mechanism evidence only when
-the v3 documents explicitly require extraction and revalidation.
+The current [requirements](./requirements.md) and replacement
+[HLD](./high-level-design.md) govern contraction work. The retained glossary,
+MLDs, this migration record and pinned former HLD govern only their existing
+implementation and evidence consumers under the
+[requirements transition](./requirements.md#requirements-and-implementation-transition).
+They do not constrain the replacement architecture. Archived v1 and v2 material
+may supply mechanism evidence only when v3 explicitly requires extraction and
+revalidation.
 
 Retained provisioning, failure, acceptance, and proving evidence belongs in
 [this project's research and validation records](./README.md#historical-source-rule)
