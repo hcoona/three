@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../../../src/private/app/workflow-delivery/WorkflowDelivery.csproj" />
+    <EmbeddedResource Include="Repository/fixtures/*.json" />
   </ItemGroup>
 </Project>

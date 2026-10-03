@@ -219,6 +219,51 @@ directory-selector glob/legacy behavior must not accidentally select a subtree
 when the caller intended one project. The application owns its selectors and
 returned identity checks, while PNPM owns interpreting them.
 
+The reader's narrow layout queries and explicit selector setting also have source
+support at the pinned commit. [`config get --json`](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/config/values.rs#L261)
+renders an unset key as JSON null. The
+[CLI override parser](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/config_overrides.rs)
+accepts `--config.legacy-dir-filtering=false`; configuration
+[loading](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/config/src/loading.rs#L242)
+applies the generic CLI setting values over workspace settings. This is source
+evidence for the invocation, not a new runtime observation. The retained native
+observations below did not execute these layout queries or that explicit override.
+
+The global full listing is a presentation tree, not independently complete for
+every initiating consumer. PNPM
+[shares a materialization cache](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/build.rs#L73)
+across selected projects and
+[elides repeated subtrees](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/get_tree.rs#L294).
+This can hide the second consumer of a nested non-workspace local input. Use an
+exact singleton directory selector without ellipsis for each project's full
+`Infinity` query; keep the separate native dependency-closure query. Within one
+consumer's tree, the original expanded occurrence still supplies that consumer's
+reachable inputs. The
+[selector parser](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/workspace-projects-filter/src/parse_project_selector.rs#L53)
+and [exact glob matching](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/workspace-projects-filter/src/glob.rs#L50)
+support this composition. These are source findings and a corrective inference;
+the retained observations did not execute singleton full queries or exercise
+nonempty deduplicated subtrees.
+
+The wanted-lock selection does not make every output group revision-bound.
+The native [builder](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/build.rs#L139)
+also scans the installed modules directory for extraneous packages, and the
+[renderer](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/list/render/structured.rs#L134)
+emits those as `unsavedDependencies`. Ignore that entire group when reading saved
+facts; retain production, development and optional dependencies. A synchronized
+lock does not require an empty or synchronized installation directory.
+
+`Infinity` also retains a native safety limit. The
+[inspection limit](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/lib.rs#L34)
+and [materializer](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/get_tree.rs#L115)
+permit dependency level 256 but omit its children without a truncation flag.
+Reject that indistinguishable boundary. The renderer nests two JSON containers
+per dependency level inside the array/project pair; a JSON maximum depth of 512
+accepts the complete level-255 shape and rejects level 256. These are pinned
+source findings and adapter inferences, not new PNPM observations or a claim of
+unbounded graph support. Controlled-output tests can validate the adapter's
+acceptance/rejection without another native campaign.
+
 ## Bounded Local CLI Validation Protocol
 
 This protocol supports the decision whether the candidate above is sufficient

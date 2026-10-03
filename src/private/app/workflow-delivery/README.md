@@ -11,15 +11,15 @@ architecture authority.
 ## Current Scope
 
 The application selects CI checks from supplied, resolved repository facts and
-collects candidate-bound check results. It has no native fact reader, Git event
-resolver, quality YAML resolver, check executor or Release command yet. Existing
-workflows still use their current implementations. Synthetic graph tests establish
-selection and collection behavior, not native ecosystem or repository-wide coverage.
+collects candidate-bound check results. Its internal PNPM graph reader supplies
+one input to repository analysis. Complete native fact assembly, Git event
+resolution, quality YAML resolution, check execution and Release commands remain
+pending. Existing workflows still use their current implementations.
 
 New ecosystem integrations follow the HLD's
 [native integration boundary](../../../public/lib/three-workflow-delivery-v3/docs/high-level-design.md#native-integrations).
-The C# entry point may invoke a helper using an ecosystem's native library.
-The implemented selection/result core consumes resolved facts and does not
+PNPM integration invokes the repository-selected CLI directly. The implemented
+selection/result core consumes resolved facts and does not
 interpret ecosystem manifests, dependency specifiers or version inheritance.
 
 Native integrations must supply complete ownership and reverse-consumer facts for
@@ -28,6 +28,45 @@ presets and all required variants. They must report incomplete evaluation or
 unsupported relevant shapes in `errors`. An empty error array is a producer's
 result, not an admission certificate or proof that a reader is implemented.
 The scope label must agree across revisions; it is not a coverage inference.
+
+### PNPM Graph Component
+
+[`PnpmGraphReader`](Repository/PnpmGraphReader.cs) reads wanted-lock workspace
+membership, native dependency closures and every project's publish-directory
+metadata. Full wanted-lock trees use exact singleton project queries so PNPM's
+cross-project output deduplication cannot hide another consumer's nested inputs.
+It joins resolved source/output directory identities, preserving
+reachability rather than promising direct manifest edges. It does not parse
+manifests, lockfiles, dependency declarations or installation-path encodings.
+Package names do not establish source identity. Unmatched local directories and
+tarballs remain inputs with explicit consumers, including when names match a
+workspace project.
+
+Only saved production, development and optional dependency groups contribute
+facts. The native `unsavedDependencies` group reflects extraneous installed state
+and is ignored. PNPM 12.8.1 silently cuts off trees at dependency level 256;
+the JSON depth bound accepts its complete level-255 shape and rejects the
+indistinguishable level-256 boundary rather than returning partial facts.
+
+The supported layout is a shared lockfile at the requested workspace root, with
+projects and local inputs inside that root. Unrepresentable directory selectors,
+ambiguous ownership, nonsingleton full responses and failed native queries stop the
+read. Each process has a 30-second deadline and a 33,554,432-character limit per
+output stream; cancellation or failure requests native process-tree termination
+and waits up to five seconds for the owned root to exit. This is not an exit
+barrier for every descendant. Cleanup failure remains a failure. Raw native
+diagnostics do not enter application errors.
+
+This component consumes the repository's accepted synchronized-lock guarantee;
+it does not add lock admission. The
+[native research](../../../public/lib/three-workflow-delivery-v3/docs/research/pnpm-native-planning.md#directory-coordinate-adaptation-candidate)
+retains the CLI evidence limits. Layout queries, the explicit legacy-filter
+override and singleton full queries have pinned source support, not new runtime
+qualification. Reader tests use controlled queries and retained-output replay.
+Actual PNPM reader execution,
+complete ownership/shared-input expansion, quality/version facts, base/candidate
+assembly and caller cutover are still pending. The root project is retained as
+`.` here; this graph is not directly accepted as the CI core's project facts.
 
 ## Commands and Transfers
 
@@ -105,7 +144,9 @@ new job owner is introduced. Run the bounded suite with:
 dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj
 ```
 
-Tests cover selection, failure behavior, result completeness and the actual JSON
-CLI boundary. They do not qualify the old or future native fact collectors. Each
+Tests cover selection, result completeness, the JSON CLI boundary, PNPM identity
+adaptation and native process failure/cancellation. Process tests use the
+repository's PowerShell tool; PNPM replay tests execute no native PNPM query.
+These tests do not qualify complete native fact collectors. Each
 native integration still needs the migration plan's concrete coverage and caller
 validation before switching a workflow.
