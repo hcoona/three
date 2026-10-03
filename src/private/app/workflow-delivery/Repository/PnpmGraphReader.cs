@@ -46,7 +46,7 @@ internal sealed class PnpmGraphReader
         Dictionary<string, string> roots = ReadProjects(membership.RootElement);
         if (!roots.ContainsKey(root))
             throw new InvalidDataException("PNPM did not report the requested workspace root.");
-        var directories = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var directories = new Dictionary<string, string>(StringComparer.Ordinal);
         var outputs = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach ((string directory, string identity) in roots)
         {
@@ -98,8 +98,8 @@ internal sealed class PnpmGraphReader
             {
                 string nativePath = Absolute(RequiredString(Property(node, "path")), root);
                 var owners = new HashSet<string>(StringComparer.Ordinal);
-                if (directories.TryGetValue(nativePath, out HashSet<string>? pathOwners))
-                    owners.UnionWith(pathOwners);
+                if (directories.TryGetValue(nativePath, out string? pathOwner))
+                    owners.Add(pathOwner);
 
                 string version = RequiredString(Property(node, "version"));
                 if (!node.TryGetProperty("resolved", out JsonElement resolved))
@@ -108,8 +108,8 @@ internal sealed class PnpmGraphReader
                     if (version.StartsWith("file:", StringComparison.Ordinal))
                     {
                         string source = Absolute(version[5..], root);
-                        if (directories.TryGetValue(source, out HashSet<string>? sourceOwners))
-                            owners.UnionWith(sourceOwners);
+                        if (directories.TryGetValue(source, out string? sourceOwner))
+                            owners.Add(sourceOwner);
                         else
                             AddInput(Relative(source), true, identity);
                     }
@@ -139,9 +139,9 @@ internal sealed class PnpmGraphReader
 
         void AddOwner(string path, string identity)
         {
-            if (!directories.TryGetValue(path, out HashSet<string>? owners))
-                directories.Add(path, owners = new(StringComparer.Ordinal));
-            owners.Add(identity);
+            if (directories.TryGetValue(path, out string? owner) && owner != identity)
+                throw new InvalidDataException("PNPM directory has ambiguous source ownership.");
+            directories[path] = identity;
         }
 
         void AddInput(string path, bool directory, string consumer)

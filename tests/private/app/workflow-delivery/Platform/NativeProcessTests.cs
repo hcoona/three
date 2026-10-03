@@ -49,18 +49,12 @@ public sealed class NativeProcessTests
         Assert.IsTrue(File.Exists(pidPath), "The child process must start before cancellation.");
         int pid = int.Parse(await File.ReadAllTextAsync(pidPath, cancellation.Token),
             System.Globalization.CultureInfo.InvariantCulture);
+        using Process child = Process.GetProcessById(pid);
 
         await cancellation.CancelAsync();
         await Assert.ThrowsAsync<OperationCanceledException>(() => query);
 
-        try
-        {
-            using Process child = Process.GetProcessById(pid);
-            await child.WaitForExitAsync(TestContext.CancellationToken).WaitAsync(
-                TimeSpan.FromSeconds(5), TestContext.CancellationToken);
-            Assert.IsTrue(child.HasExited);
-        }
-        catch (ArgumentException) { /* The process already exited. */ }
+        Assert.IsTrue(child.HasExited, "The owned root must exit before RunAsync returns.");
     }
 
     [TestMethod]

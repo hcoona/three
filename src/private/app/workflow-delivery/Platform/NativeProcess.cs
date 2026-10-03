@@ -61,12 +61,33 @@ internal static class NativeProcess
             await timeout.CancelAsync();
             try
             {
-                if (!process.HasExited)
-                    process.Kill(entireProcessTree: true);
+                await StopAsync(process);
             }
-            catch (InvalidOperationException) when (process.HasExited) { }
-            catch (Win32Exception) when (process.HasExited) { }
-            await Task.WhenAll(tasks).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            finally
+            {
+                await Task.WhenAll(tasks).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            }
+        }
+    }
+
+    private static async Task StopAsync(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch (InvalidOperationException) when (process.HasExited) { }
+        catch (Win32Exception) when (process.HasExited) { }
+        // Kill is asynchronous. The canceled operation waiter is not an exit barrier.
+        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
+        {
+            await process.WaitForExitAsync(cleanup.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            throw new TimeoutException("Native query cleanup exceeded its 5-second deadline.");
         }
     }
 

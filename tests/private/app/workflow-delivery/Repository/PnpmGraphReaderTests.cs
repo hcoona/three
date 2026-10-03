@@ -98,6 +98,34 @@ public sealed class PnpmGraphReaderTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ReadRejectsUnreferencedDirectoryOwnershipConflicts(bool sharedOutput)
+    {
+        var native = new NativeQueries(".", "packages/library", "packages/app");
+        native.Outputs["packages/app"] = sharedOutput ? "../output" : "../library";
+        if (sharedOutput)
+            native.Outputs["packages/library"] = "../output";
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => native.Reader.ReadAsync(CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task ReadAllowsProjectToPublishFromItsOwnSourceDirectory()
+    {
+        var native = new NativeQueries(".", "packages/library");
+        native.Outputs["packages/library"] = ".";
+
+        PnpmGraph graph = await native.Reader.ReadAsync(CancellationToken.None);
+
+        PnpmProject library = graph.Projects.Single(p => p.Directory == "packages/library");
+        Assert.AreEqual("packages/library", library.PublishDirectory);
+        Assert.IsEmpty(library.Dependencies);
+        Assert.IsEmpty(graph.LocalInputs);
+    }
+
+    [TestMethod]
     [DataRow("ambiguous-output")]
     [DataRow("outside-input")]
     [DataRow("unknown-closure")]

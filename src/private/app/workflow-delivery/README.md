@@ -46,7 +46,9 @@ The supported layout is a shared lockfile at the requested workspace root, with
 projects and local inputs inside that root. Unrepresentable directory selectors,
 ambiguous ownership, nonsingleton full responses and failed native queries stop the
 read. Each process has a 30-second deadline and a 33,554,432-character limit per
-output stream; cancellation or failure terminates the owned process. Raw native
+output stream; cancellation or failure requests native process-tree termination
+and waits up to five seconds for the owned root to exit. This is not an exit
+barrier for every descendant. Cleanup failure remains a failure. Raw native
 diagnostics do not enter application errors.
 
 This component consumes the repository's accepted synchronized-lock guarantee;
