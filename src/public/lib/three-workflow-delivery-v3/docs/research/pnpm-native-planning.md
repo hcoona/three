@@ -245,6 +245,25 @@ support this composition. These are source findings and a corrective inference;
 the retained observations did not execute singleton full queries or exercise
 nonempty deduplicated subtrees.
 
+The wanted-lock selection does not make every output group revision-bound.
+The native [builder](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/build.rs#L139)
+also scans the installed modules directory for extraneous packages, and the
+[renderer](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/list/render/structured.rs#L134)
+emits those as `unsavedDependencies`. Ignore that entire group when reading saved
+facts; retain production, development and optional dependencies. A synchronized
+lock does not require an empty or synchronized installation directory.
+
+`Infinity` also retains a native safety limit. The
+[inspection limit](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/lib.rs#L34)
+and [materializer](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/get_tree.rs#L115)
+permit dependency level 256 but omit its children without a truncation flag.
+Reject that indistinguishable boundary. The renderer nests two JSON containers
+per dependency level inside the array/project pair; a JSON maximum depth of 512
+accepts the complete level-255 shape and rejects level 256. These are pinned
+source findings and adapter inferences, not new PNPM observations or a claim of
+unbounded graph support. Controlled-output tests can validate the adapter's
+acceptance/rejection without another native campaign.
+
 ## Bounded Local CLI Validation Protocol
 
 This protocol supports the decision whether the candidate above is sufficient

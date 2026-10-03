@@ -12,7 +12,11 @@ internal sealed record PnpmGraph(PnpmProject[] Projects, PnpmLocalInput[] LocalI
 internal sealed class PnpmGraphReader
 {
     private static readonly string[] DependencyGroups =
-        ["dependencies", "devDependencies", "optionalDependencies", "unsavedDependencies"];
+        ["dependencies", "devDependencies", "optionalDependencies"];
+    // PNPM 12.8.1 silently stops at dependency level 256. Its renderer adds
+    // two JSON containers per level plus the outer array/project: reject 514,
+    // while accepting the complete level-255 shape at JSON depth 512.
+    private static readonly JsonDocumentOptions TreeOptions = new() { MaxDepth = 512 };
     private readonly string root;
     private readonly Func<string[], CancellationToken, Task<string>> query;
 
@@ -153,7 +157,7 @@ internal sealed class PnpmGraphReader
     }
 
     private async Task<JsonDocument> ReadJsonAsync(string[] arguments, CancellationToken token) =>
-        JsonDocument.Parse(await query(arguments, token));
+        JsonDocument.Parse(await query(arguments, token), TreeOptions);
 
     private static string[] ListArguments(string depth) =>
         ["list", "--recursive", "--include-workspace-root", "--lockfile-only",

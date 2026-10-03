@@ -11,6 +11,68 @@ public sealed class PnpmGraphReaderTests
     private static readonly string[] NestedConsumers = ["packages/one", "packages/two"];
 
     [TestMethod]
+    [DataRow("dependencies")]
+    [DataRow("devDependencies")]
+    [DataRow("optionalDependencies")]
+    public async Task ReadSavedGraphIgnoresExtraneousInstalledRelations(string group)
+    {
+        var native = new NativeQueries(".", "packages/library", "packages/app",
+            "packages/stale")
+        { DependencyGroup = group };
+        native.Nodes["packages/app"] = [
+            native.Node("link:../library", "packages/library"),
+            native.Node("file:fixtures/saved", "node_modules/saved"),
+        ];
+        native.UnsavedNodes["packages/app"] = [
+            native.Node("link:../stale", "packages/stale"),
+            native.Node("file:fixtures/stale", "node_modules/stale"),
+            native.Node("1.0.0", "node_modules/archive", "file:fixtures/stale.tgz"),
+        ];
+
+        PnpmGraph graph = await native.Reader.ReadAsync(CancellationToken.None);
+
+        Assert.AreEqual("packages/library", Assert.ContainsSingle(graph.Projects.Single(
+            p => p.Directory == "packages/app").Dependencies));
+        PnpmLocalInput input = Assert.ContainsSingle(graph.LocalInputs);
+        Assert.AreEqual("fixtures/saved", input.Path);
+        Assert.AreEqual("packages/app", Assert.ContainsSingle(input.Consumers));
+        Assert.IsTrue(input.IsDirectory);
+    }
+
+    [TestMethod]
+    public async Task ReadDeepCompleteNativeTreeKeepsItsDeepestLocalInput()
+    {
+        var native = new NativeQueries(".", "packages/app");
+        native.Nodes["packages/app"] = [Chain(native, 255)];
+
+        PnpmGraph graph = await native.Reader.ReadAsync(CancellationToken.None);
+
+        PnpmLocalInput input = Assert.ContainsSingle(graph.LocalInputs);
+        Assert.AreEqual("fixtures/deep", input.Path);
+        Assert.AreEqual("packages/app", Assert.ContainsSingle(input.Consumers));
+        Assert.IsTrue(input.IsDirectory);
+        Assert.IsEmpty(graph.Projects.Single(p => p.Directory == "packages/app").Dependencies);
+    }
+
+    [TestMethod]
+    public async Task ReadRejectsNativeTreeAtIndistinguishableTruncationBoundary()
+    {
+        var native = new NativeQueries(".", "packages/app");
+        native.Nodes["packages/app"] = [Chain(native, 256)];
+
+        await Assert.ThrowsAsync<JsonException>(
+            () => native.Reader.ReadAsync(CancellationToken.None));
+    }
+
+    private static object Chain(NativeQueries native, int depth)
+    {
+        object node = native.Node("file:fixtures/deep", "node_modules/deep");
+        for (int level = 1; level < depth; level++)
+            node = native.Node("1.0.0", "node_modules/level-" + level, children: [node]);
+        return node;
+    }
+
+    [TestMethod]
     public async Task ReadSingletonTreesPreservesBothConsumersOfNestedLocalInput()
     {
         var native = new NativeQueries(".", "packages/one", "packages/two", "packages/unrelated");
@@ -206,11 +268,14 @@ public sealed class PnpmGraphReaderTests
 
     private sealed class NativeQueries(params string[] directories)
     {
+        private static readonly JsonSerializerOptions OutputOptions = new() { MaxDepth = 1024 };
         private readonly string root = Path.GetFullPath(Path.Combine(Path.GetTempPath(),
             "pnpm reader fixture"));
         internal List<string> Directories { get; } = [.. directories];
         internal Dictionary<string, string> Outputs { get; } = new(StringComparer.Ordinal);
         internal Dictionary<string, object[]> Nodes { get; } = new(StringComparer.Ordinal);
+        internal Dictionary<string, object[]> UnsavedNodes { get; } = new(StringComparer.Ordinal);
+        internal string DependencyGroup { get; set; } = "dependencies";
         internal Dictionary<string, string[]> Closures { get; } = new(StringComparer.Ordinal);
         internal string SharedLock { get; set; } = "null";
         internal string LockDirectory { get; set; } = "null";
@@ -277,9 +342,11 @@ public sealed class PnpmGraphReaderTests
             JsonSerializer.Serialize(identities.Select(identity => new Dictionary<string, object>
             {
                 ["path"] = Path.GetFullPath(identity, root),
-                ["dependencies"] = full ? Group(Nodes.GetValueOrDefault(identity, []))
+                [DependencyGroup] = full ? Group(Nodes.GetValueOrDefault(identity, []))
                     : new Dictionary<string, object>(),
-            }));
+                ["unsavedDependencies"] = full ? Group(UnsavedNodes.GetValueOrDefault(identity, []))
+                    : new Dictionary<string, object>(),
+            }), OutputOptions);
 
         private static Dictionary<string, object> Group(object[] nodes) =>
             nodes.Select((node, index) => (node, index)).ToDictionary(p => "alias-" + p.index,

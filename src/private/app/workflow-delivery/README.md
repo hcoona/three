@@ -42,6 +42,12 @@ Package names do not establish source identity. Unmatched local directories and
 tarballs remain inputs with explicit consumers, including when names match a
 workspace project.
 
+Only saved production, development and optional dependency groups contribute
+facts. The native `unsavedDependencies` group reflects extraneous installed state
+and is ignored. PNPM 12.8.1 silently cuts off trees at dependency level 256;
+the JSON depth bound accepts its complete level-255 shape and rejects the
+indistinguishable level-256 boundary rather than returning partial facts.
+
 The supported layout is a shared lockfile at the requested workspace root, with
 projects and local inputs inside that root. Unrepresentable directory selectors,
 ambiguous ownership, nonsingleton full responses and failed native queries stop the
