@@ -1,0 +1,476 @@
+{
+  "listing": [
+    {
+      "name": "@fixture/root",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__",
+      "private": true
+    },
+    {
+      "name": "@fixture/app",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/app",
+      "private": true
+    },
+    {
+      "name": "@fixture/core",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/core",
+      "private": true
+    },
+    {
+      "name": "@fixture/cycle-a",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/cycle-a",
+      "private": true,
+      "dependencies": {
+        "@fixture/cycle-b": {
+          "from": "@fixture/cycle-b",
+          "version": "link:../cycle-b",
+          "path": "__WORKSPACE__/packages/cycle-b",
+          "dependencies": {
+            "@fixture/cycle-a": {
+              "from": "@fixture/cycle-a",
+              "version": "link:",
+              "path": "__WORKSPACE__/packages/cycle-a"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "@fixture/cycle-b",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/cycle-b",
+      "private": true,
+      "dependencies": {
+        "@fixture/cycle-a": {
+          "from": "@fixture/cycle-a",
+          "version": "link:../cycle-a",
+          "path": "__WORKSPACE__/packages/cycle-a",
+          "dependencies": {
+            "@fixture/cycle-b": {
+              "from": "@fixture/cycle-b",
+              "version": "link:",
+              "path": "__WORKSPACE__/packages/cycle-b"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "@fixture/deletion-consumer",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/deletion-consumer",
+      "private": true
+    },
+    {
+      "name": "@fixture/file",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/file",
+      "private": true,
+      "dependencies": {
+        "@fixture/core": {
+          "from": "@fixture/core",
+          "version": "link:../core",
+          "path": "__WORKSPACE__/packages/core"
+        }
+      }
+    },
+    {
+      "name": "@fixture/injected",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/injected",
+      "private": true,
+      "dependencies": {
+        "@fixture/core": {
+          "from": "@fixture/core",
+          "version": "link:../core",
+          "path": "__WORKSPACE__/packages/core"
+        }
+      }
+    },
+    {
+      "name": "@fixture/link",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/link",
+      "private": true,
+      "dependencies": {
+        "@fixture/core": {
+          "from": "@fixture/core",
+          "version": "link:../core",
+          "path": "__WORKSPACE__/packages/core"
+        }
+      }
+    },
+    {
+      "name": "@fixture/nested",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/nested",
+      "private": true
+    },
+    {
+      "name": "@fixture/nested-child",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/nested/child",
+      "private": true,
+      "dependencies": {
+        "@fixture/core": {
+          "from": "@fixture/core",
+          "version": "link:../../core",
+          "path": "__WORKSPACE__/packages/core"
+        }
+      }
+    },
+    {
+      "name": "@fixture/npm-alias",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/npm-alias",
+      "private": true,
+      "dependencies": {
+        "renamed": {
+          "from": "renamed",
+          "version": "link:../core",
+          "path": "__WORKSPACE__/packages/core"
+        }
+      }
+    },
+    {
+      "name": "@fixture/peer",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/peer",
+      "private": true
+    },
+    {
+      "name": "@fixture/peer-consumer-one",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/peer-consumer-one",
+      "private": true,
+      "dependencies": {
+        "@fixture/peer-lib": {
+          "from": "@fixture/peer-lib",
+          "version": "file:packages/peer-lib",
+          "path": "__WORKSPACE__/node_modules/.pnpm/@fixture+peer-lib@file+packages+peer-lib_@fixture+peer-provider@file+fixtures+peer-one/node_modules/@fixture/peer-lib",
+          "dependencies": {
+            "@fixture/peer-provider": {
+              "from": "@fixture/peer-provider",
+              "version": "file:fixtures/peer-one",
+              "path": "__WORKSPACE__/node_modules/.pnpm/@fixture+peer-provider@file+fixtures+peer-one/node_modules/@fixture/peer-provider"
+            }
+          }
+        },
+        "@fixture/peer-provider": {
+          "from": "@fixture/peer-provider",
+          "version": "file:fixtures/peer-one",
+          "path": "__WORKSPACE__/node_modules/.pnpm/@fixture+peer-provider@file+fixtures+peer-one/node_modules/@fixture/peer-provider"
+        }
+      }
+    },
+    {
+      "name": "@fixture/peer-consumer-two",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/peer-consumer-two",
+      "private": true,
+      "dependencies": {
+        "@fixture/peer-lib": {
+          "from": "@fixture/peer-lib",
+          "version": "file:packages/peer-lib",
+          "path": "__WORKSPACE__/node_modules/.pnpm/@fixture+peer-lib@file+packages+peer-lib_@fixture+peer-provider@file+fixtures+peer-two/node_modules/@fixture/peer-lib",
+          "dependencies": {
+            "@fixture/peer-provider": {
+              "from": "@fixture/peer-provider",
+              "version": "file:fixtures/peer-two",
+              "path": "__WORKSPACE__/node_modules/.pnpm/@fixture+peer-provider@file+fixtures+peer-two/node_modules/@fixture/peer-provider"
+            }
+          }
+        },
+        "@fixture/peer-provider": {
+          "from": "@fixture/peer-provider",
+          "version": "file:fixtures/peer-two",
+          "path": "__WORKSPACE__/node_modules/.pnpm/@fixture+peer-provider@file+fixtures+peer-two/node_modules/@fixture/peer-provider"
+        }
+      }
+    },
+    {
+      "name": "@fixture/peer-lib",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/peer-lib",
+      "private": true
+    },
+    {
+      "name": "@fixture/publish-alias",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/publish-alias",
+      "private": true,
+      "dependencies": {
+        "renamed-publisher": {
+          "from": "@fixture/publisher",
+          "version": "file:packages/publisher/build output",
+          "path": "__WORKSPACE__/node_modules/.pnpm/@fixture+publisher@file+packages+publisher+build output/node_modules/@fixture/publisher"
+        }
+      }
+    },
+    {
+      "name": "@fixture/publish-file",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/publish-file",
+      "private": true
+    },
+    {
+      "name": "@fixture/publish-link",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/publish-link",
+      "private": true,
+      "dependencies": {
+        "@fixture/publisher": {
+          "from": "@fixture/publisher",
+          "version": "link:../publisher/build output",
+          "path": "__WORKSPACE__/packages/publisher/build output"
+        }
+      }
+    },
+    {
+      "name": "@fixture/publish-workspace",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/publish-workspace",
+      "private": true,
+      "dependencies": {
+        "@fixture/publisher": {
+          "from": "@fixture/publisher",
+          "version": "link:../publisher/dist",
+          "path": "__WORKSPACE__/packages/publisher/dist"
+        }
+      }
+    },
+    {
+      "name": "@fixture/publisher",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/publisher",
+      "private": true
+    },
+    {
+      "name": "@fixture/space",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/space project",
+      "private": true,
+      "dependencies": {
+        "@fixture/core": {
+          "from": "@fixture/core",
+          "version": "link:../core",
+          "path": "__WORKSPACE__/packages/core"
+        }
+      }
+    },
+    {
+      "name": "@fixture/tarball-consumer",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/tarball-consumer",
+      "private": true,
+      "dependencies": {
+        "@fixture/publisher": {
+          "from": "@fixture/publisher",
+          "version": "1.0.0",
+          "resolved": "file:fixtures/publisher.tgz",
+          "path": "__WORKSPACE__/node_modules/.pnpm/@fixture+publisher@file+fixtures+publisher.tgz/node_modules/@fixture/publisher"
+        }
+      }
+    },
+    {
+      "name": "@fixture/top",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/top",
+      "private": true,
+      "dependencies": {
+        "@fixture/app": {
+          "from": "@fixture/app",
+          "version": "link:../app",
+          "path": "__WORKSPACE__/packages/app"
+        },
+        "@fixture/publish-file": {
+          "from": "@fixture/publish-file",
+          "version": "link:../publish-file",
+          "path": "__WORKSPACE__/packages/publish-file"
+        }
+      }
+    },
+    {
+      "name": "@fixture/unrelated",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/unrelated",
+      "private": true
+    },
+    {
+      "name": "@fixture/workspace-alias",
+      "version": "1.0.0",
+      "path": "__WORKSPACE__/packages/workspace-alias",
+      "private": true,
+      "dependencies": {
+        "renamed": {
+          "from": "renamed",
+          "version": "link:../core",
+          "path": "__WORKSPACE__/packages/core"
+        }
+      }
+    }
+  ],
+  "publishMetadata": {
+    "packages/publisher": "\"build output\"\n",
+    "packages/core": "",
+    "packages/peer-lib": "",
+    "packages/space project": ""
+  },
+  "closures": {
+    "packages/publisher": [
+      {
+        "name": "@fixture/publisher",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/publisher",
+        "private": true
+      }
+    ],
+    "packages/publish-file": [
+      {
+        "name": "@fixture/publish-file",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/publish-file",
+        "private": true
+      }
+    ],
+    "packages/publish-link": [
+      {
+        "name": "@fixture/publish-link",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/publish-link",
+        "private": true
+      }
+    ],
+    "packages/publish-workspace": [
+      {
+        "name": "@fixture/publish-workspace",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/publish-workspace",
+        "private": true
+      },
+      {
+        "name": "@fixture/publisher",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/publisher",
+        "private": true
+      }
+    ],
+    "packages/publish-alias": [
+      {
+        "name": "@fixture/publish-alias",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/publish-alias",
+        "private": true
+      }
+    ],
+    "packages/peer-consumer-one": [
+      {
+        "name": "@fixture/peer-consumer-one",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/peer-consumer-one",
+        "private": true
+      },
+      {
+        "name": "@fixture/peer-lib",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/peer-lib",
+        "private": true
+      }
+    ],
+    "packages/peer-consumer-two": [
+      {
+        "name": "@fixture/peer-consumer-two",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/peer-consumer-two",
+        "private": true
+      },
+      {
+        "name": "@fixture/peer-lib",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/peer-lib",
+        "private": true
+      }
+    ],
+    "packages/injected": [
+      {
+        "name": "@fixture/injected",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/injected",
+        "private": true
+      },
+      {
+        "name": "@fixture/core",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/core",
+        "private": true
+      }
+    ],
+    "packages/peer": [
+      {
+        "name": "@fixture/peer",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/peer",
+        "private": true
+      },
+      {
+        "name": "@fixture/core",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/core",
+        "private": true
+      }
+    ],
+    "packages/top": [
+      {
+        "name": "@fixture/top",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/top",
+        "private": true
+      },
+      {
+        "name": "@fixture/app",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/app",
+        "private": true
+      },
+      {
+        "name": "@fixture/publish-file",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/publish-file",
+        "private": true
+      }
+    ],
+    "packages/app": [
+      {
+        "name": "@fixture/app",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/app",
+        "private": true
+      }
+    ],
+    "packages/deletion-consumer": [
+      {
+        "name": "@fixture/deletion-consumer",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/deletion-consumer",
+        "private": true
+      }
+    ],
+    "packages/space project": [
+      {
+        "name": "@fixture/space",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/space project",
+        "private": true
+      },
+      {
+        "name": "@fixture/core",
+        "version": "1.0.0",
+        "path": "__WORKSPACE__/packages/core",
+        "private": true
+      }
+    ]
+  }
+}
