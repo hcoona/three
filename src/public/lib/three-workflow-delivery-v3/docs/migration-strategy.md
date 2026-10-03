@@ -159,8 +159,11 @@ integration. Do not add a Node helper or embedded LibNode for that integration.
 The [PNPM 12 assessment](./research/pnpm-native-planning.md) supplies source
 evidence and the bounded local validation protocol for this choice. Selecting
 the CLI does not accept an incomplete fact extraction recipe or native reader.
-Use PNPM's workspace selection and structured output to obtain resolved source
-project relations; Workflow combines their base/candidate results and computes
+Use PNPM's workspace selection, structured resolved output and native
+publish-directory metadata to obtain source project relations; reuse existing
+declarations rather than maintaining a second dependency/output manifest. The
+assessment's bounded directory-join follow-up tests that composition before a
+reader is accepted. Workflow combines the base/candidate results and computes
 impact with the other ecosystems and declarations. If a necessary fact cannot
 be obtained, return the concrete gap to the owner rather than introducing
 dependency parsing or changing the selected integration silently.
