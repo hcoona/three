@@ -265,7 +265,61 @@ It grants no external experiment, registry publication or hosted dispatch.
   host-trust changes. Local success covers the tested CLI composition and
   fixture shapes; it does not certify PNPM or all monorepo structures.
 
-No unavoidable capability gap has been established by this source assessment.
+## Local CLI Observations
+
+The protocol accepted in [PR #1006](https://github.com/hcoona/three/pull/1006),
+commit `057a7a0f420f0d9adbce236bd6c808a2ed783cd0`, was exercised with PNPM
+12.8.1 on Linux x86_64 on 2026-10-03. Two disposable workspaces, four preparation
+commands and 57 read-only queries were used. The fixture commands used no registry reads, scripts, hooks,
+credentials or hosted operations. The governing observation PR retains
+the sanitized fixtures, native-generated locks, runner, command outputs and
+environment identity; these are local integration observations, not a PNPM
+support certification or an accepted native reader.
+
+The first workspace's optional `packageManager` directive caused an offline
+package-manager metadata cache miss before any graph query. That case stopped.
+The second workspace used the already pinned executable without that directive;
+its base and candidate locks were generated natively. One script-disabled offline
+install supplied base installed state before candidate manifests and the wanted
+lock changed. The four-command preparation ceiling includes the stopped case.
+
+| Fixture shape                                                                              | Observed native result                                                                                                                                       |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Ordinary workspace links, workspace/npm aliases, root-directory `link:` and `file:` inputs | Directory-selector dependency closure included the source projects                                                                                           |
+| Transitive consumers, cycles, nested projects and a path containing a space                | Closure included the expected projects and excluded unrelated projects; the parent selector did not select its nested child with `legacyDirFiltering: false` |
+| Removed reference and deleted project                                                      | Candidate closure dropped the old relation; the retained base closure still identified the old consumer                                                      |
+| Candidate wanted lock with base installed state                                            | Wanted-lock queries returned candidate relations rather than substituting installed base relations                                                           |
+| Workspace reference to a project with `publishConfig.directory`                            | Closure included the source project                                                                                                                          |
+| Explicit `link:` reference to that publish subdirectory                                    | Filter closure omitted the source project; complementary `list --only-projects` returned its source-root path                                                |
+| Explicit `file:` reference to that publish subdirectory                                    | Filter closure omitted the source project; `list --only-projects` omitted the package-snapshot edge                                                          |
+
+The local-peer declaration appeared in filter closure. The fixture declaring
+`dependenciesMeta.injected: true` also appeared there, but its generated lock
+still represented the dependency as a link. This is not evidence for a
+materialized injected snapshot or peer-variant coverage. Those shapes remain
+unobserved; no additional preparation is permitted under this execution's budget.
+
+For the nested `file:` case, full list JSON retained a package coordinate such as
+`version: "file:packages/publisher/dist"` and a virtual-store installation path.
+CycloneDX retained the same coordinate as a component version and package URL.
+Neither queried view returned a separate source-directory field. This is not a
+claim that the CLI exposes no useful information: the coordinate is visible.
+However, a complete source join cannot be claimed from these observations or
+by matching package names. The [package-info source][pkg-info] can select a
+metadata version instead of a path-bearing package-key version; the rendered
+version field is not a typed directory-resolution contract.
+
+The selected filter/list composition therefore does not yet establish complete
+coverage for every required local-input shape. The owner's CLI choice remains
+unchanged. A proposed disposition is to use the MLD's existing
+[extra-input contract](../middle-level-design.md#minimum-facts)
+for source/generated-output relationships unavailable from native project facts,
+and reject relevant scope when the needed declaration is absent. That proposal
+requires owner disposition before this shape is accepted for implementation; it
+does not authorize a coordinate parser, custom resolver or full-run fallback.
+
+The source assessment and local composition have not established an unavoidable
+gap in every supported CLI interface.
 If a required source identity or relation cannot be obtained through supported
 native interfaces, follow the [HLD boundary](../high-level-design.md#native-integrations)
 and return that concrete gap to the owner. Do not fill it with custom parsing or
