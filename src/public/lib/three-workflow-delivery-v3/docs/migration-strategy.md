@@ -144,6 +144,27 @@ is retired. Do not retain the old Python package just to supply generated consta
 
 ### Native Facts and First Supported Shapes
 
+For each new integration, first identify its maintained native library or
+supported tool interface, the inputs/configuration it evaluates, the facts and
+errors it exposes, and the required facts still unavailable. Review that concrete
+boundary before implementation. Follow the HLD's
+[native integration boundary](./high-level-design.md#native-integrations), including
+native-language helpers and owner disposition when a necessary capability is
+missing. Internal implementation and transfer formats have no compatibility
+obligation. Rewrite producers and consumers together instead of adding aliases
+or porting ecosystem parsing and resolution rules into C#.
+
+The owner selected the supported PNPM CLI for the replacement application's Node
+integration. Do not add a Node helper or embedded LibNode for that integration.
+The [PNPM 12 assessment](./research/pnpm-native-planning.md) supplies source
+evidence and the bounded local validation protocol for this choice. Selecting
+the CLI does not accept an incomplete fact extraction recipe or native reader.
+Use PNPM's workspace selection and structured output to obtain resolved source
+project relations; Workflow combines their base/candidate results and computes
+impact with the other ecosystems and declarations. If a necessary fact cannot
+be obtained, return the concrete gap to the owner rather than introducing
+dependency parsing or changing the selected integration silently.
+
 | Ecosystem | Native inputs and required initial coverage                                                                                                                    | Unsupported relevant shape                                                                                                    |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | Node      | PNPM workspace membership and local dependency edges; package manifests/scripts; shared lock/toolchain consumers; NBGV project inputs; declared package output | Unknown workspace protocol or dynamic dependency/input relation that native metadata and explicit declarations cannot resolve |

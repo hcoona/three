@@ -24,8 +24,10 @@ The [previous HLD][previous-hld] remains available for those historical readers.
 ## Architecture and Responsibilities
 
 One repository-internal C# CLI implements CI and Release use cases. Shared code
-provides native repository facts, builds, checks, package inspection and platform
-clients where behavior is actually shared. CI and Release have different
+adapts native repository facts, builds, checks, package inspection and platform
+clients where behavior is actually shared. Ecosystem-language helpers may call
+their native libraries; the C# entry point does not require translating those
+libraries' behavior into C#. CI and Release have different
 responsibilities; they need no symmetric planners, finalizers, aggregates or
 record hierarchies. Ordinary functions express planning and result evaluation.
 
@@ -139,8 +141,25 @@ dependency and quality rules as other projects.
 
 ## Native Integrations
 
-Ecosystem code owns discovery, version projection, build invocation, package
-inspection and clean consumption. Destination code owns endpoint/coordinate
+Native ecosystem libraries and supported tool interfaces own manifest and
+configuration interpretation, project evaluation, dependency resolution,
+version computation and package-format semantics. Ecosystem integrations invoke
+those interfaces and project their results into the facts needed by Workflow.
+This boundary applies to ecosystem-specific helpers as well as shared code.
+Do not implement a second parser or resolver, fill missing native facts with
+protocol-prefix heuristics, or replay a native evaluator's rules in another
+language. Workflow owns impact selection, its quality and unit declarations,
+request constraints and business result evaluation.
+
+Before implementing an integration, identify the native interface and verify
+that its output supports the required scope and errors. A successful call does
+not imply that a partial listing covers the whole required dependency graph.
+If a necessary capability is unavailable, stop the dependent work and present
+the gap and tradeoff to the owner; do not compensate with application machinery
+or silently reduce the required behavior.
+
+Ecosystem integrations also invoke builds, package inspection and clean
+consumption. Destination code owns endpoint/coordinate
 semantics, observation, supported upload and interpretation of remote state.
 Release owns completion and whether another mutation is allowed.
 
