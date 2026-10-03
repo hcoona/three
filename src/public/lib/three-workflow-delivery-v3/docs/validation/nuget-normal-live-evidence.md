@@ -9,7 +9,7 @@ the publication chain, fresh destination bytes and witness, and a clean
 exact-version restore, build and marker invocation.
 
 This record owns the runtime completion evidence consumed by the project
-README, document index, agent handoffs and [migration policy](../migration-strategy.md).
+README, document index, agent handoffs and [migration policy](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md).
 Workflow Delivery v3 maintainers
 retain its original evidence and update the consuming status when a relevant
 claim changes. [Requirements](../requirements.md#nuget-second-slice) remain

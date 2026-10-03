@@ -9,7 +9,8 @@ The [contraction requirements](docs/requirements.md) and replacement
 [HLD](docs/high-level-design.md) govern new design. The
 [middle-level design](docs/middle-level-design.md) defines component, selection,
 execution, transfer and outcome contracts for the internal C# application under
-`src/private/app/workflow-delivery/`. The HLD owns the cutover order;
+`src/private/app/workflow-delivery/`. The [implementation plan](docs/migration-strategy.md) maps actual projects,
+CLI/workflow callers, integration contracts and retirement order;
 the runtime described below has not yet been replaced.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
@@ -38,7 +39,7 @@ completion campaigns are stopped. The production
 bootstrap failed at wheel readback; its request is retired and its partial/unknown
 effects remain failed. The
 [handoff](docs/agent-handoff.md#starting-a-new-session) routes current operation
-limits, and the [delivery gates](docs/migration-strategy.md#python-smoke-delivery)
+limits, and the [delivery gates](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#python-smoke-delivery)
 keep implementation, configuration/admission and publication separately authorized.
 The npm and NuGet smoke objectives remain complete.
 The [partial-publication recovery design](docs/hcoona-release-smoke-python-lld.md#approval-and-terminal-contract)
@@ -321,7 +322,7 @@ runtime work and does not renew either spent npm dispatch authorization.
 
 The [Ruby requirements](./docs/requirements.md#ruby-smoke-slice) and
 [brief LLD](./docs/hcoona-release-smoke-ruby-lld.md) define the selected
-GitHub Packages then RubyGems.org journey. [Migration gates](./docs/migration-strategy.md#ruby-smoke-delivery)
+GitHub Packages then RubyGems.org journey. [Migration gates](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#ruby-smoke-delivery)
 separate implementation and actual acceptance. The [Ruby smoke](../hcoona-release-smoke-ruby/README.md)
 has exact-target native Provider facts, a closed Model, frozen original-gem Build,
 immutable Artifact records and separate CI and Release qualification. Both

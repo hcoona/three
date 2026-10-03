@@ -18,10 +18,12 @@ The [requirements](./requirements.md) own contraction behavior. The replacement
 [HLD](./high-level-design.md) defines the smaller internal C# architecture and
 implementation order. The [middle-level design](./middle-level-design.md) closes
 component, selection, execution, transfer and outcome contracts. The
+[implementation plan](./migration-strategy.md) owns the concrete consumer inventory,
+integration contract outline and dependency-ordered caller transitions. The
 [feasibility record](./research/contraction-feasibility.md) distinguishes local
 observations from the owner's accepted Windows assumption. The
 [transition](./requirements.md#requirements-and-implementation-transition) keeps
-the old glossary, pinned former MLDs, LLDs and migration record scoped to existing code and
+the old glossary, pinned former MLDs/migration plan and LLDs scoped to existing code and
 retained evidence. The implementation and completed campaigns described below
 do not claim conformity to the replacement. The
 [Wave](../../../../../docs/delivery-wave.md) covers the full contraction.
@@ -78,7 +80,7 @@ records both destination completions, retained failures and evidence limits.
 The [current status](../README.md#ruby-build-and-qualification) and
 [handoff](./agent-handoff.md#ruby-delivery-entry) record stopped campaigns,
 all-null request slots and retired external callers. The
-[migration order](./migration-strategy.md#ruby-smoke-delivery) remains the
+[migration order](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#ruby-smoke-delivery) remains the
 delivery contract; future work requires its own accepted Wave authority.
 
 ## Python Smoke Design
@@ -100,7 +102,7 @@ HLD, five MLDs and [Python LLD](./hcoona-release-smoke-python-lld.md) adopt
 platform reliance without duplicate/race proving. The
 [source evidence](./research/python-smoke-evidence.md) distinguishes source
 findings, the retained failed runs and that owner decision.
-The [migration policy](./migration-strategy.md#python-smoke-delivery) routes the
+The [migration policy](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#python-smoke-delivery) routes the
 disabled implementation, configuration/admission and actual publication
 stages. Runtime and both protected files use strict Python Governance v2.
 Normal publication and fresh clean wheel/sdist consumption are
@@ -183,6 +185,8 @@ New design starts with the [requirements](./requirements.md), then the
 replacement [HLD](./high-level-design.md) and
 [middle-level design](./middle-level-design.md). The HLD owns architecture and
 implementation order; the MLD owns common component and behavior contracts.
+The [implementation plan](./migration-strategy.md) maps the actual cutover groups
+and their validation dependencies.
 Local observations and the Windows assumption
 are recorded in [contraction feasibility](./research/contraction-feasibility.md).
 
@@ -198,7 +202,7 @@ historical-evidence consumers, under the
     - [CI Qualification](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/ci-qualification-mld.md)
     - [Release Delivery](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/release-delivery-mld.md)
     - [Shared Foundation](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/shared-foundation-mld.md)
-3. [Pre-contraction migration policy](./migration-strategy.md)
+3. [Pre-contraction migration policy](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md)
 4. Applicable slice LLD: [npm](./hcoona-release-smoke-npm-lld.md),
    [NuGet](./hcoona-release-smoke-github-packages-lld.md), or
    [Python](./hcoona-release-smoke-python-lld.md), and

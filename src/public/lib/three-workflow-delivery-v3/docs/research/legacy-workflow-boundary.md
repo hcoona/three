@@ -1,6 +1,6 @@
 # Retained Legacy Workflow Boundary
 
-The [v3 migration policy](../migration-strategy.md) permits historical
+The [v3 migration policy](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md) permits historical
 mechanism extraction only with explicit v3 selection and revalidation.
 The retained v1 Official/reusable workflow stack is a compatibility surface;
 legacy Buddy is retired. The older v2 design is not an incremental base.
