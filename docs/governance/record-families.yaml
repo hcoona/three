@@ -580,6 +580,14 @@ bindings:
     carrier: repository-file
     path: src/public/lib/three-workflow-delivery-v3/README.md
     format: markdown
+  - id: workflow-delivery-private-interface
+    family: three-workflow-delivery-v3-interface
+    namespace: src/public/lib/three-workflow-delivery-v3
+    state: current
+    carrier: repository-file
+    path: src/private/app/workflow-delivery/README.md
+    format: markdown
+    purpose: Replacement private CLI interface; project authorities remain in the V3 namespace until Python retirement
   - id: three-workflow-delivery-v3-nuget-helper-interface
     family: three-workflow-delivery-v3-nuget-helper-interface
     namespace: src/public/lib/three-workflow-delivery-v3

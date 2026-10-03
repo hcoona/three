@@ -14,6 +14,9 @@ execution, transfer and outcome contracts. The HLD owns terminology and
 implementation order. The [implementation plan](./migration-strategy.md) identifies
 concrete callers, integration contracts and retirement dependencies.
 Implementation has not yet been cut over. The
+[private application's entry](../../../../private/app/workflow-delivery/README.md)
+describes its implemented CI selection/result interface and remaining native
+integration limits. The
 [requirements transition](./requirements.md#requirements-and-implementation-transition)
 defines the retained implementation/evidence scope of the old
 [glossary](./architecture-glossary.md),

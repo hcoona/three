@@ -311,6 +311,7 @@ def test_slice_affecting_paths_select_all_lanes(path: str) -> None:
         "hk.pkl",
         ".python-version",
         "nested/package.json",
+        "src/private/app/workflow-delivery/CI/ImpactPlanner.cs",
         "src/private/lib/hk/Config.pkl",
         "src/private/lib/hk/Steps.pkl",
         "src/private/lib/hk/steps/Typos.pkl",

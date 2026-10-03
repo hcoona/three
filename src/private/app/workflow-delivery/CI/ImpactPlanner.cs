@@ -1,0 +1,308 @@
+namespace WorkflowDelivery.CI;
+
+internal static class ImpactPlanner
+{
+    internal static CiPlan Plan(PlanRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        Dictionary<string, ProjectFacts> basis = ValidateFacts(request.Basis);
+        Dictionary<string, ProjectFacts> candidate = ValidateFacts(request.Candidate);
+        if (request.Basis.Scope != request.Candidate.Scope)
+            throw new InvalidDataException("Comparison and candidate coverage scopes differ.");
+        ArgumentNullException.ThrowIfNull(request.ChangedPaths);
+
+        var reasons = new Dictionary<string, HashSet<SelectionReason>>(StringComparer.Ordinal);
+        var consumers = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        AddRelations(basis, consumers);
+        AddRelations(candidate, consumers);
+
+        foreach (string path in request.ChangedPaths)
+        {
+            ValidatePath(path);
+            bool known = SelectOwners(request.Basis, path, reasons);
+            known |= SelectOwners(request.Candidate, path, reasons);
+            if (!known)
+                throw new InvalidDataException($"Unresolved changed path: {path}");
+        }
+        if (request.Full)
+            foreach (string project in candidate.Keys)
+                AddReason(reasons, project, new("<full>", request.Candidate.Revision, project));
+
+        // Traverse the union: deleting a reference must not hide its former consumers.
+        var pending = new Queue<string>(reasons.Keys);
+        while (pending.TryDequeue(out string? project))
+        {
+            if (!consumers.TryGetValue(project, out HashSet<string>? dependents))
+                continue;
+            foreach (string dependent in dependents)
+            {
+                bool changed = false;
+                foreach (SelectionReason reason in reasons[project].ToArray())
+                    changed |= AddReason(reasons, dependent, reason);
+                if (changed)
+                    pending.Enqueue(dependent);
+            }
+        }
+
+        var available = new Dictionary<CheckKey, CheckSpec>();
+        foreach (ProjectFacts project in candidate.Values)
+            foreach (CheckSpec check in project.Checks)
+                AddCheck(available, check);
+        ValidatePrerequisites(available);
+
+        var selected = new Dictionary<CheckKey, PlannedCheck>();
+        foreach ((string id, HashSet<SelectionReason> why) in reasons)
+        {
+            if (!candidate.TryGetValue(id, out ProjectFacts? project))
+                continue;
+            if (string.IsNullOrWhiteSpace(project.QualityPreset) || project.Checks.Length == 0)
+                throw new InvalidDataException($"Unresolved quality contract for {id}.");
+            foreach (CheckSpec check in project.Checks)
+                SelectCheck(selected, check, [project.QualityPreset], why);
+        }
+
+        var work = new Queue<CheckKey>(selected.Keys);
+        while (work.TryDequeue(out CheckKey? key))
+        {
+            PlannedCheck owner = selected[key];
+            foreach (CheckKey prerequisite in owner.Work.Prerequisites)
+            {
+                CheckSpec check = available[prerequisite] with { Required = owner.Work.Required };
+                if (SelectCheck(selected, check, owner.QualityPresets, owner.Reasons))
+                    work.Enqueue(prerequisite);
+            }
+        }
+
+        return new(
+            request.Basis.Revision,
+            request.Candidate.Revision,
+            request.Candidate.Scope,
+            selected.Values
+                .OrderBy(x => x.Work.Key.Target, StringComparer.Ordinal)
+                .ThenBy(x => x.Work.Key.Check, StringComparer.Ordinal)
+                .ThenBy(x => x.Work.Key.Variant, StringComparer.Ordinal)
+                .Select(x => x with
+                {
+                    QualityPresets = x.QualityPresets.Order(StringComparer.Ordinal).ToArray(),
+                    Reasons = x.Reasons
+                        .OrderBy(r => r.Path, StringComparer.Ordinal)
+                        .ThenBy(r => r.Revision, StringComparer.Ordinal)
+                        .ThenBy(r => r.Project, StringComparer.Ordinal)
+                        .ToArray(),
+                })
+                .ToArray()
+        );
+    }
+
+    private static Dictionary<string, ProjectFacts> ValidateFacts(RepositoryFacts facts)
+    {
+        ArgumentNullException.ThrowIfNull(facts);
+        RequireText(facts.Revision, "revision");
+        RequireText(facts.Scope, "coverage scope");
+        ArgumentNullException.ThrowIfNull(facts.Errors);
+        if (facts.Errors.Length != 0)
+            throw new InvalidDataException(
+                $"Incomplete {facts.Revision} facts: " + string.Join("; ", facts.Errors)
+            );
+        ArgumentNullException.ThrowIfNull(facts.Projects);
+        var projects = new Dictionary<string, ProjectFacts>(StringComparer.Ordinal);
+        foreach (ProjectFacts project in facts.Projects)
+        {
+            ArgumentNullException.ThrowIfNull(project);
+            RequireText(project.Id, "project id");
+            ValidatePath(project.Directory);
+            if (project.ReleaseUnit is not null)
+                RequireText(project.ReleaseUnit, "release unit");
+            if (!projects.TryAdd(project.Id, project))
+                throw new InvalidDataException($"Duplicate project: {project.Id}");
+            ArgumentNullException.ThrowIfNull(project.Checks);
+            foreach (CheckSpec check in project.Checks)
+                ValidateCheck(check);
+        }
+        foreach (ProjectFacts project in facts.Projects)
+        {
+            ArgumentNullException.ThrowIfNull(project.Dependencies);
+            ArgumentNullException.ThrowIfNull(project.QualityConsumers);
+            foreach (string id in project.Dependencies.Concat(project.QualityConsumers))
+                if (id is null || !projects.ContainsKey(id))
+                    throw new InvalidDataException(
+                        $"Unresolved relation from {project.Id} to {id}.");
+        }
+        ArgumentNullException.ThrowIfNull(facts.SharedInputs);
+        foreach (SharedInput input in facts.SharedInputs)
+        {
+            ArgumentNullException.ThrowIfNull(input);
+            ValidatePath(input.Path);
+            ArgumentNullException.ThrowIfNull(input.Consumers);
+            if (input.Consumers.Length == 0 || input.Consumers.Any(id => id is null ||
+                !projects.ContainsKey(id)))
+                throw new InvalidDataException($"Unresolved shared input: {input.Path}");
+        }
+        ArgumentNullException.ThrowIfNull(facts.UnaffectedPaths);
+        foreach (string path in facts.UnaffectedPaths)
+            ValidatePath(path);
+        return projects;
+    }
+
+    internal static void ValidateCheck(CheckSpec check)
+    {
+        ArgumentNullException.ThrowIfNull(check);
+        ValidateKey(check.Key);
+        RequireText(check.Runner, "runner");
+        ArgumentNullException.ThrowIfNull(check.Dimensions);
+        foreach ((string name, string value) in check.Dimensions)
+        {
+            RequireText(name, "dimension name");
+            RequireText(value, "dimension value");
+        }
+        ArgumentNullException.ThrowIfNull(check.Prerequisites);
+        foreach (CheckKey key in check.Prerequisites)
+            ValidateKey(key);
+    }
+
+    internal static void ValidateKey(CheckKey key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        RequireText(key.Target, "target");
+        RequireText(key.Check, "check");
+        RequireText(key.Variant, "variant");
+    }
+
+    internal static void RequireText(string value, string subject)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new InvalidDataException($"Missing {subject}.");
+    }
+
+    private static void ValidatePath(string path)
+    {
+        RequireText(path, "repository path");
+        if (path.Contains('\\') || path.Contains(':') || path.Split('/').Any(p => p is "" or
+            "." or ".."))
+            throw new InvalidDataException(
+                $"Expected a normalized repository-relative path: {path}");
+    }
+
+    private static bool SelectOwners(
+        RepositoryFacts facts,
+        string path,
+        Dictionary<string, HashSet<SelectionReason>> reasons
+    )
+    {
+        bool known = facts.UnaffectedPaths.Contains(path, StringComparer.Ordinal);
+        // The nearest project owns a nested path; broader consumers are explicit inputs.
+        ProjectFacts[] owners = facts.Projects
+            .Where(p => path == p.Directory || path.StartsWith(p.Directory + "/",
+                StringComparison.Ordinal))
+            .ToArray();
+        int longest = owners.Length == 0 ? 0 : owners.Max(p => p.Directory.Length);
+        foreach (ProjectFacts owner in owners.Where(p => p.Directory.Length == longest))
+        {
+            known = true;
+            AddReason(reasons, owner.Id, new(path, facts.Revision, owner.Id));
+        }
+        foreach (SharedInput input in facts.SharedInputs.Where(i => i.Path == path))
+            foreach (string id in input.Consumers)
+            {
+                known = true;
+                AddReason(reasons, id, new(path, facts.Revision, id));
+            }
+        return known;
+    }
+
+    private static bool AddReason(
+        Dictionary<string, HashSet<SelectionReason>> reasons,
+        string id,
+        SelectionReason reason
+    )
+    {
+        if (!reasons.TryGetValue(id, out HashSet<SelectionReason>? items))
+            reasons.Add(id, items = []);
+        return items.Add(reason);
+    }
+
+    private static void AddRelations(
+        Dictionary<string, ProjectFacts> projects,
+        Dictionary<string, HashSet<string>> consumers
+    )
+    {
+        void Add(string input, string consumer)
+        {
+            if (!consumers.TryGetValue(input, out HashSet<string>? values))
+                consumers.Add(input, values = new(StringComparer.Ordinal));
+            values.Add(consumer);
+        }
+        foreach (ProjectFacts project in projects.Values)
+        {
+            foreach (string dependency in project.Dependencies)
+                Add(dependency, project.Id);
+            foreach (string qualityConsumer in project.QualityConsumers)
+                Add(project.Id, qualityConsumer);
+            if (project.ReleaseUnit is not null)
+                foreach (ProjectFacts member in projects.Values.Where(p => p.ReleaseUnit ==
+                    project.ReleaseUnit))
+                    Add(project.Id, member.Id);
+        }
+    }
+
+    private static void AddCheck(Dictionary<CheckKey, CheckSpec> checks, CheckSpec check)
+    {
+        if (!checks.TryGetValue(check.Key, out CheckSpec? previous))
+        {
+            checks.Add(check.Key, check);
+            return;
+        }
+        if (previous.Runner != check.Runner
+            || previous.Dimensions.Count != check.Dimensions.Count
+            || previous.Dimensions.Any(p => !check.Dimensions.TryGetValue(p.Key, out string?
+                value) || p.Value != value)
+            || !previous.Prerequisites.ToHashSet().SetEquals(check.Prerequisites))
+            throw new InvalidDataException($"Conflicting check definition: {check.Key}");
+        checks[check.Key] = previous with { Required = previous.Required || check.Required };
+    }
+
+    private static bool SelectCheck(
+        Dictionary<CheckKey, PlannedCheck> selected,
+        CheckSpec check,
+        IEnumerable<string> presets,
+        IEnumerable<SelectionReason> reasons
+    )
+    {
+        if (!selected.TryGetValue(check.Key, out PlannedCheck? old))
+        {
+            selected.Add(check.Key, new(check, presets.Distinct().ToArray(), reasons.Distinct(
+                ).ToArray()));
+            return true;
+        }
+        string[] mergedPresets = old.QualityPresets.Union(presets).ToArray();
+        SelectionReason[] mergedReasons = old.Reasons.Union(reasons).ToArray();
+        bool required = old.Work.Required || check.Required;
+        bool changed = required != old.Work.Required
+            || mergedPresets.Length != old.QualityPresets.Length
+            || mergedReasons.Length != old.Reasons.Length;
+        selected[check.Key] = new(old.Work with { Required = required }, mergedPresets,
+            mergedReasons);
+        return changed;
+    }
+
+    internal static void ValidatePrerequisites(Dictionary<CheckKey, CheckSpec> checks)
+    {
+        var active = new HashSet<CheckKey>();
+        var visited = new HashSet<CheckKey>();
+        void Visit(CheckKey key)
+        {
+            if (visited.Contains(key))
+                return;
+            if (!checks.TryGetValue(key, out CheckSpec? check))
+                throw new InvalidDataException($"Missing prerequisite: {key}");
+            if (!active.Add(key))
+                throw new InvalidDataException($"Cyclic check prerequisites: {key}");
+            foreach (CheckKey prerequisite in check.Prerequisites)
+                Visit(prerequisite);
+            active.Remove(key);
+            visited.Add(key);
+        }
+        foreach (CheckKey key in checks.Keys)
+            Visit(key);
+    }
+}
