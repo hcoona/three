@@ -14,6 +14,15 @@ and its route to the [NuGet delivery retrospective](./research/nuget-delivery-re
 
 Workflow Delivery v3 is active and is the only normative Workflow Delivery design line.
 
+The [requirements](./requirements.md) now own the repository-internal contraction
+behavior. The [requirements and implementation transition](./requirements.md#requirements-and-implementation-transition)
+defines the scope of the existing HLD, glossary, MLDs, LLDs and migration record:
+they describe the pre-contraction implementation and retained evidence until
+their affected scope is reconciled. The implementation status and completed
+campaign facts below do not claim conformity to the contraction requirements.
+The [Wave](../../../../../docs/delivery-wave.md) covers the full contraction;
+requirements precede architecture, contracts and implementation.
+
 The user-approved replacement normal-Live baseline is merged across the
 requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
 The implementation includes active-only Observation, fresh
@@ -167,7 +176,9 @@ the npm slice's exceptions or evidence.
 
 ## Normative Hierarchy
 
-Read the current v3 documents in this order:
+Read the v3 documents in this order, applying the
+[requirements transition](./requirements.md#requirements-and-implementation-transition)
+to the implementation-baseline records:
 
 1. [Requirements](./requirements.md)
 2. [High-Level Design](./high-level-design.md)

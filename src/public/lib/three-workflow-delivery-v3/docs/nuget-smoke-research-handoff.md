@@ -1,5 +1,11 @@
 # NuGet Second-Slice Research Handoff
 
+> **Implementation baseline:** This record describes the pre-contraction
+> implementation. Its authority for existing code and retained evidence, and the
+> requirements-first order for replacement work, are defined by the
+> [requirements transition](./requirements.md#requirements-and-implementation-transition).
+> It is not yet a design demonstrating conformity to the contraction requirements.
+
 ## Status and Authorization
 
 The current reproducible-build advancement is [Issue #948](https://github.com/hcoona/three/issues/948),

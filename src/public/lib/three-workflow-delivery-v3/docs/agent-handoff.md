@@ -6,14 +6,19 @@ Read this page before acting on Workflow Delivery v3.
 The [document-set entry](./README.md) states the authority boundary and source
 provenance for these records.
 
-This is an operating handoff, not a second specification. The current
-[requirements](./requirements.md), [HLD](./high-level-design.md),
+This is an operating handoff, not a second specification. The
+[requirements](./requirements.md) govern new contraction work. The
+[requirements transition](./requirements.md#requirements-and-implementation-transition)
+defines the retained implementation/evidence scope of the [HLD](./high-level-design.md),
 [glossary](./architecture-glossary.md), five MLDs,
 [migration policy](./migration-strategy.md), and applicable slice LLD
 ([npm](./hcoona-release-smoke-npm-lld.md) or
 [NuGet](./hcoona-release-smoke-github-packages-lld.md), or
 [Python](./hcoona-release-smoke-python-lld.md), or
-[Ruby](./hcoona-release-smoke-ruby-lld.md)) are authoritative.
+[Ruby](./hcoona-release-smoke-ruby-lld.md)). They do not yet demonstrate
+conformity to the contraction requirements. The operating details below retain
+the existing implementation and historical campaign limits; they do not
+reinstate superseded requirements for replacement design.
 
 v3 is the only normative line. Use v1 or v2 only when a v3 document explicitly
 requests mechanism extraction and revalidation. Git and delivery PRs carry
@@ -25,6 +30,16 @@ Repository work authorization and generic contribution procedure route to the
 [contribution guide](../../../../../CONTRIBUTING.md). The domain gates below
 remain additional prerequisites; repository governance does not grant native
 operations, publication, or another npm proving run.
+
+## Contraction Entry
+
+The [Wave](../../../../../docs/delivery-wave.md) authorizes the full contraction
+tracked by [#984](https://github.com/hcoona/three/issues/984) and its coordinated
+work under [#983](https://github.com/hcoona/three/issues/983). Start with the
+requirements, then reconcile architecture and contracts before implementation,
+validation, caller cutover and retirement. Preserve permanent requirement IDs
+and the existing consumers of historical evidence. The Wave's effects boundary
+does not reopen any completed ecosystem campaign or authorize a new publication.
 
 ## Ruby Delivery Entry
 
