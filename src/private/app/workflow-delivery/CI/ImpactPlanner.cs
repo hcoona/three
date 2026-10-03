@@ -111,6 +111,8 @@ internal static class ImpactPlanner
             ArgumentNullException.ThrowIfNull(project);
             RequireText(project.Id, "project id");
             ValidatePath(project.Directory);
+            if (project.ReleaseUnit is not null)
+                RequireText(project.ReleaseUnit, "release unit");
             if (!projects.TryAdd(project.Id, project))
                 throw new InvalidDataException($"Duplicate project: {project.Id}");
             ArgumentNullException.ThrowIfNull(project.Checks);

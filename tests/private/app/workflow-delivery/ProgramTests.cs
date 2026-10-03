@@ -88,6 +88,35 @@ public sealed class ProgramTests
     }
 
     [TestMethod]
+    [DataRow(true, "")]
+    [DataRow(true, " ")]
+    [DataRow(false, "")]
+    [DataRow(false, " ")]
+    public void RunBlankReleaseUnitRejectsWithoutMergingUnrelatedProjects(bool basis,
+        string releaseUnit)
+    {
+        using var files = new TransferFiles();
+        PlanRequest request = Scenario.Request(
+            [Scenario.Project("library"), Scenario.Project("unrelated")], "src/library/code.cs");
+        RepositoryFacts facts = basis ? request.Basis : request.Candidate;
+        facts = facts with
+        {
+            Projects = facts.Projects.Select(p => p with { ReleaseUnit = releaseUnit }).ToArray(),
+        };
+        request = basis ? request with { Basis = facts } : request with { Candidate = facts };
+        string requestPath = files.Write("request.json", JsonSerializer.Serialize(request,
+            TransferJson.Default.PlanRequest));
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        int exit = Program.Run(["ci", "plan", requestPath], output, error);
+
+        Assert.AreEqual(2, exit);
+        Assert.AreEqual(string.Empty, output.ToString());
+        Assert.Contains("release unit", error.ToString());
+    }
+
+    [TestMethod]
     [DataRow("malformed")]
     [DataRow("null-request")]
     [DataRow("missing-property")]
