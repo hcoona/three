@@ -27,6 +27,9 @@ the old glossary, pinned former MLDs/migration plan and LLDs scoped to existing 
 retained evidence. The implementation and completed campaigns described below
 do not claim conformity to the replacement. The
 [Wave](../../../../../docs/delivery-wave.md) covers the full contraction.
+The [private application entry](../../../../private/app/workflow-delivery/README.md)
+documents the initial CI selection/result implementation; native readers and
+workflow callers have not switched.
 
 The pre-contraction normal-Live baseline was merged across the
 requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.

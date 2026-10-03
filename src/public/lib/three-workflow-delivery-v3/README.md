@@ -12,6 +12,9 @@ execution, transfer and outcome contracts for the internal C# application under
 `src/private/app/workflow-delivery/`. The [implementation plan](docs/migration-strategy.md) maps actual projects,
 CLI/workflow callers, integration contracts and retirement order;
 the runtime described below has not yet been replaced.
+The [private application](../../../private/app/workflow-delivery/README.md)
+now provides CI selection and result collection over resolved facts. Native fact
+readers, check execution and workflow cutover remain with the planned integrations.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
 that the existing runtime already satisfies the contraction requirements.
