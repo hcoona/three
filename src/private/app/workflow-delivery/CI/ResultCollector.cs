@@ -50,6 +50,9 @@ internal static class ResultCollector
             return new CheckOutcome(item.Work.Key, item.Work.Required, status);
         }).ToArray();
         return new(
+            plan.Comparison,
+            plan.Candidate,
+            plan.Scope,
             errors.Count == 0 && outcomes.All(o => !o.Required || o.Status == "passed"),
             outcomes,
             errors.ToArray()

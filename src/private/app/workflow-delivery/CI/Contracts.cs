@@ -68,4 +68,11 @@ internal sealed record CheckResult(string Candidate, CheckKey Key, CheckStatus S
 
 internal sealed record CheckOutcome(CheckKey Key, bool Required, string Status);
 
-internal sealed record CiOutcome(bool Satisfied, CheckOutcome[] Checks, string[] Errors);
+internal sealed record CiOutcome(
+    string Comparison,
+    string Candidate,
+    string Scope,
+    bool Satisfied,
+    CheckOutcome[] Checks,
+    string[] Errors
+);

@@ -51,8 +51,39 @@ public sealed class ProgramTests
         Assert.AreEqual(string.Empty, outcomeError.ToString());
         using JsonDocument outcomeDocument = JsonDocument.Parse(outcomeOutput.ToString());
         JsonElement outcome = outcomeDocument.RootElement;
+        Assert.AreEqual("base", outcome.GetProperty("comparison").GetString());
+        Assert.AreEqual("candidate", outcome.GetProperty("candidate").GetString());
+        Assert.AreEqual("fixture-projects", outcome.GetProperty("scope").GetString());
         Assert.AreEqual(passed, outcome.GetProperty("satisfied").GetBoolean());
         Assert.AreEqual(status, outcome.GetProperty("checks")[0].GetProperty("status").GetString());
+        Assert.AreEqual(0, outcome.GetProperty("errors").GetArrayLength());
+    }
+
+    [TestMethod]
+    [DataRow("base-one", "candidate-one", "dotnet-subset")]
+    [DataRow("base-two", "candidate-two", "node-subset")]
+    public void RunEmptyPlanPreservesResultSubject(string comparison, string candidate,
+        string scope)
+    {
+        using var files = new TransferFiles();
+        var plan = new CiPlan(comparison, candidate, scope, []);
+        string planPath = files.Write("plan.json", JsonSerializer.Serialize(plan,
+            TransferJson.Default.CiPlan));
+        string resultsPath = files.Write("results.json", "[]");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        int exit = Program.Run(["ci", "result", planPath, resultsPath], output, error);
+
+        Assert.AreEqual(0, exit, error.ToString());
+        Assert.AreEqual(string.Empty, error.ToString());
+        using JsonDocument document = JsonDocument.Parse(output.ToString());
+        JsonElement outcome = document.RootElement;
+        Assert.AreEqual(comparison, outcome.GetProperty("comparison").GetString());
+        Assert.AreEqual(candidate, outcome.GetProperty("candidate").GetString());
+        Assert.AreEqual(scope, outcome.GetProperty("scope").GetString());
+        Assert.IsTrue(outcome.GetProperty("satisfied").GetBoolean());
+        Assert.AreEqual(0, outcome.GetProperty("checks").GetArrayLength());
         Assert.AreEqual(0, outcome.GetProperty("errors").GetArrayLength());
     }
 

@@ -45,6 +45,10 @@ constructor fields and named check statuses. Unknown fields and missing or null
 required values fail. These internal formats have no historical compatibility
 promise. The concrete types are in [Contracts.cs](CI/Contracts.cs).
 
+The collected outcome retains the plan's `comparison`, `candidate` and declared
+`scope`, including when no checks are selected. Its success applies to that
+subject and supplied coverage only.
+
 | Input                 | Required content and producer responsibility                                                                                                                                |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Planning request      | `basis`, `candidate`, `changedPaths`, `full`; the caller resolves the event's actual comparison/tested revisions and includes both rename paths and deleted paths           |
