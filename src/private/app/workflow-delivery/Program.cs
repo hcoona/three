@@ -50,7 +50,7 @@ internal static class Program
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    UseStringEnumConverter = true,
+    Converters = new[] { typeof(CheckStatusJsonConverter) },
     WriteIndented = true,
     RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true,
@@ -61,3 +61,6 @@ internal static class Program
 [JsonSerializable(typeof(CheckResult[]))]
 [JsonSerializable(typeof(CiOutcome))]
 internal partial class TransferJson : JsonSerializerContext;
+
+internal sealed class CheckStatusJsonConverter()
+    : JsonStringEnumConverter<CheckStatus>(allowIntegerValues: false);

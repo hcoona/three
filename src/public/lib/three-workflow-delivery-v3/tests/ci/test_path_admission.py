@@ -13,6 +13,7 @@ from three_workflow_delivery_v3.ci.path_admission import (
 @pytest.mark.parametrize(
     "prefix",
     [
+        "src/private/app/workflow-delivery",
         "src/private/app/workflow-delivery-v3-dotnet-provider",
         "src/private/app/workflow-delivery-v3-nuget-consumer",
         "src/public/lib/hcoona-release-smoke-github-packages",

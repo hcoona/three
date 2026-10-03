@@ -47,6 +47,7 @@ _REPOSITORY_ONLY_PREFIXES = (
     "docs/",
     "eng/",
     "LICENSES/",
+    "src/private/app/workflow-delivery/",
     "src/private/app/workflow-delivery-v3-dotnet-provider/",
     "src/private/app/workflow-delivery-v3-nuget-consumer/",
     "src/private/lib/hk/",

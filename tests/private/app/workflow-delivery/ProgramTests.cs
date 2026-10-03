@@ -129,6 +129,8 @@ public sealed class ProgramTests
 
     [TestMethod]
     [DataRow("unknown-status")]
+    [DataRow("numeric-status")]
+    [DataRow("numeric-string-status")]
     [DataRow("missing-status")]
     [DataRow("null-status")]
     [DataRow("null-results")]
@@ -145,6 +147,8 @@ public sealed class ProgramTests
         switch (defect)
         {
             case "unknown-status": json[0]!["status"] = "Invented"; break;
+            case "numeric-status": json[0]!["status"] = 0; break;
+            case "numeric-string-status": json[0]!["status"] = "0"; break;
             case "missing-status": json[0]!.AsObject().Remove("status"); break;
             case "null-status": json[0]!["status"] = null; break;
             case "null-result": json[0] = null; break;
