@@ -431,4 +431,62 @@ public sealed class ImpactPlannerTests
 
         Assert.Contains("normalized repository-relative path", error.Message);
     }
+    [TestMethod]
+    [DataRow("directory")]
+    [DataRow("version")]
+    [DataRow("output")]
+    public void PlanRejectsConflictingPackageSubjectForIdenticalCheckKey(string field)
+    {
+        PackageTarget subject = PackageSubject();
+        PackageTarget other = field switch
+        {
+            "directory" => subject with { Directory = "src/other" },
+            "version" => subject with { ExpectedVersion = "2.0.0" },
+            _ => subject with
+            {
+                Outputs = [new("different", "primary-package", "npm-tarball")],
+            },
+        };
+        CheckSpec first = Scenario.Check("release/product/build", "artifact") with
+        {
+            Package = subject
+        };
+        CheckSpec second = first with { Package = other };
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            ImpactPlanner.Plan(Scenario.Request(
+                [Scenario.Project("a", checks: [first]), Scenario.Project("b", checks: [second])],
+                "src/a/code.cs", "src/b/code.cs")));
+
+        Assert.Contains("Conflicting check definition", error.Message);
+    }
+
+    [TestMethod]
+    public void PlanDeduplicatesEquivalentPackageSubjectsWithDifferentOutputArrays()
+    {
+        PackageTarget subject = PackageSubject();
+        CheckSpec first = Scenario.Check("release/product/build", "artifact") with
+        {
+            Package = subject
+        };
+        CheckSpec second = first with { Package = subject with { Outputs = [.. subject.Outputs] } };
+
+        CiPlan plan = ImpactPlanner.Plan(Scenario.Request(
+            [Scenario.Project("a", checks: [first]), Scenario.Project("b", checks: [second])],
+            "src/a/code.cs", "src/b/code.cs"));
+
+        PlannedCheck selected = Assert.ContainsSingle(plan.Checks);
+        Assert.AreEqual(first.Key, selected.Work.Key);
+        Assert.AreEqual("1.2.3", selected.Work.Package!.ExpectedVersion);
+        Assert.AreEqual(new PackageOutput("package", "primary-package", "npm-tarball"),
+            Assert.ContainsSingle(selected.Work.Package.Outputs));
+        Assert.HasCount(4, selected.Reasons);
+    }
+
+    private static PackageTarget PackageSubject() => new("product",
+        "workflow-delivery.release-unit.yml", "build", "node/npm-package-v1",
+        "src/a", "src/a/package.json", null, "1.2.3",
+        [new("package", "primary-package", "npm-tarball")]);
+
+
 }

@@ -10,14 +10,13 @@ architecture authority.
 
 ## Current Scope
 
-The application selects CI checks from supplied, resolved repository facts and
-collects candidate-bound check results. Its internal PNPM graph/script, Git and
-NBGV input readers supply inputs to repository analysis. A quality-selection reader resolves existing
-project declarations, and a concrete Node component expands its registered project
-checks. A release-unit declaration reader preserves the existing product declarations.
-Complete native fact assembly, Git event resolution, artifact/check
-expansion, check execution and Release commands remain
-pending. Existing workflows still use their current implementations.
+The application selects CI checks and collects candidate-bound check results.
+The supplied-fact command and Node revision-to-plan command share one impact
+algorithm. The Node command reads exact caller-prepared checkouts, native
+PNPM relations, NBGV inputs and existing application declarations, then expands
+selected project and package checks. Check execution, native build/package/consumer
+composition qualification, Git event mapping and Release commands remain pending.
+Existing workflows still use their current implementations.
 
 New ecosystem integrations follow the HLD's
 [native integration boundary](../../../public/lib/three-workflow-delivery-v3/docs/high-level-design.md#native-integrations).
@@ -69,9 +68,9 @@ qualifies both retained fixture revisions through this reader on Linux with
 PNPM 12.8.2. The probe separately observed native present/absent script metadata
 through direct process calls. Script discovery is a separate component below.
 Ordinary reader tests also use controlled queries and retained-output replay.
-Complete ownership/shared-input expansion, quality/version facts, base/candidate
-assembly and caller cutover are still pending. The root project is retained as
-`.` here; this graph is not directly accepted as the CI core's project facts.
+The assembler below supplies concrete shared inputs, quality/version facts and
+base/candidate association. Caller cutover is still pending. The graph retains
+root `.`; the assembler treats it as a tooling/input role rather than a CI project.
 
 ### Native Script and Version Inputs
 
@@ -101,14 +100,18 @@ reads both revisions and joins added/deleted configurations and removed-project
 consumers. Missing required projects, options or revisions fail; no default or
 full-run fallback is supplied.
 
-This input mapping does not calculate version height or canonical package versions.
+Input mapping does not calculate version height or package versions. The separate
+`NpmVersion` operation uses the official `VersionOracle.NpmPackageVersion` on the
+selected clean HEAD, with its actual tags/history and native cloud/ref context.
+The package plan retains that expected projection; later native build and packed
+metadata must agree with it.
 The pinned native legacy `version.txt` reader can retain loose-object handles until
 managed finalization. Keep the source object store alive through the reading process;
 context disposal does not promise immediate repository deletion. Test-fixture
 finalization is not a production cleanup protocol.
-Full projection still requires the clean exact-target/ref/tag/history context in
+Full projection requires the clean exact-target/ref/tag/history context in
 the [native NBGV evidence](../../../public/lib/three-workflow-delivery-v3/docs/research/nbgv-native-inputs.md).
-Complete fact assembly, other quality presets and workflow cutover remain pending.
+Other quality presets, native composition qualification and workflow cutover remain pending.
 
 ### Git Revision and Path Component
 
@@ -135,7 +138,8 @@ repository facts, event resolution, revision checkout management or caller cutov
 
 ### Input Consumer Mapping
 
-[`NodeInputConsumers`](Repository/NodeInputConsumers.cs) adapts supplied native
+[`NodeInputConsumers`](Repository/NodeInputConsumers.cs) adapts a complete supplied
+native project roster independently of its optional NBGV answers. It joins native
 version/configuration inputs, effective quality selections and resolved local
 inputs into the existing shared-input values. Directory identities name consumers;
 the NBGV answers must match the committed revision. Absent native configuration
@@ -149,10 +153,9 @@ symlink/gitlink coverage fail. Native version paths keep their original committe
 spelling. Results deduplicate consumers and sort deterministically. Each revision
 is mapped independently for the planner's base/candidate union.
 
-This is supplied-fact adaptation only. Root tooling consumers, shared toolchain
-and workspace configuration coverage, complete fact assembly, event materialization
-and caller cutover remain pending. The mapper does not infer unaffected paths or
-certify a scope's completeness.
+This is supplied-fact adaptation. The concrete reader/assembler below adds its
+operation inputs. The mapper does not infer unaffected paths or certify a
+scope's completeness.
 
 ### Quality Selection Component
 
@@ -177,9 +180,69 @@ test checks. Discovered source directories identify targets; script bodies remai
 opaque, with PNPM owning execution. Unknown or absent selections and missing
 required script names fail. Root metadata cannot become a runnable project.
 The concrete checks use the default variant and Ubuntu runner with no prerequisite;
-the registered test contract does not consume a build output. Artifact variants,
-other presets, quality-input consumer mapping and complete fact assembly remain
-pending. This component creates no new project adoption or workflow caller.
+the registered test contract does not consume a build output. The package component
+below resolves the current declared build/output contract. Other presets and
+variants remain unavailable; this component creates no new project adoption.
+
+### Node Revision-to-Plan Transaction
+
+[`NodePlanning`](Repository/NodePlanning.cs) accepts two distinct caller-prepared
+checkout roots and event-selected references. Git resolves both endpoints and
+their changed paths without substituting a merge base. Each checkout must have
+the requested HEAD, available required objects and clean tracked content.
+The caller owns checkout creation, tool/dependency preparation, controlled native
+configuration, publication-free execution and lifetime; the application does not
+clone, fetch, repair or maintain a checkout/proof service. Untracked/ignored
+application declarations are absent, not inputs from another revision.
+
+[`NodeRepositoryReader`](Repository/NodeRepositoryReader.cs) reads the complete
+native PNPM roster and joins existing quality/release declarations from committed
+regular files. Its script input contracts cover the six current Node source roots;
+an additional project needs a concrete input contract. These contracts do not
+declare native membership or interpret script bodies. Unversioned POC membership
+does not require an invented NBGV answer. The three existing versioned products
+retain native committed configuration/filter inputs, including absent candidates.
+
+The supported setup consumes root `package.json`, workspace YAML, shared lock and
+the repository's mise tool files. The fixture's native pack consumes matching
+regular root license files. Hexo's existing license-copy script consumes `LICENSE`,
+`COPYING`, `COPYING.LESSER` and the linking exception; Steam's build consumes the
+two COPYING files and regular direct members of `LICENSES/`. Hexo and the three
+POCs consume root Biome configuration and its `.gitignore`/`.ignore` candidates;
+Hexo's Prettier also consumes root EditorConfig. Steam has neither style role.
+These are concrete
+operation inputs, not a universal native configuration or arbitrary script trace.
+Added/deleted inputs remain visible through both endpoint inventories. Additional
+ancestor npmrc/pnpmfile configuration and uncommitted native version options are
+unsupported by this input contract. Native root local relations without a justified
+project projection, required symlinks/gitlinks and unknown changed paths fail.
+
+[`NodeFactsAssembler`](Repository/NodeFactsAssembler.cs) preserves native source,
+publish and local-input identities, associates unit members through entry paths,
+and selects against the union of both endpoints. It does not infer unaffected
+paths from inventory subtraction. Only selected surviving candidate projects
+resolve execution checks. Unrelated absent quality does not block a selective
+change; a genuine shared-input selection of an unadopted project fails. Full mode
+also fails unavailable contracts. The scope label describes this resolved input
+boundary and supplies no whole-repository or cross-ecosystem completeness proof.
+
+[`NodePackageChecks`](Repository/NodePackageChecks.cs) preserves every selected
+unit build and output association. The current `node/npm-package-v1` contract uses
+the default Ubuntu variant and one `primary-package` npm tarball per build,
+without an alternate publish-directory build. Each build has required pack,
+contents and installed-consumer checks. Pack depends on its actual project build;
+contents and consumer each depend on pack. The project source test has no build
+prerequisite. Additional unsupported outputs, definitions, mixed builds or
+ambiguous/multiple unit membership fail rather than retaining the first member.
+Each artifact check transfers its unit/declaration/build/definition, source/entry,
+expected native version and complete outputs in `package`.
+
+This planning implementation does not execute pack or qualify its native
+composition. Actual native build, archive inspection and source-free installed
+consumption still need bounded qualification before caller cutover. The current
+fixture's dot-only version filters also need review of genuine shared version
+inputs before transition. Five other Node projects have no adopted new quality
+preset, and unmigrated/cross-group callers retain their current owners.
 
 ## Commands and Transfers
 
@@ -188,6 +251,7 @@ Build with the repository-pinned SDK. From the repository root:
 ```powershell
 dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan request.json
+dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan-node node-request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci result plan.json results.json
 ```
 
@@ -198,6 +262,20 @@ failure or unsupported usage, with a diagnostic on stderr. Redirect stdout
 when a receiving process needs a file. In-process consumers call the same typed
 operations without serializing their inputs.
 
+The Node request supplies materializations, not a second fact declaration:
+
+```json
+{
+    "basis": { "directory": "C:/work/three-basis", "reference": "<comparison-commit>" },
+    "candidate": { "directory": "C:/work/three-candidate", "reference": "<tested-commit>" },
+    "full": false
+}
+```
+
+Both required commits must be available in the candidate object store for the
+native comparison. The checkouts retain their own correct native ref/tag/history
+context. A JSON request does not supply tool/runtime or configuration isolation.
+
 The source-generated JSON contracts use camel-case property names, required
 constructor fields and named check statuses. Unknown fields and missing or null
 required values fail. These internal formats have no historical compatibility
@@ -207,15 +285,15 @@ The collected outcome retains the plan's `comparison`, `candidate` and declared
 `scope`, including when no checks are selected. Its success applies to that
 subject and supplied coverage only.
 
-| Input                 | Required content and producer responsibility                                                                                                                                |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Planning request      | `basis`, `candidate`, `changedPaths`, `full`; the caller resolves the event's actual comparison/tested revisions and includes both rename paths and deleted paths           |
-| Each revision's facts | `revision`, `scope`, `projects`, `sharedInputs`, `unaffectedPaths`, `errors`; native readers establish completeness for this declared scope                                 |
-| Project               | Stable `id`, repository-relative `directory`, build `dependencies`, distinct `qualityConsumers`, nullable `releaseUnit` and resolved `qualityPreset`, and concrete `checks` |
-| Shared input          | Exact repository-relative `path` and project `consumers`, including actual version/configuration/lock inputs                                                                |
-| Unaffected path       | Exact path the producer established has no consumers in this scope; no wildcard or unknown-path fallback                                                                    |
-| Check                 | `key` (`target`, `check`, `variant`), actual `dimensions`, `runner`, `required`, and prerequisite keys; variant names identify resolved dimension combinations              |
-| Result array          | Each entry carries the exact `candidate`, check `key` and `status`: `Passed`, `Failed`, `Cancelled`, `TimedOut` or `Skipped`                                                |
+| Input                 | Required content and producer responsibility                                                                                                                                                       |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Planning request      | `basis`, `candidate`, `changedPaths`, `full`; the caller resolves the event's actual comparison/tested revisions and includes both rename paths and deleted paths                                  |
+| Each revision's facts | `revision`, `scope`, `projects`, `sharedInputs`, `unaffectedPaths`, `errors`; native readers establish completeness for this declared scope                                                        |
+| Project               | Stable `id`, repository-relative `directory`, build `dependencies`, distinct `qualityConsumers`, nullable `releaseUnit` and resolved `qualityPreset`, and concrete `checks`                        |
+| Shared input          | Exact repository-relative `path` and project `consumers`, including actual version/configuration/lock inputs                                                                                       |
+| Unaffected path       | Exact path the producer established has no consumers in this scope; no wildcard or unknown-path fallback                                                                                           |
+| Check                 | `key` (`target`, `check`, `variant`), actual `dimensions`, `runner`, `required`, prerequisite keys and nullable artifact `package` subject; variant names identify resolved dimension combinations |
+| Result array          | Each entry carries the exact `candidate`, check `key` and `status`: `Passed`, `Failed`, `Cancelled`, `TimedOut` or `Skipped`                                                                       |
 
 Paths use Git's case-sensitive forward-slash spelling, without a leading slash,
 empty components or traversal. A project directory owns its subtree, with the
@@ -231,7 +309,7 @@ candidate checks/variants. Deleted projects contribute relationships and reasons
 but cannot become runnable targets. Known unaffected changes may produce an empty
 plan. Unknown paths and incomplete facts fail even in explicit full mode.
 
-Identical check keys deduplicate only when runner, dimensions and prerequisites
+Identical check keys deduplicate only when runner, dimensions, package subject and prerequisites
 agree. Required status combines the selected contracts. Required checks promote
 their prerequisite closure to required; missing or cyclic prerequisites fail.
 These prerequisites order checks, not individual native compilation nodes. Plans
@@ -253,8 +331,9 @@ It retains the supplied source path and every ordered build, entry point and out
 Entry coordinates remain relative to the declaration directory. Structural errors,
 empty required sets and duplicate build or unit-wide output identities fail.
 The caller obtains exact committed content; a supplied string/path does not establish
-revision identity. Native definition registration, entry association and complete
-variant resolution remain pending and must reject unresolved necessary facts.
+revision identity. The Node transaction associates native entries and the current
+registered package definition; other definitions/variants remain unavailable and
+must reject unresolved necessary facts.
 
 ## Validation and CI Ownership
 

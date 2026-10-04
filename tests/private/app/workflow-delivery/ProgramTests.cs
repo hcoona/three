@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Repository;
+using WorkflowDelivery.Tests.Repository;
 using WorkflowDelivery.Tests.CI;
 
 namespace WorkflowDelivery.Tests;
@@ -226,6 +228,97 @@ public sealed class ProgramTests
         Assert.AreEqual(2, exit);
         Assert.AreEqual(string.Empty, output.ToString());
         Assert.StartsWith("Usage: workflow-delivery ci plan", error.ToString());
+    }
+
+
+    [TestMethod]
+    public async Task SerializedPlanPreservesPackageExecutionAssociations()
+    {
+        NodeRevisionInputs basis = NodeScenario.Inputs(NodeScenario.Basis,
+            NodeScenario.Project("src/a"));
+        NodeRevisionInputs candidate = NodeScenario.Units(
+            NodeScenario.Inputs(NodeScenario.Candidate,
+                NodeScenario.Project("src/a")), NodeScenario.Unit("product",
+            ("first", "src/a"), ("second", "src/a")));
+        CiPlan original = await NodeScenario.Plan(basis, candidate, "src/a/index.js");
+
+        string json = JsonSerializer.Serialize(original, TransferJson.Default.CiPlan);
+        CiPlan transferred = JsonSerializer.Deserialize(json, TransferJson.Default.CiPlan)!;
+
+        Assert.AreEqual(NodeScenario.Basis, transferred.Comparison);
+        Assert.AreEqual(NodeScenario.Candidate, transferred.Candidate);
+        Assert.AreEqual(NodeFactsAssembler.Scope, transferred.Scope);
+        Assert.HasCount(8, transferred.Checks);
+        foreach (string build in new[] { "first", "second" })
+        {
+            PlannedCheck[] work = transferred.Checks.Where(check =>
+                check.Work.Package?.Build == build).ToArray();
+            Assert.HasCount(3, work);
+            foreach (PlannedCheck check in work)
+            {
+                PackageTarget subject = check.Work.Package!;
+                Assert.AreEqual("product", subject.Unit);
+                Assert.AreEqual("workflow-delivery.release-unit.yml", subject.Declaration);
+                Assert.AreEqual(build, subject.Build);
+                Assert.AreEqual("node/npm-package-v1", subject.Definition);
+                Assert.AreEqual("src/a", subject.Directory);
+                Assert.AreEqual("src/a/package.json", subject.EntryPoint);
+                Assert.IsNull(subject.PublishDirectory);
+                Assert.AreEqual("1.2.3", subject.ExpectedVersion);
+                Assert.AreEqual(new PackageOutput(build + "-package", "primary-package",
+                    "npm-tarball"), Assert.ContainsSingle(subject.Outputs));
+                Assert.AreEqual("release/product/" + build, check.Work.Key.Target);
+                Assert.AreEqual("default", check.Work.Key.Variant);
+                Assert.AreEqual("ubuntu-latest", check.Work.Runner);
+                Assert.IsTrue(check.Work.Required);
+                Assert.IsEmpty(check.Work.Dimensions);
+                Assert.AreEqual(NodeScenario.Preset, Assert.ContainsSingle(check.QualityPresets));
+                Assert.Contains(new SelectionReason("src/a/index.js", NodeScenario.Candidate,
+                    "src/a"), check.Reasons);
+            }
+            PlannedCheck pack = work.Single(check =>
+                check.Work.Key.Check == "node/npm-artifact-v1");
+            Assert.AreEqual(new CheckKey("src/a", "node/project-build-v1", "default"),
+                Assert.ContainsSingle(pack.Work.Prerequisites));
+            foreach (PlannedCheck check in work.Where(check => check != pack))
+                Assert.AreEqual(pack.Work.Key, Assert.ContainsSingle(check.Work.Prerequisites));
+        }
+    }
+
+    [TestMethod]
+    public async Task CollectRequiresAllSelectedCandidatePackageChecks()
+    {
+        NodeRevisionInputs basis = NodeScenario.Inputs(NodeScenario.Basis,
+            NodeScenario.Project("src/a"));
+        NodeRevisionInputs candidate = NodeScenario.Units(
+            NodeScenario.Inputs(NodeScenario.Candidate,
+                NodeScenario.Project("src/a")), NodeScenario.Unit("product",
+            ("first", "src/a"), ("second", "src/a")));
+        CiPlan plan = await NodeScenario.Plan(basis, candidate, "src/a/index.js");
+        CheckResult[] complete = plan.Checks.Select(check =>
+            new CheckResult(plan.Candidate, check.Work.Key, CheckStatus.Passed)).ToArray();
+        Assert.IsTrue(ResultCollector.Collect(plan, complete).Satisfied);
+        foreach (PlannedCheck selected in plan.Checks.Where(check =>
+            check.Work.Package is not null))
+        {
+            CheckResult[] missing = complete.Where(result =>
+                result.Key != selected.Work.Key).ToArray();
+            CiOutcome outcome = ResultCollector.Collect(plan, missing);
+            Assert.IsFalse(outcome.Satisfied, selected.Work.Key.ToString());
+            Assert.AreEqual("missing", outcome.Checks.Single(check =>
+                check.Key == selected.Work.Key).Status);
+            CheckResult[] failed = complete.Select(result => result.Key == selected.Work.Key
+                ? result with { Status = CheckStatus.Failed } : result).ToArray();
+            Assert.IsFalse(ResultCollector.Collect(plan, failed).Satisfied);
+            CheckResult[] skipped = complete.Select(result => result.Key == selected.Work.Key
+                ? result with { Status = CheckStatus.Skipped } : result).ToArray();
+            Assert.IsFalse(ResultCollector.Collect(plan, skipped).Satisfied);
+        }
+        CheckResult[] wrongCandidate = complete.Select(result =>
+            result with { Candidate = NodeScenario.Basis }).ToArray();
+        CiOutcome incompatible = ResultCollector.Collect(plan, wrongCandidate);
+        Assert.IsFalse(incompatible.Satisfied);
+        Assert.IsNotEmpty(incompatible.Errors);
     }
 
     private sealed class TransferFiles : IDisposable

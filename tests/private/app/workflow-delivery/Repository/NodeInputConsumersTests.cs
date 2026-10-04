@@ -23,7 +23,8 @@ public sealed class NodeInputConsumersTests
         GitRevision revision = Revision(Source, "src/a/version.json", "shared/Version Ω.json",
             "src/a/" + Declaration, "src/b/" + Declaration);
 
-        SharedInput[] inputs = NodeInputConsumers.Map(revision, projects,
+        SharedInput[] inputs = NodeInputConsumers.Map(revision,
+            projects.Select(project => project.Directory).ToArray(), projects,
             LeafSelections("src/a", "src/b"), []);
 
         AssertConsumers(inputs, "version.json", "src/a", "src/b");
@@ -47,7 +48,7 @@ public sealed class NodeInputConsumersTests
         QualitySelection? selection = sourcePath.Length == 0 ? null : new("preset", sourcePath);
         var quality = new Dictionary<string, QualitySelection?> { ["src/group"] = selection };
 
-        SharedInput[] inputs = NodeInputConsumers.Map(revision,
+        SharedInput[] inputs = NodeInputConsumers.Map(revision, ["src/group"],
             [Project("src/group")], quality, []);
 
         string[] expected = expectedCount switch
@@ -73,7 +74,7 @@ public sealed class NodeInputConsumersTests
             new("archives/input.tgz", false, ["src/a", "src/b"]),
             new("vendor/nested/data.txt", false, ["src/b"])];
 
-        SharedInput[] inputs = NodeInputConsumers.Map(revision,
+        SharedInput[] inputs = NodeInputConsumers.Map(revision, ["src/a", "src/b", "src/c"],
             [Project("src/a"), Project("src/b"), Project("src/c")],
             LeafSelections("src/a", "src/b", "src/c"), local);
 
@@ -96,7 +97,8 @@ public sealed class NodeInputConsumersTests
         NbgvInputs[] projects = [new(Source, "src/b", ["shared/data.txt"], ["shared/data.txt"]),
             new(Source, "src/a", ["shared/data.txt"], ["shared/data.txt"])];
 
-        SharedInput[] inputs = NodeInputConsumers.Map(revision, projects,
+        SharedInput[] inputs = NodeInputConsumers.Map(revision,
+            projects.Select(project => project.Directory).ToArray(), projects,
             LeafSelections("src/b", "src/a"), [new("shared/data.txt", false, ["src/b", "src/a"])]);
 
         string[] expected = ["shared/data.txt", "src/a/" + Declaration, "src/b/" + Declaration];
@@ -108,7 +110,7 @@ public sealed class NodeInputConsumersTests
     public void MapRejectsMismatchedSourceRevision()
     {
         Assert.ThrowsExactly<InvalidDataException>(() => NodeInputConsumers.Map(
-            Revision(Next, "src/a/" + Declaration), [Project("src/a")],
+            Revision(Next, "src/a/" + Declaration), ["src/a"], [Project("src/a")],
             LeafSelections("src/a"), []));
     }
 
@@ -147,7 +149,8 @@ public sealed class NodeInputConsumersTests
         }
 
         Assert.ThrowsExactly<InvalidDataException>(() =>
-            NodeInputConsumers.Map(revision, projects, quality, local));
+            NodeInputConsumers.Map(revision,
+                projects.Select(project => project.Directory).ToArray(), projects, quality, local));
     }
 
     [TestMethod]
@@ -166,7 +169,7 @@ public sealed class NodeInputConsumersTests
                 new("vendor/data.txt", mode, objectType)],
         };
 
-        Assert.ThrowsExactly<InvalidDataException>(() => NodeInputConsumers.Map(revision,
+        Assert.ThrowsExactly<InvalidDataException>(() => NodeInputConsumers.Map(revision, ["src/a"],
             [Project("src/a")], LeafSelections("src/a"), [new(path, directory, ["src/a"])]));
     }
 
@@ -187,11 +190,11 @@ public sealed class NodeInputConsumersTests
         Dictionary<string, QualitySelection?> quality = LeafSelections(directories);
         RepositoryFacts oldFacts = Scenario.Facts(Source, projects) with
         {
-            SharedInputs = NodeInputConsumers.Map(basis, before, quality, []),
+            SharedInputs = NodeInputConsumers.Map(basis, directories, before, quality, []),
         };
         RepositoryFacts newFacts = Scenario.Facts(Next, projects) with
         {
-            SharedInputs = NodeInputConsumers.Map(candidate, after, quality, []),
+            SharedInputs = NodeInputConsumers.Map(candidate, directories, after, quality, []),
         };
 
         CiPlan plan = ImpactPlanner.Plan(new(oldFacts, newFacts,
@@ -210,6 +213,40 @@ public sealed class NodeInputConsumersTests
             Assert.ContainsSingle(a.Reasons));
         Assert.AreEqual(new SelectionReason("shared/new.txt", Next, "src/b"),
             Assert.ContainsSingle(b.Reasons));
+    }
+
+    [TestMethod]
+    public void MapKeepsProjectQualityAndLocalInputsWithoutNbgvAnswer()
+    {
+        GitRevision revision = Revision(Source, "src/a/" + Declaration,
+            "src/b/" + Declaration, "archives/input.tgz");
+
+        SharedInput[] inputs = NodeInputConsumers.Map(revision, ["src/a", "src/b"],
+            [Project("src/a")], LeafSelections("src/a", "src/b"),
+            [new("archives/input.tgz", false, ["src/b"])]);
+
+        AssertConsumers(inputs, "src/a/" + Declaration, "src/a");
+        AssertConsumers(inputs, "src/b/" + Declaration, "src/b");
+        AssertConsumers(inputs, "archives/input.tgz", "src/b");
+        Assert.HasCount(3, inputs);
+    }
+
+    [TestMethod]
+    [DataRow("unknown")]
+    [DataRow("duplicate")]
+    [DataRow("revision")]
+    public void MapRejectsVersionAnswerForUnknownDuplicateOrWrongRevisionConsumer(string defect)
+    {
+        NbgvInputs[] versions = defect switch
+        {
+            "unknown" => [Project("src/unknown")],
+            "duplicate" => [Project("src/a"), Project("src/a")],
+            _ => [new(Next, "src/a", [], [])],
+        };
+
+        Assert.ThrowsExactly<InvalidDataException>(() => NodeInputConsumers.Map(
+            Revision(Source, "src/a/" + Declaration), ["src/a"], versions,
+            LeafSelections("src/a"), []));
     }
 
     private static NbgvInputs Project(string directory) => new(Source, directory, [], []);

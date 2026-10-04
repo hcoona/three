@@ -4,45 +4,9 @@ internal static class ImpactPlanner
 {
     internal static CiPlan Plan(PlanRequest request)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        Dictionary<string, ProjectFacts> basis = ValidateFacts(request.Basis);
-        Dictionary<string, ProjectFacts> candidate = ValidateFacts(request.Candidate);
-        if (request.Basis.Scope != request.Candidate.Scope)
-            throw new InvalidDataException("Comparison and candidate coverage scopes differ.");
-        ArgumentNullException.ThrowIfNull(request.ChangedPaths);
-
-        var reasons = new Dictionary<string, HashSet<SelectionReason>>(StringComparer.Ordinal);
-        var consumers = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        AddRelations(basis, consumers);
-        AddRelations(candidate, consumers);
-
-        foreach (string path in request.ChangedPaths)
-        {
-            ValidatePath(path);
-            bool known = SelectOwners(request.Basis, path, reasons);
-            known |= SelectOwners(request.Candidate, path, reasons);
-            if (!known)
-                throw new InvalidDataException($"Unresolved changed path: {path}");
-        }
-        if (request.Full)
-            foreach (string project in candidate.Keys)
-                AddReason(reasons, project, new("<full>", request.Candidate.Revision, project));
-
-        // Traverse the union: deleting a reference must not hide its former consumers.
-        var pending = new Queue<string>(reasons.Keys);
-        while (pending.TryDequeue(out string? project))
-        {
-            if (!consumers.TryGetValue(project, out HashSet<string>? dependents))
-                continue;
-            foreach (string dependent in dependents)
-            {
-                bool changed = false;
-                foreach (SelectionReason reason in reasons[project].ToArray())
-                    changed |= AddReason(reasons, dependent, reason);
-                if (changed)
-                    pending.Enqueue(dependent);
-            }
-        }
+        Dictionary<string, HashSet<SelectionReason>> reasons = SelectProjects(request);
+        Dictionary<string, ProjectFacts> candidate = request.Candidate.Projects
+            .ToDictionary(project => project.Id, StringComparer.Ordinal);
 
         var available = new Dictionary<CheckKey, CheckSpec>();
         foreach (ProjectFacts project in candidate.Values)
@@ -92,6 +56,51 @@ internal static class ImpactPlanner
                 })
                 .ToArray()
         );
+    }
+
+    internal static Dictionary<string, HashSet<SelectionReason>> SelectProjects(PlanRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        Dictionary<string, ProjectFacts> basis = ValidateFacts(request.Basis);
+        Dictionary<string, ProjectFacts> candidate = ValidateFacts(request.Candidate);
+        if (request.Basis.Scope != request.Candidate.Scope)
+            throw new InvalidDataException("Comparison and candidate coverage scopes differ.");
+        ArgumentNullException.ThrowIfNull(request.ChangedPaths);
+
+        var reasons = new Dictionary<string, HashSet<SelectionReason>>(StringComparer.Ordinal);
+        var consumers = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        AddRelations(basis, consumers);
+        AddRelations(candidate, consumers);
+
+        foreach (string path in request.ChangedPaths)
+        {
+            ValidatePath(path);
+            bool known = SelectOwners(request.Basis, path, reasons);
+            known |= SelectOwners(request.Candidate, path, reasons);
+            if (!known)
+                throw new InvalidDataException($"Unresolved changed path: {path}");
+        }
+        if (request.Full)
+            foreach (string project in candidate.Keys)
+                AddReason(reasons, project, new("<full>", request.Candidate.Revision, project));
+
+        // Traverse the union: deleting a reference must not hide its former consumers.
+        var pending = new Queue<string>(reasons.Keys);
+        while (pending.TryDequeue(out string? project))
+        {
+            if (!consumers.TryGetValue(project, out HashSet<string>? dependents))
+                continue;
+            foreach (string dependent in dependents)
+            {
+                bool changed = false;
+                foreach (SelectionReason reason in reasons[project].ToArray())
+                    changed |= AddReason(reasons, dependent, reason);
+                if (changed)
+                    pending.Enqueue(dependent);
+            }
+        }
+
+        return reasons;
     }
 
     private static Dictionary<string, ProjectFacts> ValidateFacts(RepositoryFacts facts)
@@ -158,6 +167,29 @@ internal static class ImpactPlanner
         ArgumentNullException.ThrowIfNull(check.Prerequisites);
         foreach (CheckKey key in check.Prerequisites)
             ValidateKey(key);
+        if (check.Package is { } package)
+        {
+            RequireText(package.Unit, "package unit");
+            RequireText(package.Build, "package build");
+            RequireText(package.Definition, "package definition");
+            RequireText(package.ExpectedVersion, "native package version");
+            ValidatePath(package.Declaration);
+            ValidatePath(package.Directory);
+            ValidatePath(package.EntryPoint);
+            if (package.PublishDirectory is not null)
+                ValidatePath(package.PublishDirectory);
+            ArgumentNullException.ThrowIfNull(package.Outputs);
+            if (package.Outputs.Length == 0 ||
+                package.Outputs.Select(output => output.Id).Distinct(StringComparer.Ordinal)
+                    .Count() != package.Outputs.Length)
+                throw new InvalidDataException("Unresolved complete package outputs.");
+            foreach (PackageOutput output in package.Outputs)
+            {
+                RequireText(output.Id, "package output");
+                RequireText(output.Role, "package output role");
+                RequireText(output.Kind, "package output kind");
+            }
+        }
     }
 
     internal static void ValidateKey(CheckKey key)
@@ -256,10 +288,16 @@ internal static class ImpactPlanner
             || previous.Dimensions.Count != check.Dimensions.Count
             || previous.Dimensions.Any(p => !check.Dimensions.TryGetValue(p.Key, out string?
                 value) || p.Value != value)
+            || !SamePackage(previous.Package, check.Package)
             || !previous.Prerequisites.ToHashSet().SetEquals(check.Prerequisites))
             throw new InvalidDataException($"Conflicting check definition: {check.Key}");
         checks[check.Key] = previous with { Required = previous.Required || check.Required };
     }
+
+    private static bool SamePackage(PackageTarget? first, PackageTarget? second) =>
+        first is null ? second is null : second is not null &&
+        (first with { Outputs = second.Outputs }) == second &&
+        first.Outputs.SequenceEqual(second.Outputs);
 
     private static bool SelectCheck(
         Dictionary<CheckKey, PlannedCheck> selected,

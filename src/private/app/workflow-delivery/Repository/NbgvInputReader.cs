@@ -11,6 +11,24 @@ internal sealed class NbgvInputReader(string root)
 {
     private readonly string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
 
+    // Full projection uses the caller-bound clean HEAD and the same native cloud/ref
+    // context as the build. Version height and npm projection remain NBGV operations.
+    internal string NpmVersion(GitRevision revision, string directory, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        using GitContext context = GitContext.Create(root, engine: GitContext.Engine.ReadOnly);
+        if (!context.IsRepository || context.GitCommitId != revision.Commit ||
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(context.WorkingTreePath)) != root)
+            throw new InvalidDataException(
+                "NBGV npm projection requires the selected checkout HEAD.");
+        context.RepoRelativeProjectDirectory = directory;
+        if (context.VersionFile.GetVersion()?.Version is null)
+            throw new InvalidDataException("NBGV did not resolve the selected product version.");
+        var oracle = new VersionOracle(context, CloudBuild.Active);
+        token.ThrowIfCancellationRequested();
+        return oracle.NpmPackageVersion;
+    }
+
     internal NbgvInputs Read(GitRevision revision, string directory, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();

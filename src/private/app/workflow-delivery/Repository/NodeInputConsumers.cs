@@ -5,46 +5,54 @@ namespace WorkflowDelivery.Repository;
 // Map supplied native coordinates; the caller still owns complete fact assembly.
 internal static class NodeInputConsumers
 {
-    internal static SharedInput[] Map(GitRevision revision, NbgvInputs[] projects,
+    internal static SharedInput[] Map(GitRevision revision, string[] directories,
+        NbgvInputs[] versions,
         IReadOnlyDictionary<string, QualitySelection?> quality, PnpmLocalInput[] localInputs)
     {
         var entries = revision.Entries.ToDictionary(entry => entry.Path, StringComparer.Ordinal);
         var consumers = new HashSet<string>(StringComparer.Ordinal);
-        foreach (NbgvInputs project in projects)
+        foreach (string directory in directories)
         {
-            ValidatePath(project.Directory);
-            if (project.Commit != revision.Commit || !consumers.Add(project.Directory))
+            ValidatePath(directory);
+            if (!consumers.Add(directory))
                 throw new InvalidDataException(
-                    "Unresolved native input consumer or source revision.");
+                    "Duplicate native input consumer.");
         }
         if (quality.Count != consumers.Count || quality.Keys.Any(key => !consumers.Contains(key)))
             throw new InvalidDataException(
                 "Quality input consumers do not match the source projects.");
 
         var inputs = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        foreach (NbgvInputs project in projects)
+        var versionConsumers = new HashSet<string>(StringComparer.Ordinal);
+        foreach (NbgvInputs project in versions)
         {
+            if (project.Commit != revision.Commit || !consumers.Contains(project.Directory) ||
+                !versionConsumers.Add(project.Directory))
+                throw new InvalidDataException("Unresolved native version consumer or revision.");
             foreach (string path in project.Paths)
             {
-                if (!entries.ContainsKey(path))
+                if (!entries.TryGetValue(path, out GitEntry? entry))
                     throw new InvalidDataException("A native version input is not committed.");
+                RequireFile(entry);
                 Add(path, project.Directory);
             }
             foreach (string path in project.ConfigurationCandidates)
                 Add(path, project.Directory);
-
-            QualitySelection? selection = quality[project.Directory];
+        }
+        foreach (string consumer in directories)
+        {
+            QualitySelection? selection = quality[consumer];
             if (selection is not null && !entries.ContainsKey(selection.SourcePath))
                 throw new InvalidDataException(
                     "The effective quality declaration is not committed.");
-            string directory = project.Directory;
+            string directory = consumer;
             while (true)
             {
                 string path = (directory.Length == 0 ? "" : directory + "/") +
                     "workflow-delivery.quality.yml";
                 if (entries.TryGetValue(path, out GitEntry? entry))
                     RequireFile(entry);
-                Add(path, project.Directory);
+                Add(path, consumer);
                 if (selection?.SourcePath == path)
                     break;
                 if (directory.Length == 0)
