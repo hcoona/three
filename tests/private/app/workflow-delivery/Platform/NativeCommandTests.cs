@@ -71,7 +71,8 @@ public sealed class NativeCommandTests(TestContext context)
     public async Task ExecuteCancellationTerminatesOwnedRoot()
     {
         using var fixture = new CommandFixture(
-            "[IO.File]::WriteAllText($args[0], [string]$PID); Start-Sleep -Seconds 60");
+            "$temporary = $args[0] + '.tmp'; [IO.File]::WriteAllText($temporary, [string]$PID); " +
+                "[IO.File]::Move($temporary, $args[0]); Start-Sleep -Seconds 60");
         string pidPath = Path.Combine(fixture.Directory, "pid.txt");
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
@@ -91,7 +92,8 @@ public sealed class NativeCommandTests(TestContext context)
     public async Task ExecuteDeadlineTerminatesOwnedRoot()
     {
         using var fixture = new CommandFixture(
-            "[IO.File]::WriteAllText($args[0], [string]$PID); Start-Sleep -Seconds 60");
+            "$temporary = $args[0] + '.tmp'; [IO.File]::WriteAllText($temporary, [string]$PID); " +
+                "[IO.File]::Move($temporary, $args[0]); Start-Sleep -Seconds 60");
         fixture.DeadlineSeconds = 3;
         string pidPath = Path.Combine(fixture.Directory, "pid.txt");
         Task<NativeCommandResult> execution = fixture.RunAsync(context.CancellationToken, pidPath);
