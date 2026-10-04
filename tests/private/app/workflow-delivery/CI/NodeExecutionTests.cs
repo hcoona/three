@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;
@@ -112,6 +113,71 @@ public sealed class NodeExecutionTests(TestContext context)
             context.CancellationToken, request: request));
 
         Assert.IsEmpty(fixture.Commands);
+    }
+
+    [TestMethod]
+    [DataRow("scratch", false)]
+    [DataRow("checkout", false)]
+    [DataRow("scratch", true)]
+    [DataRow("checkout", true)]
+    public async Task RunRejectsLinkedAncestorsBeforeProductCommands(string alias, bool empty)
+    {
+        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var link = await DirectoryLinkFixture.CreateAsync(fixture.Repository.Directory,
+            context.CancellationToken);
+        string physicalScratch = Path.Combine(fixture.Repository.Directory, "fresh");
+        Directory.CreateDirectory(physicalScratch);
+        Assert.AreEqual(FileAttributes.ReparsePoint,
+            new DirectoryInfo(link.Link).Attributes & FileAttributes.ReparsePoint);
+        FileSystemInfo? target = new DirectoryInfo(link.Link).ResolveLinkTarget(
+            returnFinalTarget: true);
+        Assert.IsNotNull(target);
+        Assert.AreEqual(fixture.Repository.Directory, target.FullName);
+        Assert.AreEqual((FileAttributes)0,
+            new DirectoryInfo(physicalScratch).Attributes & FileAttributes.ReparsePoint);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(physicalScratch));
+        NodeRunRequest request = alias == "scratch"
+            ? new(fixture.Repository.Directory, Path.Combine(link.Link, "fresh"))
+            : new(link.Link, physicalScratch);
+        CiPlan plan = empty ? fixture.Plan with { Checks = [] } : fixture.Plan;
+
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(context.CancellationToken, plan, request));
+
+        Assert.Contains("fresh external scratch", error.Message);
+        Assert.IsEmpty(fixture.Commands);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(physicalScratch));
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+    }
+
+    [TestMethod]
+    [DataRow(NodeExecutionFixture.Test)]
+    [DataRow(NodeExecutionFixture.Contents)]
+    [DataRow(NodeExecutionFixture.Consumer)]
+    [DataRow("all")]
+    public async Task RunRejectsAdvisorySupportedQualityBeforeProductCommands(string operation)
+    {
+        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        CiPlan advisory = fixture.Plan with
+        {
+            Checks = fixture.Plan.Checks.Select(item => operation == "all" ||
+                item.Work.Key.Check == operation
+                ? item with { Work = item.Work with { Required = false } } : item).ToArray(),
+        };
+        string json = JsonSerializer.Serialize(advisory, TransferJson.Default.CiPlan);
+        CiPlan transferred = JsonSerializer.Deserialize(json, TransferJson.Default.CiPlan)!;
+        CiOutcome generic = ResultCollector.Collect(transferred, []);
+        Assert.IsEmpty(generic.Errors);
+        Assert.HasCount(operation == "all" ? 5 : 1,
+            generic.Checks.Where(item => !item.Required));
+        Assert.AreEqual(operation == "all", generic.Satisfied);
+
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(context.CancellationToken, transferred));
+
+        Assert.Contains("Unsupported Node execution quality/runner/variant", error.Message);
+        Assert.IsEmpty(fixture.Commands);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
     }
 
     [TestMethod]
@@ -594,6 +660,44 @@ public sealed class NodeExecutionTests(TestContext context)
         Assert.StartsWith(scratch.Scratch + Path.DirectorySeparatorChar,
             Assert.ContainsSingle(result.Outputs).Path);
         Assert.IsEmpty(result.Failures);
+    }
+
+    private sealed class DirectoryLinkFixture : IDisposable
+    {
+        private string Root { get; } = Directory.CreateTempSubdirectory(
+            "workflow-node-alias-").FullName;
+        internal string Link => Path.Combine(Root, "alias");
+
+        internal static async Task<DirectoryLinkFixture> CreateAsync(string target,
+            CancellationToken token)
+        {
+            var fixture = new DirectoryLinkFixture();
+            try
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    NativeCommandResult result = await NativeProcess.ExecuteAsync(new(
+                        "cmd.exe", fixture.Root,
+                        ["/d", "/c", "mklink", "/J", fixture.Link, target], 10), token);
+                    Assert.IsTrue(result.Succeeded, result.Stderr + result.Error);
+                }
+                else
+                    Directory.CreateSymbolicLink(fixture.Link, target);
+                return fixture;
+            }
+            catch
+            {
+                fixture.Dispose();
+                throw;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Link))
+                Directory.Delete(Link);
+            Directory.Delete(Root, recursive: true);
+        }
     }
 
     private sealed class ScratchFixture : IDisposable

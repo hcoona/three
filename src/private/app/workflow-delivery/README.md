@@ -249,12 +249,13 @@ preset, and unmigrated/cross-group callers retain their current owners.
 
 [`NodeExecution`](CI/NodeExecution.cs) consumes that complete plan and one
 caller-prepared checkout plus fresh external scratch directory. It validates
-the supported quality, runner, variant, package associations and prerequisites
+the supported required quality, runner, variant, package associations and prerequisites
 before running work, then binds the exact clean tracked starting checkout.
 Normal native build/stamping changes after that bind are permitted. Candidate
 identities must equal the full commit returned by Git; aliases fail. An empty
-plan still binds its starting checkout and executes no product commands. Scratch
-paths cannot contain PNPM's `%s` or `%v` output markers. The caller supplies tools,
+plan still binds its starting checkout and executes no product commands. Checkout
+and scratch paths cannot have linked ancestors, and scratch paths cannot contain
+PNPM's `%s` or `%v` output markers. The caller supplies tools,
 locked dependencies,
 correct history/ref/cloud context and an unprivileged environment with isolated
 configuration, credentials, caches and runtime preloads; request fields do not

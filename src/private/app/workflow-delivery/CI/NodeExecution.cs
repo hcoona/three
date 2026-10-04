@@ -44,7 +44,7 @@ internal static class NodeExecution
         string scratch = Absolute(request.Scratch);
         if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
             scratch == checkout || Within(scratch, checkout) || Within(checkout, scratch) ||
-            (File.GetAttributes(scratch) & FileAttributes.ReparsePoint) != 0 ||
+            HasLinkedAncestor(checkout) || HasLinkedAncestor(scratch) ||
             Directory.EnumerateFileSystemEntries(scratch).Any())
             throw new InvalidDataException("Node execution requires fresh external scratch.");
         if (scratch.Contains("%s", StringComparison.Ordinal) ||
@@ -206,7 +206,8 @@ internal static class NodeExecution
         foreach (PlannedCheck item in plan.Checks)
         {
             CheckSpec check = item.Work;
-            if (check.Runner != "ubuntu-latest" || check.Key.Variant != "default" ||
+            if (!check.Required || check.Runner != "ubuntu-latest" ||
+                check.Key.Variant != "default" ||
                 check.Dimensions.Count != 0 || item.QualityPresets is not { Length: > 0 } ||
                 item.QualityPresets.Any(preset => preset != Preset))
                 throw new InvalidDataException(
@@ -302,4 +303,13 @@ internal static class NodeExecution
     private static bool Within(string path, string directory) =>
         path.StartsWith(directory + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private static bool HasLinkedAncestor(string path)
+    {
+        for (DirectoryInfo? directory = new(path); directory is not null;
+            directory = directory.Parent)
+            if ((directory.Attributes & FileAttributes.ReparsePoint) != 0)
+                return true;
+        return false;
+    }
 }
