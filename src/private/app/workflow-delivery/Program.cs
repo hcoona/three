@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery;
@@ -9,10 +10,25 @@ internal static class Program
 {
     private static int Main(string[] args) => Run(args, Console.Out, Console.Error);
 
-    internal static int Run(string[] args, TextWriter output, TextWriter error)
+    internal static int Run(string[] args, TextWriter output, TextWriter error,
+        Func<CiPlan, NodeRunRequest, CancellationToken, Task<NodeRunResult>>? runNode = null)
     {
         try
         {
+            if (args is ["ci", "run-node", var executionPlanPath, var executionRequestPath])
+            {
+                CiPlan plan = JsonSerializer.Deserialize(
+                    File.ReadAllText(executionPlanPath), TransferJson.Default.CiPlan
+                ) ?? throw new InvalidDataException("Missing Node execution plan.");
+                NodeRunRequest request = JsonSerializer.Deserialize(
+                    File.ReadAllText(executionRequestPath), TransferJson.Default.NodeRunRequest
+                ) ?? throw new InvalidDataException("Missing Node execution request.");
+                NodeRunResult result = (runNode ?? NodeExecution.RunAsync)(plan, request,
+                    CancellationToken.None).GetAwaiter().GetResult();
+                output.WriteLine(JsonSerializer.Serialize(result,
+                    TransferJson.Default.NodeRunResult));
+                return ResultCollector.Collect(plan, result.Results).Satisfied ? 0 : 1;
+            }
             if (args is ["ci", "plan-node", var nodeRequestPath])
             {
                 NodePlanRequest request = JsonSerializer.Deserialize(
@@ -47,6 +63,7 @@ internal static class Program
             error.WriteLine(
                 "Usage: workflow-delivery ci plan <request.json>"
                     + " | ci plan-node <request.json>"
+                    + " | ci run-node <plan.json> <request.json>"
                     + " | ci result <plan.json> <results.json>"
             );
             return 2;
@@ -63,7 +80,7 @@ internal static class Program
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    Converters = new[] { typeof(CheckStatusJsonConverter) },
+    Converters = new[] { typeof(CheckStatusJsonConverter), typeof(NativeTerminationJsonConverter) },
     WriteIndented = true,
     RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true,
@@ -71,6 +88,8 @@ internal static class Program
 )]
 [JsonSerializable(typeof(PlanRequest))]
 [JsonSerializable(typeof(NodePlanRequest))]
+[JsonSerializable(typeof(NodeRunRequest))]
+[JsonSerializable(typeof(NodeRunResult))]
 [JsonSerializable(typeof(CiPlan))]
 [JsonSerializable(typeof(CheckResult[]))]
 [JsonSerializable(typeof(CiOutcome))]
@@ -78,3 +97,6 @@ internal partial class TransferJson : JsonSerializerContext;
 
 internal sealed class CheckStatusJsonConverter()
     : JsonStringEnumConverter<CheckStatus>(allowIntegerValues: false);
+
+internal sealed class NativeTerminationJsonConverter()
+    : JsonStringEnumConverter<NativeTermination>(allowIntegerValues: false);

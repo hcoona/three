@@ -265,7 +265,7 @@ public sealed class NbgvInputReaderTests(TestContext context)
     {
         using var repo = await GitReaderTests.GitFixture.CreateAsync(context.CancellationToken);
         await repo.SetAsync("product/version.json", """
-            {"version":"1.2.3","publicReleaseRefSpec":["^refs/heads/fixture$"],"pathFilters":["."]}
+            {"version":"1.2.3","publicReleaseRefSpec":[".*"],"pathFilters":["."]}
             """);
         await repo.SetAsync("product/source.js");
         string commit = await repo.CommitAsync();

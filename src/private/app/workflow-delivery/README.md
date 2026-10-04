@@ -14,8 +14,10 @@ The application selects CI checks and collects candidate-bound check results.
 The supplied-fact command and Node revision-to-plan command share one impact
 algorithm. The Node command reads exact caller-prepared checkouts, native
 PNPM relations, NBGV inputs and existing application declarations, then expands
-selected project and package checks. Check execution, native build/package/consumer
-composition qualification, Git event mapping and Release commands remain pending.
+selected project and package checks. A concrete Node executor runs the adopted
+quality recipe and retains every check result and original package output.
+Native build/package/consumer composition qualification, Git event mapping and
+Release commands remain pending.
 Existing workflows still use their current implementations.
 
 New ecosystem integrations follow the HLD's
@@ -237,12 +239,64 @@ ambiguous/multiple unit membership fail rather than retaining the first member.
 Each artifact check transfers its unit/declaration/build/definition, source/entry,
 expected native version and complete outputs in `package`.
 
-This planning implementation does not execute pack or qualify its native
-composition. Actual native build, archive inspection and source-free installed
-consumption still need bounded qualification before caller cutover. The current
+Planning does not execute pack or qualify its native composition. The executor
+below still needs bounded native qualification before caller cutover. The current
 fixture's dot-only version filters also need review of genuine shared version
 inputs before transition. Five other Node projects have no adopted new quality
 preset, and unmigrated/cross-group callers retain their current owners.
+
+### Node Check Execution
+
+[`NodeExecution`](CI/NodeExecution.cs) consumes that complete plan and one
+caller-prepared checkout plus fresh external scratch directory. It validates
+the supported required quality, runner, variant, package associations and prerequisites
+before running work, then binds the exact clean tracked starting checkout.
+Normal native build/stamping changes after that bind are permitted. Candidate
+identities must equal the full commit returned by Git; aliases fail. An empty
+plan still binds its starting checkout and executes no product commands. Checkout
+and scratch paths cannot have linked ancestors, and scratch paths cannot contain
+PNPM's `%s` or `%v` output markers. The caller supplies tools,
+locked dependencies,
+correct history/ref/cloud context and an unprivileged environment with isolated
+configuration, credentials, caches and runtime preloads; request fields do not
+prove those conditions. The caller owns checkout/scratch retention and cleanup.
+
+The current `node/hcoona-release-smoke-npm-v1` recipe invokes native project
+build and independent source test, then every declared package build through
+`pnpm pack --out`. Pack requires its actual successful source build. Contents
+and installed consumption each require successful pack and remain independent
+checks. Failed prerequisites produce skipped results; cancellation, deadlines,
+command failure and invalid outputs remain unsuccessful. There is no arbitrary
+task graph scheduler or interpretation of script bodies.
+
+Each successful native pack retains its complete original tarball under a fresh
+build directory, with unit/build/output association, byte size and SHA-256.
+A nonzero pack cannot qualify a leftover file. Maintained `GZipStream` and
+`TarReader` inspect the archive without extracting archive-controlled paths.
+The bounds are 32 MiB compressed, 128 MiB expanded, 32 MiB per member, 1,024
+members and 1 MiB each for the required regular manifest and ESM payload.
+Only the packed manifest is written to a fixed metadata filename. Native
+`pnpm pkg get` supplies typed metadata; Workflow compares the recipe's package
+identity, planned native version, module entry and supported install shape.
+
+This recipe allows development dependencies and native pack lifecycles. Populated
+runtime/optional/peer/bundled requirements, runtime acquisition, install lifecycles
+and native-build members need their own concrete contract and fail this recipe.
+Other archive members have no universal allowlist. A fresh external consumer,
+store, state and empty authentication file feed the complete original tarball to
+native offline, scripts-disabled installation; PNPM creates its consumer manifest.
+Node imports the public package name and checks `smokeMessage()`. Source tests or
+source imports cannot replace that result. Offline mode and an empty auth file
+alone do not establish the caller's configuration or credential isolation.
+
+The process helper records actual termination, exit code when available, bounded
+strict UTF-8 stdout/stderr, duration and failure diagnostics. Build/test/pack/install
+have five-minute deadlines; metadata and Node assertions have thirty seconds.
+Each stream retains at most 33,554,432 characters, with the existing five-second
+owned-root cleanup bound. The result keeps every planned key, command observation,
+original output descriptor and execution failure. The existing collector decides
+whether all required checks are satisfied. Controlled tests establish these
+application contracts; real native composition remains a separate gate.
 
 ## Commands and Transfers
 
@@ -252,13 +306,14 @@ Build with the repository-pinned SDK. From the repository root:
 dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan-node node-request.json
+dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci run-node plan.json execution-request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci result plan.json results.json
 ```
 
 Commands emit one JSON value on stdout. Exit code `0` means a valid plan or
 satisfied CI result; `1` means an unsatisfied result (including incompatible
 result subjects) with its JSON explanation; `2` means malformed input, a planning
-failure or unsupported usage, with a diagnostic on stderr. Redirect stdout
+failure, invalid execution input or unsupported usage, with a diagnostic on stderr. Redirect stdout
 when a receiving process needs a file. In-process consumers call the same typed
 operations without serializing their inputs.
 
@@ -275,6 +330,20 @@ The Node request supplies materializations, not a second fact declaration:
 Both required commits must be available in the candidate object store for the
 native comparison. The checkouts retain their own correct native ref/tag/history
 context. A JSON request does not supply tool/runtime or configuration isolation.
+
+The execution request adds no project, script, dependency or version declaration:
+
+```json
+{
+    "checkout": "C:/work/three-candidate",
+    "scratch": "C:/work/node-check-scratch"
+}
+```
+
+`ci run-node` emits its candidate-bound execution result, including unsuccessful
+checks, with exit code `0` or `1` according to the existing collector. Contract or
+starting-materialization errors return `2` before product execution. Its `results`
+array can be passed to `ci result`; in-process callers use the same typed values.
 
 The source-generated JSON contracts use camel-case property names, required
 constructor fields and named check statuses. Unknown fields and missing or null
