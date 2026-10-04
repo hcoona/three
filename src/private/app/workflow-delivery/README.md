@@ -14,7 +14,8 @@ The application selects CI checks from supplied, resolved repository facts and
 collects candidate-bound check results. Its internal PNPM graph/script, Git and
 NBGV input readers supply inputs to repository analysis. A quality-selection reader resolves existing
 project declarations, and a concrete Node component expands its registered project
-checks. Complete native fact assembly, Git event resolution, artifact/check
+checks. A release-unit declaration reader preserves the existing product declarations.
+Complete native fact assembly, Git event resolution, artifact/check
 expansion, check execution and Release commands remain
 pending. Existing workflows still use their current implementations.
 
@@ -243,6 +244,17 @@ or unknown statuses fail. Advisory outcomes remain visible without failing the
 required result. A native cancellation that prevents collection is not a success.
 The eventual workflow must preserve that native conclusion; this command cannot
 observe jobs that its caller did not report.
+
+### Release Unit Declaration Component
+
+[`ReleaseUnitDeclarationReader`](Repository/ReleaseUnitDeclarationReader.cs) parses
+the existing `workflow-delivery.release-unit.yml` application schema with YamlDotNet.
+It retains the supplied source path and every ordered build, entry point and output.
+Entry coordinates remain relative to the declaration directory. Structural errors,
+empty required sets and duplicate build or unit-wide output identities fail.
+The caller obtains exact committed content; a supplied string/path does not establish
+revision identity. Native definition registration, entry association and complete
+variant resolution remain pending and must reject unresolved necessary facts.
 
 ## Validation and CI Ownership
 
