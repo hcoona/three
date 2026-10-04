@@ -64,8 +64,9 @@ it does not add lock admission. The
 retains the CLI evidence limits. The
 [actual application observation](../../../public/lib/three-workflow-delivery-v3/docs/research/pnpm-native-planning.md#actual-reader-and-script-metadata-observation)
 qualifies both retained fixture revisions through this reader on Linux with
-PNPM 12.8.2, including native present/absent script metadata. Ordinary reader
-tests also use controlled queries and retained-output replay.
+PNPM 12.8.2. The probe separately observed native present/absent script metadata
+through direct process calls; script discovery is not implemented in this graph
+reader. Ordinary reader tests also use controlled queries and retained-output replay.
 Complete ownership/shared-input expansion, quality/version facts, base/candidate
 assembly and caller cutover are still pending. The root project is retained as
 `.` here; this graph is not directly accepted as the CI core's project facts.

@@ -598,7 +598,9 @@ project consumer relations. Four native `pkg get scripts --json` queries returne
 the exact opaque present map or no output for absent fields; scripts were not
 executed.
 
-The actual reader's 169 native queries include those four metadata queries.
+The two qualification processes made 169 native queries: 165 through the actual
+graph reader and four separate script metadata queries through `NativeProcess`.
+Script discovery is not implemented in the graph reader.
 Combined reader wall clock was 10.7984 seconds. Full query arguments, stdout,
 stderr, budgets, graph results and assertions are retained in the qualification
 packet linked from the NBGV observation. The evidence-only query recorder
