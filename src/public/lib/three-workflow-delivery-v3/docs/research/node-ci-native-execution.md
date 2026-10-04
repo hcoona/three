@@ -136,9 +136,12 @@ calls, four dotnet runtime-list calls and two local npm version commands per
 sequence. Native postpack directly resets its placeholder. Node build/test and
 public API assertions remain the exact reviewed scripts. Native wrapper runtime
 selection is used as shipped. Source-derived call inventory is not a runtime
-trace or proof that every child exited. All child lifetime is bounded by its
-outer command and the existing five-second owned-root cleanup; any cleanup
-uncertainty stops further execution.
+trace or proof that every child exited. Native child operations use their
+finite deadlines and existing five-second cleanup. An inner cleanup failure is
+retained as a failed check; the executor may finish other eligible independent
+checks within that same reserved `ci run-node` invocation. Its terminal failure,
+or caller-observed outer cleanup uncertainty, stops new campaign invocations.
+These primitives do not prove a complete descendant exit barrier.
 
 Archive limits are the implementation's 32 MiB compressed, 128 MiB expanded,
 32 MiB per member, 1,024 members and 1 MiB each required manifest/payload.
@@ -160,13 +163,21 @@ original bytes remain unchanged. Two successful same-candidate sequences may
 compare original bytes as bounded reproducibility evidence; equality is not
 required between distinct commits.
 
-A failed preparation, planning or command consumes its position and stops the
-campaign. Preserve nonzero, cancellation, timeout, invalid output, unsupported
-shape, version disagreement, missing output, failed installed consumption,
-unexpected external effect or exhausted bound. No rerun, fallback, source
-correction, replacement candidate, publication or new slot follows. Read-only
-analysis of the retained failure is permitted. A necessary native capability gap
-returns to the owner before any changed design or operation.
+Reserve each whole preparation, planning or `ci run-node` invocation before
+launch. A failed preparation or planning invocation stops the campaign. Within
+its finite selected work, `ci run-node` preserves inner native/check failures,
+skips their failed dependencies and may finish independent eligible checks,
+including after an inner cleanup failure. That continuation is part of the
+original invocation, without a retry or new sequence. The caller observes its
+terminal result; a failed execution invocation consumes its position and stops
+all later campaign invocations, including the second materialization.
+
+Preserve nonzero, cancellation, timeout, invalid output, unsupported shape,
+version disagreement, missing output, failed installed consumption, unexpected
+external effect or exhausted bound. No rerun, fallback, source correction,
+replacement candidate, publication or new slot follows. Read-only analysis of
+the retained failure is permitted. A necessary native capability gap returns to
+the owner before any changed design or operation.
 
 ## Evidence, Cleanup and Limits
 
@@ -243,11 +254,15 @@ sequences pass, compare their original bytes for bounded same-input evidence.
 
 Outer command supervision uses native process-group/deadline primitives on Linux
 plus finite root cleanup; it does not claim an OS sandbox or complete descendant
-exit barrier. Reserve a sequence before launch in its disposable evidence carrier,
-retain pending/ambiguous state, and never automatically repeat it. No operation
-may start after an original failure, exhausted bound, unexpected effect or cleanup
-uncertainty. The accepted protocol owns ceilings; a runner is only its concrete
-invocation carrier and never a product admission or retry service.
+exit barrier. Reserve each whole caller invocation before launch in its
+disposable evidence carrier, retain pending/ambiguous state, and never repeat it.
+Immediate caller supervision applies to detected outer deadline, interruption,
+retained-output excess, nonzero exit and outer cleanup uncertainty. It does not
+intercept individual native failures inside the opaque `ci run-node` invocation.
+No new campaign invocation may start after its terminal failure, an exhausted
+bound, an unexpected effect or caller-observed cleanup uncertainty. The accepted
+protocol owns ceilings; a runner is only its concrete invocation carrier and
+never a product admission or retry service.
 
 ## Invocation Carrier and Acceptance Limits
 
