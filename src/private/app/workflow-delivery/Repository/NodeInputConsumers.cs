@@ -102,6 +102,6 @@ internal static class NodeInputConsumers
     {
         if (entry.ObjectType != "blob" || entry.Mode is not ("100644" or "100755"))
             throw new InvalidDataException(
-                "Required local input coverage needs a regular Git file.");
+                "Required input coverage needs a regular Git file.");
     }
 }
