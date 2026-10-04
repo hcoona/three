@@ -207,7 +207,7 @@ internal static class ImpactPlanner
             throw new InvalidDataException($"Missing {subject}.");
     }
 
-    private static void ValidatePath(string path)
+    internal static void ValidatePath(string path)
     {
         RequireText(path, "repository path");
         if (path.Contains('\\') || path.Contains(':') || path.Split('/').Any(p => p is "" or
@@ -295,7 +295,7 @@ internal static class ImpactPlanner
         checks[check.Key] = previous with { Required = previous.Required || check.Required };
     }
 
-    private static bool SamePackage(PackageTarget? first, PackageTarget? second) =>
+    internal static bool SamePackage(PackageTarget? first, PackageTarget? second) =>
         first is null ? second is null : second is not null &&
         (first with { Outputs = second.Outputs }) == second &&
         first.Outputs.SequenceEqual(second.Outputs);

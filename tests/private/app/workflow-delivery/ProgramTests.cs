@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 using WorkflowDelivery.Tests.Repository;
 using WorkflowDelivery.Tests.CI;
@@ -360,6 +361,176 @@ public sealed class ProgramTests
         CiOutcome incompatible = ResultCollector.Collect(plan, wrongCandidate);
         Assert.IsFalse(incompatible.Satisfied);
         Assert.IsNotEmpty(incompatible.Errors);
+    }
+
+    [TestMethod]
+    public void RunNodeSerializesBoundCommandsAndOutputs()
+    {
+        using var files = new TransferFiles();
+        CiPlan plan = NodeExecutionFixture.CreatePlan(NodeScenario.Candidate);
+        var request = new NodeRunRequest(Path.Combine(files.Root, "checkout"),
+            Path.Combine(files.Root, "scratch"));
+        string planPath = files.Write("plan.json", JsonSerializer.Serialize(plan,
+            TransferJson.Default.CiPlan));
+        string requestPath = files.Write("request.json", JsonSerializer.Serialize(request,
+            TransferJson.Default.NodeRunRequest));
+        CheckKey key = plan.Checks.Single(item =>
+            item.Work.Key.Check == NodeExecutionFixture.Pack).Work.Key;
+        var command = new NativeCommand("pnpm", request.Checkout,
+            ["--dir", "literal source", "pack", "--out", "original.tgz"], 300);
+        var original = new NodeOriginalOutput("product", "main", "main-package",
+            "primary-package", "npm-tarball", "original.tgz", 123, new string('a', 64));
+        var observation = new NodeCommandObservation(key, command,
+            NodeExecutionFixture.Success("visible output"));
+        bool invoked = false;
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        int exit = Program.Run(["ci", "run-node", planPath, requestPath], output, error,
+            (receivedPlan, receivedRequest, _) =>
+            {
+                invoked = true;
+                Assert.AreEqual(plan.Candidate, receivedPlan.Candidate);
+                Assert.AreEqual(request, receivedRequest);
+                Assert.AreEqual("main-package", receivedPlan.Checks.Single(item =>
+                    item.Work.Key == key).Work.Package!.Outputs.Single().Id);
+                return Task.FromResult(new NodeRunResult(plan.Candidate,
+                    plan.Checks.Select(item => new CheckResult(plan.Candidate, item.Work.Key,
+                        CheckStatus.Passed)).ToArray(), [observation], [original], []));
+            });
+
+        Assert.IsTrue(invoked);
+        Assert.AreEqual(0, exit, error.ToString());
+        Assert.AreEqual("", error.ToString());
+        NodeRunResult transferred = JsonSerializer.Deserialize(output.ToString(),
+            TransferJson.Default.NodeRunResult)!;
+        Assert.AreEqual(plan.Candidate, transferred.Candidate);
+        Assert.HasCount(plan.Checks.Length, transferred.Results);
+        Assert.AreEqual(original, Assert.ContainsSingle(transferred.Outputs));
+        NodeCommandObservation received = Assert.ContainsSingle(transferred.Commands);
+        Assert.AreEqual(key, received.Key);
+        Assert.AreEqual(command.Executable, received.Command.Executable);
+        Assert.AreEqual(command.Directory, received.Command.Directory);
+        Assert.AreEqual(command.DeadlineSeconds, received.Command.DeadlineSeconds);
+        CollectionAssert.AreEqual(command.Arguments, received.Command.Arguments);
+        Assert.AreEqual(observation.Result, received.Result);
+        using JsonDocument json = JsonDocument.Parse(output.ToString());
+        Assert.AreEqual("Exited", json.RootElement.GetProperty("commands")[0]
+            .GetProperty("result").GetProperty("termination").GetString());
+        Assert.AreEqual("Passed", json.RootElement.GetProperty("results")[0]
+            .GetProperty("status").GetString());
+    }
+
+    [TestMethod]
+    [DataRow("Failed")]
+    [DataRow("Skipped")]
+    [DataRow("Cancelled")]
+    [DataRow("TimedOut")]
+    [DataRow("missing")]
+    [DataRow("wrong-candidate")]
+    public void RunNodeFailedOrMissingResultsCannotSucceed(string defect)
+    {
+        using var files = new TransferFiles();
+        CiPlan plan = NodeExecutionFixture.CreatePlan(NodeScenario.Candidate);
+        string planPath = files.Write("plan.json", JsonSerializer.Serialize(plan,
+            TransferJson.Default.CiPlan));
+        string requestPath = files.Write("request.json", JsonSerializer.Serialize(
+            new NodeRunRequest(files.Root, files.Root), TransferJson.Default.NodeRunRequest));
+        CheckResult[] results = plan.Checks.Select(item =>
+            new CheckResult(plan.Candidate, item.Work.Key, CheckStatus.Passed)).ToArray();
+        results = defect switch
+        {
+            "missing" => results[..^1],
+            "wrong-candidate" => results.Select(item => item with
+                { Candidate = NodeScenario.Basis }).ToArray(),
+            _ => results.Select((item, index) => index == results.Length - 1
+                ? item with { Status = Enum.Parse<CheckStatus>(defect) } : item).ToArray(),
+        };
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        int exit = Program.Run(["ci", "run-node", planPath, requestPath], output, error,
+            (_, _, _) => Task.FromResult(new NodeRunResult(plan.Candidate, results, [], [], [])));
+
+        Assert.AreEqual(1, exit);
+        Assert.AreEqual("", error.ToString());
+        NodeRunResult transferred = JsonSerializer.Deserialize(output.ToString(),
+            TransferJson.Default.NodeRunResult)!;
+        Assert.HasCount(results.Length, transferred.Results);
+        Assert.IsFalse(ResultCollector.Collect(plan, transferred.Results).Satisfied);
+    }
+
+    [TestMethod]
+    [DataRow("malformed-request")]
+    [DataRow("null-request")]
+    [DataRow("missing-property")]
+    [DataRow("null-property")]
+    [DataRow("unknown-property")]
+    [DataRow("malformed-plan")]
+    [DataRow("null-plan")]
+    public void RunNodeMalformedTransferReturnsInputErrorWithoutExecution(string defect)
+    {
+        using var files = new TransferFiles();
+        CiPlan plan = NodeExecutionFixture.CreatePlan(NodeScenario.Candidate);
+        string planJson = JsonSerializer.Serialize(plan, TransferJson.Default.CiPlan);
+        var request = new NodeRunRequest(files.Root, Path.Combine(files.Root, "scratch"));
+        JsonObject json = JsonNode.Parse(JsonSerializer.Serialize(request,
+            TransferJson.Default.NodeRunRequest))!.AsObject();
+        if (defect == "missing-property")
+            json.Remove("scratch");
+        if (defect == "null-property")
+            json["checkout"] = null;
+        if (defect == "unknown-property")
+            json["embeddedNode"] = true;
+        string requestJson = defect switch
+        {
+            "malformed-request" => "{broken",
+            "null-request" => "null",
+            _ => json.ToJsonString(),
+        };
+        planJson = defect switch
+        {
+            "malformed-plan" => "{broken",
+            "null-plan" => "null",
+            _ => planJson,
+        };
+        string planPath = files.Write("plan.json", planJson);
+        string requestPath = files.Write("request.json", requestJson);
+        bool invoked = false;
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        int exit = Program.Run(["ci", "run-node", planPath, requestPath], output, error,
+            (_, _, _) =>
+            {
+                invoked = true;
+                throw new AssertFailedException("Invalid transfer reached executor.");
+            });
+
+        Assert.IsFalse(invoked);
+        Assert.AreEqual(2, exit);
+        Assert.AreEqual("", output.ToString());
+        Assert.IsNotEmpty(error.ToString());
+    }
+
+    [TestMethod]
+    public void RunNodeSemanticInputErrorProducesNoExecutedOutcome()
+    {
+        using var files = new TransferFiles();
+        CiPlan plan = NodeExecutionFixture.CreatePlan(NodeScenario.Candidate);
+        string planPath = files.Write("plan.json", JsonSerializer.Serialize(plan,
+            TransferJson.Default.CiPlan));
+        string requestPath = files.Write("request.json", JsonSerializer.Serialize(
+            new NodeRunRequest("relative-checkout", "relative-scratch"),
+            TransferJson.Default.NodeRunRequest));
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        int exit = Program.Run(["ci", "run-node", planPath, requestPath], output, error);
+
+        Assert.AreEqual(2, exit);
+        Assert.AreEqual("", output.ToString());
+        Assert.Contains("absolute", error.ToString());
     }
 
     private sealed class TransferFiles : IDisposable
