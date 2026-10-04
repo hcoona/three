@@ -116,6 +116,30 @@ public sealed class NodeExecutionTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task RunRejectsCheckoutFilesystemRootBeforeNativeWork(bool empty)
+    {
+        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        string root = Path.GetPathRoot(fixture.Request.Checkout)!;
+        Assert.IsTrue(Path.IsPathFullyQualified(root));
+        Assert.IsTrue(Directory.Exists(root));
+        Assert.AreEqual(root, Path.GetPathRoot(fixture.Scratch));
+        Assert.AreEqual((FileAttributes)0,
+            new DirectoryInfo(fixture.Scratch).Attributes & FileAttributes.ReparsePoint);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+        NodeRunRequest request = fixture.Request with { Checkout = root };
+        CiPlan plan = empty ? fixture.Plan with { Checks = [] } : fixture.Plan;
+
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(context.CancellationToken, plan, request));
+
+        Assert.AreEqual("Node execution requires fresh external scratch.", error.Message);
+        Assert.IsEmpty(fixture.Commands);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+    }
+
+    [TestMethod]
     [DataRow("scratch", false)]
     [DataRow("checkout", false)]
     [DataRow("scratch", true)]

@@ -301,7 +301,8 @@ internal static class NodeExecution
     }
 
     private static bool Within(string path, string directory) =>
-        path.StartsWith(directory + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
+        path.StartsWith(Path.EndsInDirectorySeparator(directory)
+            ? directory : directory + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     private static bool HasLinkedAncestor(string path)
