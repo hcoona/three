@@ -132,6 +132,27 @@ The [native contract evidence](../../../public/lib/three-workflow-delivery-v3/do
 and real isolated Git/process tests cover this component. It is not complete
 repository facts, event resolution, revision checkout management or caller cutover.
 
+### Input Consumer Mapping
+
+[`NodeInputConsumers`](Repository/NodeInputConsumers.cs) adapts supplied native
+version/configuration inputs, effective quality selections and resolved local
+inputs into the existing shared-input values. Directory identities name consumers;
+the NBGV answers must match the committed revision. Absent native configuration
+candidates and quality-search candidates remain inputs. Quality search stops at
+its actual winning ancestor, without reevaluating YAML or native inheritance.
+
+Local directories expand against the committed inventory with path-segment
+boundaries; exact file inputs retain their supplied consumers. Missing required
+sources, unknown consumers, unrepresentable coordinates and unsupported local
+symlink/gitlink coverage fail. Native version paths keep their original committed
+spelling. Results deduplicate consumers and sort deterministically. Each revision
+is mapped independently for the planner's base/candidate union.
+
+This is supplied-fact adaptation only. Root tooling consumers, shared toolchain
+and workspace configuration coverage, complete fact assembly, event materialization
+and caller cutover remain pending. The mapper does not infer unaffected paths or
+certify a scope's completeness.
+
 ### Quality Selection Component
 
 [`QualitySelectionReader`](Repository/QualitySelectionReader.cs) reads the existing
