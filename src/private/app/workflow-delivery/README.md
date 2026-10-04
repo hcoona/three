@@ -12,8 +12,9 @@ architecture authority.
 
 The application selects CI checks from supplied, resolved repository facts and
 collects candidate-bound check results. Its internal PNPM graph and Git readers
-supply inputs to repository analysis. Complete native fact assembly, Git event
-resolution, quality YAML resolution, check execution and Release commands remain
+supply inputs to repository analysis. A quality-selection reader resolves existing
+project declarations. Complete native fact assembly, Git event resolution,
+preset/check expansion, check execution and Release commands remain
 pending. Existing workflows still use their current implementations.
 
 New ecosystem integrations follow the HLD's
@@ -90,6 +91,23 @@ Queries retain the shared process deadline, output and cleanup bounds above.
 The [native contract evidence](../../../public/lib/three-workflow-delivery-v3/docs/research/git-native-facts.md)
 and real isolated Git/process tests cover this component. It is not complete
 repository facts, event resolution, revision checkout management or caller cutover.
+
+### Quality Selection Component
+
+[`QualitySelectionReader`](Repository/QualitySelectionReader.cs) reads the existing
+`workflow-delivery.quality.yml` from a caller-supplied materialized revision. The
+nearest ancestor containing the requested ecosystem wins; unrelated ecosystem
+entries allow the search to continue. Parent presets are never merged. The result
+is the preset identifier and repository-relative declaration path, or explicit
+absence. Root `.` is a valid reader input without changing the CI core's project
+directory contract.
+
+YamlDotNet handles YAML syntax and aliases. The reader validates the application's
+single-document `schema`/`ecosystems`/`preset` contract and fails on malformed
+declarations or failed reads. It does not resolve registered preset semantics or
+invent checks. The caller binds the materialized revision and expands the selected
+preset into concrete work; this component alone does not complete CI facts or
+switch any workflow.
 
 ## Commands and Transfers
 
@@ -168,7 +186,7 @@ dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests
 ```
 
 Tests cover selection, result completeness, the JSON CLI boundary, PNPM identity
-adaptation and native process failure/cancellation. Process tests use the
+adaptation, quality declaration traversal and native process failure/cancellation. Process tests use the
 repository's PowerShell tool; PNPM replay tests execute no native PNPM query.
 These tests do not qualify complete native fact collectors. Each
 native integration still needs the migration plan's concrete coverage and caller

@@ -8,5 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
+    <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 </Project>
