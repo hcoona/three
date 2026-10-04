@@ -2,8 +2,9 @@
 
 ## Purpose and Authority
 
-This protocol becomes executable only after protected repository acceptance
-under the [contraction Wave](../../../../../../docs/delivery-wave.md). Its consumer
+This proposed protocol becomes executable only after explicit owner acceptance
+of one new finite generation and protected repository acceptance under the
+[contraction Wave](../../../../../../docs/delivery-wave.md). Its consumer
 is the replacement application's native Node check boundary before workflow cutover.
 It tests actual planning, native NBGV stamping, original packaging and fresh
 public API consumption together, rather than re-proving PNPM or NBGV.
@@ -11,17 +12,24 @@ The accepted contraction Wave supplies the effects ceiling; protected delivery
 of this concrete protocol is required before its first sequence. Earlier npm,
 NuGet, Python, Ruby and native-reader campaigns remain completed and spent.
 
-This protocol bounds one fresh successor generation. The stopped qualification
-under `d9e68f9a45099468381b5ebebf767c6813fac402` remains failed and cannot resume.
-Its evidence and the owner's acceptance of one trusted-lock successor are retained
-in the delivery work carrier. The successor keeps the same effects and finite
-ceilings; no further generation follows failure or completion.
+This proposal bounds one fresh successor generation and grants no execution
+on its own. The original qualification under
+`d9e68f9a45099468381b5ebebf767c6813fac402` remains failed and stopped. The
+qualification under `eaf866f2240ac6d4c4bea2dbac58edff0ab10ea7` is terminal:
+its original successful check/package observations remain, while independent
+review and separate classification reject effects/protocol conformity because
+source tests additionally installed the whole workspace and ran unrelated
+lifecycles. Both raw records, original bytes and owned state remain intact.
+Their evidence and dispositions are retained in the delivery work carriers.
+Neither generation resumes, retries or refunds a position. This proposal keeps
+the finite ceilings and excludes Registry acquisition; no further generation
+follows its own failure or completion.
 
 ## Exact Subject and Environment
 
 The executor must first be merged with the independently reviewed source tree
-`3c3ba8938e09c364512cf823aee7d713dede7927` from candidate
-`6045598a30795169b4540cfad9c313bd0e31602c`. Record its actual accepted squash and
+`8fa20e9e830c1ce3cbe292126b83c06b482dd702` from candidate
+`dbbab75dc4ec07bb6c83b60004cbd29008d44ef9`. Record its actual accepted squash and
 verify the reviewed source identities before preparation. If that subject
 changes, refresh the protocol and reviews; this is not permission to qualify a
 replacement silently.
@@ -121,6 +129,17 @@ Each executor owns fresh scratch only; no source import or warmed consumer cache
 can supply an installed result. Native build, pack lifecycle and installation
 remain opaque CLI operations; do not replay scripts or synthesize a manifest.
 
+Application-owned source build and test use the maintained native
+`--config.verify-deps-before-run=false` setting. Explicit locked preparation
+remains the caller's responsibility; automatic workspace installation is not
+part of either script invocation. The allowed environment does not inherit
+`pnpm_config_verify_deps_before_run`, which can outrank the CLI setting. This
+configuration is not a network or arbitrary script-effects sandbox. The exact
+selected scripts remain unchanged and source reviewed; no script interpreter,
+freshness checker, second resolver or dynamic admission file is introduced.
+The fixture's native NBGV filters now include its known shared package/lock,
+toolchain and license inputs.
+
 Maximum preparation: three native local Git materializations, one local candidate
 commit, three frozen offline/script-disabled PNPM installs, one .NET restore and
 one no-restore build. Each preparation command is at most 300 seconds. Read-only
@@ -174,6 +193,12 @@ original bytes remain unchanged. Two successful same-candidate sequences may
 compare original bytes as bounded reproducibility evidence; equality is not
 required between distinct commits.
 
+Retain and assess the original native stdout/stderr as well as scalar check
+results. Additional workspace preparation or unrelated lifecycle execution is
+an unexpected effect, even when all checks and the outer invocation return
+success. Outer command counts alone cannot establish nested-effects conformity.
+No log-counter inference supplies exact network requests or transferred bytes.
+
 Reserve each whole preparation, planning or `ci run-node` invocation before
 launch. A failed preparation or planning invocation stops the campaign. Within
 its finite selected work, `ci run-node` preserves inner native/check failures,
@@ -198,7 +223,7 @@ original tarballs, read-only comparisons and failures in a retrievable sanitized
 work carrier. Independent engineering/evidence review evaluates the conclusion;
 source findings, runtime observations and inference stay distinct. An observation
 may not claim publication, caller cutover, cross-group completeness or all-platform
-support. Other shared version inputs and integration groups remain obligations.
+support. Other integration groups and fixture-relocation inputs remain obligations.
 
 After evidence retention and independent review, remove only this protocol's
 owned disposable state; retain any state needed to investigate a failed cleanup.
