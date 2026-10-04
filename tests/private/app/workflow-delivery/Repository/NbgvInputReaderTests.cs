@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Nerdbank.GitVersioning;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Tests.Repository;
@@ -304,10 +305,12 @@ public sealed class NbgvInputReaderTests(TestContext context)
         async Task<string> VersionAsync(string commit)
         {
             await repo.GitAsync("reset", "--hard", commit);
-            GitRevision selected = await new GitReader(repo.Directory).ReadAsync(commit,
-                context.CancellationToken);
-            return new NbgvInputReader(repo.Directory).NpmVersion(selected, product,
-                context.CancellationToken);
+            using GitContext git = GitContext.Create(repo.Directory,
+                engine: GitContext.Engine.ReadOnly);
+            git.RepoRelativeProjectDirectory = product;
+            var oracle = new VersionOracle(git);
+            Assert.IsTrue(oracle.PublicRelease);
+            return oracle.NpmPackageVersion;
         }
     }
 
