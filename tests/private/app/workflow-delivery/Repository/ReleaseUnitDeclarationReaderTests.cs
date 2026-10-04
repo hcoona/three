@@ -253,7 +253,11 @@ public sealed class ReleaseUnitDeclarationReaderTests
         "outputs: [{id: output, role: primary, kind: package, kind: archive}]}]")]
     public void ReadPropagatesLibraryFailures(string content)
     {
-        Assert.Throws<YamlException>(() => ReleaseUnitDeclarationReader.Read(content, Source));
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            ReleaseUnitDeclarationReader.Read(content, Source));
+
+        Assert.IsInstanceOfType<YamlException>(error.InnerException);
+        Assert.Contains(Source, error.Message);
     }
 
     private static void AssertBuild(ReleaseBuild actual, string id, string definition,

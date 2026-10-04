@@ -1,3 +1,4 @@
+using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 
 namespace WorkflowDelivery.Repository;
@@ -14,8 +15,16 @@ internal static class ReleaseUnitDeclarationReader
     {
         ArgumentNullException.ThrowIfNull(content);
         string path = RelativePath(sourcePath, allowDirectoryRoot: false);
-        object? document = new DeserializerBuilder().WithDuplicateKeyChecking().Build()
-            .Deserialize<object?>(content);
+        object? document;
+        try
+        {
+            document = new DeserializerBuilder().WithDuplicateKeyChecking().Build()
+                .Deserialize<object?>(content);
+        }
+        catch (YamlException exception)
+        {
+            throw new InvalidDataException($"Invalid release-unit YAML at {path}.", exception);
+        }
         Dictionary<string, object?> unit = Mapping(document, "schema", "release-unit", "builds");
         if (Text(unit["schema"]) != "workflow-delivery/v3/release-unit")
             throw new InvalidDataException("Invalid release-unit schema.");

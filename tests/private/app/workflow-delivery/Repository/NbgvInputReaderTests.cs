@@ -203,16 +203,22 @@ public sealed class NbgvInputReaderTests(TestContext context)
         if (options.Length != 0)
             await repo.SetAsync("version.json", options);
         string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
         GitRevision revision = await new GitReader(repo.Directory).ReadAsync(commit,
             context.CancellationToken);
         var reader = new NbgvInputReader(repo.Directory);
 
-        if (options.Length == 0)
-            Assert.ThrowsExactly<InvalidDataException>(() => reader.Read(revision,
-                "product", context.CancellationToken));
-        else
-            Assert.ThrowsExactly<InvalidOperationException>(() => reader.Read(revision,
-                "product", context.CancellationToken));
+        InvalidDataException readError = Assert.ThrowsExactly<InvalidDataException>(() =>
+            reader.Read(revision, "product", context.CancellationToken));
+        InvalidDataException versionError = Assert.ThrowsExactly<InvalidDataException>(() =>
+            reader.NpmVersion(revision, "product", context.CancellationToken));
+        if (options.Length != 0)
+        {
+            Assert.IsInstanceOfType<InvalidOperationException>(readError.InnerException);
+            Assert.Contains(commit + ":product", readError.Message);
+            Assert.IsInstanceOfType<InvalidOperationException>(versionError.InnerException);
+            Assert.Contains(commit + ":product", versionError.Message);
+        }
     }
 
     [TestMethod]
@@ -254,4 +260,56 @@ public sealed class NbgvInputReaderTests(TestContext context)
         Assert.ThrowsExactly<OperationCanceledException>(() => new NbgvInputReader(".").Read(
             new("HEAD", []), "product", cancellation.Token));
     }
+    [TestMethod]
+    public async Task NpmVersionProjectsFixedPublicReleaseVersionAtCleanSelectedHead()
+    {
+        using var repo = await GitReaderTests.GitFixture.CreateAsync(context.CancellationToken);
+        await repo.SetAsync("product/version.json", """
+            {"version":"1.2.3","publicReleaseRefSpec":["^refs/heads/fixture$"],"pathFilters":["."]}
+            """);
+        await repo.SetAsync("product/source.js");
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+        GitRevision revision = await new GitReader(repo.Directory).ReadAsync(commit,
+            context.CancellationToken);
+        GitMaterialization checkout = await GitMaterialization.BindAsync(repo.Directory, revision,
+            context.CancellationToken);
+
+        string version = new NbgvInputReader(checkout.Root).NpmVersion(checkout.Revision, "product",
+            context.CancellationToken);
+
+        Assert.AreEqual("1.2.3", version);
+        Assert.AreEqual(commit, checkout.Revision.Commit);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task NpmVersionRejectsMissingOptionsOrWrongSelectedHead(bool wrongHead)
+    {
+        using var repo = await GitReaderTests.GitFixture.CreateAsync(context.CancellationToken);
+        await repo.SetAsync("product/source.js");
+        if (wrongHead)
+            await repo.SetAsync("product/version.json", "{\"version\":\"1.2.3\"}");
+        string first = await repo.CommitAsync();
+        GitRevision revision = await new GitReader(repo.Directory).ReadAsync(first,
+            context.CancellationToken);
+        if (wrongHead)
+        {
+            await repo.SetAsync("product/source.js", "next commit");
+            string next = await repo.CommitAsync(first);
+            await repo.GitAsync("reset", "--hard", next);
+        }
+        else
+            await repo.GitAsync("reset", "--hard", first);
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            new NbgvInputReader(repo.Directory).NpmVersion(revision, "product",
+                context.CancellationToken));
+
+        Assert.Contains(wrongHead ? "selected checkout HEAD" : "selected product version",
+            error.Message);
+    }
+
+
 }

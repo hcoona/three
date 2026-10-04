@@ -1,3 +1,4 @@
+using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 
 namespace WorkflowDelivery.Repository;
@@ -9,11 +10,28 @@ internal sealed class QualitySelectionReader
 {
     private const string FileName = "workflow-delivery.quality.yml";
     private readonly string root;
+    private readonly Func<string, CancellationToken, Task<string?>> read;
 
     internal QualitySelectionReader(string root)
+        : this(root, async (path, token) =>
+        {
+            try
+            {
+                return await File.ReadAllTextAsync(Path.Combine(root, path), token);
+            }
+            catch (FileNotFoundException)
+            {
+                return null;
+            }
+        })
+    { }
+
+    internal QualitySelectionReader(string root,
+        Func<string, CancellationToken, Task<string?>> read)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         this.root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        this.read = read;
     }
 
     internal async Task<QualitySelection?> ReadAsync(string manifestDirectory, string ecosystem,
@@ -35,19 +53,14 @@ internal sealed class QualitySelectionReader
         {
             token.ThrowIfCancellationRequested();
             string path = Path.Combine(directory, FileName);
-            string? content = null;
-            try
-            {
-                content = await File.ReadAllTextAsync(path, token);
-            }
-            catch (FileNotFoundException)
-            {
-                // Only descriptor absence allows ancestor search; other I/O failures propagate.
-            }
+            // A bound committed reader distinguishes true absence from untracked files.
+            string? content = await read(Path.GetRelativePath(root, path).Replace('\\', '/'),
+                token);
 
             if (content is not null)
             {
-                Dictionary<string, string> selections = ReadSelections(content);
+                Dictionary<string, string> selections = ReadSelections(content,
+                    Path.GetRelativePath(root, path).Replace('\\', '/'));
                 if (selections.TryGetValue(ecosystem, out string? preset))
                     return new(preset, Path.GetRelativePath(root, path).Replace('\\', '/'));
             }
@@ -58,10 +71,19 @@ internal sealed class QualitySelectionReader
         }
     }
 
-    private static Dictionary<string, string> ReadSelections(string content)
+    private static Dictionary<string, string> ReadSelections(string content, string sourcePath)
     {
-        object? declaration = new DeserializerBuilder().WithDuplicateKeyChecking().Build()
-            .Deserialize<object?>(content);
+        object? declaration;
+        try
+        {
+            declaration = new DeserializerBuilder().WithDuplicateKeyChecking().Build()
+                .Deserialize<object?>(content);
+        }
+        catch (YamlException exception)
+        {
+            throw new InvalidDataException(
+                $"Invalid quality-selection YAML at {sourcePath}.", exception);
+        }
         Dictionary<string, object?> fields = Mapping(declaration);
         if (fields.Count != 2 || !fields.TryGetValue("schema", out object? schema) ||
             Scalar(schema) != "workflow-delivery/v3/quality-selection" ||

@@ -30,7 +30,23 @@ internal sealed record CheckSpec(
     Dictionary<string, string> Dimensions,
     string Runner,
     bool Required,
-    CheckKey[] Prerequisites
+    CheckKey[] Prerequisites,
+    PackageTarget? Package = null
+);
+
+// Only artifact checks carry a package subject; native project checks use their source target.
+internal sealed record PackageOutput(string Id, string Role, string Kind);
+
+internal sealed record PackageTarget(
+    string Unit,
+    string Declaration,
+    string Build,
+    string Definition,
+    string Directory,
+    string EntryPoint,
+    string? PublishDirectory,
+    string ExpectedVersion,
+    PackageOutput[] Outputs
 );
 
 internal sealed record PlanRequest(

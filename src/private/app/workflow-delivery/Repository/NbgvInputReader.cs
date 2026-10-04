@@ -11,6 +11,24 @@ internal sealed class NbgvInputReader(string root)
 {
     private readonly string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
 
+    // Full projection uses the caller-bound clean HEAD and the same native cloud/ref
+    // context as the build. Version height and npm projection remain NBGV operations.
+    internal string NpmVersion(GitRevision revision, string directory, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        using GitContext context = GitContext.Create(root, engine: GitContext.Engine.ReadOnly);
+        if (!context.IsRepository || context.GitCommitId != revision.Commit ||
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(context.WorkingTreePath)) != root)
+            throw new InvalidDataException(
+                "NBGV npm projection requires the selected checkout HEAD.");
+        context.RepoRelativeProjectDirectory = directory;
+        if (ReadOptions(context, revision, directory)?.Version is null)
+            throw new InvalidDataException("NBGV did not resolve the selected product version.");
+        var oracle = new VersionOracle(context, CloudBuild.Active);
+        token.ThrowIfCancellationRequested();
+        return oracle.NpmPackageVersion;
+    }
+
     internal NbgvInputs Read(GitRevision revision, string directory, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
@@ -37,7 +55,7 @@ internal sealed class NbgvInputReader(string root)
             entry.Path.StartsWith(directory + "/", comparison)))
             throw new InvalidDataException(
                 "The required project directory is absent from the committed inventory.");
-        VersionOptions options = context.VersionFile.GetVersion()
+        VersionOptions options = ReadOptions(context, revision, directory)
             ?? throw new InvalidDataException("NBGV did not resolve committed version options.");
         if (options.Version is null)
             throw new InvalidDataException("NBGV did not resolve a committed product version.");
@@ -76,6 +94,20 @@ internal sealed class NbgvInputReader(string root)
         {
             candidates.Add(prefix + "version.txt");
             candidates.Add(prefix + "version.json");
+        }
+    }
+
+    private static VersionOptions? ReadOptions(GitContext context, GitRevision revision,
+        string directory)
+    {
+        try
+        {
+            return context.VersionFile.GetVersion();
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new InvalidDataException(
+                $"Invalid NBGV version options at {revision.Commit}:{directory}.", exception);
         }
     }
 }
