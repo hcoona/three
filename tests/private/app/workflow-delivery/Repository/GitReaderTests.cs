@@ -208,7 +208,7 @@ public sealed class GitReaderTests(TestContext context)
     private static string[] Paths(GitRevision revision) =>
         revision.Entries.Select(entry => entry.Path).ToArray();
 
-    private sealed class GitFixture(CancellationToken token) : IDisposable
+    internal sealed class GitFixture(CancellationToken token) : IDisposable
     {
         private readonly string temporary = Path.Combine(Path.GetTempPath(),
             "workflow git facts " + Guid.NewGuid().ToString("N"));
@@ -275,6 +275,12 @@ public sealed class GitReaderTests(TestContext context)
         {
             if (!System.IO.Directory.Exists(temporary))
                 return;
+            if (OperatingSystem.IsWindows())
+            {
+                // NBGV's legacy version.txt reader leaves loose-object handles to finalization.
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
             foreach (string file in System.IO.Directory.EnumerateFiles(temporary, "*",
                 SearchOption.AllDirectories))
                 File.SetAttributes(file, FileAttributes.Normal);
