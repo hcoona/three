@@ -179,16 +179,17 @@ internal static class ImpactPlanner
             if (package.PublishDirectory is not null)
                 ValidatePath(package.PublishDirectory);
             ArgumentNullException.ThrowIfNull(package.Outputs);
-            if (package.Outputs.Length == 0 ||
-                package.Outputs.Select(output => output.Id).Distinct(StringComparer.Ordinal)
-                    .Count() != package.Outputs.Length)
-                throw new InvalidDataException("Unresolved complete package outputs.");
             foreach (PackageOutput output in package.Outputs)
             {
+                ArgumentNullException.ThrowIfNull(output);
                 RequireText(output.Id, "package output");
                 RequireText(output.Role, "package output role");
                 RequireText(output.Kind, "package output kind");
             }
+            if (package.Outputs.Length == 0 ||
+                package.Outputs.Select(output => output.Id).Distinct(StringComparer.Ordinal)
+                    .Count() != package.Outputs.Length)
+                throw new InvalidDataException("Unresolved complete package outputs.");
         }
     }
 

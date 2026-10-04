@@ -197,6 +197,47 @@ public sealed class ProgramTests
     }
 
     [TestMethod]
+    [DataRow("plan")]
+    [DataRow("result")]
+    public void RunNullPackageOutputReturnsInputErrorWithoutJson(string command)
+    {
+        using var files = new TransferFiles();
+        CheckSpec check = Scenario.Check("library") with
+        {
+            Package = new("product", "workflow-delivery.release-unit.yml", "build",
+                "node/npm-package-v1", "src/library", "src/library/package.json", null,
+                "1.2.3", [new("package", "primary-package", "npm-tarball")]),
+        };
+        string[] arguments;
+        if (command == "plan")
+        {
+            PlanRequest request = Scenario.Request(
+                [Scenario.Project("library", checks: [check])], "src/library/code.cs");
+            JsonNode json = JsonNode.Parse(JsonSerializer.Serialize(request,
+                TransferJson.Default.PlanRequest))!;
+            json["candidate"]!["projects"]![0]!["checks"]![0]!["package"]!["outputs"]![0] = null;
+            arguments = ["ci", "plan", files.Write("request.json", json.ToJsonString())];
+        }
+        else
+        {
+            JsonNode json = JsonNode.Parse(JsonSerializer.Serialize(Scenario.Plan(check),
+                TransferJson.Default.CiPlan))!;
+            json["checks"]![0]!["work"]!["package"]!["outputs"]![0] = null;
+            arguments = ["ci", "result", files.Write("plan.json", json.ToJsonString()),
+                files.Write("results.json", "[]")];
+        }
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        int exit = Program.Run(arguments, output, error);
+
+        Assert.AreEqual(2, exit);
+        Assert.AreEqual(string.Empty, output.ToString());
+        Assert.IsNotEmpty(error.ToString());
+        Assert.Contains("output", error.ToString());
+    }
+
+    [TestMethod]
     public void RunMissingInputFileReturnsInputErrorWithoutSuccessJson()
     {
         using var files = new TransferFiles();

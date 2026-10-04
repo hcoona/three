@@ -203,16 +203,22 @@ public sealed class NbgvInputReaderTests(TestContext context)
         if (options.Length != 0)
             await repo.SetAsync("version.json", options);
         string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
         GitRevision revision = await new GitReader(repo.Directory).ReadAsync(commit,
             context.CancellationToken);
         var reader = new NbgvInputReader(repo.Directory);
 
-        if (options.Length == 0)
-            Assert.ThrowsExactly<InvalidDataException>(() => reader.Read(revision,
-                "product", context.CancellationToken));
-        else
-            Assert.ThrowsExactly<InvalidOperationException>(() => reader.Read(revision,
-                "product", context.CancellationToken));
+        InvalidDataException readError = Assert.ThrowsExactly<InvalidDataException>(() =>
+            reader.Read(revision, "product", context.CancellationToken));
+        InvalidDataException versionError = Assert.ThrowsExactly<InvalidDataException>(() =>
+            reader.NpmVersion(revision, "product", context.CancellationToken));
+        if (options.Length != 0)
+        {
+            Assert.IsInstanceOfType<InvalidOperationException>(readError.InnerException);
+            Assert.Contains(commit + ":product", readError.Message);
+            Assert.IsInstanceOfType<InvalidOperationException>(versionError.InnerException);
+            Assert.Contains(commit + ":product", versionError.Message);
+        }
     }
 
     [TestMethod]

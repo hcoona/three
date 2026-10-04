@@ -1,3 +1,4 @@
+using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 
 namespace WorkflowDelivery.Repository;
@@ -58,7 +59,8 @@ internal sealed class QualitySelectionReader
 
             if (content is not null)
             {
-                Dictionary<string, string> selections = ReadSelections(content);
+                Dictionary<string, string> selections = ReadSelections(content,
+                    Path.GetRelativePath(root, path).Replace('\\', '/'));
                 if (selections.TryGetValue(ecosystem, out string? preset))
                     return new(preset, Path.GetRelativePath(root, path).Replace('\\', '/'));
             }
@@ -69,10 +71,19 @@ internal sealed class QualitySelectionReader
         }
     }
 
-    private static Dictionary<string, string> ReadSelections(string content)
+    private static Dictionary<string, string> ReadSelections(string content, string sourcePath)
     {
-        object? declaration = new DeserializerBuilder().WithDuplicateKeyChecking().Build()
-            .Deserialize<object?>(content);
+        object? declaration;
+        try
+        {
+            declaration = new DeserializerBuilder().WithDuplicateKeyChecking().Build()
+                .Deserialize<object?>(content);
+        }
+        catch (YamlException exception)
+        {
+            throw new InvalidDataException(
+                $"Invalid quality-selection YAML at {sourcePath}.", exception);
+        }
         Dictionary<string, object?> fields = Mapping(declaration);
         if (fields.Count != 2 || !fields.TryGetValue("schema", out object? schema) ||
             Scalar(schema) != "workflow-delivery/v3/quality-selection" ||

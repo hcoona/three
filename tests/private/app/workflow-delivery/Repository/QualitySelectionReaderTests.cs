@@ -131,7 +131,11 @@ public sealed class QualitySelectionReaderTests(TestContext context)
         await files.WriteAsync(".", Selection("node", "root-node"));
         await files.WriteAsync("src/project", declaration);
 
-        await Assert.ThrowsAsync<YamlException>(() => files.ReadAsync("src/project", "node"));
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => files.ReadAsync("src/project", "node"));
+
+        Assert.IsInstanceOfType<YamlException>(error.InnerException);
+        Assert.Contains("src/project/workflow-delivery.quality.yml", error.Message);
     }
 
     [TestMethod]
