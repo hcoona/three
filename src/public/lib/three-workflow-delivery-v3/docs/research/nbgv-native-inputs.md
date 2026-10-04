@@ -47,6 +47,16 @@ private reflection, vendoring or additional runtime/helper is proposed.
 Bind and dispose a native managed read-only context at the manifest directory
 and explicit committed subject. Require a real repository, selected commit and
 effective options; no working-copy, missing-repository or default substitution.
+Native disposal does not establish immediate release of every object stream.
+The pinned [legacy `version.txt` branch][managed-version] constructs an unscoped
+`StreamReader`, while JSON reads use `using`; [context disposal][managed-context]
+closes the repository's packs, not that returned loose-object stream. Such handles
+may remain until managed finalization. Keep the source object store alive through
+the reading process. A future in-process materialization teardown needs its own
+validated lifetime boundary; test-fixture finalization is not a production cleanup
+protocol. These are source findings and integration limits, not broader runtime
+qualification.
+
 Explicit commit selection binds committed options and filters. It does not bind
 complete `VersionOracle` projection: the pinned [oracle][projection-context]
 uses the cloud-build ref or current HEAD ref and native HEAD tags;

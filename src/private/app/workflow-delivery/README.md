@@ -100,6 +100,10 @@ consumers. Missing required projects, options or revisions fail; no default or
 full-run fallback is supplied.
 
 This input mapping does not calculate version height or canonical package versions.
+The pinned native legacy `version.txt` reader can retain loose-object handles until
+managed finalization. Keep the source object store alive through the reading process;
+context disposal does not promise immediate repository deletion. Test-fixture
+finalization is not a production cleanup protocol.
 Full projection still requires the clean exact-target/ref/tag/history context in
 the [native NBGV evidence](../../../public/lib/three-workflow-delivery-v3/docs/research/nbgv-native-inputs.md).
 Complete fact assembly, quality expansion and workflow cutover remain pending.

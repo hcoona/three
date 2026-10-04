@@ -275,6 +275,12 @@ public sealed class GitReaderTests(TestContext context)
         {
             if (!System.IO.Directory.Exists(temporary))
                 return;
+            if (OperatingSystem.IsWindows())
+            {
+                // NBGV's legacy version.txt reader leaves loose-object handles to finalization.
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
             foreach (string file in System.IO.Directory.EnumerateFiles(temporary, "*",
                 SearchOption.AllDirectories))
                 File.SetAttributes(file, FileAttributes.Normal);
