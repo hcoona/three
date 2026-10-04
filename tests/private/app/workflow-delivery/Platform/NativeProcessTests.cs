@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Platform;
 
@@ -32,6 +33,38 @@ public sealed class NativeProcessTests
 
         Assert.Contains("exit code 7", error.Message);
         Assert.DoesNotContain("private diagnostic", error.Message);
+    }
+
+    [TestMethod]
+    public async Task RunPreservesLeadingUtf8BomAsNativeData()
+    {
+        const string expected = "\uFEFF雪\0";
+
+        string output = await RunRawOutputAsync(
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(expected)),
+            TestContext.CancellationToken);
+
+        Assert.AreEqual(expected, output);
+    }
+
+    [TestMethod]
+    [DataRow("wyg=")]
+    [DataRow("//5BAA==")]
+    [DataRow("/v8AQQ==")]
+    [DataRow("//4AAA==")]
+    public async Task RunRejectsInvalidUtf8WithoutSwitchingEncoding(string bytes)
+    {
+        await Assert.ThrowsExactlyAsync<DecoderFallbackException>(
+            () => RunRawOutputAsync(bytes, TestContext.CancellationToken));
+    }
+
+    private static Task<string> RunRawOutputAsync(string payload, CancellationToken token)
+    {
+        string script = "$bytes = [Convert]::FromBase64String('" + payload + "'); " +
+            "[Console]::OpenStandardOutput().Write($bytes, 0, $bytes.Length)";
+        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        return NativeProcess.RunAsync("pwsh", Path.GetTempPath(),
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], token);
     }
 
     [TestMethod]

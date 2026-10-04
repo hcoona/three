@@ -4,7 +4,9 @@
 
 This source assessment supports the replacement application's
 [native fact integration](../migration-strategy.md#native-facts-and-first-supported-shapes).
-It compares interfaces at the repository's pinned PNPM 12.8.1. It does not audit
+Its original interface assessment and native observations use PNPM 12.8.1;
+the [12.8.2 pin recheck](#pnpm-1282-pin-recheck) covers the current repository pin.
+It does not audit
 the former V3 implementation or assert runtime coverage. The
 [implementation plan](../migration-strategy.md#native-facts-and-first-supported-shapes)
 records the owner's CLI selection. Maintainers and integration reviewers use this assessment to avoid choosing
@@ -18,7 +20,7 @@ installed-state selection remain different concerns.
 
 ## Immutable Source Basis
 
-All source findings below use PNPM release `v12.8.1`, commit
+Except for the explicitly versioned pin recheck, source findings below use PNPM release `v12.8.1`, commit
 `57e7b9b76ac3a5ef67461093071b2264335a1a01`.
 
 The release [README][release-readme] identifies the v12 CLI as Rust and the
@@ -525,6 +527,39 @@ only if the owner reopens that selection. The integration author checks the
 public contracts and affected scenarios; the next native-reader implementation
 or dependency-upgrade review is the fallback review point.
 
+## PNPM 12.8.2 Pin Recheck
+
+The repository pin changed through [PR #1011](https://github.com/hcoona/three/pull/1011).
+The official [`v12.8.2` tag](https://github.com/pnpm/pnpm/releases/tag/v12.8.2)
+peels to `b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce`. A public-source recheck
+compared 50 selected source and license paths at that commit with the original
+12.8.1 commit. [PR #1013](https://github.com/hcoona/three/pull/1013) retains the
+exact source bytes, retrieval identities, hashes, comparison and independent review.
+The comparison uses exact files rather than absence from a capped change list.
+
+The consumed membership, workspace filter/graph, recursive list, linked-project,
+JSON renderer, wanted-lock selection, package/directory identity and
+`pkg get publishConfig.directory` branches are unchanged in those files.
+In particular, the native [shared materialization cache][recheck-build] and
+[subtree deduplication and depth cutoff][recheck-tree] are byte-identical;
+the [maximum walk depth][recheck-inspection] remains 256. The existing singleton
+queries and depth limitation retain this source basis.
+
+Five selected files changed: CLI config set/delete validation, version and
+child-concurrency defaults, and the restriction on machine-level `globalShims`.
+Inspection found no change in the consumed config read or explicit-override
+branches. This bounded source comparison supports continuing the selected CLI
+composition without a second resolver or metadata declaration.
+
+This is a source finding and integration inference, not a 12.8.2 runtime
+observation or complete upstream equivalence claim. All earlier observations
+remain bound to 12.8.1. Actual C# reader execution and complete revision/ownership
+assembly remain pending; unobserved layouts and identities retain their existing
+limits. No completed native campaign was repeated for this recheck.
+
+[recheck-build]: https://github.com/pnpm/pnpm/blob/b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce/pnpm/crates/deps-inspection/src/build.rs#L74-L90
+[recheck-tree]: https://github.com/pnpm/pnpm/blob/b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce/pnpm/crates/deps-inspection/src/get_tree.rs#L108-L118
+[recheck-inspection]: https://github.com/pnpm/pnpm/blob/b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce/pnpm/crates/deps-inspection/src/lib.rs#L34-L40
 [release-readme]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/README.md
 [workspace-graph]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/workspace-projects-graph/src/create_projects_graph.rs
 [napi-metadata]: https://registry.npmjs.org/@pnpm/napi/12.8.1

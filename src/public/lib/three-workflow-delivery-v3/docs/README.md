@@ -194,6 +194,8 @@ Local observations and the Windows assumption
 are recorded in [contraction feasibility](./research/contraction-feasibility.md).
 The [PNPM native planning assessment](./research/pnpm-native-planning.md) compares
 the pinned v12 library and CLI interfaces for replacement repository analysis.
+The [Git native fact evidence](./research/git-native-facts.md) supports committed
+revision inventory, direct endpoint changes and strict native path decoding.
 
 Load these implementation-baseline records only for their existing code or
 historical-evidence consumers, under the
