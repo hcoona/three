@@ -98,10 +98,11 @@ native filter matching. Workflow assigns input consumers from those answers and
 the native ancestor configuration read boundary; it does not reconstruct
 inheritance or historical version-height evaluation. Preserve native case
 semantics, missing/added/deleted inputs and both revision identities. The
-[source findings and qualification protocol](./research/nbgv-native-inputs.md)
-identify the compile-time official-package delivery candidate and its remaining
-runtime limit. Qualify that delivery before implementing the consumer mapping;
-unresolved necessary inputs still fail planning.
+[source findings and local qualification](./research/nbgv-native-inputs.md)
+identify the compile-time official-package integration and its observed Linux
+delivery boundary. Consumer mapping remains to be implemented and validated;
+unresolved necessary inputs still fail planning. This component evidence does
+not establish complete CI fact assembly.
 
 Use ordinary typed values inside one invocation. Do not require a Provider Request
 Manifest, Fact Bundle, admission token or immutable Repository Model aggregate.

@@ -5,8 +5,10 @@
 Can repository analysis consume native NBGV configuration and path matching
 without another version-file parser, inheritance evaluator or filter language?
 The [middle-level contract](../middle-level-design.md#minimum-facts) consumes this
-research. Source inspection identifies an integration candidate; compilation,
-runtime dependency delivery and complete CI integration remain unqualified.
+research. Source inspection identifies the integration; the
+[local application observation](#local-application-observation) qualifies
+ordinary compilation and runtime dependency delivery on Linux. Complete CI
+integration remains pending.
 
 The source pin is NBGV 3.10.94, commit
 `dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb`, retrieved on 2026-10-03/04.
@@ -74,8 +76,9 @@ pin-specific. Leaf matching does not implement historical commit relevance,
 version-height evaluation or artifact equality. Other project, build, dependency,
 toolchain and quality inputs remain necessary for CI coverage.
 
-These are source-backed integration choices with an untested packaging boundary.
-The protocol below qualifies that boundary before application implementation.
+The source-backed integration choices have the bounded Linux packaging evidence
+below. The accepted protocol qualified that boundary before application
+implementation; it does not establish complete input-consumer mapping.
 A concrete gap stops dependent work for owner disposition; it does not authorize
 a replacement evaluator or a full-run fallback.
 
@@ -132,6 +135,67 @@ refill or repetition of either completed PNPM CLI research budget.
   results and hashes in the governing PR before deleting only generated owned
   state. Leave source caches available for review. No hosted dispatch,
   publication, authentication, account/Environment/access or host-trust changes.
+
+## Local Application Observation
+
+The protocol was accepted at `ab0b6f67afa73e842e3d70d9c09a881c83f6b351`,
+tree `7f7d59119c121f030e73f621980d2ddeb39c244d`, and executed on
+2026-10-04 on Linux x86_64 with SDK 10.0.401, NBGV 3.10.94 and PNPM 12.8.2.
+[PR #1015](https://github.com/hcoona/three/pull/1015) retains the qualification
+packet: exact protocol, native/source identities, fixtures, runner, command
+outputs, original failures, package/deployment inventories and independent
+reviews. These are component integration observations, not complete CI or
+Windows runtime evidence.
+
+The standard official package supplied a compile-time reference through a
+scoped `BeforeTargets="ResolveAssemblyReferences"` target using
+`NerdbankGitVersioningTasksPath`. Local-only restore, ordinary build and
+framework-dependent publish succeeded. The copied publish directory ran with
+the same full native oracle result; its managed dependency bytes matched the
+official package. No dynamic loading or additional helper runtime was needed.
+Restore used only the prepared local feed, with audit disabled; build and
+publish prohibited implicit restore.
+
+Native committed options and filters were exercised across configuration
+absence, addition with inheritance, and deletion. Effective product versions
+were `1.2-beta`, `2.4-beta` and `1.2-beta`. Shared/project inclusion, explicit
+exclusion and unrelated-input exclusion matched the fixture. Historical options
+remained bound to their selected commit with a different HEAD and deliberately
+different working-copy options. Full projection was observed separately at clean
+exact-target HEAD with `release/native-qualification` and its target-associated
+`vqualification` tag; normal and relocated projections were equal.
+
+Two preparation failures remain failures: initial restore could not discover the
+archive under its acquisition-carrier filename, and an incorrectly attempted
+dependent build failed on the same missing package. One bounded correction copied
+the identical prepared archive under NuGet's native flat-feed filename, without
+new acquisition. The historical runner then passed 23 assertions and exited 1
+because the native missing-commit rejection was `GitException`, while the runner
+expected `ArgumentException`. Its original source/output and failed status remain
+retained. A separate read-only verifier confirms the actual explicit native
+rejection; it does not turn that process into a passing run.
+
+The fixture's committed runner and the corrected external assertion runner are
+recorded separately. Two count/descendant assertion corrections preceded native
+evaluation. Build compiled the corrected external runner, then restored the
+committed file before clean exact-target oracle calls; publish reused that build.
+The fixture repository supplied the oracle's product inputs, not the identity of
+the externally compiled assertion runner. The copied production PNPM sources
+were unchanged.
+
+The [PNPM application observation](./pnpm-native-planning.md#actual-reader-and-script-metadata-observation)
+qualifies both actual reader revisions and native script metadata. Six read-only
+retained-output tests passed, covering native options, missing-subject rejection,
+relocated projection, reader relations/scripts, removed-base consumers, exact
+inputs and finite effects. They execute no native operations.
+
+The original cumulative ledger used all five restore/build/publish commands,
+three of four NBGV launches, all three local commits, both reader calls,
+169 of 240 PNPM queries and four of six direct script queries. Combined reader
+wall clock was 10.7984 seconds within 900 seconds. Acceptance retains these spent
+limits; no operation is repeated or budget renewed by this observation.
+Consumer mapping, complete native fact assembly, quality/check expansion and
+workflow cutover still require implementation and their own ordinary validation.
 
 ## Recheck Trigger
 

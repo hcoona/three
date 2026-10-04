@@ -197,8 +197,9 @@ the pinned v12 library and CLI interfaces for replacement repository analysis.
 The [Git native fact evidence](./research/git-native-facts.md) supports committed
 revision inventory, direct endpoint changes and strict native path decoding.
 The [NBGV native-input assessment](./research/nbgv-native-inputs.md) identifies
-public configuration/filter APIs, official-package delivery limits and bounded
-local application qualification for NBGV and the existing PNPM reader.
+public configuration/filter APIs and bounded Linux application observations for
+official-package delivery and the existing PNPM reader. Complete CI integration
+remains pending.
 
 Load these implementation-baseline records only for their existing code or
 historical-evidence consumers, under the
