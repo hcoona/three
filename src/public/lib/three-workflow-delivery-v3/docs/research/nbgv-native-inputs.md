@@ -45,9 +45,20 @@ private reflection, vendoring or additional runtime/helper is proposed.
 Bind and dispose a native managed read-only context at the manifest directory
 and explicit committed subject. Require a real repository, selected commit and
 effective options; no working-copy, missing-repository or default substitution.
-Native `VersionOracle` can compute version projections in that context. If CLI
-and API results are combined, their pin, subject, engine and relevant configuration
-must agree.
+Explicit commit selection binds committed options and filters. It does not bind
+complete `VersionOracle` projection: the pinned [oracle][projection-context]
+uses the cloud-build ref or current HEAD ref and native HEAD tags;
+[the managed context][managed-context] does not retarget those facts to a
+historical selected commit. When that subject is HEAD, the oracle also reads
+working-copy options.
+
+Invoke canonical version/package projection on clean exact-target materialization,
+with HEAD equal to the selected commit, the intended ref or controlled native
+cloud-build context, tags associated with that target, and required history and
+version inputs. A cloud branch override alone cannot correct another HEAD's tag
+fallback. CLI/API agreement includes these ref/tag/worktree inputs as well as the
+pin, subject, engine and configuration. NBGV owns public-release evaluation and
+package suffixes; the application supplies their intended inputs.
 
 Known ancestor `version.txt`/`version.json` search candidates can describe the
 pinned engine's configuration read-input boundary. This is deliberately distinct
@@ -94,10 +105,13 @@ refill or repetition of either completed PNPM CLI research budget.
   The ceiling includes one bounded packaging correction, if necessary. Verify
   normal build and relocated publish execution with an actual public native
   context, effective options, filter calls and `VersionOracle` projection. Check
-  explicit commit binding against a different worktree/HEAD, native inheritance
-  and shared/excluded source association, configuration addition/deletion and a
-  missing required subject. Assert application use of native results rather than
-  re-proving the parser or history algorithm. Retain failures before correction.
+  historical committed-options/filter binding against a different worktree/HEAD,
+  native inheritance and shared/excluded source association, configuration
+  addition/deletion and a missing required subject. Qualify full oracle projection
+  separately on clean exact-target materialization with the intended ref and
+  target's native tags; the different-HEAD options test cannot establish it.
+  Assert application use of native results rather than re-proving the parser or
+  history algorithm. Retain failures before correction.
 - **PNPM operations:** at most two complete calls to the accepted C# graph reader,
   one per fixture revision, with a combined ceiling of 240 native queries and
   15 minutes. Each native query retains the reader's 30-second deadline/output
@@ -143,3 +157,5 @@ renews spent budgets nor supplies runtime evidence by source comparison alone.
 [targets]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/Nerdbank.GitVersioning.Tasks/build/Nerdbank.GitVersioning.Common.targets
 [core]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/NerdBank.GitVersioning/Nerdbank.GitVersioning.csproj
 [cake]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/Cake.GitVersioning/Cake.GitVersioning.csproj#L55-L80
+[projection-context]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/NerdBank.GitVersioning/VersionOracle.cs#L44-L117
+[managed-context]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/NerdBank.GitVersioning/Managed/ManagedGitContext.cs#L50-L67
