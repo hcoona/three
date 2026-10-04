@@ -208,7 +208,7 @@ public sealed class GitReaderTests(TestContext context)
     private static string[] Paths(GitRevision revision) =>
         revision.Entries.Select(entry => entry.Path).ToArray();
 
-    private sealed class GitFixture(CancellationToken token) : IDisposable
+    internal sealed class GitFixture(CancellationToken token) : IDisposable
     {
         private readonly string temporary = Path.Combine(Path.GetTempPath(),
             "workflow git facts " + Guid.NewGuid().ToString("N"));

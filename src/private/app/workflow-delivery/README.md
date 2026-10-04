@@ -11,8 +11,8 @@ architecture authority.
 ## Current Scope
 
 The application selects CI checks from supplied, resolved repository facts and
-collects candidate-bound check results. Its internal PNPM graph and Git readers
-supply inputs to repository analysis. A quality-selection reader resolves existing
+collects candidate-bound check results. Its internal PNPM graph/script, Git and
+NBGV input readers supply inputs to repository analysis. A quality-selection reader resolves existing
 project declarations. Complete native fact assembly, Git event resolution,
 preset/check expansion, check execution and Release commands remain
 pending. Existing workflows still use their current implementations.
@@ -65,11 +65,44 @@ retains the CLI evidence limits. The
 [actual application observation](../../../public/lib/three-workflow-delivery-v3/docs/research/pnpm-native-planning.md#actual-reader-and-script-metadata-observation)
 qualifies both retained fixture revisions through this reader on Linux with
 PNPM 12.8.2. The probe separately observed native present/absent script metadata
-through direct process calls; script discovery is not implemented in this graph
-reader. Ordinary reader tests also use controlled queries and retained-output replay.
+through direct process calls. Script discovery is a separate component below.
+Ordinary reader tests also use controlled queries and retained-output replay.
 Complete ownership/shared-input expansion, quality/version facts, base/candidate
 assembly and caller cutover are still pending. The root project is retained as
 `.` here; this graph is not directly accepted as the CI core's project facts.
+
+### Native Script and Version Inputs
+
+[`PnpmScriptReader`](Repository/PnpmScriptReader.cs) queries `pkg get scripts --json`
+for an already discovered source directory, including root `.`. It returns script
+names and opaque string values. Absent output or an empty map means no scripts;
+malformed, nonstring or duplicate values fail the read. Registered quality checks
+will select names and execute them through `pnpm run`. This reader never parses
+or executes the command text, and adds no script declaration.
+
+[`NbgvInputReader`](Repository/NbgvInputReader.cs) consumes an exact `GitRevision`
+and project directory. The existing global NBGV package pin supplies the official
+managed assembly through its imported task path and normal assembly resolution.
+A read-only native context selects committed effective options, including when
+HEAD and working-copy options differ. Native filters and repository case behavior
+select inventory paths; absent or exclusion-only filters use NBGV's implicit
+inclusion. Native descendant matching retains relevant gitlink coordinates
+without traversing submodule contents. Later fact assembly must still establish
+supported ownership and input coverage for those native entry kinds.
+
+The result keeps the source commit, consumer directory, existing selected paths
+and ancestor `version.txt`/`version.json` search candidates, including absent
+candidates. Existing configuration paths remain inputs even when value overrides
+or path exclusions hide them. These candidates describe the pinned native search
+boundary, not a reconstructed inheritance tree or exact read trace. The caller
+reads both revisions and joins added/deleted configurations and removed-project
+consumers. Missing required projects, options or revisions fail; no default or
+full-run fallback is supplied.
+
+This input mapping does not calculate version height or canonical package versions.
+Full projection still requires the clean exact-target/ref/tag/history context in
+the [native NBGV evidence](../../../public/lib/three-workflow-delivery-v3/docs/research/nbgv-native-inputs.md).
+Complete fact assembly, quality expansion and workflow cutover remain pending.
 
 ### Git Revision and Path Component
 
@@ -188,7 +221,9 @@ dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests
 ```
 
 Tests cover selection, result completeness, the JSON CLI boundary, PNPM identity
-adaptation, quality declaration traversal and native process failure/cancellation. Process tests use the
+and opaque script adaptation, committed NBGV input mapping, quality declaration
+traversal and native process failure/cancellation. NBGV tests use isolated local Git
+objects; PNPM metadata tests use controlled native responses. Process tests use the
 repository's PowerShell tool; PNPM replay tests execute no native PNPM query.
 These tests do not qualify complete native fact collectors. Each
 native integration still needs the migration plan's concrete coverage and caller
