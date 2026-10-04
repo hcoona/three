@@ -13,8 +13,9 @@ architecture authority.
 The application selects CI checks from supplied, resolved repository facts and
 collects candidate-bound check results. Its internal PNPM graph/script, Git and
 NBGV input readers supply inputs to repository analysis. A quality-selection reader resolves existing
-project declarations. Complete native fact assembly, Git event resolution,
-preset/check expansion, check execution and Release commands remain
+project declarations, and a concrete Node component expands its registered project
+checks. Complete native fact assembly, Git event resolution, artifact/check
+expansion, check execution and Release commands remain
 pending. Existing workflows still use their current implementations.
 
 New ecosystem integrations follow the HLD's
@@ -106,7 +107,7 @@ context disposal does not promise immediate repository deletion. Test-fixture
 finalization is not a production cleanup protocol.
 Full projection still requires the clean exact-target/ref/tag/history context in
 the [native NBGV evidence](../../../public/lib/three-workflow-delivery-v3/docs/research/nbgv-native-inputs.md).
-Complete fact assembly, quality expansion and workflow cutover remain pending.
+Complete fact assembly, other quality presets and workflow cutover remain pending.
 
 ### Git Revision and Path Component
 
@@ -147,6 +148,16 @@ declarations or failed reads. It does not resolve registered preset semantics or
 invent checks. The caller binds the materialized revision and expands the selected
 preset into concrete work; this component alone does not complete CI facts or
 switch any workflow.
+
+[`NodeQualityChecks`](Repository/NodeQualityChecks.cs) expands the existing
+`node/hcoona-release-smoke-npm-v1` selection into its required project build and
+test checks. Discovered source directories identify targets; script bodies remain
+opaque, with PNPM owning execution. Unknown or absent selections and missing
+required script names fail. Root metadata cannot become a runnable project.
+The concrete checks use the default variant and Ubuntu runner with no prerequisite;
+the registered test contract does not consume a build output. Artifact variants,
+other presets, quality-input consumer mapping and complete fact assembly remain
+pending. This component creates no new project adoption or workflow caller.
 
 ## Commands and Transfers
 
