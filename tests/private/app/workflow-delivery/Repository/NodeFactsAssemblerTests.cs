@@ -57,6 +57,97 @@ public sealed class NodeFactsAssemblerTests
     }
 
     [TestMethod]
+    [DataRow("120000", "blob")]
+    [DataRow("160000", "commit")]
+    public void AssembleRejectsNonregularOperationInput(string mode, string objectType)
+    {
+        NodeRevisionInputs inputs = NodeScenario.Inputs(NodeScenario.Candidate,
+            NodeScenario.Project("src/a"));
+        inputs = inputs with
+        {
+            OperationInputs = [new(".ignore", ["src/a"])],
+            Revision = inputs.Revision with
+            {
+                Entries = [.. inputs.Revision.Entries, new(".ignore", mode, objectType)],
+            },
+        };
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            NodeFactsAssembler.Assemble(inputs));
+
+        Assert.Contains(".ignore", error.Message);
+    }
+
+    [TestMethod]
+    [DataRow("100644")]
+    [DataRow("100755")]
+    public async Task PlanOperationInputsRetainAbsentCandidatesAndRegularConsumers(string mode)
+    {
+        NodeRevisionInputs basis = WithOperations(NodeScenario.Basis);
+        NodeRevisionInputs candidate = WithOperations(NodeScenario.Candidate);
+        RepositoryFacts facts = NodeFactsAssembler.Assemble(candidate);
+
+        foreach (string path in new[] { "biome.jsonc", ".ignore" })
+            Assert.AreEqual("src/a", Assert.ContainsSingle(facts.SharedInputs.Single(input =>
+                input.Path == path).Consumers));
+        CiPlan plan = await NodeScenario.Plan(basis, candidate, "biome.jsonc");
+
+        AssertProjectTargets(plan, "src/a");
+        Assert.HasCount(2, plan.Checks);
+        foreach (PlannedCheck check in plan.Checks)
+            Assert.IsNull(check.Work.Package);
+
+        NodeRevisionInputs WithOperations(string revision)
+        {
+            NodeRevisionInputs inputs = NodeScenario.Inputs(revision,
+                NodeScenario.Project("src/a"), NodeScenario.Project("src/b"));
+            return inputs with
+            {
+                OperationInputs = [new("biome.jsonc", ["src/a"]), new(".ignore", ["src/a"])],
+                Revision = inputs.Revision with
+                {
+                    Entries = [.. inputs.Revision.Entries, new("biome.jsonc", mode, "blob")],
+                },
+            };
+        }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task PlanAddedOrDeletedOperationInputKeepsEndpointConsumers(bool deleted)
+    {
+        NodeRevisionInputs basis = NodeScenario.Inputs(NodeScenario.Basis,
+            NodeScenario.Project("src/a"), NodeScenario.Project("src/b")) with
+        { OperationInputs = [new(".ignore", ["src/a"])] };
+        NodeRevisionInputs candidate = NodeScenario.Inputs(NodeScenario.Candidate,
+            NodeScenario.Project("src/a"), NodeScenario.Project("src/b")) with
+        { OperationInputs = [new(".ignore", ["src/a"])] };
+        NodeRevisionInputs present = deleted ? basis : candidate;
+        present = present with
+        {
+            Revision = present.Revision with
+            {
+                Entries = [.. present.Revision.Entries, NodeScenario.File(".ignore")],
+            },
+        };
+        if (deleted) basis = present;
+        else candidate = present;
+
+        CiPlan plan = await NodeScenario.Plan(basis, candidate, ".ignore");
+
+        AssertProjectTargets(plan, "src/a");
+        Assert.HasCount(2, plan.Checks);
+        foreach (PlannedCheck check in plan.Checks)
+        {
+            Assert.Contains(new SelectionReason(".ignore", NodeScenario.Basis, "src/a"),
+                check.Reasons);
+            Assert.Contains(new SelectionReason(".ignore", NodeScenario.Candidate, "src/a"),
+                check.Reasons);
+        }
+    }
+
+    [TestMethod]
     public async Task PlanDeletedProducerKeepsSurvivingConsumerWithoutOldPackageVersion()
     {
         NodeRevisionInputs basis = NodeScenario.Units(NodeScenario.Inputs(NodeScenario.Basis,
@@ -192,12 +283,22 @@ public sealed class NodeFactsAssemblerTests
     }
 
     [TestMethod]
-    [DataRow("120000", "blob")]
-    [DataRow("160000", "commit")]
-    public void AssembleRejectsUnsupportedRelevantSourceEntry(string mode, string objectType)
+    [DataRow("120000", "blob", false)]
+    [DataRow("160000", "commit", false)]
+    [DataRow("120000", "blob", true)]
+    [DataRow("160000", "commit", true)]
+    public void AssembleRejectsUnsupportedRelevantSourceEntry(string mode, string objectType,
+        bool releaseEntry)
     {
         NodeRevisionInputs inputs = NodeScenario.Inputs(NodeScenario.Candidate,
             NodeScenario.Project("src/a"));
+        if (releaseEntry)
+        {
+            ReleaseUnitDeclaration unit = NodeScenario.Unit("product", ("build", "src/a"));
+            unit = unit with
+            { Builds = [unit.Builds[0] with { EntryPoint = "src/a/native-entry" }] };
+            inputs = NodeScenario.Units(inputs, unit);
+        }
         inputs = inputs with
         {
             Revision = inputs.Revision with
@@ -433,23 +534,98 @@ public sealed class NodeFactsAssemblerTests
     }
 
     [TestMethod]
-    public async Task PlanUnselectedUnsupportedDefinitionDoesNotPreventOrdinaryChange()
+    [DataRow("node/unsupported-v1", "package.json")]
+    [DataRow("custom/unsupported-v1", ".")]
+    [DataRow("custom/unsupported-v1", "generated")]
+    public async Task PlanUnselectedUnsupportedDefinitionDoesNotPreventOrdinaryChange(
+        string definition, string entryPoint)
     {
         NodeRevisionInputs basis = NodeScenario.Inputs(NodeScenario.Basis,
             NodeScenario.Project("src/a"), NodeScenario.Project("src/b"));
         ReleaseUnitDeclaration unit = NodeScenario.Unit("other", ("build", "src/b"));
         unit = unit with
         {
-            Builds = [unit.Builds[0] with { Definition = "node/unsupported-v1" }],
+            SourcePath = "src/b/workflow-delivery.release-unit.yml",
+            Builds = [unit.Builds[0] with { Definition = definition, EntryPoint = entryPoint }],
         };
         NodeRevisionInputs candidate = NodeScenario.Units(
             NodeScenario.Inputs(NodeScenario.Candidate,
                 NodeScenario.Project("src/a"), NodeScenario.Project("src/b")), unit);
 
-        CiPlan plan = await NodeScenario.Plan(basis, candidate, "src/a/index.js");
+        candidate = candidate with
+        {
+            Revision = candidate.Revision with
+            {
+                Entries = [.. candidate.Revision.Entries,
+                    NodeScenario.File("src/b/generated/input.txt")],
+            },
+        };
+        RepositoryFacts facts = NodeFactsAssembler.Assemble(candidate);
+        Assert.AreEqual("other", facts.Projects.Single(project => project.Id == "src/b")
+            .ReleaseUnit);
+        Assert.AreEqual("src/b", Assert.ContainsSingle(facts.SharedInputs.Single(input =>
+            input.Path == unit.SourcePath).Consumers));
+        CiPlan plan = await NodeFactsAssembler.PlanAsync(basis, candidate, ["src/a/index.js"],
+            false, (project, _) => project.Directory == "src/a"
+                ? Task.FromResult(NodeScenario.Scripts(project))
+                : throw new InvalidOperationException("Unselected directory build hydrated."),
+            (_, _) => throw new InvalidOperationException("Unselected package version hydrated."),
+            CancellationToken.None);
 
         AssertProjectTargets(plan, "src/a");
         Assert.HasCount(2, plan.Checks);
+        foreach (PlannedCheck check in plan.Checks)
+            Assert.IsNull(check.Work.Package);
+    }
+
+    [TestMethod]
+    [DataRow("src/b/index.js")]
+    [DataRow("src/b/workflow-delivery.release-unit.yml")]
+    public async Task PlanSelectedDirectoryEntryRejectsUnsupportedBuild(string changedPath)
+    {
+        ReleaseUnitDeclaration unit = NodeScenario.Unit("other", ("build", "src/b"));
+        unit = unit with
+        {
+            SourcePath = "src/b/workflow-delivery.release-unit.yml",
+            Builds = [unit.Builds[0] with
+            { Definition = "custom/unsupported-v1", EntryPoint = "." }],
+        };
+        NodeRevisionInputs basis = NodeScenario.Units(NodeScenario.Inputs(NodeScenario.Basis,
+            NodeScenario.Project("src/b")), unit);
+        NodeRevisionInputs candidate = NodeScenario.Units(
+            NodeScenario.Inputs(NodeScenario.Candidate, NodeScenario.Project("src/b")), unit);
+
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            NodeScenario.Plan(basis, candidate, changedPath));
+
+        Assert.Contains("other/build", error.Message);
+    }
+
+    [TestMethod]
+    public void AssembleRejectsMissingReleaseEntry()
+    {
+        ReleaseUnitDeclaration unit = NodeScenario.Unit("other", ("build", "src/b"));
+        unit = unit with
+        {
+            SourcePath = "src/b/workflow-delivery.release-unit.yml",
+            Builds = [unit.Builds[0] with
+            { Definition = "custom/unsupported-v1", EntryPoint = "missing" }],
+        };
+        NodeRevisionInputs inputs = NodeScenario.Units(
+            NodeScenario.Inputs(NodeScenario.Candidate, NodeScenario.Project("src/b")), unit);
+        inputs = inputs with
+        {
+            Revision = inputs.Revision with
+            {
+                Entries = [.. inputs.Revision.Entries,
+                    NodeScenario.File("src/b/missing-other/input.txt")],
+            },
+        };
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            NodeFactsAssembler.Assemble(inputs));
+
+        Assert.Contains("src/b/missing", error.Message);
     }
 
     [TestMethod]

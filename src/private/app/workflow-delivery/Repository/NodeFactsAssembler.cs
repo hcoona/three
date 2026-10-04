@@ -97,6 +97,9 @@ internal static class NodeFactsAssembler
         var membership = new Dictionary<string, string>(StringComparer.Ordinal);
         var shared = new List<SharedInput>(NodeInputConsumers.Map(inputs.Revision, directories,
             inputs.Versions, inputs.Quality, inputs.Graph.LocalInputs));
+        foreach (SharedInput input in inputs.OperationInputs)
+            if (entries.ContainsKey(input.Path))
+                RequireFile(input.Path);
         shared.AddRange(inputs.OperationInputs);
         foreach (PnpmProject project in native.Values.Where(project =>
             project.Directory != "." && project.PublishDirectory is not null))
@@ -142,7 +145,9 @@ internal static class NodeFactsAssembler
                             "Unresolved Node release-unit entry: " + entry);
                     continue;
                 }
-                RequireFile(entry);
+                if (entries.ContainsKey(entry) || !inputs.Revision.Entries.Any(item =>
+                    item.Path.StartsWith(entry + "/", StringComparison.Ordinal)))
+                    RequireFile(entry);
                 members.Add(owner);
                 if (membership.TryGetValue(owner, out string? previous) && previous != unit.Id)
                     throw new InvalidDataException(
