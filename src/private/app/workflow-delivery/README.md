@@ -240,9 +240,9 @@ Each artifact check transfers its unit/declaration/build/definition, source/entr
 expected native version and complete outputs in `package`.
 
 Planning does not execute pack or qualify its native composition. The executor
-below still needs bounded native qualification before caller cutover. The current
-fixture's dot-only version filters also need review of genuine shared version
-inputs before transition. Five other Node projects have no adopted new quality
+below still needs bounded native qualification before caller cutover. The fixture's
+native NBGV filters include its source and shared package/workspace/lock, toolchain
+and license inputs. Five other Node projects have no adopted new quality
 preset, and unmigrated/cross-group callers retain their current owners.
 
 ### Node Check Execution
@@ -268,6 +268,17 @@ and installed consumption each require successful pack and remain independent
 checks. Failed prerequisites produce skipped results; cancellation, deadlines,
 command failure and invalid outputs remain unsuccessful. There is no arbitrary
 task graph scheduler or interpretation of script bodies.
+
+Build and source-test invocations use PNPM's native
+`--config.verify-deps-before-run=false` setting. The caller explicitly prepares
+locked dependencies; execution does not automatically inspect freshness or
+reinstall the workspace after ordinary version stamping. This is the maintained
+[PNPM contract](https://github.com/pnpm/pnpm/blob/b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce/pnpm/crates/cli/src/cli_args/verify_deps.rs#L78),
+not a script-effects or network boundary. Selected scripts can still invoke
+installation themselves, and the caller controls ambient native configuration.
+The native `pnpm_config_verify_deps_before_run` recursion variable can override
+the CLI setting. The recipe's contents/consumer checks and explicit native
+consumer install remain separate operations.
 
 Each successful native pack retains its complete original tarball under a fresh
 build directory, with unit/build/output association, byte size and SHA-256.

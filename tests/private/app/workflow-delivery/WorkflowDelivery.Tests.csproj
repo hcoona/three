@@ -8,5 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="../../../../src/private/app/workflow-delivery/WorkflowDelivery.csproj" />
     <EmbeddedResource Include="Repository/fixtures/*.json" />
+    <EmbeddedResource Include="../../../../src/public/lib/hcoona-release-smoke-npm/version.json"
+                      LogicalName="NpmFixtureVersionConfiguration" />
   </ItemGroup>
 </Project>

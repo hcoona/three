@@ -260,6 +260,57 @@ public sealed class NbgvInputReaderTests(TestContext context)
         Assert.ThrowsExactly<OperationCanceledException>(() => new NbgvInputReader(".").Read(
             new("HEAD", []), "product", cancellation.Token));
     }
+
+    [TestMethod]
+    [DataRow("package.json")]
+    [DataRow("pnpm-workspace.yaml")]
+    [DataRow("pnpm-lock.yaml")]
+    [DataRow("mise.toml")]
+    [DataRow("mise.lock")]
+    [DataRow("global.json")]
+    [DataRow("LICENSE")]
+    public async Task NpmFixtureVersionIncludesSharedInputsAndIgnoresUnrelatedCommits(
+        string sharedInput)
+    {
+        const string product = "src/public/lib/hcoona-release-smoke-npm";
+        using Stream configuration = typeof(NbgvInputReaderTests).Assembly
+            .GetManifestResourceStream("NpmFixtureVersionConfiguration")!;
+        using var text = new StreamReader(configuration);
+        string options = await text.ReadToEndAsync(context.CancellationToken);
+        using var repo = await GitReaderTests.GitFixture.CreateAsync(context.CancellationToken);
+        await repo.GitAsync("symbolic-ref", "HEAD", "refs/heads/main");
+        await repo.SetAsync(product + "/version.json", options);
+        await repo.SetAsync(product + "/source.js");
+        await repo.SetAsync(sharedInput, "original shared input");
+        string basis = await repo.CommitAsync();
+        string before = await VersionAsync(basis);
+
+        await repo.SetAsync("unrelated/source.js");
+        string unrelated = await repo.CommitAsync(basis);
+        string unchanged = await VersionAsync(unrelated);
+        await repo.SetAsync(sharedInput, "changed shared input");
+        string affected = await repo.CommitAsync(unrelated);
+        string after = await VersionAsync(affected);
+        GitRevision revision = await new GitReader(repo.Directory).ReadAsync(affected,
+            context.CancellationToken);
+        NbgvInputs inputs = new NbgvInputReader(repo.Directory).Read(revision, product,
+            context.CancellationToken);
+
+        Assert.AreEqual(before, unchanged);
+        Assert.AreNotEqual(unchanged, after);
+        Assert.Contains(sharedInput, inputs.Paths);
+        Assert.DoesNotContain("unrelated/source.js", inputs.Paths);
+
+        async Task<string> VersionAsync(string commit)
+        {
+            await repo.GitAsync("reset", "--hard", commit);
+            GitRevision selected = await new GitReader(repo.Directory).ReadAsync(commit,
+                context.CancellationToken);
+            return new NbgvInputReader(repo.Directory).NpmVersion(selected, product,
+                context.CancellationToken);
+        }
+    }
+
     [TestMethod]
     public async Task NpmVersionProjectsFixedPublicReleaseVersionAtCleanSelectedHead()
     {
