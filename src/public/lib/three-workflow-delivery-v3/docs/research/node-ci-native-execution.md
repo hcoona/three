@@ -11,6 +11,12 @@ The accepted contraction Wave supplies the effects ceiling; protected delivery
 of this concrete protocol is required before its first sequence. Earlier npm,
 NuGet, Python, Ruby and native-reader campaigns remain completed and spent.
 
+This protocol bounds one fresh successor generation. The stopped qualification
+under `d9e68f9a45099468381b5ebebf767c6813fac402` remains failed and cannot resume.
+Its evidence and the owner's acceptance of one trusted-lock successor are retained
+in the delivery work carrier. The successor keeps the same effects and finite
+ceilings; no further generation follows failure or completion.
+
 ## Exact Subject and Environment
 
 The executor must first be merged with the independently reviewed source tree
@@ -76,8 +82,13 @@ exit barrier. The exact native isolation recipe must be independently reviewed
 before merge.
 
 Prepare dependencies once per checkout with the unchanged synchronized PNPM lock,
-`install --frozen-lockfile --offline --ignore-scripts`, using a separate prepared
+`install --frozen-lockfile --offline --ignore-scripts --trust-lockfile`, using a separate prepared
 public development-dependency store. Do not expose it as a consumer store.
+The repository's accepted synchronized locks are trusted inputs. PNPM's native
+[`--trust-lockfile` contract][trusted-lock-source] skips Registry-metadata
+supply-chain verification for this preparation. This qualification does not test
+that verification or certify arbitrary lockfiles. Frozen-lock and package
+integrity semantics remain native; consumer installation remains unchanged.
 Preparation may reuse already prepared public package bytes, but no source links,
 version declaration or lock may be invented. Missing prepared dependencies stop.
 For controller compilation, use the existing locked .NET package/SDK identities
@@ -216,7 +227,7 @@ store is read-only. Pass `--store-dir <owned>/development-store` consistently
 to preparation installs; native PNPM supplies its supported `v11` suffix.
 Prior read-only size inspection found 503 MiB, below the 4 GiB total owned-state
 ceiling; actual preparation records its copied state and stops on a crossed bound.
-Native frozen offline/script-disabled PNPM install uses that owned development
+Native frozen offline/script-disabled/trusted-lock PNPM install uses that owned development
 store explicitly in each checkout. Consumer stores remain separate and empty.
 Do not link/copy installed project directories into consumers, mutate the host
 store, fetch replacements or fabricate native store metadata.
@@ -278,8 +289,9 @@ An existing root or pending/ambiguous invocation cannot be resumed or replaced.
 The carrier is disposable experiment code, not a shipped cache, policy or
 execution service. It consumes the existing plan and declarations unchanged.
 
-No native product operation has executed while preparing this protocol. Source
-reviews establish prospective consistency, not locked-restore, composition or
+Source reviews establish prospective consistency, not locked-restore, composition or
 caller-cutover success. The original draft and all predecessor findings remain
 immutable in the work carrier. Only bounded observations and their independent
 review can establish the result.
+
+[trusted-lock-source]: https://github.com/pnpm/pnpm/blob/b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce/pnpm/crates/config/src/settings.rs#L1518-L1534
