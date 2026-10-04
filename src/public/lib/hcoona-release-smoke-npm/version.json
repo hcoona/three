@@ -1,7 +1,16 @@
 {
   "$schema": "https://raw.githubusercontent.com/dotnet/Nerdbank.GitVersioning/main/src/NerdBank.GitVersioning/version.schema.json",
   "version": "1.0.0-beta.{height}",
-  "pathFilters": ["."],
+  "pathFilters": [
+    ".",
+    ":/package.json",
+    ":/pnpm-workspace.yaml",
+    ":/pnpm-lock.yaml",
+    ":/mise.toml",
+    ":/mise.lock",
+    ":/global.json",
+    ":/LICENSE"
+  ],
   "gitCommitIdShortFixedLength": 7,
   "gitCommitIdShortAutoMinimum": 7,
   "publicReleaseRefSpec": ["^refs/heads/main$", "^refs/tags/release/hcoona-release-smoke-npm/v.+$"],

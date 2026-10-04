@@ -8,5 +8,16 @@
   <ItemGroup>
     <ProjectReference Include="../../../../src/private/app/workflow-delivery/WorkflowDelivery.csproj" />
     <EmbeddedResource Include="Repository/fixtures/*.json" />
+    <EmbeddedResource Include="../../../../src/public/lib/hcoona-release-smoke-npm/version.json"
+                      LogicalName="NpmFixtureVersionConfiguration" />
   </ItemGroup>
+  <Target Name="ReferenceOfficialNbgv" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(NerdbankGitVersioningTasksPath)' == ''" Text="The official NBGV task path is unavailable." />
+    <ItemGroup>
+      <Reference Include="Nerdbank.GitVersioning">
+        <HintPath>$(NerdbankGitVersioningTasksPath)Nerdbank.GitVersioning.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+    </ItemGroup>
+  </Target>
 </Project>

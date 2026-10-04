@@ -448,7 +448,8 @@ public sealed class NodeExecutionTests(TestContext context)
             Assert.AreEqual(300, source.Command.DeadlineSeconds);
             string script = source.Key.Check == NodeExecutionFixture.Build ? "build" : "test";
             string[] arguments = ["--dir", Path.Combine(fixture.Repository.Directory,
-                NodeExecutionFixture.Source), "run", script];
+                NodeExecutionFixture.Source), "--config.verify-deps-before-run=false",
+                "run", script];
             CollectionAssert.AreEqual(arguments, source.Command.Arguments);
         }
         NativeCommand install = fixture.Commands.Single(item => item.Arguments.Contains("install"));

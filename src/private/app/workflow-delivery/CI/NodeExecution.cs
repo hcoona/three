@@ -71,7 +71,7 @@ internal static class NodeExecution
             string script = check.Key.Check == Build ? "build" : "test";
             await CompleteAsync(check, () => CommandAsync(check,
                 new("pnpm", checkout, ["--dir", Path.Combine(checkout, check.Key.Target),
-                    "run", script], 300)));
+                    "--config.verify-deps-before-run=false", "run", script], 300)));
         }
         int index = 0;
         foreach (PlannedCheck item in plan.Checks.Where(item => item.Work.Key.Check == Pack))
