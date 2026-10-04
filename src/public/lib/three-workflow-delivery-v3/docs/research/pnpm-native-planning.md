@@ -527,6 +527,26 @@ only if the owner reopens that selection. The integration author checks the
 public contracts and affected scenarios; the next native-reader implementation
 or dependency-upgrade review is the fallback review point.
 
+## Native Script Metadata Candidate
+
+The pinned Rust `pkg get` implementation uses native manifest parsing and field
+selection. Selecting one field with `--json` returns that native value; an absent
+field produces no output. Recursive results are keyed by package name, which is
+unsuitable for general directory identity association. These are source findings
+from [`pkg.rs`, lines 175–236][pkg-command], not runtime observations.
+The same file at the repository-selected 12.8.2 commit
+`b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce` was retrieved on 2026-10-04 and is
+byte-identical: SHA-256
+`0555e7feb6067d7425a6fc40763806168597e9b41fc4e580b2424c63dd80a6be`.
+
+Query `pnpm --dir <already-discovered-directory> pkg get scripts --json` for
+registered native check presence. Treat script text as opaque; selected execution
+uses `pnpm run`. Existing quality YAML selects registered contracts. No shell
+dependency parser, duplicate script declaration or YAML command language is added.
+The [application qualification protocol](./nbgv-native-inputs.md#bounded-local-application-qualification-protocol)
+includes finite actual metadata queries and execution of the accepted graph reader;
+the completed CLI research protocols do not authorize those new runs.
+
 ## PNPM 12.8.2 Pin Recheck
 
 The repository pin changed through [PR #1011](https://github.com/hcoona/three/pull/1011).

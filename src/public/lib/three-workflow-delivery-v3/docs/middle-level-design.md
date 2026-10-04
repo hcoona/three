@@ -93,6 +93,16 @@ tests joining resolved coordinates to discovered roots and native publish
 directories without a second dependency declaration. Its evidence limits remain
 separate from acceptance of an implemented reader.
 
+For NBGV, use the pinned public managed API for committed effective options and
+native filter matching. Workflow assigns input consumers from those answers and
+the native ancestor configuration read boundary; it does not reconstruct
+inheritance or historical version-height evaluation. Preserve native case
+semantics, missing/added/deleted inputs and both revision identities. The
+[source findings and qualification protocol](./research/nbgv-native-inputs.md)
+identify the compile-time official-package delivery candidate and its remaining
+runtime limit. Qualify that delivery before implementing the consumer mapping;
+unresolved necessary inputs still fail planning.
+
 Use ordinary typed values inside one invocation. Do not require a Provider Request
 Manifest, Fact Bundle, admission token or immutable Repository Model aggregate.
 When native evaluation requires another process or runner, transfer the relevant
