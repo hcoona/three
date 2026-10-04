@@ -200,6 +200,9 @@ The [NBGV native-input assessment](./research/nbgv-native-inputs.md) identifies
 public configuration/filter APIs and bounded Linux application observations for
 official-package delivery and the existing PNPM reader. Complete CI integration
 remains pending.
+The [Node CI native execution protocol](./research/node-ci-native-execution.md)
+bounds the complete selected Node build, package and fresh-consumer composition
+before caller cutover; source review alone does not establish its success.
 
 Load these implementation-baseline records only for their existing code or
 historical-evidence consumers, under the
