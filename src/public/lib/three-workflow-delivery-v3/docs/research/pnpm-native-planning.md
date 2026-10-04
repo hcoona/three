@@ -571,11 +571,47 @@ Inspection found no change in the consumed config read or explicit-override
 branches. This bounded source comparison supports continuing the selected CLI
 composition without a second resolver or metadata declaration.
 
-This is a source finding and integration inference, not a 12.8.2 runtime
-observation or complete upstream equivalence claim. All earlier observations
-remain bound to 12.8.1. Actual C# reader execution and complete revision/ownership
-assembly remain pending; unobserved layouts and identities retain their existing
-limits. No completed native campaign was repeated for this recheck.
+This recheck is a source finding and integration inference, not a runtime
+observation or complete upstream equivalence claim. Earlier CLI observations
+remain bound to 12.8.1; the separate application observation below uses 12.8.2.
+Unobserved layouts and identities retain their existing limits. No completed
+native campaign was repeated for this source recheck.
+
+## Actual Reader and Script Metadata Observation
+
+The separately accepted
+[application protocol and observation](./nbgv-native-inputs.md#local-application-observation)
+qualified the actual C# `PnpmGraphReader` and `NativeProcess` with PNPM 12.8.2
+on Linux x86_64 on 2026-10-04. Exact accepted production source bytes were copied
+and compiled into the disposable probe. Both calls used copies of the retained
+PR #1009 directory-join fixtures and unchanged native locks; no install or lock
+regeneration occurred. One existing base manifest gained only an opaque script
+map for the protocol's present-field case. Its original/prepared bytes and exact
+delta are retained; dependencies and identities were unchanged.
+
+The base returned 27 native workspace projects and the candidate 26, including
+root `.`. Fixture assertions passed for resolved source/publish-directory joins,
+aliases, peer contexts and local inputs. A local tarball remained an input rather
+than becoming a same-named workspace producer. Unrelated work stayed excluded;
+unioning both revisions retained removed file, transitive-output and deleted
+project consumer relations. Four native `pkg get scripts --json` queries returned
+the exact opaque present map or no output for absent fields; scripts were not
+executed.
+
+The actual reader's 169 native queries include those four metadata queries.
+Combined reader wall clock was 10.7984 seconds. Full query arguments, stdout,
+stderr, budgets, graph results and assertions are retained in the qualification
+packet linked from the NBGV observation. The evidence-only query recorder
+launched the pinned CLI and preserved its outputs; production query handling and
+source were unchanged.
+
+These observations qualify the tested reader composition and present/absent
+script shapes at 12.8.2. They do not relabel earlier 12.8.1 observations or
+establish complete ownership/shared-input assembly, preset expansion, execution
+or caller cutover. Root graph membership still needs input-consumer adaptation
+before ordinary CI project facts. Unobserved layouts retain their limits;
+required unresolved scope remains a planning failure. Both complete reader-call
+slots are spent, and evidence acceptance grants no repetition.
 
 [recheck-build]: https://github.com/pnpm/pnpm/blob/b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce/pnpm/crates/deps-inspection/src/build.rs#L74-L90
 [recheck-tree]: https://github.com/pnpm/pnpm/blob/b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce/pnpm/crates/deps-inspection/src/get_tree.rs#L108-L118
