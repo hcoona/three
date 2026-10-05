@@ -18,7 +18,9 @@ selected project and package checks. A concrete Node executor runs the adopted
 quality recipe and retains every check result and original package output.
 The adopted fixture has a bounded Linux
 [native build/package/consumer observation](../../../public/lib/three-workflow-delivery-v3/docs/research/node-ci-native-execution.md).
-Git event mapping and Release commands remain pending.
+The GitHub event comparison command reads native payloads and resolves comparison
+endpoints under the MLD's finite mapping. Hosted event/transfer integration,
+group integration, other quality presets and Release commands remain pending.
 Existing workflows still use their current implementations.
 
 New ecosystem integrations follow the HLD's
@@ -243,7 +245,7 @@ expected native version and complete outputs in `package`.
 
 Planning does not execute pack. The
 [native observation](../../../public/lib/three-workflow-delivery-v3/docs/research/node-ci-native-execution.md)
-qualifies the executor's adopted fixture composition on Linux; event, transfer and
+qualifies the executor's adopted fixture composition on Linux; hosted event, transfer and
 group integration still precede caller cutover. The fixture's
 native NBGV filters include its source and shared package/workspace/lock, toolchain
 and license inputs. Five other Node projects have no adopted new quality
