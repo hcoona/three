@@ -9,6 +9,8 @@ public sealed class NodeGroupPlanningTests
 {
     private const string Adopted = "src/adopted";
     private const string Retained = "src/retained";
+    private static readonly string[] AdoptedChecks =
+        ["node/project-build-v1", "node/project-test-v1"];
 
     [TestMethod]
     public async Task SharedChangesKeepAdoptedChecksAndRetainedMemberReasons()
@@ -94,6 +96,42 @@ public sealed class NodeGroupPlanningTests
         foreach (PlannedCheck check in group.Adopted.Checks)
             Assert.AreEqual(reason, Assert.ContainsSingle(check.Reasons));
         Assert.HasCount(2, group.Adopted.Checks);
+    }
+
+    [TestMethod]
+    public async Task NamedMovesKeepBothOwnersAndBasisReverseConsumerReasons()
+    {
+        const string oldAdopted = "src/old-adopted";
+        const string oldRetained = "src/old-retained";
+        const string newAdopted = "tests/new-adopted";
+        const string newRetained = "tests/new-retained";
+        NodeRevisionInputs basis = NodeScenario.Inputs(NodeScenario.Basis,
+            NodeScenario.Project(oldAdopted, oldRetained) with { Name = "@example/adopted" },
+            NodeScenario.Project(oldRetained) with { Name = "@example/retained" });
+        NodeRevisionInputs candidate = NodeScenario.Inputs(NodeScenario.Candidate,
+            NodeScenario.Project(newAdopted) with { Name = "@example/adopted" },
+            NodeScenario.Project(newRetained) with { Name = "@example/retained" });
+        string changed = oldRetained + "/index.js";
+        var reason = new SelectionReason(changed, NodeScenario.Basis, "npm:@example/retained");
+
+        NodeGroupPlan group = await NodeGroupPlanning.PlanAsync(basis, candidate,
+            Scope(basis, candidate, [changed]), newAdopted,
+            (project, _) => project.Directory == newAdopted
+                ? Task.FromResult(NodeScenario.Scripts(project))
+                : throw new InvalidOperationException("Retained or basis script hydration."),
+            (_, _) => throw new InvalidOperationException("Unneeded version hydration."),
+            CancellationToken.None);
+
+        CollectionAssert.AreEquivalent(AdoptedChecks,
+            group.Adopted.Checks.Select(check => check.Work.Key.Check).ToArray());
+        foreach (PlannedCheck check in group.Adopted.Checks)
+        {
+            Assert.AreEqual(newAdopted, check.Work.Key.Target);
+            Assert.AreEqual(reason, Assert.ContainsSingle(check.Reasons));
+        }
+        RetainedNodeSelection member = Assert.ContainsSingle(group.Retained);
+        Assert.AreEqual(newRetained, member.Directory);
+        Assert.AreEqual(reason, Assert.ContainsSingle(member.Reasons));
     }
 
     [TestMethod]
