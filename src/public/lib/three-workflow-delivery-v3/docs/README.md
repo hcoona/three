@@ -198,6 +198,9 @@ The [PNPM native planning assessment](./research/pnpm-native-planning.md) compar
 the pinned v12 library and CLI interfaces for replacement repository analysis.
 The [Git native fact evidence](./research/git-native-facts.md) supports committed
 revision inventory, direct endpoint changes and strict native path decoding.
+The [MSBuild native item evidence](./research/msbuild-native-items.md) supports a
+narrow evaluated resource-input projection for a specified project/dimension;
+membership, wider .NET facts and CI owner integration remain separate work.
 The [NBGV native-input assessment](./research/nbgv-native-inputs.md) identifies
 public configuration/filter APIs and bounded Linux application observations for
 official-package delivery and the existing PNPM reader. Complete CI integration
