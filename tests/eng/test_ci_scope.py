@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tomllib
+from importlib import import_module
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,7 @@ sys.path.insert(0, str(SCRIPTS))
 try:
     scope = importlib.util.module_from_spec(SPEC)
     SPEC.loader.exec_module(scope)
+    preparation = import_module("prepare_ci_control_inputs")
 finally:
     sys.path.remove(str(SCRIPTS))
 V3_TESTS = scope.V3 + "/tests"
@@ -264,6 +266,9 @@ def comparison(tmp_path):
     node = tmp_path / "src/node"
     node.mkdir()
     (node / "package.json").write_text('{"name":"node"}')
+    project = tmp_path / scope.CONTROL_PROJECT
+    project.parent.mkdir(parents=True)
+    project.write_text("<Project />", encoding="utf-8")
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-qm", "Base")
     base = _git(tmp_path, "rev-parse", "HEAD")
@@ -274,19 +279,60 @@ def comparison(tmp_path):
     return tmp_path, base, _git(tmp_path, "rev-parse", "HEAD")
 
 
-def _select_cli(root, *arguments):
+def _control_response(base, candidate, *, full=False, before=(), after=()):
+    def endpoint(revision, inputs):
+        return {
+            "revision": revision,
+            "project": scope.CONTROL_PROJECT,
+            "present": True,
+            "dimension": {
+                "configuration": "Debug",
+                "targetFramework": "net10.0",
+                "runtimeIdentifier": "",
+            },
+            "inputs": list(inputs),
+        }
+
+    return {
+        "comparison": {"basis": base, "candidate": candidate, "full": full},
+        "basis": endpoint(base, before),
+        "candidate": endpoint(candidate, after),
+    }
+
+
+def _select_cli(root, *arguments, receipt=None):
+    candidate = _git(root, "rev-parse", "HEAD")
+    full = "--full" in arguments
+    base = (
+        candidate
+        if full or "--from-ref" not in arguments
+        else arguments[arguments.index("--from-ref") + 1]
+    )
+    response = (
+        _control_response(base, candidate, full=full)
+        if receipt is None
+        else receipt
+    )
+    source = root / "control-inputs.json"
+    source.write_text(
+        response if isinstance(response, str) else json.dumps(response),
+        encoding="utf-8",
+    )
     return subprocess.run(  # noqa: S603 - Fixed tool/script and owned fixture arguments.
         [
             sys.executable,
             str(SCRIPTS / "ci_scope.py"),
             "--repository",
             str(root),
+            "--control-inputs",
+            str(source),
             *arguments,
         ],
         env=dict(os.environ, GITHUB_OUTPUT=str(root / "outputs")),
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
 
 
@@ -365,3 +411,329 @@ def test_candidate_test_migration_selects_replacement_root(comparison):
     assert selected["python_roots"] == ["src/python/checks"]
     assert selected["scopes"]["python"]
     assert not (root / "src/python/tests").exists()
+
+
+@pytest.mark.parametrize(
+    "change", ["version-only", "removed", "added", "moved"]
+)
+def test_resource_input_selects_existing_dotnet_owner_from_both_revisions(
+    comparison, change
+):
+    """Both native resource sets keep the existing .NET owner selected."""
+    root, _, _ = comparison
+    old = "src/node/version 雪.json"
+    new = "src/node/moved 雪.json" if change == "moved" else old
+    (root / scope.CONTROL_PROJECT).write_text(
+        "<Project><PropertyGroup>"
+        "<TargetFramework>net10.0</TargetFramework></PropertyGroup>"
+        "<ItemGroup Condition=\"'$(Configuration)' == 'Debug'\">"
+        '<EmbeddedResource Include="../../../../src/node/*.json" />'
+        "</ItemGroup></Project>",
+        encoding="utf-8",
+    )
+    if change != "added":
+        (root / old).write_text("before", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Resource basis")
+    base = _git(root, "rev-parse", "HEAD")
+    if change in {"removed", "moved"}:
+        (root / old).unlink()
+    if change != "removed":
+        (root / new).write_text("after", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "Change native resource")
+    candidate = _git(root, "rev-parse", "HEAD")
+    before = () if change == "added" else (old,)
+    after = () if change == "removed" else (new,)
+    response = _control_response(base, candidate, before=before, after=after)
+
+    result = _select_cli(root, "--from-ref", base, receipt=response)
+
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    assert selected["scopes"]["dotnet"]
+    assert selected["scopes"]["node"]
+    assert not selected["scopes"]["python"]
+    expected = {
+        f"{path} -> {scope.CONTROL_PROJECT} ({revision})"
+        for revision, inputs in ((base, before), (candidate, after))
+        for path in inputs
+    }
+    assert set(selected["reasons"]["dotnet"]) == expected
+    assert "dotnet=true\n" in (root / "outputs").read_text(encoding="utf-8")
+
+
+def test_unrelated_node_input_does_not_select_control_tests(comparison):
+    """Known unrelated Node inputs exclude the .NET control tests."""
+    root, _, _ = comparison
+    (root / "src/node/version.json").write_text(
+        "unchanged resource", encoding="utf-8"
+    )
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Unchanged native resource")
+    candidate = _git(root, "rev-parse", "HEAD")
+    (root / "src/node/unrelated.txt").write_text("change", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Unrelated Node source")
+    current = _git(root, "rev-parse", "HEAD")
+    response = _control_response(
+        candidate,
+        current,
+        before=("src/node/version.json",),
+        after=("src/node/version.json",),
+    )
+
+    result = _select_cli(root, "--from-ref", candidate, receipt=response)
+
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    assert selected["scopes"]["node"]
+    assert not selected["scopes"]["dotnet"]
+    assert selected["reasons"]["dotnet"] == []
+    assert "dotnet=false\n" in (root / "outputs").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "malformed",
+        "missing-field",
+        "wrong-basis",
+        "wrong-candidate",
+        "wrong-revision",
+        "wrong-project",
+        "wrong-presence",
+        "empty-framework",
+        "wrong-configuration",
+        "inputs-null",
+        "outside-input",
+        "duplicate",
+    ],
+)
+def test_invalid_native_response_emits_no_successful_scope(comparison, defect):
+    """Required malformed facts fail before applicability output."""
+    root, base, candidate = comparison
+    response = _control_response(base, candidate)
+    if defect == "malformed":
+        response = "{"
+    elif defect == "missing-field":
+        del response["basis"]
+    elif defect == "duplicate":
+        response = json.dumps(response).replace(
+            '"basis": {', '"basis": {}, "basis": {', 1
+        )
+    else:
+        mutations = {
+            "wrong-basis": (("comparison", "basis"), candidate),
+            "wrong-candidate": (("comparison", "candidate"), base),
+            "wrong-revision": (("basis", "revision"), candidate),
+            "wrong-project": (("candidate", "project"), "other.csproj"),
+            "wrong-presence": (("basis", "present"), False),
+            "empty-framework": (
+                ("candidate", "dimension", "targetFramework"),
+                "",
+            ),
+            "wrong-configuration": (
+                ("candidate", "dimension", "configuration"),
+                "Release",
+            ),
+            "inputs-null": (("candidate", "inputs"), None),
+            "outside-input": (("candidate", "inputs"), ["../outside.json"]),
+        }
+        path, value = mutations[defect]
+        target = response
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+
+    result = _select_cli(root, "--from-ref", base, receipt=response)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert not (root / "outputs").exists()
+
+
+def test_missing_native_response_is_not_an_incremental_or_full_fallback(
+    comparison,
+):
+    """Unavailable facts fail full as well as incremental selection."""
+    root, base, _ = comparison
+    for mode in (("--from-ref", base), ("--full",)):
+        result = subprocess.run(  # noqa: S603 - Owned CLI fixture.
+            [
+                sys.executable,
+                str(SCRIPTS / "ci_scope.py"),
+                "--repository",
+                str(root),
+                *mode,
+                "--control-inputs",
+                str(root / "missing-response.json"),
+            ],
+            env=dict(os.environ, GITHUB_OUTPUT=str(root / "outputs")),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert not (root / "outputs").exists()
+
+
+def test_full_scope_retains_equal_native_endpoints(comparison):
+    """Manual full preserves the equality of the native source endpoints."""
+    root, _, candidate = comparison
+
+    result = _select_cli(root, "--full")
+
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    assert selected["base"] == selected["candidate"] == candidate
+    assert selected["full"] is True
+    assert all(selected["scopes"].values())
+
+
+def test_confirmed_base_owner_absence_is_explicit_and_candidate_is_required(
+    comparison,
+):
+    """Only base absence is allowed; the candidate retains its owner."""
+    root, _, _ = comparison
+    project = root / scope.CONTROL_PROJECT
+    project.unlink()
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "Absent basis owner")
+    base = _git(root, "rev-parse", "HEAD")
+    project.write_text("<Project />", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Add candidate owner")
+    candidate = _git(root, "rev-parse", "HEAD")
+    response = _control_response(base, candidate)
+    response["basis"].update(present=False, dimension=None)
+
+    result = _select_cli(root, "--from-ref", base, receipt=response)
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["scopes"]["dotnet"]
+    (root / "outputs").unlink()
+    project.unlink()
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "Remove candidate owner")
+    absent = _git(root, "rev-parse", "HEAD")
+    response = _control_response(candidate, absent)
+    response["candidate"].update(present=False, dimension=None)
+    result = _select_cli(root, "--from-ref", candidate, receipt=response)
+    assert result.returncode != 0
+    assert not (root / "outputs").exists()
+
+
+@pytest.mark.parametrize("full", [False, True])
+def test_native_prepare_preserves_endpoints_and_locked_context(
+    comparison, monkeypatch, tmp_path_factory, full
+):
+    """Native preparation uses exact Git endpoints and locked contexts."""
+    root, basis, candidate = comparison
+    if full:
+        basis = candidate
+    native_comparison = {"basis": basis, "candidate": candidate, "full": full}
+    restored = []
+    original = preparation.run
+    response = _control_response(basis, candidate, full=full)
+
+    def native(directory, *arguments):
+        if arguments[0] == "git":
+            return original(directory, *arguments)
+        if arguments[1] == "restore":
+            restored.append((directory, arguments))
+            return "Locked fixture preparation\n"
+        if "comparison" in arguments:
+            return json.dumps(native_comparison)
+        assert "control-inputs" in arguments
+        return json.dumps(response)
+
+    monkeypatch.setattr(preparation, "run", native)
+    scratch = tmp_path_factory.mktemp("control-inputs") / "endpoints"
+    request = preparation.prepare(
+        root,
+        scratch,
+        root / "control.dll",
+        ("pull_request", root / "event.json", candidate),
+    )
+    before = Path(request["basisDirectory"])
+    after = Path(request["candidateDirectory"])
+    assert not before.is_relative_to(root)
+    assert not after.is_relative_to(root)
+    assert _git(before, "rev-parse", "HEAD") == basis
+    assert _git(after, "rev-parse", "HEAD") == candidate
+    assert (before == after) is full
+    assert (
+        json.loads((scratch / "request.json").read_text(encoding="utf-8"))
+        == request
+    )
+    result = preparation.evaluate(
+        root,
+        root / "control.dll",
+        scratch / "request.json",
+        scratch / "response.json",
+    )
+    assert result == response
+    assert {directory for directory, _ in restored} == {before, after}
+    for _, arguments in restored:
+        assert arguments == (
+            "dotnet",
+            "restore",
+            scope.CONTROL_PROJECT,
+            "--locked-mode",
+            "-p:Configuration=Debug",
+        )
+    assert (
+        json.loads((scratch / "response.json").read_text(encoding="utf-8"))
+        == response
+    )
+
+
+def test_native_prepare_failure_does_not_write_facts(comparison, monkeypatch):
+    """Failed required native operations never write successful facts."""
+    root, basis, candidate = comparison
+    scratch = root.parent / (root.name + "-failed-endpoints")
+    request = {
+        "comparison": {"basis": basis, "candidate": candidate, "full": False},
+        "repository": str(root),
+        "basisDirectory": str(scratch / "basis"),
+        "candidateDirectory": str(scratch / "candidate"),
+    }
+    scratch.mkdir()
+    request_path = scratch / "request.json"
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+
+    def unavailable(*_arguments):
+        raise subprocess.CalledProcessError(1, ["dotnet", "restore"])
+
+    monkeypatch.setattr(preparation, "run", unavailable)
+    with pytest.raises(subprocess.CalledProcessError):
+        preparation.evaluate(
+            root, root / "control.dll", request_path, scratch / "response.json"
+        )
+    assert not (scratch / "response.json").exists()
+    with pytest.raises(subprocess.CalledProcessError):
+        preparation.prepare(
+            root,
+            scratch / "not-created",
+            root / "control.dll",
+            ("push", root / "event.json", candidate),
+        )
+    assert not (scratch / "not-created").exists()
+
+
+def test_native_prepare_rejects_source_subdirectories(
+    comparison,
+):
+    """Temporary checkouts cannot pollute the candidate source inventory."""
+    root, _, candidate = comparison
+    with pytest.raises(ValueError, match="outside"):
+        preparation.prepare(
+            root,
+            root / "generated",
+            root / "control.dll",
+            ("push", root / "event.json", candidate),
+        )
+    assert not (root / "generated").exists()

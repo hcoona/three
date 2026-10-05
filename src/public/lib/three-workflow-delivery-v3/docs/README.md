@@ -28,10 +28,12 @@ retained evidence. The implementation and completed campaigns described below
 do not claim conformity to the replacement. The
 [Wave](../../../../../docs/delivery-wave.md) covers the full contraction.
 The [private application entry](../../../../private/app/workflow-delivery/README.md)
-documents CI selection/result, GitHub event comparison, native Node fact assembly
-and the adopted check executor. The [bounded native observation](./research/node-ci-native-execution.md)
-qualifies the adopted fixture composition on Linux. Hosted event/transfer integration,
-other quality presets and workflow cutover remain pending.
+documents CI selection/result, GitHub event comparison, control-test resource inputs,
+native Node fact assembly and the adopted check executor. Root CI's existing scope
+job consumes native comparison/resource inputs; the original .NET job remains its
+sole test executor. The [bounded native observation](./research/node-ci-native-execution.md)
+qualifies the adopted fixture composition on Linux. Node plan/result transfer,
+other quality presets and execution workflow cutover remain pending.
 
 The pre-contraction normal-Live baseline was merged across the
 requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
@@ -200,7 +202,9 @@ The [Git native fact evidence](./research/git-native-facts.md) supports committe
 revision inventory, direct endpoint changes and strict native path decoding.
 The [MSBuild native item evidence](./research/msbuild-native-items.md) supports a
 narrow evaluated resource-input projection for a specified project/dimension;
-membership, wider .NET facts and CI owner integration remain separate work.
+root CI now consumes the control-test resource projection and retains its existing
+.NET test executor. Membership, wider .NET facts and complete group integration
+remain separate work.
 The [NBGV native-input assessment](./research/nbgv-native-inputs.md) identifies
 public configuration/filter APIs and bounded Linux application observations for
 official-package delivery and the existing PNPM reader. Complete CI integration
