@@ -321,6 +321,8 @@ Build with the repository-pinned SDK. From the repository root:
 
 ```powershell
 dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj
+dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll `
+  ci comparison pull_request native-event.json <tested-commit>
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan-node node-request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci run-node plan.json execution-request.json
@@ -333,6 +335,16 @@ result subjects) with its JSON explanation; `2` means malformed input, a plannin
 failure, invalid execution input or unsupported usage, with a diagnostic on stderr. Redirect stdout
 when a receiving process needs a file. In-process consumers call the same typed
 operations without serializing their inputs.
+
+`ci comparison <event-name> <native-event.json> <tested-candidate>` consumes the
+native Actions `GITHUB_EVENT_PATH` payload and tested SHA without a second event
+declaration. It emits only `basis`, `candidate` and `full` for caller construction
+of the existing Node request below. The finite
+[GitHub event mapping](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#github-event-comparison)
+owns supported comparisons. Required malformed fields or conflicting targets
+return input error; unrelated native fields are ignored. Native Git subsequently
+resolves actual objects. This command does not fetch events, prepare checkouts,
+inspect ancestry or switch workflow/group ownership.
 
 The Node request supplies materializations, not a second fact declaration:
 

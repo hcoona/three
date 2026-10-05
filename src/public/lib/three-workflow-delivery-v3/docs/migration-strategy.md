@@ -196,6 +196,7 @@ Do not build an envelope registry or independent schema version service.
 
 | Command and caller                                          | Required inputs                                                                                         | Output consumed at the next real boundary                                                                                                          |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci comparison` in root CI planning                         | Native event name/payload and platform-tested candidate                                                 | Comparison basis, candidate and explicit full flag for native checkout/plan preparation                                                            |
 | `repository facts` on a required native runner              | Candidate or comparison revision, ecosystem, evaluation roots and dimensions                            | Revision, project ownership, local/shared-input relations, native dimensions, explicit coverage/errors                                             |
 | `ci plan` in root CI planning                               | Candidate/comparison identities, changed paths and necessary native facts, supported group              | Selected project/target/check/dimensions, reasons, required/advisory flags, runner, prerequisites and unresolved scope                             |
 | `ci run` in a selected executor                             | Selected work, candidate and required native inputs                                                     | Check/target/dimensions, actual status, native command result and output identities where consumed                                                 |
@@ -207,6 +208,9 @@ Do not build an envelope registry or independent schema version service.
 | `release result` in collection                              | Request, publisher/native execution facts, readback and applicable consumer results                     | Satisfied/unsatisfied/unknown with command abnormality and unresolved effects kept distinct                                                        |
 
 In-process callers use the same typed operations without serializing each row.
+The finite [GitHub comparison mapping](./middle-level-design.md#github-event-comparison)
+reads native payload fields directly rather than adding another event declaration.
+Its implementation alone does not switch root CI or establish group coverage.
 Artifact references crossing jobs carry immutable artifact ID, producer/run and
 integrity bindings; qualified file entries carry relative path, size and digest
 for package comparison. These checks bind actual consumers, not approvals or a

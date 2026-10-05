@@ -115,10 +115,43 @@ selection and exclusion. An incomplete graph cannot certify that a changed path
 has no consumers. Release resolves its selected unit's complete input/build/check
 closure; it need not evaluate unrelated projects.
 
+### GitHub Event Comparison
+
+The finite event adapter reads the native `GITHUB_EVENT_PATH` JSON and the
+platform's tested candidate from ordinary process arguments. It consumes only
+the relevant native fields; unrelated payload fields and workflow-selected PR
+activities do not require an application mirror.
+
+| Native event                       | Comparison basis        | Candidate                                  | Mode      |
+| ---------------------------------- | ----------------------- | ------------------------------------------ | --------- |
+| `pull_request`                     | `pull_request.base.sha` | Tested `github.sha` merge commit           | Selective |
+| `merge_group` / `checks_requested` | `merge_group.base_sha`  | `merge_group.head_sha`, equal tested SHA   | Selective |
+| `push`                             | `before`                | `after`, equal tested SHA; `deleted=false` | Selective |
+| `workflow_dispatch`                | Tested candidate        | Tested candidate                           | Full      |
+
+Native identities must be full nonzero 40- or 64-character hexadecimal commit
+IDs, normalized for comparison. Missing, malformed or conflicting relevant
+fields, unsupported events/actions and creation/deletion pushes without a
+supported incremental basis fail. They do not select full mode automatically.
+The native Git reader subsequently resolves actual objects and compares the
+endpoints; the adapter neither requires ancestry nor reconstructs a merge base
+or group members. Force-push endpoint comparison remains valid when both
+objects are available. PR source head does not replace the tested merge.
+
+The selected semantics follow pinned
+[GitHub Actions event documentation](https://github.com/github/docs/blob/2bd66de8cea336061c9ea060c9b37385136e6ab3/content/actions/reference/workflows-and-actions/events-that-trigger-workflows.md)
+and the consumed fields in the pinned
+[PR](https://github.com/octokit/webhooks/blob/aa80c24a3f55354465b8b1438d33dd5602956d0d/payload-schemas/api.github.com/common/pull-request.schema.json),
+[merge-group](https://github.com/octokit/webhooks/blob/aa80c24a3f55354465b8b1438d33dd5602956d0d/payload-schemas/api.github.com/merge_group/checks_requested.schema.json)
+and [push](https://github.com/octokit/webhooks/blob/aa80c24a3f55354465b8b1438d33dd5602956d0d/payload-schemas/api.github.com/push/event.schema.json)
+schemas. Supplied-payload tests establish the adapter contract, not hosted event
+execution or caller cutover. Group ownership, checkout preparation and transfers
+remain separate integration responsibilities.
+
 ### Selection Algorithm
 
-1. Resolve the candidate tree and event-appropriate comparison: PR base/head and
-   tested merge identity, merge-group basis, or push before/after. Explicit full
+1. Resolve the candidate tree and event-appropriate comparison through the finite
+   mapping above. Explicit full
    validation is a distinct mode with its supported coverage stated.
 2. Read changed paths, including both sides of rename/deletion. Resolve ownership
    and relevant relations in the comparison basis and candidate. Changes to

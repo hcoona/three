@@ -15,6 +15,15 @@ internal static class Program
     {
         try
         {
+            if (args is ["ci", "comparison", var eventName, var eventPath, var testedCandidate])
+            {
+                using JsonDocument payload = JsonDocument.Parse(File.ReadAllText(eventPath));
+                CiComparison comparison = GitHubComparison.Resolve(eventName, payload.RootElement,
+                    testedCandidate);
+                output.WriteLine(JsonSerializer.Serialize(comparison,
+                    TransferJson.Default.CiComparison));
+                return 0;
+            }
             if (args is ["ci", "run-node", var executionPlanPath, var executionRequestPath])
             {
                 CiPlan plan = JsonSerializer.Deserialize(
@@ -62,6 +71,7 @@ internal static class Program
             }
             error.WriteLine(
                 "Usage: workflow-delivery ci plan <request.json>"
+                    + " | ci comparison <event-name> <native-event.json> <tested-candidate>"
                     + " | ci plan-node <request.json>"
                     + " | ci run-node <plan.json> <request.json>"
                     + " | ci result <plan.json> <results.json>"
@@ -87,6 +97,7 @@ internal static class Program
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
 )]
 [JsonSerializable(typeof(PlanRequest))]
+[JsonSerializable(typeof(CiComparison))]
 [JsonSerializable(typeof(NodePlanRequest))]
 [JsonSerializable(typeof(NodeRunRequest))]
 [JsonSerializable(typeof(NodeRunResult))]
