@@ -2,8 +2,9 @@
 
 ## Purpose and Authority
 
-This protocol becomes executable only after protected repository acceptance
-under the [contraction Wave](../../../../../../docs/delivery-wave.md). Its consumer
+This protocol becomes executable only after explicit owner acceptance
+of the finite allowance below and protected repository acceptance under the
+[contraction Wave](../../../../../../docs/delivery-wave.md). Its consumer
 is the replacement application's native Node check boundary before workflow cutover.
 It tests actual planning, native NBGV stamping, original packaging and fresh
 public API consumption together, rather than re-proving PNPM or NBGV.
@@ -11,20 +12,31 @@ The accepted contraction Wave supplies the effects ceiling; protected delivery
 of this concrete protocol is required before its first sequence. Earlier npm,
 NuGet, Python, Ruby and native-reader campaigns remain completed and spent.
 
-This protocol bounds one fresh successor generation. The stopped qualification
-under `d9e68f9a45099468381b5ebebf767c6813fac402` remains failed and cannot resume.
-Its evidence and the owner's acceptance of one trusted-lock successor are retained
-in the delivery work carrier. The successor keeps the same effects and finite
-ceilings; no further generation follows failure or completion.
+This protocol bounds one initial generation and two reserve generations. It grants no execution
+on its own. The original qualification under
+`d9e68f9a45099468381b5ebebf767c6813fac402` remains failed and stopped. The
+qualification under `eaf866f2240ac6d4c4bea2dbac58edff0ab10ea7` is terminal:
+its original successful check/package observations remain, while independent
+review and separate classification reject effects/protocol conformity because
+source tests additionally installed the whole workspace and ran unrelated
+lifecycles. Both raw records, original bytes and owned state remain intact.
+Their evidence and dispositions are retained in the delivery work carriers.
+Neither predecessor resumes, retries or refunds a position. The finite buffer
+below supplies only new local generations and excludes Registry acquisition.
 
 ## Exact Subject and Environment
 
 The executor must first be merged with the independently reviewed source tree
-`3c3ba8938e09c364512cf823aee7d713dede7927` from candidate
-`6045598a30795169b4540cfad9c313bd0e31602c`. Record its actual accepted squash and
+`8fa20e9e830c1ce3cbe292126b83c06b482dd702` from candidate
+`dbbab75dc4ec07bb6c83b60004cbd29008d44ef9`. Record its actual accepted squash and
 verify the reviewed source identities before preparation. If that subject
 changes, refresh the protocol and reviews; this is not permission to qualify a
 replacement silently.
+
+That exact tree governs the initial generation. A reserve may use a corrected
+executor or invocation recipe only under the finite successor rules below.
+Record its independently reviewed and protected-delivered source tree and
+refreshed concrete protocol/carrier identities before preparation.
 
 Use the existing `@hcoona/hcoona-release-smoke-npm` product and adopted quality/
 release declarations at that accepted source. Do not change manifests, scripts,
@@ -121,6 +133,17 @@ Each executor owns fresh scratch only; no source import or warmed consumer cache
 can supply an installed result. Native build, pack lifecycle and installation
 remain opaque CLI operations; do not replay scripts or synthesize a manifest.
 
+Application-owned source build and test use the maintained native
+`--config.verify-deps-before-run=false` setting. Explicit locked preparation
+remains the caller's responsibility; automatic workspace installation is not
+part of either script invocation. The allowed environment does not inherit
+`pnpm_config_verify_deps_before_run`, which can outrank the CLI setting. This
+configuration is not a network or arbitrary script-effects sandbox. The exact
+selected scripts remain unchanged and source reviewed; no script interpreter,
+freshness checker, second resolver or dynamic admission file is introduced.
+The fixture's native NBGV filters now include its known shared package/lock,
+toolchain and license inputs.
+
 Maximum preparation: three native local Git materializations, one local candidate
 commit, three frozen offline/script-disabled PNPM installs, one .NET restore and
 one no-restore build. Each preparation command is at most 300 seconds. Read-only
@@ -162,6 +185,45 @@ evidence logs: concurrently read supported process pipes, write only the bounded
 prefix, and stop at the first excess. These are finite experiment/application
 bounds, not universal npm validity rules.
 
+## Finite Buffer and Successor Rules
+
+The owner's finite allowance covers at most three new local generations:
+one initial generation and two reserves. Each generation retains all limits
+above: one candidate, one plan, at most two same-candidate executions, 4,800
+seconds and 4 GiB owned state. Across all three, actual experiment elapsed time
+is at most 14,400 seconds and total retained owned state is at most 12 GiB.
+Preparation, planning and execution consume these totals, including failed or
+interrupted generations. Source diagnosis, review and normal protected delivery
+are ordinary contraction work outside experiment elapsed time. A pending or
+ambiguous generation is consumed and must not be resumed or refunded.
+
+Use a reserve only when an earlier generation failed or its independent effects/
+protocol review rejected qualification. Preserve that original outcome and
+evidence, diagnose the concrete cause, and complete any necessary independent
+review and protected source/protocol delivery before allocating a new root.
+A correction may adjust local preparation, native invocation or the existing
+executor implementation while preserving the adopted fixture, required checks,
+native dependency responsibilities, fixed tool/package identities and effects
+ceiling. It may not weaken acceptance or add a resolver, declaration, trust,
+cache or recovery service. Refresh source and carrier bindings rather than
+silently substituting a new subject. The original V6 carrier remains single-use
+per owned root and contains no automatic successor or retry loop.
+
+Before each launch, retain the new root, exact subject/carrier, ordinal and
+remaining aggregate time/state in the governing PR's evidence. This is finite
+experiment bookkeeping, not product admission or a separately maintained policy
+service. Independent review still applies to each observation and any changed
+recipe. Such reviewed successors inside this accepted allowance need no further
+owner approval. Stop after the first independently accepted success; unused
+reserves expire at that stop and are not a general future experiment allowance.
+
+A different product, ecosystem, required quality contract, purpose, tool/package
+identity or external effects boundary needs new owner disposition. So does a
+necessary native capability gap. Registry acquisition/publication, hosted
+release/proving dispatch, credential/access/Environment/publisher changes and
+predecessor cleanup remain excluded. Exhausting the generation allowance or an aggregate
+bound stops this allowance; no fourth generation follows.
+
 ## Expected Observations and Stops
 
 All five planned checks must be present and passed. The planned official NBGV
@@ -174,6 +236,12 @@ original bytes remain unchanged. Two successful same-candidate sequences may
 compare original bytes as bounded reproducibility evidence; equality is not
 required between distinct commits.
 
+Retain and assess the original native stdout/stderr as well as scalar check
+results. Additional workspace preparation or unrelated lifecycle execution is
+an unexpected effect, even when all checks and the outer invocation return
+success. Outer command counts alone cannot establish nested-effects conformity.
+No log-counter inference supplies exact network requests or transferred bytes.
+
 Reserve each whole preparation, planning or `ci run-node` invocation before
 launch. A failed preparation or planning invocation stops the campaign. Within
 its finite selected work, `ci run-node` preserves inner native/check failures,
@@ -185,10 +253,11 @@ all later campaign invocations, including the second materialization.
 
 Preserve nonzero, cancellation, timeout, invalid output, unsupported shape,
 version disagreement, missing output, failed installed consumption, unexpected
-external effect or exhausted bound. No rerun, fallback, source correction,
-replacement candidate, publication or new slot follows. Read-only analysis of
-the retained failure is permitted. A necessary native capability gap returns to
-the owner before any changed design or operation.
+external effect or exhausted bound. That generation is terminal: no rerun,
+fallback, source correction, replacement candidate, publication or new slot
+within it follows. Retained-failure analysis and a separately reviewed new
+reserve generation follow only the finite successor rules above. A necessary
+native capability gap returns to the owner before any changed design or operation.
 
 ## Evidence, Cleanup and Limits
 
@@ -198,7 +267,7 @@ original tarballs, read-only comparisons and failures in a retrievable sanitized
 work carrier. Independent engineering/evidence review evaluates the conclusion;
 source findings, runtime observations and inference stay distinct. An observation
 may not claim publication, caller cutover, cross-group completeness or all-platform
-support. Other shared version inputs and integration groups remain obligations.
+support. Other integration groups and fixture-relocation inputs remain obligations.
 
 After evidence retention and independent review, remove only this protocol's
 owned disposable state; retain any state needed to investigate a failed cleanup.
@@ -270,7 +339,7 @@ disposable evidence carrier, retain pending/ambiguous state, and never repeat it
 Immediate caller supervision applies to detected outer deadline, interruption,
 retained-output excess, nonzero exit and outer cleanup uncertainty. It does not
 intercept individual native failures inside the opaque `ci run-node` invocation.
-No new campaign invocation may start after its terminal failure, an exhausted
+No later invocation in that generation may start after its terminal failure, an exhausted
 bound, an unexpected effect or caller-observed cleanup uncertainty. The accepted
 protocol owns ceilings; a runner is only its concrete invocation carrier and
 never a product admission or retry service.
