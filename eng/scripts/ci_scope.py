@@ -415,11 +415,13 @@ def _resource_reasons(path: str, response: dict | None) -> set[str]:
     }
 
 
-def _unique_object(pairs: list[tuple[str, object]]) -> dict:
+def _unique_object(
+    pairs: list[tuple[str, object]], context: str = "control input"
+) -> dict:
     result: dict = {}
     for name, value in pairs:
         if name in result:
-            message = f"Duplicate control input field: {name}"
+            message = f"Duplicate {context} field: {name}"
             raise ValueError(message)
         result[name] = value
     return result
@@ -464,7 +466,9 @@ def _record_owner_bindings(
 
     def mapping(loader: yaml.SafeLoader, node: yaml.MappingNode) -> dict:
         loader.flatten_mapping(node)
-        return _unique_object(loader.construct_pairs(node, deep=True))
+        return _unique_object(
+            loader.construct_pairs(node, deep=True), f"{FAMILY_CATALOG} YAML"
+        )
 
     _OwnerCatalogLoader.add_constructor(
         yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
