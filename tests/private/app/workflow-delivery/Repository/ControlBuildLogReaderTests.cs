@@ -270,6 +270,7 @@ public sealed class ControlBuildLogReaderTests(TestContext context)
             + ".binlog");
         await NativeProcess.RunAsync("dotnet", repo.Directory,
             ["build", "Control.csproj", "-nologo", "-property:MSBuildLogVerboseTaskParameters=true",
+                "-property:Configuration=Debug", "-property:NuGetInteractive=false",
                 "-property:ContinuousIntegrationBuild=true", "-property:RestoreLockedMode=true",
                 "-bl:" + binlog], context.CancellationToken);
 

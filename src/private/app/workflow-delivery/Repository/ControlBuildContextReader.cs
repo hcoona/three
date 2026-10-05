@@ -34,12 +34,13 @@ internal sealed record ControlBuildContext(string Revision, string Project,
             if (!same)
                 throw new InvalidDataException("Native build context differs from query: " + name);
         }
-        foreach ((string name, string actual) in log.GlobalProperties)
+        if (log.GlobalProperties.Count != ControlBuildContextReader.GlobalPropertyNames.Length)
+            throw new InvalidDataException(
+                "Native control global property set differs from query.");
+        foreach (string name in ControlBuildContextReader.GlobalPropertyNames)
         {
-            if (name is not ("Configuration" or "ContinuousIntegrationBuild" or
-                "RestoreLockedMode" or "MSBuildLogVerboseTaskParameters" or "NuGetInteractive"))
-                throw new InvalidDataException("Unsupported native control global property: " +
-                    name);
+            if (!log.GlobalProperties.TryGetValue(name, out string? actual))
+                throw new InvalidDataException("Missing native control global property: " + name);
             if (!actual.Equals(Properties[name], StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Native control global differs from query: " + name);
         }
@@ -52,6 +53,9 @@ internal sealed record ControlBuildContext(string Revision, string Project,
 // Native evaluation supplies the context and finite optional candidates for this build.
 internal sealed class ControlBuildContextReader
 {
+    internal static readonly string[] GlobalPropertyNames = ["Configuration",
+        "ContinuousIntegrationBuild", "RestoreLockedMode", "MSBuildLogVerboseTaskParameters",
+        "NuGetInteractive"];
     internal const string PropertyNames = "MSBuildProjectFullPath,Configuration,TargetFramework,"
         + "TargetFrameworks,RuntimeIdentifier,RuntimeIdentifiers,NETCoreSdkVersion,"
         + "MSBuildToolsPath,NetCoreRoot,NuGetPackageRoot,OutputPath,IntermediateOutputPath,"
@@ -81,7 +85,7 @@ internal sealed class ControlBuildContextReader
         GitEntry? entry = checkout.Revision.Entries.SingleOrDefault(e => e.Path == project);
         if (entry is null || entry.ObjectType != "blob" || entry.Mode is not ("100644" or "100755"))
             throw new InvalidDataException("The control project must be a committed regular file.");
-        string absolute = Path.Combine(checkout.Root, project);
+        string absolute = Path.GetFullPath(Path.Combine(checkout.Root, project));
         string output = await query(["msbuild", absolute, "-nologo", "-noAutoResponse",
             "-property:Configuration=Debug", "-property:ContinuousIntegrationBuild=true",
             "-property:RestoreLockedMode=true", "-property:MSBuildLogVerboseTaskParameters=true",
