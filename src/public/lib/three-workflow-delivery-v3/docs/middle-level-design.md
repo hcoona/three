@@ -21,6 +21,11 @@ implementation scope. Missing necessary native capabilities remain unsupported;
 implementation details cannot silently weaken these contracts. The
 [handoff](./agent-handoff.md) retains the operating and evidence limits.
 
+The [first Node execution group](./migration-strategy.md#first-node-execution-group)
+specifies the initial caller's endpoint responsibility, native control inputs,
+runtime/check ownership and atomic fixture relocation. Its implementation and
+hosted acceptance remain prerequisites of that cutover.
+
 ## Components and Native Responsibilities
 
 The application starts at `src/private/app/workflow-delivery/` with one test
