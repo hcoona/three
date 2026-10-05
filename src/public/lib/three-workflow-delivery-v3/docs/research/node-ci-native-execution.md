@@ -31,7 +31,11 @@ persist its terminal report. That clone's original record remains pending;
 empty original result/outcome files are not repaired into a successful or
 complete observation. No dependency preparation, controller build, planning or
 product execution followed. Preserve the original state and byte-identical
-evidence copy in its work carrier. Charge the full 4,800-second reservation
+evidence copy in its work carrier. The complete investigation copy at
+`/workspace/workflow-v3-node-ci-buffer-recovery/initial-owned-state` remains
+charged to this initial generation's 4 GiB and the aggregate 12 GiB ceiling;
+removing its original `/tmp` root refunds no state still retained, generation or time.
+Charge the full 4,800-second reservation
 conservatively because its precise elapsed report was not retained. Two reserves
 and at most 9,600 aggregate experiment seconds remain.
 
@@ -81,8 +85,12 @@ filesystem has ample capacity compared with the exhausted host `/tmp`. Before
 allocation, read native filesystem availability and stop when fewer than 4 GiB
 are available. This is an experiment preparation check, not a storage guarantee,
 quota, product admission mechanism or cross-process resource scheduler. Retain
-evidence in the separately owned `/workspace` work carrier, with per-generation
-and aggregate limits unchanged. Do not clear unrelated `/tmp` state or any
+original native evidence at `<generation>/evidence` inside that sole native
+work root. The separately owned
+`/workspace/workflow-v3-node-ci-buffer-recovery/carrier` is the ordinary
+source/tool-input, review and publication carrier. The invocation reads its
+existing inventories; later retention copies do not move or rewrite original
+results. Per-generation and aggregate limits remain unchanged. Do not clear unrelated `/tmp` state or any
 predecessor to make room.
 Build the controller once from the exact candidate before any product scripts
 mutate it; copy its complete normal framework-dependent output to fixed external
@@ -211,6 +219,14 @@ one initial generation and two reserves. Each generation retains all limits
 above: one candidate, one plan, at most two same-candidate executions, 4,800
 seconds and 4 GiB owned state. Across all three, actual experiment elapsed time
 is at most 14,400 seconds and total retained owned state is at most 12 GiB.
+Generation-created work state, original native evidence and every additional
+retained local copy count toward their originating generation's 4 GiB and the
+aggregate 12 GiB ceiling wherever stored. Pre-existing ordinary source,
+protocol and review material is separate; the shared carrier is not a blanket
+exemption for generation-derived bytes. Before launch and when making retention
+copies, the caller includes relevant bytes outside the native root in the
+existing bounded bookkeeping; the runner's root measurement alone does not
+measure those copies. This requires no accounting service or storage guarantee.
 Preparation, planning and execution consume these totals, including failed or
 interrupted generations. Source diagnosis, review and normal protected delivery
 are ordinary contraction work outside experiment elapsed time. A pending or
@@ -302,8 +318,13 @@ The actual accepted executor and independently reviewed invocation carrier must
 be bound in the delivery PR before this protocol is accepted. Its accepted
 revision and the compiled subject identities are recorded before preparation.
 
-The sole temporary root owns `base`, `candidate-1`, `candidate-2`, `development-store`,
+The sole directly owned `/workspace/<generation>` native work root owns
+`base`, `candidate-1`, `candidate-2`, `development-store`,
 `feed`, `packages`, `control`, `state`, `scratch-1`, `scratch-2`, and `evidence`.
+Original native command/result evidence stays in that `evidence` child. The
+shared ordinary carrier supplies the existing source/tool inventories and
+retains later review/publication copies. Charge any generation-derived copies
+there under the same per-generation and aggregate state rules above.
 Native local Git clones retain full inherited objects/tags with no alternates;
 all checkouts use explicit source identities. Set only the disposable candidate
 ref to `qualification/native-node-ci`. The single candidate commit changes only
