@@ -97,8 +97,10 @@ seconds, charged as 33 seconds; the initial generation retains a conservative
 state ceilings. Every generation-derived local retention/review/publication copy
 remains charged to its origin wherever stored. Point-in-time root and external
 copy measurements do not establish a continuous peak, filesystem quota or
-reserved capacity. Original native state remains retained; no reserve cleanup
-was performed.
+reserved capacity. After evidence retention and independent review,
+[bounded cleanup](https://github.com/hcoona/three/pull/1032#issuecomment-5988446332)
+removed the ten owned disposable children. The root and all 141 original evidence
+files remain retained and unchanged. Cleanup refunds no allowance.
 
 The first independently accepted success stops the finite allowance. The unused
 final reserve expired, including all remaining numerical time/state allowance.
