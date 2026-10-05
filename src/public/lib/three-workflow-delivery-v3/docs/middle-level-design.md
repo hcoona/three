@@ -115,6 +115,42 @@ selection and exclusion. An incomplete graph cannot certify that a changed path
 has no consumers. Release resolves its selected unit's complete input/build/check
 closure; it need not evaluate unrelated projects.
 
+### Control-Test Resource Consumer
+
+The existing general .NET CI owner must be selected when a changed input is
+embedded by `tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj`.
+Read `EmbeddedResource` at both comparison revisions through supported native
+MSBuild evaluation. This is one concrete input-consumer projection, not a
+complete .NET graph or another resource declaration. Preserve the existing owner.
+
+Evaluate the owner's default property context in one query: set
+`Configuration=Debug`, with no TFM/RID global override, and request
+`MSBuildProjectFullPath`, `Configuration`, `TargetFramework`, `TargetFrameworks`,
+`RuntimeIdentifier`, `RuntimeIdentifiers` and `EmbeddedResource` together.
+Use `-noAutoResponse`; request no target, target result, restore or repair.
+The initial supported shape has one nonempty effective TFM, empty multiple-TFM
+and multiple-RID declarations and a possibly empty effective RID. Reject an
+unsupported relevant shape. Reuse the native reader's project/path/item
+validation and original committed spelling; do not build a dimension service.
+Each endpoint uses its own committed inputs, SDK and locked native preparation.
+
+At the C#-to-Python process boundary, the required response carries the exact
+native comparison and each endpoint's revision, project, concrete effective
+dimension and committed resource array. Represent confirmed base-project absence
+explicitly; missing facts or failed evaluation are not absence. The candidate
+must retain the named owner; moving or replacing it requires an atomic reviewed
+owner change. An absent/nonregular candidate project, conflicting identity,
+missing materialized input or unavailable native preparation fails selection.
+
+The receiving selector binds the response to the checked-out candidate and
+Git-resolved basis, then intersects changed paths with both resource input sets.
+A hit adds the existing .NET owner with its changed path, project and revision
+reason to the final scope. Retain other selector reasons and owners. Emit
+successful scope outputs only after required response validation and final
+selection; no later executor override or automatic full fallback is permitted.
+Explicit manual full retains the native `basis == candidate` comparison identity.
+The process response is a consumed input, not an internal trust or approval record.
+
 ### GitHub Event Comparison
 
 The finite event adapter reads the native `GITHUB_EVENT_PATH` JSON and the
