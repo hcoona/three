@@ -25,6 +25,13 @@ existing .NET job remains the sole general .NET test executor. Node execution
 ownership, complete group integration, other quality presets and Release commands
 remain pending; other workflow callers retain their current implementations.
 
+The finite `ci_scope.record_control_owners` helper derives local record-checker
+and regression-script responsibility from each committed control entry and
+native `mise tasks info` output in its exact endpoint checkout. It retains those
+authority coordinates and advisory local semantics without executing either
+task or adding CI selection. Its actual caller join remains pending; native
+product/control consumption is separate from responsibility.
+
 New ecosystem integrations follow the HLD's
 [native integration boundary](../../../public/lib/three-workflow-delivery-v3/docs/high-level-design.md#native-integrations).
 PNPM integration invokes the repository-selected CLI directly. The implemented
