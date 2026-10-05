@@ -202,7 +202,9 @@ The [Git native fact evidence](./research/git-native-facts.md) supports committe
 revision inventory, direct endpoint changes and strict native path decoding.
 The [MSBuild native item evidence](./research/msbuild-native-items.md) supports a
 narrow evaluated resource-input projection for a specified project/dimension;
-membership, wider .NET facts and CI owner integration remain separate work.
+root CI now consumes the control-test resource projection and retains its existing
+.NET test executor. Membership, wider .NET facts and complete group integration
+remain separate work.
 The [NBGV native-input assessment](./research/nbgv-native-inputs.md) identifies
 public configuration/filter APIs and bounded Linux application observations for
 official-package delivery and the existing PNPM reader. Complete CI integration
