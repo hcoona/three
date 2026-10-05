@@ -45,6 +45,27 @@ internal sealed class MsBuildResourceReader
             "-getItem:EmbeddedResource", "-property:Configuration=" + dimension.Configuration,
             "-property:TargetFramework=" + dimension.TargetFramework,
             "-property:RuntimeIdentifier=" + dimension.RuntimeIdentifier], token);
+        return ReadResult(output, committedProject, dimension.Configuration, dimension, token);
+    }
+
+    internal async Task<MsBuildResources> ReadDefaultAsync(string project, string configuration,
+        CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        RequireCoordinate(project);
+        string committedProject = RequireFile(project);
+        RequireLiteral(configuration, false);
+        string output = await query(["msbuild", Path.Combine(checkout.Root, committedProject),
+            "-nologo", "-noAutoResponse",
+            "-getProperty:MSBuildProjectFullPath,Configuration,TargetFramework,TargetFrameworks,"
+                + "RuntimeIdentifier,RuntimeIdentifiers",
+            "-getItem:EmbeddedResource", "-property:Configuration=" + configuration], token);
+        return ReadResult(output, committedProject, configuration, null, token);
+    }
+
+    private MsBuildResources ReadResult(string output, string committedProject,
+        string configuration, MsBuildDimension? requested, CancellationToken token)
+    {
         token.ThrowIfCancellationRequested();
         using JsonDocument result = JsonDocument.Parse(output);
         JsonElement properties = Property(result.RootElement, "Properties");
@@ -52,8 +73,18 @@ internal sealed class MsBuildResourceReader
         var effective = new MsBuildDimension(Text(Property(properties, "Configuration")),
             Text(Property(properties, "TargetFramework")),
             Text(Property(properties, "RuntimeIdentifier"), allowEmpty: true));
-        if (nativeProject != committedProject || effective != dimension)
+        if (nativeProject != committedProject || effective.Configuration != configuration ||
+            (requested is not null && effective != requested))
             throw new InvalidDataException("MSBuild returned a different project or dimension.");
+        if (requested is null)
+        {
+            if (Text(Property(properties, "TargetFrameworks"), allowEmpty: true) != "" ||
+                Text(Property(properties, "RuntimeIdentifiers"), allowEmpty: true) != "")
+                throw new InvalidDataException(
+                    "Control resource evaluation requires one default dimension.");
+            RequireLiteral(effective.TargetFramework, false);
+            RequireLiteral(effective.RuntimeIdentifier, true);
+        }
         JsonElement resources = Property(Property(result.RootElement, "Items"),
             "EmbeddedResource");
         if (resources.ValueKind != JsonValueKind.Array)

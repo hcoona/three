@@ -19,9 +19,11 @@ quality recipe and retains every check result and original package output.
 The adopted fixture has a bounded Linux
 [native build/package/consumer observation](../../../public/lib/three-workflow-delivery-v3/docs/research/node-ci-native-execution.md).
 The GitHub event comparison command reads native payloads and resolves comparison
-endpoints under the MLD's finite mapping. Hosted event/transfer integration,
-group integration, other quality presets and Release commands remain pending.
-Existing workflows still use their current implementations.
+endpoints under the MLD's finite mapping. Root CI now uses this comparison and
+native control-test resource inputs in its existing Windows scope job. The
+existing .NET job remains the sole general .NET test executor. Node execution
+ownership, complete group integration, other quality presets and Release commands
+remain pending; other workflow callers retain their current implementations.
 
 New ecosystem integrations follow the HLD's
 [native integration boundary](../../../public/lib/three-workflow-delivery-v3/docs/high-level-design.md#native-integrations).
@@ -164,9 +166,25 @@ property functions even without targets.
 The [native interface evidence](../../../public/lib/three-workflow-delivery-v3/docs/research/msbuild-native-items.md)
 and controlled-result/actual CLI tests cover this narrow projection. It does not
 discover project membership, imports, references, other item/target inputs or
-required dimensions. It has no CLI caller or owner-selection integration yet and
-does not qualify complete .NET facts or CI group cutover. The initial actual
-consumer is the control test project's embedded npm fixture version file.
+required dimensions. It does not qualify complete .NET facts or CI group cutover.
+
+[`ControlTestInputs`](Repository/ControlTestInputs.cs) exposes one concrete root-CI
+consumer through `ci control-inputs`: the control test project's embedded resources,
+including the npm fixture version file. Git confirms the exact comparison,
+candidate owner and optional base absence. Each present endpoint is a caller-prepared
+exact materialization. One native query per distinct endpoint uses Debug without
+TFM/RID overrides; the effective TFM must be nonempty and plural TFM/RID declarations
+must be empty. Unsupported required shapes fail.
+
+[`prepare_ci_control_inputs.py`](../../../../eng/scripts/prepare_ci_control_inputs.py)
+resolves the native event once, materializes both endpoints outside the source root
+and restores their test-project reference closures in locked Debug context using
+each endpoint's pinned SDK. The same job builds the complete candidate application
+once. Its finite response carries comparison, project, revision, presence, dimension
+and resource inputs to the existing Python selector before any final scope output.
+Both resource sets contribute the .NET owner and path/project/revision reasons;
+missing or conflicting facts fail rather than suppressing checks. Only the final
+`ci-scope` artifact crosses the job boundary. General Node cutover remains pending.
 
 ### Input Consumer Mapping
 
@@ -351,6 +369,7 @@ Build with the repository-pinned SDK. From the repository root:
 dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll `
   ci comparison pull_request native-event.json <tested-commit>
+dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci control-inputs control-request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan-node node-request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci run-node plan.json execution-request.json
@@ -373,6 +392,15 @@ owns supported comparisons. Required malformed fields or conflicting targets
 return input error; unrelated native fields are ignored. Native Git subsequently
 resolves actual objects. This command does not fetch events, prepare checkouts,
 inspect ancestry or switch workflow/group ownership.
+
+`ci control-inputs <request.json>` consumes `comparison` (`basis`, `candidate`,
+`full`), `repository`, nullable `basisDirectory` and `candidateDirectory`. The
+comparison contains full Git object IDs, and the repository HEAD must be the
+candidate. A null basis directory means confirmed owner absence, not failed
+preparation. Explicit full retains equal comparison IDs and may reuse one endpoint.
+The response contains `comparison`, `basis` and `candidate`; each endpoint carries
+`revision`, the fixed test `project`, `present`, nullable `dimension` and `inputs`.
+This internal response feeds scope selection and supplies no publication authority.
 
 The Node request supplies materializations, not a second fact declaration:
 

@@ -19,7 +19,12 @@ concurrency:
 jobs:
   scope:
     name: Select affected validation
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
+    defaults:
+      run:
+        shell: bash
     outputs:
       validation: ${{ steps.select.outputs.validation }}
       mise: ${{ steps.select.outputs.mise }}
@@ -46,18 +51,47 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
+      - name: Setup candidate control SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Prepare the candidate control application
+        run: |
+          dotnet restore src/private/app/workflow-delivery/WorkflowDelivery.csproj --locked-mode -p:Configuration=Debug
+          dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj -c Debug --no-restore -o artifacts/ci-control-app
+      - name: Resolve and materialize exact control-input endpoints
+        id: materialize
+        run: |
+          python eng/scripts/prepare_ci_control_inputs.py --application artifacts/ci-control-app/WorkflowDelivery.dll prepare \
+            --directory "$RUNNER_TEMP/ci-control-inputs" --event-name "$GITHUB_EVENT_NAME" \
+            --event-path "$GITHUB_EVENT_PATH" --candidate "$GITHUB_SHA"
+      - name: Setup candidate resource SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: ${{ steps.materialize.outputs.candidate_directory }}/global.json
+      - name: Setup basis resource SDK
+        if: steps.materialize.outputs.basis_separate == 'true'
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: ${{ steps.materialize.outputs.basis_directory }}/global.json
       - name: Select work from the actual comparison
         id: select
         env:
-          COMPARISON_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          TESTED_CANDIDATE: ${{ github.sha }}
+          CONTROL_REQUEST: ${{ steps.materialize.outputs.request }}
+          COMPARISON_BASE: ${{ steps.materialize.outputs.basis }}
+          TESTED_CANDIDATE: ${{ steps.materialize.outputs.candidate }}
+          FULL: ${{ steps.materialize.outputs.full }}
         run: |
           python --version
-          if [[ "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]]; then
-            python eng/scripts/ci_scope.py --full --output artifacts/ci-scope.json
+          python eng/scripts/prepare_ci_control_inputs.py --application artifacts/ci-control-app/WorkflowDelivery.dll evaluate \
+            --request "$CONTROL_REQUEST" --response "$RUNNER_TEMP/ci-control-inputs/response.json"
+          if [[ "$FULL" == 'true' ]]; then
+            python eng/scripts/ci_scope.py --full --control-inputs "$RUNNER_TEMP/ci-control-inputs/response.json" \
+              --output artifacts/ci-scope.json
           else
             python eng/scripts/ci_scope.py --from-ref "$COMPARISON_BASE" \
-              --to-ref "$TESTED_CANDIDATE" --output artifacts/ci-scope.json
+              --to-ref "$TESTED_CANDIDATE" --control-inputs "$RUNNER_TEMP/ci-control-inputs/response.json" \
+              --output artifacts/ci-scope.json
           fi
       - name: Retain selection and reasons
         uses: actions/upload-artifact@v7

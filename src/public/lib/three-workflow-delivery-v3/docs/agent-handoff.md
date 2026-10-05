@@ -13,14 +13,16 @@ This is an operating handoff, not a second specification. The
 execution, transfer and outcome contracts. The HLD owns terminology and
 implementation order. The [implementation plan](./migration-strategy.md) identifies
 concrete callers, integration contracts and retirement dependencies.
-Implementation has not yet been cut over. The
+General ecosystem execution ownership has not yet been cut over. Root CI's
+existing scope job now consumes native event comparison and control-test resource
+inputs, with the existing .NET job retaining sole execution ownership. The
 [private application's entry](../../../../private/app/workflow-delivery/README.md)
 describes its implemented CI selection/result interface, GitHub event comparison,
-native Node facts and check execution. The
+native Node facts, control-test resource interface and check execution. The
 [bounded native observation](./research/node-ci-native-execution.md) qualifies
 the adopted fixture composition/effects on Linux. Its finite allowance is stopped
-and the unused reserve expired; hosted event/transfer integration, other quality presets
-and caller cutover remain pending. The
+and the unused reserve expired; Node hosted plan/result transfer, other quality presets
+and execution caller cutover remain pending. The
 [requirements transition](./requirements.md#requirements-and-implementation-transition)
 defines the retained implementation/evidence scope of the old
 [glossary](./architecture-glossary.md),

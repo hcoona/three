@@ -13,10 +13,91 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
     private static readonly MsBuildDimension Release = new("Release", "net10.0", "linux-x64");
     private static readonly string[] BaseInputs =
         ["shared/Version 雪.json", "shared/executable.txt"];
+    private static readonly string[] VersionOnlyInputs = ["shared/Version 雪.json"];
     private static readonly string[] MovedInputs = ["moved/version.json"];
     private static readonly string[] ReleaseNativeInputs =
         ["shared/Version 雪.json", "tests/Control/Resources/kept.txt"];
     private static readonly string[] DebugNativeInputs = ["tests/Control/Resources/kept.txt"];
+
+    [TestMethod]
+    public async Task DefaultQueryPreservesNativeDimensionWithoutOverrides()
+    {
+        using var repo = await FixtureAsync();
+        GitMaterialization checkout = await BindAsync(repo);
+        var dimension = new MsBuildDimension("Debug", "net10.0");
+        JsonNode native = JsonNode.Parse(Output(checkout, dimension, "shared/Version 雪.json"))!;
+        native["Properties"]!["TargetFrameworks"] = "";
+        native["Properties"]!["RuntimeIdentifiers"] = "";
+        string[]? arguments = null;
+        int queries = 0;
+        var reader = new MsBuildResourceReader(checkout, (actual, _) =>
+        {
+            arguments = actual;
+            queries++;
+            return Task.FromResult(native.ToJsonString());
+        });
+
+        MsBuildResources result = await reader.ReadDefaultAsync(Project, "Debug",
+            context.CancellationToken);
+
+        Assert.AreEqual(1, queries);
+        CollectionAssert.AreEqual(new[] { "msbuild", Path.Combine(checkout.Root, Project),
+            "-nologo", "-noAutoResponse",
+            "-getProperty:MSBuildProjectFullPath,Configuration,TargetFramework,TargetFrameworks,"
+                + "RuntimeIdentifier,RuntimeIdentifiers",
+            "-getItem:EmbeddedResource", "-property:Configuration=Debug" }, arguments);
+        Assert.AreEqual(dimension, result.Dimension);
+        CollectionAssert.AreEqual(VersionOnlyInputs, result.Inputs);
+    }
+
+    [TestMethod]
+    [DataRow("frameworks")]
+    [DataRow("rids")]
+    [DataRow("missing-frameworks")]
+    [DataRow("empty-framework")]
+    [DataRow("framework-list")]
+    [DataRow("rid-list")]
+    public async Task DefaultQueryRejectsUnsupportedRequiredShapes(string defect)
+    {
+        using var repo = await FixtureAsync();
+        GitMaterialization checkout = await BindAsync(repo);
+        JsonNode native = JsonNode.Parse(Output(checkout, new("Debug", "net10.0")))!;
+        JsonObject properties = native["Properties"]!.AsObject();
+        properties["TargetFrameworks"] = defect == "frameworks" ? "net9.0;net10.0" : "";
+        properties["RuntimeIdentifiers"] = defect == "rids" ? "linux-x64;win-x64" : "";
+        if (defect == "missing-frameworks") properties.Remove("TargetFrameworks");
+        if (defect == "empty-framework") properties["TargetFramework"] = "";
+        if (defect == "framework-list") properties["TargetFramework"] = "net9.0;net10.0";
+        if (defect == "rid-list") properties["RuntimeIdentifier"] = "linux-x64;win-x64";
+        var reader = new MsBuildResourceReader(checkout,
+            (_, _) => Task.FromResult(native.ToJsonString()));
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            reader.ReadDefaultAsync(Project, "Debug", context.CancellationToken));
+    }
+
+    [TestMethod]
+    public async Task NativeDefaultContextHonorsDebugConditionalResources()
+    {
+        using var repo = await FixtureAsync();
+        await repo.SetAsync(Project, """
+            <Project DefaultTargets="Forbidden">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+              <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+                <EmbeddedResource Include="../../shared/Version 雪.json" />
+              </ItemGroup>
+              <Target Name="Forbidden"><Error Text="No targets are permitted." /></Target>
+            </Project>
+            """);
+        await repo.CommitAsync("HEAD");
+        await repo.GitAsync("reset", "--hard", "HEAD");
+
+        MsBuildResources result = await new MsBuildResourceReader(await BindAsync(repo))
+            .ReadDefaultAsync(Project, "Debug", context.CancellationToken);
+
+        Assert.AreEqual(new("Debug", "net10.0"), result.Dimension);
+        CollectionAssert.AreEqual(VersionOnlyInputs, result.Inputs);
+    }
 
     [TestMethod]
     public async Task ReadBindsRevisionProjectDimensionsAndNativeResourcePaths()

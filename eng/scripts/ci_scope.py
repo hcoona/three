@@ -9,7 +9,7 @@ import os
 import re
 import subprocess
 import tomllib
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from workflow_delivery_v3_hk import changed_paths
 
@@ -30,9 +30,13 @@ SCOPES = (
 ALL_INPUTS = {
     ".github/workflows/ci.yml",
     "eng/scripts/ci_scope.py",
+    "eng/scripts/prepare_ci_control_inputs.py",
     "mise.toml",
     "mise.lock",
 }
+CONTROL_PROJECT = (
+    "tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj"
+)
 PYTHON_INPUTS = {
     "pyproject.toml",
     "uv.lock",
@@ -79,6 +83,8 @@ def git(root: Path, *arguments: str) -> str:
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="strict",
     ).stdout
 
 
@@ -99,14 +105,14 @@ def _python_packages(
 ) -> dict[str, tuple[str, set[str]]]:
     packages = {}
     for path in sorted(files):
-        directory = str(Path(path).parent)
+        directory = str(PurePosixPath(path).parent)
         if not path.endswith("/pyproject.toml") or not any(
             fnmatch.fnmatchcase(directory, member) for member in members
         ):
             continue
         source = root / path
         content = (
-            source.read_text()
+            source.read_text(encoding="utf-8")
             if source.exists()
             else git(root, "show", f"{base}:{path}")
         )
@@ -150,7 +156,7 @@ def _python_consumers(
 
 
 def _dotnet_input(path: str, roots: set[str]) -> bool:
-    inherited = Path(path).name in {
+    inherited = PurePosixPath(path).name in {
         ".editorconfig",
         "Directory.Build.props",
         "Directory.Build.targets",
@@ -162,7 +168,7 @@ def _dotnet_input(path: str, roots: set[str]) -> bool:
     }
     return path in DOTNET_INPUTS or any(
         _under(path, directory)
-        or (inherited and _under(directory, str(Path(path).parent)))
+        or (inherited and _under(directory, str(PurePosixPath(path).parent)))
         for directory in roots
     )
 
@@ -223,20 +229,22 @@ def _work_scopes(path: str, files: set[str]) -> set[str]:
     if path in ALL_INPUTS:
         return set(SCOPES)
     node_roots = {
-        str(Path(item).parent)
+        str(PurePosixPath(item).parent)
         for item in files
         if item.endswith("/package.json") and item.startswith("src/")
     }
     dotnet_roots = {
-        str(Path(item).parent)
+        str(PurePosixPath(item).parent)
         for item in files
         if item.endswith((".csproj", ".fsproj", ".vbproj"))
     }
     ruby_roots = {
-        str(Path(item).parent) for item in files if item.endswith(".gemspec")
+        str(PurePosixPath(item).parent)
+        for item in files
+        if item.endswith(".gemspec")
     }
     applicability = {
-        "mise": Path(path).name in {"mise.toml", "mise.lock"},
+        "mise": PurePosixPath(path).name in {"mise.toml", "mise.lock"},
         "dotnet": _dotnet_input(path, dotnet_roots),
         "node": path in NODE_INPUTS
         or any(_under(path, directory) for directory in node_roots),
@@ -312,10 +320,17 @@ def _legacy_release_input(path: str) -> bool:
 
 
 def select(
-    root: Path, paths: tuple[str, ...], *, base: str, full: bool = False
+    root: Path,
+    paths: tuple[str, ...],
+    *,
+    base: str,
+    full: bool = False,
+    control_inputs: dict | None = None,
 ) -> dict:
     """Select Python roots and the existing Node/.NET workspace units."""
-    config = tomllib.loads((root / "pyproject.toml").read_text())
+    config = tomllib.loads(
+        (root / "pyproject.toml").read_text(encoding="utf-8")
+    )
     test_roots = config["tool"]["pytest"]["ini_options"]["testpaths"]
     if (
         not isinstance(test_roots, list)
@@ -344,6 +359,7 @@ def select(
             reasons[scope].add(path)
         for test in _python_tests(path, test_roots, packages):
             python_reasons[test].add(path)
+        reasons["dotnet"].update(_resource_reasons(path, control_inputs))
     if full:
         for why in (*reasons.values(), *python_reasons.values()):
             why.add("explicit full validation")
@@ -374,6 +390,119 @@ def select(
     }
 
 
+def _resource_reasons(path: str, response: dict | None) -> set[str]:
+    if response is None:
+        return set()
+    return {
+        f"{path} -> {endpoint['project']} ({endpoint['revision']})"
+        for endpoint in (response["basis"], response["candidate"])
+        if path in endpoint["inputs"]
+    }
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict:
+    result: dict = {}
+    for name, value in pairs:
+        if name in result:
+            message = f"Duplicate control input field: {name}"
+            raise ValueError(message)
+        result[name] = value
+    return result
+
+
+def owner_present(root: Path, revision: str) -> bool:
+    """Distinguish confirmed native owner absence from unavailable inventory."""
+    entry = git(root, "ls-tree", "-z", revision, "--", CONTROL_PROJECT)
+    if not entry:
+        return False
+    metadata, path = entry.removesuffix("\0").split("\t", 1)
+    mode, kind, _ = metadata.split(" ")
+    if (
+        path != CONTROL_PROJECT
+        or kind != "blob"
+        or mode not in {"100644", "100755"}
+    ):
+        message = "The control test owner must be a committed regular project"
+        raise ValueError(message)
+    return True
+
+
+def read_control_inputs(
+    root: Path, source: Path, *, base: str, candidate: str, full: bool
+) -> dict:
+    """Validate the receiving-process contract before final scope output."""
+    response = json.loads(
+        source.read_text(encoding="utf-8"), object_pairs_hook=_unique_object
+    )
+    if not isinstance(response, dict) or set(response) != {
+        "comparison",
+        "basis",
+        "candidate",
+    }:
+        message = "Missing or malformed native control input response"
+        raise ValueError(message)
+    expected = {"basis": base, "candidate": candidate, "full": full}
+    comparison = response["comparison"]
+    if (
+        not isinstance(comparison, dict)
+        or type(comparison.get("full")) is not bool
+        or comparison != expected
+        or (full and base != candidate)
+    ):
+        message = "Control inputs disagree with the exact Git comparison"
+        raise ValueError(message)
+    for name, revision in (("basis", base), ("candidate", candidate)):
+        _validate_control_endpoint(root, response[name], revision, name)
+    return response
+
+
+def _validate_control_endpoint(
+    root: Path, endpoint: dict, revision: str, name: str
+) -> None:
+    if (
+        not isinstance(endpoint, dict)
+        or set(endpoint)
+        != {"revision", "project", "present", "dimension", "inputs"}
+        or endpoint["revision"] != revision
+        or endpoint["project"] != CONTROL_PROJECT
+        or type(endpoint["present"]) is not bool
+        or not isinstance(endpoint["inputs"], list)
+    ):
+        message = "Malformed native control endpoint identity"
+        raise ValueError(message)
+    present = owner_present(root, revision)
+    if endpoint["present"] != present or (name == "candidate" and not present):
+        message = "Control project presence disagrees with the native inventory"
+        raise ValueError(message)
+    dimension = endpoint["dimension"]
+    if not present:
+        if dimension is not None or endpoint["inputs"]:
+            message = "An absent control owner cannot return resource facts"
+            raise ValueError(message)
+        return
+    if (
+        not isinstance(dimension, dict)
+        or set(dimension)
+        != {"configuration", "targetFramework", "runtimeIdentifier"}
+        or dimension["configuration"] != "Debug"
+        or not isinstance(dimension["targetFramework"], str)
+        or not dimension["targetFramework"].strip()
+        or not isinstance(dimension["runtimeIdentifier"], str)
+    ):
+        message = "Unsupported native control resource dimension"
+        raise ValueError(message)
+    for path in endpoint["inputs"]:
+        if (
+            not isinstance(path, str)
+            or not path
+            or path.startswith("/")
+            or "\\" in path
+            or any(part in {"", ".", ".."} for part in path.split("/"))
+        ):
+            message = "Noncanonical native resource input coordinate"
+            raise ValueError(message)
+
+
 def main() -> int:
     """Emit explicit applicability only after successful candidate selection."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -381,6 +510,7 @@ def main() -> int:
     parser.add_argument("--from-ref")
     parser.add_argument("--to-ref", default="HEAD")
     parser.add_argument("--full", action="store_true")
+    parser.add_argument("--control-inputs", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     options = parser.parse_args()
     root = options.repository.resolve()
@@ -394,7 +524,7 @@ def main() -> int:
     if candidate != git(root, "rev-parse", "HEAD").strip():
         parser.error("comparison target must be the checked-out candidate")
     if options.full:
-        base, paths = "", ()
+        base, paths = candidate, ()
     else:
         if not options.from_ref:
             parser.error("provide --from-ref or explicitly request --full")
@@ -406,18 +536,31 @@ def main() -> int:
             f"{options.from_ref}^{{commit}}",
         ).strip()
         paths = changed_paths(root, base, candidate)
+    control_inputs = read_control_inputs(
+        root,
+        options.control_inputs,
+        base=base,
+        candidate=candidate,
+        full=options.full,
+    )
     result = {
         "base": base,
         "candidate": candidate,
         "full": options.full,
         "changed_paths": paths,
-        **select(root, paths, base=base, full=options.full),
+        **select(
+            root,
+            paths,
+            base=base,
+            full=options.full,
+            control_inputs=control_inputs,
+        ),
     }
     rendered = json.dumps(result, indent=2) + "\n"
     print(rendered, end="")
     if options.output:
         options.output.parent.mkdir(parents=True, exist_ok=True)
-        options.output.write_text(rendered)
+        options.output.write_text(rendered, encoding="utf-8")
     if output := os.environ.get("GITHUB_OUTPUT"):
         with Path(output).open("a", encoding="utf-8") as stream:
             for scope, selected in result["scopes"].items():
