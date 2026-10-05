@@ -12,6 +12,7 @@ from importlib import import_module
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "eng/scripts"
@@ -591,6 +592,10 @@ def test_full_scope_retains_equal_native_endpoints(comparison):
     assert selected["base"] == selected["candidate"] == candidate
     assert selected["full"] is True
     assert all(selected["scopes"].values())
+    assert selected["endpoint_owners"] == {
+        "basis": {"revision": candidate, "paths": []},
+        "candidate": {"revision": candidate, "paths": []},
+    }
 
 
 def test_confirmed_base_owner_absence_is_explicit_and_candidate_is_required(
@@ -737,3 +742,480 @@ def test_native_prepare_rejects_source_subdirectories(
             ("push", root / "event.json", candidate),
         )
     assert not (root / "generated").exists()
+
+
+def _owner_rows(result, name):
+    return {
+        row["path"]: row for row in result["endpoint_owners"][name]["paths"]
+    }
+
+
+def test_control_preparation_remains_available_without_endpoint_parser():
+    """System-Python bootstrap must not require the UV endpoint parser."""
+    result = subprocess.run(  # noqa: S603 - Exact interpreter and repository help command.
+        [
+            sys.executable,
+            "-S",
+            str(SCRIPTS / "prepare_ci_control_inputs.py"),
+            "--help",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "prepare" in result.stdout
+    assert "evaluate" in result.stdout
+
+
+def test_endpoint_owners_preserve_changed_coordinate_identity(comparison):
+    """Removed coordinates and both rename endpoints keep independent facts."""
+    root, base, candidate = comparison
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    owners = selected["endpoint_owners"]
+    assert owners["basis"]["revision"] == base
+    assert owners["candidate"]["revision"] == candidate
+    before, after = (
+        _owner_rows(selected, "basis"),
+        _owner_rows(selected, "candidate"),
+    )
+    assert list(before) == list(after) == selected["changed_paths"]
+    removed = before["src/python/deleted.py"]
+    assert removed["present"] is True
+    assert removed["mode"] == "100644"
+    assert removed["reasons"] == [
+        {
+            "owner": "python",
+            "target": "src/python/tests",
+            "rule": "retained-python-test-input",
+            "sources": ["pyproject.toml", "src/python/pyproject.toml"],
+        }
+    ]
+    assert after["src/python/deleted.py"] == {
+        "path": "src/python/deleted.py",
+        "present": False,
+        "mode": None,
+        "reasons": [],
+    }
+    assert before["src/node/renamed.txt"]["present"] is False
+    assert after["src/node/renamed.txt"] == {
+        "path": "src/node/renamed.txt",
+        "present": True,
+        "mode": "100644",
+        "reasons": [],
+    }
+    # Retained aggregate execution selects Node; PNPM ownership is pending.
+    assert selected["scopes"]["node"] is True
+    assert selected["python_roots"] == ["src/python/tests"]
+
+
+def test_endpoint_owners_keep_basis_python_targets_from_committed_configuration(
+    comparison,
+):
+    """Committed endpoint facts explain surviving candidate execution."""
+    root, base, _ = comparison
+    project = root / "src/python/pyproject.toml"
+    project.unlink()
+    config = root / "pyproject.toml"
+    config.write_text(
+        config.read_text().replace(
+            'testpaths = ["src/python/tests"]',
+            'testpaths = ["tests/replacement"]',
+        )
+    )
+    replacement = root / "tests/replacement/test_current.py"
+    replacement.parent.mkdir(parents=True)
+    replacement.write_text("pass\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "Replace candidate Python test target")
+    candidate = _git(root, "rev-parse", "HEAD")
+    # Dirty manifest contents do not replace committed endpoint facts.
+    config.write_text(
+        config.read_text().replace('"tests/replacement"', '"tests/dirty"')
+    )
+    owners = scope.endpoint_owners(
+        root,
+        ("src/python/deleted.py", "pyproject.toml"),
+        base=base,
+        candidate=candidate,
+        control_inputs=_control_response(base, candidate),
+    )
+    assert (
+        owners["basis"]["paths"][0]["reasons"][0]["target"]
+        == "src/python/tests"
+    )
+    assert owners["candidate"]["paths"][0]["reasons"] == []
+    assert owners["candidate"]["paths"][1]["reasons"] == [
+        {
+            "owner": "python",
+            "target": "tests/replacement",
+            "rule": "retained-python-test-input",
+            "sources": ["pyproject.toml"],
+        }
+    ]
+    _git(root, "checkout", "--", "pyproject.toml")
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    assert selected["python_roots"] == ["tests/replacement"]
+    assert selected["python_packages"] == ["sample-root"]
+    assert "src/python/tests" not in selected["python_reasons"]
+
+
+@pytest.mark.parametrize("member_pattern", ["*", "?", "[abc]"])
+def test_endpoint_owners_use_committed_member_dependencies(
+    comparison, member_pattern
+):
+    """Surviving consumers use endpoint dependencies, never dirty members."""
+    root, _, _ = comparison
+    paths = tuple(f"src/provider-{name}/input.py" for name in ("a", "b", "c"))
+    test_roots = [
+        "src/python/tests",
+        *(f"src/provider-{name}/tests" for name in ("a", "b", "c")),
+    ]
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "sample-root"\n'
+        '[tool.uv.workspace]\nmembers = ["src/python", '
+        + json.dumps("src/provider-" + member_pattern)
+        + "]\n"
+        + "[tool.pytest.ini_options]\ntestpaths = "
+        + json.dumps(test_roots)
+        + "\n"
+    )
+    member = root / "src/python/pyproject.toml"
+    member.write_text(
+        '[project]\nname = "sample"\ndependencies = ["provider-a"]\n'
+    )
+    for name, path in zip(("a", "b", "c"), paths, strict=True):
+        directory = (root / path).parent
+        directory.mkdir()
+        (directory / "pyproject.toml").write_text(
+            f'[project]\nname = "provider-{name}"\n'
+        )
+        (directory / "tests").mkdir()
+        (directory / "tests/test_provider.py").write_text("pass\n")
+        (root / path).write_text("original = True\n")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Add basis Python dependency")
+    base = _git(root, "rev-parse", "HEAD")
+    member.write_text(member.read_text().replace("provider-a", "provider-b"))
+    for path in paths:
+        (root / path).write_text("updated = True\n")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Change candidate Python dependency")
+    candidate = _git(root, "rev-parse", "HEAD")
+    member.write_text(member.read_text().replace("provider-b", "provider-c"))
+
+    owners = scope.endpoint_owners(
+        root,
+        paths,
+        base=base,
+        candidate=candidate,
+        control_inputs=_control_response(base, candidate),
+    )
+    for endpoint, dependency in (("basis", "a"), ("candidate", "b")):
+        assert owners[endpoint]["revision"] == (
+            base if endpoint == "basis" else candidate
+        )
+        for name, row in zip(
+            ("a", "b", "c"), owners[endpoint]["paths"], strict=True
+        ):
+            targets = [f"src/provider-{name}/tests"]
+            if name == dependency:
+                targets.append("src/python/tests")
+            assert row == {
+                "path": f"src/provider-{name}/input.py",
+                "present": True,
+                "mode": "100644",
+                "reasons": [
+                    {
+                        "owner": "python",
+                        "target": target,
+                        "rule": "retained-python-test-input",
+                        "sources": [
+                            "pyproject.toml",
+                            target.removesuffix("/tests") + "/pyproject.toml",
+                        ],
+                    }
+                    for target in sorted(targets)
+                ],
+            }
+
+    _git(root, "checkout", "--", "src/python/pyproject.toml")
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    assert selected["python_roots"] == test_roots
+    assert selected["python_packages"] == [
+        "sample-root",
+        "provider-a",
+        "provider-b",
+        "provider-c",
+        "sample",
+    ]
+    assert selected["python_reasons"] == {
+        "src/python/tests": [paths[1], "src/python/pyproject.toml"],
+        **{
+            f"src/provider-{name}/tests": [path]
+            for name, path in zip(("a", "b", "c"), paths, strict=True)
+        },
+    }
+
+
+def test_endpoint_owners_retain_multiple_native_and_project_responsibilities(
+    comparison,
+):
+    """Keep general .NET, special-job and native resource reasons separate."""
+    root, _, base = comparison
+    azure = root / scope.AZURE / "Sample.csproj"
+    azure.parent.mkdir(parents=True)
+    azure.write_text("<Project />")
+    source = azure.parent / "Input.cs"
+    source.write_text("class Input {}")
+    (root / "dirs.proj").write_text("<Project />")
+    resource = root / "src/public/lib/hcoona-release-smoke-npm/version.json"
+    resource.parent.mkdir(parents=True)
+    resource.write_text('{"version":"1.0"}')
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Add owned native inputs")
+    candidate = _git(root, "rev-parse", "HEAD")
+    result = _select_cli(
+        root,
+        "--from-ref",
+        base,
+        receipt=_control_response(
+            base, candidate, after=(str(resource.relative_to(root)),)
+        ),
+    )
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    azure_reasons = _owner_rows(selected, "candidate")[
+        str(source.relative_to(root))
+    ]["reasons"]
+    assert {(item["owner"], item["target"]) for item in azure_reasons} == {
+        ("dotnet", str(azure.relative_to(root))),
+        ("azureauth", scope.AZURE),
+    }
+    native_reasons = _owner_rows(selected, "candidate")[
+        str(resource.relative_to(root))
+    ]["reasons"]
+    assert native_reasons == [
+        {
+            "owner": "dotnet",
+            "target": scope.CONTROL_PROJECT,
+            "rule": "native-embedded-resource",
+            "sources": [scope.CONTROL_PROJECT],
+        }
+    ]
+    assert selected["scopes"]["dotnet"]
+    assert selected["scopes"]["azureauth"]
+    assert not selected["endpoint_owners"]["basis"]["paths"][0]["reasons"]
+
+
+def _catalog(root, pattern="docs/*.md"):
+    target = root / scope.FAMILY_CATALOG
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 3,
+                "families": [{"id": "records"}],
+                "bindings": [
+                    {
+                        "id": "project-docs",
+                        "family": "records",
+                        "namespace": "repository",
+                        "state": "current",
+                        "carrier": "repository-files",
+                        "path": pattern,
+                    }
+                ],
+            }
+        )
+    )
+    return target
+
+
+def test_endpoint_owners_use_record_bindings_without_guessing_node_membership(
+    comparison,
+):
+    """Endpoint record routing keeps unmatched paths unknown."""
+    root, _, _ = comparison
+    catalog = _catalog(root)
+    for path in ("docs/guide.md", "docs/nested/guide.md", "unknown.txt"):
+        target = root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("Original")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Bind direct documentation")
+    base = _git(root, "rev-parse", "HEAD")
+    _catalog(root, "docs/**/*.md")
+    for path in (
+        "docs/guide.md",
+        "docs/nested/guide.md",
+        "unknown.txt",
+        "src/node/package.json",
+    ):
+        target = root / path
+        target.write_text(target.read_text() + " ")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Bind nested documentation")
+    candidate = _git(root, "rev-parse", "HEAD")
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    before, after = (
+        _owner_rows(selected, "basis"),
+        _owner_rows(selected, "candidate"),
+    )
+    record = {
+        "owner": "record-system",
+        "target": "docs/nested/guide.md",
+        "rule": "record-binding:project-docs",
+        "sources": [str(catalog.relative_to(root))],
+    }
+    assert before["docs/nested/guide.md"]["reasons"] == []
+    assert after["docs/nested/guide.md"]["reasons"] == [record]
+    assert before["docs/guide.md"]["reasons"][0]["owner"] == "record-system"
+    assert after["unknown.txt"]["reasons"] == []
+    assert after["src/node/package.json"]["reasons"] == []
+    assert selected["scopes"]["validation"] is True
+    assert selected["scopes"]["node"] is True
+    assert selected["python_roots"] == []
+    assert selected["candidate"] == candidate
+
+
+def test_endpoint_record_owners_accept_native_yaml_merge(comparison):
+    """Native merge mappings retain the canonical checker's catalog meaning."""
+    root, _, base = comparison
+    catalog = _catalog(root)
+    catalog.write_text(
+        "schema_version: 3\n"
+        "families: [{id: records}]\n"
+        "bindings:\n"
+        "  - <<: {id: project-docs, family: records, namespace: repository, "
+        "state: current, carrier: repository-files, path: 'docs/*.md'}\n"
+    )
+    target = root / "docs/guide.md"
+    target.write_text("Owned record\n")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Use native merged record binding")
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    assert _owner_rows(selected, "candidate")["docs/guide.md"]["reasons"] == [
+        {
+            "owner": "record-system",
+            "target": "docs/guide.md",
+            "rule": "record-binding:project-docs",
+            "sources": [str(catalog.relative_to(root))],
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "duplicate-yaml",
+        "duplicate-merged-yaml",
+        "wrong-version",
+        "foreign-family",
+        "unsafe-binding",
+        "question-binding",
+        "bracket-binding",
+        "missing-base-object",
+    ],
+)
+def test_invalid_endpoint_owner_inputs_emit_no_successful_scope(
+    comparison, defect
+):
+    """Failed committed reads cannot emit successful applicability."""
+    root, _, base = comparison
+    catalog = _catalog(root)
+    if defect == "duplicate-yaml":
+        catalog.write_text(catalog.read_text() + "schema_version: 3\n")
+    elif defect == "duplicate-merged-yaml":
+        catalog.write_text(catalog.read_text() + "<<: {schema_version: 3}\n")
+    elif defect == "wrong-version":
+        catalog.write_text(
+            catalog.read_text().replace(
+                "schema_version: 3", "schema_version: 2"
+            )
+        )
+    elif defect == "foreign-family":
+        catalog.write_text(
+            catalog.read_text().replace("family: records", "family: unknown")
+        )
+    elif defect == "unsafe-binding":
+        catalog.write_text(
+            catalog.read_text().replace("docs/*.md", "../outside/*.md")
+        )
+    elif defect in {"question-binding", "bracket-binding"}:
+        catalog.write_text(
+            catalog.read_text().replace(
+                "docs/*.md",
+                "docs/?.md" if defect == "question-binding" else "docs/[ab].md",
+            )
+        )
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Candidate endpoint input")
+    if defect == "missing-base-object":
+        base = "f" * 40
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode != 0
+    assert not result.stdout.strip()
+    assert not (root / "outputs").exists()
+
+
+def test_endpoint_owners_keep_nonregular_git_modes_distinct(comparison):
+    """Gitlink and symlink coordinates retain distinct entry modes."""
+    root, _, base = comparison
+    blob = root / "target.txt"
+    blob.write_text("outside\n")
+    link_object = _git(root, "hash-object", "-w", "target.txt")
+    _git(
+        root,
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        "120000",
+        link_object,
+        "unknown-link",
+    )
+    _git(
+        root,
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        "160000",
+        base,
+        "unknown-submodule",
+    )
+    _git(root, "commit", "-qm", "Add nonregular coordinates")
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    before, after = (
+        _owner_rows(selected, "basis"),
+        _owner_rows(selected, "candidate"),
+    )
+    for path, mode in (
+        ("unknown-link", "120000"),
+        ("unknown-submodule", "160000"),
+    ):
+        assert before[path] == {
+            "path": path,
+            "present": False,
+            "mode": None,
+            "reasons": [],
+        }
+        assert after[path] == {
+            "path": path,
+            "present": True,
+            "mode": mode,
+            "reasons": [],
+        }
+    assert not selected["scopes"]["node"]
+    assert selected["python_roots"] == []

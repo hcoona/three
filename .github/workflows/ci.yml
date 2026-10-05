@@ -51,6 +51,10 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
+      - name: Setup locked selection dependencies
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Prepare existing root selection parser
+        run: uv sync --frozen --only-group dev --no-install-project --no-install-workspace
       - name: Setup candidate control SDK
         uses: actions/setup-dotnet@v6
         with:
@@ -86,10 +90,10 @@ jobs:
           python eng/scripts/prepare_ci_control_inputs.py --application artifacts/ci-control-app/WorkflowDelivery.dll evaluate \
             --request "$CONTROL_REQUEST" --response "$RUNNER_TEMP/ci-control-inputs/response.json"
           if [[ "$FULL" == 'true' ]]; then
-            python eng/scripts/ci_scope.py --full --control-inputs "$RUNNER_TEMP/ci-control-inputs/response.json" \
+            uv run --frozen --no-sync python eng/scripts/ci_scope.py --full --control-inputs "$RUNNER_TEMP/ci-control-inputs/response.json" \
               --output artifacts/ci-scope.json
           else
-            python eng/scripts/ci_scope.py --from-ref "$COMPARISON_BASE" \
+            uv run --frozen --no-sync python eng/scripts/ci_scope.py --from-ref "$COMPARISON_BASE" \
               --to-ref "$TESTED_CANDIDATE" --control-inputs "$RUNNER_TEMP/ci-control-inputs/response.json" \
               --output artifacts/ci-scope.json
           fi
