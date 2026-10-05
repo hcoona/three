@@ -142,6 +142,32 @@ The [native contract evidence](../../../public/lib/three-workflow-delivery-v3/do
 and real isolated Git/process tests cover this component. It is not complete
 repository facts, event resolution, revision checkout management or caller cutover.
 
+### MSBuild Resource Input Component
+
+[`MsBuildResourceReader`](Repository/MsBuildResourceReader.cs) reads evaluated
+`EmbeddedResource` items for a caller-specified committed project and concrete
+configuration/TFM/RID in an exact `GitMaterialization`. It invokes `dotnet msbuild`
+with supported evaluation-only JSON switches and disables automatic response
+files. The caller supplies the selected SDK and any locked preparation required
+by project evaluation; this reader does not restore or build.
+
+Native project identity and effective dimensions must match the request. Native
+`FullPath` values become in-root committed regular-file inputs with their original
+Git spelling. Missing or unsupported files and malformed/conflicting native
+results fail. Unspecified RID and a valid empty resource array are allowed;
+duplicate appearances of a resource retain one input relation. Dimension values
+must be single literal values without property-list separators or escape syntax.
+Read each revision separately so a removed or moved resource retains its prior
+consumer. Evaluation belongs in an unprivileged context and can run project
+property functions even without targets.
+
+The [native interface evidence](../../../public/lib/three-workflow-delivery-v3/docs/research/msbuild-native-items.md)
+and controlled-result/actual CLI tests cover this narrow projection. It does not
+discover project membership, imports, references, other item/target inputs or
+required dimensions. It has no CLI caller or owner-selection integration yet and
+does not qualify complete .NET facts or CI group cutover. The initial actual
+consumer is the control test project's embedded npm fixture version file.
+
 ### Input Consumer Mapping
 
 [`NodeInputConsumers`](Repository/NodeInputConsumers.cs) adapts a complete supplied
