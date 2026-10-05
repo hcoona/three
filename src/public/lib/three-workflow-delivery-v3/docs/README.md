@@ -28,8 +28,10 @@ retained evidence. The implementation and completed campaigns described below
 do not claim conformity to the replacement. The
 [Wave](../../../../../docs/delivery-wave.md) covers the full contraction.
 The [private application entry](../../../../private/app/workflow-delivery/README.md)
-documents CI selection/result and the internal PNPM graph component. Complete
-native fact assembly, check execution and workflow cutover remain pending.
+documents CI selection/result, native Node fact assembly and the adopted check
+executor. The [bounded native observation](./research/node-ci-native-execution.md)
+qualifies the adopted fixture composition on Linux. Event/transfer integration,
+other quality presets and workflow cutover remain pending.
 
 The pre-contraction normal-Live baseline was merged across the
 requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
@@ -200,9 +202,9 @@ The [NBGV native-input assessment](./research/nbgv-native-inputs.md) identifies
 public configuration/filter APIs and bounded Linux application observations for
 official-package delivery and the existing PNPM reader. Complete CI integration
 remains pending.
-The [Node CI native execution protocol](./research/node-ci-native-execution.md)
-bounds the complete selected Node build, package and fresh-consumer composition
-before caller cutover; source review alone does not establish its success.
+The [Node CI native execution observation](./research/node-ci-native-execution.md)
+retains the completed adopted-fixture Linux composition/effects evidence,
+independent reviews and stopped protocol. It does not establish caller cutover.
 
 Load these implementation-baseline records only for their existing code or
 historical-evidence consumers, under the
