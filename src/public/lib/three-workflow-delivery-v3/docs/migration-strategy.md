@@ -233,6 +233,197 @@ not establish routing or complete-group acceptance. Retained Python consumers,
 all selected Node variants and explicit migrated execution ownership remain
 separate prerequisites of the later group cutover.
 
+### First Node Execution Group
+
+This is the concrete integration contract for the first root-CI execution
+cutover. It refines the MLD's selection and transfer contracts; it does not claim
+that the new caller or input projections have been implemented or qualified.
+The group adopts the npm fixture's existing quality/package obligations. Other
+native workspace members retain their existing Node executor. Native PNPM impact
+is computed over the complete supported workspace before this ownership split.
+An unadopted member needs no replacement preset merely to retain its checks.
+
+#### Endpoint Responsibility and Selection
+
+Extend the existing `ci-scope` JSON with `endpoint_owners`, alongside its existing
+aggregate selections. Each `basis`/`candidate` endpoint carries its exact
+`revision` and one `paths` row for every changed coordinate. A row contains
+`path`, committed `present`, nullable Git `mode`, and `reasons`; each positive
+reason contains `owner`, concrete `target`, `rule`, and source-file coordinates
+in `sources`. Confirmed absence has `present=false`, `mode=null` and no reasons.
+Multiple legitimate owners remain separate reasons. Native Git supplies entry
+presence/mode and committed configuration bytes; missing facts are not absence.
+Only changed coordinates are transferred, not another ownership database.
+
+Refactor the retained selector's project, Python-test, resource and special-job
+associations to produce these endpoint facts. Read each endpoint's own Python
+workspace/test configuration and manifests. Preserve the existing aggregate
+candidate-execution semantics separately, including candidate replacement test
+roots and candidate-present package preparation. A basis-only owner explains a
+removed input; it does not execute a deleted target. Preserve both general .NET
+and AzureAuth owners when applicable and the native control-test resource reasons
+already integrated above.
+
+Record responsibility uses the accepted endpoint's record-family bindings and
+the existing component-aware matcher from `check_repository_records.py`. Extract
+that small pure matcher for both consumers rather than import the entire checker
+or introduce another glob dialect. Prepare the existing root dev dependency
+group through frozen UV synchronization for its locked PyYAML parser; introduce
+no second parser/version/lock declaration. Catalog parsing and matching do not
+run the full contextual record checker in every scope job. Unconditional source
+conformance is not a positive owner for an arbitrary path.
+
+The Ubuntu group joins native PNPM membership and reasons before final owner
+validation. The Windows selector's `src/` package-manifest heuristic cannot
+establish or reject native Node responsibility. Manifest/catalog reads used to
+discover an owner do not themselves make those files product execution inputs.
+Responsibility and actual product/control consumption remain distinct.
+
+Compute the complete supported PNPM, product NBGV, declaration and control-input
+relations at both endpoints, then select their reverse consumers and surviving
+candidate work. A changed coordinate may be excluded from the fixture group only
+when every relevant present endpoint has positive responsibility and neither
+endpoint has a group consumer. Unknown ownership, unsupported relevant entries,
+unresolved necessary inputs or failed native reads fail planning. Do not infer
+nonselection from arbitrary Git subtraction, filename extensions or HK success.
+Explicit full selects all supported adopted checks and retained Node owners; it
+still rejects unresolved required facts. An empty plan retains its exact subject.
+
+#### Native Control-CLI Inputs
+
+The supported control operation is unprivileged Ubuntu Debug locked restore/build
+of `src/private/app/workflow-delivery/WorkflowDelivery.csproj`, followed by Node
+planning/execution. Use the endpoint's committed SDK with one effective TFM, no
+RID override or project references, and ordinary build properties recorded with
+the operation. Record project, SDK, configuration, TFM, working directory,
+output/intermediate paths and relevant CI/global properties. The candidate CLI
+must build successfully even when no product check is selected. A distinct
+basis gets its own exact materialization and native context. Confirmed absence
+of the basis CLI is supported; a failed restore/build/read is not absence.
+
+Read the ordinary build's binary log through the selected SDK's maintained
+`BinaryLogReplayEventSource`, reusing only the predecessor's native replay
+mechanism inside the one private application. Use structured import, task,
+parameter and completion events, with `MSBuildLogVerboseTaskParameters=true` and
+task-input logging enabled. Native `-getItem/-getProperty` queries supplement the
+SDK's configuration candidate lists and operation context. Do not add a custom
+compiler snapshot, `ProjectCollection` host, SDK XML evaluator, compiler command
+parser, localized-text fallback or extra helper project.
+
+Correlate `TaskStarted`, `TaskInput` parameters and completion through native
+build/node/project/target/task contexts. Accept inputs only for the actual CLI
+operation and supported producers. Preserve the native parameter role, item
+identity and required metadata; `IList` alone does not define a universal path
+schema. The finite mapping is:
+
+| Native role                        | Projection and supported boundary                                                                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Csc file lists                     | `Sources`, `Resources`, `References`, `AdditionalFiles`, `Analyzers`, `AnalyzerConfigFiles`, `EmbeddedFiles`, `AddModules` and `LinkResources`; include repository inputs and classify generated/external inputs below. Output assembly, documentation, PDB and generated-output directory parameters are outputs.                                                                                              |
+| Csc scalar/indirect files          | Recognize `ApplicationConfiguration`, `CodeAnalysisRuleSet`, `KeyFile`, `ResponseFiles`, `Win32Icon`, `Win32Manifest`, `Win32Resource` and `SourceLink`. The first operation supports generated SourceLink through its native producer/configuration; other nonempty forms remain unavailable until their native/explicit input adapter is implemented. A response filename alone cannot close indirect reads.  |
+| Standard generated compiler inputs | Associate SDK global-usings, assembly/TFM attributes, generated analyzer configuration and NBGV managed version source with their native producer inputs/outputs and contributing configuration. Preserve generated identity; do not rewrite an `obj` filename into a guessed source path. A generated resource or other generator outside this finite operation fails until its producer/input adapter exists. |
+| Runtime inputs                     | Include native source-backed copy inputs and resolved implementation dependencies used by running the CLI, not just Csc reference assemblies. Bind source files to native Copy input identities/metadata and their output roles. The current locked CopyOnWrite task implementation is part of the supported operation; task name alone does not establish implementation semantics.                            |
+| Project/configuration inputs       | Include the main project, contributing native imports, SDK/CPM/locked restore configuration and concrete group caller/preparation files. Native imports do not include the main project automatically.                                                                                                                                                                                                          |
+| Optional configuration candidates  | Query native `PotentialEditorConfigFiles` and `GlobalAnalyzerConfigFiles`, retaining relevant absent coordinates. The finite operation also includes standard root/ancestor SDK, NuGet, Directory.Build and Directory.Packages configuration search coordinates. These are supported search candidates, not a claim of arbitrary missing-import discovery.                                                      |
+
+Normalize repository paths in their native project/task context to the exact
+endpoint's committed spelling. Only supported regular Git files become source
+inputs. A generated file must join a supported native producer/configuration
+relation. Files outside the checkout must join the selected SDK or locked restore
+package/tool identity; unknown external files fail. Do not invent source paths
+from output basenames or treat all external files as pinned dependencies.
+
+This is a maintained adapter for the concrete CLI build, not a filesystem trace
+or an arbitrary-MSBuild completeness promise. Review additions to custom tasks,
+imports, generators and indirect inputs against this boundary; detectable
+unsupported tasks/parameters fail at runtime. Native events cannot discover a
+custom task's arbitrary unreported reads. Such behavior requires an explicit
+adapter before adoption, rather than an application monitoring or trust service.
+
+Require successful restore/build, complete successful replay, successful relevant
+task completion and an actual required Csc invocation. Fresh endpoint output and
+intermediate state prevents an incremental hit from standing in for input
+coverage. Design-time/skipped compiler execution, truncated/malformed logs,
+missing required fields or conflicting contexts fail. Optional empty parameters
+remain distinguishable from required missing events. A supported SDK pair must
+have ordinary integration evidence for event emission and replay/dependency
+loading; an incompatible basis/candidate pair fails explicitly. Do not infer
+exact-runtime support from a newer public API page.
+
+Unused CLI self AssemblyVersion/InformationalVersion and source-link provenance
+do not create product-consumption edges solely because the repository commit
+changes. This narrow rule requires no current runtime consumer of that metadata;
+genuine CLI source/configuration/dependency/preparation inputs remain semantic.
+Product NBGV version inputs remain native product inputs. Always retain the exact
+candidate control-build provenance and native failure behavior.
+
+#### Workflow, Runtime Variants and Results
+
+Add one static Ubuntu group job after the existing Windows scope job. The scope
+upload exposes its actual immutable artifact ID. The group downloads that ID and
+validates the actual producer/run, comparison, complete changed-coordinate set
+and endpoint facts before planning. Use native transfer integrity; add no
+signature, admission mirror or producer download/readmission loop. Plan every
+change, independently of the old coarse Node Boolean. Build and use the candidate
+CLI in this job; there is no separate CLI artifact without another consumer.
+
+The retained Node matrix depends one-way on scope and this group. Successful
+planning supplies explicit retained-member selections/reasons and applicability;
+failed/missing group planning cannot become a skip. Exclude exactly the migrated
+fixture using PNPM's native negative directory filter for recursive build/test,
+while preserving full frozen installation, every other workspace member, both
+runtime variants, if-present test behavior and the Hexo typecheck/packed probes.
+Resolve any real generated-output prerequisite before crossing this boundary.
+Do not execute an adopted check again through the retained aggregate owner.
+
+Preserve these seven required obligations:
+
+| Runtime | Required checks and actual prerequisites                                                                               |
+| ------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Node 22 | Build and source test; source test has no build prerequisite.                                                          |
+| Node 24 | Build and source test; npm package requires build, and package contents/clean installed consumer require that package. |
+
+Resolve runtime variants from root CI's existing `node-version` matrix and the
+committed mise toolchain authority, retaining actual native version readback.
+Do not maintain a second runtime list. Finite variant keys carry those dimensions
+through planning, execution and results; packaging remains Node 24 only. Each
+runtime receives the complete parent plan plus its selected runtime context.
+The collector evaluates both result sets against that original plan, with no
+success substituted for another runtime's missing/failed/canceled/timed-out/
+skipped/conflicting required result.
+
+Prepare separate exact candidate materializations, native dependency state and
+external scratch for the two runtimes. Node 22 build can stamp its tracked
+manifest without postpack reset; fresh scratch alone does not isolate source.
+Use native checkouts, not application cleanup/recovery logic. An empty product
+plan requires no product runtime execution. Root CI retains overall result
+ownership; the group and retained executor remain required when applicable.
+
+#### Atomic Fixture Move and Acceptance
+
+Move the native member to
+`tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm`
+with unchanged package coordinate, PNPM membership/importer, relative quality/
+unit declarations and native version/operation inputs. Associate old basis and
+new candidate coordinates through native identity; retain no duplicate fixture
+or mutable compatibility alias. Update current MSBuild resources/tests, Python
+source-copy/catalog/adapter consumers, active legacy Release source-path readers
+and workflow environments atomically. Preserve original historical bytes and
+Git-pinned evidence identities. No Release execution follows from this move.
+If an active reader cannot migrate correctly, defer both move and dependent
+caller cutover together.
+
+Before cutover, validate transitive/removed/native local inputs, dependency-edge
+changes, source moves/deletions, selected unadopted members, explicit full/empty
+plans, genuine shared/control inputs and unrelated owned Node/C#/Python/record
+nonselection. Validate real target-added NBGV references, later analyzer-config
+inputs, generated/pinned input classification, supported copy roles, task context
+correlation, missing/failed/skipped compiler facts and unsupported indirect reads.
+Verify the exact SDK logging/replay dependency assumptions in ordinary authorized
+implementation tests, then the actual changed-code hosted transfer, retained
+filter and all seven obligations. These are implementation acceptance conditions,
+not a claim of existing native qualification or permission to revive the stopped
+Node campaign. A necessary native capability gap returns to the owner.
+
 ### CLI and Boundary Payloads
 
 The executable is `workflow-delivery`; these are internal command families with
