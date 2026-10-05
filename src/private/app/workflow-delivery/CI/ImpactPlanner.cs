@@ -3,8 +3,13 @@ namespace WorkflowDelivery.CI;
 internal static class ImpactPlanner
 {
     internal static CiPlan Plan(PlanRequest request)
+        => PlanSelected(request, SelectProjects(request));
+
+    internal static CiPlan PlanSelected(PlanRequest request,
+        IReadOnlyDictionary<string, HashSet<SelectionReason>> reasons)
     {
-        Dictionary<string, HashSet<SelectionReason>> reasons = SelectProjects(request);
+        // Callers can partition native selections, but hydrated facts must remain complete.
+        SelectProjects(request with { ChangedPaths = [], Full = false });
         Dictionary<string, ProjectFacts> candidate = request.Candidate.Projects
             .ToDictionary(project => project.Id, StringComparer.Ordinal);
 

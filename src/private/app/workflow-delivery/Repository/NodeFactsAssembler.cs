@@ -28,6 +28,16 @@ internal static class NodeFactsAssembler
         var request = new PlanRequest(before, after, changedPaths, full);
         Dictionary<string, HashSet<SelectionReason>> selected =
             ImpactPlanner.SelectProjects(request);
+        return await CompleteAsync(candidate, request, selected, scripts, npmVersion, token);
+    }
+
+    internal static async Task<CiPlan> CompleteAsync(NodeRevisionInputs candidate,
+        PlanRequest request, IReadOnlyDictionary<string, HashSet<SelectionReason>> selected,
+        Func<PnpmProject, CancellationToken, Task<PnpmScripts>> scripts,
+        Func<PnpmProject, CancellationToken, Task<string>> npmVersion,
+        CancellationToken token)
+    {
+        RepositoryFacts after = request.Candidate;
         var native = candidate.Graph.Projects.Where(project => project.Directory != ".")
             .ToDictionary(project => project.Directory, StringComparer.Ordinal);
         var work = new Dictionary<string, List<CheckSpec>>(StringComparer.Ordinal);
@@ -66,7 +76,7 @@ internal static class NodeFactsAssembler
         after = after with { Projects = after.Projects.Select(project =>
             work.TryGetValue(project.Id, out List<CheckSpec>? checks)
                 ? project with { Checks = [.. checks] } : project).ToArray() };
-        return ImpactPlanner.Plan(request with { Candidate = after });
+        return ImpactPlanner.PlanSelected(request with { Candidate = after }, selected);
     }
 
     internal static RepositoryFacts Assemble(NodeRevisionInputs inputs)
