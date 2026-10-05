@@ -297,13 +297,19 @@ preset, and unmigrated/cross-group callers retain their current owners.
 
 ### Node Check Execution
 
-[`NodeExecution`](CI/NodeExecution.cs) consumes that complete plan and one
-caller-prepared checkout plus fresh external scratch directory. It validates
+[`NodeExecution`](CI/NodeExecution.cs) consumes a complete runtime-expanded parent
+plan, an explicit `node22` or `node24` context, and one caller-prepared checkout
+plus fresh external scratch directory. It validates
 the supported required quality, runner, variant, package associations and prerequisites
 before running work, then binds the exact clean tracked starting checkout.
 Normal native build/stamping changes after that bind are permitted. Candidate
 identities must equal the full commit returned by Git; aliases fail. An empty
-plan still binds its starting checkout and executes no product commands. Checkout
+plan still binds its starting checkout and requires no runtime reads or product
+commands. Nonempty execution reads native `node --version` and `pnpm --version`
+before product work: Node 24 and PNPM must match the plan's exact configured
+identities; Node 22 must match its supported matrix selector. The result retains
+the actual concrete versions and native readbacks. Invalid or unsuccessful
+starting runtime reads fail the invocation before product work. Checkout
 and scratch paths cannot have linked ancestors, and scratch paths cannot contain
 PNPM's `%s` or `%v` output markers. The caller supplies tools,
 locked dependencies,
@@ -317,7 +323,16 @@ build and independent source test, then every declared package build through
 and installed consumption each require successful pack and remain independent
 checks. Failed prerequisites produce skipped results; cancellation, deadlines,
 command failure and invalid outputs remain unsuccessful. There is no arbitrary
-task graph scheduler or interpretation of script bodies.
+task graph scheduler or interpretation of script bodies. Source build/test run
+in the selected runtime; packaging, contents and installed consumption run only
+in Node 24. Both source runtimes remain required in the complete parent plan.
+The caller supplies distinct native source/dependency materializations for each
+runtime; external scratch alone does not supply that isolation.
+
+[`NodeRuntimeReader`](Repository/NodeRuntimeInputs.cs) derives runtime dimensions
+from the committed root CI matrix and native mise tool identities. It maintains
+no second runtime declaration. Its projection and this executor remain separate
+components from `ci plan-node`'s base selections until group integration.
 
 Build and source-test invocations use PNPM's native
 `--config.verify-deps-before-run=false` setting. The caller explicitly prepares
@@ -354,9 +369,12 @@ The process helper records actual termination, exit code when available, bounded
 strict UTF-8 stdout/stderr, duration and failure diagnostics. Build/test/pack/install
 have five-minute deadlines; metadata and Node assertions have thirty seconds.
 Each stream retains at most 33,554,432 characters, with the existing five-second
-owned-root cleanup bound. The result keeps every planned key, command observation,
+owned-root cleanup bound. The result keeps every selected runtime key, command observation,
 original output descriptor and execution failure. The existing collector decides
-whether all required checks are satisfied. Controlled tests establish these
+whether that runtime's required checks are satisfied. Final collection combines
+both runtime result sets against the complete original parent; one runtime's
+success cannot replace the other's missing or unsuccessful result. Controlled
+tests establish these
 application contracts. The linked bounded native observation separately
 qualifies this fixture's Linux composition and effects; it does not qualify other
 presets or establish caller cutover.
@@ -421,14 +439,17 @@ The execution request adds no project, script, dependency or version declaration
 ```json
 {
     "checkout": "C:/work/three-candidate",
-    "scratch": "C:/work/node-check-scratch"
+    "scratch": "C:/work/node-check-scratch",
+    "runtime": "node24"
 }
 ```
 
 `ci run-node` emits its candidate-bound execution result, including unsuccessful
-checks, with exit code `0` or `1` according to the existing collector. Contract or
+checks and runtime identity, with exit code `0` or `1` for its selected runtime
+according to the existing collector. Contract or
 starting-materialization errors return `2` before product execution. Its `results`
-array can be passed to `ci result`; in-process callers use the same typed values.
+arrays from both runtimes are combined and passed to `ci result` with the original
+parent plan; in-process callers use the same typed values.
 
 The source-generated JSON contracts use camel-case property names, required
 constructor fields and named check statuses. Unknown fields and missing or null
