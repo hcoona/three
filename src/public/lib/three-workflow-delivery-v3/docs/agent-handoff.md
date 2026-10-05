@@ -15,8 +15,12 @@ implementation order. The [implementation plan](./migration-strategy.md) identif
 concrete callers, integration contracts and retirement dependencies.
 Implementation has not yet been cut over. The
 [private application's entry](../../../../private/app/workflow-delivery/README.md)
-describes its implemented CI selection/result interface, PNPM graph component and
-remaining native integration limits. The
+describes its implemented CI selection/result interface, native Node facts and
+check execution. The
+[bounded native observation](./research/node-ci-native-execution.md) qualifies
+the adopted fixture composition/effects on Linux. Its finite allowance is stopped
+and the unused reserve expired; event/transfer integration, other quality presets
+and caller cutover remain pending. The
 [requirements transition](./requirements.md#requirements-and-implementation-transition)
 defines the retained implementation/evidence scope of the old
 [glossary](./architecture-glossary.md),

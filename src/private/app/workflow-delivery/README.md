@@ -16,8 +16,9 @@ algorithm. The Node command reads exact caller-prepared checkouts, native
 PNPM relations, NBGV inputs and existing application declarations, then expands
 selected project and package checks. A concrete Node executor runs the adopted
 quality recipe and retains every check result and original package output.
-Native build/package/consumer composition qualification, Git event mapping and
-Release commands remain pending.
+The adopted fixture has a bounded Linux
+[native build/package/consumer observation](../../../public/lib/three-workflow-delivery-v3/docs/research/node-ci-native-execution.md).
+Git event mapping and Release commands remain pending.
 Existing workflows still use their current implementations.
 
 New ecosystem integrations follow the HLD's
@@ -113,7 +114,8 @@ context disposal does not promise immediate repository deletion. Test-fixture
 finalization is not a production cleanup protocol.
 Full projection requires the clean exact-target/ref/tag/history context in
 the [native NBGV evidence](../../../public/lib/three-workflow-delivery-v3/docs/research/nbgv-native-inputs.md).
-Other quality presets, native composition qualification and workflow cutover remain pending.
+The linked native observation qualifies the adopted fixture composition only.
+Other quality presets and workflow cutover remain pending.
 
 ### Git Revision and Path Component
 
@@ -239,8 +241,10 @@ ambiguous/multiple unit membership fail rather than retaining the first member.
 Each artifact check transfers its unit/declaration/build/definition, source/entry,
 expected native version and complete outputs in `package`.
 
-Planning does not execute pack or qualify its native composition. The executor
-below still needs bounded native qualification before caller cutover. The fixture's
+Planning does not execute pack. The
+[native observation](../../../public/lib/three-workflow-delivery-v3/docs/research/node-ci-native-execution.md)
+qualifies the executor's adopted fixture composition on Linux; event, transfer and
+group integration still precede caller cutover. The fixture's
 native NBGV filters include its source and shared package/workspace/lock, toolchain
 and license inputs. Five other Node projects have no adopted new quality
 preset, and unmigrated/cross-group callers retain their current owners.
@@ -307,7 +311,9 @@ Each stream retains at most 33,554,432 characters, with the existing five-second
 owned-root cleanup bound. The result keeps every planned key, command observation,
 original output descriptor and execution failure. The existing collector decides
 whether all required checks are satisfied. Controlled tests establish these
-application contracts; real native composition remains a separate gate.
+application contracts. The linked bounded native observation separately
+qualifies this fixture's Linux composition and effects; it does not qualify other
+presets or establish caller cutover.
 
 ## Commands and Transfers
 
