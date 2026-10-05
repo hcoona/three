@@ -31,7 +31,10 @@ from three_workflow_delivery_v3.repository.node_provider import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
-PROJECT_PATH = "src/public/lib/hcoona-release-smoke-npm"
+PROJECT_PATH = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 REQUEST_DIGEST = "sha256:" + ("a" * 64)
 VERSION_HEIGHT = 42
 RUN_ATTEMPT = 3
@@ -1083,7 +1086,10 @@ def test_provider_rejects_incomplete_checkout_before_nbgv(
 @pytest.mark.parametrize(
     "path",
     [
-        "src/public/lib/hcoona-release-smoke-npm/package.json",
+        (
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-npm/package.json"
+        ),
         "version.json",
     ],
     ids=["package-json", "version-json"],

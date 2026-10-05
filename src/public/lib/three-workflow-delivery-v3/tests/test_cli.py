@@ -104,7 +104,10 @@ from .release.test_observation_admission import (
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 PACKAGE_ROOT = REPO_ROOT / "src/public/lib/three-workflow-delivery-v3"
-PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
+PRODUCT_PATH = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 WORKFLOW_RUN_ID = 8101
 RUN_ATTEMPT = 2
 ARGPARSE_ERROR = 2

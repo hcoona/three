@@ -51,7 +51,10 @@ from three_workflow_delivery_v3.repository.node_provider import (
 
 SOURCE_REPO_ROOT = Path(__file__).resolve().parents[6]
 REPO_ROOT = SOURCE_REPO_ROOT
-PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
+PRODUCT_PATH = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 TARGET = "e" * 40
 NPM_VERSION = "1.2.3-beta.42.ge123456"
 RUN_ATTEMPT = 3

@@ -57,6 +57,17 @@ internal static class Program
                 return result.Candidate == plan.Candidate && result.Runtime == request.Runtime &&
                     ResultCollector.Collect(selected, result.Results).Satisfied ? 0 : 1;
             }
+            if (args is ["ci", "plan-node-group", var groupRequestPath])
+            {
+                NodeGroupRequest request = JsonSerializer.Deserialize(
+                    File.ReadAllText(groupRequestPath), TransferJson.Default.NodeGroupRequest
+                ) ?? throw new InvalidDataException("Missing Node group request.");
+                NodeGroupReadback result = NodeGroupReader.ReadAsync(request,
+                    CancellationToken.None).GetAwaiter().GetResult();
+                output.WriteLine(JsonSerializer.Serialize(result,
+                    TransferJson.Default.NodeGroupReadback));
+                return 0;
+            }
             if (args is ["ci", "plan-node", var nodeRequestPath])
             {
                 NodePlanRequest request = JsonSerializer.Deserialize(
@@ -93,6 +104,7 @@ internal static class Program
                     + " | ci comparison <event-name> <native-event.json> <tested-candidate>"
                     + " | ci control-inputs <request.json>"
                     + " | ci plan-node <request.json>"
+                    + " | ci plan-node-group <request.json>"
                     + " | ci run-node <plan.json> <request.json>"
                     + " | ci result <plan.json> <results.json>"
             );
@@ -121,6 +133,8 @@ internal static class Program
 [JsonSerializable(typeof(ControlTestInputRequest))]
 [JsonSerializable(typeof(ControlTestInputResponse))]
 [JsonSerializable(typeof(NodePlanRequest))]
+[JsonSerializable(typeof(NodeGroupRequest))]
+[JsonSerializable(typeof(NodeGroupReadback))]
 [JsonSerializable(typeof(NodeRunRequest))]
 [JsonSerializable(typeof(NodeRunResult))]
 [JsonSerializable(typeof(CiPlan))]

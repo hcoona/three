@@ -40,7 +40,10 @@ if TYPE_CHECKING:
     from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
-PROJECT_ROOT = REPO_ROOT / "src/public/lib/hcoona-release-smoke-npm"
+PROJECT_ROOT = REPO_ROOT / (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 TARGET = "e" * 40
 NPM_VERSION = "1.2.3-beta.42.ge123456"
 DIGEST_A = "sha256:" + ("a" * 64)

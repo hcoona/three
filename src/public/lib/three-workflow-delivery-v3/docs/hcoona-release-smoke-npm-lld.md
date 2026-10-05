@@ -47,28 +47,28 @@ Unless changed here, preserve purpose-first routing; request-local same-revision
 
 ## 2. Exact Slice
 
-| Concern                                   | Exact value                                                                                                    |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Repository                                | `hcoona/three`                                                                                                 |
-| Product root                              | `src/public/lib/hcoona-release-smoke-npm`                                                                      |
-| Release Unit                              | `hcoona-release-smoke-npm`                                                                                     |
-| Package                                   | `@hcoona/hcoona-release-smoke-npm`                                                                             |
-| Channel and purpose                       | Buddy; `live-release`                                                                                          |
-| Build Definition and output               | `node/npm-package-v1`; `npm-tarball`                                                                           |
-| Destination                               | `npm/github-packages-hcoona-three-v1`                                                                          |
-| Registry                                  | `https://npm.pkg.github.com`                                                                                   |
-| Release policy                            | `eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml`                                               |
-| Release Unit descriptor                   | `src/public/lib/hcoona-release-smoke-npm/workflow-delivery.release-unit.yml`                                   |
-| Quality descriptor                        | `src/public/lib/hcoona-release-smoke-npm/workflow-delivery.quality.yml`                                        |
-| Governance repository/ref/path            | `hcoona/three`; `refs/heads/main`; `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`        |
-| Governance maximum age                    | 90 days                                                                                                        |
-| Approval Environment                      | `workflow-delivery-v3-buddy-approval`                                                                          |
-| Environment sentinel                      | `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`                                      |
-| Sole accepted writer/publisher TCB member | `hcoona`                                                                                                       |
-| Package credential principal              | repository `hcoona/three`                                                                                      |
-| Artifact retention                        | 45 days                                                                                                        |
-| Target-derived dist-tag                   | `buddy-sha-<40-lowercase-target-sha>`                                                                          |
-| Target mutation profile                   | Pinned standard `npm publish --tag ... --fetch-retries=0`; action admission requires passing native acceptance |
+| Concern                                   | Exact value                                                                                                         |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Repository                                | `hcoona/three`                                                                                                      |
+| Product root                              | `tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm`                                    |
+| Release Unit                              | `hcoona-release-smoke-npm`                                                                                          |
+| Package                                   | `@hcoona/hcoona-release-smoke-npm`                                                                                  |
+| Channel and purpose                       | Buddy; `live-release`                                                                                               |
+| Build Definition and output               | `node/npm-package-v1`; `npm-tarball`                                                                                |
+| Destination                               | `npm/github-packages-hcoona-three-v1`                                                                               |
+| Registry                                  | `https://npm.pkg.github.com`                                                                                        |
+| Release policy                            | `eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml`                                                    |
+| Release Unit descriptor                   | `tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/workflow-delivery.release-unit.yml` |
+| Quality descriptor                        | `tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/workflow-delivery.quality.yml`      |
+| Governance repository/ref/path            | `hcoona/three`; `refs/heads/main`; `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`             |
+| Governance maximum age                    | 90 days                                                                                                             |
+| Approval Environment                      | `workflow-delivery-v3-buddy-approval`                                                                               |
+| Environment sentinel                      | `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`                                           |
+| Sole accepted writer/publisher TCB member | `hcoona`                                                                                                            |
+| Package credential principal              | repository `hcoona/three`                                                                                           |
+| Artifact retention                        | 45 days                                                                                                             |
+| Target-derived dist-tag                   | `buddy-sha-<40-lowercase-target-sha>`                                                                               |
+| Target mutation profile                   | Pinned standard `npm publish --tag ... --fetch-retries=0`; action admission requires passing native acceptance      |
 
 The desired Buddy coordinate is the exact package plus the frozen native NBGV `npmPackageVersion`. The Release policy's Official projection, `npm/npmjs-public-v1`, remains isolated and is not a Live capability of this design.
 
@@ -583,7 +583,7 @@ The authority graph, not policy code, determines npm, pnpm, or NuGet syntax and
 normalization. Policy code compares emitted identities and paths.
 Repository-relative path comparison uses POSIX semantics, resolves `.` and
 `..`, rejects escape above repository root, and compares with
-`src/public/lib/hcoona-release-smoke-npm`.
+`tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm`.
 
 Documentation, ordinary application source, standalone `pyproject.toml`,
 `setup.py`, `requirements*.txt`, `uv.lock`, `poetry.lock`, npm and Yarn

@@ -29,7 +29,10 @@ from three_workflow_delivery_v3.repository.node_provider import (
 TARGET = "e" * 40
 NPM_VERSION = "1.2.3-beta.42.ge123456"
 DIGEST = "sha256:" + "a" * 64
-PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
+PRODUCT_PATH = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 
 
 def _nbgv_facts() -> NbgvFacts:

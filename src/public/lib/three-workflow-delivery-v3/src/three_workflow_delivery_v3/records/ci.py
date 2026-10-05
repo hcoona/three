@@ -89,7 +89,10 @@ _FIRST_SLICE_PROJECT_NODES = ("@hcoona/hcoona-release-smoke-npm",)
 _FIRST_SLICE_RELEASE_UNITS = ("hcoona-release-smoke-npm",)
 _FIRST_SLICE_VARIANTS = ("npm-package",)
 _FIRST_SLICE_OUTPUTS = (("npm-tarball", "primary-package", "npm-tarball"),)
-_FIRST_SLICE_PROJECT_PATH = "src/public/lib/hcoona-release-smoke-npm"
+_FIRST_SLICE_PROJECT_PATH = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 _FIRST_SLICE_AFFECTING_PATHS = frozenset(
     {
         ".config/uv/uv.toml",

@@ -261,7 +261,10 @@ if TYPE_CHECKING:
     from three_workflow_delivery_v3.canonical import JsonValue
     from three_workflow_delivery_v3.repository.descriptors import ReleasePolicy
 
-_PROJECT_PATH = "src/public/lib/hcoona-release-smoke-npm"
+_PROJECT_PATH = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 _CI_REQUEST_SCHEMA = "workflow-delivery/v3/ci-request"
 _CI_ADAPTER_CONTEXT_SCHEMA = "workflow-delivery/v3/ci-node-adapter-context"
 _CI_ADAPTER_RESULT_SCHEMA = "workflow-delivery/v3/ci-node-adapter-result"

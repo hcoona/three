@@ -22,11 +22,11 @@ from .workflow_shell import executable, resolve, run_step
 REPO_ROOT = Path(__file__).resolve().parents[6]
 CHILD_FAILURE = 73
 NODE_PACKAGE_DIR = "src/public/lib/hexo-renderer-asciidoc"
-NODE_WORK_COMMANDS = (
-    ("pnpm", "--dir", NODE_PACKAGE_DIR, "run", "typecheck"),
-    ("pnpm", "run", "test"),
-    ("pnpm", "run", "build"),
-    ("pnpm", "--dir", NODE_PACKAGE_DIR, "run", "validate:packed-artifact"),
+NODE_RETAINED = [NODE_PACKAGE_DIR, "src/retained"]
+NODE_ADOPTED = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    ""
+    "hcoona-release-smoke-npm"
 )
 TOOL_COMMANDS = {
     "dotnet": "dotnet",
@@ -130,6 +130,11 @@ def _bindings(tmp_path: Path) -> dict[str, str]:
             ["hcoona-three-monorepo", "three-workflow-delivery-v3"]
         ),
         "needs.scope.outputs.python_v3": "true",
+        "needs.node-group.outputs.retained_directories": json.dumps(
+            NODE_RETAINED
+        ),
+        "needs.node-group.outputs.adopted_directory": NODE_ADOPTED,
+        "runner.temp": str(tmp_path / "runner-state"),
         "needs.scope.outputs.python_dotnet": "true",
         "needs.scope.outputs.python_roots": json.dumps(
             ["tests/eng/test_ci_scope.py"]
@@ -159,6 +164,7 @@ def _commands(tmp_path: Path, *, missing: str | None = None) -> dict[str, str]:
         "COMMAND_LOG": str(tmp_path / "commands.jsonl"),
         "GITHUB_ENV": str(tmp_path / "github-env"),
         "GITHUB_EVENT_NAME": "pull_request",
+        "RUNNER_TEMP": str(tmp_path / "runner-state"),
     }
 
 
@@ -286,6 +292,8 @@ def test_required_general_ci_checks_remain_eligible(
             assert job["needs"] == (
                 ["conformance", "scholarly-tests", "nuget-reproducibility"]
                 if key == "validation"
+                else ["scope", "node-group"]
+                if key == "node-tests"
                 else "scope"
             )
         permissions = job.get("permissions", workflow["permissions"])
@@ -376,14 +384,28 @@ def test_validation_hk_uses_tested_comparison_and_propagates_failure(
     assert {"small", "medium", "large"} <= set(observed["profile"].split(","))
 
 
-def test_node_checks_execute_workspace_and_package_work(
+def _retained_command(tmp_path: Path) -> list[str]:
+    return [
+        "python",
+        "eng/scripts/run_node_ci_group.py",
+        "retained",
+        "--directories",
+        json.dumps(NODE_RETAINED),
+        "--adopted-directory",
+        NODE_ADOPTED,
+        "--directory",
+        str(tmp_path / "runner-state/retained-node"),
+    ]
+
+
+def test_node_checks_execute_selected_retained_members(
     workflow: dict[str, Any],
     tmp_path: Path,
 ) -> None:
-    """Both Node contexts reach frozen install and required Node work."""
+    """Both retained contexts install before native filtered execution."""
     job = workflow["jobs"]["node-tests"]
     setup = _action(job, "actions/setup-node")
-    for version in ("22.x", "24.x"):
+    for version in job["strategy"]["matrix"]["node-version"]:
         assert (
             resolve(
                 setup["with"]["node-version"], {"matrix.node-version": version}
@@ -394,13 +416,11 @@ def test_node_checks_execute_workspace_and_package_work(
     result = _run_bash_steps(job["steps"], workflow, job, tmp_path, env)
     assert result.returncode == 0, result.stderr
     calls = [item["command"] for item in _observations(env)]
-    for command in NODE_WORK_COMMANDS:
-        assert calls.index(
-            ["pnpm", "install", "--frozen-lockfile"]
-        ) < calls.index(list(command))
-        assert calls.index(["dotnet", "tool", "restore"]) < calls.index(
-            list(command)
-        )
+    execution = calls.index(_retained_command(tmp_path))
+    assert calls.index(["pnpm", "install", "--frozen-lockfile"]) < execution
+    assert calls.index(["dotnet", "tool", "restore"]) < execution
+    assert ["pnpm", "run", "test"] not in calls
+    assert ["pnpm", "run", "build"] not in calls
 
 
 @pytest.mark.parametrize(
@@ -408,23 +428,16 @@ def test_node_checks_execute_workspace_and_package_work(
     [
         ("pnpm", "install"),
         ("dotnet", "tool", "restore"),
-        *NODE_WORK_COMMANDS,
+        ("python", "eng/scripts/run_node_ci_group.py", "retained"),
     ],
-    ids=[
-        "pnpm-install",
-        "dotnet-tools",
-        "typecheck",
-        "workspace-test",
-        "workspace-build",
-        "packed-artifact",
-    ],
+    ids=["pnpm-install", "dotnet-tools", "retained-execution"],
 )
 def test_node_check_propagates_required_command_failure(
     workflow: dict[str, Any],
     tmp_path: Path,
     failure: tuple[str, ...],
 ) -> None:
-    """Fail the Node boundary at each required dependency or work command."""
+    """Fail the retained boundary on dependency or selected work failure."""
     env = _commands(tmp_path)
     env["FAIL_COMMAND"] = json.dumps(failure)
     job = workflow["jobs"]["node-tests"]
@@ -432,6 +445,62 @@ def test_node_check_propagates_required_command_failure(
     assert result.returncode == CHILD_FAILURE, result.stderr
     calls = [item["command"] for item in _observations(env)]
     assert calls[-1][: len(failure)] == list(failure)
+
+
+@pytest.mark.parametrize(
+    ("selection", "artifact", "succeeds"),
+    [
+        ("success", "123", True),
+        ("failure", "123", False),
+        ("skipped", "123", False),
+        ("success", "", False),
+        ("success", "0", False),
+        ("success", "named-artifact", False),
+    ],
+)
+def test_node_group_requires_received_immutable_scope(
+    workflow,
+    tmp_path,
+    selection,
+    artifact,
+    succeeds,
+):
+    """Group always plans and consumes the actual scope upload identity."""
+    job = workflow["jobs"]["node-group"]
+    assert job["needs"] == "scope"
+    assert job["if"] == "${{ !cancelled() }}"
+    assert "needs.scope.outputs.node" not in json.dumps(job)
+    upload = _action(workflow["jobs"]["scope"], "actions/upload-artifact")
+    assert upload["id"] == "retain"
+    assert workflow["jobs"]["scope"]["outputs"]["artifact_id"] == (
+        "${{ steps.retain.outputs.artifact-id }}"
+    )
+    download = _action(job, "actions/download-artifact")
+    assert download["with"]["artifact-ids"] == (
+        "${{ needs.scope.outputs.artifact_id }}"
+    )
+    assert "name" not in download["with"]
+    result = run_step(
+        job["steps"][0],
+        cwd=tmp_path,
+        env={},
+        bindings={
+            "needs.scope.result": selection,
+            "needs.scope.outputs.artifact_id": artifact,
+        },
+        workflow=workflow,
+        job=job,
+    )
+    assert (result.returncode == 0) is succeeds, result.stderr
+    checkout = _action(job, "actions/checkout")
+    assert checkout["with"]["persist-credentials"] is False
+    assert checkout["with"]["fetch-depth"] == 0
+    assert job["permissions"] == {"contents": "read", "actions": "read"}
+    token_steps = [
+        step for step in job["steps"] if "GH_TOKEN" in step.get("env", {})
+    ]
+    assert len(token_steps) == 1
+    assert "gh api" in token_steps[0]["run"]
 
 
 def test_python_check_has_consumed_toolchain_prerequisites(
@@ -776,9 +845,11 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
 ):
     """Distinguish valid non-applicability from lost required work."""
     for name, job in workflow["jobs"].items():
-        if name in {"scope", "validation"}:
+        if name in {"scope", "validation", "node-group"}:
             continue
-        assert job["needs"] == "scope"
+        assert job["needs"] == (
+            ["scope", "node-group"] if name == "node-tests" else "scope"
+        )
         assert job["if"] == "${{ !cancelled() }}"
         guard = job["steps"][0]
         assert guard["id"] == "scope"
@@ -791,7 +862,11 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
             cwd=tmp_path,
             env={"GITHUB_OUTPUT": str(output)},
             bindings=_bindings(tmp_path)
-            | {"needs.scope.result": selection, key: applicable},
+            | {
+                "needs.scope.result": selection,
+                key: applicable,
+                "needs.node-group.result": "success",
+            },
             workflow=workflow,
             job=job,
         )
@@ -919,7 +994,10 @@ def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
             "always()" if name == "validation" else "${{ !cancelled() }}"
         )
         for step in job["steps"][1:-1]:
-            if step.get("name") == "Retain NuGet authority diagnostics":
+            if name == "node-group":
+                assert step.get("if", "success()") in {"success()", "always()"}
+                assert not step.get("continue-on-error", False)
+            elif step.get("name") == "Retain NuGet authority diagnostics":
                 assert name == "dotnet-tests"
                 assert step.get("uses", "").startswith(
                     "actions/upload-artifact@"

@@ -814,15 +814,20 @@ def _validate_slice_descriptor_inventory(
     descriptors: tuple[ReleaseUnitDescriptor, ...],
 ) -> None:
     """Keep discovery closed to the independently registered slice paths."""
-    registered_units = {
-        FIRST_SLICE_RELEASE_UNIT,
-        NUGET_RELEASE_UNIT,
-        "hcoona-release-smoke-python",
-        "hcoona-release-smoke-ruby",
+    registered_roots = {
+        FIRST_SLICE_RELEASE_UNIT: (
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-npm"
+        ),
+        NUGET_RELEASE_UNIT: f"src/public/lib/{NUGET_RELEASE_UNIT}",
+        "hcoona-release-smoke-python": (
+            "src/public/lib/hcoona-release-smoke-python"
+        ),
+        "hcoona-release-smoke-ruby": "src/public/lib/hcoona-release-smoke-ruby",
     }
     registered_paths = {
-        f"src/public/lib/{unit}/{RELEASE_UNIT_BASENAME}": unit
-        for unit in registered_units
+        f"{root}/{RELEASE_UNIT_BASENAME}": unit
+        for unit, root in registered_roots.items()
     }
     for descriptor in descriptors:
         if (
@@ -831,15 +836,9 @@ def _validate_slice_descriptor_inventory(
         ):
             message = "Release Unit descriptor and policy identity mismatch"
             raise ValueError(message)
-        expected = (
-            PurePosixPath("src/public/lib")
-            / descriptor.release_unit
-            / RELEASE_UNIT_BASENAME
-        ).as_posix()
-        if (
-            descriptor.release_unit not in registered_units
-            or descriptor.path != expected
-        ):
+        root = registered_roots.get(descriptor.release_unit)
+        expected = f"{root}/{RELEASE_UNIT_BASENAME}" if root else None
+        if descriptor.path != expected:
             message = (
                 "slice authoring must contain exactly one Release Unit "
                 "descriptor at each registered slice path"
@@ -859,7 +858,10 @@ def load_first_slice_authoring(  # noqa: C901
         message = "first-slice Release Unit descriptor is missing"
         raise MissingFirstSliceDescriptorError(message)
     _validate_slice_descriptor_inventory(descriptors)
-    expected_root = PurePosixPath("src/public/lib/hcoona-release-smoke-npm")
+    expected_root = PurePosixPath(
+        "tests/private/app/workflow-delivery/fixtures/products/"
+        "hcoona-release-smoke-npm"
+    )
     expected_descriptor = (expected_root / RELEASE_UNIT_BASENAME).as_posix()
     matches = tuple(
         descriptor

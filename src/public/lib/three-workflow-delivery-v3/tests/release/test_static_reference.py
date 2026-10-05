@@ -900,7 +900,10 @@ _PHASE2_LIVE_IMPLEMENTATIONS = tuple(
         key=utf8_sort_key,
     )
 )
-_PHASE2_PRODUCER_ROOT = "src/public/lib/hcoona-release-smoke-npm"
+_PHASE2_PRODUCER_ROOT = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
     "schema": "workflow-delivery/v3/static-reference-authority-manifest",
     "execution": {
@@ -2041,9 +2044,13 @@ def test_policy_authority_manifest_and_digest_are_exact() -> None:
         ),
         "producer": {
             "package": "@hcoona/hcoona-release-smoke-npm",
-            "root": "src/public/lib/hcoona-release-smoke-npm",
+            "root": (
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-npm"
+            ),
             "manifest": (
-                "src/public/lib/hcoona-release-smoke-npm/package.json"
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-npm/package.json"
             ),
         },
         "source-kinds": ["git-target", "index", "worktree"],
@@ -4297,16 +4304,23 @@ def test_pnpm_projection_accepts_typed_hosted_git_resolution() -> None:
     ("candidate_path", "expected_findings"),
     [
         pytest.param(
-            "src/public/lib/hcoona-release-smoke-npm/package.json",
+            (
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-npm/package.json"
+            ),
             [],
             id="exact-producer-manifest-allowed",
         ),
         pytest.param(
-            ("src/public/lib/hcoona-release-smoke-npm/adjacent/package.json"),
+            (
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-npm/adjacent/package.json"
+            ),
             [
                 {
                     "path": (
-                        "src/public/lib/hcoona-release-smoke-npm/"
+                        "tests/private/app/workflow-delivery/fixtures/products/"
+                        "hcoona-release-smoke-npm/"
                         "adjacent/package.json"
                     ),
                     "family": "npm-manifest",

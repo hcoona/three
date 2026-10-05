@@ -42,7 +42,10 @@ SHA_A = "a" * 40
 SHA_B = "b" * 40
 SHA_C = "c" * 40
 SHA_D = "d" * 40
-PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
+PRODUCT_PATH = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 PROJECT_SOURCE = f"{PRODUCT_PATH}/src/index.js"
 RUBY_CHANGED_PATHS = tuple(
     f"src/public/lib/hcoona-release-smoke-ruby/{name}"

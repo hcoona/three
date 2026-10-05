@@ -976,7 +976,10 @@ def test_endpoint_owners_retain_multiple_native_and_project_responsibilities(
     source = azure.parent / "Input.cs"
     source.write_text("class Input {}")
     (root / "dirs.proj").write_text("<Project />")
-    resource = root / "src/public/lib/hcoona-release-smoke-npm/version.json"
+    resource = root / (
+        "tests/private/app/workflow-delivery/fixtures/products/"
+        "hcoona-release-smoke-npm/version.json"
+    )
     resource.parent.mkdir(parents=True)
     resource.write_text('{"version":"1.0"}')
     _git(root, "add", ".")
@@ -1008,7 +1011,13 @@ def test_endpoint_owners_retain_multiple_native_and_project_responsibilities(
             "target": scope.CONTROL_PROJECT,
             "rule": "native-embedded-resource",
             "sources": [scope.CONTROL_PROJECT],
-        }
+        },
+        {
+            "owner": "dotnet",
+            "target": scope.CONTROL_PROJECT,
+            "rule": "retained-project-input",
+            "sources": ["dirs.proj", scope.CONTROL_PROJECT],
+        },
     ]
     assert selected["scopes"]["dotnet"]
     assert selected["scopes"]["azureauth"]

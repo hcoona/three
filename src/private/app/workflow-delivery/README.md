@@ -21,16 +21,21 @@ The adopted fixture has a bounded Linux
 The GitHub event comparison command reads native payloads and resolves comparison
 endpoints under the MLD's finite mapping. Root CI now uses this comparison and
 native control-test resource inputs in its existing Windows scope job. The
-existing .NET job remains the sole general .NET test executor. Node execution
-ownership, complete group integration, other quality presets and Release commands
-remain pending; other workflow callers retain their current implementations.
+existing .NET job remains the sole general .NET test executor. The static Ubuntu
+Node group joins complete endpoint inputs, prepares the candidate control CLI,
+executes the adopted fixture in separate Node 22/24 checkouts and collects both
+result sets against their original parent plan. The retained Node matrix consumes
+only its selected native members. Other quality presets and Release commands
+remain pending. The old npm shadow workflow remains a temporary comparison
+caller until this group's ordinary hosted acceptance and retirement complete.
 
 The finite `ci_scope.record_control_owners` helper derives local record-checker
 and regression-script responsibility from each committed control entry and
 native `mise tasks info` output in its exact endpoint checkout. It retains those
 authority coordinates and advisory local semantics without executing either
-task or adding CI selection. Its actual caller join remains pending; native
-product/control consumption is separate from responsibility.
+task or adding CI selection. The group caller joins these endpoint reasons with
+the received scope; native product/control consumption remains separate from
+responsibility.
 
 New ecosystem integrations follow the HLD's
 [native integration boundary](../../../public/lib/three-workflow-delivery-v3/docs/high-level-design.md#native-integrations).
@@ -85,7 +90,7 @@ PNPM 12.8.2. The probe separately observed native present/absent script metadata
 through direct process calls. Script discovery is a separate component below.
 Ordinary reader tests also use controlled queries and retained-output replay.
 The assembler below supplies concrete shared inputs, quality/version facts and
-base/candidate association. Caller cutover is still pending. The graph retains
+base/candidate association. The group caller consumes this composition. The graph retains
 root `.`; the assembler treats it as a tooling/input role rather than a CI project.
 
 ### Native Script and Version Inputs
@@ -415,6 +420,7 @@ dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll 
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci control-inputs control-request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan-node node-request.json
+dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan-node-group group-request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci run-node plan.json execution-request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci result plan.json results.json
 ```
@@ -458,6 +464,21 @@ The Node request supplies materializations, not a second fact declaration:
 Both required commits must be available in the candidate object store for the
 native comparison. The checkouts retain their own correct native ref/tag/history
 context. A JSON request does not supply tool/runtime or configuration isolation.
+
+`ci plan-node-group` adds `scopePath`, nullable `basisBuildLog` and required
+`candidateBuildLog` to those endpoint fields. It requires separate exact checkouts
+even for explicit full. A missing basis log is valid only for confirmed absence of
+the committed control project; build or read failure is never owner absence.
+The response carries `adopted`, `retained`, `adoptedDirectory`, native `runtime`
+variants and both native control-input projections. It identifies the fixture by
+its workspace package name across directory moves.
+
+`eng/scripts/run_node_ci_group.py group` receives the exact scope artifact and
+native producer/lifetime metadata, prepares both endpoints and fresh control
+builds, then executes and collects the complete runtime plan before emitting
+retained-member outputs. The `retained` entry delegates those members' build/test
+and selected Hexo probes to PNPM. These are concrete root-CI callers, not another
+task scheduler. Failed or missing group collection cannot become nonselection.
 
 The execution request adds no project, script, dependency or version declaration:
 

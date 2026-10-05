@@ -863,7 +863,10 @@ def test_manual_and_blocked_plan_shapes_are_exact() -> None:
         replace(
             _snapshot(selected_lanes=("root-hk",)),
             changed_paths=(
-                "src/public/lib/hcoona-release-smoke-npm/src/index.ts",
+                (
+                    "tests/private/app/workflow-delivery/fixtures/products/"
+                    "hcoona-release-smoke-npm/src/index.ts"
+                ),
             ),
         )
     with pytest.raises(ValueError, match="complete first-slice scope"):

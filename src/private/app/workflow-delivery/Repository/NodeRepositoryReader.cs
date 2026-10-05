@@ -5,7 +5,7 @@ namespace WorkflowDelivery.Repository;
 
 internal sealed class NodeRepositoryReader
 {
-    private const string Fixture = "src/public/lib/hcoona-release-smoke-npm";
+    internal const string FixtureName = "@hcoona/hcoona-release-smoke-npm";
     private const string Hexo = "src/public/lib/hexo-renderer-asciidoc";
     private const string Steam = "src/public/lib/steam-account-history-to-csv";
     private readonly GitMaterialization checkout;
@@ -26,6 +26,10 @@ internal sealed class NodeRepositoryReader
     internal async Task<NodeRevisionInputs> ReadAsync(CancellationToken token)
     {
         PnpmGraph graph = await new PnpmGraphReader(checkout.Root, query).ReadAsync(token);
+        string[] fixtures = graph.Projects.Where(project => project.Name == FixtureName)
+            .Select(project => project.Directory).ToArray();
+        if (fixtures.Length > 1)
+            throw new InvalidDataException("Ambiguous native adopted fixture identity.");
         string[] directories = graph.Projects.Where(project => project.Directory != ".")
             .Select(project => project.Directory).ToArray();
         var quality = new Dictionary<string, QualitySelection?>(StringComparer.Ordinal);
@@ -38,7 +42,8 @@ internal sealed class NodeRepositoryReader
         {
             // These are input contracts for existing opaque scripts, not membership
             // declarations. PNPM still supplies the complete actual project roster.
-            if (directory is not (Fixture or Hexo or Steam or
+            if (!fixtures.Contains(directory, StringComparer.Ordinal) &&
+                directory is not (Hexo or Steam or
                 "src/private/app/im-acp-gateway/poc/telegram-bot-verifier" or
                 "src/private/app/im-acp-gateway/poc/telegram-topic-session-bridge" or
                 "src/private/app/im-acp-gateway/poc/wechat-ilink-verifier"))
@@ -48,7 +53,8 @@ internal sealed class NodeRepositoryReader
             // tooling membership remains complete without fabricating an NBGV answer.
             if (committed.ContainsKey(directory + "/version.json") ||
                 committed.ContainsKey(directory + "/version.txt") ||
-                directory is Fixture or Hexo or Steam)
+                (fixtures.Contains(directory, StringComparer.Ordinal) ||
+                    directory is Hexo or Steam))
             {
                 NbgvInputs version = nbgv.Read(checkout.Revision, directory, token);
                 foreach (string path in version.ConfigurationCandidates)
@@ -98,7 +104,7 @@ internal sealed class NodeRepositoryReader
         foreach (GitEntry entry in checkout.Revision.Entries.Where(entry =>
             !entry.Path.Contains('/') && IsLicense(entry.Path) &&
             entry.ObjectType == "blob" && entry.Mode is "100644" or "100755"))
-            Add(entry.Path, directories.Where(directory => directory == Fixture).ToArray());
+            Add(entry.Path, fixtures);
         foreach (string path in new[] { "LICENSE", "COPYING", "COPYING.LESSER",
             "LICENSES/LGPL-3.0-linking-exception.txt" })
             Add(path, directories.Where(directory => directory == Hexo).ToArray());
@@ -110,7 +116,7 @@ internal sealed class NodeRepositoryReader
             entry.ObjectType == "blob" && entry.Mode is "100644" or "100755"))
             Add(entry.Path, directories.Where(directory => directory == Steam).ToArray());
         string[] biomeConsumers = directories.Where(directory =>
-            directory is not (Fixture or Steam)).ToArray();
+            !fixtures.Contains(directory, StringComparer.Ordinal) && directory != Steam).ToArray();
         foreach (string path in new[] { "biome.jsonc", ".gitignore", ".ignore" })
             Add(path, biomeConsumers);
         Add(".editorconfig", directories.Where(directory => directory == Hexo).ToArray());

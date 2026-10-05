@@ -113,7 +113,10 @@ DIGEST_PROVENANCE = "sha256:" + ("e" * 64)
 SHA512_ARTIFACT = "sha512:" + ("f" * 128)
 WORKFLOW_RUN_ID = 7001
 RUN_ATTEMPT = 2
-PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
+PRODUCT_PATH = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 PROJECT_SOURCE = f"{PRODUCT_PATH}/src/index.ts"
 UNRELATED_PRODUCT_SOURCE = "src/public/lib/hcoona-release-smoke/src/index.ts"
 GIT_TRANSITIONS = ("add", "modify", "delete", "rename-out", "rename-in")
