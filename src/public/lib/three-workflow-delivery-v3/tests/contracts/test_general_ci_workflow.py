@@ -98,6 +98,23 @@ def _required_step(scope: dict[str, Any]) -> None:
     assert scope.get("continue-on-error", False) is False
 
 
+def _required_context_step(key: str, step: dict[str, Any]) -> None:
+    if key == "validation":
+        assert step["if"] in {"always()", "cancelled()"}
+        assert not step.get("continue-on-error", False)
+    elif key == "scope" and step["name"] == "Setup basis resource SDK":
+        assert step["if"] == (
+            "steps.materialize.outputs.basis_separate == 'true'"
+        )
+        assert step["uses"] == "actions/setup-dotnet@v6"
+        assert step["with"]["global-json-file"] == (
+            "${{ steps.materialize.outputs.basis_directory }}" + "/global.json"
+        )
+        assert not step.get("continue-on-error", False)
+    elif "Retain" not in step["name"] and step.get("if") != "cancelled()":
+        _required_step(step)
+
+
 def _bindings(tmp_path: Path) -> dict[str, str]:
     return {
         "github.workspace": str(tmp_path),
@@ -276,13 +293,7 @@ def test_required_general_ci_checks_remain_eligible(
         assert permissions.get("contents") == "read"
         assert "write" not in permissions.values()
         for step in job["steps"]:
-            if key == "validation":
-                assert step["if"] in {"always()", "cancelled()"}
-                assert not step.get("continue-on-error", False)
-            elif (
-                "Retain" not in step["name"] and step.get("if") != "cancelled()"
-            ):
-                _required_step(step)
+            _required_context_step(key, step)
         needs = job.get("needs", [])
         pending.extend([needs] if isinstance(needs, str) else needs)
 
@@ -943,41 +954,72 @@ def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
         assert "canceled before a complete result" in result.stderr
 
 
+@pytest.mark.parametrize("full", ["false", "true"])
+@pytest.mark.parametrize("failure", [None, "evaluate", "select"])
 def test_scope_selection_uses_project_python_and_tested_comparison(
-    workflow, tmp_path
+    workflow, tmp_path, full, failure
 ):
-    """Bootstrap selection from the same runtime projection as its consumers."""
+    """Select from evaluated endpoint inputs and propagate command failures."""
     job = workflow["jobs"]["scope"]
     setup = _action(job, "actions/setup-python")
     select = next(step for step in job["steps"] if step.get("id") == "select")
     assert setup["with"]["python-version-file"] == ".python-version"
     assert job["steps"].index(setup) < job["steps"].index(select)
     env = _commands(tmp_path)
+    runner_temp = tmp_path / "runner temp"
+    request = str(runner_temp / "ci-control-inputs/request.json")
+    response = str(runner_temp / "ci-control-inputs/response.json")
+    env["RUNNER_TEMP"] = str(runner_temp)
+    evaluate = [
+        "python",
+        "eng/scripts/prepare_ci_control_inputs.py",
+        "--application",
+        "artifacts/ci-control-app/WorkflowDelivery.dll",
+        "evaluate",
+        "--request",
+        request,
+        "--response",
+        response,
+    ]
+    selector = [
+        "python",
+        "eng/scripts/ci_scope.py",
+        *(
+            ["--full"]
+            if full == "true"
+            else ["--from-ref", "a" * 40, "--to-ref", "d" * 40]
+        ),
+        "--control-inputs",
+        response,
+        "--output",
+        "artifacts/ci-scope.json",
+    ]
+    if failure is not None:
+        env["FAIL_COMMAND"] = json.dumps(
+            evaluate if failure == "evaluate" else selector
+        )
     result = run_step(
         select,
         cwd=tmp_path,
         env=env,
         bindings=_bindings(tmp_path)
         | {
-            "github.event.pull_request.base.sha || github.event.before": "a"
-            * 40
+            "steps.materialize.outputs.request": request,
+            "steps.materialize.outputs.basis": ("d" if full == "true" else "a")
+            * 40,
+            "steps.materialize.outputs.candidate": "d" * 40,
+            "steps.materialize.outputs.full": full,
         },
         workflow=workflow,
         job=job,
     )
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == (0 if failure is None else CHILD_FAILURE), (
+        result.stderr
+    )
     assert [item["command"] for item in _observations(env)] == [
         ["python", "--version"],
-        [
-            "python",
-            "eng/scripts/ci_scope.py",
-            "--from-ref",
-            "a" * 40,
-            "--to-ref",
-            "d" * 40,
-            "--output",
-            "artifacts/ci-scope.json",
-        ],
+        evaluate,
+        *([] if failure == "evaluate" else [selector]),
     ]
 
 
