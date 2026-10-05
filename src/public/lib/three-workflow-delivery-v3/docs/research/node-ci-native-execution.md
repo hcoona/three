@@ -24,6 +24,17 @@ Their evidence and dispositions are retained in the delivery work carriers.
 Neither predecessor resumes, retries or refunds a position. The finite buffer
 below supplies only new local generations and excludes Registry acquisition.
 
+The initial buffered generation under protocol revision
+`85f6a79d5b5856a156713894a30fe5607409b214` is also terminal. The caller observed
+host `/tmp` exhaustion during the third local materialization and could not
+persist its terminal report. That clone's original record remains pending;
+empty original result/outcome files are not repaired into a successful or
+complete observation. No dependency preparation, controller build, planning or
+product execution followed. Preserve the original state and byte-identical
+evidence copy in its work carrier. Charge the full 4,800-second reservation
+conservatively because its precise elapsed report was not retained. Two reserves
+and at most 9,600 aggregate experiment seconds remain.
+
 ## Exact Subject and Environment
 
 The executor must first be merged with the independently reviewed source tree
@@ -33,7 +44,7 @@ verify the reviewed source identities before preparation. If that subject
 changes, refresh the protocol and reviews; this is not permission to qualify a
 replacement silently.
 
-That exact tree governs the initial generation. A reserve may use a corrected
+That exact tree governs the initial generation and first reserve. A later reserve may use a corrected
 executor or invocation recipe only under the finite successor rules below.
 Record its independently reviewed and protected-delivered source tree and
 refreshed concrete protocol/carrier identities before preparation.
@@ -65,6 +76,14 @@ context. Keep source object stores alive through all managed/native contexts.
 
 Allocate one new owned temporary root outside every checkout. Each candidate
 sequence receives distinct empty scratch, consumer, store, state and config.
+Use one new directly owned `/workspace` child for a reserve; its native backing
+filesystem has ample capacity compared with the exhausted host `/tmp`. Before
+allocation, read native filesystem availability and stop when fewer than 4 GiB
+are available. This is an experiment preparation check, not a storage guarantee,
+quota, product admission mechanism or cross-process resource scheduler. Retain
+evidence in the separately owned `/workspace` work carrier, with per-generation
+and aggregate limits unchanged. Do not clear unrelated `/tmp` state or any
+predecessor to make room.
 Build the controller once from the exact candidate before any product scripts
 mutate it; copy its complete normal framework-dependent output to fixed external
 control storage. Its source/output identities bind both invocations.
@@ -206,8 +225,10 @@ executor implementation while preserving the adopted fixture, required checks,
 native dependency responsibilities, fixed tool/package identities and effects
 ceiling. It may not weaken acceptance or add a resolver, declaration, trust,
 cache or recovery service. Refresh source and carrier bindings rather than
-silently substituting a new subject. The original V6 carrier remains single-use
-per owned root and contains no automatic successor or retry loop.
+silently substituting a new subject. Each concrete carrier remains single-use
+per owned root and contains no automatic successor or retry loop. The V7 reserve
+carrier changes only owned-root/evidence placement and the native capacity
+precheck; its original V6 remains retained unchanged.
 
 Before each launch, retain the new root, exact subject/carrier, ordinal and
 remaining aggregate time/state in the governing PR's evidence. This is finite
@@ -351,8 +372,9 @@ and preparation inventories, original drafts, NCE-PREP-01/NCE-RUNNER-01 reviews
 and separate classifications, syntax checks and independent final protocol/runner
 reviews. Its exact accepted filename and SHA-256 are bound there before use.
 The caller retrieves those original bytes, verifies the source identities and
-records this protocol's actual accepted Git revision. Run the carrier once with
-its one new owned `/tmp` root, accepted executor squash and protocol revision.
+records this protocol's actual accepted Git revision. Run the reviewed V7 reserve
+carrier once with its one new owned `/workspace` root, accepted executor squash
+and protocol revision.
 It reserves each invocation before launch and records the original outcome.
 An existing root or pending/ambiguous invocation cannot be resumed or replaced.
 The carrier is disposable experiment code, not a shipped cache, policy or
