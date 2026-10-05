@@ -171,9 +171,16 @@ internal static class ControlBuildInputProjection
                     throw new InvalidDataException("Unsupported control task: " + task.Name);
                 if (task.Name == "ResolveAssemblyReference" && task.Parameters.Any(p =>
                     p.Kind == TaskParameterMessageKind.TaskInput &&
-                    p.Name is "AppConfigFile" or "AssemblyInformationCachePaths" &&
+                    p.Name is "AppConfigFile" or "AssemblyInformationCachePaths" or
+                        "InstalledAssemblyTables" or "InstalledAssemblySubsetTables" or
+                        "FullFrameworkAssemblyTables" &&
                     p.Values.Any(value => !string.IsNullOrWhiteSpace(value.Identity))))
                     throw new InvalidDataException("Unsupported indirect assembly resolver input.");
+                if (task.Name == "Nerdbank.GitVersioning.Tasks.AssemblyVersionInfo" &&
+                    task.Parameters.Any(p => p.Kind == TaskParameterMessageKind.TaskInput &&
+                        p.Name == "AssemblyOriginatorKeyFile" &&
+                        p.Values.Any(value => !string.IsNullOrWhiteSpace(value.Identity))))
+                    throw new InvalidDataException("Unsupported native version key-file input.");
                 AddFile(task.Definition, "task definition");
                 RequireImplementation(task);
                 AddExternal(task.Implementation);

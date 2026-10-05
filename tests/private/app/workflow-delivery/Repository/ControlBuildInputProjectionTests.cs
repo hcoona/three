@@ -214,6 +214,9 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
     [TestMethod]
     [DataRow("AppConfigFile")]
     [DataRow("AssemblyInformationCachePaths")]
+    [DataRow("InstalledAssemblyTables")]
+    [DataRow("InstalledAssemblySubsetTables")]
+    [DataRow("FullFrameworkAssemblyTables")]
     public async Task UnsupportedResolverInputsCannotBecomeCompleteFacts(string role)
     {
         using Fixture fixture = await CreateAsync();
@@ -235,9 +238,13 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
         ControlBuildParameter[] parameters = shape switch
         {
             "absent" => [],
-            "empty" => [Input("AppConfigFile"), Input("AssemblyInformationCachePaths")],
+            "empty" => [Input("AppConfigFile"), Input("AssemblyInformationCachePaths"),
+                Input("InstalledAssemblyTables"), Input("InstalledAssemblySubsetTables"),
+                Input("FullFrameworkAssemblyTables")],
             "whitespace" => [Input("AppConfigFile", " "),
-                Input("AssemblyInformationCachePaths", " ")],
+                Input("AssemblyInformationCachePaths", " "), Input("InstalledAssemblyTables", " "),
+                Input("InstalledAssemblySubsetTables", " "),
+                Input("FullFrameworkAssemblyTables", " ")],
             _ => throw new InvalidOperationException("Unknown optional resolver shape."),
         };
         ControlBuildTask resolver = fixture.Task("ResolveAssemblyReference",
@@ -250,6 +257,77 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
             result.Sources);
         Assert.Contains(new ControlExternalInput(resolver.Implementation,
             "selected SDK"), result.External);
+    }
+
+    [TestMethod]
+    [DataRow("nonempty")]
+    [DataRow("absent")]
+    [DataRow("empty")]
+    [DataRow("whitespace")]
+    public async Task UnsignedNativeVersionKeyInputRequiresAnAdapter(string shape)
+    {
+        using Fixture fixture = await CreateAsync();
+        string directory = System.IO.Path.Combine(fixture.ToolDirectory, "nbgv");
+        string implementation = System.IO.Path.Combine(directory,
+            "build/MSBuildCore/Nerdbank.GitVersioning.Tasks.dll");
+        string generated = System.IO.Path.Combine(fixture.Operation.IntermediateDirectory,
+            "version.cs");
+        ControlBuildDependencies dependencies = fixture.Dependencies with
+        {
+            Directories = [new("Nerdbank.GitVersioning/3.10.94", directory, [implementation])],
+        };
+        ControlBuildParameter[] parameters = shape switch
+        {
+            "nonempty" => [Input("AssemblyOriginatorKeyFile", "unsigned.snk")],
+            "absent" => [],
+            "empty" => [Input("AssemblyOriginatorKeyFile")],
+            "whitespace" => [Input("AssemblyOriginatorKeyFile", " ")],
+            _ => throw new InvalidOperationException("Unknown native version key shape."),
+        };
+        ControlBuildTask producer = fixture.Task("Nerdbank.GitVersioning.Tasks.AssemblyVersionInfo",
+            implementation, [Input("OutputFile", generated), .. parameters]);
+        // An unsigned compiler supplies no KeyFile; NBGV's independent read still matters.
+        ControlBuildTask compiler = fixture.Compiler("Source.cs") with
+        {
+            Parameters = [Input("Sources", "Source.cs", generated), Input("PublicSign", "False")],
+        };
+        ControlBuildLog log = fixture.Log([producer, compiler]);
+        if (shape == "nonempty")
+        {
+            InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+                fixture.Project(log, dependencies));
+            Assert.AreEqual("Unsupported native version key-file input.", error.Message);
+            return;
+        }
+
+        ControlBuildConsumption result = fixture.Project(log, dependencies);
+
+        Assert.Contains(new ControlGeneratedInput(generated, producer.Name), result.Generated);
+        Assert.Contains(new ControlSourceInput("control/Source.cs", "compiler Sources", true),
+            result.Sources);
+    }
+
+    [TestMethod]
+    [DataRow("Configuration")]
+    [DataRow("ContinuousIntegrationBuild")]
+    [DataRow("RestoreLockedMode")]
+    [DataRow("MSBuildLogVerboseTaskParameters")]
+    [DataRow("NuGetInteractive")]
+    [DataRow("all")]
+    public async Task EvaluatedValuesCannotReplaceMissingExplicitGlobals(string missing)
+    {
+        using Fixture fixture = await CreateAsync();
+        ControlBuildLog log = fixture.Log([fixture.Compiler("Source.cs")]);
+        var globals = new Dictionary<string, string>(log.GlobalProperties);
+        if (missing == "all") globals.Clear();
+        else globals.Remove(missing);
+        log = log with { GlobalProperties = globals };
+
+        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Project(log));
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ControlBuildDependencyReader.Read(fixture.Operation, log));
+        Assert.AreEqual(fixture.Operation.Properties["ContinuousIntegrationBuild"],
+            log.Properties["ContinuousIntegrationBuild"]);
     }
 
     [TestMethod]
@@ -335,7 +413,7 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
         using Fixture fixture = await CreateAsync();
         ControlBuildLog log = fixture.Log([fixture.Compiler("Source.cs")]);
         var properties = new Dictionary<string, string>(log.Properties);
-        var globals = new Dictionary<string, string>();
+        var globals = new Dictionary<string, string>(log.GlobalProperties);
         if (field == "missing-property") properties.Remove("TargetFramework");
         else if (field == "different-global") globals["ContinuousIntegrationBuild"] = "false";
         else if (field == "unknown-global") globals["CustomControlInput"] = "value";
@@ -410,6 +488,7 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
         string ci = scenario == "different-operation" ? "false" : "true";
         NativeCommandResult built = await NativeProcess.ExecuteAsync(new("dotnet", repo.Directory,
             ["build", "Control.csproj", "--no-restore", "-noAutoResponse",
+                "-p:Configuration=Debug", "-p:NuGetInteractive=false",
                 "-p:ContinuousIntegrationBuild=" + ci, "-p:RestoreLockedMode=" + ci,
                 "-p:MSBuildLogVerboseTaskParameters=true", "-bl:" + binlog], 30),
             context.CancellationToken);
@@ -595,7 +674,8 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
         internal ControlBuildLog Log(ControlBuildTask[] tasks,
             ControlBuildImport[]? imports = null) => new(Operation.Project, tasks, imports ?? [],
                 new Dictionary<string, string>(Operation.Properties),
-                new Dictionary<string, string>());
+                ControlBuildContextReader.GlobalPropertyNames.ToDictionary(name => name,
+                    name => Operation.Properties[name], StringComparer.Ordinal));
         internal ControlBuildTask Compiler(string source) => Task("Csc",
             "Roslyn/Microsoft.Build.Tasks.CodeAnalysis.dll", Input("Sources", source));
         internal ControlBuildTask Task(string name, string implementation,

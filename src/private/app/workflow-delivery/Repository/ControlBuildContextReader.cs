@@ -34,12 +34,13 @@ internal sealed record ControlBuildContext(string Revision, string Project,
             if (!same)
                 throw new InvalidDataException("Native build context differs from query: " + name);
         }
-        foreach ((string name, string actual) in log.GlobalProperties)
+        if (log.GlobalProperties.Count != ControlBuildContextReader.GlobalPropertyNames.Length)
+            throw new InvalidDataException(
+                "Native control global property set differs from query.");
+        foreach (string name in ControlBuildContextReader.GlobalPropertyNames)
         {
-            if (name is not ("Configuration" or "ContinuousIntegrationBuild" or
-                "RestoreLockedMode" or "MSBuildLogVerboseTaskParameters" or "NuGetInteractive"))
-                throw new InvalidDataException("Unsupported native control global property: " +
-                    name);
+            if (!log.GlobalProperties.TryGetValue(name, out string? actual))
+                throw new InvalidDataException("Missing native control global property: " + name);
             if (!actual.Equals(Properties[name], StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Native control global differs from query: " + name);
         }
@@ -52,6 +53,9 @@ internal sealed record ControlBuildContext(string Revision, string Project,
 // Native evaluation supplies the context and finite optional candidates for this build.
 internal sealed class ControlBuildContextReader
 {
+    internal static readonly string[] GlobalPropertyNames = ["Configuration",
+        "ContinuousIntegrationBuild", "RestoreLockedMode", "MSBuildLogVerboseTaskParameters",
+        "NuGetInteractive"];
     internal const string PropertyNames = "MSBuildProjectFullPath,Configuration,TargetFramework,"
         + "TargetFrameworks,RuntimeIdentifier,RuntimeIdentifiers,NETCoreSdkVersion,"
         + "MSBuildToolsPath,NetCoreRoot,NuGetPackageRoot,OutputPath,IntermediateOutputPath,"
