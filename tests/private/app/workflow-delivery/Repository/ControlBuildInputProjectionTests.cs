@@ -47,7 +47,7 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
             "source.json");
         string package = System.IO.Path.Combine(fixture.ToolDirectory, "sourcelink");
         string implementation = System.IO.Path.Combine(package,
-            "tools/net/Microsoft.SourceLink.Common.dll");
+            "tools", "net", "Microsoft.SourceLink.Common.dll");
         ControlBuildDependencies dependencies = fixture.Dependencies with
         {
             Directories = [new("Microsoft.SourceLink.Common/1.0.0", package, [implementation])],
@@ -269,7 +269,7 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
         using Fixture fixture = await CreateAsync();
         string directory = System.IO.Path.Combine(fixture.ToolDirectory, "nbgv");
         string implementation = System.IO.Path.Combine(directory,
-            "build/MSBuildCore/Nerdbank.GitVersioning.Tasks.dll");
+            "build", "MSBuildCore", "Nerdbank.GitVersioning.Tasks.dll");
         string generated = System.IO.Path.Combine(fixture.Operation.IntermediateDirectory,
             "version.cs");
         ControlBuildDependencies dependencies = fixture.Dependencies with
@@ -460,6 +460,13 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
                 </Project>
                 """, StringComparison.Ordinal);
         }
+        await repo.SetAsync("Directory.Build.props", """
+            <Project>
+              <PropertyGroup>
+                <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+              </PropertyGroup>
+            </Project>
+            """);
         await repo.SetAsync("Control.csproj", project);
         await repo.SetAsync("nuget.config",
             "<configuration><packageSources><clear /></packageSources></configuration>");
@@ -521,6 +528,8 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
             dependencies.RestoreConfigurationFiles);
         Assert.Contains(operation.AssetsFile, dependencies.RestoreGeneratedFiles);
         Assert.Contains(new ControlSourceInput("Program.cs", "compiler Sources", true),
+            result.Sources);
+        Assert.Contains(new ControlSourceInput("Directory.Build.props", "import", true),
             result.Sources);
         Assert.IsTrue(result.Generated.Any(g => g.Producer == "WriteCodeFragment"));
         Assert.IsTrue(result.External.Any(e => e.Dependency.StartsWith(
@@ -670,7 +679,8 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
             };
         }
 
-        internal string Path(string relative) => System.IO.Path.Combine(repo.Directory, relative);
+        internal string Path(string relative) =>
+            System.IO.Path.GetFullPath(System.IO.Path.Combine(repo.Directory, relative));
         internal ControlBuildLog Log(ControlBuildTask[] tasks,
             ControlBuildImport[]? imports = null) => new(Operation.Project, tasks, imports ?? [],
                 new Dictionary<string, string>(Operation.Properties),
@@ -681,8 +691,9 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
         internal ControlBuildTask Task(string name, string implementation,
             params ControlBuildParameter[] parameters) => new(Operation.Project, name,
                 System.IO.Path.Combine(Operation.SdkDirectory, "tasks.targets"),
-                System.IO.Path.IsPathRooted(implementation) ? implementation :
-                    System.IO.Path.Combine(Operation.SdkDirectory, implementation), parameters);
+                System.IO.Path.GetFullPath(System.IO.Path.IsPathRooted(implementation)
+                    ? implementation : System.IO.Path.Combine(Operation.SdkDirectory,
+                        implementation)), parameters);
         internal ControlBuildConsumption Project(ControlBuildLog log,
             ControlBuildDependencies? dependencies = null) => ControlBuildInputProjection.Project(
                 checkout, Operation, log, dependencies ?? Dependencies, ["version.json"]);

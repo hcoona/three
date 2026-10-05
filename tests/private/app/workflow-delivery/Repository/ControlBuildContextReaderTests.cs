@@ -16,7 +16,7 @@ public sealed class ControlBuildContextReaderTests(TestContext context)
         using var repo = await FixtureAsync();
         GitMaterialization checkout = await BindAsync(repo);
         JsonObject native = Output(checkout);
-        string editor = Path.Combine(repo.Directory, "control/.editorconfig");
+        string editor = Path.GetFullPath(Path.Combine(repo.Directory, "control/.editorconfig"));
         string external = Path.GetFullPath("external/analyzer.globalconfig");
         native["Items"]!["PotentialEditorConfigFiles"] = new JsonArray(
             new JsonObject { ["FullPath"] = editor }, new JsonObject { ["FullPath"] = editor });
@@ -27,21 +27,23 @@ public sealed class ControlBuildContextReaderTests(TestContext context)
             context.CancellationToken);
 
         Assert.AreEqual(checkout.Revision.Commit, result.Revision);
-        Assert.AreEqual(Path.Combine(repo.Directory, Project), result.Project);
+        Assert.AreEqual(Path.GetFullPath(Path.Combine(repo.Directory, Project)), result.Project);
         Assert.AreEqual(new("Debug", "net10.0"), result.Dimension);
         Assert.AreEqual("10.0.401", result.SdkVersion);
         Assert.AreEqual(Path.GetFullPath("sdk/10.0.401"), result.SdkDirectory);
         Assert.AreEqual(Path.GetFullPath("dotnet"), result.DotNetDirectory);
         Assert.AreEqual(Path.GetFullPath("packages"), result.PackageDirectory);
-        Assert.AreEqual(Path.Combine(repo.Directory, "control/bin/Debug/net10.0"),
+        Assert.AreEqual(Path.GetFullPath(Path.Combine(repo.Directory, "control/bin/Debug/net10.0")),
             result.OutputDirectory);
-        Assert.AreEqual(Path.Combine(repo.Directory, "control/obj/Debug/net10.0"),
+        Assert.AreEqual(Path.GetFullPath(Path.Combine(repo.Directory, "control/obj/Debug/net10.0")),
             result.IntermediateDirectory);
-        Assert.AreEqual(Path.Combine(repo.Directory, "control/obj"),
+        Assert.AreEqual(Path.GetFullPath(Path.Combine(repo.Directory, "control/obj")),
             result.BaseIntermediateDirectory);
-        Assert.AreEqual(Path.Combine(repo.Directory, "control/obj/project.assets.json"),
+        Assert.AreEqual(Path.GetFullPath(Path.Combine(repo.Directory,
+            "control/obj/project.assets.json")),
             result.AssetsFile);
-        Assert.AreEqual(Path.Combine(repo.Directory, "control/bin/Debug/net10.0/Control.dll"),
+        Assert.AreEqual(Path.GetFullPath(Path.Combine(repo.Directory,
+            "control/bin/Debug/net10.0/Control.dll")),
             result.TargetFile);
         Assert.AreEqual(editor, Assert.ContainsSingle(result.EditorConfigCandidates));
         Assert.AreEqual(external, Assert.ContainsSingle(result.GlobalConfigCandidates));
@@ -174,7 +176,7 @@ public sealed class ControlBuildContextReaderTests(TestContext context)
     {
         ["Properties"] = new JsonObject
         {
-            ["MSBuildProjectFullPath"] = Path.Combine(checkout.Root, Project),
+            ["MSBuildProjectFullPath"] = Path.GetFullPath(Path.Combine(checkout.Root, Project)),
             ["Configuration"] = "Debug",
             ["TargetFramework"] = "net10.0",
             ["TargetFrameworks"] = "",
@@ -187,8 +189,10 @@ public sealed class ControlBuildContextReaderTests(TestContext context)
             ["OutputPath"] = "bin\\Debug/net10.0/",
             ["IntermediateOutputPath"] = "obj\\Debug/net10.0/",
             ["BaseIntermediateOutputPath"] = "obj\\",
-            ["ProjectAssetsFile"] = Path.Combine(checkout.Root, "control/obj/project.assets.json"),
-            ["TargetPath"] = Path.Combine(checkout.Root, "control/bin/Debug/net10.0/Control.dll"),
+            ["ProjectAssetsFile"] = Path.GetFullPath(Path.Combine(checkout.Root,
+                "control/obj/project.assets.json")),
+            ["TargetPath"] = Path.GetFullPath(Path.Combine(checkout.Root,
+                "control/bin/Debug/net10.0/Control.dll")),
             ["ContinuousIntegrationBuild"] = "true",
             ["RestoreLockedMode"] = "true",
             ["MSBuildStartupDirectory"] = checkout.Root,

@@ -85,7 +85,7 @@ internal sealed class ControlBuildContextReader
         GitEntry? entry = checkout.Revision.Entries.SingleOrDefault(e => e.Path == project);
         if (entry is null || entry.ObjectType != "blob" || entry.Mode is not ("100644" or "100755"))
             throw new InvalidDataException("The control project must be a committed regular file.");
-        string absolute = Path.Combine(checkout.Root, project);
+        string absolute = Path.GetFullPath(Path.Combine(checkout.Root, project));
         string output = await query(["msbuild", absolute, "-nologo", "-noAutoResponse",
             "-property:Configuration=Debug", "-property:ContinuousIntegrationBuild=true",
             "-property:RestoreLockedMode=true", "-property:MSBuildLogVerboseTaskParameters=true",
