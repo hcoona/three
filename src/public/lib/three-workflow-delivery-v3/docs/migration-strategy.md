@@ -405,10 +405,13 @@ Move the native member to
 with unchanged package coordinate, PNPM membership/importer, relative quality/
 unit declarations and native version/operation inputs. Associate old basis and
 new candidate coordinates through native identity; retain no duplicate fixture
-or mutable compatibility alias. Update current MSBuild resources/tests, Python
-source-copy/catalog/adapter consumers, active legacy Release source-path readers
-and workflow environments atomically. Preserve original historical bytes and
-Git-pinned evidence identities. No Release execution follows from this move.
+or mutable compatibility alias. Update the replacement C# Node repository reader
+(`NodeRepositoryReader.cs`) and its fixture-sensitive tests, current MSBuild
+resources/tests, Python source-copy/catalog/adapter consumers, active legacy
+Release source-path readers and workflow environments atomically. Preserve the
+reader's actual script, version, legal and configuration input roles across the
+native old-basis/new-candidate association. Preserve original historical bytes
+and Git-pinned evidence identities. No Release execution follows from this move.
 If an active reader cannot migrate correctly, defer both move and dependent
 caller cutover together.
 
