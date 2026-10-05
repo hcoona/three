@@ -24,6 +24,21 @@ Their evidence and dispositions are retained in the delivery work carriers.
 Neither predecessor resumes, retries or refunds a position. The finite buffer
 below supplies only new local generations and excludes Registry acquisition.
 
+The initial buffered generation under protocol revision
+`85f6a79d5b5856a156713894a30fe5607409b214` is also terminal. The caller observed
+host `/tmp` exhaustion during the third local materialization and could not
+persist its terminal report. That clone's original record remains pending;
+empty original result/outcome files are not repaired into a successful or
+complete observation. No dependency preparation, controller build, planning or
+product execution followed. Preserve the original state and byte-identical
+evidence copy in its work carrier. The complete investigation copy at
+`/workspace/workflow-v3-node-ci-buffer-recovery/initial-owned-state` remains
+charged to this initial generation's 4 GiB and the aggregate 12 GiB ceiling;
+removing its original `/tmp` root refunds no state still retained, generation or time.
+Charge the full 4,800-second reservation
+conservatively because its precise elapsed report was not retained. Two reserves
+and at most 9,600 aggregate experiment seconds remain.
+
 ## Exact Subject and Environment
 
 The executor must first be merged with the independently reviewed source tree
@@ -33,7 +48,7 @@ verify the reviewed source identities before preparation. If that subject
 changes, refresh the protocol and reviews; this is not permission to qualify a
 replacement silently.
 
-That exact tree governs the initial generation. A reserve may use a corrected
+That exact tree governs the initial generation and first reserve. A later reserve may use a corrected
 executor or invocation recipe only under the finite successor rules below.
 Record its independently reviewed and protected-delivered source tree and
 refreshed concrete protocol/carrier identities before preparation.
@@ -65,6 +80,18 @@ context. Keep source object stores alive through all managed/native contexts.
 
 Allocate one new owned temporary root outside every checkout. Each candidate
 sequence receives distinct empty scratch, consumer, store, state and config.
+Use one new directly owned `/workspace` child for a reserve; its native backing
+filesystem has ample capacity compared with the exhausted host `/tmp`. Before
+allocation, read native filesystem availability and stop when fewer than 4 GiB
+are available. This is an experiment preparation check, not a storage guarantee,
+quota, product admission mechanism or cross-process resource scheduler. Retain
+original native evidence at `<generation>/evidence` inside that sole native
+work root. The separately owned
+`/workspace/workflow-v3-node-ci-buffer-recovery/carrier` is the ordinary
+source/tool-input, review and publication carrier. The invocation reads its
+existing inventories; later retention copies do not move or rewrite original
+results. Per-generation and aggregate limits remain unchanged. Do not clear unrelated `/tmp` state or any
+predecessor to make room.
 Build the controller once from the exact candidate before any product scripts
 mutate it; copy its complete normal framework-dependent output to fixed external
 control storage. Its source/output identities bind both invocations.
@@ -192,6 +219,14 @@ one initial generation and two reserves. Each generation retains all limits
 above: one candidate, one plan, at most two same-candidate executions, 4,800
 seconds and 4 GiB owned state. Across all three, actual experiment elapsed time
 is at most 14,400 seconds and total retained owned state is at most 12 GiB.
+Generation-created work state, original native evidence and every additional
+retained local copy count toward their originating generation's 4 GiB and the
+aggregate 12 GiB ceiling wherever stored. Pre-existing ordinary source,
+protocol and review material is separate; the shared carrier is not a blanket
+exemption for generation-derived bytes. Before launch and when making retention
+copies, the caller includes relevant bytes outside the native root in the
+existing bounded bookkeeping; the runner's root measurement alone does not
+measure those copies. This requires no accounting service or storage guarantee.
 Preparation, planning and execution consume these totals, including failed or
 interrupted generations. Source diagnosis, review and normal protected delivery
 are ordinary contraction work outside experiment elapsed time. A pending or
@@ -206,8 +241,10 @@ executor implementation while preserving the adopted fixture, required checks,
 native dependency responsibilities, fixed tool/package identities and effects
 ceiling. It may not weaken acceptance or add a resolver, declaration, trust,
 cache or recovery service. Refresh source and carrier bindings rather than
-silently substituting a new subject. The original V6 carrier remains single-use
-per owned root and contains no automatic successor or retry loop.
+silently substituting a new subject. Each concrete carrier remains single-use
+per owned root and contains no automatic successor or retry loop. The V7 reserve
+carrier changes only owned-root/evidence placement and the native capacity
+precheck; its original V6 remains retained unchanged.
 
 Before each launch, retain the new root, exact subject/carrier, ordinal and
 remaining aggregate time/state in the governing PR's evidence. This is finite
@@ -281,8 +318,13 @@ The actual accepted executor and independently reviewed invocation carrier must
 be bound in the delivery PR before this protocol is accepted. Its accepted
 revision and the compiled subject identities are recorded before preparation.
 
-The sole temporary root owns `base`, `candidate-1`, `candidate-2`, `development-store`,
+The sole directly owned `/workspace/<generation>` native work root owns
+`base`, `candidate-1`, `candidate-2`, `development-store`,
 `feed`, `packages`, `control`, `state`, `scratch-1`, `scratch-2`, and `evidence`.
+Original native command/result evidence stays in that `evidence` child. The
+shared ordinary carrier supplies the existing source/tool inventories and
+retains later review/publication copies. Charge any generation-derived copies
+there under the same per-generation and aggregate state rules above.
 Native local Git clones retain full inherited objects/tags with no alternates;
 all checkouts use explicit source identities. Set only the disposable candidate
 ref to `qualification/native-node-ci`. The single candidate commit changes only
@@ -351,8 +393,9 @@ and preparation inventories, original drafts, NCE-PREP-01/NCE-RUNNER-01 reviews
 and separate classifications, syntax checks and independent final protocol/runner
 reviews. Its exact accepted filename and SHA-256 are bound there before use.
 The caller retrieves those original bytes, verifies the source identities and
-records this protocol's actual accepted Git revision. Run the carrier once with
-its one new owned `/tmp` root, accepted executor squash and protocol revision.
+records this protocol's actual accepted Git revision. Run the reviewed V7 reserve
+carrier once with its one new owned `/workspace` root, accepted executor squash
+and protocol revision.
 It reserves each invocation before launch and records the original outcome.
 An existing root or pending/ambiguous invocation cannot be resumed or replaced.
 The carrier is disposable experiment code, not a shipped cache, policy or
