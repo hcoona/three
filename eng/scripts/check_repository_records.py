@@ -31,6 +31,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
 from markdown_it import MarkdownIt
 from referencing.exceptions import Unresolvable
+from repository_path_patterns import matches, safe_path, safe_record_pattern
 
 CURRENT_CATALOG_VERSION = 3
 LEGACY_CATALOG_VERSION = 2
@@ -542,29 +543,6 @@ def classify(path: str) -> str:  # noqa: C901, PLR0911, PLR0912 - Ordered indepe
     return "unresolved"
 
 
-def safe_path(path: str, *, pattern: bool = False) -> bool:
-    """Accept repository-relative POSIX paths and optional star globs."""
-    return (
-        bool(path)
-        and not path.startswith("/")
-        and "\\" not in path
-        and ":" not in path
-        and all(p not in {"", ".", ".."} for p in path.split("/"))
-        and (pattern or not any(c in path for c in "*?[]"))
-    )
-
-
-def matches(path: str, pattern: str) -> bool:
-    """Match star globs by path component, with recursive double stars."""
-    regex = (
-        re.escape(pattern)
-        .replace(r"\*\*/", "(?:.*/)?")
-        .replace(r"\*\*", ".*")
-        .replace(r"\*", "[^/]*")
-    )
-    return re.fullmatch(regex, path) is not None
-
-
 def bindings(
     catalog: dict[str, Any], *, base: bool = False
 ) -> list[dict[str, Any]]:
@@ -841,7 +819,7 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
                 FAMILY_CATALOG,
                 f"{binding['id']}: {binding['family']}",
             )
-        if not safe_path(path, pattern=True) or (
+        if not safe_record_pattern(path) or (
             binding["carrier"] == "repository-file"
             and any(c in path for c in "*?[]")
         ):

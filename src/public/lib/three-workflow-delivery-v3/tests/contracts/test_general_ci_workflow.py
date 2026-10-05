@@ -965,6 +965,18 @@ def test_scope_selection_uses_project_python_and_tested_comparison(
     select = next(step for step in job["steps"] if step.get("id") == "select")
     assert setup["with"]["python-version-file"] == ".python-version"
     assert job["steps"].index(setup) < job["steps"].index(select)
+    parser_setup = _action(job, "astral-sh/setup-uv")
+    parser = next(
+        step
+        for step in job["steps"]
+        if step["name"] == "Prepare existing root selection parser"
+    )
+    assert job["steps"].index(parser_setup) < job["steps"].index(parser)
+    assert job["steps"].index(parser) < job["steps"].index(select)
+    assert parser["run"].strip() == (
+        "uv sync --frozen --only-group dev "
+        "--no-install-project --no-install-workspace"
+    )
     env = _commands(tmp_path)
     runner_temp = tmp_path / "runner temp"
     request = str(runner_temp / "ci-control-inputs/request.json")
@@ -982,6 +994,10 @@ def test_scope_selection_uses_project_python_and_tested_comparison(
         response,
     ]
     selector = [
+        "uv",
+        "run",
+        "--frozen",
+        "--no-sync",
         "python",
         "eng/scripts/ci_scope.py",
         *(

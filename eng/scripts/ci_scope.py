@@ -11,6 +11,7 @@ import subprocess
 import tomllib
 from pathlib import Path, PurePosixPath
 
+from repository_path_patterns import matches, safe_path, safe_record_pattern
 from workflow_delivery_v3_hk import changed_paths
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +31,7 @@ SCOPES = (
 ALL_INPUTS = {
     ".github/workflows/ci.yml",
     "eng/scripts/ci_scope.py",
+    "eng/scripts/repository_path_patterns.py",
     "eng/scripts/prepare_ci_control_inputs.py",
     "mise.toml",
     "mise.lock",
@@ -101,7 +103,12 @@ def _name(requirement: str) -> str:
 
 
 def _python_packages(
-    root: Path, files: set[str], members: list[str], base: str
+    root: Path,
+    files: set[str],
+    members: list[str],
+    base: str,
+    *,
+    revision: str | None = None,
 ) -> dict[str, tuple[str, set[str]]]:
     packages = {}
     for path in sorted(files):
@@ -112,9 +119,13 @@ def _python_packages(
             continue
         source = root / path
         content = (
-            source.read_text(encoding="utf-8")
-            if source.exists()
-            else git(root, "show", f"{base}:{path}")
+            git(root, "show", f"{revision}:{path}")
+            if revision is not None
+            else (
+                source.read_text(encoding="utf-8")
+                if source.exists()
+                else git(root, "show", f"{base}:{path}")
+            )
         )
         manifest = tomllib.loads(content)
         project = manifest["project"]
@@ -225,32 +236,30 @@ def _v3_input(path: str) -> bool:
     )
 
 
-def _work_scopes(path: str, files: set[str]) -> set[str]:
+def _work_roots(files: set[str]) -> dict[str, set[str]]:
+    roots: dict[str, set[str]] = {"node": set(), "dotnet": set(), "ruby": set()}
+    for item in files:
+        directory = str(PurePosixPath(item).parent)
+        if item.endswith("/package.json") and item.startswith("src/"):
+            roots["node"].add(directory)
+        if item.endswith((".csproj", ".fsproj", ".vbproj")):
+            roots["dotnet"].add(directory)
+        if item.endswith(".gemspec"):
+            roots["ruby"].add(directory)
+    return roots
+
+
+def _work_scopes(path: str, roots: dict[str, set[str]]) -> set[str]:
     if path in ALL_INPUTS:
         return set(SCOPES)
-    node_roots = {
-        str(PurePosixPath(item).parent)
-        for item in files
-        if item.endswith("/package.json") and item.startswith("src/")
-    }
-    dotnet_roots = {
-        str(PurePosixPath(item).parent)
-        for item in files
-        if item.endswith((".csproj", ".fsproj", ".vbproj"))
-    }
-    ruby_roots = {
-        str(PurePosixPath(item).parent)
-        for item in files
-        if item.endswith(".gemspec")
-    }
     applicability = {
         "mise": PurePosixPath(path).name in {"mise.toml", "mise.lock"},
-        "dotnet": _dotnet_input(path, dotnet_roots),
+        "dotnet": _dotnet_input(path, roots["dotnet"]),
         "node": path in NODE_INPUTS
-        or any(_under(path, directory) for directory in node_roots),
+        or any(_under(path, directory) for directory in roots["node"]),
         "azureauth": _azure_input(path),
         "ruby": path in {"Gemfile", "Gemfile.lock", ".ruby-version"}
-        or any(_under(path, directory) for directory in ruby_roots),
+        or any(_under(path, directory) for directory in roots["ruby"]),
         "scholarly": _under(path, SCHOLARLY)
         or path.startswith(".agents/skills/scholarly-")
         or path in {"apm.yml", "apm.lock.yaml"},
@@ -319,6 +328,20 @@ def _legacy_release_input(path: str) -> bool:
     )
 
 
+def _test_roots(config: dict) -> list[str]:
+    test_roots = config["tool"]["pytest"]["ini_options"]["testpaths"]
+    if (
+        not isinstance(test_roots, list)
+        or not test_roots
+        or any(
+            not isinstance(test, str) or not test.strip() for test in test_roots
+        )
+    ):
+        message = "Python testpaths must be a nonempty list of explicit paths"
+        raise ValueError(message)
+    return test_roots
+
+
 def select(
     root: Path,
     paths: tuple[str, ...],
@@ -331,16 +354,7 @@ def select(
     config = tomllib.loads(
         (root / "pyproject.toml").read_text(encoding="utf-8")
     )
-    test_roots = config["tool"]["pytest"]["ini_options"]["testpaths"]
-    if (
-        not isinstance(test_roots, list)
-        or not test_roots
-        or any(
-            not isinstance(test, str) or not test.strip() for test in test_roots
-        )
-    ):
-        message = "Python testpaths must be a nonempty list of explicit paths"
-        raise ValueError(message)
+    test_roots = _test_roots(config)
     files = set(
         git(root, "ls-tree", "-r", "--name-only", "-z", "HEAD").split("\0")
     )
@@ -354,8 +368,9 @@ def select(
     reasons = {scope: set() for scope in SCOPES}
     reasons["validation"].add("source conformance")
     python_reasons = {test: set() for test in test_roots}
+    work_roots = _work_roots(files)
     for path in paths:
-        for scope in _work_scopes(path, files):
+        for scope in _work_scopes(path, work_roots):
             reasons[scope].add(path)
         for test in _python_tests(path, test_roots, packages):
             python_reasons[test].add(path)
@@ -400,14 +415,296 @@ def _resource_reasons(path: str, response: dict | None) -> set[str]:
     }
 
 
-def _unique_object(pairs: list[tuple[str, object]]) -> dict:
+def _unique_object(
+    pairs: list[tuple[str, object]], context: str = "control input"
+) -> dict:
     result: dict = {}
     for name, value in pairs:
         if name in result:
-            message = f"Duplicate control input field: {name}"
+            message = f"Duplicate {context} field: {name}"
             raise ValueError(message)
         result[name] = value
     return result
+
+
+FAMILY_CATALOG = "docs/governance/record-families.yaml"
+RECORD_CATALOG_VERSION = 3
+
+
+def _entry_modes(root: Path, revision: str) -> dict[str, str]:
+    entries = {}
+    for raw in git(root, "ls-tree", "-r", "-z", "--full-tree", revision).split(
+        "\0"
+    ):
+        if raw:
+            metadata, path = raw.split("\t", 1)
+            mode, _, _ = metadata.split(" ")
+            entries[path] = mode
+    return entries
+
+
+def _endpoint_text(
+    root: Path, revision: str, modes: dict[str, str], path: str
+) -> str:
+    if modes.get(path) not in {"100644", "100755"}:
+        raise ValueError(
+            "Required endpoint configuration is not a regular file: " + path
+        )
+    return git(root, "show", f"{revision}:{path}")
+
+
+def _record_owner_bindings(
+    root: Path, revision: str, modes: dict[str, str]
+) -> list[dict]:
+    if FAMILY_CATALOG not in modes:
+        return []
+    # Bootstrap callers use only standard-library selectors.
+    import yaml  # noqa: PLC0415 - Only endpoint record parsing needs locked PyYAML.
+
+    class _OwnerCatalogLoader(yaml.SafeLoader):
+        """Reject duplicate mapping keys with the locked safe parser."""
+
+    def mapping(loader: yaml.SafeLoader, node: yaml.MappingNode) -> dict:
+        loader.flatten_mapping(node)
+        return _unique_object(
+            loader.construct_pairs(node, deep=True), f"{FAMILY_CATALOG} YAML"
+        )
+
+    _OwnerCatalogLoader.add_constructor(
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+        mapping,
+    )
+    catalog = yaml.load(
+        _endpoint_text(root, revision, modes, FAMILY_CATALOG),
+        Loader=_OwnerCatalogLoader,  # noqa: S506 - Subclass adds duplicate-key checks to SafeLoader.
+    )
+    if (
+        not isinstance(catalog, dict)
+        or type(catalog.get("schema_version")) is not int
+        or catalog["schema_version"] != RECORD_CATALOG_VERSION
+        or not isinstance(catalog.get("families"), list)
+        or not isinstance(catalog.get("bindings"), list)
+    ):
+        message = "Unsupported endpoint record-family catalog"
+        raise ValueError(message)
+    families = set()
+    for family in catalog["families"]:
+        if (
+            not isinstance(family, dict)
+            or not isinstance(family.get("id"), str)
+            or not family["id"]
+            or family["id"] in families
+        ):
+            message = "Malformed endpoint record families"
+            raise ValueError(message)
+        families.add(family["id"])
+    identifiers = set()
+    current = []
+    for binding in catalog["bindings"]:
+        if (
+            not isinstance(binding, dict)
+            or any(
+                not isinstance(binding.get(key), str) or not binding[key]
+                for key in (
+                    "id",
+                    "family",
+                    "namespace",
+                    "state",
+                    "carrier",
+                    "path",
+                )
+            )
+            or binding["id"] in identifiers
+            or binding["family"] not in families
+            or binding["state"] not in {"current", "scheduled"}
+            or binding["carrier"] not in {"repository-file", "repository-files"}
+            or not safe_record_pattern(binding["path"])
+            or (
+                binding["carrier"] == "repository-file"
+                and any(char in binding["path"] for char in "*?[]")
+            )
+        ):
+            message = "Malformed endpoint record binding"
+            raise ValueError(message)
+        identifiers.add(binding["id"])
+        if binding["state"] == "current":
+            current.append(binding)
+    return current
+
+
+def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit endpoint facts.
+    path: str,
+    *,
+    modes: dict[str, str],
+    work_roots: dict[str, set[str]],
+    manifests: tuple[str, ...],
+    packages: dict[str, tuple[str, set[str]]],
+    test_roots: list[str],
+    bindings: list[dict],
+    native: dict,
+) -> list[dict]:
+    """Reuse retained selector results without claiming complete consumption."""
+    if path not in modes:
+        return []
+    reasons = []
+
+    def add(owner: str, target: str, rule: str, sources: list[str]) -> None:
+        sources = sorted(
+            {
+                source
+                for source in sources
+                if modes.get(source) in {"100644", "100755"}
+            }
+        )
+        if sources:
+            reasons.append(
+                {
+                    "owner": owner,
+                    "target": target,
+                    "rule": rule,
+                    "sources": sources,
+                }
+            )
+
+    scopes = _work_scopes(path, work_roots)
+    for manifest in manifests:
+        directory = str(PurePosixPath(manifest).parent)
+        if (
+            manifest.endswith((".csproj", ".fsproj", ".vbproj"))
+            and "dotnet" in scopes
+            and (path in ALL_INPUTS or _dotnet_input(path, {directory}))
+        ):
+            add(
+                "dotnet",
+                manifest,
+                "retained-project-input",
+                [manifest, "dirs.proj"],
+            )
+        if (
+            manifest.endswith(".gemspec")
+            and "ruby" in scopes
+            and (
+                path
+                in ALL_INPUTS | {"Gemfile", "Gemfile.lock", ".ruby-version"}
+                or _under(path, directory)
+            )
+        ):
+            add(
+                "ruby",
+                manifest,
+                "retained-gem-input",
+                [manifest, "Gemfile"],
+            )
+    for scope, target, sources in (
+        (
+            "mise",
+            ".github/workflows/ci.yml#mise-lock",
+            ["mise.toml", path],
+        ),
+        (
+            "azureauth",
+            AZURE,
+            ["dirs.proj", AZURE + "/python/pyproject.toml"],
+        ),
+        (
+            "scholarly",
+            SCHOLARLY,
+            [SCHOLARLY + "/pyproject.toml", "apm.yml"],
+        ),
+    ):
+        if scope in scopes:
+            add(scope, target, "retained-special-job-input", sources)
+    for test in sorted(_python_tests(path, test_roots, packages)):
+        sources = [
+            "pyproject.toml",
+            *[
+                directory + "/pyproject.toml"
+                for directory, _ in packages.values()
+                if _under(test, directory)
+            ],
+        ]
+        add("python", test, "retained-python-test-input", sources)
+    if path in native["inputs"]:
+        add(
+            "dotnet",
+            native["project"],
+            "native-embedded-resource",
+            [native["project"]],
+        )
+    for binding in bindings:
+        if matches(path, binding["path"]):
+            add(
+                "record-system",
+                path,
+                "record-binding:" + binding["id"],
+                [FAMILY_CATALOG],
+            )
+    return sorted(
+        reasons,
+        key=lambda reason: (reason["owner"], reason["target"], reason["rule"]),
+    )
+
+
+def endpoint_owners(
+    root: Path,
+    paths: tuple[str, ...],
+    *,
+    base: str,
+    candidate: str,
+    control_inputs: dict,
+) -> dict:
+    """Project retained responsibility; PNPM supplies native Node ownership."""
+    endpoints = {}
+    for name, revision in (("basis", base), ("candidate", candidate)):
+        modes = _entry_modes(root, revision)
+        config = tomllib.loads(
+            _endpoint_text(root, revision, modes, "pyproject.toml")
+        )
+        test_roots = _test_roots(config)
+        members = config["tool"]["uv"]["workspace"]["members"]
+        if (
+            any(not safe_path(item) for item in test_roots)
+            or not isinstance(members, list)
+            or any(
+                not isinstance(item, str) or not safe_path(item, pattern=True)
+                for item in members
+            )
+        ):
+            message = "Malformed endpoint Python workspace/test configuration"
+            raise ValueError(message)
+        files = set(modes)
+        work_roots = _work_roots(files)
+        manifests = tuple(
+            sorted(
+                path
+                for path in files
+                if path.endswith((".csproj", ".fsproj", ".vbproj", ".gemspec"))
+            )
+        )
+        packages = _python_packages(
+            root, files, members, revision, revision=revision
+        )
+        bindings = _record_owner_bindings(root, revision, modes)
+        rows = [
+            {
+                "path": path,
+                "present": path in modes,
+                "mode": modes.get(path),
+                "reasons": _path_owner_reasons(
+                    path,
+                    modes=modes,
+                    work_roots=work_roots,
+                    manifests=manifests,
+                    packages=packages,
+                    test_roots=test_roots,
+                    bindings=bindings,
+                    native=control_inputs[name],
+                ),
+            }
+            for path in paths
+        ]
+        endpoints[name] = {"revision": revision, "paths": rows}
+    return endpoints
 
 
 def owner_present(root: Path, revision: str) -> bool:
@@ -548,6 +845,13 @@ def main() -> int:
         "candidate": candidate,
         "full": options.full,
         "changed_paths": paths,
+        "endpoint_owners": endpoint_owners(
+            root,
+            paths,
+            base=base,
+            candidate=candidate,
+            control_inputs=control_inputs,
+        ),
         **select(
             root,
             paths,
