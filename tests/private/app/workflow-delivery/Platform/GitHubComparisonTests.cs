@@ -131,6 +131,19 @@ public sealed class GitHubComparisonTests
     }
 
     [TestMethod]
+    [DataRow(39)]
+    [DataRow(41)]
+    [DataRow(63)]
+    [DataRow(65)]
+    public void NeighboringCommitLengthsFail(int length)
+    {
+        using JsonDocument payload = JsonDocument.Parse("{}");
+
+        Assert.ThrowsExactly<InvalidDataException>(() => GitHubComparison.Resolve(
+            "workflow_dispatch", payload.RootElement, new string('b', length)));
+    }
+
+    [TestMethod]
     [DataRow("pull_request", "{}")]
     [DataRow("pull_request", "{\"pull_request\":null}")]
     [DataRow("pull_request", "{\"pull_request\":{\"base\":[]}}")]
