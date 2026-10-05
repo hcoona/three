@@ -82,7 +82,7 @@ retains failed-evidence consumers with both request slots null. No duplicate/rac
 suite is a prerequisite. Configuration/admission and actual publication retain
 separate grants and each destination still needs exact readback and clean consumers.
 
-The [npm smoke package](../hcoona-release-smoke-npm/README.md) owns its small
+The [npm smoke package](../../../../tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/README.md) owns its small
 package purpose. This project owns the
 [first-slice proving protocol](docs/hcoona-release-smoke-npm-lld.md).
 The [NuGet authority helper](../../../private/app/workflow-delivery-v3-nuget-authority/README.md)

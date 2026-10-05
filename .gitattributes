@@ -28,7 +28,7 @@ apm.lock.yaml linguist-generated
 # Preserve byte-stable Workflow Delivery v3 static-reference inputs.
 pnpm-lock.yaml text eol=lf
 src/private/app/workflow-delivery-v3-nuget-authority/packages.lock.json text eol=lf
-src/public/lib/hcoona-release-smoke-npm/package.json text eol=lf
+tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/package.json text eol=lf
 src/public/lib/three-workflow-delivery-v3/tests/fixtures/acceptance/npm-publish-request/package/package-manifest.json text eol=lf
 
 # Preserve the admitted NuGet operation profile's exact adapter source bytes.

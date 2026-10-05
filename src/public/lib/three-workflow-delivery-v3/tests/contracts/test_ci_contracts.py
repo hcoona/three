@@ -67,7 +67,7 @@ GOLDEN_DIGESTS = {
         "sha256:66393b1fe56039c8fef6729b41c788c3c1a454954f15c630fbe578e3c31352eb"
     ),
     "ready-plan": (
-        "sha256:7bb6d4003e5abb66d42e1c7831bd02ed96eb5f3d704350c309657f1c6d7e9227"
+        "sha256:2c3fb63f5a68e559eeb63726b511b7b57e15dd5ee6ee03cead04b9e9d4e962b9"
     ),
     "npm-artifact": (
         "sha256:4c6d2537140d55ac57443ee188b00a38f132af69b27220b26b9aee5d720e0065"
@@ -76,10 +76,10 @@ GOLDEN_DIGESTS = {
         "sha256:142991d2654858e3e50fb62f61a116a67ad9d6ae45b7f76e59d2f46037b92a9c"
     ),
     "satisfied-evidence": (
-        "sha256:bff4704c9afda896484bae3dddc2fca22e89f22f45b1c937d053bd8335a60774"
+        "sha256:c92423bc4d5adc65c372c6566eae16d0ce5e6e08808215232b65d4f138511c77"
     ),
     "non-authoritative-decision": (
-        "sha256:4d51ad600d8d2a4b75d91c0abec38be1d5fbfb92d9d9e213edc243f2bab611da"
+        "sha256:6eeeedb94400561ad876f5cbf410a21a72fd2a1e13aa3a323de6e8c0b69e44fe"
     ),
 }
 

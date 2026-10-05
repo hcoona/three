@@ -2233,11 +2233,11 @@ def test_policy_authority_manifest_and_digest_are_exact() -> None:
     )
     assert policy.STATIC_REFERENCE_POLICY_DIGEST == (
         "sha256:"
-        "851f5b48b7e37ba6253c2fa2d9e51faa7adfc61a6f6179357bb9760316e15bb3"
+        "9448b18f090feff0d99549d73ca119a0c955ba59ad187b3b2cd139a3d953595e"
     )
     assert policy.canonical_sha256(document) == (
         "sha256:"
-        "851f5b48b7e37ba6253c2fa2d9e51faa7adfc61a6f6179357bb9760316e15bb3"
+        "9448b18f090feff0d99549d73ca119a0c955ba59ad187b3b2cd139a3d953595e"
     )
 
 
@@ -2685,7 +2685,7 @@ def test_policy_stops_at_the_first_source_error_before_authority_execution(
         ),
         "policy-digest": (
             "sha256:"
-            "851f5b48b7e37ba6253c2fa2d9e51faa7adfc61a6f6179357bb9760316e15bb3"
+            "9448b18f090feff0d99549d73ca119a0c955ba59ad187b3b2cd139a3d953595e"
         ),
         "implementation-identities": [],
         "findings": [],

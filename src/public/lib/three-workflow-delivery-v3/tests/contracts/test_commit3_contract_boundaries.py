@@ -468,6 +468,11 @@ def nbgv_provider_repository(tmp_path: Path) -> tuple[Path, str]:
         / "nerdbank-gitversioning"
     ).resolve()
     assert installed_nbgv.is_dir()
+    fixture_dependency = (
+        project / ".fixture-dependencies/nerdbank-gitversioning"
+    )
+    fixture_dependency.parent.mkdir(parents=True)
+    fixture_dependency.symlink_to(installed_nbgv, target_is_directory=True)
     (seed / "package.json").write_text(
         json.dumps({"name": "provider-fixture-root", "private": True}) + "\n",
         encoding="utf-8",
@@ -493,7 +498,7 @@ def nbgv_provider_repository(tmp_path: Path) -> tuple[Path, str]:
                 "type": "module",
                 "devDependencies": {
                     "nerdbank-gitversioning": (
-                        f"file:{installed_nbgv.as_posix()}"
+                        "file:./.fixture-dependencies/nerdbank-gitversioning"
                     ),
                 },
             },
@@ -1242,7 +1247,7 @@ def test_repository_model_serializes_complete_canonical_document() -> None:
         },
     }
     assert snapshot.snapshot_digest == (
-        "sha256:20858322d530ac8c812d0b00b4c8fddd4b5902a70e3eb44b8f3e40f434e1d112"
+        "sha256:a1fe2c2add021d77d1b3abb0905684e0d0924eaafe226dae909b1b409ce31ab1"
     )
 
 
@@ -1274,11 +1279,11 @@ def test_exact_provider_result_and_repository_model_admission_preserve_concrete_
     assert result.nbgv.git_commit_id == TARGET
     assert result.nbgv.npm_package_version == NPM_VERSION
     assert result.result_digest == (
-        "sha256:aed861a99f68da7c2d4dc04274dba868201b6a41abef3ccc0d08929918a04b3a"
+        "sha256:ca046a8dde5bd156c6657fdbebefd992fa0fdab9e9b5a4feb6677028d9bd2ca8"
     )
     assert snapshot.release_units[0].builds[0].build_id == "npm-package"
     assert snapshot.quality[0].preset == "node/hcoona-release-smoke-npm-v1"
     assert snapshot.ready is True
     assert snapshot.snapshot_digest == (
-        "sha256:20858322d530ac8c812d0b00b4c8fddd4b5902a70e3eb44b8f3e40f434e1d112"
+        "sha256:a1fe2c2add021d77d1b3abb0905684e0d0924eaafe226dae909b1b409ce31ab1"
     )
