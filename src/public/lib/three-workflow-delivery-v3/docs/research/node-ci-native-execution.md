@@ -2,8 +2,8 @@
 
 ## Purpose and Authority
 
-This proposed protocol becomes executable only after explicit owner acceptance
-of one new finite generation and protected repository acceptance under the
+This protocol becomes executable only after explicit owner acceptance
+of the finite allowance below and protected repository acceptance under the
 [contraction Wave](../../../../../../docs/delivery-wave.md). Its consumer
 is the replacement application's native Node check boundary before workflow cutover.
 It tests actual planning, native NBGV stamping, original packaging and fresh
@@ -12,7 +12,7 @@ The accepted contraction Wave supplies the effects ceiling; protected delivery
 of this concrete protocol is required before its first sequence. Earlier npm,
 NuGet, Python, Ruby and native-reader campaigns remain completed and spent.
 
-This proposal bounds one fresh successor generation and grants no execution
+This protocol bounds one initial generation and two reserve generations. It grants no execution
 on its own. The original qualification under
 `d9e68f9a45099468381b5ebebf767c6813fac402` remains failed and stopped. The
 qualification under `eaf866f2240ac6d4c4bea2dbac58edff0ab10ea7` is terminal:
@@ -21,9 +21,8 @@ review and separate classification reject effects/protocol conformity because
 source tests additionally installed the whole workspace and ran unrelated
 lifecycles. Both raw records, original bytes and owned state remain intact.
 Their evidence and dispositions are retained in the delivery work carriers.
-Neither generation resumes, retries or refunds a position. This proposal keeps
-the finite ceilings and excludes Registry acquisition; no further generation
-follows its own failure or completion.
+Neither predecessor resumes, retries or refunds a position. The finite buffer
+below supplies only new local generations and excludes Registry acquisition.
 
 ## Exact Subject and Environment
 
@@ -33,6 +32,11 @@ The executor must first be merged with the independently reviewed source tree
 verify the reviewed source identities before preparation. If that subject
 changes, refresh the protocol and reviews; this is not permission to qualify a
 replacement silently.
+
+That exact tree governs the initial generation. A reserve may use a corrected
+executor or invocation recipe only under the finite successor rules below.
+Record its independently reviewed and protected-delivered source tree and
+refreshed concrete protocol/carrier identities before preparation.
 
 Use the existing `@hcoona/hcoona-release-smoke-npm` product and adopted quality/
 release declarations at that accepted source. Do not change manifests, scripts,
@@ -181,6 +185,45 @@ evidence logs: concurrently read supported process pipes, write only the bounded
 prefix, and stop at the first excess. These are finite experiment/application
 bounds, not universal npm validity rules.
 
+## Finite Buffer and Successor Rules
+
+The owner's finite allowance covers at most three new local generations:
+one initial generation and two reserves. Each generation retains all limits
+above: one candidate, one plan, at most two same-candidate executions, 4,800
+seconds and 4 GiB owned state. Across all three, actual experiment elapsed time
+is at most 14,400 seconds and total retained owned state is at most 12 GiB.
+Preparation, planning and execution consume these totals, including failed or
+interrupted generations. Source diagnosis, review and normal protected delivery
+are ordinary contraction work outside experiment elapsed time. A pending or
+ambiguous generation is consumed and must not be resumed or refunded.
+
+Use a reserve only when an earlier generation failed or its independent effects/
+protocol review rejected qualification. Preserve that original outcome and
+evidence, diagnose the concrete cause, and complete any necessary independent
+review and protected source/protocol delivery before allocating a new root.
+A correction may adjust local preparation, native invocation or the existing
+executor implementation while preserving the adopted fixture, required checks,
+native dependency responsibilities, fixed tool/package identities and effects
+ceiling. It may not weaken acceptance or add a resolver, declaration, trust,
+cache or recovery service. Refresh source and carrier bindings rather than
+silently substituting a new subject. The original V6 carrier remains single-use
+per owned root and contains no automatic successor or retry loop.
+
+Before each launch, retain the new root, exact subject/carrier, ordinal and
+remaining aggregate time/state in the governing PR's evidence. This is finite
+experiment bookkeeping, not product admission or a separately maintained policy
+service. Independent review still applies to each observation and any changed
+recipe. Such reviewed successors inside this accepted allowance need no further
+owner approval. Stop after the first independently accepted success; unused
+reserves expire at that stop and are not a general future experiment allowance.
+
+A different product, ecosystem, required quality contract, purpose, tool/package
+identity or external effects boundary needs new owner disposition. So does a
+necessary native capability gap. Registry acquisition/publication, hosted
+release/proving dispatch, credential/access/Environment/publisher changes and
+predecessor cleanup remain excluded. Exhausting the generation allowance or an aggregate
+bound stops this allowance; no fourth generation follows.
+
 ## Expected Observations and Stops
 
 All five planned checks must be present and passed. The planned official NBGV
@@ -210,10 +253,11 @@ all later campaign invocations, including the second materialization.
 
 Preserve nonzero, cancellation, timeout, invalid output, unsupported shape,
 version disagreement, missing output, failed installed consumption, unexpected
-external effect or exhausted bound. No rerun, fallback, source correction,
-replacement candidate, publication or new slot follows. Read-only analysis of
-the retained failure is permitted. A necessary native capability gap returns to
-the owner before any changed design or operation.
+external effect or exhausted bound. That generation is terminal: no rerun,
+fallback, source correction, replacement candidate, publication or new slot
+within it follows. Retained-failure analysis and a separately reviewed new
+reserve generation follow only the finite successor rules above. A necessary
+native capability gap returns to the owner before any changed design or operation.
 
 ## Evidence, Cleanup and Limits
 
@@ -295,7 +339,7 @@ disposable evidence carrier, retain pending/ambiguous state, and never repeat it
 Immediate caller supervision applies to detected outer deadline, interruption,
 retained-output excess, nonzero exit and outer cleanup uncertainty. It does not
 intercept individual native failures inside the opaque `ci run-node` invocation.
-No new campaign invocation may start after its terminal failure, an exhausted
+No later invocation in that generation may start after its terminal failure, an exhausted
 bound, an unexpected effect or caller-observed cleanup uncertainty. The accepted
 protocol owns ceilings; a runner is only its concrete invocation carrier and
 never a product admission or retry service.
