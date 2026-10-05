@@ -3,8 +3,13 @@ namespace WorkflowDelivery.CI;
 internal static class ImpactPlanner
 {
     internal static CiPlan Plan(PlanRequest request)
+        => PlanSelected(request, SelectProjects(request));
+
+    internal static CiPlan PlanSelected(PlanRequest request,
+        IReadOnlyDictionary<string, HashSet<SelectionReason>> reasons)
     {
-        Dictionary<string, HashSet<SelectionReason>> reasons = SelectProjects(request);
+        // Callers can partition native selections, but hydrated facts must remain complete.
+        SelectProjects(request with { ChangedPaths = [], Full = false });
         Dictionary<string, ProjectFacts> candidate = request.Candidate.Projects
             .ToDictionary(project => project.Id, StringComparer.Ordinal);
 
@@ -223,24 +228,25 @@ internal static class ImpactPlanner
     )
     {
         bool known = facts.UnaffectedPaths.Contains(path, StringComparer.Ordinal);
+        foreach (string owner in DirectConsumers(facts, path))
+        {
+            known = true;
+            AddReason(reasons, owner, new(path, facts.Revision, owner));
+        }
+        return known;
+    }
+
+    internal static string[] DirectConsumers(RepositoryFacts facts, string path)
+    {
         // The nearest project owns a nested path; broader consumers are explicit inputs.
         ProjectFacts[] owners = facts.Projects
             .Where(p => path == p.Directory || path.StartsWith(p.Directory + "/",
                 StringComparison.Ordinal))
             .ToArray();
         int longest = owners.Length == 0 ? 0 : owners.Max(p => p.Directory.Length);
-        foreach (ProjectFacts owner in owners.Where(p => p.Directory.Length == longest))
-        {
-            known = true;
-            AddReason(reasons, owner.Id, new(path, facts.Revision, owner.Id));
-        }
-        foreach (SharedInput input in facts.SharedInputs.Where(i => i.Path == path))
-            foreach (string id in input.Consumers)
-            {
-                known = true;
-                AddReason(reasons, id, new(path, facts.Revision, id));
-            }
-        return known;
+        return owners.Where(p => p.Directory.Length == longest).Select(p => p.Id)
+            .Concat(facts.SharedInputs.Where(i => i.Path == path).SelectMany(i => i.Consumers))
+            .Distinct(StringComparer.Ordinal).ToArray();
     }
 
     private static bool AddReason(

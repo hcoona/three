@@ -49,11 +49,13 @@ internal static class Program
                 NodeRunRequest request = JsonSerializer.Deserialize(
                     File.ReadAllText(executionRequestPath), TransferJson.Default.NodeRunRequest
                 ) ?? throw new InvalidDataException("Missing Node execution request.");
+                CiPlan selected = NodeExecution.SelectRuntime(plan, request.Runtime);
                 NodeRunResult result = (runNode ?? NodeExecution.RunAsync)(plan, request,
                     CancellationToken.None).GetAwaiter().GetResult();
                 output.WriteLine(JsonSerializer.Serialize(result,
                     TransferJson.Default.NodeRunResult));
-                return ResultCollector.Collect(plan, result.Results).Satisfied ? 0 : 1;
+                return result.Candidate == plan.Candidate && result.Runtime == request.Runtime &&
+                    ResultCollector.Collect(selected, result.Results).Satisfied ? 0 : 1;
             }
             if (args is ["ci", "plan-node", var nodeRequestPath])
             {

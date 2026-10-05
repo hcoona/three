@@ -28,17 +28,29 @@ internal static class NodeFactsAssembler
         var request = new PlanRequest(before, after, changedPaths, full);
         Dictionary<string, HashSet<SelectionReason>> selected =
             ImpactPlanner.SelectProjects(request);
+        return await CompleteAsync(candidate, request, selected, scripts, npmVersion, token);
+    }
+
+    internal static async Task<CiPlan> CompleteAsync(NodeRevisionInputs candidate,
+        PlanRequest request, IReadOnlyDictionary<string, HashSet<SelectionReason>> selected,
+        Func<PnpmProject, CancellationToken, Task<PnpmScripts>> scripts,
+        Func<PnpmProject, CancellationToken, Task<string>> npmVersion,
+        CancellationToken token)
+    {
+        RepositoryFacts after = request.Candidate;
         var native = candidate.Graph.Projects.Where(project => project.Directory != ".")
             .ToDictionary(project => project.Directory, StringComparer.Ordinal);
+        var identities = after.Projects.ToDictionary(project => project.Directory,
+            project => project.Id, StringComparer.Ordinal);
         var work = new Dictionary<string, List<CheckSpec>>(StringComparer.Ordinal);
         foreach (ProjectFacts project in after.Projects.Where(project =>
             selected.ContainsKey(project.Id)))
         {
             token.ThrowIfCancellationRequested();
-            PnpmScripts targets = await scripts(native[project.Id], token);
+            PnpmScripts targets = await scripts(native[project.Directory], token);
             if (targets.Directory != project.Directory)
                 throw new InvalidDataException("Native scripts resolved a different project.");
-            work.Add(project.Id, [.. NodeQualityChecks.Expand(candidate.Quality[project.Id],
+            work.Add(project.Id, [.. NodeQualityChecks.Expand(candidate.Quality[project.Directory],
                 targets)]);
         }
 
@@ -46,12 +58,12 @@ internal static class NodeFactsAssembler
         foreach (ReleaseUnitDeclaration unit in candidate.Units)
         {
             string[] members = after.Projects.Where(project => project.ReleaseUnit == unit.Id)
-                .Select(project => project.Id).ToArray();
-            if (!members.Any(work.ContainsKey))
+                .Select(project => project.Directory).ToArray();
+            if (!members.Any(member => work.ContainsKey(identities[member])))
                 continue;
             foreach (string member in members)
             {
-                if (!work.ContainsKey(member))
+                if (!work.ContainsKey(identities[member]))
                     throw new InvalidDataException("Selected release unit has unresolved members.");
                 if (!candidate.Versions.Any(version => version.Directory == member))
                     throw new InvalidDataException(
@@ -61,12 +73,12 @@ internal static class NodeFactsAssembler
             }
             CheckSpec[] packages = NodePackageChecks.Expand(unit, native, versions);
             foreach (CheckSpec check in packages)
-                work[check.Package!.Directory].Add(check);
+                work[identities[check.Package!.Directory]].Add(check);
         }
         after = after with { Projects = after.Projects.Select(project =>
             work.TryGetValue(project.Id, out List<CheckSpec>? checks)
                 ? project with { Checks = [.. checks] } : project).ToArray() };
-        return ImpactPlanner.Plan(request with { Candidate = after });
+        return ImpactPlanner.PlanSelected(request with { Candidate = after }, selected);
     }
 
     internal static RepositoryFacts Assemble(NodeRevisionInputs inputs)
@@ -157,10 +169,25 @@ internal static class NodeFactsAssembler
             if (members.Count != 0)
                 shared.Add(new(unit.SourcePath, members.Order(StringComparer.Ordinal).ToArray()));
         }
+        // Native names associate workspace projects across moves. They never resolve
+        // a dependency's source directory; that remains the graph reader's native join.
+        var identities = directories.ToDictionary(directory => directory,
+            directory => native[directory].Name is { } name ? "npm:" + name : directory,
+            StringComparer.Ordinal);
+        if (identities.Values.Distinct(StringComparer.Ordinal).Count() != identities.Count)
+            throw new InvalidDataException("Ambiguous native Node project identity.");
         return new(inputs.Revision.Commit, Scope, directories.Select(directory =>
-            new ProjectFacts(directory, directory, native[directory].Dependencies, [],
+            new ProjectFacts(identities[directory], directory,
+                native[directory].Dependencies.Select(Identity)
+                    .ToArray(), [],
                 membership.GetValueOrDefault(directory), inputs.Quality[directory]?.Preset,
-                [])).ToArray(), shared.ToArray(), [], []);
+                [])).ToArray(), shared.Select(input => input with
+                { Consumers = input.Consumers.Select(Identity).ToArray() })
+                    .ToArray(), [], []);
+
+        string Identity(string directory) => identities.TryGetValue(directory, out string? identity)
+            ? identity : throw new InvalidDataException("Unresolved native Node relation: "
+                + directory);
 
         void RequireFile(string path)
         {

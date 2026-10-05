@@ -10,9 +10,13 @@ import re
 import subprocess
 import tomllib
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 
 from repository_path_patterns import matches, safe_path, safe_record_pattern
 from workflow_delivery_v3_hk import changed_paths
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 ROOT = Path(__file__).resolve().parents[2]
 V3 = "src/public/lib/three-workflow-delivery-v3"
@@ -453,11 +457,9 @@ def _endpoint_text(
     return git(root, "show", f"{revision}:{path}")
 
 
-def _record_owner_bindings(
-    root: Path, revision: str, modes: dict[str, str]
-) -> list[dict]:
-    if FAMILY_CATALOG not in modes:
-        return []
+def _endpoint_yaml(
+    root: Path, revision: str, modes: dict[str, str], path: str
+) -> object:
     # Bootstrap callers use only standard-library selectors.
     import yaml  # noqa: PLC0415 - Only endpoint record parsing needs locked PyYAML.
 
@@ -467,17 +469,25 @@ def _record_owner_bindings(
     def mapping(loader: yaml.SafeLoader, node: yaml.MappingNode) -> dict:
         loader.flatten_mapping(node)
         return _unique_object(
-            loader.construct_pairs(node, deep=True), f"{FAMILY_CATALOG} YAML"
+            loader.construct_pairs(node, deep=True), f"{path} YAML"
         )
 
     _OwnerCatalogLoader.add_constructor(
         yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
         mapping,
     )
-    catalog = yaml.load(
-        _endpoint_text(root, revision, modes, FAMILY_CATALOG),
+    return yaml.load(
+        _endpoint_text(root, revision, modes, path),
         Loader=_OwnerCatalogLoader,  # noqa: S506 - Subclass adds duplicate-key checks to SafeLoader.
     )
+
+
+def _record_owner_bindings(
+    root: Path, revision: str, modes: dict[str, str]
+) -> list[dict]:
+    if FAMILY_CATALOG not in modes:
+        return []
+    catalog = _endpoint_yaml(root, revision, modes, FAMILY_CATALOG)
     if (
         not isinstance(catalog, dict)
         or type(catalog.get("schema_version")) is not int
@@ -530,6 +540,150 @@ def _record_owner_bindings(
         if binding["state"] == "current":
             current.append(binding)
     return current
+
+
+CONTROL_CATALOG_VERSION = 2
+CONTROL_CATALOG = "docs/governance/controls.yaml"
+CHECKER_CONTRACT = "docs/governance/checker-contract.md"
+RECORD_CONTROL = "repository-record-validation"
+
+
+def _mise_task_info(checkout: Path, name: str) -> str:
+    return subprocess.run(
+        ("mise", "tasks", "info", name, "--json"),
+        cwd=checkout,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        timeout=30,
+    ).stdout
+
+
+def _record_task_script(
+    checkout: Path, name: str, raw: str, modes: dict[str, str]
+) -> str:
+    task = json.loads(
+        raw,
+        object_pairs_hook=lambda pairs: _unique_object(
+            pairs, "native mise task"
+        ),
+    )
+    source = str(checkout / "mise.toml")
+    if (
+        not isinstance(task, dict)
+        or task.get("name") != "//:" + name
+        or task.get("source") != source
+        or task.get("config_sources") != [source]
+        or task.get("dir") != str(checkout)
+        or any(
+            task.get(key) != []
+            for key in ("depends", "depends_post", "wait_for", "env")
+        )
+        or any(task.get(key) is not None for key in ("file", "shell"))
+        or not isinstance(task.get("run"), list)
+        or len(task["run"]) != 1
+        or not isinstance(task["run"][0], str)
+    ):
+        raise ValueError("Unsupported native record task context: " + name)
+    command = re.fullmatch(
+        r"uv run --script ([A-Za-z0-9_./-]+\.py)", task["run"][0]
+    )
+    if command is None or not safe_path(command[1]):
+        raise ValueError("Unsupported native record task command: " + name)
+    script = command[1]
+    if modes.get(script) not in {"100644", "100755"}:
+        raise ValueError(
+            "Native record task script is not a committed regular file: "
+            + script
+        )
+    return script
+
+
+def record_control_owners(
+    root: Path,
+    revision: str,
+    checkout: Path,
+    *,
+    query: Callable[[Path, str], str] = _mise_task_info,
+) -> dict[str, list[dict]]:
+    """Derive finite local record responsibility without executing its tasks."""
+    modes = _entry_modes(root, revision)
+    if CONTROL_CATALOG not in modes:
+        return {}
+    catalog = _endpoint_yaml(root, revision, modes, CONTROL_CATALOG)
+    if (
+        not isinstance(catalog, dict)
+        or type(catalog.get("schema_version")) is not int
+        or catalog["schema_version"] != CONTROL_CATALOG_VERSION
+        or not isinstance(catalog.get("controls"), list)
+    ):
+        message = "Unsupported endpoint control catalog"
+        raise ValueError(message)
+    selected = [
+        entry
+        for entry in catalog["controls"]
+        if isinstance(entry, dict) and entry.get("id") == RECORD_CONTROL
+    ]
+    if not selected:
+        return {}
+    if len(selected) != 1:
+        message = "Conflicting endpoint record controls"
+        raise ValueError(message)
+    control = selected[0]
+    if control.get("state") == "scheduled":
+        return {}
+    implementation = control.get("implementation")
+    if (
+        control.get("state") != "current"
+        or control.get("class") != "mechanical"
+        or control.get("runner") != "local-tool"
+        or control.get("enforcement") != "advisory"
+        or control.get("execution_points") != ["local-validation"]
+        or not isinstance(control.get("governing_rules"), list)
+        or CHECKER_CONTRACT not in control["governing_rules"]
+        or not isinstance(implementation, dict)
+        or implementation.get("kind") != "repository-path"
+        or not isinstance(implementation.get("value"), str)
+        or not safe_path(implementation["value"])
+    ):
+        message = "Unsupported active record-control responsibility"
+        raise ValueError(message)
+    _endpoint_text(root, revision, modes, CHECKER_CONTRACT)
+    committed_mise = _endpoint_text(root, revision, modes, "mise.toml")
+    checkout = checkout.resolve()
+    if (
+        git(checkout, "rev-parse", "HEAD").strip() != revision
+        or (checkout / "mise.toml").read_text(encoding="utf-8")
+        != committed_mise
+    ):
+        message = "Record task metadata requires the exact committed endpoint"
+        raise ValueError(message)
+    scripts = {
+        name: _record_task_script(checkout, name, query(checkout, name), modes)
+        for name in ("records:check", "records:test")
+    }
+    if scripts["records:check"] != implementation["value"]:
+        message = "Record control and native task implementation disagree"
+        raise ValueError(message)
+    reasons: dict[str, list[dict]] = {}
+    for name, rule in (
+        ("records:check", "record-control:" + RECORD_CONTROL),
+        ("records:test", "record-regression:records:test"),
+    ):
+        script = scripts[name]
+        reasons.setdefault(script, []).append(
+            {
+                "owner": "record-system",
+                "target": script,
+                "rule": rule,
+                "sources": sorted(
+                    [CONTROL_CATALOG, "mise.toml", CHECKER_CONTRACT]
+                ),
+            }
+        )
+    return reasons
 
 
 def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit endpoint facts.

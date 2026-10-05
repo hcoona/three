@@ -152,7 +152,8 @@ public sealed class NodeFactsAssemblerTests
     {
         NodeRevisionInputs basis = NodeScenario.Units(NodeScenario.Inputs(NodeScenario.Basis,
             NodeScenario.Project("src/a"), NodeScenario.Project("src/b", "src/a")),
-            NodeScenario.Unit("removed", ("old", "src/a"))) with { Versions = [] };
+            NodeScenario.Unit("removed", ("old", "src/a"))) with
+        { Versions = [] };
         NodeRevisionInputs candidate = NodeScenario.Inputs(NodeScenario.Candidate,
             NodeScenario.Project("src/b"));
 
@@ -195,7 +196,8 @@ public sealed class NodeFactsAssemblerTests
         NodeRevisionInputs basis = NodeScenario.Units(NodeScenario.Inputs(NodeScenario.Basis,
             NodeScenario.Project("src/a"), NodeScenario.Project("src/b")),
             NodeScenario.Unit("old", ("first", "src/a"), ("second", "src/b")))
-            with { Versions = [] };
+            with
+        { Versions = [] };
         NodeRevisionInputs candidate = NodeScenario.Inputs(NodeScenario.Candidate,
             NodeScenario.Project("src/a"), NodeScenario.Project("src/b"));
 
@@ -769,7 +771,7 @@ public sealed class NodeFactsAssemblerTests
         withFile = withFile with
         {
             Revision = withFile.Revision with
-                { Entries = [.. withFile.Revision.Entries, NodeScenario.File("version.json")] },
+            { Entries = [.. withFile.Revision.Entries, NodeScenario.File("version.json")] },
         };
         if (deleted) basis = withFile;
         else candidate = withFile;
@@ -786,10 +788,89 @@ public sealed class NodeFactsAssemblerTests
         }
     }
 
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task PlanMovedNamedProjectRetainsBasisReverseConsumers(bool sharedInput)
+    {
+        NodeRevisionInputs basis = NodeScenario.Inputs(NodeScenario.Basis,
+            NodeScenario.Project("src/old-library") with { Name = "@example/library" },
+            NodeScenario.Project("src/old-consumer", "src/old-library") with
+            { Name = "@example/consumer" });
+        NodeRevisionInputs candidate = NodeScenario.Inputs(NodeScenario.Candidate,
+            NodeScenario.Project("tests/new-library") with { Name = "@example/library" },
+            NodeScenario.Project("tests/new-consumer") with { Name = "@example/consumer" });
+        string changed = sharedInput ? "external/removed.json" : "src/old-library/index.js";
+        if (sharedInput)
+            basis = basis with
+            {
+                Revision = basis.Revision with
+                { Entries = [.. basis.Revision.Entries, NodeScenario.File(changed)] },
+                OperationInputs = [new(changed, ["src/old-library"])],
+            };
+
+        CiPlan plan = await NodeScenario.Plan(basis, candidate, changed);
+
+        AssertProjectTargets(plan, "tests/new-library", "tests/new-consumer");
+        Assert.HasCount(4, plan.Checks);
+        foreach (PlannedCheck check in plan.Checks)
+            Assert.AreEqual(new(changed, NodeScenario.Basis, "npm:@example/library"),
+                Assert.ContainsSingle(check.Reasons));
+    }
+
+    [TestMethod]
+    public async Task PlanMovedNamedPackageUsesCandidateDirectories()
+    {
+        const string before = "src/old-package";
+        const string after = "tests/new-package";
+        NodeRevisionInputs basis = NodeScenario.Units(NodeScenario.Inputs(NodeScenario.Basis,
+            NodeScenario.Project(before) with { Name = "@example/product" }),
+            NodeScenario.Unit("product", ("package", before)));
+        NodeRevisionInputs candidate = NodeScenario.Units(NodeScenario.Inputs(
+            NodeScenario.Candidate, NodeScenario.Project(after) with { Name = "@example/product" }),
+            NodeScenario.Unit("product", ("package", after)));
+
+        CiPlan plan = await NodeFactsAssembler.PlanAsync(basis, candidate,
+            [before + "/index.js"], false,
+            (project, _) => project.Directory == after
+                ? Task.FromResult(NodeScenario.Scripts(project))
+                : throw new InvalidOperationException("Wrong script directory."),
+            (project, _) => project.Directory == after ? Task.FromResult("1.2.3")
+                : throw new InvalidOperationException("Wrong version directory."),
+            CancellationToken.None);
+
+        AssertProjectTargets(plan, after, "release/product/package");
+        Assert.HasCount(5, plan.Checks);
+        Assert.HasCount(3, plan.Checks.Where(check => check.Work.Package is not null));
+        foreach (PlannedCheck check in plan.Checks)
+        {
+            Assert.AreEqual(new(before + "/index.js", NodeScenario.Basis,
+                "npm:@example/product"), Assert.ContainsSingle(check.Reasons));
+            if (check.Work.Package is { } package)
+            {
+                Assert.AreEqual(after, package.Directory);
+                Assert.AreEqual(after + "/package.json", package.EntryPoint);
+                Assert.AreEqual("1.2.3", package.ExpectedVersion);
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task PlanRejectsAmbiguousNativeNames()
+    {
+        NodeRevisionInputs inputs = NodeScenario.Inputs(NodeScenario.Candidate,
+            NodeScenario.Project("src/a") with { Name = "@example/same" },
+            NodeScenario.Project("src/b") with { Name = "@example/same" });
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            NodeScenario.Plan(inputs, inputs, "src/a/index.js"));
+    }
+
     private static NodeRevisionInputs WithoutQuality(NodeRevisionInputs inputs, string project)
     {
         var quality = new Dictionary<string, QualitySelection?>(
-            inputs.Quality) { [project] = null };
+            inputs.Quality)
+        { [project] = null };
         return inputs with { Quality = quality };
     }
 

@@ -25,7 +25,15 @@ internal sealed class NodeExecutionFixture(GitFixture repository, CiPlan plan) :
     internal CiPlan Plan { get; } = plan;
     internal string Scratch { get; } = Directory.CreateTempSubdirectory(
         "workflow-node-execution-").FullName;
-    internal NodeRunRequest Request => new(Repository.Directory, Scratch);
+    internal string Runtime { get; set; } = "node24";
+    internal string NodeVersion { get; set; } = "24.21.0";
+    internal string PnpmVersion { get; set; } = "12.8.2";
+    internal CiPlan SelectedPlan => Plan with
+    {
+        Checks = Plan.Checks.Where(item =>
+        item.Work.Key.Variant == Runtime).ToArray()
+    };
+    internal NodeRunRequest Request => new(Repository.Directory, Scratch, Runtime);
     internal List<NativeCommand> Commands { get; } = [];
     internal string NativeMetadata { get; set; } = Metadata;
     internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
@@ -61,9 +69,12 @@ internal sealed class NodeExecutionFixture(GitFixture repository, CiPlan plan) :
             builds.Select(build => (build, Source)).ToArray()),
             new Dictionary<string, PnpmProject> { [Source] = project },
             new Dictionary<string, string> { [Source] = "1.2.3" });
-        return new(candidate, candidate, NodeFactsAssembler.Scope,
+        CiPlan original = new(candidate, candidate, NodeFactsAssembler.Scope,
             source.Concat(packages).Select(check => new PlannedCheck(check,
                 [NodeScenario.Preset], [new(Source + "/index.js", candidate, Source)])).ToArray());
+        return new NodeRuntimeInputs(candidate,
+            [new("node22", "22.x", null), new("node24", "24.x", "24.21.0")],
+            "12.8.2", []).Expand(original);
     }
 
     internal Task<NodeRunResult> RunAsync(CancellationToken token, CiPlan? plan = null,
@@ -85,7 +96,9 @@ internal sealed class NodeExecutionFixture(GitFixture repository, CiPlan plan) :
             else
                 PackageArchiveFixture.Write(path, PackageArchiveFixture.Required());
         }
-        return Task.FromResult(Success(command.Arguments.Contains("pkg") ? NativeMetadata : ""));
+        return Task.FromResult(Success(command.Arguments.Contains("--version")
+            ? command.Executable == "node" ? "v" + NodeVersion + "\n" : PnpmVersion + "\n"
+            : command.Arguments.Contains("pkg") ? NativeMetadata : ""));
     }
 
     internal static NativeCommandResult Success(string stdout = "") =>

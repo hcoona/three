@@ -5,7 +5,10 @@ namespace WorkflowDelivery.Repository;
 
 // Native workspace relations are one input to repository analysis, not complete CI facts.
 internal sealed record PnpmProject(string Directory, string? PublishDirectory,
-    string[] Dependencies);
+    string[] Dependencies)
+{
+    internal string? Name { get; init; }
+}
 internal sealed record PnpmLocalInput(string Path, bool IsDirectory, string[] Consumers);
 internal sealed record PnpmGraph(PnpmProject[] Projects, PnpmLocalInput[] LocalInputs);
 
@@ -48,6 +51,7 @@ internal sealed class PnpmGraphReader
 
         using JsonDocument membership = await ReadJsonAsync(ListArguments("-1"), cancellationToken);
         Dictionary<string, string> roots = ReadProjects(membership.RootElement);
+        Dictionary<string, JsonElement> members = ReadTrees(membership.RootElement);
         if (!roots.ContainsKey(root))
             throw new InvalidDataException("PNPM did not report the requested workspace root.");
         var directories = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -134,7 +138,11 @@ internal sealed class PnpmGraphReader
             }
             related.Remove(identity);
             projects.Add(new(identity, outputs[identity],
-                related.Order(StringComparer.Ordinal).ToArray()));
+                related.Order(StringComparer.Ordinal).ToArray())
+            {
+                Name = members[directory].TryGetProperty("name", out JsonElement name)
+                    ? RequiredString(name) : null,
+            });
         }
         return new(projects.OrderBy(p => p.Directory, StringComparer.Ordinal).ToArray(),
             inputs.OrderBy(p => p.Key.Path, StringComparer.Ordinal)

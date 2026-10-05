@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tomllib
@@ -1036,6 +1037,372 @@ def _catalog(root, pattern="docs/*.md"):
         )
     )
     return target
+
+
+@pytest.fixture
+def record_control(comparison):
+    """Committed local control with deliberately noncanonical script names."""
+    root, _, _ = comparison
+    scripts = {
+        "records:check": "eng/record_check.py",
+        "records:test": "tests/record_test.py",
+    }
+    control = {
+        "id": scope.RECORD_CONTROL,
+        "state": "current",
+        "class": "mechanical",
+        "enforcement": "advisory",
+        "runner": "local-tool",
+        "execution_points": ["local-validation"],
+        "governing_rules": [scope.CHECKER_CONTRACT],
+        "implementation": {
+            "kind": "repository-path",
+            "value": scripts["records:check"],
+        },
+    }
+    for path in (*scripts.values(), scope.CHECKER_CONTRACT):
+        target = root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("Committed source\n")
+    catalog = root / scope.CONTROL_CATALOG
+    catalog.write_text(
+        yaml.safe_dump({"schema_version": 2, "controls": [control]})
+    )
+    (root / "mise.toml").write_text(
+        '[tasks."records:check"]\nrun = "unused controlled fixture"\n'
+    )
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Record control")
+    return root, _git(root, "rev-parse", "HEAD"), control, scripts
+
+
+def _record_task(checkout, name, scripts):
+    return {
+        "name": "//:" + name,
+        "source": str(checkout / "mise.toml"),
+        "config_sources": [str(checkout / "mise.toml")],
+        "dir": str(checkout),
+        "depends": [],
+        "depends_post": [],
+        "wait_for": [],
+        "env": [],
+        "file": None,
+        "shell": None,
+        "run": ["uv run --script " + scripts[name]],
+    }
+
+
+def test_record_control_owners_derive_native_coordinates(record_control):
+    """Native facts name the two current local scripts and their authorities."""
+    root, revision, _, scripts = record_control
+    reasons = scope.record_control_owners(
+        root,
+        revision,
+        root,
+        query=lambda checkout, name: json.dumps(
+            _record_task(checkout, name, scripts)
+        ),
+    )
+    assert reasons == {
+        script: [
+            {
+                "owner": "record-system",
+                "target": script,
+                "rule": "record-control:" + scope.RECORD_CONTROL
+                if name == "records:check"
+                else "record-regression:records:test",
+                "sources": sorted(
+                    [scope.CONTROL_CATALOG, scope.CHECKER_CONTRACT, "mise.toml"]
+                ),
+            }
+        ]
+        for name, script in scripts.items()
+    }
+    assert "eng/unrelated.py" not in reasons
+    assert "tests/unrelated.py" not in reasons
+    selected = scope.select(root, tuple(scripts.values()), base=revision)
+    assert selected["python_roots"] == []
+    assert not selected["scopes"]["python"]
+
+
+def test_record_control_owners_preserve_both_roles_for_one_script(
+    record_control,
+):
+    """Multiple current responsibilities survive an identical script target."""
+    root, revision, _, scripts = record_control
+    scripts["records:test"] = scripts["records:check"]
+    reasons = scope.record_control_owners(
+        root,
+        revision,
+        root,
+        query=lambda checkout, name: json.dumps(
+            _record_task(checkout, name, scripts)
+        ),
+    )
+    assert set(reasons) == {scripts["records:check"]}
+    assert [reason["rule"] for reason in reasons[scripts["records:check"]]] == [
+        "record-control:" + scope.RECORD_CONTROL,
+        "record-regression:records:test",
+    ]
+
+
+def test_record_control_owners_preserve_endpoint_moves(record_control):
+    """Each endpoint retains its own script identity across coherent moves."""
+    root, base, control, old = record_control
+    basis = root.parent / "record-basis"
+    _git(root, "worktree", "add", "--detach", str(basis), base)
+    new = {name: path.replace(".py", "_moved.py") for name, path in old.items()}
+    for name, path in old.items():
+        (root / path).rename(root / new[name])
+    control["implementation"]["value"] = new["records:check"]
+    (root / scope.CONTROL_CATALOG).write_text(
+        yaml.safe_dump({"schema_version": 2, "controls": [control]})
+    )
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "Move both record scripts")
+    candidate = _git(root, "rev-parse", "HEAD")
+    before = scope.record_control_owners(
+        root,
+        base,
+        basis,
+        query=lambda checkout, name: json.dumps(
+            _record_task(checkout, name, old)
+        ),
+    )
+    after = scope.record_control_owners(
+        root,
+        candidate,
+        root,
+        query=lambda checkout, name: json.dumps(
+            _record_task(checkout, name, new)
+        ),
+    )
+    assert set(before) == set(old.values())
+    assert set(after) == set(new.values())
+    assert set(before).isdisjoint(after)
+    assert before[old["records:check"]][0]["target"] == old["records:check"]
+    with pytest.raises(ValueError, match="exact committed endpoint"):
+        scope.record_control_owners(root, base, root)
+
+
+@pytest.mark.parametrize("change", ["head", "dirty-manifest"])
+def test_record_control_owners_require_exact_task_context(
+    record_control, change
+):
+    """A different or dirty task context cannot represent the endpoint."""
+    root, revision, _, _ = record_control
+    if change == "head":
+        _git(root, "commit", "--allow-empty", "-qm", "Another endpoint")
+    else:
+        (root / "mise.toml").write_text("Changed task source\n")
+    with pytest.raises(ValueError, match="exact committed endpoint"):
+        scope.record_control_owners(
+            root,
+            revision,
+            root,
+            query=lambda *_: pytest.fail("Wrong endpoint must not query tasks"),
+        )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "malformed",
+        "duplicate",
+        "failure",
+        "foreign-source",
+        "foreign-config",
+        "foreign-dir",
+        "name",
+        "depends",
+        "env",
+        "shell",
+        "file",
+        "multiple",
+        "operator",
+        "substitution",
+        "option",
+        "traversal",
+        "missing-script",
+        "nonregular",
+    ],
+)
+def test_record_control_owners_reject_unsupported_native_facts(
+    record_control, change
+):
+    """Unavailable native metadata cannot establish responsibility."""
+    root, revision, _, scripts = record_control
+
+    def query(checkout, name):
+        task = _record_task(checkout, name, scripts)
+        if change == "malformed":
+            return "{"
+        if change == "duplicate":
+            return '{"name": "x", "name": "y"}'
+        if change == "failure":
+            raise subprocess.CalledProcessError(1, ["mise", "tasks", "info"])
+        updates = {
+            "foreign-source": {"source": str(root.parent / "mise.toml")},
+            "foreign-config": {
+                "config_sources": [
+                    str(root / "mise.toml"),
+                    str(root.parent / "mise.toml"),
+                ]
+            },
+            "foreign-dir": {"dir": str(root.parent)},
+            "name": {"name": "//:another"},
+            "depends": {"depends": ["another"]},
+            "env": {"env": ["CUSTOM=1"]},
+            "shell": {"shell": "bash"},
+            "file": {"file": "other.py"},
+            "multiple": {"run": [*task["run"], "uv run --script other.py"]},
+            "operator": {"run": [task["run"][0] + "; echo other"]},
+            "substitution": {"run": ["uv run --script $(echo other.py)"]},
+            "option": {"run": ["uv run --frozen --script other.py"]},
+            "traversal": {"run": ["uv run --script ../outside.py"]},
+            "missing-script": {"run": ["uv run --script missing.py"]},
+            "nonregular": {"run": ["uv run --script link.py"]},
+        }
+        if (
+            change not in {"missing-script", "nonregular"}
+            or name == "records:test"
+        ):
+            task.update(updates[change])
+        return json.dumps(task)
+
+    if change == "nonregular":
+        _git(
+            root,
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            "120000,"
+            + _git(root, "rev-parse", "HEAD:" + scripts["records:check"])
+            + ",link.py",
+        )
+        _git(root, "commit", "-qm", "Nonregular script")
+        revision = _git(root, "rev-parse", "HEAD")
+    if change in {"missing-script", "nonregular"}:
+        script = "missing.py" if change == "missing-script" else "link.py"
+        with pytest.raises(
+            ValueError,
+            match="Native record task script is not a committed regular file: "
+            + re.escape(script),
+        ):
+            scope.record_control_owners(root, revision, root, query=query)
+    else:
+        with pytest.raises((ValueError, subprocess.CalledProcessError)):
+            scope.record_control_owners(root, revision, root, query=query)
+
+
+@pytest.mark.parametrize(
+    "state", ["absent-catalog", "absent-control", "scheduled"]
+)
+def test_record_control_owners_do_not_activate_absent_or_scheduled(
+    record_control, state
+):
+    """Inactive controls contribute neither queries nor ownership."""
+    root, _, control, _ = record_control
+    catalog = root / scope.CONTROL_CATALOG
+    if state == "absent-catalog":
+        catalog.unlink()
+    else:
+        control["state"] = "scheduled"
+        catalog.write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": 2,
+                    "controls": [] if state == "absent-control" else [control],
+                }
+            )
+        )
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "Inactive record control")
+    assert (
+        scope.record_control_owners(
+            root,
+            _git(root, "rev-parse", "HEAD"),
+            root,
+            query=lambda *_: pytest.fail("Inactive route must not query tasks"),
+        )
+        == {}
+    )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "duplicate-control",
+        "duplicate-yaml",
+        "schema",
+        "enforcement",
+        "execution",
+        "contract",
+        "implementation",
+    ],
+)
+def test_record_control_owners_reject_conflicting_controls(
+    record_control, change
+):
+    """Conflicting active authority cannot become a positive reason."""
+    root, _, control, scripts = record_control
+    catalog = {"schema_version": 2, "controls": [control]}
+    if change == "duplicate-control":
+        catalog["controls"].append(control)
+    if change == "schema":
+        catalog["schema_version"] = True
+    if change == "enforcement":
+        control["enforcement"] = "blocking"
+    if change == "execution":
+        control["execution_points"] = ["ci"]
+    if change == "contract":
+        control["governing_rules"] = []
+    if change == "implementation":
+        control["implementation"]["value"] = scripts["records:test"]
+    (root / scope.CONTROL_CATALOG).write_text(
+        yaml.safe_dump(catalog)
+        + ("schema_version: 2\n" if change == "duplicate-yaml" else "")
+    )
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Conflicting record control")
+    with pytest.raises(
+        ValueError, match=r"Duplicate|Unsupported|Conflicting|disagree"
+    ):
+        scope.record_control_owners(
+            root,
+            _git(root, "rev-parse", "HEAD"),
+            root,
+            query=lambda checkout, name: json.dumps(
+                _record_task(checkout, name, scripts)
+            ),
+        )
+
+
+def test_record_control_metadata_query_never_executes_tasks(
+    record_control, monkeypatch
+):
+    """Only native info queries run; local task commands remain opaque."""
+    root, revision, _, scripts = record_control
+    commands = []
+    native_run = scope.subprocess.run
+
+    def run(command, **kwargs):
+        if command[0] != "mise":
+            return native_run(command, **kwargs)
+        commands.append(tuple(command))
+        assert kwargs["cwd"] == root
+        return subprocess.CompletedProcess(
+            command, 0, json.dumps(_record_task(root, command[3], scripts)), ""
+        )
+
+    monkeypatch.setattr(scope.subprocess, "run", run)
+    assert set(scope.record_control_owners(root, revision, root)) == set(
+        scripts.values()
+    )
+    assert commands == [
+        ("mise", "tasks", "info", name, "--json")
+        for name in ("records:check", "records:test")
+    ]
 
 
 def test_endpoint_owners_use_record_bindings_without_guessing_node_membership(

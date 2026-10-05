@@ -11,6 +11,43 @@ public sealed class PnpmGraphReaderTests
     private static readonly string[] NestedConsumers = ["packages/one", "packages/two"];
 
     [TestMethod]
+    public async Task ReadRetainsNativeProjectNamesWithoutChangingDependencyOwnership()
+    {
+        var native = new NativeQueries(".", "packages/library", "packages/app");
+        native.Names["packages/library"] = "@example/library";
+        native.Names["packages/app"] = "@example/app";
+        native.Nodes["packages/app"] = [native.Node("link:../library", "packages/library"),
+            native.Node("1.0.0", "node_modules/copied", "file:fixtures/library.tgz")];
+
+        PnpmGraph graph = await native.Reader.ReadAsync(CancellationToken.None);
+
+        PnpmProject library = graph.Projects.Single(project => project.Directory ==
+            "packages/library");
+        PnpmProject app = graph.Projects.Single(project => project.Directory == "packages/app");
+        Assert.AreEqual("@example/library", library.Name);
+        Assert.AreEqual("@example/app", app.Name);
+        Assert.IsNull(graph.Projects.Single(project => project.Directory == ".").Name);
+        Assert.AreEqual("packages/library", Assert.ContainsSingle(app.Dependencies));
+        PnpmLocalInput archive = Assert.ContainsSingle(graph.LocalInputs);
+        Assert.AreEqual("fixtures/library.tgz", archive.Path);
+        Assert.AreEqual("packages/app", Assert.ContainsSingle(archive.Consumers));
+        Assert.IsFalse(archive.IsDirectory);
+    }
+
+    [TestMethod]
+    [DataRow("")]
+    [DataRow(" ")]
+    [DataRow(12)]
+    public async Task ReadRejectsMalformedNativeProjectName(object name)
+    {
+        var native = new NativeQueries(".", "packages/library");
+        native.Names["packages/library"] = name;
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            native.Reader.ReadAsync(CancellationToken.None));
+    }
+
+    [TestMethod]
     [DataRow("dependencies")]
     [DataRow("devDependencies")]
     [DataRow("optionalDependencies")]
@@ -273,6 +310,7 @@ public sealed class PnpmGraphReaderTests
             "pnpm reader fixture"));
         internal List<string> Directories { get; } = [.. directories];
         internal Dictionary<string, string> Outputs { get; } = new(StringComparer.Ordinal);
+        internal Dictionary<string, object> Names { get; } = new(StringComparer.Ordinal);
         internal Dictionary<string, object[]> Nodes { get; } = new(StringComparer.Ordinal);
         internal Dictionary<string, object[]> UnsavedNodes { get; } = new(StringComparer.Ordinal);
         internal string DependencyGroup { get; set; } = "dependencies";
@@ -339,13 +377,19 @@ public sealed class PnpmGraphReaderTests
         }
 
         private string Projects(IEnumerable<string> identities, bool full) =>
-            JsonSerializer.Serialize(identities.Select(identity => new Dictionary<string, object>
+            JsonSerializer.Serialize(identities.Select(identity =>
             {
-                ["path"] = Path.GetFullPath(identity, root),
-                [DependencyGroup] = full ? Group(Nodes.GetValueOrDefault(identity, []))
-                    : new Dictionary<string, object>(),
-                ["unsavedDependencies"] = full ? Group(UnsavedNodes.GetValueOrDefault(identity, []))
-                    : new Dictionary<string, object>(),
+                var project = new Dictionary<string, object>
+                {
+                    ["path"] = Path.GetFullPath(identity, root),
+                    [DependencyGroup] = full ? Group(Nodes.GetValueOrDefault(identity, []))
+                        : new Dictionary<string, object>(),
+                    ["unsavedDependencies"] = full
+                        ? Group(UnsavedNodes.GetValueOrDefault(identity, []))
+                        : new Dictionary<string, object>(),
+                };
+                if (Names.TryGetValue(identity, out object? name)) project["name"] = name;
+                return project;
             }), OutputOptions);
 
         private static Dictionary<string, object> Group(object[] nodes) =>

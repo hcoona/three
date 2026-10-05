@@ -427,7 +427,7 @@ public sealed class ProgramTests
         using var files = new TransferFiles();
         CiPlan plan = NodeExecutionFixture.CreatePlan(NodeScenario.Candidate);
         var request = new NodeRunRequest(Path.Combine(files.Root, "checkout"),
-            Path.Combine(files.Root, "scratch"));
+            Path.Combine(files.Root, "scratch"), "node24");
         string planPath = files.Write("plan.json", JsonSerializer.Serialize(plan,
             TransferJson.Default.CiPlan));
         string requestPath = files.Write("request.json", JsonSerializer.Serialize(request,
@@ -448,13 +448,18 @@ public sealed class ProgramTests
             (receivedPlan, receivedRequest, _) =>
             {
                 invoked = true;
+                Assert.HasCount(7, receivedPlan.Checks);
                 Assert.AreEqual(plan.Candidate, receivedPlan.Candidate);
                 Assert.AreEqual(request, receivedRequest);
                 Assert.AreEqual("main-package", receivedPlan.Checks.Single(item =>
                     item.Work.Key == key).Work.Package!.Outputs.Single().Id);
                 return Task.FromResult(new NodeRunResult(plan.Candidate,
-                    plan.Checks.Select(item => new CheckResult(plan.Candidate, item.Work.Key,
-                        CheckStatus.Passed)).ToArray(), [observation], [original], []));
+                    plan.Checks.Where(item => item.Work.Key.Variant == request.Runtime)
+                        .Select(item => new CheckResult(plan.Candidate, item.Work.Key,
+                        CheckStatus.Passed)).ToArray(), [observation], [original], [],
+                    request.Runtime,
+                    new("24.21.0", "12.8.2", NodeExecutionFixture.Success("v24.21.0\n"),
+                        NodeExecutionFixture.Success("12.8.2\n"))));
             });
 
         Assert.IsTrue(invoked);
@@ -463,7 +468,11 @@ public sealed class ProgramTests
         NodeRunResult transferred = JsonSerializer.Deserialize(output.ToString(),
             TransferJson.Default.NodeRunResult)!;
         Assert.AreEqual(plan.Candidate, transferred.Candidate);
-        Assert.HasCount(plan.Checks.Length, transferred.Results);
+        Assert.HasCount(5, transferred.Results);
+        Assert.AreEqual("node24", transferred.Runtime);
+        Assert.AreEqual("24.21.0", transferred.RuntimeVersions!.NodeVersion);
+        Assert.AreEqual("12.8.2", transferred.RuntimeVersions.PnpmVersion);
+        Assert.IsFalse(ResultCollector.Collect(plan, transferred.Results).Satisfied);
         Assert.AreEqual(original, Assert.ContainsSingle(transferred.Outputs));
         NodeCommandObservation received = Assert.ContainsSingle(transferred.Commands);
         Assert.AreEqual(key, received.Key);
@@ -493,8 +502,10 @@ public sealed class ProgramTests
         string planPath = files.Write("plan.json", JsonSerializer.Serialize(plan,
             TransferJson.Default.CiPlan));
         string requestPath = files.Write("request.json", JsonSerializer.Serialize(
-            new NodeRunRequest(files.Root, files.Root), TransferJson.Default.NodeRunRequest));
-        CheckResult[] results = plan.Checks.Select(item =>
+            new NodeRunRequest(files.Root, files.Root, "node24"),
+            TransferJson.Default.NodeRunRequest));
+        CheckResult[] results = plan.Checks
+            .Where(item => item.Work.Key.Variant == "node24").Select(item =>
             new CheckResult(plan.Candidate, item.Work.Key, CheckStatus.Passed)).ToArray();
         results = defect switch
         {
@@ -508,7 +519,8 @@ public sealed class ProgramTests
         using var error = new StringWriter();
 
         int exit = Program.Run(["ci", "run-node", planPath, requestPath], output, error,
-            (_, _, _) => Task.FromResult(new NodeRunResult(plan.Candidate, results, [], [], [])));
+            (_, _, _) => Task.FromResult(new NodeRunResult(plan.Candidate, results, [], [], [],
+                "node24", null)));
 
         Assert.AreEqual(1, exit);
         Assert.AreEqual("", error.ToString());
@@ -526,12 +538,15 @@ public sealed class ProgramTests
     [DataRow("unknown-property")]
     [DataRow("malformed-plan")]
     [DataRow("null-plan")]
+    [DataRow("missing-runtime")]
+    [DataRow("null-runtime")]
+    [DataRow("unsupported-runtime")]
     public void RunNodeMalformedTransferReturnsInputErrorWithoutExecution(string defect)
     {
         using var files = new TransferFiles();
         CiPlan plan = NodeExecutionFixture.CreatePlan(NodeScenario.Candidate);
         string planJson = JsonSerializer.Serialize(plan, TransferJson.Default.CiPlan);
-        var request = new NodeRunRequest(files.Root, Path.Combine(files.Root, "scratch"));
+        var request = new NodeRunRequest(files.Root, Path.Combine(files.Root, "scratch"), "node24");
         JsonObject json = JsonNode.Parse(JsonSerializer.Serialize(request,
             TransferJson.Default.NodeRunRequest))!.AsObject();
         if (defect == "missing-property")
@@ -540,6 +555,12 @@ public sealed class ProgramTests
             json["checkout"] = null;
         if (defect == "unknown-property")
             json["embeddedNode"] = true;
+        if (defect == "missing-runtime")
+            json.Remove("runtime");
+        if (defect == "null-runtime")
+            json["runtime"] = null;
+        if (defect == "unsupported-runtime")
+            json["runtime"] = "default";
         string requestJson = defect switch
         {
             "malformed-request" => "{broken",
@@ -579,7 +600,7 @@ public sealed class ProgramTests
         string planPath = files.Write("plan.json", JsonSerializer.Serialize(plan,
             TransferJson.Default.CiPlan));
         string requestPath = files.Write("request.json", JsonSerializer.Serialize(
-            new NodeRunRequest("relative-checkout", "relative-scratch"),
+            new NodeRunRequest("relative-checkout", "relative-scratch", "node24"),
             TransferJson.Default.NodeRunRequest));
         using var output = new StringWriter();
         using var error = new StringWriter();
