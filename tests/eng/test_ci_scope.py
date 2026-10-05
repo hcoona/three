@@ -864,7 +864,10 @@ def test_endpoint_owners_keep_basis_python_targets_from_committed_configuration(
     assert "src/python/tests" not in selected["python_reasons"]
 
 
-def test_endpoint_owners_use_committed_member_dependencies(comparison):
+@pytest.mark.parametrize("member_pattern", ["*", "?", "[abc]"])
+def test_endpoint_owners_use_committed_member_dependencies(
+    comparison, member_pattern
+):
     """Surviving consumers use endpoint dependencies, never dirty members."""
     root, _, _ = comparison
     paths = tuple(f"src/provider-{name}/input.py" for name in ("a", "b", "c"))
@@ -874,8 +877,10 @@ def test_endpoint_owners_use_committed_member_dependencies(comparison):
     ]
     (root / "pyproject.toml").write_text(
         '[project]\nname = "sample-root"\n'
-        '[tool.uv.workspace]\nmembers = ["src/python", "src/provider-*"]\n'
-        "[tool.pytest.ini_options]\ntestpaths = "
+        '[tool.uv.workspace]\nmembers = ["src/python", '
+        + json.dumps("src/provider-" + member_pattern)
+        + "]\n"
+        + "[tool.pytest.ini_options]\ntestpaths = "
         + json.dumps(test_roots)
         + "\n"
     )
@@ -1118,6 +1123,8 @@ def test_endpoint_record_owners_accept_native_yaml_merge(comparison):
         "wrong-version",
         "foreign-family",
         "unsafe-binding",
+        "question-binding",
+        "bracket-binding",
         "missing-base-object",
     ],
 )
@@ -1144,6 +1151,13 @@ def test_invalid_endpoint_owner_inputs_emit_no_successful_scope(
     elif defect == "unsafe-binding":
         catalog.write_text(
             catalog.read_text().replace("docs/*.md", "../outside/*.md")
+        )
+    elif defect in {"question-binding", "bracket-binding"}:
+        catalog.write_text(
+            catalog.read_text().replace(
+                "docs/*.md",
+                "docs/?.md" if defect == "question-binding" else "docs/[ab].md",
+            )
         )
     _git(root, "add", ".")
     _git(root, "commit", "-qm", "Candidate endpoint input")

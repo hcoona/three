@@ -31,7 +31,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
 from markdown_it import MarkdownIt
 from referencing.exceptions import Unresolvable
-from repository_path_patterns import matches, safe_path
+from repository_path_patterns import matches, safe_path, safe_record_pattern
 
 CURRENT_CATALOG_VERSION = 3
 LEGACY_CATALOG_VERSION = 2
@@ -819,7 +819,7 @@ def check_repository(  # noqa: C901, PLR0912, PLR0915 - One ordered report trans
                 FAMILY_CATALOG,
                 f"{binding['id']}: {binding['family']}",
             )
-        if not safe_path(path, pattern=True) or (
+        if not safe_record_pattern(path) or (
             binding["carrier"] == "repository-file"
             and any(c in path for c in "*?[]")
         ):

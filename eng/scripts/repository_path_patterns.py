@@ -26,3 +26,8 @@ def matches(path: str, pattern: str) -> bool:
         .replace(r"\*", "[^/]*")
     )
     return re.fullmatch(regex, path) is not None
+
+
+def safe_record_pattern(path: str) -> bool:
+    """Accept only the record matcher's component-aware star grammar."""
+    return safe_path(path, pattern=True) and not any(c in path for c in "?[]")

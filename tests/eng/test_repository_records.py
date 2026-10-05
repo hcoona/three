@@ -372,6 +372,8 @@ def test_repository_root_directory_links(repo: Repository) -> None:
         ("remote-schema-ref", "schema-input-invalid"),
         ("wrong-field", "schema-invalid"),
         ("unsafe-path", "unsafe-binding-path"),
+        ("question-pattern", "unsafe-binding-path"),
+        ("bracket-pattern", "unsafe-binding-path"),
     ],
 )
 def test_invalid_catalog_diagnostics(
@@ -390,6 +392,11 @@ def test_invalid_catalog_diagnostics(
         repo.catalog["bindings"][0]["state"] = "whatever"
     elif mutation == "unsafe-path":
         repo.catalog["bindings"][0]["path"] = "../escaped.md"
+    elif mutation in {"question-pattern", "bracket-pattern"}:
+        repo.catalog["bindings"][0]["carrier"] = "repository-files"
+        repo.catalog["bindings"][0]["path"] = (
+            "docs/?.md" if mutation == "question-pattern" else "docs/[ab].md"
+        )
     repo.save()
     if mutation == "duplicate-yaml-key":
         with (repo.root / checker.FAMILY_CATALOG).open("a") as stream:

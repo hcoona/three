@@ -11,7 +11,7 @@ import subprocess
 import tomllib
 from pathlib import Path, PurePosixPath
 
-from repository_path_patterns import matches, safe_path
+from repository_path_patterns import matches, safe_path, safe_record_pattern
 from workflow_delivery_v3_hk import changed_paths
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -236,32 +236,30 @@ def _v3_input(path: str) -> bool:
     )
 
 
-def _work_scopes(path: str, files: set[str]) -> set[str]:
+def _work_roots(files: set[str]) -> dict[str, set[str]]:
+    roots: dict[str, set[str]] = {"node": set(), "dotnet": set(), "ruby": set()}
+    for item in files:
+        directory = str(PurePosixPath(item).parent)
+        if item.endswith("/package.json") and item.startswith("src/"):
+            roots["node"].add(directory)
+        if item.endswith((".csproj", ".fsproj", ".vbproj")):
+            roots["dotnet"].add(directory)
+        if item.endswith(".gemspec"):
+            roots["ruby"].add(directory)
+    return roots
+
+
+def _work_scopes(path: str, roots: dict[str, set[str]]) -> set[str]:
     if path in ALL_INPUTS:
         return set(SCOPES)
-    node_roots = {
-        str(PurePosixPath(item).parent)
-        for item in files
-        if item.endswith("/package.json") and item.startswith("src/")
-    }
-    dotnet_roots = {
-        str(PurePosixPath(item).parent)
-        for item in files
-        if item.endswith((".csproj", ".fsproj", ".vbproj"))
-    }
-    ruby_roots = {
-        str(PurePosixPath(item).parent)
-        for item in files
-        if item.endswith(".gemspec")
-    }
     applicability = {
         "mise": PurePosixPath(path).name in {"mise.toml", "mise.lock"},
-        "dotnet": _dotnet_input(path, dotnet_roots),
+        "dotnet": _dotnet_input(path, roots["dotnet"]),
         "node": path in NODE_INPUTS
-        or any(_under(path, directory) for directory in node_roots),
+        or any(_under(path, directory) for directory in roots["node"]),
         "azureauth": _azure_input(path),
         "ruby": path in {"Gemfile", "Gemfile.lock", ".ruby-version"}
-        or any(_under(path, directory) for directory in ruby_roots),
+        or any(_under(path, directory) for directory in roots["ruby"]),
         "scholarly": _under(path, SCHOLARLY)
         or path.startswith(".agents/skills/scholarly-")
         or path in {"apm.yml", "apm.lock.yaml"},
@@ -370,8 +368,9 @@ def select(
     reasons = {scope: set() for scope in SCOPES}
     reasons["validation"].add("source conformance")
     python_reasons = {test: set() for test in test_roots}
+    work_roots = _work_roots(files)
     for path in paths:
-        for scope in _work_scopes(path, files):
+        for scope in _work_scopes(path, work_roots):
             reasons[scope].add(path)
         for test in _python_tests(path, test_roots, packages):
             python_reasons[test].add(path)
@@ -515,7 +514,7 @@ def _record_owner_bindings(
             or binding["family"] not in families
             or binding["state"] not in {"current", "scheduled"}
             or binding["carrier"] not in {"repository-file", "repository-files"}
-            or not safe_path(binding["path"], pattern=True)
+            or not safe_record_pattern(binding["path"])
             or (
                 binding["carrier"] == "repository-file"
                 and any(char in binding["path"] for char in "*?[]")
@@ -533,6 +532,8 @@ def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit en
     path: str,
     *,
     modes: dict[str, str],
+    work_roots: dict[str, set[str]],
+    manifests: tuple[str, ...],
     packages: dict[str, tuple[str, set[str]]],
     test_roots: list[str],
     bindings: list[dict],
@@ -542,7 +543,6 @@ def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit en
     if path not in modes:
         return []
     reasons = []
-    files = set(modes)
 
     def add(owner: str, target: str, rule: str, sources: list[str]) -> None:
         sources = sorted(
@@ -562,8 +562,8 @@ def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit en
                 }
             )
 
-    scopes = _work_scopes(path, files)
-    for manifest in sorted(files):
+    scopes = _work_scopes(path, work_roots)
+    for manifest in manifests:
         directory = str(PurePosixPath(manifest).parent)
         if (
             manifest.endswith((".csproj", ".fsproj", ".vbproj"))
@@ -669,6 +669,14 @@ def endpoint_owners(
             message = "Malformed endpoint Python workspace/test configuration"
             raise ValueError(message)
         files = set(modes)
+        work_roots = _work_roots(files)
+        manifests = tuple(
+            sorted(
+                path
+                for path in files
+                if path.endswith((".csproj", ".fsproj", ".vbproj", ".gemspec"))
+            )
+        )
         packages = _python_packages(
             root, files, members, revision, revision=revision
         )
@@ -681,6 +689,8 @@ def endpoint_owners(
                 "reasons": _path_owner_reasons(
                     path,
                     modes=modes,
+                    work_roots=work_roots,
+                    manifests=manifests,
                     packages=packages,
                     test_roots=test_roots,
                     bindings=bindings,
