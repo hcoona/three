@@ -273,6 +273,15 @@ no second parser/version/lock declaration. Catalog parsing and matching do not
 run the full contextual record checker in every scope job. Unconditional source
 conformance is not a positive owner for an arbitrary path.
 
+The existing `repository-record-validation` implementation and its maintained
+`records:test` regression entry may supply positive endpoint responsibility from
+that endpoint's current [control entry](../../../../../docs/governance/controls.yaml),
+explicit `mise.toml` tasks and [checker contract](../../../../../docs/governance/checker-contract.md).
+Retain the committed source coordinates and local/advisory execution semantics.
+This finite route neither invokes the checker nor adds CI selections; it does
+not infer owners for other local controls, tests or engineering paths. Actual
+product/control consumption remains independently native.
+
 The Ubuntu group joins native PNPM membership and reasons before final owner
 validation. The Windows selector's `src/` package-manifest heuristic cannot
 establish or reject native Node responsibility. Manifest/catalog reads used to
