@@ -13,9 +13,9 @@ execution, transfer and outcome contracts for the internal C# application under
 CLI/workflow callers, integration contracts and retirement order;
 the runtime described below has not yet been replaced.
 The [private application](../../../private/app/workflow-delivery/README.md)
-now provides CI selection/results, native Node fact assembly and the adopted
-check executor. The [bounded Linux observation](docs/research/node-ci-native-execution.md)
-qualifies that fixture's native composition and effects. Event/transfer integration,
+now provides CI selection/results, GitHub event comparison, native Node fact assembly
+and the adopted check executor. The [bounded Linux observation](docs/research/node-ci-native-execution.md)
+qualifies that fixture's native composition and effects. Hosted event/transfer integration,
 other quality presets and workflow cutover remain pending.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim

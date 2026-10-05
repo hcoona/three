@@ -71,7 +71,7 @@ invalid UTF-8. Index metadata avoids requiring OS symlink privileges or checking
 out unusual names. Results and exact reviewed trees belong in the delivery PR.
 
 This component supplies committed tree/path inputs. Complete RepositoryFacts,
-ownership/input expansion, ecosystem evaluation at each revision, event mapping
+ownership/input expansion, ecosystem evaluation at each revision
 and caller cutover remain pending. Missing objects required by a selected query
 fail; no unrelated blob/history audit, fetching, repair, retry, trust record or
 full-run fallback is added. Ordinary Windows changed-code CI remains the existing

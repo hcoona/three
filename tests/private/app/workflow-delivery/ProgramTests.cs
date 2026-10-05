@@ -13,6 +13,64 @@ namespace WorkflowDelivery.Tests;
 public sealed class ProgramTests
 {
     [TestMethod]
+    public void RunComparisonReadsNativePayloadAndEmitsMinimalTransfer()
+    {
+        using var files = new TransferFiles();
+        string basis = new('a', 40);
+        string candidate = new('b', 40);
+        string eventPath = files.Write("native-event.json", $$$"""
+            {"pull_request":{"base":{"sha":"{{{basis}}}"},
+             "head":{"sha":"{{{new string('c', 40)}}}"}},"unrelated":"native field"}
+            """);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        int exit = Program.Run(["ci", "comparison", "pull_request", eventPath, candidate],
+            output, error);
+
+        Assert.AreEqual(0, exit, error.ToString());
+        Assert.AreEqual("", error.ToString());
+        using JsonDocument document = JsonDocument.Parse(output.ToString());
+        JsonElement comparison = document.RootElement;
+        Assert.HasCount(3, comparison.EnumerateObject().ToArray());
+        Assert.AreEqual(basis, comparison.GetProperty("basis").GetString());
+        Assert.AreEqual(candidate, comparison.GetProperty("candidate").GetString());
+        Assert.IsFalse(comparison.GetProperty("full").GetBoolean());
+    }
+
+    [TestMethod]
+    [DataRow("malformed")]
+    [DataRow("nonobject")]
+    [DataRow("missing-field")]
+    [DataRow("unsupported-event")]
+    [DataRow("missing-file")]
+    [DataRow("missing-argument")]
+    public void RunInvalidComparisonReturnsInputErrorWithoutSuccessJson(string defect)
+    {
+        using var files = new TransferFiles();
+        string eventPath = files.Write("native-event.json", defect switch
+        {
+            "malformed" => "{broken",
+            "nonobject" => "[]",
+            _ => "{}",
+        });
+        string eventName = defect == "unsupported-event" ? "schedule" : "pull_request";
+        if (defect == "missing-file")
+            eventPath = Path.Combine(files.Root, "absent.json");
+        string[] args = ["ci", "comparison", eventName, eventPath, new('b', 40)];
+        if (defect == "missing-argument")
+            args = args[..^1];
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        int exit = Program.Run(args, output, error);
+
+        Assert.AreEqual(2, exit);
+        Assert.AreEqual("", output.ToString());
+        Assert.IsNotEmpty(error.ToString());
+    }
+
+    [TestMethod]
     [DataRow(true, 0, "passed")]
     [DataRow(false, 1, "failed")]
     public void RunJsonFilesPlanAndCollectCandidateBoundOutcome(bool passed, int exitCode,
@@ -442,7 +500,7 @@ public sealed class ProgramTests
         {
             "missing" => results[..^1],
             "wrong-candidate" => results.Select(item => item with
-                { Candidate = NodeScenario.Basis }).ToArray(),
+            { Candidate = NodeScenario.Basis }).ToArray(),
             _ => results.Select((item, index) => index == results.Length - 1
                 ? item with { Status = Enum.Parse<CheckStatus>(defect) } : item).ToArray(),
         };
