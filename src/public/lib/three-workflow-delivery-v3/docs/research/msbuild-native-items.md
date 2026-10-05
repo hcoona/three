@@ -27,7 +27,8 @@ claims.
 | JSON groups properties and items, with associated native metadata including `FullPath`                                     | [Evaluate items and properties, lines 57–78][evaluation]  |
 | `MSBuildProjectFullPath` is the reserved absolute path of the evaluated project                                            | [Reserved and well-known properties, line 66][properties] |
 | `-noAutoResponse` omits automatic `MSBuild.rsp` and `Directory.Build.rsp`; property-list separators are semicolon or comma | [Command-line reference, lines 59–65][cli]                |
-| Evaluation processes properties, imports and items outside targets, and can execute property functions                     | [Build process overview, evaluation sections][process]    |
+| Evaluation processes properties, imports and items outside targets                                                         | [Build process overview, evaluation sections][process]    |
+| Property functions call .NET methods and are evaluated for properties/items outside targets before any target runs         | [Property functions, lines 15–19][functions]              |
 
 ## Adaptation and Alternatives
 
@@ -96,3 +97,4 @@ native-integration review.
 [properties]: https://github.com/MicrosoftDocs/visualstudio-docs/blob/653cd6e4ffe7e1ff69ba2c4eade3c29ed49a4336/docs/msbuild/msbuild-reserved-and-well-known-properties.md#L66
 [cli]: https://github.com/MicrosoftDocs/visualstudio-docs/blob/653cd6e4ffe7e1ff69ba2c4eade3c29ed49a4336/docs/msbuild/msbuild-command-line-reference.md#L59
 [process]: https://github.com/MicrosoftDocs/visualstudio-docs/blob/653cd6e4ffe7e1ff69ba2c4eade3c29ed49a4336/docs/msbuild/build-process-overview.md
+[functions]: https://github.com/MicrosoftDocs/visualstudio-docs/blob/653cd6e4ffe7e1ff69ba2c4eade3c29ed49a4336/docs/msbuild/property-functions.md#L15
