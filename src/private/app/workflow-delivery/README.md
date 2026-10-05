@@ -47,7 +47,9 @@ cross-project output deduplication cannot hide another consumer's nested inputs.
 It joins resolved source/output directory identities, preserving
 reachability rather than promising direct manifest edges. It does not parse
 manifests, lockfiles, dependency declarations or installation-path encodings.
-Package names do not establish source identity. Unmatched local directories and
+Native workspace package names associate projects across revisions and directory
+moves; nameless members retain their native directory identity. Names do not
+establish dependency source ownership. Unmatched local directories and
 tarballs remain inputs with explicit consumers, including when names match a
 workspace project.
 
