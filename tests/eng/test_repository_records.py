@@ -28,7 +28,11 @@ assert SPEC
 assert SPEC.loader
 checker = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = checker
-SPEC.loader.exec_module(checker)
+sys.path.insert(0, str(ROOT / "eng/scripts"))
+try:
+    SPEC.loader.exec_module(checker)
+finally:
+    sys.path.remove(str(ROOT / "eng/scripts"))
 
 
 def run_git(root: Path, *args: str) -> str:
