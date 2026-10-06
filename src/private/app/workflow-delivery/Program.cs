@@ -133,6 +133,8 @@ internal static class Program
 [JsonSerializable(typeof(CiComparison))]
 [JsonSerializable(typeof(ControlTestInputRequest))]
 [JsonSerializable(typeof(ControlTestInputResponse))]
+[JsonSerializable(typeof(DotNetGraphRequest))]
+[JsonSerializable(typeof(DotNetGraphResponse))]
 [JsonSerializable(typeof(NodePlanRequest))]
 [JsonSerializable(typeof(NodeGroupRequest))]
 [JsonSerializable(typeof(NodeGroupReadback))]

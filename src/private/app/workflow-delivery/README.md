@@ -188,6 +188,40 @@ and controlled-result/actual CLI tests cover this narrow projection. It does not
 discover project membership, imports, references, other item/target inputs or
 required dimensions. It does not qualify complete .NET facts or CI group cutover.
 
+### Native .NET Graph Task
+
+[`DotNetGraphTask`](Repository/DotNetGraphTask.cs) is an `ITask` entry supplied by
+the existing application. A completely built application is loaded with
+`UsingTask` inside ordinary endpoint-selected `dotnet msbuild`. The typed request
+supplies the exact revision, absolute endpoint/traversal paths, Debug CI locked
+operation globals, Git-derived committed paths and a new private response path.
+MSBuild constructs the `ProjectGraph`; wrapper properties do not become graph
+globals. Project paths plus complete global maps identify native nodes. The
+response retains outer/inner nodes, configuration/TFM/RID and native reference
+edges, including analyzer references. Endpoint-dependent semantic globals fail.
+
+[`DotNetOwnership`](Repository/DotNetOwnership.cs) projects ordinary committed
+paths into the nearest managed project directory; projects sharing that directory
+retain their own ownership. The selected SDK's `MSBuildGlob` matches effective
+`DefaultItemExcludes` and `DefaultExcludesInProjectFolder`. Escaped list boundaries
+are preserved before official unescaping. Illegal file specifications and encoded
+literal wildcards remain unsupported instead of broadening ownership. No SDK
+defaults are reconstructed. Each variant retains its own owned paths for later
+union by the fact assembler.
+
+The response separately retains main projects, native imports and supported
+evaluated source/resource/additional/analyzer/XAML items with their full paths,
+roles, evaluation stage and consuming native node. Explicit input consumers remain
+independent of ordinary ownership, including an embedded resource excluded by a
+default file rule. Environmental and generated paths remain physical native facts
+for later role binding; they are not asserted to be committed source inputs.
+
+This is a partial native fact producer, exercised by isolated actual-process
+contract tests. Locked endpoint preparation/configuration, complete finite input
+coverage, repository producer adapters, native test output/capability, exact Git
+binding, both-endpoint assembly, selected execution and workflow transfer remain
+pending. No CLI caller or general .NET CI cutover uses this task yet.
+
 [`ControlTestInputs`](Repository/ControlTestInputs.cs) exposes one concrete root-CI
 consumer through `ci control-inputs`: the control test project's embedded resources,
 including the npm fixture version file. Git confirms the exact comparison,
