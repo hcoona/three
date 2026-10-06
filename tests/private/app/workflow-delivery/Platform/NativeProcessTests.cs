@@ -71,15 +71,21 @@ public sealed class NativeProcessTests
     [TestMethod]
     public async Task RunCancellationTerminatesOwnedProcess()
     {
-        var fixture = new ProcessFixture(
-            "$staging = $args[0] + '.tmp'; " +
+        string pidPath = Path.Combine(Path.GetTempPath(),
+            "workflow native process " + Guid.NewGuid().ToString("N") + ".pid");
+        string encodedPath = Convert.ToBase64String(Encoding.UTF8.GetBytes(pidPath));
+        string script = "$path = [Text.Encoding]::UTF8.GetString(" +
+            "[Convert]::FromBase64String('" + encodedPath + "')); " +
+            "$staging = $path + '.tmp'; " +
             "[System.IO.File]::WriteAllText($staging, [string]$PID); " +
-            "[System.IO.File]::Move($staging, $args[0]); Start-Sleep -Seconds 60");
-        string pidPath = Path.Combine(fixture.Directory, "pid.txt");
+            "[System.IO.File]::Move($staging, $path); Start-Sleep -Seconds 60";
+        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.CancellationToken);
         cancellation.CancelAfter(TimeSpan.FromSeconds(15));
-        Task<string> query = fixture.RunAsync(cancellation.Token, pidPath);
+        Task<string> query = NativeProcess.RunAsync("pwsh", Path.GetTempPath(),
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+            cancellation.Token);
         Exception? failure = null;
         try
         {
@@ -119,13 +125,17 @@ public sealed class NativeProcessTests
             {
                 failure = failure is null ? exception : new AggregateException(failure, exception);
             }
-            try
+            foreach (string path in new[] { pidPath, pidPath + ".tmp" })
             {
-                fixture.Dispose();
-            }
-            catch (Exception exception)
-            {
-                failure = failure is null ? exception : new AggregateException(failure, exception);
+                try
+                {
+                    File.Delete(path);
+                }
+                catch (Exception exception)
+                {
+                    failure = failure is null ? exception
+                        : new AggregateException(failure, exception);
+                }
             }
         }
         if (failure is not null) ExceptionDispatchInfo.Capture(failure).Throw();
