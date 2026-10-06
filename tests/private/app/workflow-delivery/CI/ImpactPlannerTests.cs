@@ -7,6 +7,226 @@ namespace WorkflowDelivery.Tests.CI;
 public sealed class ImpactPlannerTests
 {
     [TestMethod]
+    public void PlanExactOwnershipExcludesFixtureSourceButPreservesEmbeddedConsumer()
+    {
+        const string root = "tests/controller";
+        const string fixture = root + "/fixtures/node";
+        const string source = fixture + "/index.js";
+        const string embedded = fixture + "/version.json";
+        ProjectFacts native = Scenario.Project("controller", directory: root) with
+        {
+            OwnedPaths = [root + "/Tests.cs"],
+            QualityPreset = null,
+            Origin = CheckOrigin.NativeRetained,
+        };
+        ProjectFacts node = Scenario.Project("node", directory: fixture);
+        RepositoryFacts basis = Scenario.Facts("base", native, node) with
+        {
+            SharedInputs = [new(embedded, [native.Id])],
+        };
+        RepositoryFacts candidate = basis with { Revision = "candidate" };
+
+        CiPlan ordinary = ImpactPlanner.Plan(new(basis, candidate, [source], false));
+        Assert.AreEqual(node.Id, Assert.ContainsSingle(ordinary.Checks).Work.Key.Target);
+
+        CiPlan resource = ImpactPlanner.Plan(new(basis, candidate, [embedded], false));
+        CollectionAssert.AreEquivalent(new[] { native.Id, node.Id },
+            resource.Checks.Select(check => check.Work.Key.Target).ToArray());
+        PlannedCheck consumer = resource.Checks.Single(check => check.Work.Key.Target == native.Id);
+        Assert.IsEmpty(consumer.QualityPresets);
+        CollectionAssert.AreEqual(new[] { CheckOrigin.NativeRetained }, consumer.Origins);
+        CollectionAssert.AreEquivalent(new[]
+        {
+            new SelectionReason(embedded, "base", native.Id),
+            new SelectionReason(embedded, "candidate", native.Id),
+        }, consumer.Reasons);
+    }
+
+    [TestMethod]
+    public void PlanExactDeletedInputUsesFormerEdgesAndAllSurvivingCandidateVariants()
+    {
+        const string deleted = "src/library/removed.cs";
+        ProjectFacts library = Scenario.Project("library") with { OwnedPaths = [deleted] };
+        ProjectFacts consumer = Scenario.Project("consumer", dependencies: [library.Id]);
+        CheckSpec[] variants =
+        [Scenario.Check(library.Id, variant: "net8"), Scenario.Check(library.Id, variant: "net10")];
+        RepositoryFacts basis = Scenario.Facts("base", library, consumer);
+        RepositoryFacts candidate = Scenario.Facts("candidate",
+            library with { OwnedPaths = [], Checks = variants },
+            consumer with { Dependencies = [] });
+
+        CiPlan plan = ImpactPlanner.Plan(new(basis, candidate, [deleted], false));
+
+        CollectionAssert.AreEquivalent(variants.Select(check => check.Key)
+            .Append(consumer.Checks[0].Key).ToArray(), plan.Checks.Select(check => check.Work.Key)
+            .ToArray());
+        foreach (PlannedCheck check in plan.Checks)
+            CollectionAssert.AreEqual(new[] { new SelectionReason(deleted, "base", library.Id) },
+                check.Reasons);
+    }
+
+    [TestMethod]
+    public void PlanExactOwnershipDoesNotRestoreAnExcludedParentDirectory()
+    {
+        const string path = "src/parent/native/excluded.txt";
+        ProjectFacts parent = Scenario.Project("parent");
+        ProjectFacts child = Scenario.Project("child", directory: "src/parent/native") with
+        {
+            OwnedPaths = [],
+        };
+        PlanRequest request = Scenario.Request([parent, child], path);
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            ImpactPlanner.Plan(request));
+        Assert.Contains("Unresolved changed path", error.Message);
+
+        request = request with
+        {
+            Basis = request.Basis with { SharedInputs = [new(path, [parent.Id])] },
+        };
+        PlannedCheck selected = Assert.ContainsSingle(ImpactPlanner.Plan(request).Checks);
+        Assert.AreEqual(parent.Id, selected.Work.Key.Target);
+        CollectionAssert.AreEqual(new[] { new SelectionReason(path, "base", parent.Id) },
+            selected.Reasons);
+    }
+
+    [TestMethod]
+    public void PlanExactOwnershipRetainsEveryProjectSharingThePath()
+    {
+        const string path = "src/shared/code.cs";
+        ProjectFacts first = Scenario.Project("first", directory: "src/shared") with
+        {
+            OwnedPaths = [path],
+        };
+        ProjectFacts second = Scenario.Project("second", directory: "src/shared") with
+        {
+            OwnedPaths = [path],
+        };
+
+        CiPlan plan = ImpactPlanner.Plan(Scenario.Request([first, second], path));
+
+        CollectionAssert.AreEquivalent(new[] { first.Id, second.Id },
+            plan.Checks.Select(check => check.Work.Key.Target).ToArray());
+        foreach (PlannedCheck check in plan.Checks)
+            Assert.HasCount(2, check.Reasons);
+    }
+
+    [TestMethod]
+    [DataRow("duplicate")]
+    [DataRow("invalid")]
+    public void PlanMalformedExactOwnershipFailsBeforeSelection(string defect)
+    {
+        ProjectFacts project = Scenario.Project("native") with
+        {
+            OwnedPaths = defect == "duplicate" ? ["src/native/code.cs", "src/native/code.cs"]
+                : ["../src/native/code.cs"],
+        };
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ImpactPlanner.Plan(Scenario.Request([project])));
+    }
+
+    [TestMethod]
+    public void PlanNativeRetainedChecksNeedNoPresetAndKeepRequiredPrerequisites()
+    {
+        CheckSpec build = Scenario.Check("native", "build", required: false);
+        CheckSpec test = Scenario.Check("native", prerequisites: [build.Key]);
+        ProjectFacts project = Scenario.Project("native", checks: [test, build]) with
+        {
+            QualityPreset = null,
+            Origin = CheckOrigin.NativeRetained,
+        };
+
+        CiPlan plan = ImpactPlanner.Plan(Scenario.Request([project], "src/native/code.cs"));
+
+        CollectionAssert.AreEquivalent(new[] { build.Key, test.Key },
+            plan.Checks.Select(check => check.Work.Key).ToArray());
+        foreach (PlannedCheck check in plan.Checks)
+        {
+            Assert.IsTrue(check.Work.Required);
+            Assert.IsEmpty(check.QualityPresets);
+            CollectionAssert.AreEqual(new[] { CheckOrigin.NativeRetained }, check.Origins);
+            Assert.HasCount(2, check.Reasons);
+        }
+    }
+
+    [TestMethod]
+    [DataRow("empty")]
+    [DataRow("preset")]
+    [DataRow("unknown")]
+    public void PlanNativeRetainedDoesNotAcceptAnUnresolvedOrContradictoryContract(string defect)
+    {
+        ProjectFacts native = Scenario.Project("native") with
+        {
+            QualityPreset = defect == "preset" ? "invented-adoption" : null,
+            Origin = defect == "unknown" ? (CheckOrigin)42 : CheckOrigin.NativeRetained,
+            Checks = defect == "empty" ? [] : [Scenario.Check("native")],
+        };
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ImpactPlanner.Plan(Scenario.Request([native], "src/native/code.cs")));
+    }
+
+    [TestMethod]
+    public void PlanNativeAndPresetSourcesMergeWithoutAdoptingUnselectedPolicies()
+    {
+        CheckSpec shared = Scenario.Check("shared", required: false);
+        ProjectFacts native = Scenario.Project("native", checks: [shared]) with
+        {
+            QualityPreset = null,
+            Origin = CheckOrigin.NativeRetained,
+        };
+        ProjectFacts adopted = Scenario.Project("adopted", preset: "selected",
+            checks: [shared with { Required = true }]);
+        ProjectFacts unrelated = Scenario.Project("unrelated", preset: "unselected",
+            checks: [shared with { Required = true }]);
+
+        PlannedCheck onlyNative = Assert.ContainsSingle(ImpactPlanner.Plan(
+            Scenario.Request([native, adopted, unrelated], "src/native/code.cs")).Checks);
+        Assert.IsFalse(onlyNative.Work.Required);
+        Assert.IsEmpty(onlyNative.QualityPresets);
+        CollectionAssert.AreEqual(new[] { CheckOrigin.NativeRetained }, onlyNative.Origins);
+
+        PlannedCheck merged = Assert.ContainsSingle(ImpactPlanner.Plan(Scenario.Request(
+            [native, adopted, unrelated], "src/native/code.cs", "src/adopted/code.cs")).Checks);
+        Assert.IsTrue(merged.Work.Required);
+        Assert.AreEqual("selected", Assert.ContainsSingle(merged.QualityPresets));
+        CollectionAssert.AreEqual(new[] { CheckOrigin.Preset, CheckOrigin.NativeRetained },
+            merged.Origins);
+        Assert.HasCount(4, merged.Reasons);
+    }
+
+    [TestMethod]
+    public void PlanLateNativeOriginPropagatesThroughSharedPrerequisiteClosure()
+    {
+        CheckSpec restore = Scenario.Check("dependency", "restore", required: false);
+        CheckSpec build = Scenario.Check("dependency", "build", required: false,
+            prerequisites: [restore.Key]);
+        ProjectFacts adopted = Scenario.Project("adopted", checks:
+            [Scenario.Check("adopted", required: false, prerequisites: [build.Key])]);
+        ProjectFacts native = Scenario.Project("native", checks:
+            [Scenario.Check("native", prerequisites: [build.Key])]) with
+        {
+            QualityPreset = null,
+            Origin = CheckOrigin.NativeRetained,
+        };
+        ProjectFacts dependency = Scenario.Project("dependency", checks: [build, restore]);
+
+        CiPlan plan = ImpactPlanner.Plan(Scenario.Request([adopted, native, dependency],
+            "src/adopted/code.cs", "src/native/code.cs"));
+
+        foreach (CheckKey key in new[] { build.Key, restore.Key })
+        {
+            PlannedCheck check = plan.Checks.Single(check => check.Work.Key == key);
+            Assert.IsTrue(check.Work.Required);
+            Assert.AreEqual("standard", Assert.ContainsSingle(check.QualityPresets));
+            CollectionAssert.AreEqual(new[] { CheckOrigin.Preset, CheckOrigin.NativeRetained },
+                check.Origins);
+            Assert.HasCount(4, check.Reasons);
+        }
+    }
+
+    [TestMethod]
     public void PlanSourceChangesSelectTransitiveAndQualityConsumersWithAllReasons()
     {
         ProjectFacts[] projects =

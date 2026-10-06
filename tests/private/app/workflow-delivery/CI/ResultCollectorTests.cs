@@ -7,6 +7,61 @@ namespace WorkflowDelivery.Tests.CI;
 public sealed class ResultCollectorTests
 {
     [TestMethod]
+    [DataRow("empty-origin")]
+    [DataRow("undefined-origin")]
+    [DataRow("preset-without-name")]
+    [DataRow("native-with-preset")]
+    [DataRow("mixed-without-preset")]
+    [DataRow("blank-preset")]
+    public void CollectMalformedOriginContractRejectsPassedResults(string defect)
+    {
+        CheckSpec work = Scenario.Check("library");
+        CiPlan plan = Scenario.Plan(work);
+        PlannedCheck check = Assert.ContainsSingle(plan.Checks);
+        check = defect switch
+        {
+            "empty-origin" => check with { Origins = [] },
+            "undefined-origin" => check with { Origins = [(CheckOrigin)999] },
+            "preset-without-name" => check with { QualityPresets = [] },
+            "native-with-preset" => check with { Origins = [CheckOrigin.NativeRetained] },
+            "mixed-without-preset" => check with
+            {
+                Origins = [CheckOrigin.Preset, CheckOrigin.NativeRetained],
+                QualityPresets = [],
+            },
+            "blank-preset" => check with { QualityPresets = [" "] },
+            _ => throw new InvalidOperationException(defect),
+        };
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            ResultCollector.Collect(plan with { Checks = [check] },
+                [new(plan.Candidate, work.Key, CheckStatus.Passed)]));
+        Assert.Contains("origin/preset relationship", error.Message);
+    }
+
+    [TestMethod]
+    [DataRow("preset")]
+    [DataRow("native")]
+    [DataRow("mixed")]
+    public void CollectValidOriginsPreserveSatisfiedResult(string source)
+    {
+        CheckSpec work = Scenario.Check("library");
+        CiPlan plan = Scenario.Plan(work);
+        PlannedCheck check = Assert.ContainsSingle(plan.Checks);
+        check = source switch
+        {
+            "preset" => check,
+            "native" => check with { Origins = [CheckOrigin.NativeRetained], QualityPresets = [] },
+            "mixed" => check with { Origins = [CheckOrigin.Preset, CheckOrigin.NativeRetained] },
+            _ => throw new InvalidOperationException(source),
+        };
+        CiOutcome outcome = ResultCollector.Collect(plan with { Checks = [check] },
+            [new(plan.Candidate, work.Key, CheckStatus.Passed)]);
+        Assert.IsTrue(outcome.Satisfied);
+        Assert.IsEmpty(outcome.Errors);
+        Assert.AreEqual(new(work.Key, true, "passed"), Assert.ContainsSingle(outcome.Checks));
+    }
+
+    [TestMethod]
     public void CollectAllRequiredPassedWithDuplicateResultIsSatisfied()
     {
         CheckSpec build = Scenario.Check("library", "build");

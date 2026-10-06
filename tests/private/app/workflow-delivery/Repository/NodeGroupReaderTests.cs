@@ -25,7 +25,7 @@ public sealed class NodeGroupReaderTests
             false);
         candidate = NodeGroupReader.WithControlInputs(candidate,
             Control(NodeScenario.Candidate), true);
-        var scope = new NodeScopeInputs(new(NodeScenario.Basis, NodeScenario.Candidate, false),
+        var scope = new ScopeInputs(new(NodeScenario.Basis, NodeScenario.Candidate, false),
             [removed], [new(removed, true, "100644", [])], [new(removed, false, null, [])]);
 
         NodeGroupPlan group = await NodeGroupPlanning.PlanAsync(basis, candidate, scope, Adopted,
@@ -57,7 +57,7 @@ public sealed class NodeGroupReaderTests
         };
         candidate = NodeGroupReader.WithControlInputs(candidate,
             Control(NodeScenario.Candidate), true);
-        var scope = new NodeScopeInputs(new(NodeScenario.Basis, NodeScenario.Candidate, false),
+        var scope = new ScopeInputs(new(NodeScenario.Basis, NodeScenario.Candidate, false),
             [path], [new(path, false, null, [])], [new(path, true, "100644", [])]);
 
         NodeGroupPlan group = await NodeGroupPlanning.PlanAsync(basis, candidate, scope, Adopted,

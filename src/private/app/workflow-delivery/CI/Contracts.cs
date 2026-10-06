@@ -17,8 +17,16 @@ internal sealed record ProjectFacts(
     string[] QualityConsumers,
     string? ReleaseUnit,
     string? QualityPreset,
-    CheckSpec[] Checks
+    CheckSpec[] Checks,
+    string[]? OwnedPaths = null,
+    CheckOrigin Origin = CheckOrigin.Preset
 );
+
+internal enum CheckOrigin
+{
+    Preset,
+    NativeRetained,
+}
 
 internal sealed record SharedInput(string Path, string[] Consumers);
 
@@ -61,7 +69,8 @@ internal sealed record SelectionReason(string Path, string Revision, string Proj
 internal sealed record PlannedCheck(
     CheckSpec Work,
     string[] QualityPresets,
-    SelectionReason[] Reasons
+    SelectionReason[] Reasons,
+    CheckOrigin[] Origins
 );
 
 internal sealed record CiPlan(

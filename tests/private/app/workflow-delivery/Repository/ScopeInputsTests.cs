@@ -6,7 +6,7 @@ using WorkflowDelivery.Repository;
 namespace WorkflowDelivery.Tests.Repository;
 
 [TestClass]
-public sealed class NodeScopeInputsTests
+public sealed class ScopeInputsTests
 {
     private const string Unrelated = "docs/guide.md";
     private const string Catalog = "docs/governance/record-families.yaml";
@@ -203,7 +203,7 @@ public sealed class NodeScopeInputsTests
                 string text = scenario.Payload.ToJsonString().Replace("\"full\":false",
                     "\"full\":false,\"full\":false", StringComparison.Ordinal);
                 Assert.ThrowsExactly<InvalidDataException>(() =>
-                    NodeScopeInputs.Read(text, scenario.Native, false));
+                    ScopeInputs.Read(text, scenario.Native, false));
                 return;
             default: Assert.Fail("Unknown scope fixture defect."); break;
         }
@@ -276,8 +276,8 @@ public sealed class NodeScopeInputsTests
         internal JsonObject Endpoint(string name) => (JsonObject)Payload["endpoint_owners"]![name]!;
         internal JsonObject Row(string name) =>
             (JsonObject)((JsonArray)Endpoint(name)["paths"]!)[0]!;
-        internal NodeScopeInputs Read(bool full = false) =>
-            NodeScopeInputs.Read(Payload.ToJsonString(), Native, full);
+        internal ScopeInputs Read(bool full = false) =>
+            ScopeInputs.Read(Payload.ToJsonString(), Native, full);
 
         internal static JsonObject Coordinate(GitRevision revision, string path)
         {

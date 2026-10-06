@@ -15,6 +15,12 @@ internal static class ResultCollector
         {
             ArgumentNullException.ThrowIfNull(check);
             ImpactPlanner.ValidateCheck(check.Work);
+            ArgumentNullException.ThrowIfNull(check.Origins);
+            ArgumentNullException.ThrowIfNull(check.QualityPresets);
+            if (check.Origins.Length == 0 || check.Origins.Any(origin => !Enum.IsDefined(origin)) ||
+                check.Origins.Contains(CheckOrigin.Preset) != (check.QualityPresets.Length != 0) ||
+                check.QualityPresets.Any(string.IsNullOrWhiteSpace))
+                throw new InvalidDataException("Invalid planned check origin/preset relationship.");
             if (!expected.TryAdd(check.Work.Key, check.Work))
                 throw new InvalidDataException($"Duplicate planned check: {check.Work.Key}");
         }

@@ -71,7 +71,8 @@ internal sealed class NodeExecutionFixture(GitFixture repository, CiPlan plan) :
             new Dictionary<string, string> { [Source] = "1.2.3" });
         CiPlan original = new(candidate, candidate, NodeFactsAssembler.Scope,
             source.Concat(packages).Select(check => new PlannedCheck(check,
-                [NodeScenario.Preset], [new(Source + "/index.js", candidate, Source)])).ToArray());
+                [NodeScenario.Preset], [new(Source + "/index.js", candidate, Source)],
+                [CheckOrigin.Preset])).ToArray());
         return new NodeRuntimeInputs(candidate,
             [new("node22", "22.x", null), new("node24", "24.x", "24.21.0")],
             "12.8.2", []).Expand(original);

@@ -9,7 +9,7 @@ internal sealed record NodeGroupPlan(CiPlan Adopted, RetainedNodeSelection[] Ret
 internal static class NodeGroupPlanning
 {
     internal static async Task<NodeGroupPlan> PlanAsync(NodeRevisionInputs basis,
-        NodeRevisionInputs candidate, NodeScopeInputs scope, string? adoptedDirectory,
+        NodeRevisionInputs candidate, ScopeInputs scope, string? adoptedDirectory,
         Func<PnpmProject, CancellationToken, Task<PnpmScripts>> scripts,
         Func<PnpmProject, CancellationToken, Task<string>> npmVersion,
         CancellationToken token)

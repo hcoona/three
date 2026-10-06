@@ -12,7 +12,10 @@ architecture authority.
 
 The application selects CI checks and collects candidate-bound check results.
 The supplied-fact command and Node revision-to-plan command share one impact
-algorithm. The Node command reads exact caller-prepared checkouts, native
+algorithm and comparison/responsibility binder. The core accepts exact committed
+ownership and resolved preset/native-retained check origins; native .NET fact
+production and execution remain pending. The Node command reads exact
+caller-prepared checkouts, native
 PNPM relations, NBGV inputs and existing application declarations, then expands
 selected project and package checks. A concrete Node executor runs the adopted
 quality recipe and retains every check result and original package output.
@@ -510,19 +513,24 @@ The collected outcome retains the plan's `comparison`, `candidate` and declared
 `scope`, including when no checks are selected. Its success applies to that
 subject and supplied coverage only.
 
-| Input                 | Required content and producer responsibility                                                                                                                                                       |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Planning request      | `basis`, `candidate`, `changedPaths`, `full`; the caller resolves the event's actual comparison/tested revisions and includes both rename paths and deleted paths                                  |
-| Each revision's facts | `revision`, `scope`, `projects`, `sharedInputs`, `unaffectedPaths`, `errors`; native readers establish completeness for this declared scope                                                        |
-| Project               | Stable `id`, repository-relative `directory`, build `dependencies`, distinct `qualityConsumers`, nullable `releaseUnit` and resolved `qualityPreset`, and concrete `checks`                        |
-| Shared input          | Exact repository-relative `path` and project `consumers`, including actual version/configuration/lock inputs                                                                                       |
-| Unaffected path       | Exact path the producer established has no consumers in this scope; no wildcard or unknown-path fallback                                                                                           |
-| Check                 | `key` (`target`, `check`, `variant`), actual `dimensions`, `runner`, `required`, prerequisite keys and nullable artifact `package` subject; variant names identify resolved dimension combinations |
-| Result array          | Each entry carries the exact `candidate`, check `key` and `status`: `Passed`, `Failed`, `Cancelled`, `TimedOut` or `Skipped`                                                                       |
+| Input                 | Required content and producer responsibility                                                                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Planning request      | `basis`, `candidate`, `changedPaths`, `full`; the caller resolves the event's actual comparison/tested revisions and includes both rename paths and deleted paths                                             |
+| Each revision's facts | `revision`, `scope`, `projects`, `sharedInputs`, `unaffectedPaths`, `errors`; native readers establish completeness for this declared scope                                                                   |
+| Project               | Stable `id`, repository-relative `directory`, optional exact `ownedPaths`, build `dependencies`, distinct `qualityConsumers`, nullable `releaseUnit`/`qualityPreset`, resolved `origin` and concrete `checks` |
+| Shared input          | Exact repository-relative `path` and project `consumers`, including actual version/configuration/lock inputs                                                                                                  |
+| Unaffected path       | Exact path the producer established has no consumers in this scope; no wildcard or unknown-path fallback                                                                                                      |
+| Check                 | `key` (`target`, `check`, `variant`), actual `dimensions`, `runner`, `required`, prerequisite keys and nullable artifact `package` subject; variant names identify resolved dimension combinations            |
+| Planned check         | Concrete `work`, actual selected `qualityPresets`, selection `reasons` and nonempty `origins` (`Preset` and/or `NativeRetained`)                                                                              |
+| Result array          | Each entry carries the exact `candidate`, check `key` and `status`: `Passed`, `Failed`, `Cancelled`, `TimedOut` or `Skipped`                                                                                  |
 
 Paths use Git's case-sensitive forward-slash spelling, without a leading slash,
-empty components or traversal. A project directory owns its subtree, with the
-nearest project owning nested paths. Shared-input consumers are added separately.
+empty components or traversal. Null `ownedPaths` retains nearest-directory
+ownership; a populated array supplies exact owned coordinates, with no directory
+fallback. All exact owners and explicit shared-input consumers contribute even
+when an ordinary directory/exact owner excludes the path. A nearer project still
+prevents implicit ownership by a legacy parent directory. Readers populate these
+facts; the core does not evaluate native excludes or reconstruct glob rules.
 Root-level inputs and inputs outside project directories need explicit consumers;
 they do not become implicit dependencies of every project. Readers must resolve
 native imports, workspace references, extra inputs and quality declarations before
@@ -538,7 +546,17 @@ Identical check keys deduplicate only when runner, dimensions, package subject a
 agree. Required status combines the selected contracts. Required checks promote
 their prerequisite closure to required; missing or cyclic prerequisites fail.
 These prerequisites order checks, not individual native compilation nodes. Plans
-retain quality presets and all initiating path/revision/project reasons.
+retain actual quality presets, selected origins and all initiating
+path/revision/project reasons. `Preset` requires a resolved preset;
+`NativeRetained` requires nonempty resolved checks and no claimed preset adoption.
+It never substitutes for a missing adopted contract. Node producers retain preset
+selection. Native-retained production belongs to the forthcoming concrete .NET
+adapter; the supplied-fact core alone does not establish native capability.
+
+[`ScopeInputs`](Repository/ScopeInputs.cs) binds native comparison coordinates and
+committed endpoint responsibility to actual consumers for both revisions. Node
+callers use that shared operation; the .NET caller will reuse it. The rename adds
+no second scope parser or compatibility alias.
 
 The collector requires every selected required result at the candidate revision.
 Missing, failed, cancelled, timed-out, skipped and conflicting required results

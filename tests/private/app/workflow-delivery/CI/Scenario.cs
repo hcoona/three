@@ -32,5 +32,6 @@ internal static class Scenario
     internal static CiPlan Plan(params CheckSpec[] checks)
         => new("base", "candidate", "fixture-projects",
             checks.Select(check => new PlannedCheck(check, ["standard"],
-                [new("src/library/code.cs", "candidate", "library")])).ToArray());
+                [new("src/library/code.cs", "candidate", "library")],
+                [CheckOrigin.Preset])).ToArray());
 }

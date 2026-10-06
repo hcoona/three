@@ -24,10 +24,18 @@ internal static class ImpactPlanner
         {
             if (!candidate.TryGetValue(id, out ProjectFacts? project))
                 continue;
-            if (string.IsNullOrWhiteSpace(project.QualityPreset) || project.Checks.Length == 0)
+            bool resolvedOrigin = project.Origin switch
+            {
+                CheckOrigin.Preset => !string.IsNullOrWhiteSpace(project.QualityPreset),
+                CheckOrigin.NativeRetained => project.QualityPreset is null,
+                _ => false,
+            };
+            if (!resolvedOrigin || project.Checks.Length == 0)
                 throw new InvalidDataException($"Unresolved quality contract for {id}.");
+            string[] presets = project.Origin == CheckOrigin.Preset
+                ? [project.QualityPreset!] : [];
             foreach (CheckSpec check in project.Checks)
-                SelectCheck(selected, check, [project.QualityPreset], why);
+                SelectCheck(selected, check, presets, why, [project.Origin]);
         }
 
         var work = new Queue<CheckKey>(selected.Keys);
@@ -37,7 +45,8 @@ internal static class ImpactPlanner
             foreach (CheckKey prerequisite in owner.Work.Prerequisites)
             {
                 CheckSpec check = available[prerequisite] with { Required = owner.Work.Required };
-                if (SelectCheck(selected, check, owner.QualityPresets, owner.Reasons))
+                if (SelectCheck(selected, check, owner.QualityPresets, owner.Reasons,
+                    owner.Origins))
                     work.Enqueue(prerequisite);
             }
         }
@@ -53,6 +62,7 @@ internal static class ImpactPlanner
                 .Select(x => x with
                 {
                     QualityPresets = x.QualityPresets.Order(StringComparer.Ordinal).ToArray(),
+                    Origins = x.Origins.Order().ToArray(),
                     Reasons = x.Reasons
                         .OrderBy(r => r.Path, StringComparer.Ordinal)
                         .ThenBy(r => r.Revision, StringComparer.Ordinal)
@@ -125,6 +135,15 @@ internal static class ImpactPlanner
             ArgumentNullException.ThrowIfNull(project);
             RequireText(project.Id, "project id");
             ValidatePath(project.Directory);
+            if (!Enum.IsDefined(project.Origin))
+                throw new InvalidDataException($"Unknown check origin for {project.Id}.");
+            if (project.OwnedPaths is { } owned)
+            {
+                foreach (string path in owned)
+                    ValidatePath(path);
+                if (owned.Distinct(StringComparer.Ordinal).Count() != owned.Length)
+                    throw new InvalidDataException($"Duplicate owned path for {project.Id}.");
+            }
             if (project.ReleaseUnit is not null)
                 RequireText(project.ReleaseUnit, "release unit");
             if (!projects.TryAdd(project.Id, project))
@@ -244,7 +263,10 @@ internal static class ImpactPlanner
                 StringComparison.Ordinal))
             .ToArray();
         int longest = owners.Length == 0 ? 0 : owners.Max(p => p.Directory.Length);
-        return owners.Where(p => p.Directory.Length == longest).Select(p => p.Id)
+        return owners.Where(p => p.OwnedPaths is null && p.Directory.Length == longest)
+            .Select(p => p.Id)
+            .Concat(facts.Projects.Where(p => p.OwnedPaths?.Contains(path,
+                StringComparer.Ordinal) == true).Select(p => p.Id))
             .Concat(facts.SharedInputs.Where(i => i.Path == path).SelectMany(i => i.Consumers))
             .Distinct(StringComparer.Ordinal).ToArray();
     }
@@ -310,23 +332,26 @@ internal static class ImpactPlanner
         Dictionary<CheckKey, PlannedCheck> selected,
         CheckSpec check,
         IEnumerable<string> presets,
-        IEnumerable<SelectionReason> reasons
+        IEnumerable<SelectionReason> reasons,
+        IEnumerable<CheckOrigin> origins
     )
     {
         if (!selected.TryGetValue(check.Key, out PlannedCheck? old))
         {
             selected.Add(check.Key, new(check, presets.Distinct().ToArray(), reasons.Distinct(
-                ).ToArray()));
+                ).ToArray(), origins.Distinct().ToArray()));
             return true;
         }
         string[] mergedPresets = old.QualityPresets.Union(presets).ToArray();
         SelectionReason[] mergedReasons = old.Reasons.Union(reasons).ToArray();
+        CheckOrigin[] mergedOrigins = old.Origins.Union(origins).ToArray();
         bool required = old.Work.Required || check.Required;
         bool changed = required != old.Work.Required
             || mergedPresets.Length != old.QualityPresets.Length
+            || mergedOrigins.Length != old.Origins.Length
             || mergedReasons.Length != old.Reasons.Length;
         selected[check.Key] = new(old.Work with { Required = required }, mergedPresets,
-            mergedReasons);
+            mergedReasons, mergedOrigins);
         return changed;
     }
 
