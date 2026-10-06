@@ -23,8 +23,11 @@ implementation details cannot silently weaken these contracts. The
 
 The [first Node execution group](./migration-strategy.md#first-node-execution-group)
 specifies the initial caller's endpoint responsibility, native control inputs,
-runtime/check ownership and atomic fixture relocation. Its implementation and
-hosted acceptance remain prerequisites of that cutover.
+runtime/check ownership and atomic fixture relocation. The
+[native .NET CI group](./migration-strategy.md#native-net-ci-group) defines the
+next group's extraction and caller contract. Each group requires its own native
+implementation and hosted qualification before cutover; source design acceptance
+does not establish those results.
 
 ## Components and Native Responsibilities
 
@@ -119,6 +122,40 @@ CI must obtain enough ownership and reverse-consumer facts to justify both
 selection and exclusion. An incomplete graph cannot certify that a changed path
 has no consumers. Release resolves its selected unit's complete input/build/check
 closure; it need not evaluate unrelated projects.
+
+### Native .NET Project Facts
+
+MSBuild owns .NET discovery, SDK resolution, evaluation, graph identity and
+reference propagation. The existing application supplies a task loaded by the
+endpoint's selected `dotnet msbuild` process; Workflow does not host a second
+resolver, parse project XML or schedule compilation nodes. The
+[integration contract](./migration-strategy.md#native-net-ci-group) identifies
+the finite input roles and preparation stages supported by this operation.
+
+Keep each native graph node's project path and complete effective globals,
+including outer/inner identity and native reference edges. Business impact uses
+the committed project path as its project ID. Aggregate native relations for
+selection only; every surviving selected candidate project's supported inner
+variants expand their complete checks. A changed framework/global tuple must not
+make a surviving project's new variant disappear from execution.
+
+`ProjectFacts.OwnedPaths` is optional: null retains existing nearest-directory
+ownership; a populated array names exact committed endpoint coordinates. The
+.NET adapter derives ordinary regions from native project directories, preserving
+nearest-project ownership and multiple projects sharing a directory, and narrows
+them with native evaluated default excludes using the official MSBuild glob
+matcher. The traversal entry is a discovery input, never a repository-root owner.
+Explicit native input consumers remain additional relations even when ordinary
+ownership excludes a path. Union consumers from all native nodes and both
+endpoints; unsupported or ambiguous necessary facts fail planning.
+
+These ordinary regions are a business ownership policy, not complete compiler or
+custom-target I/O discovery. For example, ordinary npm fixture source excluded by
+the .NET test project's default excludes does not select that parent; its exact
+embedded `version.json` still selects the .NET resource consumer. Concrete
+repository producers outside ordinary ownership require a reviewed native
+adapter. Trust SDK/package behavior without an application task allowlist or
+dynamic admission policy.
 
 ### Control-Test Resource Consumer
 
@@ -233,6 +270,18 @@ Replacement is explicit, with no implicit ancestor merge. A project-specific
 registered preset is valid. Do not introduce an arbitrary YAML command language.
 If selected work needs a quality contract and no effective selection resolves,
 planning fails rather than inventing a default checklist or omitting its checks.
+An explicit `NativeRetained` origin also permits the concrete .NET adapter to
+resolve existing general-CI Build/Test behavior for unadopted projects without a
+new YAML declaration. This requires nonempty resolved checks and native capability
+and variant facts; it is never a fallback from a missing or invalid adopted
+preset. Node declaration behavior remains preset-based.
+
+Resolved checks retain `Preset` and/or `NativeRetained` origins. Actual adopted
+preset names remain in `QualityPresets`; native-only checks have an empty preset
+collection. Identical check keys union origins, actual presets and selection
+reasons, with required status combined by OR. Conflicting definitions, runners,
+dimensions or prerequisites still fail. This distinction expresses existing
+behavior, not a new policy registry or policy-version lifecycle.
 
 Registered checks distinguish required and advisory behavior. A check declared
 required must resolve; a supported conditional-on-presence check becomes required
@@ -252,7 +301,7 @@ CI produces a finite work list before execution. Each selected item identifies:
 
 - the concrete project, native aggregate or artifact target;
 - operation and dimensions, suitable runner/toolchain and required inputs;
-- required/advisory status and the quality selection that caused it;
+- required/advisory status and its resolved preset/native-retained origin;
 - real prerequisites and the reasons it was selected.
 
 The workflow has static planning, execution and collection phases. Planning can

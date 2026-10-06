@@ -14,7 +14,11 @@ execution, transfer and outcome contracts. The HLD owns terminology and
 implementation order. The [implementation plan](./migration-strategy.md) identifies
 concrete callers, integration contracts and retirement dependencies.
 Node execution ownership is cut over for the adopted fixture and selected retained
-Node matrix; other ecosystem execution ownership remains pending. Root CI's
+Node matrix; other ecosystem execution ownership remains pending. The next
+[native .NET CI group](./migration-strategy.md#native-net-ci-group) reuses Windows
+scope planning and the existing execution owner. Its native facts, ownership and
+check-origin contracts require implementation and ordinary qualification before
+cutover; source design does not establish runtime acceptance. Root CI's
 existing scope job now consumes native event comparison and control-test resource
 inputs, with the existing .NET job retaining sole execution ownership. The
 [private application's entry](../../../../private/app/workflow-delivery/README.md)
