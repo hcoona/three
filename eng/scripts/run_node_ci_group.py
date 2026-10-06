@@ -269,7 +269,14 @@ def execute(root: Path, source: Path, directory: Path) -> dict[str, Any]:
             str(endpoints[name]),
             revision,
         )
-        run(endpoints[name], directory, name + "-tools", "mise", "install")
+        run(
+            endpoints[name],
+            directory,
+            name + "-tools",
+            "mise",
+            "install",
+            "--locked",
+        )
         run(
             endpoints[name],
             directory,
@@ -323,6 +330,20 @@ def execute(root: Path, source: Path, directory: Path) -> dict[str, Any]:
             "candidateBuildLog": str(candidate_log),
         },
     )
+    for name, endpoint in endpoints.items():
+        run(
+            endpoint,
+            directory,
+            name + "-tracked-status",
+            "git",
+            "--no-lazy-fetch",
+            "--no-replace-objects",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=no",
+            "--ignore-submodules=none",
+        )
     raw = run(
         endpoints["candidate"],
         directory,
@@ -400,7 +421,13 @@ def run_runtimes(
                 or variant["selector"].removesuffix(".x")
             )
             run(
-                checkout, directory, key + "-tools", "mise", "install", selector
+                checkout,
+                directory,
+                key + "-tools",
+                "mise",
+                "--no-config",
+                "install",
+                selector,
             )
             run(
                 checkout,
@@ -436,6 +463,19 @@ def run_runtimes(
                     "scratch": str(scratch),
                     "runtime": key,
                 },
+            )
+            run(
+                checkout,
+                directory,
+                key + "-tracked-status",
+                "git",
+                "--no-lazy-fetch",
+                "--no-replace-objects",
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=no",
+                "--ignore-submodules=none",
             )
             output = run(
                 checkout,
