@@ -18,6 +18,8 @@ internal sealed record DotNetGraphResponse(string Revision, string Root, string 
 // Called only inside the endpoint-selected MSBuild process. MSBuild owns graph construction.
 internal static class DotNetGraph
 {
+    private static readonly string[] CallerVariantSelectors = ["TargetFramework",
+        "TargetFrameworks", "RuntimeIdentifier", "RuntimeIdentifiers"];
     private static readonly string[] EvaluatedInputTypes = ["Compile", "EmbeddedResource",
         "Content", "None", "AdditionalFiles", "Analyzer", "EditorConfigFiles",
         "GlobalAnalyzerConfigFiles", "ApplicationDefinition", "Page", "Resource",
@@ -36,6 +38,10 @@ internal static class DotNetGraph
             throw new InvalidDataException("Native graph entry is outside its endpoint.");
         if (!File.Exists(entry))
             throw new InvalidDataException("Native graph entry is unavailable.");
+        if (request.Globals.Keys.Any(name => CallerVariantSelectors.Contains(name,
+            StringComparer.OrdinalIgnoreCase)))
+            throw new InvalidDataException(
+                "Native graph discovery does not accept caller variant selectors.");
         if (!request.Globals.TryGetValue("Configuration", out string? configuration) ||
             configuration != "Debug" ||
             !request.Globals.TryGetValue("ContinuousIntegrationBuild", out string? ci) ||

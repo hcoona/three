@@ -75,6 +75,37 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow("TargetFramework", "net10.0")]
+    [DataRow("targetframework", "net10.0")]
+    [DataRow("TargetFrameworks", "net10.0")]
+    [DataRow("TARGETFRAMEWORKS", "net10.0")]
+    [DataRow("RuntimeIdentifier", "linux-x64")]
+    [DataRow("runtimeidentifier", "linux-x64")]
+    [DataRow("RuntimeIdentifiers", "linux-x64")]
+    [DataRow("RUNTIMEIDENTIFIERS", "linux-x64")]
+    [DataRow("TargetFramework", "")]
+    [DataRow("TargetFrameworks", "")]
+    [DataRow("RuntimeIdentifier", "")]
+    [DataRow("RuntimeIdentifiers", "")]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task CallerVariantSelectorsFailWithoutAResponse(string name, string value)
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", """
+            <Project><ItemGroup><ProjectReference Include="multi.csproj" /></ItemGroup></Project>
+            """);
+        fixture.Write("multi.csproj", """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFrameworks>net10.0;net9.0</TargetFrameworks></PropertyGroup>
+            </Project>
+            """);
+        fixture.Globals.Add(name, value);
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(context.CancellationToken));
+        Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
+    }
+
+    [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
     public async Task MissingNativeReferenceFailsWithoutAResponse()
     {
@@ -254,7 +285,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         internal string? RequestRoot { get; set; }
 
         internal GraphFixture() => Directory.CreateDirectory(Root);
-        internal string PathOf(string name) => System.IO.Path.Combine(Root, name);
+        internal string PathOf(string name) => System.IO.Path.GetFullPath(
+            System.IO.Path.Combine(Root, name));
         internal void Write(string name, string content)
         {
             string path = PathOf(name);

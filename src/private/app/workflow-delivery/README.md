@@ -195,6 +195,8 @@ the existing application. A completely built application is loaded with
 `UsingTask` inside ordinary endpoint-selected `dotnet msbuild`. The typed request
 supplies the exact revision, absolute endpoint/traversal paths, Debug CI locked
 operation globals, Git-derived committed paths and a new private response path.
+Caller TFM/RID selector names are rejected case-insensitively before discovery;
+native-propagated TFM/RID globals remain in each node's complete identity.
 MSBuild constructs the `ProjectGraph`; wrapper properties do not become graph
 globals. Project paths plus complete global maps identify native nodes. The
 response retains outer/inner nodes, configuration/TFM/RID and native reference
