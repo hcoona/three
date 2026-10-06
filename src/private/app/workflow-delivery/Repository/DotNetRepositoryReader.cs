@@ -12,7 +12,8 @@ internal sealed record DotNetBoundNode(string Project, DotNetGraphNode Native,
 internal sealed record DotNetBoundInput(string? Path, DotNetGraphInput Native);
 internal sealed record DotNetRevisionInputs(GitRevision Revision, DotNetGraphResponse Graph,
     DotNetBoundNode[] Nodes, DotNetBoundInput[] Inputs, NbgvInputs[] Versions,
-    IReadOnlyDictionary<string, QualitySelection?> Quality, SharedInput[] SelectionInputs);
+    IReadOnlyDictionary<string, QualitySelection?> Quality, SharedInput[] SelectionInputs,
+    ReleaseUnitDeclaration[] Units);
 
 // The caller owns prepared checkouts, the complete task distribution, and scratch
 // lifetime. This reader binds native answers; it does not restore or build projects.
@@ -218,8 +219,20 @@ internal sealed class DotNetRepositoryReader
                 directory = Parent(directory);
             }
         }
+        var units = new List<ReleaseUnitDeclaration>();
+        foreach (GitEntry entry in checkout.Revision.Entries.Where(entry =>
+                     entry.Path == "workflow-delivery.release-unit.yml" ||
+                     entry.Path.EndsWith("/workflow-delivery.release-unit.yml",
+                         StringComparison.Ordinal)))
+        {
+            RequireFile(Path.Combine(checkout.Root, entry.Path), "ReleaseUnit");
+            units.Add(ReleaseUnitDeclarationReader.Read(
+                await checkout.ReadOptionalTextAsync(entry.Path, token) ??
+                    throw Unavailable("ReleaseUnit", "Missing committed release declaration."),
+                entry.Path));
+        }
         return new(checkout.Revision, graph, nodes.Values.ToArray(), inputs.ToArray(),
-            versions.ToArray(), quality, shared.ToArray());
+            versions.ToArray(), quality, shared.ToArray(), units.ToArray());
 
         void Resolve(DotNetNodeIdentity identity)
         {

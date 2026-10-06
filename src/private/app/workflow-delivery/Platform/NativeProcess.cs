@@ -30,6 +30,12 @@ internal static class NativeProcess
         };
         foreach (string argument in command.Arguments)
             process.StartInfo.ArgumentList.Add(argument);
+        if (command.Environment is not null)
+            foreach ((string name, string? value) in command.Environment)
+            {
+                if (value is null) process.StartInfo.Environment.Remove(name);
+                else process.StartInfo.Environment[name] = value;
+            }
         try
         {
             if (!process.Start())
