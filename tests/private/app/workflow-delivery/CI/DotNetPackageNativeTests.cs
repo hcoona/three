@@ -238,8 +238,11 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                 GitRevision revision = await new GitReader(source).ReadAsync("HEAD", token);
                 await NativeProcess.RunAsync("git", source,
                     ["clone", "--shared", "--no-checkout", "--", source, checkout], token);
-                await NativeProcess.RunAsync("git", checkout,
-                    ["checkout", "--detach", revision.Commit], token);
+                string[] checkoutArguments = ["checkout", "--detach", revision.Commit];
+                NativeCommandResult checkoutResult = await NativeProcess.ExecuteAsync(
+                    new("git", checkout, checkoutArguments, 30), token);
+                DotNetNativeFixture.RequireSuccess(checkoutResult,
+                    "Fixture git " + string.Join(' ', checkoutArguments) + " in " + checkout);
                 string sourceRevision = revision.Commit;
                 byte[] projectBytes = await File.ReadAllBytesAsync(
                     Path.Combine(source, Project), token);
@@ -284,7 +287,8 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                 ReleaseUnitDeclaration unit = ReleaseUnitDeclarationReader.Read(
                     await File.ReadAllTextAsync(Path.Combine(checkout, declaration),
                         token), declaration);
-                var node = new DotNetGraphNode(new(Path.Combine(checkout, Project),
+                var node = new DotNetGraphNode(new(
+                    Path.GetFullPath(Path.Combine(checkout, Project)),
                     DotNetNativeFixture.Globals(appHost: false)), false,
                     new("Debug", "net10.0", ""), "", "", [], "None");
                 var project = new ProjectFacts(Project, DotNetRepositoryReader.Parent(Project),

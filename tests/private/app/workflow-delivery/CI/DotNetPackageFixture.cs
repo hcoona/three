@@ -28,7 +28,8 @@ internal sealed class DotNetPackageFixture(GitFixture repo, string candidate) : 
         Directory.CreateDirectory(Path.Combine(Scratch, "run")).FullName, 60);
     internal static ReleaseUnitDeclaration Unit =>
         ReleaseUnitDeclarationReader.Read(UnitText, Declaration);
-    internal DotNetGraphNode Node => new(new(Path.Combine(Repo.Directory, Project),
+    internal DotNetGraphNode Node => new(new(
+        Path.GetFullPath(Path.Combine(Repo.Directory, Project)),
         new(StringComparer.Ordinal)
         {
             ["Configuration"] = "Debug",
@@ -39,7 +40,7 @@ internal sealed class DotNetPackageFixture(GitFixture repo, string candidate) : 
         }), false, new("Debug", "net10.0", ""), "", "", [], "None");
     internal Dictionary<string, string> Values => new(StringComparer.Ordinal)
     {
-        ["MSBuildProjectFullPath"] = Path.Combine(Repo.Directory, Project),
+        ["MSBuildProjectFullPath"] = Path.GetFullPath(Path.Combine(Repo.Directory, Project)),
         ["TargetFramework"] = "net10.0",
         ["RuntimeIdentifier"] = "",
         ["NETCoreSdkVersion"] = "10.0.401",

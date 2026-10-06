@@ -130,7 +130,8 @@ internal static class DotNetPackageChecks
             !check.Dimensions.TryGetValue("msbuild", out string? dimension) ||
             !check.Dimensions.TryGetValue("native", out string? native))
             throw new InvalidDataException("Missing full native package dimensions.");
-        var node = new DotNetGraphNode(new(Path.Combine(checkout, subject.EntryPoint),
+        var node = new DotNetGraphNode(new(
+            Path.GetFullPath(Path.Combine(checkout, subject.EntryPoint)),
             JsonSerializer.Deserialize(globals, TransferJson.Default.DictionaryStringString) ??
                 throw new InvalidDataException("Missing native package globals.")), false,
             JsonSerializer.Deserialize(dimension, TransferJson.Default.MsBuildDimension) ??
@@ -156,7 +157,8 @@ internal static class DotNetPackageChecks
             NativeProperties.Any(name => !values.ContainsKey(name)) ||
             values.Any(pair => pair.Value is null) ||
             !Path.IsPathFullyQualified(values["MSBuildProjectFullPath"]) ||
-            !Path.GetFullPath(values["MSBuildProjectFullPath"]).Equals(node.Identity.Project,
+            !Path.GetFullPath(values["MSBuildProjectFullPath"]).Equals(
+                Path.GetFullPath(node.Identity.Project),
                 OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
                     StringComparison.Ordinal) ||
             values["TargetFramework"] != node.Dimension.TargetFramework ||

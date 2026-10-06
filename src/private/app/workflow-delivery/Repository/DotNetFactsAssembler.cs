@@ -46,8 +46,9 @@ internal static class DotNetFactsAssembler
         if (revision.Commit != selection.Request.Candidate.Revision)
             throw new InvalidDataException("Native projection requires its exact candidate.");
         await GitMaterialization.BindAsync(checkout, revision, token);
-        if (packages.Any(package => !package.Node.Identity.Project.Equals(
-                Path.Combine(checkout, package.Project), OperatingSystem.IsWindows() ?
+        if (packages.Any(package => !Path.GetFullPath(package.Node.Identity.Project).Equals(
+                Path.GetFullPath(Path.Combine(checkout, package.Project)),
+                OperatingSystem.IsWindows() ?
                     StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)))
             throw new InvalidDataException("Different selected package checkout identity.");
         var checks = new Dictionary<string, CheckSpec[]>(StringComparer.Ordinal);
