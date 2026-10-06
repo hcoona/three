@@ -9,6 +9,9 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class DotNetGraphTaskTests(TestContext context)
 {
+    private static readonly StringComparer PhysicalPathComparer = OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
     public async Task LoadedNativeGraphPreservesInnerVariantsAndReferenceEdges()
@@ -305,11 +308,17 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                 ("packages.lock.json", "RestoreLockCandidate", "Evaluation"),
             })
             {
+                string expectedPath = fixture.PathOf(path);
                 DotNetGraphInput input = Assert.ContainsSingle(response.Inputs.Where(input =>
-                    input.Path == fixture.PathOf(path) && input.Role == role &&
+                    PhysicalPathComparer.Equals(input.Path, expectedPath) && input.Role == role &&
                     input.Consumer.Project == node.Identity.Project &&
                     input.Consumer.Globals.OrderBy(pair => pair.Key).SequenceEqual(
-                        node.Identity.Globals.OrderBy(pair => pair.Key))));
+                        node.Identity.Globals.OrderBy(pair => pair.Key))),
+                    $"Expected {role} at {expectedPath} for {node.Identity.Project} " +
+                    $"[{string.Join(", ", node.Identity.Globals)}]. Native inputs: " +
+                    string.Join("; ", response.Inputs.Where(input => input.Role == role)
+                        .Select(input => $"{input.Path} for {input.Consumer.Project} " +
+                            $"[{string.Join(", ", input.Consumer.Globals)}]")));
                 Assert.AreEqual(stage, input.Stage);
             }
         }
@@ -358,8 +367,13 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                 assets.PackageSpec.RestoreMetadata.ConfigFilePaths.Clear();
                 break;
             case "missing-root-contributor":
-                assets.PackageSpec.RestoreMetadata.ConfigFilePaths.Remove(
-                    fixture.PathOf("nuget.config"));
+                string rootConfiguration = fixture.PathOf("nuget.config");
+                var configurations = assets.PackageSpec.RestoreMetadata.ConfigFilePaths;
+                string contributor = Assert.ContainsSingle(configurations.Where(configuration =>
+                    PhysicalPathComparer.Equals(configuration, rootConfiguration)),
+                    $"Expected one root contributor at {rootConfiguration}. Native contributors: " +
+                    string.Join("; ", configurations));
+                Assert.IsTrue(configurations.Remove(contributor));
                 break;
             case "uncommitted-root-configuration": fixture.IncludeRootConfiguration = false; break;
         }
