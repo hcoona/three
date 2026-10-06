@@ -1,7 +1,11 @@
 # CI Shadow Evidence and Its Limits
 
 The [CI Qualification MLD](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/ci-qualification-mld.md) and
-[first-slice LLD](../hcoona-release-smoke-npm-lld.md) own current CI semantics.
+[first-slice LLD](../hcoona-release-smoke-npm-lld.md) describe the historical CI
+semantics of these observations. The shadow producer and bootstrap projection are
+retired. Current CI follows the replacement
+[middle-level design](../middle-level-design.md) and
+[migration contract](../migration-strategy.md#first-node-execution-group).
 These observations distinguish a failing canonical shadow Decision from a
 successful enclosing check under the one-time pre-coexistence projection.
 They are consumed when evaluating qualification claims and the retained

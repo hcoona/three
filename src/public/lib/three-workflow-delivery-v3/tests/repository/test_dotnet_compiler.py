@@ -538,8 +538,14 @@ def test_dotnet_snapshot_rejects_cross_ecosystem_substitution(
         project = ProjectNode(
             project_id=FIRST_SLICE_PACKAGE,
             package_name=FIRST_SLICE_PACKAGE,
-            path="src/public/lib/hcoona-release-smoke-npm",
-            manifest_path="src/public/lib/hcoona-release-smoke-npm/package.json",
+            path=(
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-npm"
+            ),
+            manifest_path=(
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-npm/package.json"
+            ),
             private=False,
             workspace_dependencies=(),
         )

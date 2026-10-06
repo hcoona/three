@@ -68,7 +68,10 @@ from three_workflow_delivery_v3.repository.node_provider import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
-PROJECT_ROOT = REPO_ROOT / "src/public/lib/hcoona-release-smoke-npm"
+PROJECT_ROOT = REPO_ROOT / (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 TARGET = "e" * 40
 RUN_ID = 7301
 RUN_ATTEMPT = 3
@@ -145,8 +148,14 @@ def repository_model(
     project = ProjectNode(
         project_id="@hcoona/hcoona-release-smoke-npm",
         package_name="@hcoona/hcoona-release-smoke-npm",
-        path="src/public/lib/hcoona-release-smoke-npm",
-        manifest_path=("src/public/lib/hcoona-release-smoke-npm/package.json"),
+        path=(
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-npm"
+        ),
+        manifest_path=(
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-npm/package.json"
+        ),
         private=False,
         workspace_dependencies=(),
     )
@@ -167,14 +176,16 @@ def repository_model(
     release_unit = CompiledReleaseUnit(
         release_unit="hcoona-release-smoke-npm",
         descriptor_path=(
-            "src/public/lib/hcoona-release-smoke-npm/"
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-npm/"
             "workflow-delivery.release-unit.yml"
         ),
         builds=(build,),
     )
     quality = CompiledQualitySelection(
         path=(
-            "src/public/lib/hcoona-release-smoke-npm/"
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-npm/"
             "workflow-delivery.quality.yml"
         ),
         ecosystem="node",

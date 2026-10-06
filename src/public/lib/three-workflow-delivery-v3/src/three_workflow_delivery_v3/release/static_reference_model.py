@@ -44,7 +44,10 @@ STATIC_REFERENCE_POLICY_ID = (
     "release/hcoona-release-smoke-npm-bounded-static-reference-v1"
 )
 PRODUCER_PACKAGE = "@hcoona/hcoona-release-smoke-npm"
-PRODUCER_ROOT = "src/public/lib/hcoona-release-smoke-npm"
+PRODUCER_ROOT = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 PRODUCER_MANIFEST = f"{PRODUCER_ROOT}/package.json"
 STATIC_REFERENCE_SOURCE_KINDS: tuple[StaticReferenceSourceKind, ...] = (
     "git-target",

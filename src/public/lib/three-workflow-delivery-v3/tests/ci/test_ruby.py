@@ -42,7 +42,15 @@ from ..ruby_integration_fixtures import (
         ((), False),
         (("docs/README.md",), False),
         (("src/public/lib/hcoona-release-smoke-python/lib.py",), False),
-        (("src/public/lib/hcoona-release-smoke-npm/src/index.js",), False),
+        (
+            (
+                (
+                    "tests/private/app/workflow-delivery/fixtures/products/"
+                    "hcoona-release-smoke-npm/src/index.js"
+                ),
+            ),
+            False,
+        ),
         (("src/public/lib/hcoona-release-smoke-ruby/deleted.rb",), True),
         (("src/public/lib/three-workflow-delivery-v3/src/control.py",), True),
         ((".github/workflows/workflow-delivery-v3-ruby-smoke.yml",), True),

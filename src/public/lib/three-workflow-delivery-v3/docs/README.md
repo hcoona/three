@@ -32,8 +32,11 @@ documents CI selection/result, GitHub event comparison, control-test resource in
 native Node fact assembly and the adopted check executor. Root CI's existing scope
 job consumes native comparison/resource inputs; the original .NET job remains its
 sole test executor. The [bounded native observation](./research/node-ci-native-execution.md)
-qualifies the adopted fixture composition on Linux. Node plan/result transfer,
-other quality presets and execution workflow cutover remain pending.
+qualifies the adopted fixture composition on Linux. Root CI owns the adopted Node
+group and selected retained Node matrix, with ordinary hosted transfer and
+execution qualification in [PR #1042](https://github.com/hcoona/three/pull/1042).
+The exclusive npm CI shadow is retired. Other quality presets, ecosystem
+execution cutover and Release remain pending.
 
 The pre-contraction normal-Live baseline was merged across the
 requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
@@ -242,7 +245,7 @@ mechanisms need explicit v3 extraction and revalidation before reuse.
 
 The first vertical slice is `hcoona-release-smoke-npm`:
 
-- CI Qualification remains shadow/manual during coexistence;
+- root CI owns the adopted Node checks and selected retained Node matrix;
 - live Buddy targets GitHub Packages; and
 - Official npmjs behavior remains simulation-only.
 

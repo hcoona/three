@@ -47,28 +47,28 @@ Unless changed here, preserve purpose-first routing; request-local same-revision
 
 ## 2. Exact Slice
 
-| Concern                                   | Exact value                                                                                                    |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Repository                                | `hcoona/three`                                                                                                 |
-| Product root                              | `src/public/lib/hcoona-release-smoke-npm`                                                                      |
-| Release Unit                              | `hcoona-release-smoke-npm`                                                                                     |
-| Package                                   | `@hcoona/hcoona-release-smoke-npm`                                                                             |
-| Channel and purpose                       | Buddy; `live-release`                                                                                          |
-| Build Definition and output               | `node/npm-package-v1`; `npm-tarball`                                                                           |
-| Destination                               | `npm/github-packages-hcoona-three-v1`                                                                          |
-| Registry                                  | `https://npm.pkg.github.com`                                                                                   |
-| Release policy                            | `eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml`                                               |
-| Release Unit descriptor                   | `src/public/lib/hcoona-release-smoke-npm/workflow-delivery.release-unit.yml`                                   |
-| Quality descriptor                        | `src/public/lib/hcoona-release-smoke-npm/workflow-delivery.quality.yml`                                        |
-| Governance repository/ref/path            | `hcoona/three`; `refs/heads/main`; `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`        |
-| Governance maximum age                    | 90 days                                                                                                        |
-| Approval Environment                      | `workflow-delivery-v3-buddy-approval`                                                                          |
-| Environment sentinel                      | `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`                                      |
-| Sole accepted writer/publisher TCB member | `hcoona`                                                                                                       |
-| Package credential principal              | repository `hcoona/three`                                                                                      |
-| Artifact retention                        | 45 days                                                                                                        |
-| Target-derived dist-tag                   | `buddy-sha-<40-lowercase-target-sha>`                                                                          |
-| Target mutation profile                   | Pinned standard `npm publish --tag ... --fetch-retries=0`; action admission requires passing native acceptance |
+| Concern                                   | Exact value                                                                                                         |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Repository                                | `hcoona/three`                                                                                                      |
+| Product root                              | `tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm`                                    |
+| Release Unit                              | `hcoona-release-smoke-npm`                                                                                          |
+| Package                                   | `@hcoona/hcoona-release-smoke-npm`                                                                                  |
+| Channel and purpose                       | Buddy; `live-release`                                                                                               |
+| Build Definition and output               | `node/npm-package-v1`; `npm-tarball`                                                                                |
+| Destination                               | `npm/github-packages-hcoona-three-v1`                                                                               |
+| Registry                                  | `https://npm.pkg.github.com`                                                                                        |
+| Release policy                            | `eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml`                                                    |
+| Release Unit descriptor                   | `tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/workflow-delivery.release-unit.yml` |
+| Quality descriptor                        | `tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/workflow-delivery.quality.yml`      |
+| Governance repository/ref/path            | `hcoona/three`; `refs/heads/main`; `.github/workflow-delivery/governance/hcoona-release-smoke-npm.json`             |
+| Governance maximum age                    | 90 days                                                                                                             |
+| Approval Environment                      | `workflow-delivery-v3-buddy-approval`                                                                               |
+| Environment sentinel                      | `WDV3_APPROVAL_ENVIRONMENT_MARKER=workflow-delivery-v3-buddy-approval/v1`                                           |
+| Sole accepted writer/publisher TCB member | `hcoona`                                                                                                            |
+| Package credential principal              | repository `hcoona/three`                                                                                           |
+| Artifact retention                        | 45 days                                                                                                             |
+| Target-derived dist-tag                   | `buddy-sha-<40-lowercase-target-sha>`                                                                               |
+| Target mutation profile                   | Pinned standard `npm publish --tag ... --fetch-retries=0`; action admission requires passing native acceptance      |
 
 The desired Buddy coordinate is the exact package plus the frozen native NBGV `npmPackageVersion`. The Release policy's Official projection, `npm/npmjs-public-v1`, remains isolated and is not a Live capability of this design.
 
@@ -160,27 +160,27 @@ There is no custom Actions-history discovery phase. Native history may aid diagn
 
 ## 5. Repository and File Decomposition
 
-| Path or area                                                    | Target responsibility                                                                            |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `.github/workflows/workflow-delivery-v3-buddy-smoke.yml`        | Manual request, discovery/model compilation, Live Eligibility, and Release Execution concurrency |
-| `.github/workflows/workflow-delivery-v3-live-attempt.yml`       | Reusable normal-Live Attempt, Approval, publication, and finalization                            |
-| `.github/workflows/workflow-delivery-v3-official-simulate.yml`  | Existing Official simulation, unchanged by this design                                           |
-| `.github/workflows/workflow-delivery-v3-ci.yml`                 | CI and root HK integration; no Live authority                                                    |
-| Protected Governance path                                       | Fresh access, Environment, principal, and enablement attestation                                 |
-| Slice release policy and descriptors                            | Existing exact Release Unit, quality, and projection authoring                                   |
-| `hk.pkl`                                                        | Root `index`/`worktree` static-reference gate                                                    |
-| `eng/scripts/workflow_delivery_v3_static_reference.py`          | Thin source-kind-aware entry point                                                               |
-| `three_workflow_delivery_v3/release/static_reference_policy.py` | Canonical policy, source readers, selectors, findings, and Result validation                     |
-| `three_workflow_delivery_v3/repository/`                        | Same-revision Provider and Repository Model logic                                                |
-| `three_workflow_delivery_v3/records/`                           | Strict records, canonicalization, and transport admission                                        |
-| `three_workflow_delivery_v3/release/eligibility.py`             | Current-request eligibility and Governance admission                                             |
-| `three_workflow_delivery_v3/release/qualification.py`           | Qualification planning, Evidence Admission, and Decision                                         |
-| `three_workflow_delivery_v3/release/live.py`                    | Snapshot, Approval Bundle, Authorization, Result, and outcome semantics                          |
-| `three_workflow_delivery_v3/release/finalizer.py`               | Current-DAG-only read-only finalization                                                          |
-| `three_workflow_delivery_v3/adapters/node.py`                   | Deterministic tarball build and Node qualification                                               |
-| `three_workflow_delivery_v3/adapters/github_packages.py`        | Observation, primitive admission, one compound action, and readback                              |
-| `three_workflow_delivery_v3/cli.py`                             | Strict workflow-facing commands                                                                  |
-| `three_workflow_delivery_v3/tests/`                             | Semantic unit, adapter, contract, and workflow acceptance tests                                  |
+| Path or area                                                    | Target responsibility                                                                                |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `.github/workflows/workflow-delivery-v3-buddy-smoke.yml`        | Manual request, discovery/model compilation, Live Eligibility, and Release Execution concurrency     |
+| `.github/workflows/workflow-delivery-v3-live-attempt.yml`       | Reusable normal-Live Attempt, Approval, publication, and finalization                                |
+| `.github/workflows/workflow-delivery-v3-official-simulate.yml`  | Existing Official simulation, unchanged by this design                                               |
+| `.github/workflows/ci.yml`                                      | Current adopted Node CI and root HK owner; see the replacement migration contract; no Live authority |
+| Protected Governance path                                       | Fresh access, Environment, principal, and enablement attestation                                     |
+| Slice release policy and descriptors                            | Existing exact Release Unit, quality, and projection authoring                                       |
+| `hk.pkl`                                                        | Root `index`/`worktree` static-reference gate                                                        |
+| `eng/scripts/workflow_delivery_v3_static_reference.py`          | Thin source-kind-aware entry point                                                                   |
+| `three_workflow_delivery_v3/release/static_reference_policy.py` | Canonical policy, source readers, selectors, findings, and Result validation                         |
+| `three_workflow_delivery_v3/repository/`                        | Same-revision Provider and Repository Model logic                                                    |
+| `three_workflow_delivery_v3/records/`                           | Strict records, canonicalization, and transport admission                                            |
+| `three_workflow_delivery_v3/release/eligibility.py`             | Current-request eligibility and Governance admission                                                 |
+| `three_workflow_delivery_v3/release/qualification.py`           | Qualification planning, Evidence Admission, and Decision                                             |
+| `three_workflow_delivery_v3/release/live.py`                    | Snapshot, Approval Bundle, Authorization, Result, and outcome semantics                              |
+| `three_workflow_delivery_v3/release/finalizer.py`               | Current-DAG-only read-only finalization                                                              |
+| `three_workflow_delivery_v3/adapters/node.py`                   | Deterministic tarball build and Node qualification                                                   |
+| `three_workflow_delivery_v3/adapters/github_packages.py`        | Observation, primitive admission, one compound action, and readback                                  |
+| `three_workflow_delivery_v3/cli.py`                             | Strict workflow-facing commands                                                                      |
+| `three_workflow_delivery_v3/tests/`                             | Semantic unit, adapter, contract, and workflow acceptance tests                                      |
 
 Implementation retires the old consumer-policy module, JavaScript dataflow analyzer, and script after callers migrate. Dependencies used only by that analyzer are removed from manifests and locks during implementation. Chronology-named tests should be replaced by semantic contracts.
 
@@ -583,7 +583,7 @@ The authority graph, not policy code, determines npm, pnpm, or NuGet syntax and
 normalization. Policy code compares emitted identities and paths.
 Repository-relative path comparison uses POSIX semantics, resolves `.` and
 `..`, rejects escape above repository root, and compares with
-`src/public/lib/hcoona-release-smoke-npm`.
+`tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm`.
 
 Documentation, ordinary application source, standalone `pyproject.toml`,
 `setup.py`, `requirements*.txt`, `uv.lock`, `poetry.lock`, npm and Yarn

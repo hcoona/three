@@ -900,7 +900,10 @@ _PHASE2_LIVE_IMPLEMENTATIONS = tuple(
         key=utf8_sort_key,
     )
 )
-_PHASE2_PRODUCER_ROOT = "src/public/lib/hcoona-release-smoke-npm"
+_PHASE2_PRODUCER_ROOT = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 _PHASE2_EXPECTED_AUTHORITY_MANIFEST = {
     "schema": "workflow-delivery/v3/static-reference-authority-manifest",
     "execution": {
@@ -2041,9 +2044,13 @@ def test_policy_authority_manifest_and_digest_are_exact() -> None:
         ),
         "producer": {
             "package": "@hcoona/hcoona-release-smoke-npm",
-            "root": "src/public/lib/hcoona-release-smoke-npm",
+            "root": (
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-npm"
+            ),
             "manifest": (
-                "src/public/lib/hcoona-release-smoke-npm/package.json"
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-npm/package.json"
             ),
         },
         "source-kinds": ["git-target", "index", "worktree"],
@@ -2226,11 +2233,11 @@ def test_policy_authority_manifest_and_digest_are_exact() -> None:
     )
     assert policy.STATIC_REFERENCE_POLICY_DIGEST == (
         "sha256:"
-        "851f5b48b7e37ba6253c2fa2d9e51faa7adfc61a6f6179357bb9760316e15bb3"
+        "9448b18f090feff0d99549d73ca119a0c955ba59ad187b3b2cd139a3d953595e"
     )
     assert policy.canonical_sha256(document) == (
         "sha256:"
-        "851f5b48b7e37ba6253c2fa2d9e51faa7adfc61a6f6179357bb9760316e15bb3"
+        "9448b18f090feff0d99549d73ca119a0c955ba59ad187b3b2cd139a3d953595e"
     )
 
 
@@ -2678,7 +2685,7 @@ def test_policy_stops_at_the_first_source_error_before_authority_execution(
         ),
         "policy-digest": (
             "sha256:"
-            "851f5b48b7e37ba6253c2fa2d9e51faa7adfc61a6f6179357bb9760316e15bb3"
+            "9448b18f090feff0d99549d73ca119a0c955ba59ad187b3b2cd139a3d953595e"
         ),
         "implementation-identities": [],
         "findings": [],
@@ -4297,16 +4304,23 @@ def test_pnpm_projection_accepts_typed_hosted_git_resolution() -> None:
     ("candidate_path", "expected_findings"),
     [
         pytest.param(
-            "src/public/lib/hcoona-release-smoke-npm/package.json",
+            (
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-npm/package.json"
+            ),
             [],
             id="exact-producer-manifest-allowed",
         ),
         pytest.param(
-            ("src/public/lib/hcoona-release-smoke-npm/adjacent/package.json"),
+            (
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-npm/adjacent/package.json"
+            ),
             [
                 {
                     "path": (
-                        "src/public/lib/hcoona-release-smoke-npm/"
+                        "tests/private/app/workflow-delivery/fixtures/products/"
+                        "hcoona-release-smoke-npm/"
                         "adjacent/package.json"
                     ),
                     "family": "npm-manifest",

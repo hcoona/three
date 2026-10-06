@@ -13,7 +13,7 @@ concurrency:
 env:
   WDV3_PACKAGE: three-workflow-delivery-v3
   WDV3_PURPOSE: release-simulation
-  WDV3_PROJECT: src/public/lib/hcoona-release-smoke-npm
+  WDV3_PROJECT: tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm
 
 jobs:
   request:

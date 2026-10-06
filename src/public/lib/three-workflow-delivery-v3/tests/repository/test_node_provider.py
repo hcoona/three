@@ -31,7 +31,10 @@ from three_workflow_delivery_v3.repository.node_provider import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
-PROJECT_PATH = "src/public/lib/hcoona-release-smoke-npm"
+PROJECT_PATH = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 REQUEST_DIGEST = "sha256:" + ("a" * 64)
 VERSION_HEIGHT = 42
 RUN_ATTEMPT = 3
@@ -306,6 +309,12 @@ def _create_local_clone_topology(
     seed = tmp_path / "seed"
     project = seed / PROJECT_PATH
     project.mkdir(parents=True)
+    fixture_dependency = project / _NBGV_FIXTURE_DEPENDENCY
+    fixture_dependency.parent.mkdir(parents=True)
+    fixture_dependency.symlink_to(
+        NBGV_INSTALLATION,
+        target_is_directory=True,
+    )
     (seed / "package.json").write_text(
         json.dumps({"name": "provider-fixture-root", "private": True}) + "\n",
         encoding="utf-8",
@@ -337,9 +346,7 @@ def _create_local_clone_topology(
                 "version": "0.0.0-placeholder",
                 "type": "module",
                 "devDependencies": {
-                    "nerdbank-gitversioning": (
-                        f"file:{NBGV_INSTALLATION.as_posix()}"
-                    )
+                    "nerdbank-gitversioning": _NBGV_FIXTURE_SPECIFIER
                 },
             },
             indent=2,
@@ -1083,7 +1090,10 @@ def test_provider_rejects_incomplete_checkout_before_nbgv(
 @pytest.mark.parametrize(
     "path",
     [
-        "src/public/lib/hcoona-release-smoke-npm/package.json",
+        (
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-npm/package.json"
+        ),
         "version.json",
     ],
     ids=["package-json", "version-json"],
@@ -2666,7 +2676,8 @@ def _direct_ambient_control(
         assert package["dependencies"] == {
             "isolated-provider-fixture-root": {
                 "from": "isolated-provider-fixture-root",
-                "version": "link:../../../..",
+                "version": "link:"
+                + "/".join(".." for _ in Path(PROJECT_PATH).parts),
                 "path": str(control_root.resolve()),
             }
         }

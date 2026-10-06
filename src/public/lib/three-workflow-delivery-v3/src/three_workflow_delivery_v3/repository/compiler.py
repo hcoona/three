@@ -1175,8 +1175,14 @@ def validate_first_slice_repository_model_snapshot(  # noqa: C901, PLR0912, PLR0
     expected_project = ProjectNode(
         project_id=FIRST_SLICE_PACKAGE,
         package_name=FIRST_SLICE_PACKAGE,
-        path="src/public/lib/hcoona-release-smoke-npm",
-        manifest_path="src/public/lib/hcoona-release-smoke-npm/package.json",
+        path=(
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-npm"
+        ),
+        manifest_path=(
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-npm/package.json"
+        ),
         private=False,
         workspace_dependencies=(),
     )
@@ -1193,7 +1199,8 @@ def validate_first_slice_repository_model_snapshot(  # noqa: C901, PLR0912, PLR0
         release_unit.release_unit != FIRST_SLICE_RELEASE_UNIT
         or release_unit.descriptor_path
         != (
-            "src/public/lib/hcoona-release-smoke-npm/"
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-npm/"
             "workflow-delivery.release-unit.yml"
         )
         or len(release_unit.builds) != 1
@@ -1207,7 +1214,10 @@ def validate_first_slice_repository_model_snapshot(  # noqa: C901, PLR0912, PLR0
         or build.definition != definition.logical_id
         or build.project_id != FIRST_SLICE_PACKAGE
         or build.entry_point
-        != "src/public/lib/hcoona-release-smoke-npm/package.json"
+        != (
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-npm/package.json"
+        )
         or build.required_native_projections
         != definition.required_native_projections
         or len(build.outputs) != 1
@@ -1245,7 +1255,8 @@ def validate_first_slice_repository_model_snapshot(  # noqa: C901, PLR0912, PLR0
     expected_quality = (
         CompiledQualitySelection(
             path=(
-                "src/public/lib/hcoona-release-smoke-npm/"
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-npm/"
                 "workflow-delivery.quality.yml"
             ),
             ecosystem="node",
@@ -1623,7 +1634,8 @@ def _first_slice_provider_request_document(
         "discovery-basis": {
             "package": "@hcoona/hcoona-release-smoke-npm",
             "entry-point": (
-                "src/public/lib/hcoona-release-smoke-npm/package.json"
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-npm/package.json"
             ),
         },
     }
@@ -2014,7 +2026,10 @@ def _expected_provider_input_facts(
     repo_root: Path,
     target: str,
 ) -> tuple[str, str, tuple[GlobalInput, ...]]:
-    project_path = "src/public/lib/hcoona-release-smoke-npm/package.json"
+    project_path = (
+        "tests/private/app/workflow-delivery/fixtures/products/"
+        "hcoona-release-smoke-npm/package.json"
+    )
     manifest_digest = _content_digest(
         _git_target_file_bytes(repo_root, target, project_path)
     )
@@ -2022,7 +2037,8 @@ def _expected_provider_input_facts(
     version_paths = tuple(
         path
         for path in node_provider_version_input_candidates(
-            "src/public/lib/hcoona-release-smoke-npm"
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-npm"
         )
         if path in target_paths
     )

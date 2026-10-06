@@ -5,7 +5,7 @@
 This source assessment supports the replacement application's
 [native fact integration](../migration-strategy.md#native-facts-and-first-supported-shapes).
 Its original interface assessment and native observations use PNPM 12.8.1;
-the [12.8.2 pin recheck](#pnpm-1282-pin-recheck) covers the current repository pin.
+the [12.9.0 pin recheck](#pnpm-1290-pin-recheck) assesses the current repository pin.
 It does not audit
 the former V3 implementation or assert runtime coverage. The
 [implementation plan](../migration-strategy.md#native-facts-and-first-supported-shapes)
@@ -576,6 +576,44 @@ observation or complete upstream equivalence claim. Earlier CLI observations
 remain bound to 12.8.1; the separate application observation below uses 12.8.2.
 Unobserved layouts and identities retain their existing limits. No completed
 native campaign was repeated for this source recheck.
+
+## PNPM 12.9.0 Pin Recheck
+
+The repository pin changed through [PR #1044](https://github.com/hcoona/three/pull/1044).
+The official [`v12.9.0` tag](https://github.com/pnpm/pnpm/releases/tag/v12.9.0)
+peels to `247bfc45e5f011185e9a7088d9c39ac6bc084e44`. The source comparison
+uses complete, untruncated Git-tree inventories at that commit and the 12.8.2
+commit above. It selects 69 source/license files, including complete dependency
+inspection, workspace graph/discovery and CLI list/config subtrees: 48 Git blobs
+are unchanged and 21 changed. Changed source bytes and decision-relevant callees
+are retained with native Git-blob verification and SHA256 in
+[PR #1042](https://github.com/hcoona/three/pull/1042), rather than inferred from
+absence in a capped comparison response.
+
+The singleton wanted-lock list, linked-project association, JSON rendering,
+materialization cache and depth cutoff retain their exact source branches.
+Changed recursive execution code extracts dependency/scheduling helpers and
+extends native dependency freshness verification; that preparation gate is
+separate from runnable project selection. The adopted executor already disables
+this gate for its prepared, version-stamped checkout. Retained executors keep
+PNPM's ordinary installed-dependency behavior and native selected commands.
+In 12.9.0, an ordinary error from an implicit pre-run installation warns and
+allows scripts to run; it no longer makes that preparation gate fail. Gate
+success therefore does not prove dependency freshness. The caller's explicit
+frozen installation remains a separately checked prerequisite, and selected
+script failures still fail the check. Interruptions retain native failure.
+Recursive `pkg get` changes report keys for duplicate names; the application
+queries metadata non-recursively in each discovered directory. Local tilde-path
+resolution changes its home-directory helper; external local inputs remain
+outside the supported repository-root layout. No second resolver, metadata
+manifest or preparation service follows from these changes.
+
+This is a bounded source assessment and integration inference, not complete
+upstream equivalence or a new 12.9.0 runtime observation. Earlier native results
+remain bound to their original 12.8.1/12.8.2 versions. Ordinary changed-code CI
+must still qualify the actual group transfer, selected native commands and
+adopted results with the current pin before caller replacement and retirement.
+No completed native campaign is reopened.
 
 ## Actual Reader and Script Metadata Observation
 

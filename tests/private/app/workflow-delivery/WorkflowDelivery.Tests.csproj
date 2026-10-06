@@ -4,6 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);fixtures/products/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../../../src/private/app/workflow-delivery/WorkflowDelivery.csproj" />
@@ -15,7 +16,7 @@
     <Reference Include="NuGet.Versioning" HintPath="$(MSBuildBinPath)/NuGet.Versioning.dll" />
     <Reference Include="NuGet.Frameworks" HintPath="$(MSBuildBinPath)/NuGet.Frameworks.dll" />
     <EmbeddedResource Include="Repository/fixtures/*.json" />
-    <EmbeddedResource Include="../../../../src/public/lib/hcoona-release-smoke-npm/version.json"
+    <EmbeddedResource Include="fixtures/products/hcoona-release-smoke-npm/version.json"
                       LogicalName="NpmFixtureVersionConfiguration" />
   </ItemGroup>
   <Target Name="ReferenceOfficialNbgv" BeforeTargets="ResolveAssemblyReferences">

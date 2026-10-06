@@ -29,6 +29,10 @@ from three_workflow_delivery_v3.repository.descriptors import (
 REPOSITORY = Path(__file__).resolve().parents[6]
 PYTHON_UNIT = "hcoona-release-smoke-python"
 DESCRIPTOR_NAME = "workflow-delivery.release-unit.yml"
+NPM_ROOT = Path(
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -45,7 +49,11 @@ def _git(repo: Path, *args: str) -> str:
 def authored_tree(tmp_path: Path) -> tuple[Path, str]:
     """Commit all admitted descriptors without invoking native toolchains."""
     for unit in (FIRST_SLICE_RELEASE_UNIT, NUGET_RELEASE_UNIT):
-        root = Path("src/public/lib") / unit
+        root = (
+            NPM_ROOT
+            if unit == FIRST_SLICE_RELEASE_UNIT
+            else Path("src/public/lib") / unit
+        )
         (tmp_path / root).mkdir(parents=True)
         for name in (
             "workflow-delivery.release-unit.yml",
@@ -56,7 +64,8 @@ def authored_tree(tmp_path: Path) -> tuple[Path, str]:
         (tmp_path / policy).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(REPOSITORY / policy, tmp_path / policy)
     npm_manifest = tmp_path / (
-        "src/public/lib/hcoona-release-smoke-npm/package.json"
+        "tests/private/app/workflow-delivery/fixtures/products/"
+        "hcoona-release-smoke-npm/package.json"
     )
     npm_manifest.write_text(
         '{"name":"@hcoona/hcoona-release-smoke-npm"}', encoding="utf-8"
@@ -87,8 +96,12 @@ def test_nuget_authoring_and_npm_select_independent_units(
     assert {
         (d.release_unit, d.path) for d in discover_release_units(repo, target)
     } == {
-        (unit, f"src/public/lib/{unit}/{DESCRIPTOR_NAME}")
-        for unit in (FIRST_SLICE_RELEASE_UNIT, NUGET_RELEASE_UNIT, PYTHON_UNIT)
+        (FIRST_SLICE_RELEASE_UNIT, (NPM_ROOT / DESCRIPTOR_NAME).as_posix()),
+        (
+            NUGET_RELEASE_UNIT,
+            f"src/public/lib/{NUGET_RELEASE_UNIT}/{DESCRIPTOR_NAME}",
+        ),
+        (PYTHON_UNIT, f"src/public/lib/{PYTHON_UNIT}/{DESCRIPTOR_NAME}"),
     }
     nuget, quality, policy = load_nuget_authoring(repo, target)
     npm, npm_quality, npm_policy = load_first_slice_authoring(repo, target)
@@ -251,7 +264,12 @@ def test_known_slice_does_not_require_unrelated_descriptors(
     repo, _ = authored_tree
     for unit in (FIRST_SLICE_RELEASE_UNIT, NUGET_RELEASE_UNIT, PYTHON_UNIT):
         if unit != selected:
-            descriptor = repo / "src/public/lib" / unit / DESCRIPTOR_NAME
+            root = (
+                NPM_ROOT
+                if unit == FIRST_SLICE_RELEASE_UNIT
+                else Path("src/public/lib") / unit
+            )
+            descriptor = repo / root / DESCRIPTOR_NAME
             descriptor.rename(descriptor.with_suffix(".disabled"))
     _git(repo, "add", ".")
     _git(repo, "commit", "--quiet", "-m", "Historical single-unit fixture")

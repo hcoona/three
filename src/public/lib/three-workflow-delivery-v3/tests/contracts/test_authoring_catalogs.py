@@ -37,8 +37,14 @@ from three_workflow_delivery_v3.repository.descriptors import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
-PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
-PRODUCT_ROOT = REPO_ROOT / "src/public/lib/hcoona-release-smoke-npm"
+PRODUCT_PATH = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
+PRODUCT_ROOT = REPO_ROOT / (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 POLICY_PATH = REPO_ROOT / FIRST_SLICE_POLICY_PATH
 
 RELEASE_UNIT_YAML = """\
@@ -1640,12 +1646,17 @@ def test_first_slice_authoring_accepts_ruby_at_registered_target_path(
     discovered = discover_release_units(repo, target)
     descriptor, quality, policy = load_first_slice_authoring(repo, target)
 
-    assert tuple(item.release_unit for item in discovered) == (
+    assert sorted(item.release_unit for item in discovered) == [
         "hcoona-release-smoke-npm",
         "hcoona-release-smoke-ruby",
+    ]
+    ruby = next(
+        item
+        for item in discovered
+        if item.release_unit == "hcoona-release-smoke-ruby"
     )
-    assert discovered[1].builds[0].definition == "ruby/gem-v1"
-    assert discovered[1].path == descriptor_path.as_posix()
+    assert ruby.builds[0].definition == "ruby/gem-v1"
+    assert ruby.path == descriptor_path.as_posix()
     assert descriptor.release_unit == "hcoona-release-smoke-npm"
     assert quality.preset_for("node") == "node/hcoona-release-smoke-npm-v1"
     assert policy.release_unit == "hcoona-release-smoke-npm"

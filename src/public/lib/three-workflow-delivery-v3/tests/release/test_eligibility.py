@@ -96,7 +96,10 @@ if TYPE_CHECKING:
 
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
-PRODUCT_PATH = "src/public/lib/hcoona-release-smoke-npm"
+PRODUCT_PATH = (
+    "tests/private/app/workflow-delivery/fixtures/products/"
+    "hcoona-release-smoke-npm"
+)
 TARGET = "e" * 40
 GOVERNANCE_COMMIT = "f" * 40
 GOVERNANCE_BLOB = "b" * 40

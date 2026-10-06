@@ -99,12 +99,6 @@ importers:
         specifier: ^7.0.0-dev.20260523.1
         version: 7.0.0-dev.20260707.2
 
-  src/public/lib/hcoona-release-smoke-npm:
-    devDependencies:
-      nerdbank-gitversioning:
-        specifier: ^3.7.91
-        version: 3.10.94
-
   src/public/lib/hexo-renderer-asciidoc:
     dependencies:
       '@asciidoctor/core':
@@ -177,6 +171,12 @@ importers:
       wxt:
         specifier: ^0.21.0
         version: 0.21.4(rolldown@1.2.6)(typescript@7.0.2)(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0))
+
+  tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm:
+    devDependencies:
+      nerdbank-gitversioning:
+        specifier: ^3.7.91
+        version: 3.10.94
 
 packages:
 

@@ -1025,25 +1025,6 @@ def test_real_hk_plan_prepares_authority_for_unrelated_root_hk_path(
     assert static_reference["fileCount"] == 1
 
 
-def test_static_reference_is_one_internal_root_hk_step_not_ci_obligation() -> (
-    None
-):
-    """Keep the explicit index scan inside root HK, not in a fifth CI lane."""
-    if str(REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(REPO_ROOT))
-    from three_workflow_delivery_v3.records.ci import (  # noqa: PLC0415
-        CI_LANE_IDS,
-    )
-
-    assert CI_LANE_IDS == (
-        "root-hk",
-        "project-build",
-        "project-test",
-        "npm-artifact-build",
-    )
-    assert STATIC_REFERENCE_STEP_NAME not in CI_LANE_IDS
-
-
 @pytest.mark.parametrize(
     "step_name", ["markdownlint-cli2", "markdown-prettier"]
 )

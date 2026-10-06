@@ -8,6 +8,8 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class NodeRepositoryReaderTests(TestContext context)
 {
+    private static readonly JsonSerializerOptions NativeJsonOptions = new()
+    { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
     private const string Project = "src/private/app/im-acp-gateway/poc/telegram-bot-verifier";
     private static readonly string[] SetupInputs =
         ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "mise.toml", "mise.lock"];
@@ -123,9 +125,10 @@ public sealed class NodeRepositoryReaderTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task ReadRejectsUncommittedNativeVersionConfiguration()
+    [DataRow("src/public/lib/hcoona-release-smoke-npm")]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm")]
+    public async Task ReadRejectsUncommittedNativeVersionConfiguration(string product)
     {
-        const string product = "src/public/lib/hcoona-release-smoke-npm";
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
         foreach (string path in SetupInputs)
             await repo.SetAsync(path);
@@ -152,11 +155,13 @@ public sealed class NodeRepositoryReaderTests(TestContext context)
 
 
     [TestMethod]
-    public async Task ReadKeepsCurrentProductLegalInputConsumers()
+    [DataRow("src/public/lib/hcoona-release-smoke-npm")]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm")]
+    public async Task ReadKeepsCurrentProductLegalInputConsumers(string fixture)
     {
         string[] products =
         [
-            "src/public/lib/hcoona-release-smoke-npm",
+            fixture,
             "src/public/lib/hexo-renderer-asciidoc",
             "src/public/lib/steam-account-history-to-csv",
         ];
@@ -233,7 +238,9 @@ public sealed class NodeRepositoryReaderTests(TestContext context)
         return Task.FromResult(JsonSerializer.Serialize(directories.Select(directory => new
         {
             path = Path.GetFullPath(directory, root),
+            name = directory.EndsWith("/hcoona-release-smoke-npm", StringComparison.Ordinal)
+                ? NodeRepositoryReader.FixtureName : null,
             dependencies = new Dictionary<string, object>(),
-        })));
+        }), NativeJsonOptions));
     }
 }

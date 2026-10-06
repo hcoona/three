@@ -328,12 +328,8 @@ jobs:
     assert "buddy.yml" not in result.stdout
 
 
-def test_v3_shadow_and_buddy_workflows_remain_dedicated() -> None:
-    """Keep v3 shadow and Buddy workflows outside the restored v1 entries."""
-    shadow = WORKFLOWS / "workflow-delivery-v3-ci.yml"
-    assert shadow.is_file()
-    assert shadow.read_bytes() != (WORKFLOWS / "ci.yml").read_bytes()
-
+def test_v3_buddy_workflow_remains_dedicated() -> None:
+    """Keep the v3 Buddy workflow outside the restored v1 entries."""
     buddy = WORKFLOWS / "workflow-delivery-v3-buddy-smoke.yml"
     document = yaml.safe_load(buddy.read_text(encoding="utf-8"))
     assert "workflow_dispatch" in _triggers(document)

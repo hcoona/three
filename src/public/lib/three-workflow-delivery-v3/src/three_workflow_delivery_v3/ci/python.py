@@ -71,7 +71,8 @@ def python_ci_affected(
         if path in sources or path.startswith(prefixes):
             affected = True
         elif is_repository_only_path(path) or path.startswith(
-            "src/public/lib/hcoona-release-smoke-npm/"
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-npm/"
         ):
             continue
         else:
