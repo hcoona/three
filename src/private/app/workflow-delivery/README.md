@@ -26,8 +26,11 @@ Node group joins complete endpoint inputs, prepares the candidate control CLI,
 executes the adopted fixture in separate Node 22/24 checkouts and collects both
 result sets against their original parent plan. The retained Node matrix consumes
 only its selected native members. Other quality presets and Release commands
-remain pending. The old npm shadow workflow remains a temporary comparison
-caller until this group's ordinary hosted acceptance and retirement complete.
+remain pending. Ordinary hosted qualification in
+[PR #1042](https://github.com/hcoona/three/pull/1042) covers this group's immutable
+scope transfer, all seven adopted obligations and selected retained members on
+Node 22/24. The exclusive npm shadow workflow, record/planner family and bootstrap
+projection are retired; Python, Ruby and Release retain their current callers.
 
 The finite `ci_scope.record_control_owners` helper derives local record-checker
 and regression-script responsibility from each committed control entry and
@@ -361,8 +364,9 @@ runtime; external scratch alone does not supply that isolation.
 
 [`NodeRuntimeReader`](Repository/NodeRuntimeInputs.cs) derives runtime dimensions
 from the committed root CI matrix and native mise tool identities. It maintains
-no second runtime declaration. Its projection and this executor remain separate
-components from `ci plan-node`'s base selections until group integration.
+no second runtime declaration. `ci plan-node-group` joins its projection with
+base/candidate selections and the executor obligations; `ci plan-node` remains
+the supplied-operation selection interface.
 
 Build and source-test invocations use PNPM's native
 `--config.verify-deps-before-run=false` setting. The caller explicitly prepares

@@ -17,8 +17,11 @@ now provides CI selection/results, GitHub event comparison, native Node fact ass
 control-test resource inputs and the adopted check executor. Root CI consumes the
 native comparison and resource response before selecting its existing .NET test
 owner. The [bounded Linux observation](docs/research/node-ci-native-execution.md)
-qualifies that fixture's native composition and effects. Node hosted plan/result
-transfer, other quality presets and execution workflow cutover remain pending.
+qualifies that fixture's native composition and effects. The adopted Node group
+and selected retained Node matrix now execute under root CI;
+[PR #1042](https://github.com/hcoona/three/pull/1042) retains their ordinary hosted
+transfer and execution qualification. The exclusive npm CI shadow is retired.
+Other quality presets, ecosystem execution cutover and Release remain pending.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
 that the existing runtime already satisfies the contraction requirements.

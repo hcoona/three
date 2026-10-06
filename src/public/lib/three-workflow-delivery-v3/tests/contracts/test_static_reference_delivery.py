@@ -11,9 +11,8 @@ import yaml
 from .workflow_shell import executable, run_step
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
-WORKFLOWS = (
-    REPO_ROOT / ".github/workflows/workflow-delivery-v3-ci.yml",
-    REPO_ROOT / ".github/workflows/workflow-delivery-v3-buddy-smoke.yml",
+BUDDY_WORKFLOW = (
+    REPO_ROOT / ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
 )
 
 
@@ -21,7 +20,7 @@ def test_buddy_workflow_delegates_static_reference_to_live(
     tmp_path: Path,
 ) -> None:
     """Prepare the authorities before the selected Live eligibility entry."""
-    document = yaml.safe_load(WORKFLOWS[1].read_text(encoding="utf-8"))
+    document = yaml.safe_load(BUDDY_WORKFLOW.read_text(encoding="utf-8"))
     job = document["jobs"]["evaluate-live-eligibility"]
     assert job["if"] == "github.run_attempt == 1"
     steps = job["steps"]
