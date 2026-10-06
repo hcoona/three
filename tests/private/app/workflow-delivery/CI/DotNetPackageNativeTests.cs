@@ -239,8 +239,10 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                 await NativeProcess.RunAsync("git", source,
                     ["clone", "--shared", "--no-checkout", "--", source, checkout], token);
                 string[] checkoutArguments = ["checkout", "--detach", revision.Commit];
+                // This package fixture needs Git history, not unrelated products' LFS payloads.
                 NativeCommandResult checkoutResult = await NativeProcess.ExecuteAsync(
-                    new("git", checkout, checkoutArguments, 30), token);
+                    new("git", checkout, checkoutArguments, 30,
+                        new Dictionary<string, string?> { ["GIT_LFS_SKIP_SMUDGE"] = "1" }), token);
                 DotNetNativeFixture.RequireSuccess(checkoutResult,
                     "Fixture git " + string.Join(' ', checkoutArguments) + " in " + checkout);
                 string sourceRevision = revision.Commit;
