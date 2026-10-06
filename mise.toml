@@ -64,7 +64,7 @@ fd = "latest"
 gopass = "1.17.3"
 ripgrep = "latest"
 github-cli = "latest"
-"github:microsoft/apm" = "v0.32.0"
+"github:microsoft/apm" = "v0.33.0"
 "github:alibaba/open-code-review" = { version = "v1.12.11", bin = "ocr" }
 
 #
