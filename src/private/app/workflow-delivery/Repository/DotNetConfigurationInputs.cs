@@ -1,7 +1,11 @@
 using Microsoft.Build.Execution;
+using NuGet.Commands;
 using NuGet.ProjectModel;
 
 namespace WorkflowDelivery.Repository;
+
+internal sealed record DotNetRestoreInputs(DotNetGraphInput[] Inputs,
+    DotNetInputProvider[] Packages, string[] GeneratedImports);
 
 // Native restore owns effective contributors; candidates only cover later additions.
 internal static class DotNetConfigurationInputs
@@ -9,7 +13,7 @@ internal static class DotNetConfigurationInputs
     private static readonly StringComparer Paths = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
-    internal static IEnumerable<DotNetGraphInput> Restore(ProjectInstance project,
+    internal static DotNetRestoreInputs Restore(ProjectInstance project,
         DotNetNodeIdentity consumer, string root, string[] committedPaths)
     {
         string assetsPath = Absolute(project.GetPropertyValue("ProjectAssetsFile"));
@@ -33,14 +37,31 @@ internal static class DotNetConfigurationInputs
         if (!File.Exists(assetsPath) || !File.Exists(lockPath) ||
             restore.ConfigFilePaths.Any(path => !File.Exists(Absolute(path))))
             throw new InvalidDataException("Native locked restore input is unavailable.");
-        yield return new(assetsPath, "RestoreAssets", "LockedRestore", consumer);
-        yield return new(lockPath, "RestoreLock", "LockedRestore", consumer);
+        var inputs = new List<DotNetGraphInput>
+        {
+            new(assetsPath, "RestoreAssets", "LockedRestore", consumer,
+                new("RestoreAssets", assetsPath, restore.ProjectPath, "")),
+            new(lockPath, "RestoreLock", "LockedRestore", consumer),
+        };
         foreach (string path in restore.ConfigFilePaths)
-            yield return new(Absolute(path), "RestoreConfiguration", "LockedRestore", consumer);
+            inputs.Add(new(Absolute(path), "RestoreConfiguration", "LockedRestore", consumer,
+                new("RestoreEnvironment", Absolute(path), restore.ProjectPath, "")));
         string cpm = project.GetPropertyValue("DirectoryPackagesPropsPath");
         if (!string.IsNullOrEmpty(cpm))
-            yield return new(Path.GetFullPath(cpm, Path.GetDirectoryName(project.FullPath)!),
-                "CentralPackageConfiguration", "Evaluation", consumer);
+            inputs.Add(new(Path.GetFullPath(cpm, Path.GetDirectoryName(project.FullPath)!),
+                "CentralPackageConfiguration", "Evaluation", consumer));
+        DotNetInputProvider[] packages = assets.Libraries.Where(library =>
+            library.Type == "package" && !string.IsNullOrEmpty(library.Path))
+            .SelectMany(library => assets.PackageFolders.Select(folder =>
+                new DotNetInputProvider("LockedPackage", Path.GetFullPath(Path.Combine(
+                    Absolute(folder.Path), library.Path)), library.Name,
+                    library.Version.ToNormalizedString()))).ToArray();
+        string[] generated = new[] { BuildAssetsUtils.PropsExtension,
+                BuildAssetsUtils.TargetsExtension }
+            .Select(extension => Absolute(BuildAssetsUtils
+                .GetMSBuildFilePathForPackageReferenceStyleProject(spec, extension)))
+            .ToArray();
+        return new([.. inputs], packages, generated);
     }
 
     internal static IEnumerable<DotNetGraphInput> Candidates(ProjectInstance project,

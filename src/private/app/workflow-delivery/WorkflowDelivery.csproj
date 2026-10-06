@@ -12,6 +12,7 @@
     <Reference Include="Microsoft.Build" HintPath="$(MSBuildBinPath)/Microsoft.Build.dll" />
     <Reference Include="Microsoft.Build.Framework" HintPath="$(MSBuildBinPath)/Microsoft.Build.Framework.dll" />
     <Reference Include="NuGet.ProjectModel" HintPath="$(MSBuildBinPath)/NuGet.ProjectModel.dll" />
+    <Reference Include="NuGet.Commands" HintPath="$(MSBuildBinPath)/NuGet.Commands.dll" />
     <Reference Include="NuGet.Packaging" HintPath="$(MSBuildBinPath)/NuGet.Packaging.dll" />
     <Reference Include="NuGet.Versioning" HintPath="$(MSBuildBinPath)/NuGet.Versioning.dll" />
     <Reference Include="NuGet.Frameworks" HintPath="$(MSBuildBinPath)/NuGet.Frameworks.dll" />

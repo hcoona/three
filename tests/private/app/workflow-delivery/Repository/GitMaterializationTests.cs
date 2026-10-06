@@ -165,4 +165,29 @@ public sealed class GitMaterializationTests(TestContext context)
         Assert.Contains("checkout root", error.Message);
     }
 
+    [TestMethod]
+    [OSCondition(OperatingSystems.Windows)]
+    public async Task BindAcceptsRootCaseDifference()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        await repo.SetAsync("product/source.cs", "source");
+        await repo.SetAsync("version.json", """{"version":"1.0"}""");
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+        GitRevision revision = await new GitReader(repo.Directory).ReadAsync(commit,
+            context.CancellationToken);
+        string differentlySpelledRoot = repo.Directory.ToUpperInvariant();
+
+        GitMaterialization bound = await GitMaterialization.BindAsync(differentlySpelledRoot,
+            revision, context.CancellationToken);
+        var nbgv = new NbgvInputReader(differentlySpelledRoot);
+        NbgvInputs inputs = nbgv.Read(revision, "product", context.CancellationToken);
+        string version = nbgv.NpmVersion(revision, "product", context.CancellationToken);
+
+        Assert.AreEqual(differentlySpelledRoot, bound.Root);
+        Assert.AreEqual(commit, inputs.Commit);
+        Assert.Contains("product/source.cs", inputs.Paths);
+        Assert.StartsWith("1.0.", version);
+    }
+
 }
