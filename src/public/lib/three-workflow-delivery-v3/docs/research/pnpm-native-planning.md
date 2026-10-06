@@ -597,6 +597,11 @@ extends native dependency freshness verification; that preparation gate is
 separate from runnable project selection. The adopted executor already disables
 this gate for its prepared, version-stamped checkout. Retained executors keep
 PNPM's ordinary installed-dependency behavior and native selected commands.
+In 12.9.0, an ordinary error from an implicit pre-run installation warns and
+allows scripts to run; it no longer makes that preparation gate fail. Gate
+success therefore does not prove dependency freshness. The caller's explicit
+frozen installation remains a separately checked prerequisite, and selected
+script failures still fail the check. Interruptions retain native failure.
 Recursive `pkg get` changes report keys for duplicate names; the application
 queries metadata non-recursively in each discovered directory. Local tilde-path
 resolution changes its home-directory helper; external local inputs remain
