@@ -11,6 +11,7 @@
     <PackageReference Include="YamlDotNet" />
     <Reference Include="Microsoft.Build" HintPath="$(MSBuildBinPath)/Microsoft.Build.dll" />
     <Reference Include="Microsoft.Build.Framework" HintPath="$(MSBuildBinPath)/Microsoft.Build.Framework.dll" />
+    <Reference Include="Microsoft.Build.Utilities.Core" HintPath="$(MSBuildBinPath)/Microsoft.Build.Utilities.Core.dll" />
     <Reference Include="NuGet.ProjectModel" HintPath="$(MSBuildBinPath)/NuGet.ProjectModel.dll" />
     <Reference Include="NuGet.Commands" HintPath="$(MSBuildBinPath)/NuGet.Commands.dll" />
     <Reference Include="NuGet.Packaging" HintPath="$(MSBuildBinPath)/NuGet.Packaging.dll" />
