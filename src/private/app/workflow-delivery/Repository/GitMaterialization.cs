@@ -23,17 +23,18 @@ internal sealed class GitMaterialization
         string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
         string nativeRoot = await NativeProcess.RunAsync("git", root,
             ["--no-lazy-fetch", "--no-replace-objects", "rev-parse", "--show-toplevel"], token);
-        if (Path.TrimEndingDirectorySeparator(Path.GetFullPath(nativeRoot.TrimEnd('\r', '\n')))
-            != root)
-            throw new InvalidDataException("A Node materialization must be its checkout root.");
+        if (!string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(
+                nativeRoot.TrimEnd('\r', '\n'))), root, OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            throw new InvalidDataException("A materialization must be its checkout root.");
         GitRevision head = await new GitReader(root).ReadAsync("HEAD", token);
         if (head.Commit != revision.Commit)
-            throw new InvalidDataException("The Node checkout HEAD is not the requested revision.");
+            throw new InvalidDataException("The checkout HEAD is not the requested revision.");
         string status = await NativeProcess.RunAsync("git", root,
             ["--no-lazy-fetch", "--no-replace-objects", "status", "--porcelain=v1", "-z",
                 "--untracked-files=no", "--ignore-submodules=none"], token);
         if (status.Length != 0)
-            throw new InvalidDataException("Node planning requires a clean tracked checkout.");
+            throw new InvalidDataException("Planning requires a clean tracked checkout.");
         return new(root, revision);
     }
 

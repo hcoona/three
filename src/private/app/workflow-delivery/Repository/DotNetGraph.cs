@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using Microsoft.Build.Evaluation;
 using Microsoft.Build.Execution;
 using Microsoft.Build.Graph;
 
@@ -11,7 +13,9 @@ internal sealed record DotNetGraphNode(DotNetNodeIdentity Identity, bool OuterBu
     string[] OwnedPaths, string TestCapability);
 internal sealed record DotNetGraphEdge(DotNetNodeIdentity Consumer, DotNetNodeIdentity Dependency);
 internal sealed record DotNetGraphInput(string Path, string Role, string Stage,
-    DotNetNodeIdentity Consumer);
+    DotNetNodeIdentity Consumer, DotNetInputProvider? Provider = null);
+internal sealed record DotNetInputProvider(string Kind, string Root, string Identity,
+    string Version);
 internal sealed record DotNetGraphResponse(string Revision, string Root, string Entry,
     DotNetGraphNode[] Nodes, DotNetGraphEdge[] Edges, DotNetGraphInput[] Inputs);
 
@@ -24,7 +28,9 @@ internal static class DotNetGraph
         "Content", "None", "AdditionalFiles", "Analyzer", "EditorConfigFiles",
         "PotentialEditorConfigFiles",
         "GlobalAnalyzerConfigFiles", "ApplicationDefinition", "Page", "Resource",
-        "SplashScreen"];
+        "SplashScreen", "Manifest"];
+    private static readonly string[] EvaluatedFileProperties = ["ApplicationIcon",
+        "ApplicationManifest", "Win32Manifest", "Win32Resource"];
 
     internal static DotNetGraphResponse Read(DotNetGraphRequest request)
     {
@@ -50,7 +56,18 @@ internal static class DotNetGraph
             !request.Globals.TryGetValue("RestoreLockedMode", out string? locked) ||
             locked != "true")
             throw new InvalidDataException("Native graph requires the supported CI operation.");
-        var graph = new ProjectGraph(entry, request.Globals);
+        var imports = new ConcurrentDictionary<ProjectInstance, ResolvedImport[]>();
+        var graph = new ProjectGraph([new ProjectGraphEntryPoint(entry, request.Globals)],
+            ProjectCollection.GlobalProjectCollection,
+            (path, globals, collection) =>
+        {
+            // The graph supplies this evaluation's parameters and collection. Observe
+            // native SDK results here; a flat ProjectInstance import list loses them.
+            var project = new Project(path, globals, null, collection);
+            ProjectInstance instance = project.CreateProjectInstance(ProjectInstanceSettings.None);
+            imports.TryAdd(instance, project.Imports.ToArray());
+            return instance;
+        });
         var identities = graph.ProjectNodes.ToDictionary(node => node,
             node => Identity(node.ProjectInstance));
         var ownership = new DotNetOwnership(root, graph.ProjectNodes.Select(node =>
@@ -80,6 +97,9 @@ internal static class DotNetGraph
         {
             ProjectInstance project = node.ProjectInstance;
             DotNetNodeIdentity consumer = identities[node];
+            DotNetRestoreInputs[] restore = RestoreInputs(node);
+            var providers = new DotNetNativeInputs(project, imports[project], restore,
+                request.CommittedPaths);
             return new[] { new DotNetGraphInput(Absolute(project.FullPath), "Project",
                     "Evaluation", consumer) }
                 .Concat(project.ImportPaths.Select(path => new DotNetGraphInput(Absolute(path),
@@ -88,8 +108,15 @@ internal static class DotNetGraph
                     .Select(item => new DotNetGraphInput(
                         Absolute(item.GetMetadataValue("FullPath")), type,
                         "Evaluation", consumer))))
+                .Concat(EvaluatedFileProperties.Select(name => (Name: name,
+                        Value: project.GetPropertyValue(name)))
+                    .Where(property => property.Value.Length != 0)
+                    .Select(property => new DotNetGraphInput(Path.GetFullPath(property.Value,
+                            Path.GetDirectoryName(project.FullPath)!), property.Name,
+                        "Evaluation", consumer)))
                 .Concat(DotNetConfigurationInputs.Candidates(project, consumer, root))
-                .Concat(RestoreInputs(node));
+                .Concat(restore.SelectMany(value => value.Inputs))
+                .Select(providers.Classify);
         }).ToArray();
         return new(request.Revision, root, entry, nodes, edges, inputs);
 
@@ -113,7 +140,7 @@ internal static class DotNetGraph
                 System.Text.Json.JsonSerializer.Serialize(identity.Globals) +
                 $", role {role}: {reason}");
 
-        IEnumerable<DotNetGraphInput> RestoreInputs(ProjectGraphNode node)
+        DotNetRestoreInputs[] RestoreInputs(ProjectGraphNode node)
         {
             ProjectInstance project = node.ProjectInstance;
             if (!DotNetOwnership.IsManagedProject(project)) return [];
@@ -134,8 +161,8 @@ internal static class DotNetGraph
             if (sources.Length == 0)
                 throw new InvalidDataException(
                     "Native outer restore contributors are unavailable.");
-            return sources.SelectMany(source => DotNetConfigurationInputs.Restore(source,
-                identities[node], root, request.CommittedPaths)).Distinct();
+            return sources.Select(source => DotNetConfigurationInputs.Restore(source,
+                identities[node], root, request.CommittedPaths)).ToArray();
         }
 
         DotNetNodeIdentity Identity(ProjectInstance project)

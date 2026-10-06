@@ -134,7 +134,11 @@ internal static class ImpactPlanner
         {
             ArgumentNullException.ThrowIfNull(project);
             RequireText(project.Id, "project id");
-            ValidatePath(project.Directory);
+            if (project.Directory == "." && project.OwnedPaths is null)
+                throw new InvalidDataException(
+                    $"Root project {project.Id} requires explicit owned paths.");
+            if (project.Directory != ".")
+                ValidatePath(project.Directory);
             if (!Enum.IsDefined(project.Origin))
                 throw new InvalidDataException($"Unknown check origin for {project.Id}.");
             if (project.OwnedPaths is { } owned)

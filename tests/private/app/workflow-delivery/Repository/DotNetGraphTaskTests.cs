@@ -332,6 +332,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     [DataRow("unsupported-format")]
     [DataRow("missing-project")]
     [DataRow("missing-restore")]
+    [DataRow("unsupported-project-style")]
     [DataRow("wrong-project")]
     [DataRow("unlocked")]
     [DataRow("empty-configurations")]
@@ -357,6 +358,9 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             case "unsupported-format": assets.Version = LockFileFormat.Version + 1; break;
             case "missing-project": assets.PackageSpec = null; break;
             case "missing-restore": assets.PackageSpec.RestoreMetadata = null; break;
+            case "unsupported-project-style":
+                assets.PackageSpec.RestoreMetadata.ProjectStyle = ProjectStyle.Unknown;
+                break;
             case "wrong-project":
                 assets.PackageSpec.RestoreMetadata.ProjectPath = fixture.PathOf("other.csproj");
                 break;
@@ -686,6 +690,107 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             PhysicalPathComparer.Equals(input.Path, fixture.PathOf(origin))));
         Assert.AreEqual(response.Nodes[0].Identity.Project, input.Consumer.Project);
         Assert.AreEqual("Evaluation", input.Stage);
+    }
+
+    [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task NativeProvidersRetainResolvedSdkAndGeneratedRestoreImports()
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("global.json", """
+            {"sdk":{"version":"10.0.401","rollForward":"disable"},
+             "msbuild-sdks":{"Microsoft.Build.Traversal":"4.1.82",
+             "MSTest.Sdk":"4.3.3","Microsoft.Build.Artifacts":"6.1.63"}}
+            """);
+        fixture.Write("dirs.proj", """
+            <Project Sdk="Microsoft.Build.Traversal"><ItemGroup>
+              <ProjectReference Include="main.csproj" />
+            </ItemGroup></Project>
+            """);
+        fixture.Write("main.csproj", """
+            <Project Sdk="MSTest.Sdk;Microsoft.Build.Artifacts"><PropertyGroup>
+              <TargetFramework>net10.0</TargetFramework>
+            </PropertyGroup></Project>
+            """);
+        fixture.Write("Directory.Build.props", """
+            <Project><PropertyGroup>
+              <BaseIntermediateOutputPath>obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+              <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+              <NuGetLockFilePath>packages.$(MSBuildProjectName).lock.json</NuGetLockFilePath>
+              <NuGetAudit>false</NuGetAudit>
+              <CustomAfterArtifactsProps
+                >$(MSBuildThisFileDirectory)extra.props</CustomAfterArtifactsProps>
+            </PropertyGroup></Project>
+            """);
+        fixture.Write("extra.props", "<Project />");
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+        foreach (string identity in new[] { "Microsoft.Build.Traversal", "MSTest.Sdk",
+                     "Microsoft.Build.Artifacts" })
+            Assert.IsTrue(response.Inputs.Any(input => input.Role == "Import" &&
+                input.Provider is { Kind: "Sdk" } provider && provider.Identity == identity));
+        DotNetGraphInput[] generated = response.Inputs.Where(input =>
+            input.Provider?.Kind == "RestoreGenerated").ToArray();
+        Assert.HasCount(2, generated);
+        Assert.IsTrue(generated.All(input => input.Role == "Import" &&
+            input.Stage == "Evaluation" &&
+            input.Consumer.Project == fixture.PathOf("main.csproj")));
+        Assert.IsTrue(response.Inputs.Any(input => input.Provider?.Kind == "Toolset"));
+        Assert.IsTrue(response.Inputs.Any(input => input.Provider?.Kind == "LockedPackage"));
+        foreach (string name in new[] { "Microsoft.Build.Artifacts.props",
+                     "Microsoft.Build.Artifacts.targets", "Microsoft.Build.Artifacts.Common.props",
+                     "Microsoft.Build.Artifacts.Common.targets" })
+            Assert.IsTrue(response.Inputs.Any(input => Path.GetFileName(input.Path) == name &&
+                input.Provider is { Kind: "Sdk", Identity: "Microsoft.Build.Artifacts" }));
+        DotNetGraphInput hook = Assert.ContainsSingle(response.Inputs.Where(input =>
+            input.Path == fixture.PathOf("extra.props") && input.Role == "Import"));
+        Assert.IsNull(hook.Provider);
+        Assert.AreEqual("Import", hook.Role);
+    }
+
+    [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task NativeScalarFileInputsRetainEffectiveConsumers()
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", """
+            <Project><ItemGroup><ProjectReference Include="product/main.csproj" />
+              <ProjectReference Include="empty.csproj" /></ItemGroup></Project>
+            """);
+        fixture.Write("product/main.csproj", """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+              <TargetFrameworks>net10.0;net9.0</TargetFrameworks>
+              <ApplicationIcon>../linked/app.ico</ApplicationIcon>
+              <ApplicationManifest>../linked/app.manifest</ApplicationManifest>
+              <Win32Manifest>../linked/native.manifest</Win32Manifest>
+              <Win32Resource
+                Condition="'$(TargetFramework)' == 'net9.0'">../linked/app.res</Win32Resource>
+            </PropertyGroup><ItemGroup><Manifest Include="../linked/package.manifest" />
+            </ItemGroup></Project>
+            """);
+        fixture.Write("empty.csproj", GraphFixture.Project);
+        foreach (string name in new[] { "app.ico", "app.manifest", "native.manifest", "app.res",
+                     "package.manifest" })
+            fixture.Write("linked/" + name, "fixture source");
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+        foreach ((string role, string path) in new[]
+        {
+            ("ApplicationIcon", "app.ico"), ("ApplicationManifest", "app.manifest"),
+            ("Win32Manifest", "native.manifest"), ("Manifest", "package.manifest"),
+        })
+        {
+            DotNetGraphInput[] inputs = response.Inputs.Where(input => input.Role == role &&
+                input.Consumer.Project == fixture.PathOf("product/main.csproj")).ToArray();
+            Assert.HasCount(3, inputs);
+            Assert.IsTrue(inputs.All(input => input.Path == fixture.PathOf("linked/" + path) &&
+                input.Stage == "Evaluation"));
+        }
+        DotNetGraphInput resource = Assert.ContainsSingle(response.Inputs.Where(input =>
+            input.Role == "Win32Resource"));
+        Assert.AreEqual("net9.0", resource.Consumer.Globals["TargetFramework"]);
+        Assert.AreEqual(fixture.PathOf("linked/app.res"), resource.Path);
+        Assert.IsFalse(response.Inputs.Any(input => input.Consumer.Project ==
+            fixture.PathOf("empty.csproj") && input.Role is "ApplicationIcon" or
+                "ApplicationManifest" or "Win32Manifest" or "Win32Resource"));
     }
 
     private sealed class GraphFixture : IDisposable

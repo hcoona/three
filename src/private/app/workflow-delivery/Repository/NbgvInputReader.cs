@@ -10,6 +10,8 @@ internal sealed record NbgvInputs(string Commit, string Directory,
 internal sealed class NbgvInputReader(string root)
 {
     private readonly string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+    private static readonly StringComparison PhysicalComparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     // Full projection uses the caller-bound clean HEAD and the same native cloud/ref
     // context as the build. Version height and npm projection remain NBGV operations.
@@ -18,7 +20,8 @@ internal sealed class NbgvInputReader(string root)
         token.ThrowIfCancellationRequested();
         using GitContext context = GitContext.Create(root, engine: GitContext.Engine.ReadOnly);
         if (!context.IsRepository || context.GitCommitId != revision.Commit ||
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(context.WorkingTreePath)) != root)
+            !string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(
+                context.WorkingTreePath)), root, PhysicalComparison))
             throw new InvalidDataException(
                 "NBGV npm projection requires the selected checkout HEAD.");
         context.RepoRelativeProjectDirectory = directory;
@@ -44,7 +47,8 @@ internal sealed class NbgvInputReader(string root)
             GitContext.Engine.ReadOnly);
         if (context is not ManagedGitContext managed || !context.IsRepository ||
             context.GitCommitId != revision.Commit ||
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(context.WorkingTreePath)) != root)
+            !string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(
+                context.WorkingTreePath)), root, PhysicalComparison))
             throw new InvalidDataException(
                 "NBGV did not bind the required repository and commit.");
         context.RepoRelativeProjectDirectory = directory == "." ? "" : directory;

@@ -355,6 +355,60 @@ public sealed class ImpactPlannerTests
     }
 
     [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(false, true)]
+    [DataRow(true, false)]
+    [DataRow(true, true)]
+    public void PlanRootWithoutOwnedPathsRejectsEitherRevisionIncludingFullMode(bool basis,
+        bool full)
+    {
+        ProjectFacts root = Scenario.Project("root", directory: ".") with { OwnedPaths = [] };
+        PlanRequest request = Scenario.Request([root]) with { Full = full };
+        ProjectFacts invalid = root with { OwnedPaths = null };
+        request = basis
+            ? request with { Basis = request.Basis with { Projects = [invalid] } }
+            : request with { Candidate = request.Candidate with { Projects = [invalid] } };
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            ImpactPlanner.Plan(request));
+
+        Assert.Contains("Root project root requires explicit owned paths", error.Message);
+    }
+
+    [TestMethod]
+    public void PlanEmptyRootOwnershipCanBeSelectedByExplicitInput()
+    {
+        ProjectFacts root = Scenario.Project("root", directory: ".") with { OwnedPaths = [] };
+        RepositoryFacts basis = Scenario.Facts("base", root) with
+        {
+            SharedInputs = [new("shared/input.txt", ["root"])],
+        };
+        PlanRequest request = new(basis, basis with { Revision = "candidate" }, [], false);
+
+        Assert.IsEmpty(ImpactPlanner.Plan(request).Checks);
+        CiPlan plan = ImpactPlanner.Plan(request with { ChangedPaths = ["shared/input.txt"] });
+
+        PlannedCheck selected = Assert.ContainsSingle(plan.Checks);
+        Assert.AreEqual(Scenario.Check("root").Key, selected.Work.Key);
+        CollectionAssert.AreEquivalent(new[]
+        {
+            new SelectionReason("shared/input.txt", "base", "root"),
+            new SelectionReason("shared/input.txt", "candidate", "root"),
+        }, selected.Reasons);
+    }
+
+    [TestMethod]
+    public void PlanEmptyRootOwnershipDoesNotOwnRepositoryPaths()
+    {
+        ProjectFacts root = Scenario.Project("root", directory: ".") with { OwnedPaths = [] };
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            ImpactPlanner.Plan(Scenario.Request([root], "unknown/file.cs")));
+
+        Assert.Contains("Unresolved changed path: unknown/file.cs", error.Message);
+    }
+
+    [TestMethod]
     public void PlanKnownUnaffectedPathProducesEmptySuccessfulPlan()
     {
         CiPlan plan = ImpactPlanner.Plan(Scenario.Request([Scenario.Project("library")],

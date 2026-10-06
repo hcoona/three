@@ -216,7 +216,10 @@ evaluated source/resource/additional/analyzer/XAML items with their full paths,
 roles, evaluation stage and consuming native node. Explicit input consumers remain
 independent of ordinary ownership, including an embedded resource excluded by a
 default file rule. Environmental and generated paths remain physical native facts
-for later role binding; they are not asserted to be committed source inputs.
+with invocation-local provider associations; they are not committed source inputs.
+Four nonempty evaluated scalar properties retain explicit file consumers:
+`ApplicationIcon`, `ApplicationManifest`, `Win32Manifest` and `Win32Resource`.
+Native Build still owns defaults, target-time assignments and generated outputs.
 
 [`DotNetConfigurationInputs`](Repository/DotNetConfigurationInputs.cs) consumes
 prepared managed-project assets through the selected SDK's official NuGet model.
@@ -227,6 +230,14 @@ native consumer; assets retain a generated restore role. An outer node without
 an evaluated assets path consumes the same project's referenced native inner
 nodes. Traversal nodes do not require managed assets. Projection performs no
 restore or repair.
+
+[`DotNetNativeInputs`](Repository/DotNetNativeInputs.cs) uses native toolset paths,
+successful public SDK results captured through the graph's project-instance factory,
+and validated locked-library directories to classify supported observed inputs.
+Official `NuGet.Commands.BuildAssetsUtils` supplies the two generated evaluation
+import paths. Microsoft's Artifacts SDK has four finite sibling build imports;
+its arbitrary custom hooks gain no provider authority. Package-cache or `obj`
+residence alone does not classify an input. Committed files bind first.
 
 Roslyn's evaluated `PotentialEditorConfigFiles` and `GlobalAnalyzerConfigFiles`
 retain absent linked-source candidates and respect native discovery switches.
@@ -251,11 +262,27 @@ retain definition impact, without an extra target record, body parser, condition
 evaluator, SDK task allowlist or hash admission policy. Native conditions and
 effects are unchanged.
 
-This is a partial native fact producer, exercised by isolated actual-process
-contract tests. Repository endpoint preparation, complete finite input
-coverage, additional producer adapters, native test output, exact Git
-binding, both-endpoint assembly, selected execution and workflow transfer remain
-pending. No CLI caller or general .NET CI cutover uses this task yet.
+[`DotNetRepositoryReader`](Repository/DotNetRepositoryReader.cs) invokes the task
+from a caller-prepared exact checkout with the complete application distribution
+and caller-owned scratch paths. It binds physical coordinates to original Git
+spelling, validates full node/edge/input identities and rejects necessary unsupported
+source. Finite absent in-endpoint configuration candidates retain possible-addition
+consumers; existing untracked source is not absence. NBGV supplies committed version
+inputs, and nearest committed quality YAML retains adoption or unadopted native intent.
+
+[`DotNetFactsAssembler`](Repository/DotNetFactsAssembler.cs) aggregates native
+variants into distinct committed project IDs only for `ImpactPlanner.SelectProjects`.
+Traversal discovery retains real consumers without root ownership. Exact ownership
+and explicit inputs remain separate, and both-endpoint relation union preserves
+removed consumers. Caller-supplied positive responsibility answers cover unrelated
+paths; unknown paths fail even in full mode. Every candidate native node remains
+available for later completion. Selection-stage checks stay empty.
+
+Isolated native-process and exact-Git selection tests exercise this bounded projection.
+Whole-repository endpoint preparation, complete finite input coverage, additional
+producer adapters, native test output, selected execution, workflow transfer and
+changed-code Windows qualification remain pending. No CLI caller or general .NET
+CI cutover uses this reader yet; the eight whole-group gates remain open.
 
 [`ControlTestInputs`](Repository/ControlTestInputs.cs) exposes one concrete root-CI
 consumer through `ci control-inputs`: the control test project's embedded resources,
