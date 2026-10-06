@@ -13,6 +13,35 @@ namespace WorkflowDelivery.Tests;
 public sealed class ProgramTests
 {
     [TestMethod]
+    [DataRow("empty-origin")]
+    [DataRow("preset-without-name")]
+    [DataRow("native-with-preset")]
+    public void RunMalformedOriginsProduceInputErrorDespitePassedResult(string defect)
+    {
+        using var files = new TransferFiles();
+        CheckSpec work = Scenario.Check("library");
+        CiPlan plan = Scenario.Plan(work);
+        PlannedCheck check = Assert.ContainsSingle(plan.Checks);
+        check = defect switch
+        {
+            "empty-origin" => check with { Origins = [] },
+            "preset-without-name" => check with { QualityPresets = [] },
+            "native-with-preset" => check with { Origins = [CheckOrigin.NativeRetained] },
+            _ => throw new InvalidOperationException(defect),
+        };
+        string planPath = files.Write("plan.json", JsonSerializer.Serialize(
+            plan with { Checks = [check] }, TransferJson.Default.CiPlan));
+        CheckResult[] results = [new(plan.Candidate, work.Key, CheckStatus.Passed)];
+        string resultPath = files.Write("results.json", JsonSerializer.Serialize(results,
+            TransferJson.Default.CheckResultArray));
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        Assert.AreEqual(2, Program.Run(["ci", "result", planPath, resultPath], output, error));
+        Assert.AreEqual("", output.ToString());
+        Assert.Contains("origin/preset relationship", error.ToString());
+    }
+
+    [TestMethod]
     [DataRow(true, 0, "passed")]
     [DataRow(false, 1, "missing")]
     public void RunNativeRetainedPlanKeepsOriginAcrossOriginalResultTransfer(bool completed,
