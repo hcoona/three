@@ -201,6 +201,7 @@ addopts = "--import-mode=importlib"
 tmp_path_retention_policy = "failed"
 testpaths = [
   "tests/eng/test_ci_scope.py",
+  "tests/eng/test_run_node_ci_group.py",
   "tests/eng/test_python_runtime.py",
   "tests/eng/test_legacy_release_contract.py",
   "tests/eng/test_typos_config.py",

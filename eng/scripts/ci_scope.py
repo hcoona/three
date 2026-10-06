@@ -290,6 +290,10 @@ def _python_tests(
         )
         or (test == "tests/eng/test_typos_config.py" and path == ".typos.toml")
         or (
+            test == "tests/eng/test_run_node_ci_group.py"
+            and path == "eng/scripts/run_node_ci_group.py"
+        )
+        or (
             test.startswith("src/public/lib/nbgv-python/")
             and path in DOTNET_INPUTS
         )
