@@ -12,6 +12,44 @@ internal static class DotNetFactsAssembler
 {
     internal const string Scope = "dotnet/native-endpoint-selection-v1";
 
+    internal static CiPlan Complete(DotNetSelection selection, CancellationToken token)
+    {
+        var identities = new HashSet<(string Project, string Globals)>(
+            new DotNetRepositoryReader.NativeIdentityComparer());
+        RepositoryFacts candidate = selection.Request.Candidate;
+        var completed = new List<ProjectFacts>();
+        foreach (ProjectFacts project in candidate.Projects)
+        {
+            token.ThrowIfCancellationRequested();
+            if (!selection.Reasons.ContainsKey(project.Id))
+            {
+                completed.Add(project);
+                continue;
+            }
+            if (project.Origin != CheckOrigin.NativeRetained || project.QualityPreset is not null)
+                throw new InvalidDataException("Selected adopted .NET quality requires its " +
+                    "native package adapter: " + project.Id);
+            if (!selection.CandidateNodes.TryGetValue(project.Id, out DotNetGraphNode[]? nodes))
+                throw new InvalidDataException("Missing selected candidate native identities: " +
+                    project.Id);
+            var checks = new List<CheckSpec>();
+            foreach (DotNetGraphNode node in nodes.Where(node => !node.OuterBuild))
+            {
+                if (!identities.Add(DotNetRepositoryReader.Key(node.Identity)))
+                    throw new InvalidDataException("Duplicate selected complete native identity.");
+                checks.AddRange(DotNetChecks.Expand(project.Id, node));
+            }
+            if (checks.Count == 0)
+                throw new InvalidDataException("Selected project has no native inner identity: " +
+                    project.Id);
+            completed.Add(project with { Checks = checks.ToArray() });
+        }
+        return ImpactPlanner.PlanSelected(selection.Request with
+        {
+            Candidate = candidate with { Projects = completed.ToArray() }
+        }, selection.Reasons);
+    }
+
     internal static DotNetSelection Select(DotNetRevisionInputs basis,
         DotNetRevisionInputs candidate, string[] changedPaths, bool full,
         string[] basisUnaffected, string[] candidateUnaffected)

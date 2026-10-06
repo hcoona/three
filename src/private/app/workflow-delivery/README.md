@@ -13,8 +13,9 @@ architecture authority.
 The application selects CI checks and collects candidate-bound check results.
 The supplied-fact command and Node revision-to-plan command share one impact
 algorithm and comparison/responsibility binder. The core accepts exact committed
-ownership and resolved preset/native-retained check origins; native .NET fact
-production and execution remain pending. The Node command reads exact
+ownership and resolved preset/native-retained check origins. Native .NET endpoint
+reading, selected-check completion and execution are internal operations; whole-group
+qualification and caller cutover remain pending. The Node command reads exact
 caller-prepared checkouts, native
 PNPM relations, NBGV inputs and existing application declarations, then expands
 selected project and package checks. A concrete Node executor runs the adopted
@@ -280,9 +281,47 @@ available for later completion. Selection-stage checks stay empty.
 
 Isolated native-process and exact-Git selection tests exercise this bounded projection.
 Whole-repository endpoint preparation, complete finite input coverage, additional
-producer adapters, native test output, selected execution, workflow transfer and
+producer adapters, whole-group native test output and selected execution, workflow transfer and
 changed-code Windows qualification remain pending. No CLI caller or general .NET
 CI cutover uses this reader yet; the eight whole-group gates remain open.
+
+### Native .NET Selected Checks and Execution
+
+[`DotNetFactsAssembler.Complete`](Repository/DotNetFactsAssembler.cs) expands only
+selected surviving candidate nonouter identities through the existing planner.
+[`DotNetChecks`](Repository/DotNetChecks.cs) retains the complete original escaped
+global map, native dimensions and `NativeRetained` origin. Each identity requires
+Build; evaluated MTP or VSTest capability also requires Test after that Build.
+None is Build-only. Selected adopted package quality fails completion until its
+separate concrete NuGet package adapter is available; it cannot become an
+unadopted native recipe.
+
+[`DotNetExecution`](CI/DotNetExecution.cs) consumes the original complete plan,
+an exact candidate checkout and fresh external scratch. The caller owns locked
+preparation, SDK selection and native output lifetime. One phase runs native
+Build/GetTargetPath. A separate Test phase repeats native Build, then runs
+GetTargetPath and `InvokeTestingPlatform` or `VSTest` in that same process.
+MSBuild owns references, analyzers and target state; the test platform owns its
+host, arguments, environment, settings and verdict. The selected SDK's
+`CommandLineBuilder` quotes each original property value without re-escaping it.
+Unrepresentable globals fail before product commands.
+
+Each phase reads its required native target-result JSON and regular-file
+GetTargetPath coordinate from fresh scratch. Diagnostic stdout is not a result.
+A failed Test, repeated Build or required receipt cannot erase an earlier passed
+Build. Native cancellation, deadlines, skipped prerequisites and missing results
+retain the existing check/collector semantics. Individual intentionally skipped
+tests and no-tests policies remain native. A genuine empty plan performs no
+product Build/Test commands. No restore, application launcher, task scheduler or
+general cache is added.
+
+Isolated native integration tests exercise original globals, references/analyzers,
+inner multi-TFM MTP with apphost and hostless execution, VSTest settings, redirected
+outputs, intentional skips, no-tests policies and active cancellation/deadlines.
+These tests cover their concrete fixture composition. Complete repository input
+coverage, adopted NuGet quality, whole-group qualification and ordinary Windows
+artifact/result transfer remain pending. No CLI/workflow caller uses this executor
+yet, and the eight whole-group gates remain open.
 
 [`ControlTestInputs`](Repository/ControlTestInputs.cs) exposes one concrete root-CI
 consumer through `ci control-inputs`: the control test project's embedded resources,
@@ -646,8 +685,8 @@ retain actual quality presets, selected origins and all initiating
 path/revision/project reasons. `Preset` requires a resolved preset;
 `NativeRetained` requires nonempty resolved checks and no claimed preset adoption.
 It never substitutes for a missing adopted contract. Node producers retain preset
-selection. Native-retained production belongs to the forthcoming concrete .NET
-adapter; the supplied-fact core alone does not establish native capability.
+selection. The internal .NET completion operation above produces native-retained
+checks; the supplied-fact core alone does not establish native capability.
 
 [`ScopeInputs`](Repository/ScopeInputs.cs) binds native comparison coordinates and
 committed endpoint responsibility to actual consumers for both revisions. Node
