@@ -143,7 +143,9 @@ internal static class DotNetPackageConsumer
         if (restore.FallbackFolders.Count != 0)
             throw AssetsMismatch("fallback folder count", 0, restore.FallbackFolders.Count);
         if (restore.Sources is not [var source])
-            throw AssetsMismatch("source count", 1, restore.Sources.Count);
+            throw AssetsMismatch("source count", 1,
+                $"{restore.Sources.Count} [{string.Join(", ",
+                    restore.Sources.Take(4).Select(item => LocalPath(item.Source)))}]");
         if (!SamePath(source.Source, feed))
             throw AssetsMismatch("source path", feed, LocalPath(source.Source));
         if (restore.ConfigFilePaths is not [string configured])
