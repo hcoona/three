@@ -70,6 +70,7 @@ def prepare(root: Path, directory: Path, endpoints_path: Path) -> Path:
             name + "-node-tools",
             "mise",
             "install",
+            "--locked",
             "node",
             "pnpm",
         )

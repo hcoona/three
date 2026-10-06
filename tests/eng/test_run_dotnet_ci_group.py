@@ -85,8 +85,10 @@ def test_bootstrap_transfers_complete_native_default_output(
     ).read_bytes() == log.read_bytes()
 
 
+@pytest.mark.parametrize("shared_endpoint", [False, True])
+@pytest.mark.parametrize("locked_failure", [False, True])
 def test_absent_basis_control_still_prepares_both_native_endpoints(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, shared_endpoint, locked_failure
 ):
     """Owner absence never removes native endpoint preparation."""
     root = tmp_path / "root"
@@ -109,17 +111,37 @@ def test_absent_basis_control_still_prepares_both_native_endpoints(
             "reference": CANDIDATE,
         },
     }
+    if shared_endpoint:
+        endpoints["basis"] = dict(endpoints["candidate"])
+        endpoints["full"] = True
     endpoints_path = tmp_path / "endpoints.json"
     group.node.write_json(endpoints_path, endpoints)
     commands = []
+    error = subprocess.CalledProcessError(
+        2,
+        ("mise", "install", "--locked", "node", "pnpm"),
+        output=b"",
+        stderr=b"locked URLs unavailable",
+    )
+
+    def native(endpoint, _directory, label, *args, **_options):
+        commands.append((endpoint, label, args))
+        if locked_failure and args[:2] == ("mise", "install"):
+            raise error
+
     monkeypatch.setattr(
         group.node,
         "run",
-        lambda endpoint, _, label, *args, **__: commands.append(
-            (endpoint, label, args)
-        ),
+        native,
     )
     monkeypatch.setattr(group.node, "owner_present", lambda *_: False)
+    if locked_failure:
+        with pytest.raises(subprocess.CalledProcessError) as captured:
+            group.prepare(root, state, endpoints_path)
+        assert captured.value is error
+        assert not (state / "planning/request.json").exists()
+        assert commands[-1][2] == error.cmd
+        return
     request_path = group.prepare(root, state, endpoints_path)
     request = group.node.read_json(request_path)
     assert request["basisControl"] is None
@@ -131,15 +153,23 @@ def test_absent_basis_control_still_prepares_both_native_endpoints(
         if args[:2] == ("dotnet", "restore")
     ]
     assert {endpoint for endpoint, _ in restores} == {
-        tmp_path / "basis",
-        tmp_path / "candidate",
+        Path(endpoints[name]["directory"]) for name in ("basis", "candidate")
     }
     for _, args in restores:
         assert args[2] == "dirs.proj"
         assert set(group.PROPERTIES) <= set(args)
-    assert not any(
-        "install" in args and "pnpm" not in args for _, _, args in commands
-    )
+    installs = [
+        (endpoint, args)
+        for endpoint, _, args in commands
+        if args[:2] == ("mise", "install")
+    ]
+    assert installs == [
+        (endpoint, ("mise", "install", "--locked", "node", "pnpm"))
+        for endpoint in dict.fromkeys(
+            Path(endpoints[name]["directory"])
+            for name in ("basis", "candidate")
+        )
+    ]
 
 
 @pytest.mark.parametrize("failed", [False, True])
