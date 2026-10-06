@@ -25,6 +25,7 @@ internal static class DotNetConfigurationInputs
             ?? throw new InvalidDataException("Native restore metadata is unavailable.");
         string configuration = Path.Combine(root, "nuget.config");
         if (assets.Version != LockFileFormat.Version ||
+            restore.ProjectStyle != ProjectStyle.PackageReference ||
             !Paths.Equals(Absolute(restore.ProjectPath), Path.GetFullPath(project.FullPath)) ||
             restore.RestoreLockProperties is null ||
             !restore.RestoreLockProperties.RestoreLockedMode ||

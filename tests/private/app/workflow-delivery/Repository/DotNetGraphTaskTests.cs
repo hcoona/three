@@ -332,6 +332,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     [DataRow("unsupported-format")]
     [DataRow("missing-project")]
     [DataRow("missing-restore")]
+    [DataRow("unsupported-project-style")]
     [DataRow("wrong-project")]
     [DataRow("unlocked")]
     [DataRow("empty-configurations")]
@@ -357,6 +358,9 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             case "unsupported-format": assets.Version = LockFileFormat.Version + 1; break;
             case "missing-project": assets.PackageSpec = null; break;
             case "missing-restore": assets.PackageSpec.RestoreMetadata = null; break;
+            case "unsupported-project-style":
+                assets.PackageSpec.RestoreMetadata.ProjectStyle = ProjectStyle.Unknown;
+                break;
             case "wrong-project":
                 assets.PackageSpec.RestoreMetadata.ProjectPath = fixture.PathOf("other.csproj");
                 break;
