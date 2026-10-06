@@ -639,7 +639,6 @@ jobs:
             ${{ runner.temp }}/node-group/*.json
             ${{ runner.temp }}/node-group/*.stdout
             ${{ runner.temp }}/node-group/*.stderr
-            ${{ runner.temp }}/node-group/*.binlog
           if-no-files-found: ignore
           retention-days: 7
       - name: Reject canceled validation
