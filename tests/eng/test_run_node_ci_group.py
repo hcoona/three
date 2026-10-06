@@ -380,6 +380,80 @@ def test_native_command_retains_failure_or_timeout(
     )
 
 
+@pytest.mark.parametrize("timeout", [False, True])
+@pytest.mark.parametrize("reporting_fails", [False, True])
+def test_required_native_failure_reports_streams_and_preserves_exception(
+    tmp_path, monkeypatch, capsys, timeout, reporting_fails
+):
+    """Retain required failure details even if reporting itself fails."""
+    calls = []
+    error_output = b"deadline" if timeout else b"failure"
+
+    def native(*args, **kwargs):
+        calls.append((args, kwargs))
+        if timeout:
+            raise subprocess.TimeoutExpired(
+                ["native"], 900, b"partial", error_output
+            )
+        return subprocess.CompletedProcess(
+            ["native"], 2, b"partial", error_output
+        )
+
+    class BrokenStream:
+        def write(self, _text):
+            raise OSError
+
+    monkeypatch.setattr(group.subprocess, "run", native)
+    exception = (
+        subprocess.TimeoutExpired if timeout else subprocess.CalledProcessError
+    )
+    with monkeypatch.context() as reporting:
+        if reporting_fails:
+            reporting.setattr(group.sys, "stderr", BrokenStream())
+        with pytest.raises(exception) as captured:
+            group.run(tmp_path, tmp_path, "required", "native")
+    assert len(calls) == 1
+    assert captured.value.cmd == ("native",)
+    assert captured.value.output == b"partial"
+    assert captured.value.stderr == error_output
+    if timeout:
+        assert captured.value.timeout == 900
+    else:
+        assert captured.value.returncode == 2
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == (
+        "" if reporting_fails else "partial" + error_output.decode("utf-8")
+    )
+    assert (tmp_path / "required.stdout").read_bytes() == b"partial"
+    assert (tmp_path / "required.stderr").read_bytes() == error_output
+    assert group.read_json(tmp_path / "required.command.json") == {
+        "arguments": ["native"],
+        "cwd": str(tmp_path),
+        "exitCode": None if timeout else 2,
+        "termination": "timedOut" if timeout else "exited",
+    }
+
+
+def test_successful_native_json_remains_quiet(tmp_path, monkeypatch, capsys):
+    """Return the original successful stdout without mixing diagnostics."""
+    payload = b'{"value":1}'
+    monkeypatch.setattr(
+        group.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ["native"], 0, payload, b"warning"
+        ),
+    )
+    assert group.run(tmp_path, tmp_path, "success", "native") == (
+        payload.decode("utf-8")
+    )
+    output = capsys.readouterr()
+    assert output.out == output.err == ""
+    assert (tmp_path / "success.stdout").read_bytes() == payload
+    assert (tmp_path / "success.stderr").read_bytes() == b"warning"
+
+
 @pytest.mark.parametrize("probe_selected", [False, True])
 def test_retained_filters_exclude_only_adopted_and_keep_selected_probes(
     tmp_path, monkeypatch, probe_selected

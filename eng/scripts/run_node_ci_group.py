@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -91,11 +92,19 @@ def run(
     write_json(directory / (label + ".command.json"), outcome)
     try:
         output = stdout.decode("utf-8", errors="strict")
-        stderr.decode("utf-8", errors="strict")
+        error_output = stderr.decode("utf-8", errors="strict")
     except UnicodeDecodeError:
         if required:
             raise
         return ""
+    if required and (
+        outcome["termination"] == "timedOut" or outcome["exitCode"]
+    ):
+        try:
+            sys.stderr.write(output)
+            sys.stderr.write(error_output)
+        except (OSError, UnicodeError):
+            pass
     if outcome["termination"] == "timedOut":
         if required:
             raise subprocess.TimeoutExpired(args, 900, stdout, stderr)
