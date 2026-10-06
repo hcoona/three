@@ -13,7 +13,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     [TestMethod]
-    [Timeout(30000, CooperativeCancellation = true)]
+    // Eight restores and one query retain their own 30-second command deadlines.
+    [Timeout(360000, CooperativeCancellation = true)]
     public async Task LoadedNativeGraphPreservesInnerVariantsAndReferenceEdges()
     {
         using var fixture = new GraphFixture();

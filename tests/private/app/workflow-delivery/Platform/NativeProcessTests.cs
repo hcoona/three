@@ -144,14 +144,17 @@ public sealed class NativeProcessTests
     [TestMethod]
     public async Task RunOutputLimitStopsQueryBeforeItsDeadline()
     {
-        using var fixture = new ProcessFixture(
-            "[Console]::Out.Write(('x' * (32 * 1024 * 1024 + 1))); Start-Sleep -Seconds 60");
+        string script =
+            "[Console]::Out.Write(('x' * (32 * 1024 * 1024 + 1))); Start-Sleep -Seconds 60";
+        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.CancellationToken);
         cancellation.CancelAfter(TimeSpan.FromSeconds(15));
 
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(
-            () => fixture.RunAsync(cancellation.Token));
+            () => NativeProcess.RunAsync("pwsh", Path.GetTempPath(),
+                ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+                cancellation.Token));
 
         Assert.Contains("characters", error.Message);
     }
