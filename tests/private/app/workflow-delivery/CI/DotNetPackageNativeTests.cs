@@ -2,6 +2,9 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Xml.Linq;
+using NuGet.Packaging;
+using NuGet.ProjectModel;
+using NuGet.Versioning;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -94,19 +97,7 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         string path = Path.Combine(fixture.Scratch, "WorkflowDelivery.Tests.1.0.0.nupkg");
         fixture.CreateArchive(path);
         const string missing = "WorkflowDelivery.MissingNativeDependency";
-        // This deliberately defective test archive is never a product Pack output.
-        using (ZipArchive zip = ZipFile.Open(path, ZipArchiveMode.Update))
-        {
-            ZipArchiveEntry entry = zip.GetEntry("product.nuspec")!;
-            XDocument document;
-            using (Stream input = entry.Open()) document = XDocument.Load(input);
-            document.Root!.Element("metadata")!.Add(new XElement("dependencies",
-                new XElement("dependency", new XAttribute("id", missing),
-                    new XAttribute("version", "[1.0.0]"))));
-            entry.Delete();
-            using Stream output = zip.CreateEntry("product.nuspec").Open();
-            document.Save(output);
-        }
+        AddMissingDependency(path, missing);
         var original = new DotNetOriginalPackage("product", "package", "package",
             "primary-package", "nuget-package", path, new FileInfo(path).Length,
             DotNetPackageArchive.Digest(path));
@@ -131,6 +122,99 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         Assert.Contains("NU1101", restore.Result.Stdout + restore.Result.Stderr);
         Assert.Contains(missing, restore.Result.Stdout + restore.Result.Stderr);
         Assert.AreEqual(original.Sha256, DotNetPackageArchive.Digest(original.Path));
+    }
+
+    [TestMethod]
+    public async Task NativeConsumerCannotBorrowDependencyFromImplicitSdkFeed()
+    {
+        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        string path = Path.Combine(fixture.Scratch, "WorkflowDelivery.Tests.1.0.0.nupkg");
+        fixture.CreateArchive(path);
+        const string missing = "WorkflowDelivery.ImplicitSdkDependency";
+        AddMissingDependency(path, missing);
+        var original = new DotNetOriginalPackage("product", "package", "package",
+            "primary-package", "nuget-package", path, new FileInfo(path).Length,
+            DotNetPackageArchive.Digest(path));
+        string sdkFeed = Directory.CreateDirectory(Path.Combine(fixture.Scratch, "sdk-feed"))
+            .FullName;
+        string readme = Path.Combine(fixture.Scratch, "dependency-readme.md");
+        await File.WriteAllTextAsync(readme, "Owned native source sensitivity package.",
+            context.CancellationToken);
+        var dependency = new PackageBuilder
+        {
+            Id = missing,
+            Version = new NuGetVersion(1, 0, 0),
+            Description = "Dependency available only in the owned implicit SDK feed."
+        };
+        dependency.Authors.Add("WorkflowDelivery.Tests");
+        dependency.Files.Add(new PhysicalPackageFile
+        { SourcePath = readme, TargetPath = "README.md" });
+        using (Stream output = File.Create(Path.Combine(sdkFeed, missing + ".1.0.0.nupkg")))
+            dependency.Save(output);
+
+        foreach (bool enableSource in new[] { false, true })
+        {
+            string fresh = Directory.CreateDirectory(Path.Combine(fixture.Scratch,
+                enableSource ? "source-enabled" : "source-isolated")).FullName;
+            var observations = new List<NativeCommandResult>();
+            InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+                () =>
+                DotNetPackageConsumer.RunAsync(original, fixture.Values, fresh, 60,
+                    async (command, token) =>
+                    {
+                        var environment = new Dictionary<string, string?>(command.Environment!)
+                        { ["_WorkloadLibraryPacksFolder"] = sdkFeed };
+                        string[] arguments = enableSource
+                            ? [.. command.Arguments,
+                                "-property:DisableImplicitLibraryPacksFolder=false"]
+                            : command.Arguments;
+                        NativeCommandResult native = await NativeProcess.ExecuteAsync(
+                            command with { Arguments = arguments, Environment = environment },
+                            token);
+                        observations.Add(native);
+                        context.WriteLine(native.Stdout + native.Stderr);
+                        if (!native.Succeeded)
+                            throw new InvalidDataException(
+                                "Native isolated dependency restore failed.");
+                        return native;
+                    }, context.CancellationToken));
+            NativeCommandResult restore = Assert.ContainsSingle(observations);
+            if (enableSource)
+            {
+                Assert.IsTrue(restore.Succeeded, "The native sensitivity restore must succeed.");
+                Assert.Contains("source count", failure.Message);
+                LockFile assets = new LockFileFormat().Read(
+                    Path.Combine(fresh, "consumer", "obj", "project.assets.json"));
+                Assert.Contains(missing, assets.Libraries.Select(item => item.Name).ToArray());
+                string installed = new VersionFolderPathResolver(Path.Combine(fresh, "packages"))
+                    .GetPackageFilePath(missing, dependency.Version);
+                Assert.IsTrue(File.Exists(installed),
+                    "The control dependency was really restored.");
+            }
+            else
+            {
+                Assert.IsFalse(restore.Succeeded);
+                Assert.Contains("isolated dependency restore failed", failure.Message);
+                Assert.Contains("NU1101", restore.Stdout + restore.Stderr);
+                Assert.Contains(missing, restore.Stdout + restore.Stderr);
+            }
+            Assert.AreEqual(original.Sha256, DotNetPackageArchive.Digest(original.Path));
+        }
+    }
+
+    private static void AddMissingDependency(string path, string missing)
+    {
+        // This deliberately defective test archive is never a product Pack output.
+        using ZipArchive zip = ZipFile.Open(path, ZipArchiveMode.Update);
+        ZipArchiveEntry entry = zip.GetEntry("product.nuspec")!;
+        XDocument document;
+        using (Stream input = entry.Open()) document = XDocument.Load(input);
+        document.Root!.Element("metadata")!.Add(new XElement("dependencies",
+            new XElement("dependency", new XAttribute("id", missing),
+                new XAttribute("version", "[1.0.0]"))));
+        entry.Delete();
+        using Stream output = zip.CreateEntry("product.nuspec").Open();
+        document.Save(output);
     }
 
     private void Retain(ProductFixture fixture, DotNetPackageRunResult result, string label)

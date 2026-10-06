@@ -58,6 +58,7 @@ internal static class DotNetPackageConsumer
                 new XElement("ImportDirectoryBuildProps", "false"),
                 new XElement("ImportDirectoryBuildTargets", "false"),
                 new XElement("ManagePackageVersionsCentrally", "false"),
+                new XElement("DisableImplicitLibraryPacksFolder", "true"),
                 new XElement("RestoreFallbackFolders", ""),
                 new XElement("RestoreAdditionalProjectFallbackFolders", ""),
                 new XElement("RestoreAdditionalProjectSources", "")),
