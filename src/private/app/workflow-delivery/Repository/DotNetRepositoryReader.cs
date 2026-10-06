@@ -261,7 +261,8 @@ internal sealed class DotNetRepositoryReader
         return (Absolute(identity.Project), JsonSerializer.Serialize(properties
             .Select(pair => new KeyValuePair<string, string>(
                 pair.Key.ToUpperInvariant(), pair.Value))
-            .OrderBy(pair => pair.Key, StringComparer.Ordinal).ToArray()));
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal).ToArray(),
+            TransferJson.Default.KeyValuePairStringStringArray));
     }
 
     internal sealed class NativeIdentityComparer :
@@ -339,5 +340,7 @@ internal sealed class DotNetRepositoryReader
     private InvalidDataException Unavailable(string role, string reason,
         DotNetNodeIdentity? consumer = null) => new($"Native .NET fact unavailable at " +
         $"revision {checkout.Revision.Commit}, endpoint {checkout.Root}, " +
-        $"consumer {JsonSerializer.Serialize(consumer)}, role {role}: {reason}");
+        $"consumer {JsonSerializer.Serialize(consumer,
+            TransferJson.Default.DotNetNodeIdentity)}, " +
+        $"role {role}: {reason}");
 }

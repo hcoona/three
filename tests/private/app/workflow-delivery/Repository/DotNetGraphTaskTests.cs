@@ -1,5 +1,6 @@
 using System.Security;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using NuGet.ProjectModel;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -566,6 +567,27 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     }
 
     [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task UnavailableNativeGlobalsKeepTheirDiagnosticWithoutReflection()
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", """
+            <Project><PropertyGroup>
+              <IsTestProject>malformed</IsTestProject>
+            </PropertyGroup></Project>
+            """);
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(context.CancellationToken, reflectionDisabled: true));
+        Assert.Contains("Reflection-disabled host verified", error.Message);
+        Assert.Contains("Malformed required native Boolean: malformed", error.Message);
+        Assert.Contains("role IsTestProject", error.Message);
+        Assert.Contains(GraphFixture.Revision, error.Message);
+        Assert.Contains(fixture.Root, error.Message);
+        Assert.Contains("RestoreLockedMode", error.Message);
+        Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
+    }
+
+    [TestMethod]
     [DataRow("src/public/lib/CircularList/CircularList.csproj", "SetPackageReleaseNotes")]
     [DataRow("src/public/lib/Hjg.Pngcs/Hjg.Pngcs.csproj", "SetPackageReleaseNotes")]
     [DataRow("src/public/lib/Memoization/Memoization.csproj", "SetPackageReleaseNotes")]
@@ -872,7 +894,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                     result.Error + "\n" + result.Stdout + result.Stderr);
         }
 
-        internal async Task<DotNetGraphResponse> ReadAsync(CancellationToken token)
+        internal async Task<DotNetGraphResponse> ReadAsync(CancellationToken token,
+            bool reflectionDisabled = false)
         {
             await PrepareAsync(token);
             Write("request.json", JsonSerializer.Serialize(new DotNetGraphRequest(Revision,
@@ -891,8 +914,48 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                   </Target>
                 </Project>
                 """);
+            string[] launcher = ["msbuild"];
+            if (reflectionDisabled)
+            {
+                NativeCommandResult location = await NativeProcess.ExecuteAsync(new("dotnet", Root,
+                    ["msbuild", PathOf("read.proj"), "-nologo", "-noAutoResponse",
+                        "-getProperty:MSBuildToolsPath"], 30), token);
+                Assert.IsTrue(location.Succeeded,
+                    location.Stdout + location.Stderr + location.Error);
+                string nativeDirectory = location.Stdout.Trim();
+                Assert.IsTrue(System.IO.Path.IsPathFullyQualified(nativeDirectory));
+                JsonNode runtime = JsonNode.Parse(await File.ReadAllTextAsync(
+                    System.IO.Path.Combine(nativeDirectory, "MSBuild.runtimeconfig.json"), token))!;
+                runtime["runtimeOptions"]!["configProperties"]![
+                    "System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault"] = false;
+                Write("reflection-disabled.runtimeconfig.json", runtime.ToJsonString());
+                launcher = ["exec", "--runtimeconfig",
+                    PathOf("reflection-disabled.runtimeconfig.json"),
+                    System.IO.Path.Combine(nativeDirectory, "MSBuild.dll")];
+                string jsonAssembly = SecurityElement.Escape(
+                    typeof(JsonSerializer).Assembly.Location)!;
+                string wrapper = await File.ReadAllTextAsync(PathOf("read.proj"), token);
+                Write("read.proj", wrapper.Replace("<Target Name=\"Read\">", $"""
+                    <UsingTask TaskName="VerifyReflectionDisabled"
+                        TaskFactory="RoslynCodeTaskFactory"
+                        AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+                      <Task>
+                        <Reference Include="{jsonAssembly}" />
+                        <Code Type="Fragment" Language="cs"><![CDATA[
+                          if (System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault)
+                            throw new System.InvalidOperationException(
+                              "JSON reflection remains enabled.");
+                          Log.LogMessage(Microsoft.Build.Framework.MessageImportance.High,
+                            "Reflection-disabled host verified");
+                        ]]></Code>
+                      </Task>
+                    </UsingTask>
+                    <Target Name="Read">
+                      <VerifyReflectionDisabled />
+                    """, StringComparison.Ordinal));
+            }
             NativeCommandResult query = await NativeProcess.ExecuteAsync(new("dotnet", Root,
-                ["msbuild", PathOf("read.proj"), "-nologo", "-noAutoResponse", "-target:Read",
+                [.. launcher, PathOf("read.proj"), "-nologo", "-noAutoResponse", "-target:Read",
                     "-property:WrapperSentinel=wrapper-only"], 30), token);
             token.ThrowIfCancellationRequested();
             if (query.Termination == NativeTermination.TimedOut)

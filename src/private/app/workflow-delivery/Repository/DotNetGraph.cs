@@ -137,7 +137,8 @@ internal static class DotNetGraph
         InvalidDataException Unavailable(DotNetNodeIdentity identity, string role, string reason) =>
             new($"Native fact unavailable at revision {request.Revision}, endpoint {root}, " +
                 $"project {identity.Project}, globals " +
-                System.Text.Json.JsonSerializer.Serialize(identity.Globals) +
+                System.Text.Json.JsonSerializer.Serialize(identity.Globals,
+                    TransferJson.Default.DictionaryStringString) +
                 $", role {role}: {reason}");
 
         DotNetRestoreInputs[] RestoreInputs(ProjectGraphNode node)

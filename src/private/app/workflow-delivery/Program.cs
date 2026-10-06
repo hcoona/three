@@ -166,6 +166,7 @@ internal static class Program
 [JsonSerializable(typeof(ControlTestInputResponse))]
 [JsonSerializable(typeof(DotNetGraphRequest))]
 [JsonSerializable(typeof(DotNetGraphResponse))]
+[JsonSerializable(typeof(KeyValuePair<string, string>[]))]
 [JsonSerializable(typeof(DotNetRunRequest))]
 [JsonSerializable(typeof(DotNetRunResult))]
 [JsonSerializable(typeof(DotNetPackageRunResult))]
