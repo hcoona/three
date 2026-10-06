@@ -489,6 +489,205 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             input.Path == fixture.PathOf("source.cs")));
     }
 
+    [TestMethod]
+    [DataRow("true", "true", "MTP")]
+    [DataRow("TRUE", "malformed", "MTP")]
+    [DataRow("true", "false", "MTP")]
+    [DataRow("false", "true", "VSTest")]
+    [DataRow("", "TRUE", "VSTest")]
+    [DataRow("false", "false", "None")]
+    [DataRow("", "", "None")]
+    [DataRow("FALSE", "", "None")]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task NativeTestCapabilitiesFollowEvaluatedPrecedence(
+        string mtp, string vstest, string expected)
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", """
+            <Project><ItemGroup><ProjectReference Include="main.csproj" /></ItemGroup></Project>
+            """);
+        fixture.Write("main.csproj", $"""
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+              <TargetFrameworks>net10.0;net9.0</TargetFrameworks>
+              <IsTestingPlatformApplication>{mtp}</IsTestingPlatformApplication>
+              <IsTestProject>{vstest}</IsTestProject>
+            </PropertyGroup></Project>
+            """);
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+        DotNetGraphNode[] nodes = response.Nodes.Where(node =>
+            PhysicalPathComparer.Equals(node.Identity.Project, fixture.PathOf("main.csproj")))
+            .ToArray();
+        Assert.HasCount(3, nodes);
+        Assert.HasCount(1, nodes.Where(node => node.OuterBuild));
+        Assert.HasCount(1, nodes.Where(node => node.Dimension.TargetFramework == "net10.0"));
+        Assert.HasCount(1, nodes.Where(node => node.Dimension.TargetFramework == "net9.0"));
+        foreach (DotNetGraphNode node in nodes)
+        {
+            Assert.AreEqual(expected, node.TestCapability);
+            Assert.AreEqual("Debug", node.Identity.Globals["Configuration"]);
+            Assert.AreEqual("true", node.Identity.Globals["RestoreLockedMode"]);
+        }
+        Assert.AreEqual("None", response.Nodes.Single(node =>
+            PhysicalPathComparer.Equals(node.Identity.Project, fixture.PathOf("dirs.proj")))
+            .TestCapability);
+    }
+
+    [TestMethod]
+    [DataRow("malformed", "true", "IsTestingPlatformApplication")]
+    [DataRow("", "malformed", "IsTestProject")]
+    [DataRow("false", "malformed", "IsTestProject")]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task MalformedRequiredTestCapabilitiesFailWithoutAResponse(
+        string mtp, string vstest, string role)
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", $"""
+            <Project><PropertyGroup>
+              <IsTestingPlatformApplication>{mtp}</IsTestingPlatformApplication>
+              <IsTestProject>{vstest}</IsTestProject>
+            </PropertyGroup></Project>
+            """);
+        await fixture.PrepareAsync(context.CancellationToken);
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(context.CancellationToken));
+        Assert.Contains(role, error.Message);
+        Assert.Contains(GraphFixture.Revision, error.Message);
+        Assert.Contains(fixture.Root, error.Message);
+        Assert.IsTrue(error.Message.Contains(fixture.PathOf("dirs.proj"),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
+                StringComparison.Ordinal));
+        Assert.Contains("RestoreLockedMode", error.Message);
+        Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
+    }
+
+    [TestMethod]
+    [DataRow("src/public/lib/CircularList/CircularList.csproj", "SetPackageReleaseNotes")]
+    [DataRow("src/public/lib/Hjg.Pngcs/Hjg.Pngcs.csproj", "SetPackageReleaseNotes")]
+    [DataRow("src/public/lib/Memoization/Memoization.csproj", "SetPackageReleaseNotes")]
+    [DataRow("src/public/lib/MicrosoftExtensions.Logging.MSTest/" +
+        "MicrosoftExtensions.Logging.MSTest.csproj",
+        "SetPackageReleaseNotes")]
+    [DataRow("src/public/lib/MicrosoftExtensions.Logging.Xunit/" +
+        "MicrosoftExtensions.Logging.Xunit.csproj",
+        "SetPackageReleaseNotes")]
+    [DataRow("src/public/lib/MicrosoftExtensions.Options.DedupChangeExtensions/" +
+        "MicrosoftExtensions.Options.DedupChangeExtensions.csproj",
+        "SetPackageReleaseNotes")]
+    [DataRow("src/public/lib/PhiFailureDetector/PhiFailureDetector.csproj",
+        "SetPackageReleaseNotes")]
+    [DataRow("src/public/lib/WebHdfs.Extensions.FileProviders/" +
+        "WebHdfs.Extensions.FileProviders.csproj",
+        "SetPackageReleaseNotes")]
+    [DataRow("src/private/app/workflow-delivery/WorkflowDelivery.csproj", "ReferenceOfficialNbgv")]
+    [DataRow("tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj",
+        "ReferenceOfficialNbgv")]
+    [DataRow("tests/public/lib/WebHdfs.Extensions.FileProviders.UnitTest/" +
+        "WebHdfs.Extensions.FileProviders.UnitTest.csproj",
+        "PreBuild")]
+    [DataRow("dirs.proj", "RestoreWindowsOnlyProjectsOnNonWindows")]
+    [DataRow("src/public/lib/hcoona-release-smoke-github-packages/" +
+        "hcoona-release-smoke-github-packages.csproj",
+        "ValidateWorkflowDeliveryFrozenInputs")]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task SupportedRepositoryProducersRetainNativeConsumers(string origin, string name)
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write(origin, """
+            <Project>
+            """ + $"<Target Name=\"{name.ToLowerInvariant()}\" />" + "</Project>",
+            restoreProject: false);
+        if (origin != "dirs.proj")
+            fixture.Write("dirs.proj", $"<Project><Import Project=\"{origin}\" /></Project>");
+        fixture.CommittedPaths = [fixture.PathOf(origin)];
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+        DotNetGraphNode node = Assert.ContainsSingle(response.Nodes);
+        Assert.AreEqual("None", node.TestCapability);
+        DotNetGraphInput input = Assert.ContainsSingle(response.Inputs.Where(input =>
+            PhysicalPathComparer.Equals(input.Path, fixture.PathOf(origin)) &&
+            input.Role == (origin == "dirs.proj" ? "Project" : "Import")));
+        Assert.AreEqual("Evaluation", input.Stage);
+        Assert.AreEqual(node.Identity.Project, input.Consumer.Project);
+        CollectionAssert.AreEquivalent(node.Identity.Globals.ToArray(),
+            input.Consumer.Globals.ToArray());
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task NativeTargetShadowingUsesWinningOrigin(bool unknownWins)
+    {
+        using var fixture = new GraphFixture();
+        const string origin = "src/private/app/workflow-delivery/WorkflowDelivery.csproj";
+        fixture.Write("shadow.targets",
+            "<Project><Target Name=\"ReferenceOfficialNbgv\" /></Project>");
+        string import = "<Import Project=\"../../../../shadow.targets\" />";
+        string target = "<Target Name=\"ReferenceOfficialNbgv\" />";
+        fixture.Write(origin, "<Project>" + (unknownWins ? target + import : import + target) +
+            "</Project>", restoreProject: false);
+        fixture.Write("dirs.proj", $"<Project><Import Project=\"{origin}\" /></Project>");
+        fixture.CommittedPaths = [fixture.PathOf(origin), fixture.PathOf("shadow.targets")];
+        await fixture.PrepareAsync(context.CancellationToken);
+        if (unknownWins)
+        {
+            InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+                fixture.ReadAsync(context.CancellationToken));
+            Assert.Contains("ReferenceOfficialNbgv", error.Message);
+            Assert.IsTrue(error.Message.Contains(fixture.PathOf("shadow.targets"),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
+                StringComparison.Ordinal));
+            Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
+        }
+        else
+        {
+            DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+            Assert.HasCount(1, response.Nodes);
+            Assert.HasCount(1, response.Inputs.Where(input => input.Role == "Import" &&
+                PhysicalPathComparer.Equals(input.Path, fixture.PathOf("shadow.targets"))));
+        }
+    }
+
+    [TestMethod]
+    [DataRow("UnknownProducer")]
+    [DataRow("ReferenceOfficialNbgv")]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task UnknownRepositoryProducersFailWithoutAResponse(string name)
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", $"<Project><Target Name=\"{name}\" /></Project>");
+        fixture.CommittedPaths = [fixture.PathOf("dirs.proj")];
+        await fixture.PrepareAsync(context.CancellationToken);
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(context.CancellationToken));
+        foreach (string expected in new[] { name, fixture.Root, GraphFixture.Revision,
+            "RepositoryTarget", "RestoreLockedMode" })
+            Assert.Contains(expected, error.Message);
+        Assert.IsTrue(error.Message.Contains(fixture.PathOf("dirs.proj"),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
+                StringComparison.Ordinal));
+        Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
+    }
+
+    [TestMethod]
+    [DataRow("obj/generated.targets")]
+    [DataRow("packages/native/build/package.targets")]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task EnvironmentalTargetsInsideEndpointRemainNative(string origin)
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write(origin,
+            "<Project><Target Name=\"UnknownEnvironmentalProducer\" /></Project>");
+        fixture.Write("dirs.proj", $"<Project><Import Project=\"{origin}\" /></Project>");
+        fixture.CommittedPaths = [fixture.PathOf("dirs.proj")];
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+        Assert.HasCount(1, response.Nodes);
+        DotNetGraphInput input = Assert.ContainsSingle(response.Inputs.Where(input =>
+            input.Role == "Import" &&
+            PhysicalPathComparer.Equals(input.Path, fixture.PathOf(origin))));
+        Assert.AreEqual(response.Nodes[0].Identity.Project, input.Consumer.Project);
+        Assert.AreEqual("Evaluation", input.Stage);
+    }
+
     private sealed class GraphFixture : IDisposable
     {
         internal const string Revision = "1111111111111111111111111111111111111111";
@@ -530,12 +729,12 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         }
         internal string PathOf(string name) => System.IO.Path.GetFullPath(
             System.IO.Path.Combine(Root, name));
-        internal void Write(string name, string content)
+        internal void Write(string name, string content, bool restoreProject = true)
         {
             string path = PathOf(name);
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
             File.WriteAllText(path, content);
-            if (new[] { ".csproj", ".fsproj", ".vbproj" }.Contains(
+            if (restoreProject && new[] { ".csproj", ".fsproj", ".vbproj" }.Contains(
                 System.IO.Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
                 _projects.Add(path);
         }
@@ -586,9 +785,16 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                   </Target>
                 </Project>
                 """);
-            await NativeProcess.RunAsync("dotnet", Root,
+            NativeCommandResult query = await NativeProcess.ExecuteAsync(new("dotnet", Root,
                 ["msbuild", PathOf("read.proj"), "-nologo", "-noAutoResponse", "-target:Read",
-                    "-property:WrapperSentinel=wrapper-only"], token);
+                    "-property:WrapperSentinel=wrapper-only"], 30), token);
+            token.ThrowIfCancellationRequested();
+            if (query.Termination == NativeTermination.TimedOut)
+                throw new TimeoutException(query.Error);
+            if (!query.Succeeded)
+                throw new InvalidDataException(
+                    $"Native graph {query.Termination}, exit {query.ExitCode}: " +
+                    query.Error + "\n" + query.Stdout + query.Stderr);
             return JsonSerializer.Deserialize(await File.ReadAllTextAsync(
                 PathOf("response.json"), token), TransferJson.Default.DotNetGraphResponse)
                 ?? throw new InvalidDataException("Missing graph response.");
