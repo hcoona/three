@@ -234,9 +234,26 @@ Evaluated CPM paths and finite SDK/Directory.Build/CPM/NuGet/lock search candida
 remain separate input roles. Candidates cover possible additions; the application
 does not resolve configuration hierarchy or reconstruct Roslyn's search.
 
+Each node's `TestCapability` reads evaluated `IsTestingPlatformApplication`
+first: true selects MTP. Only otherwise is `IsTestProject` needed to select
+VSTest; false or absent selects no test capability. Malformed required nonempty
+values fail with revision, endpoint, complete node identity and property role.
+Capability is metadata; runnable output still needs Build/inner GetTargetPath.
+
+[`DotNetRepositoryTargets`](Repository/DotNetRepositoryTargets.cs) reads the native
+effective target dictionary and definition origins. Concrete repository
+origin/name pairs identify the supported operation adapters. An unsupported
+committed repository producer fails with native coordinates instead of assuming
+its I/O. Uncommitted SDK/package/generated definitions remain native; physical residence
+under the endpoint does not establish committed repository ownership. Native
+shadowing selects the winning definition. Existing project/import consumer rows
+retain definition impact, without an extra target record, body parser, condition
+evaluator, SDK task allowlist or hash admission policy. Native conditions and
+effects are unchanged.
+
 This is a partial native fact producer, exercised by isolated actual-process
 contract tests. Repository endpoint preparation, complete finite input
-coverage, repository producer adapters, native test output/capability, exact Git
+coverage, additional producer adapters, native test output, exact Git
 binding, both-endpoint assembly, selected execution and workflow transfer remain
 pending. No CLI caller or general .NET CI cutover uses this task yet.
 

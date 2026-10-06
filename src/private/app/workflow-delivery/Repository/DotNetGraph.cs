@@ -8,7 +8,7 @@ internal sealed record DotNetGraphRequest(string Revision, string Root, string E
 internal sealed record DotNetNodeIdentity(string Project, Dictionary<string, string> Globals);
 internal sealed record DotNetGraphNode(DotNetNodeIdentity Identity, bool OuterBuild,
     MsBuildDimension Dimension, string TargetFrameworks, string RuntimeIdentifiers,
-    string[] OwnedPaths);
+    string[] OwnedPaths, string TestCapability);
 internal sealed record DotNetGraphEdge(DotNetNodeIdentity Consumer, DotNetNodeIdentity Dependency);
 internal sealed record DotNetGraphInput(string Path, string Role, string Stage,
     DotNetNodeIdentity Consumer);
@@ -55,9 +55,12 @@ internal static class DotNetGraph
             node => Identity(node.ProjectInstance));
         var ownership = new DotNetOwnership(root, graph.ProjectNodes.Select(node =>
             node.ProjectInstance), request.CommittedPaths);
+        var producers = new DotNetRepositoryTargets(root, request.CommittedPaths);
         DotNetGraphNode[] nodes = graph.ProjectNodes.Select(node =>
         {
             ProjectInstance project = node.ProjectInstance;
+            producers.Validate(project, reason => Unavailable(identities[node],
+                "RepositoryTarget", reason));
             string outer = project.GetPropertyValue("IsCrossTargetingBuild");
             if (outer != "" && !bool.TryParse(outer, out _))
                 throw new InvalidDataException("Unsupported native outer-build identity.");
@@ -67,7 +70,8 @@ internal static class DotNetGraph
                     project.GetPropertyValue("TargetFramework"),
                     project.GetPropertyValue("RuntimeIdentifier")),
                 project.GetPropertyValue("TargetFrameworks"),
-                project.GetPropertyValue("RuntimeIdentifiers"), ownership.Read(project));
+                project.GetPropertyValue("RuntimeIdentifiers"), ownership.Read(project),
+                TestCapability(project, identities[node]));
         }).ToArray();
         DotNetGraphEdge[] edges = graph.ProjectNodes.SelectMany(node =>
             node.ProjectReferences.Select(dependency =>
@@ -88,6 +92,26 @@ internal static class DotNetGraph
                 .Concat(RestoreInputs(node));
         }).ToArray();
         return new(request.Revision, root, entry, nodes, edges, inputs);
+
+        string TestCapability(ProjectInstance project, DotNetNodeIdentity identity)
+        {
+            if (Property("IsTestingPlatformApplication")) return "MTP";
+            return Property("IsTestProject") ? "VSTest" : "None";
+
+            bool Property(string name)
+            {
+                string value = project.GetPropertyValue(name);
+                if (value.Length == 0) return false;
+                if (bool.TryParse(value, out bool enabled)) return enabled;
+                throw Unavailable(identity, name, "Malformed required native Boolean: " + value);
+            }
+        }
+
+        InvalidDataException Unavailable(DotNetNodeIdentity identity, string role, string reason) =>
+            new($"Native fact unavailable at revision {request.Revision}, endpoint {root}, " +
+                $"project {identity.Project}, globals " +
+                System.Text.Json.JsonSerializer.Serialize(identity.Globals) +
+                $", role {role}: {reason}");
 
         IEnumerable<DotNetGraphInput> RestoreInputs(ProjectGraphNode node)
         {
