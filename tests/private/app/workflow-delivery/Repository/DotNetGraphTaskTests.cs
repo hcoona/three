@@ -1,5 +1,6 @@
 using System.Security;
 using System.Text.Json;
+using NuGet.ProjectModel;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
@@ -8,6 +9,9 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class DotNetGraphTaskTests(TestContext context)
 {
+    private static readonly StringComparer PhysicalPathComparer = OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
     [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
     public async Task LoadedNativeGraphPreservesInnerVariantsAndReferenceEdges()
@@ -31,11 +35,11 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             """);
         fixture.Write("dependency.csproj", """
             <Project Sdk="Microsoft.NET.Sdk">
-              <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+              <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>
               <ItemGroup><ProjectReference Include="leaf.csproj" /></ItemGroup>
             </Project>
             """);
-        fixture.Write("leaf.csproj", GraphFixture.Project);
+        fixture.Write("leaf.csproj", GraphFixture.Project.Replace("net10.0", "net9.0"));
         fixture.Write("analyzer.csproj", GraphFixture.Project);
         DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
         Assert.AreEqual(GraphFixture.Revision, response.Revision);
@@ -100,6 +104,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             </Project>
             """);
         fixture.Globals.Add(name, value);
+        await fixture.PrepareAsync(context.CancellationToken);
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
         Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
@@ -213,6 +218,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             </PropertyGroup></Project>
             """);
         fixture.CommittedPaths = [fixture.PathOf("source.cs")];
+        await fixture.PrepareAsync(context.CancellationToken);
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
         Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
@@ -265,6 +271,224 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         }
     }
 
+    [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task LockedRestoreInputsRetainAllNativeConsumers()
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", """
+            <Project><ItemGroup><ProjectReference Include="multi.csproj" /></ItemGroup></Project>
+            """);
+        fixture.Write("Directory.Packages.props", """
+            <Project><PropertyGroup>
+              <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+            </PropertyGroup></Project>
+            """);
+        fixture.Write("multi.csproj", """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+              <TargetFrameworks>net10.0;net9.0</TargetFrameworks>
+              <NuGetLockFilePath>locks/multi.json</NuGetLockFilePath>
+            </PropertyGroup></Project>
+            """);
+        fixture.Write("locks/.keep", "");
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+        DotNetGraphNode[] managed = response.Nodes.Where(node =>
+            node.Identity.Project == fixture.PathOf("multi.csproj")).ToArray();
+        Assert.HasCount(3, managed);
+        Assert.HasCount(1, managed.Where(node => node.OuterBuild));
+        foreach (DotNetGraphNode node in managed)
+        {
+            foreach ((string path, string role, string stage) in new[]
+            {
+                ("obj/multi/project.assets.json", "RestoreAssets", "LockedRestore"),
+                ("locks/multi.json", "RestoreLock", "LockedRestore"),
+                ("nuget.config", "RestoreConfiguration", "LockedRestore"),
+                ("Directory.Packages.props", "CentralPackageConfiguration", "Evaluation"),
+                ("global.json", "SdkConfigurationCandidate", "Evaluation"),
+                ("packages.lock.json", "RestoreLockCandidate", "Evaluation"),
+            })
+            {
+                string expectedPath = fixture.PathOf(path);
+                DotNetGraphInput input = Assert.ContainsSingle(response.Inputs.Where(input =>
+                    PhysicalPathComparer.Equals(input.Path, expectedPath) && input.Role == role &&
+                    input.Consumer.Project == node.Identity.Project &&
+                    input.Consumer.Globals.OrderBy(pair => pair.Key).SequenceEqual(
+                        node.Identity.Globals.OrderBy(pair => pair.Key))),
+                    $"Expected {role} at {expectedPath} for {node.Identity.Project} " +
+                    $"[{string.Join(", ", node.Identity.Globals)}]. Native inputs: " +
+                    string.Join("; ", response.Inputs.Where(input => input.Role == role)
+                        .Select(input => $"{input.Path} for {input.Consumer.Project} " +
+                            $"[{string.Join(", ", input.Consumer.Globals)}]")));
+                Assert.AreEqual(stage, input.Stage);
+            }
+        }
+        Assert.IsFalse(response.Inputs.Any(input => input.Role == "RestoreAssets" &&
+            input.Consumer.Project == fixture.PathOf("dirs.proj")));
+        Assert.IsFalse(File.Exists(fixture.PathOf("global.json")));
+    }
+
+    [TestMethod]
+    [DataRow("missing-assets")]
+    [DataRow("unsupported-format")]
+    [DataRow("missing-project")]
+    [DataRow("missing-restore")]
+    [DataRow("wrong-project")]
+    [DataRow("unlocked")]
+    [DataRow("empty-configurations")]
+    [DataRow("missing-root-contributor")]
+    [DataRow("uncommitted-root-configuration")]
+    [DataRow("missing-lock")]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task MissingOrDifferentRestoreMetadataFailsWithoutAResponse(string scenario)
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", """
+            <Project><ItemGroup><ProjectReference Include="main.csproj" /></ItemGroup></Project>
+            """);
+        fixture.Write("main.csproj", GraphFixture.Project);
+        await fixture.PrepareAsync(context.CancellationToken);
+        string path = fixture.PathOf("obj/main/project.assets.json");
+        var format = new LockFileFormat();
+        LockFile assets = format.Read(path);
+        switch (scenario)
+        {
+            case "missing-assets": File.Delete(path); break;
+            case "missing-lock": File.Delete(fixture.PathOf("packages.main.lock.json")); break;
+            case "unsupported-format": assets.Version = LockFileFormat.Version + 1; break;
+            case "missing-project": assets.PackageSpec = null; break;
+            case "missing-restore": assets.PackageSpec.RestoreMetadata = null; break;
+            case "wrong-project":
+                assets.PackageSpec.RestoreMetadata.ProjectPath = fixture.PathOf("other.csproj");
+                break;
+            case "unlocked":
+                assets.PackageSpec.RestoreMetadata.RestoreLockProperties = new("true", null, false);
+                break;
+            case "empty-configurations":
+                assets.PackageSpec.RestoreMetadata.ConfigFilePaths.Clear();
+                break;
+            case "missing-root-contributor":
+                string rootConfiguration = fixture.PathOf("nuget.config");
+                var configurations = assets.PackageSpec.RestoreMetadata.ConfigFilePaths;
+                string contributor = Assert.ContainsSingle(configurations.Where(configuration =>
+                    PhysicalPathComparer.Equals(configuration, rootConfiguration)),
+                    $"Expected one root contributor at {rootConfiguration}. Native contributors: " +
+                    string.Join("; ", configurations));
+                Assert.IsTrue(configurations.Remove(contributor));
+                break;
+            case "uncommitted-root-configuration": fixture.IncludeRootConfiguration = false; break;
+        }
+        if (scenario is not ("missing-assets" or "missing-lock")) format.Write(path, assets);
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(context.CancellationToken));
+        Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
+    }
+
+    [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task NativeRestoreRetainsRidAndRedirectedCpm()
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", """
+            <Project><ItemGroup><ProjectReference Include="main.csproj" /></ItemGroup></Project>
+            """);
+        fixture.Write("Directory.Build.props", File.ReadAllText(
+            fixture.PathOf("Directory.Build.props")).Replace("</PropertyGroup>",
+            "<DirectoryPackagesPropsPath>$(MSBuildThisFileDirectory)config/packages.props" +
+            "</DirectoryPackagesPropsPath></PropertyGroup>"));
+        fixture.Write("config/packages.props", """
+            <Project><PropertyGroup>
+              <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+            </PropertyGroup></Project>
+            """);
+        fixture.Write("main.csproj", """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+              <TargetFramework>net10.0</TargetFramework>
+              <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+              <UseAppHost>false</UseAppHost>
+            </PropertyGroup></Project>
+            """);
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+        DotNetGraphNode consumer = Assert.ContainsSingle(response.Nodes.Where(node =>
+            node.Identity.Project == fixture.PathOf("main.csproj")));
+        Assert.AreEqual("linux-x64", consumer.Dimension.RuntimeIdentifier);
+        LockFile assets = new LockFileFormat().Read(fixture.PathOf("obj/main/project.assets.json"));
+        Assert.IsTrue(assets.Targets.Count > 1);
+        Assert.IsTrue(assets.Targets.Any(target => target.RuntimeIdentifier == "linux-x64"));
+        foreach ((string path, string role) in new[]
+        {
+            ("config/packages.props", "CentralPackageConfiguration"),
+            ("packages.main.lock.json", "RestoreLock"),
+            ("obj/main/project.assets.json", "RestoreAssets"),
+        })
+        {
+            DotNetGraphInput input = Assert.ContainsSingle(response.Inputs.Where(input =>
+                input.Path == fixture.PathOf(path) && input.Role == role));
+            Assert.AreEqual(consumer.Identity.Project, input.Consumer.Project);
+            CollectionAssert.AreEquivalent(consumer.Identity.Globals.ToArray(),
+                input.Consumer.Globals.ToArray());
+        }
+    }
+
+    [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task NativeAnalyzerConfigCandidatesPreserveAbsentLinkedPaths()
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", """
+            <Project><ItemGroup>
+              <ProjectReference Include="product/main.csproj" />
+            </ItemGroup></Project>
+            """);
+        fixture.Write("product/main.csproj", """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+              <TargetFramework>net10.0</TargetFramework>
+            </PropertyGroup><ItemGroup>
+              <Compile Include="../linked/source.cs" />
+            </ItemGroup></Project>
+            """);
+        fixture.Write("linked/source.cs", "");
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+        DotNetGraphNode consumer = Assert.ContainsSingle(response.Nodes.Where(node =>
+            node.Identity.Project == fixture.PathOf("product/main.csproj")));
+        foreach ((string path, string role) in new[]
+        {
+            ("linked/.editorconfig", "PotentialEditorConfigFiles"),
+            ("linked/.globalconfig", "GlobalAnalyzerConfigFiles"),
+        })
+        {
+            DotNetGraphInput input = Assert.ContainsSingle(response.Inputs.Where(input =>
+                input.Path == fixture.PathOf(path) && input.Role == role));
+            Assert.AreEqual(consumer.Identity.Project, input.Consumer.Project);
+            CollectionAssert.AreEquivalent(consumer.Identity.Globals.ToArray(),
+                input.Consumer.Globals.ToArray());
+            Assert.AreEqual("Evaluation", input.Stage);
+            Assert.IsFalse(File.Exists(input.Path));
+        }
+    }
+
+    [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task NativeAnalyzerConfigDiscoverySwitchesRemainEffective()
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", """
+            <Project><ItemGroup><ProjectReference Include="main.csproj" /></ItemGroup></Project>
+            """);
+        fixture.Write("main.csproj", """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+              <TargetFramework>net10.0</TargetFramework>
+              <DiscoverEditorConfigFiles>false</DiscoverEditorConfigFiles>
+              <DiscoverGlobalAnalyzerConfigFiles>false</DiscoverGlobalAnalyzerConfigFiles>
+            </PropertyGroup></Project>
+            """);
+        fixture.Write("source.cs", "");
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+        Assert.IsFalse(response.Inputs.Any(input =>
+            input.Role is "PotentialEditorConfigFiles" or "GlobalAnalyzerConfigFiles"));
+        Assert.IsTrue(response.Inputs.Any(input => input.Role == "Compile" &&
+            input.Path == fixture.PathOf("source.cs")));
+    }
+
     private sealed class GraphFixture : IDisposable
     {
         internal const string Revision = "1111111111111111111111111111111111111111";
@@ -283,8 +507,27 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         };
         internal string[] CommittedPaths { get; set; } = [];
         internal string? RequestRoot { get; set; }
+        internal bool IncludeRootConfiguration { get; set; } = true;
+        private readonly HashSet<string> _projects = new(StringComparer.Ordinal);
+        private bool _prepared;
 
-        internal GraphFixture() => Directory.CreateDirectory(Root);
+        internal GraphFixture()
+        {
+            Directory.CreateDirectory(Root);
+            Write("nuget.config", """
+                <configuration><packageSources><clear />
+                  <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+                </packageSources></configuration>
+                """);
+            Write("Directory.Build.props", """
+                <Project><PropertyGroup>
+                <BaseIntermediateOutputPath>obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+                  <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+                  <NuGetLockFilePath>packages.$(MSBuildProjectName).lock.json</NuGetLockFilePath>
+                  <NuGetAudit>false</NuGetAudit>
+                </PropertyGroup></Project>
+                """);
+        }
         internal string PathOf(string name) => System.IO.Path.GetFullPath(
             System.IO.Path.Combine(Root, name));
         internal void Write(string name, string content)
@@ -292,13 +535,46 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             string path = PathOf(name);
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
             File.WriteAllText(path, content);
+            if (new[] { ".csproj", ".fsproj", ".vbproj" }.Contains(
+                System.IO.Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+                _projects.Add(path);
+        }
+
+        internal async Task PrepareAsync(CancellationToken token)
+        {
+            if (_prepared) return;
+            foreach (string project in _projects)
+            {
+                string[] operation = ["-property:Configuration=Debug",
+                    "-property:ContinuousIntegrationBuild=true"];
+                // Seed only disposable fixture locks, then perform the supported locked operation.
+                await RestoreAsync(
+                    ["restore", project, "--use-lock-file", .. operation], token);
+                await RestoreAsync(
+                    ["restore", project, "--locked-mode", "--force", .. operation], token);
+            }
+            _prepared = true;
+        }
+
+        private async Task RestoreAsync(string[] arguments, CancellationToken token)
+        {
+            NativeCommandResult result = await NativeProcess.ExecuteAsync(
+                new("dotnet", Root, arguments, 30), token);
+            token.ThrowIfCancellationRequested();
+            if (!result.Succeeded)
+                throw new InvalidDataException(
+                    $"Fixture restore {result.Termination}, exit {result.ExitCode}: " +
+                    result.Error + "\n" + result.Stdout + result.Stderr);
         }
 
         internal async Task<DotNetGraphResponse> ReadAsync(CancellationToken token)
         {
+            await PrepareAsync(token);
             Write("request.json", JsonSerializer.Serialize(new DotNetGraphRequest(Revision,
                 RequestRoot ?? Root, PathOf("dirs.proj"), Globals, PathOf("response.json"),
-                CommittedPaths), TransferJson.Default.DotNetGraphRequest));
+                IncludeRootConfiguration ? [.. CommittedPaths, PathOf("nuget.config")]
+                    : CommittedPaths),
+                TransferJson.Default.DotNetGraphRequest));
             string assembly = SecurityElement.Escape(typeof(DotNetGraphTask).Assembly.Location)!;
             string request = SecurityElement.Escape(PathOf("request.json"))!;
             Write("read.proj", $"""

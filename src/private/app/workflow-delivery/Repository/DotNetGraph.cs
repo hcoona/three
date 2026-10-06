@@ -22,6 +22,7 @@ internal static class DotNetGraph
         "TargetFrameworks", "RuntimeIdentifier", "RuntimeIdentifiers"];
     private static readonly string[] EvaluatedInputTypes = ["Compile", "EmbeddedResource",
         "Content", "None", "AdditionalFiles", "Analyzer", "EditorConfigFiles",
+        "PotentialEditorConfigFiles",
         "GlobalAnalyzerConfigFiles", "ApplicationDefinition", "Page", "Resource",
         "SplashScreen"];
 
@@ -82,9 +83,36 @@ internal static class DotNetGraph
                 .Concat(EvaluatedInputTypes.SelectMany(type => project.GetItems(type)
                     .Select(item => new DotNetGraphInput(
                         Absolute(item.GetMetadataValue("FullPath")), type,
-                        "Evaluation", consumer))));
+                        "Evaluation", consumer))))
+                .Concat(DotNetConfigurationInputs.Candidates(project, consumer, root))
+                .Concat(RestoreInputs(node));
         }).ToArray();
         return new(request.Revision, root, entry, nodes, edges, inputs);
+
+        IEnumerable<DotNetGraphInput> RestoreInputs(ProjectGraphNode node)
+        {
+            ProjectInstance project = node.ProjectInstance;
+            if (!DotNetOwnership.IsManagedProject(project)) return [];
+            ProjectInstance[] sources = [project];
+            if (string.IsNullOrEmpty(project.GetPropertyValue("ProjectAssetsFile")) &&
+                string.Equals(project.GetPropertyValue("IsCrossTargetingBuild"), "true",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                // Outer nodes consume their native inner builds, not an invented assets path.
+                sources = node.ProjectReferences.Select(reference => reference.ProjectInstance)
+                    .Where(inner => string.Equals(inner.FullPath, project.FullPath,
+                        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
+                            StringComparison.Ordinal) &&
+                        !string.Equals(inner.GetPropertyValue("IsCrossTargetingBuild"), "true",
+                            StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+            }
+            if (sources.Length == 0)
+                throw new InvalidDataException(
+                    "Native outer restore contributors are unavailable.");
+            return sources.SelectMany(source => DotNetConfigurationInputs.Restore(source,
+                identities[node], root, request.CommittedPaths)).Distinct();
+        }
 
         DotNetNodeIdentity Identity(ProjectInstance project)
         {

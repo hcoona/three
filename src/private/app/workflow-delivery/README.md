@@ -218,8 +218,24 @@ independent of ordinary ownership, including an embedded resource excluded by a
 default file rule. Environmental and generated paths remain physical native facts
 for later role binding; they are not asserted to be committed source inputs.
 
+[`DotNetConfigurationInputs`](Repository/DotNetConfigurationInputs.cs) consumes
+prepared managed-project assets through the selected SDK's official NuGet model.
+Supported format, populated locked restore metadata, exact physical project and
+the committed endpoint `nuget.config` contributor are required. Actual NuGet
+configuration contributors and the official effective lock path retain each
+native consumer; assets retain a generated restore role. An outer node without
+an evaluated assets path consumes the same project's referenced native inner
+nodes. Traversal nodes do not require managed assets. Projection performs no
+restore or repair.
+
+Roslyn's evaluated `PotentialEditorConfigFiles` and `GlobalAnalyzerConfigFiles`
+retain absent linked-source candidates and respect native discovery switches.
+Evaluated CPM paths and finite SDK/Directory.Build/CPM/NuGet/lock search candidates
+remain separate input roles. Candidates cover possible additions; the application
+does not resolve configuration hierarchy or reconstruct Roslyn's search.
+
 This is a partial native fact producer, exercised by isolated actual-process
-contract tests. Locked endpoint preparation/configuration, complete finite input
+contract tests. Repository endpoint preparation, complete finite input
 coverage, repository producer adapters, native test output/capability, exact Git
 binding, both-endpoint assembly, selected execution and workflow transfer remain
 pending. No CLI caller or general .NET CI cutover uses this task yet.

@@ -63,7 +63,7 @@ internal sealed class DotNetOwnership
         }
     }
 
-    private static bool IsManagedProject(ProjectInstance project)
+    internal static bool IsManagedProject(ProjectInstance project)
     {
         string extension = Path.GetExtension(project.FullPath);
         return extension.Equals(".csproj", StringComparison.OrdinalIgnoreCase) ||
