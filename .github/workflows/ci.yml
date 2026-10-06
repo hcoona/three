@@ -230,7 +230,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 12.8.2
+          version: 12.9.0
 
       - name: Set up Node.js
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
@@ -693,7 +693,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 12.8.2
+          version: 12.9.0
 
       - name: Set up Node.js
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
@@ -727,6 +727,18 @@ jobs:
           python eng/scripts/run_node_ci_group.py retained \
             --directories "$RETAINED_DIRECTORIES" --adopted-directory "$ADOPTED_DIRECTORY" \
             --directory "$RUNNER_TEMP/retained-node"
+
+      - name: Retain selected Node command diagnostics
+        if: always() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: retained-node-${{ matrix.node-version }}
+          path: |
+            ${{ runner.temp }}/retained-node/*.json
+            ${{ runner.temp }}/retained-node/*.stdout
+            ${{ runner.temp }}/retained-node/*.stderr
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Reject canceled validation
         if: cancelled()
@@ -847,7 +859,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_v3 == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 12.8.2
+          version: 12.9.0
 
       - name: Set up Node.js
         if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_v3 == 'true'

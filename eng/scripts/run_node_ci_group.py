@@ -188,6 +188,8 @@ def build(root: Path, directory: Path, name: str) -> tuple[Path, Path]:
         "restore",
         CONTROL_PROJECT,
         "--locked-mode",
+        "--configfile",
+        str(root / "nuget.config"),
         *BUILD_PROPERTIES,
         "-binaryLogger:" + str(directory / (name + "-restore.binlog")),
     )
