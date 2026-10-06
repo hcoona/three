@@ -454,6 +454,61 @@ def test_successful_native_json_remains_quiet(tmp_path, monkeypatch, capsys):
     assert (tmp_path / "success.stderr").read_bytes() == b"warning"
 
 
+@pytest.mark.parametrize("failed_action", [None, "restore", "build", "target"])
+def test_control_build_uses_locked_native_runtime_preparation(
+    tmp_path, monkeypatch, failed_action
+):
+    """Keep control inputs pristine and stop on native prerequisite failure."""
+    root = tmp_path / "source"
+    target = root / "bin/Debug/net10.0/WorkflowDelivery.dll"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"control")
+    directory = tmp_path / "logs"
+    directory.mkdir()
+    calls = []
+    error = subprocess.CalledProcessError(
+        2, "mise", output=b"partial", stderr=b"locked prerequisite unavailable"
+    )
+
+    def native(checkout, carrier, label, *args):
+        calls.append((checkout, carrier, label, args))
+        if label == "control-" + str(failed_action):
+            raise error
+        return str(target) + "\n" if label == "control-target" else ""
+
+    monkeypatch.setattr(group, "run", native)
+    if failed_action:
+        with pytest.raises(subprocess.CalledProcessError) as captured:
+            group.build(root, directory, "control")
+        assert captured.value is error
+    else:
+        assert group.build(root, directory, "control") == (
+            directory / "control.binlog",
+            target,
+        )
+    labels = ["control-restore", "control-build", "control-target"]
+    if failed_action:
+        labels = labels[: labels.index("control-" + failed_action) + 1]
+    assert [label for _, _, label, _ in calls] == labels
+    for checkout, carrier, _, args in calls:
+        assert checkout == root
+        assert carrier == directory
+        assert args[:5] == ("mise", "exec", "--locked", "--", "dotnet")
+        assert group.CONTROL_PROJECT in args
+        assert set(group.BUILD_PROPERTIES) <= set(args)
+    restore = calls[0][3]
+    assert "--locked-mode" in restore
+    assert restore[restore.index("--configfile") + 1] == str(
+        root / "nuget.config"
+    )
+    if len(calls) > 1:
+        assert "-target:Build" in calls[1][3]
+        assert "-noAutoResponse" in calls[1][3]
+    if len(calls) > 2:
+        assert "-getProperty:TargetPath" in calls[2][3]
+        assert "-noAutoResponse" in calls[2][3]
+
+
 @pytest.mark.parametrize("probe_selected", [False, True])
 def test_retained_filters_exclude_only_adopted_and_keep_selected_probes(
     tmp_path, monkeypatch, probe_selected
