@@ -37,7 +37,7 @@ internal static class NodeGroupReader
             comparison.Basis, token);
         GitMaterialization after = await GitMaterialization.BindAsync(afterRoot,
             comparison.Candidate, token);
-        NodeScopeInputs scope = NodeScopeInputs.Read(await File.ReadAllTextAsync(
+        ScopeInputs scope = ScopeInputs.Read(await File.ReadAllTextAsync(
             request.ScopePath, token), comparison, request.Full);
         var basisReader = new NodeRepositoryReader(before);
         var candidateReader = new NodeRepositoryReader(after);

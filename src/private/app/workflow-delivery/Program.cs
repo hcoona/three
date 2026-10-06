@@ -122,7 +122,8 @@ internal static class Program
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    Converters = new[] { typeof(CheckStatusJsonConverter), typeof(NativeTerminationJsonConverter) },
+    Converters = new[] { typeof(CheckStatusJsonConverter), typeof(NativeTerminationJsonConverter),
+        typeof(CheckOriginJsonConverter) },
     WriteIndented = true,
     RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true,
@@ -147,3 +148,6 @@ internal sealed class CheckStatusJsonConverter()
 
 internal sealed class NativeTerminationJsonConverter()
     : JsonStringEnumConverter<NativeTermination>(allowIntegerValues: false);
+
+internal sealed class CheckOriginJsonConverter()
+    : JsonStringEnumConverter<CheckOrigin>(allowIntegerValues: false);

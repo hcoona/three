@@ -10,10 +10,10 @@ internal sealed record ScopeCoordinate(string Path, bool Present, string? Mode,
     ScopeResponsibility[] Reasons);
 
 // Responsibility is supplied by the retained selector. Consumption remains native facts.
-internal sealed record NodeScopeInputs(CiComparison Comparison, string[] ChangedPaths,
+internal sealed record ScopeInputs(CiComparison Comparison, string[] ChangedPaths,
     ScopeCoordinate[] Basis, ScopeCoordinate[] Candidate)
 {
-    internal static NodeScopeInputs Read(string text, GitComparison native, bool full)
+    internal static ScopeInputs Read(string text, GitComparison native, bool full)
     {
         using JsonDocument document = JsonDocument.Parse(text);
         JsonElement root = document.RootElement;

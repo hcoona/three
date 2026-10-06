@@ -233,7 +233,7 @@ public sealed class NodeGroupPlanningTests
         NodeRevisionInputs basis = Inputs(NodeScenario.Basis);
         NodeRevisionInputs candidate = Inputs(NodeScenario.Candidate);
         string[] paths = defect == "unknown" ? ["unknown/file.txt"] : [];
-        NodeScopeInputs scope = Scope(basis, candidate, paths);
+        ScopeInputs scope = Scope(basis, candidate, paths);
         if (defect == "revision")
             scope = scope with { Comparison = scope.Comparison with { Candidate = "other" } };
         if (defect == "native")
@@ -272,7 +272,7 @@ public sealed class NodeGroupPlanningTests
         },
     };
 
-    private static NodeScopeInputs Scope(NodeRevisionInputs basis,
+    private static ScopeInputs Scope(NodeRevisionInputs basis,
         NodeRevisionInputs candidate, string[] paths, bool full = false)
     {
         ScopeCoordinate[] Rows(GitRevision revision) => paths.Select(path =>

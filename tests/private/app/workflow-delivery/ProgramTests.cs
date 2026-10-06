@@ -13,6 +13,54 @@ namespace WorkflowDelivery.Tests;
 public sealed class ProgramTests
 {
     [TestMethod]
+    [DataRow(true, 0, "passed")]
+    [DataRow(false, 1, "missing")]
+    public void RunNativeRetainedPlanKeepsOriginAcrossOriginalResultTransfer(bool completed,
+        int expectedExit, string expectedStatus)
+    {
+        using var files = new TransferFiles();
+        const string path = "src/native/code.cs";
+        ProjectFacts project = Scenario.Project("native") with
+        {
+            OwnedPaths = [path],
+            QualityPreset = null,
+            Origin = CheckOrigin.NativeRetained,
+        };
+        PlanRequest request = Scenario.Request([project], path);
+        string requestPath = files.Write("request.json", JsonSerializer.Serialize(request,
+            TransferJson.Default.PlanRequest));
+        using var planOutput = new StringWriter();
+        using var planError = new StringWriter();
+
+        Assert.AreEqual(0, Program.Run(["ci", "plan", requestPath], planOutput, planError),
+            planError.ToString());
+        using JsonDocument document = JsonDocument.Parse(planOutput.ToString());
+        JsonElement check = document.RootElement.GetProperty("checks")[0];
+        Assert.AreEqual("NativeRetained", check.GetProperty("origins")[0].GetString());
+        Assert.AreEqual(0, check.GetProperty("qualityPresets").GetArrayLength());
+        CiPlan plan = JsonSerializer.Deserialize(planOutput.ToString(),
+            TransferJson.Default.CiPlan)!;
+        CollectionAssert.AreEqual(new[] { CheckOrigin.NativeRetained },
+            Assert.ContainsSingle(plan.Checks).Origins);
+        string planPath = files.Write("plan.json", planOutput.ToString());
+        CheckResult[] results = completed
+            ? [new(plan.Candidate, project.Checks[0].Key, CheckStatus.Passed)] : [];
+        string resultPath = files.Write("result.json", JsonSerializer.Serialize(results,
+            TransferJson.Default.CheckResultArray));
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        Assert.AreEqual(expectedExit, Program.Run(["ci", "result", planPath, resultPath],
+            output, error), error.ToString());
+        CiOutcome outcome = JsonSerializer.Deserialize(output.ToString(),
+            TransferJson.Default.CiOutcome)!;
+        Assert.AreEqual(completed, outcome.Satisfied);
+        Assert.AreEqual(expectedStatus, Assert.ContainsSingle(outcome.Checks).Status);
+        Assert.AreEqual(plan.Candidate, outcome.Candidate);
+        Assert.AreEqual(string.Empty, error.ToString());
+    }
+
+    [TestMethod]
     public void RunComparisonReadsNativePayloadAndEmitsMinimalTransfer()
     {
         using var files = new TransferFiles();
