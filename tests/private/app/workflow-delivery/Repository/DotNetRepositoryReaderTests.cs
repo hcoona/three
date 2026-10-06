@@ -42,7 +42,8 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
             files.Request, context.CancellationToken), TransferJson.Default.DotNetGraphRequest)!;
         Assert.AreEqual(fixture.Revision.Commit, request.Revision);
         Assert.HasCount(3, request.Globals);
-        Assert.Contains(fixture.PathOf("product/A.csproj"), request.CommittedPaths);
+        Assert.Contains(Path.GetFullPath(fixture.PathOf("product/A.csproj")),
+            request.CommittedPaths);
         Assert.IsFalse(request.Globals.Values.Contains(files.Wrapper, StringComparer.Ordinal));
         Assert.IsTrue(result.Inputs.All(input =>
             input.Path is null || !Path.IsPathRooted(input.Path)));
@@ -222,7 +223,7 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
         InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
             fixture.BindAsync);
         Assert.Contains("regular committed source", failure.Message);
-        Assert.Contains(path.Replace('/', Path.DirectorySeparatorChar), failure.Message);
+        Assert.Contains(path.Replace('\\', '/'), failure.Message.Replace('\\', '/'));
     }
 
     [TestMethod]
@@ -267,6 +268,7 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
             """);
         await fixture.Repo.SetAsync("Directory.Build.props", """
             <Project><PropertyGroup>
+              <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
               <BaseIntermediateOutputPath>obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
               <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
               <NuGetLockFilePath>packages.$(MSBuildProjectName).lock.json</NuGetLockFilePath>
