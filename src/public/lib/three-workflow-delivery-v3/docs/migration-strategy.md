@@ -188,6 +188,129 @@ Use Ubuntu runners for the initial Node/Python/Ruby groups and Windows for gener
 Tool versions come from `global.json`, `mise.toml`/`mise.lock` and native locks;
 do not introduce a second toolchain authority in this plan.
 
+### Native .NET CI Group
+
+This group replaces general .NET CI selection and execution using the current
+Windows Debug operation. It does not migrate Release or test frameworks. Its
+source design is a contract for implementation; task loading, native facts,
+selected execution and changed-code hosted transfer remain qualification gates.
+
+#### Native Process and Endpoint Facts
+
+Build the candidate private application completely before task use. Its assembly
+supplies one public `ITask` entry loaded through `UsingTask` in an ordinary
+endpoint-selected `dotnet msbuild` process. Use native `ProjectGraph` with explicit
+entry/global properties. MSBuild owns SDK resolution, task/dependency loading,
+evaluation and reference propagation. Do not introduce MSBuildLocator, a custom
+ProjectCollection host/resolver, a helper application or an XML/item evaluator.
+An unavailable native capability stops this operation.
+
+Prepare each exact endpoint with its own `global.json` SDK and locked `dirs.proj`
+restore using `Configuration=Debug`, `ContinuousIntegrationBuild=true` and
+`RestoreLockedMode=true`. Candidate assets cannot substitute for basis facts;
+there is no unlocked repair. Discover through unfiltered `dirs.proj`. Projection
+task/import/output properties are wrapper inputs, not semantic graph globals.
+
+The typed task request carries endpoint revision/root, traversal entry, operation
+globals and private response destination. Its response carries native nodes,
+edges, input-consumer rows, test capabilities and unavailable facts. Nodes retain
+project path, complete globals, outer/inner distinction and native configuration,
+TFM and RID. Node identity is project path plus sorted complete globals. Edges
+refer to those identities, including native analyzer references. Input rows retain
+path, role, observation stage and consuming nodes. Required unavailable facts
+name the endpoint, project/node when known, role and reason; they are errors.
+
+The CLI binds physical native paths to exact endpoint roots and committed Git
+spelling. SDK/package/generated paths retain their environmental/producer roles.
+Reject unsupported semantic globals containing endpoint-dependent coordinates;
+do not invent path rewriting or AssemblyName/relocation aliases. Aggregate native
+relations into business project-path IDs for the shared impact planner, retaining
+full native identity for execution. Both-endpoint relation union handles removed
+projects/references and rename coordinates; selected surviving projects expand
+all supported candidate inner variants.
+
+#### Finite Input and Ownership Coverage
+
+Evaluation supplies main projects/imports, native source/resource/AdditionalFiles/
+Analyzer/XAML/manifest items and relevant icon/manifest properties, native graph
+references and test capabilities, and Roslyn's existing/potential analyzer
+configuration inputs. Locked restore supplies assets, CPM/lock and configuration
+facts. Read `ProjectAssetsFile` through official NuGet `LockFileFormat` and consume
+`PackageSpec.RestoreMetadata.ConfigFilePaths`. Require supported format, readable
+populated native metadata, exact project identity and the current committed
+`nuget.config` contributor. An empty model collection alone cannot establish
+serialized presence. Do not parse configuration hierarchy or add a second JSON
+reader. Native NBGV supplies actual configuration/version inputs; generated `obj`
+outputs retain their native producers instead of becoming committed diff paths.
+Build and native inner `GetTargetPath` supply runnable output at their proper
+stage; passive evaluation does not promise target-produced values.
+
+The adapter populates the MLD's exact `OwnedPaths` from committed endpoint entries
+in ordinary native project regions, narrowed by evaluated `DefaultItemExcludes`
+and `DefaultItemExcludesInProjectFolder`. Match each native file spec through
+selected-SDK `Microsoft.Build.Globbing.MSBuildGlob.Parse`/`IsMatch`, preserving
+native scalar-list boundaries, escaping and path semantics. Illegal or ambiguous
+necessary values fail instead of broadening ownership. Explicit input-consumer
+facts independently add their consumers; union across native nodes rather than
+intersecting variant excludes. Do not simulate SDK item rules.
+
+The current test project's `fixtures/products/**` exclusion separates ordinary
+Node fixture edits from its .NET parent, while its explicit embedded npm
+`version.json` retains that exact .NET consumer. WebHdfs assigns `ConfigFilePath`
+inside `PreBuild`; its in-project copy input is covered by ordinary committed
+ownership, including additions/deletions. Keep native Copy unchanged, without a
+passive-property promise or default-None assumption. External/shared producer
+inputs need concrete native facts/adapters.
+
+Native `ProjectInstance.Targets` and `ProjectTargetInstance.Location` identify
+effective repository target definitions and their origins, not arbitrary task
+I/O. The current finite producer scope includes Pack-only `SetPackageReleaseNotes`,
+official tool references in `ReferenceOfficialNbgv`, WebHdfs `PreBuild`, the
+traversal's non-Windows restore customization and conditional
+`ValidateWorkflowDeliveryFrozenInputs`. Preserve their native conditions/effects;
+ordinary Windows CI does not activate the non-Windows or frozen-release operation.
+New or unrecognized repository producers need a reviewed adapter/operation scope;
+report unsupported origin/name. This is no SDK task allowlist, hash admission
+policy, universal tracer or claim about every locked package's hidden I/O.
+
+#### Planning, Execution and Collection
+
+Extend existing Windows `scope`; do not add a planning job for runner availability.
+Reuse its prepared candidate application and native event/comparison handoff.
+Obtain both endpoint facts before .NET applicability, and reuse the shared
+comparison/responsibility binder and impact planner rather than duplicating them.
+The old coarse .NET Boolean is not selected-plan authority.
+
+Resolve adopted presets and explicit native-retained checks under the MLD's
+[quality-origin contract](./middle-level-design.md#declarations-and-quality-autonomy).
+Emit the original .NET `CiPlan` as a distinct artifact for the existing
+`dotnet-tests` execution/collection consumer, with native artifact ID and resolved
+applicability. Failed/missing/cancelled planning cannot become a successful skip.
+Successful empty work remains valid; required CI composition still accounts for
+the planning owner and .NET execution/result check.
+
+Initially build selected native projects/variants individually with the original
+operation globals; MSBuild owns references/order. Repeated reference work is an
+acceptable cost. Traversal filtering is an optional later optimization requiring
+its own native hook/variant qualification, not an application scheduler. Evaluated
+`IsTestingPlatformApplication` selects MTP; otherwise `IsTestProject` selects
+VSTest using native inner `GetTargetPath` output. Do not infer framework paths or
+capability from package names. Every selected supported variant contributes its
+required checks, collected against the original plan and candidate. Exit zero
+cannot satisfy absent, skipped or failed obligations.
+
+Retain the old command as sole executor during qualification if needed; it cannot
+satisfy replacement-plan results. Before atomic cutover, qualify task/dependency
+loading; graph identity/dimensions/references; finite committed/generated input
+ownership; official configuration facts; native test capability/output; selected
+execution; both-endpoint mapping; and changed-code Windows plan transfer/results.
+Cover actual local/transitive/analyzer references, exclusions plus explicit
+resources, additions/deletions/renames, changed variants/edges and unavailable
+facts. Windows feasibility remains the owner's assumption, not another experiment.
+Retire the old provider/caller only after its actual remaining consumers switch.
+No publication/proving dispatch, authentication, access or Environment change
+follows from this group.
+
 ### Control-Test Input Routing
 
 Before the complete Node group switches, connect the MLD's

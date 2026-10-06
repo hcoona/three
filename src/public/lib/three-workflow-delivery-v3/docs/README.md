@@ -19,7 +19,9 @@ The [requirements](./requirements.md) own contraction behavior. The replacement
 implementation order. The [middle-level design](./middle-level-design.md) closes
 component, selection, execution, transfer and outcome contracts. The
 [implementation plan](./migration-strategy.md) owns the concrete consumer inventory,
-integration contract outline and dependency-ordered caller transitions. The
+integration contract outline and dependency-ordered caller transitions, including
+the [native .NET CI group](./migration-strategy.md#native-net-ci-group). That
+group's contract does not claim implemented native facts or caller cutover. The
 [feasibility record](./research/contraction-feasibility.md) distinguishes local
 observations from the owner's accepted Windows assumption. The
 [transition](./requirements.md#requirements-and-implementation-transition) keeps
