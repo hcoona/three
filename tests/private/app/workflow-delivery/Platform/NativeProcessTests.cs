@@ -105,6 +105,13 @@ public sealed class NativeProcessTests
             try
             {
                 await cancellation.CancelAsync();
+            }
+            catch (Exception exception)
+            {
+                failure = failure is null ? exception : new AggregateException(failure, exception);
+            }
+            try
+            {
                 await query;
             }
             catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
