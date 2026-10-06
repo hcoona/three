@@ -127,21 +127,49 @@ internal static class DotNetPackageConsumer
         LockFile assets = new LockFileFormat().Read(path) ??
             throw new InvalidDataException("Missing native consumer restore assets.");
         ProjectRestoreMetadata? restore = assets.PackageSpec?.RestoreMetadata;
-        if (assets.Version != LockFileFormat.Version || restore is null ||
-            !SamePath(restore.ProjectPath, project) ||
-            restore.ProjectStyle != ProjectStyle.PackageReference ||
-            assets.PackageFolders is not [var folder] || !SamePath(folder.Path, packages) ||
-            restore.FallbackFolders.Count != 0 ||
-            restore.Sources is not [var source] || !SamePath(source.Source, feed) ||
-            restore.ConfigFilePaths is not [string configured] || !SamePath(configured, config) ||
-            assets.Libraries is not [var library] || library.Type != "package" ||
-            !PackageIdentityComparer.Default.Equals(new(library.Name, library.Version), identity) ||
-            assets.Targets is not [var target] ||
-            target.Libraries is not [var restored] || restored.Type != "package" ||
-            string.IsNullOrWhiteSpace(restored.Name) ||
-            !PackageIdentityComparer.Default.Equals(new(restored.Name, restored.Version), identity))
-            throw new InvalidDataException(
-                "Native consumer assets differ from the isolated package contract.");
+        if (assets.Version != LockFileFormat.Version)
+            throw AssetsMismatch("format version", LockFileFormat.Version, assets.Version);
+        if (restore is null)
+            throw AssetsMismatch("restore metadata", "present", "missing");
+        if (!SamePath(restore.ProjectPath, project))
+            throw AssetsMismatch("project path", project, LocalPath(restore.ProjectPath));
+        if (restore.ProjectStyle != ProjectStyle.PackageReference)
+            throw AssetsMismatch("project style", ProjectStyle.PackageReference,
+                restore.ProjectStyle);
+        if (assets.PackageFolders is not [var folder])
+            throw AssetsMismatch("package folder count", 1, assets.PackageFolders.Count);
+        if (!SamePath(folder.Path, packages))
+            throw AssetsMismatch("package folder", packages, LocalPath(folder.Path));
+        if (restore.FallbackFolders.Count != 0)
+            throw AssetsMismatch("fallback folder count", 0, restore.FallbackFolders.Count);
+        if (restore.Sources is not [var source])
+            throw AssetsMismatch("source count", 1, restore.Sources.Count);
+        if (!SamePath(source.Source, feed))
+            throw AssetsMismatch("source path", feed, LocalPath(source.Source));
+        if (restore.ConfigFilePaths is not [string configured])
+            throw AssetsMismatch("configuration file count", 1,
+                $"{restore.ConfigFilePaths.Count} [{string.Join(", ",
+                    restore.ConfigFilePaths.Take(4).Select(LocalPath))}]");
+        if (!SamePath(configured, config))
+            throw AssetsMismatch("configuration file path", config, LocalPath(configured));
+        if (assets.Libraries is not [var library])
+            throw AssetsMismatch("package library count", 1, assets.Libraries.Count);
+        if (library.Type != "package")
+            throw AssetsMismatch("library type", "package", library.Type);
+        if (!PackageIdentityComparer.Default.Equals(new(library.Name, library.Version), identity))
+            throw AssetsMismatch("library identity", identity,
+                new PackageIdentity(library.Name, library.Version));
+        if (assets.Targets is not [var target])
+            throw AssetsMismatch("target count", 1, assets.Targets.Count);
+        if (target.Libraries is not [var restored])
+            throw AssetsMismatch("target package library count", 1, target.Libraries.Count);
+        if (restored.Type != "package")
+            throw AssetsMismatch("target library type", "package", restored.Type);
+        if (string.IsNullOrWhiteSpace(restored.Name))
+            throw AssetsMismatch("target library name", identity.Id, "missing");
+        if (!PackageIdentityComparer.Default.Equals(new(restored.Name, restored.Version), identity))
+            throw AssetsMismatch("target library identity", identity,
+                new PackageIdentity(restored.Name, restored.Version));
         string installed = new VersionFolderPathResolver(folder.Path)
             .GetPackageFilePath(identity.Id, identity.Version);
         RequireFile(installed);
@@ -150,6 +178,14 @@ internal static class DotNetPackageConsumer
             throw new InvalidDataException(
                 "The restored package bytes differ from the original archive.");
     }
+
+    private static InvalidDataException AssetsMismatch(string field, object expected,
+        object? actual) => new(
+        $"Native consumer assets differ from the isolated package contract: {field}; " +
+        $"expected {expected}; actual {actual ?? "<missing>"}.");
+
+    private static string LocalPath(string path) => Path.IsPathFullyQualified(path)
+        ? path : "<not a local absolute path>";
 
     private static bool SamePath(string left, string right) => Path.IsPathFullyQualified(left) &&
         Path.TrimEndingDirectorySeparator(Path.GetFullPath(left)).Equals(
