@@ -12,6 +12,38 @@ public sealed class NativeProcessTests
     public TestContext TestContext { get; set; } = null!;
 
     [TestMethod]
+    public async Task ExecuteAppliesPerCommandEnvironmentWithoutAmbientMutation()
+    {
+        string marker = "WORKFLOW_PROCESS_PROBE_" + Guid.NewGuid().ToString("N");
+        string removed = OperatingSystem.IsWindows() ? "USERPROFILE" : "HOME";
+        string? original = Environment.GetEnvironmentVariable(removed);
+        Assert.IsNotNull(original);
+        string inheritedName = OperatingSystem.IsWindows() ? "SystemRoot" : "USER";
+        string? inherited = Environment.GetEnvironmentVariable(inheritedName);
+        Assert.IsNotNull(inherited);
+        const string value = "native spaces;percent% equals=tail";
+        string script = "[Console]::Out.Write([Environment]::GetEnvironmentVariable('" +
+            marker + "') + '|' + [Environment]::GetEnvironmentVariable('" + removed +
+            "') + '|' + [Environment]::GetEnvironmentVariable('" + inheritedName + "'))";
+        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        var environment = new Dictionary<string, string?>
+        {
+            [marker] = value,
+            [removed] = null,
+        };
+
+        NativeCommandResult result = await NativeProcess.ExecuteAsync(new("pwsh",
+            Path.GetTempPath(), ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                encoded], 30, environment), TestContext.CancellationToken);
+
+        Assert.IsTrue(result.Succeeded, result.Stderr);
+        Assert.AreEqual(value + "||" + inherited, result.Stdout);
+        Assert.IsNull(Environment.GetEnvironmentVariable(marker));
+        Assert.AreEqual(original, Environment.GetEnvironmentVariable(removed));
+        Assert.AreEqual(inherited, Environment.GetEnvironmentVariable(inheritedName));
+    }
+
+    [TestMethod]
     public async Task RunPreservesLiteralArgumentsAndWorkingDirectory()
     {
         using var fixture = new ProcessFixture(

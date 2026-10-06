@@ -296,6 +296,29 @@ None is Build-only. Selected adopted package quality fails completion until its
 separate concrete NuGet package adapter is available; it cannot become an
 unadopted native recipe.
 
+The internal asynchronous `CompleteAsync` operation resolves the registered
+`dotnet/hcoona-release-smoke-github-packages-v1` contract and its existing
+release-unit declaration before native version hooks. Release-unit membership
+and declaration consumers participate at both endpoints before impact selection.
+The native NBGV target supplies expected package and assembly projections;
+Build/Pack may calculate them again without frozen version injection.
+[`DotNetPackageExecution`](CI/DotNetPackageExecution.cs) consumes only a complete
+adopted package partition, separately from the retained native executor. Its
+fixed required phases are native Pack/output items, NuGet/.NET content inspection,
+and a fresh local native restore/build/marker consumer. Results retain each
+prerequisite and the complete original archive's unit/build/output, path, size
+and SHA-256. NuGet owns identities, version ranges, assets and installed paths.
+The per-command environment option isolates consumer caches/configuration/home
+without changing the application's ambient environment.
+
+This package path is under qualification and has no CLI/workflow caller. The
+product's native project supplies a fixed deterministic archive timestamp only
+when neither `DeterministicTimestamp` nor `SOURCE_DATE_EPOCH` is supplied.
+Explicit native inputs retain precedence. Native build infrastructure owns
+that metadata; the application does not normalize or repack archives. Local
+qualification materializes current product project bytes in a clean isolated
+Git fixture, retaining the source/fixture identities and original archives.
+
 [`DotNetExecution`](CI/DotNetExecution.cs) consumes the original complete plan,
 an exact candidate checkout and fresh external scratch. The caller owns locked
 preparation, SDK selection and native output lifetime. One phase runs native

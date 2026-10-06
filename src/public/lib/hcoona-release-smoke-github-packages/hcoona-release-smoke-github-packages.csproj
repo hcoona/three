@@ -9,6 +9,7 @@
     <IncludeSymbols>false</IncludeSymbols>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <DeterministicTimestamp Condition="'$(Deterministic)' == 'true' and '$(DeterministicTimestamp)' == '' and '$(SOURCE_DATE_EPOCH)' == ''">315532800</DeterministicTimestamp>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(WorkflowDeliveryFrozenBuild)' == 'true'">

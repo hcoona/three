@@ -4,7 +4,8 @@ internal sealed record NativeCommand(
     string Executable,
     string Directory,
     string[] Arguments,
-    int DeadlineSeconds
+    int DeadlineSeconds,
+    IReadOnlyDictionary<string, string?>? Environment = null
 );
 
 internal enum NativeTermination
