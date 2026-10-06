@@ -104,7 +104,7 @@ internal static class NodeGroupReader
         }
     }
 
-    private static async Task<ControlBuildConsumption?> ControlAsync(GitMaterialization checkout,
+    internal static async Task<ControlBuildConsumption?> ControlAsync(GitMaterialization checkout,
         string? binlog, bool required, CancellationToken token)
     {
         bool present = checkout.Revision.Entries.Any(entry => entry.Path == ControlProject);

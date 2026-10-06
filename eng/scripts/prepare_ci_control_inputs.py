@@ -76,25 +76,34 @@ def prepare(
         str(after),
         comparison["candidate"],
     )
-    before = None
-    if before_present:
-        if comparison["basis"] == comparison["candidate"]:
-            before = after
-        else:
-            before = directory / "basis"
-            run(
-                root,
-                "git",
-                "worktree",
-                "add",
-                "--detach",
-                str(before),
-                comparison["basis"],
-            )
+    if comparison["basis"] == comparison["candidate"]:
+        before = after
+    else:
+        before = directory / "basis"
+        run(
+            root,
+            "git",
+            "worktree",
+            "add",
+            "--detach",
+            str(before),
+            comparison["basis"],
+        )
+    endpoints = {
+        "full": comparison["full"],
+        "basis": {"directory": str(before), "reference": comparison["basis"]},
+        "candidate": {
+            "directory": str(after),
+            "reference": comparison["candidate"],
+        },
+    }
+    (directory / "group-endpoints.json").write_text(
+        json.dumps(endpoints, indent=2) + "\n", encoding="utf-8"
+    )
     request = {
         "comparison": comparison,
         "repository": str(root),
-        "basisDirectory": str(before) if before is not None else None,
+        "basisDirectory": str(before) if before_present else None,
         "candidateDirectory": str(after),
     }
     request_path = directory / "request.json"
@@ -106,7 +115,7 @@ def prepare(
             stream.write(
                 f"request={request_path}\ncandidate_directory={after}\n"
             )
-            stream.write(f"basis_directory={before or ''}\n")
+            stream.write(f"basis_directory={before}\n")
             separate = str(before is not None and before != after).lower()
             stream.write(f"basis_separate={separate}\n")
             stream.write(

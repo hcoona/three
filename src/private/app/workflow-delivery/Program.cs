@@ -15,10 +15,39 @@ internal static class Program
     }
 
     internal static int Run(string[] args, TextWriter output, TextWriter error,
-        Func<CiPlan, NodeRunRequest, CancellationToken, Task<NodeRunResult>>? runNode = null)
+        Func<CiPlan, NodeRunRequest, CancellationToken, Task<NodeRunResult>>? runNode = null,
+        Func<CiPlan, DotNetRunRequest, CancellationToken, Task<DotNetGroupRunResult>>?
+            runDotNet = null)
     {
         try
         {
+            if (args is ["ci", "plan-dotnet-group", var dotnetGroupPath])
+            {
+                DotNetGroupRequest request = JsonSerializer.Deserialize(
+                    File.ReadAllText(dotnetGroupPath), TransferJson.Default.DotNetGroupRequest
+                ) ?? throw new InvalidDataException("Missing native .NET group request.");
+                DotNetGroupReadback result = DotNetGroupReader.ReadAsync(request,
+                    CancellationToken.None).GetAwaiter().GetResult();
+                output.WriteLine(JsonSerializer.Serialize(result,
+                    TransferJson.Default.DotNetGroupReadback));
+                return 0;
+            }
+            if (args is ["ci", "run-dotnet", var dotnetPlanPath, var dotnetRequestPath])
+            {
+                CiPlan plan = JsonSerializer.Deserialize(File.ReadAllText(dotnetPlanPath),
+                    TransferJson.Default.CiPlan) ??
+                    throw new InvalidDataException("Missing native .NET execution plan.");
+                DotNetRunRequest request =
+                    JsonSerializer.Deserialize(File.ReadAllText(dotnetRequestPath),
+                    TransferJson.Default.DotNetRunRequest) ??
+                    throw new InvalidDataException("Missing native .NET execution request.");
+                DotNetGroupRunResult result = (runDotNet ?? DotNetGroupExecution.RunAsync)(plan,
+                    request, CancellationToken.None).GetAwaiter().GetResult();
+                output.WriteLine(JsonSerializer.Serialize(result,
+                    TransferJson.Default.DotNetGroupRunResult));
+                return result.Candidate == plan.Candidate &&
+                    ResultCollector.Collect(plan, result.Results).Satisfied ? 0 : 1;
+            }
             if (args is ["ci", "comparison", var eventName, var eventPath, var testedCandidate])
             {
                 using JsonDocument payload = JsonDocument.Parse(File.ReadAllText(eventPath,
@@ -105,6 +134,8 @@ internal static class Program
                     + " | ci control-inputs <request.json>"
                     + " | ci plan-node <request.json>"
                     + " | ci plan-node-group <request.json>"
+                    + " | ci plan-dotnet-group <request.json>"
+                    + " | ci run-dotnet <plan.json> <request.json>"
                     + " | ci run-node <plan.json> <request.json>"
                     + " | ci result <plan.json> <results.json>"
             );
@@ -138,6 +169,9 @@ internal static class Program
 [JsonSerializable(typeof(DotNetRunRequest))]
 [JsonSerializable(typeof(DotNetRunResult))]
 [JsonSerializable(typeof(DotNetPackageRunResult))]
+[JsonSerializable(typeof(DotNetGroupRequest))]
+[JsonSerializable(typeof(DotNetGroupReadback))]
+[JsonSerializable(typeof(DotNetGroupRunResult))]
 [JsonSerializable(typeof(NodePlanRequest))]
 [JsonSerializable(typeof(NodeGroupRequest))]
 [JsonSerializable(typeof(NodeGroupReadback))]

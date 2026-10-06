@@ -15,6 +15,58 @@ namespace WorkflowDelivery.Tests.CI;
 public sealed class DotNetPackageNativeTests(TestContext context)
 {
     [TestMethod]
+    public async Task NativeOriginalPlanExecutesInDifferentCheckout()
+    {
+        using var fixture = await ProductFixture.CreateAsync(context.CancellationToken);
+        string original = JsonSerializer.Serialize(fixture.Plan, TransferJson.Default.CiPlan);
+        CiPlan transferred = JsonSerializer.Deserialize(original, TransferJson.Default.CiPlan)!;
+        string receiver = Path.Combine(fixture.Scratch, "receiver");
+        NativeCommandResult checkout = await NativeProcess.ExecuteAsync(new("git", fixture.Checkout,
+            ["worktree", "add", "--detach", receiver, transferred.Candidate], 30,
+            new Dictionary<string, string?> { ["GIT_LFS_SKIP_SMUDGE"] = "1" }),
+            context.CancellationToken);
+        DotNetNativeFixture.RequireSuccess(checkout, "Transferred exact candidate checkout");
+        NativeCommandResult restore = await NativeProcess.ExecuteAsync(new("dotnet", receiver,
+            ["restore", ProductFixture.Project, "--locked-mode"], 60),
+            context.CancellationToken);
+        DotNetNativeFixture.RequireSuccess(restore, "Transferred locked package preparation");
+        string execution = Directory.CreateDirectory(
+            Path.Combine(fixture.Scratch, "received-run")).FullName;
+        DotNetGroupRunResult result = await DotNetGroupExecution.RunAsync(transferred,
+            new(receiver, execution, 60), context.CancellationToken);
+        Retain(fixture, result.Packages, "cross-root");
+        context.WriteLine(JsonSerializer.Serialize(result,
+            TransferJson.Default.DotNetGroupRunResult));
+        context.WriteLine(JsonSerializer.Serialize(fixture.Native,
+            TransferJson.Default.DictionaryStringString));
+        string receipt = result.Packages.Commands[0].Command.Arguments.Single(argument =>
+            argument.StartsWith("-getResultOutputFile:", StringComparison.Ordinal))
+            ["-getResultOutputFile:".Length..];
+        context.WriteLine(await File.ReadAllTextAsync(receipt, context.CancellationToken));
+        Assert.AreNotEqual(fixture.Checkout, receiver);
+        Assert.IsTrue(result.Outcome.Satisfied,
+            string.Join("; ", result.Packages.Failures.Select(item => item.Error)));
+        Assert.HasCount(3, result.Outcome.Checks);
+        Assert.IsEmpty(result.Retained.Commands);
+        CollectionAssert.AreEqual(transferred.Checks.Select(item => item.Work.Key).ToArray(),
+            result.Results.Select(item => item.Key).ToArray());
+        Assert.AreEqual(original, JsonSerializer.Serialize(transferred,
+            TransferJson.Default.CiPlan));
+        NativeCommand pack = result.Packages.Commands[0].Command;
+        Assert.AreEqual(receiver, pack.Directory);
+        Assert.Contains(Path.GetFullPath(Path.Combine(receiver, ProductFixture.Project)),
+            pack.Arguments);
+        Dictionary<string, string> globals = JsonSerializer.Deserialize(
+            transferred.Checks[0].Work.Dimensions["globals"],
+            TransferJson.Default.DictionaryStringString)!;
+        CollectionAssert.IsSubsetOf(DotNetChecks.Properties(globals), pack.Arguments);
+        Assert.HasCount(1, result.Packages.Packages);
+        Assert.HasCount(1, result.Packages.ConsumerOutputs);
+        Assert.AreEqual(DotNetPackageConsumer.Marker,
+            result.Packages.Commands[^1].Result.Stdout.Trim());
+    }
+
+    [TestMethod]
     public async Task NativeProductPackAndCleanConsumerAgreeWithNbgv()
     {
         using var fixture = await ProductFixture.CreateAsync(context.CancellationToken);

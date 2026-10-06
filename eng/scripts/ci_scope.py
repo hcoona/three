@@ -728,17 +728,6 @@ def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit en
     for manifest in manifests:
         directory = str(PurePosixPath(manifest).parent)
         if (
-            manifest.endswith((".csproj", ".fsproj", ".vbproj"))
-            and "dotnet" in scopes
-            and (path in ALL_INPUTS or _dotnet_input(path, {directory}))
-        ):
-            add(
-                "dotnet",
-                manifest,
-                "retained-project-input",
-                [manifest, "dirs.proj"],
-            )
-        if (
             manifest.endswith(".gemspec")
             and "ruby" in scopes
             and (
@@ -958,6 +947,22 @@ def _validate_control_endpoint(
             raise ValueError(message)
 
 
+def _complete_dotnet_scope(
+    root: Path, result: dict, options: argparse.Namespace
+) -> dict:
+    """Join native facts before final applicability."""
+    if not options.dotnet_group_request:
+        return result
+    from run_dotnet_ci_group import finish  # noqa: PLC0415
+
+    return finish(
+        root,
+        result,
+        options.dotnet_group_request.resolve(),
+        options.application.resolve(),
+    )
+
+
 def main() -> int:
     """Emit explicit applicability only after successful candidate selection."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -967,7 +972,11 @@ def main() -> int:
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--control-inputs", type=Path, required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--dotnet-group-request", type=Path)
+    parser.add_argument("--application", type=Path)
     options = parser.parse_args()
+    if options.dotnet_group_request and options.application is None:
+        parser.error("native .NET group requires --application")
     root = options.repository.resolve()
     candidate = git(
         root,
@@ -1018,6 +1027,7 @@ def main() -> int:
             control_inputs=control_inputs,
         ),
     }
+    result = _complete_dotnet_scope(root, result, options)
     rendered = json.dumps(result, indent=2) + "\n"
     print(rendered, end="")
     if options.output:

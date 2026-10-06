@@ -13,9 +13,10 @@ architecture authority.
 The application selects CI checks and collects candidate-bound check results.
 The supplied-fact command and Node revision-to-plan command share one impact
 algorithm and comparison/responsibility binder. The core accepts exact committed
-ownership and resolved preset/native-retained check origins. Native .NET endpoint
-reading, selected-check completion and execution are internal operations; whole-group
-qualification and caller cutover remain pending. The Node command reads exact
+ownership and resolved preset/native-retained check origins. The native .NET group
+command joins both endpoints, completes selected checks and collects their original
+plan through the existing executors. Whole-group qualification and the proposed
+root CI caller cutover remain pending. The Node command reads exact
 caller-prepared checkouts, native
 PNPM relations, NBGV inputs and existing application declarations, then expands
 selected project and package checks. A concrete Node executor runs the adopted
@@ -280,10 +281,10 @@ paths; unknown paths fail even in full mode. Every candidate native node remains
 available for later completion. Selection-stage checks stay empty.
 
 Isolated native-process and exact-Git selection tests exercise this bounded projection.
-Whole-repository endpoint preparation, complete finite input coverage, additional
-producer adapters, whole-group native test output and selected execution, workflow transfer and
-changed-code Windows qualification remain pending. No CLI caller or general .NET
-CI cutover uses this reader yet; the eight whole-group gates remain open.
+The group interface below composes this reader with both-endpoint native Node and
+control consumption. Its complete repository preparation, selected execution and
+changed-code Windows plan transfer still require the eight whole-group gates.
+Additional producer adapters require their own concrete operation scope.
 
 ### Native .NET Selected Checks and Execution
 
@@ -311,8 +312,9 @@ and SHA-256. NuGet owns identities, version ranges, assets and installed paths.
 The per-command environment option isolates consumer caches/configuration/home
 without changing the application's ambient environment.
 
-This package path is under qualification and has no CLI/workflow caller. The
-product's native project supplies a fixed deterministic archive timestamp only
+The group executor below exposes this package partition without introducing a
+separate package command or workflow. The product's native project supplies a
+fixed deterministic archive timestamp only
 when neither `DeterministicTimestamp` nor `SOURCE_DATE_EPOCH` is supplied.
 Explicit native inputs retain precedence. Native build infrastructure owns
 that metadata; the application does not normalize or repack archives. Local
@@ -341,10 +343,50 @@ general cache is added.
 Isolated native integration tests exercise original globals, references/analyzers,
 inner multi-TFM MTP with apphost and hostless execution, VSTest settings, redirected
 outputs, intentional skips, no-tests policies and active cancellation/deadlines.
-These tests cover their concrete fixture composition. Complete repository input
-coverage, adopted NuGet quality, whole-group qualification and ordinary Windows
-artifact/result transfer remain pending. No CLI/workflow caller uses this executor
-yet, and the eight whole-group gates remain open.
+These tests cover their concrete fixture composition. The CLI below composes retained
+native checks and the adopted NuGet recipe. Whole-group qualification and ordinary
+Windows artifact/result transfer remain separate gates.
+
+### Native .NET Group Interface
+
+[`DotNetGroupReader`](Repository/DotNetGroupReader.cs) reads both exact .NET endpoints,
+native PNPM ownership and candidate/basis control consumption before the existing
+`ScopeInputs.Bind`. Complete native input consumers supply .NET and Node responsibility
+rows; retained project/test/record owners remain separate. PNPM reads the synchronized
+wanted lock through its CLI without workspace installation or product lifecycles.
+Unknown required ownership and native relation errors fail even in full mode.
+Both-endpoint changes select surviving candidate projects and all required variants.
+
+`ci plan-dotnet-group` emits the original `CiPlan`, joined endpoint responsibility and
+candidate control-build context. Its request supplies both materializations, native
+graph response destinations, control build logs and fresh completion scratch; it
+adds no project, dependency or version declaration. Confirmed basis control-owner
+absence allows a null basis log, while both native group endpoints remain required.
+Explicit full may reuse one comparison endpoint without inventing basis absence.
+
+[`DotNetGroupExecution`](CI/DotNetGroupExecution.cs) resolves both selected contracts
+before either executor can run product commands. It partitions the unchanged original
+plan into `NativeRetained` and the registered NuGet preset, reuses their existing
+executors, and combines their results against the complete parent. A failed or missing
+partition cannot become successful nonselection. `ci run-dotnet` exposes that operation;
+`ci result` independently collects its result array against the same original plan.
+
+Package plans retain the committed project entry point and original native semantic
+expectations. Each checkout validates its own native `MSBuildProjectFullPath`; the
+producer's absolute path does not cross the plan boundary. Receiver Pack still checks
+its local project identity and recomputed package/version values against the original
+expectations before qualifying archives and clean consumers.
+
+[`run_dotnet_ci_group.py`](../../../../eng/scripts/run_dotnet_ci_group.py) builds the
+complete candidate control output once, prepares each endpoint with its selected SDK
+and locked unfiltered traversal restore, and finalizes scope only after native planning.
+The proposed existing Windows `scope`/`dotnet-tests` caller transfers the original plan
+and complete distribution through a native artifact ID. The receiver validates the
+actual producer/lifetime, prepares the candidate and executes without rebuilding control
+or replanning. Empty work still crosses execution and collection; missing planning,
+transfer or required results fail. No second test launcher, scheduler or cache is added.
+The required `Build & Test (.NET 10)` owner remains the existing Windows job. Ordinary
+changed-code Windows qualification is required before accepting that caller cutover.
 
 [`ControlTestInputs`](Repository/ControlTestInputs.cs) exposes one concrete root-CI
 consumer through `ci control-inputs`: the control test project's embedded resources,
@@ -374,11 +416,11 @@ Responsibility explains retained project/test/record routing; it does not prove
 product nonconsumption. Absent coordinates and unknown ownership have no positive
 reasons. The retained Node manifest heuristic supplies no authoritative Node
 owner, and unconditional source conformance supplies no per-path owner. Native
-PNPM ownership and complete product/control consumption still require the later
-Ubuntu group. Aggregate candidate execution and package preparation retain their
-existing behavior; basis-only reasons do not execute removed targets. Only the
-final `ci-scope` artifact crosses the job boundary. General Node cutover remains
-pending.
+PNPM ownership and complete product/control consumption come from the native
+group readers. Basis-only reasons do not execute removed targets. The Node group
+consumes the final `ci-scope` artifact. The proposed .NET caller
+transfers its original plan separately with the complete control distribution;
+its ordinary Windows qualification remains pending.
 
 ### Input Consumer Mapping
 
@@ -586,6 +628,8 @@ dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll 
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan-node node-request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan-node-group group-request.json
+dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci plan-dotnet-group dotnet-group-request.json
+dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci run-dotnet dotnet-plan.json dotnet-request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci run-node plan.json execution-request.json
 dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll ci result plan.json results.json
 ```
@@ -713,7 +757,7 @@ checks; the supplied-fact core alone does not establish native capability.
 
 [`ScopeInputs`](Repository/ScopeInputs.cs) binds native comparison coordinates and
 committed endpoint responsibility to actual consumers for both revisions. Node
-callers use that shared operation; the .NET caller will reuse it. The rename adds
+callers and the native .NET group reuse that shared operation. The rename adds
 no second scope parser or compatibility alias.
 
 The collector requires every selected required result at the candidate revision.

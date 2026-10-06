@@ -42,6 +42,7 @@ jobs:
       candidate: ${{ steps.select.outputs.candidate }}
       full: ${{ steps.select.outputs.full }}
       artifact_id: ${{ steps.retain.outputs.artifact-id }}
+      dotnet_artifact_id: ${{ steps.retain-dotnet.outputs.artifact-id }}
     steps:
       - name: Checkout tested candidate
         uses: actions/checkout@v7
@@ -60,14 +61,21 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-      - name: Prepare the candidate control application
-        run: |
-          dotnet restore src/private/app/workflow-delivery/WorkflowDelivery.csproj --locked-mode -p:Configuration=Debug
-          dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj -c Debug --no-restore -o artifacts/ci-control-app
+      - name: Setup native endpoint tools
+        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          experimental: true
+          install: false
+      - name: Prepare the complete candidate control application
+        id: control
+        env:
+          MSBUILDLOGTASKINPUTS: '1'
+          MSBUILDLOGTASKOUTPUTS: '1'
+        run: python eng/scripts/run_dotnet_ci_group.py bootstrap --directory "$RUNNER_TEMP/dotnet-group"
       - name: Resolve and materialize exact control-input endpoints
         id: materialize
         run: |
-          python eng/scripts/prepare_ci_control_inputs.py --application artifacts/ci-control-app/WorkflowDelivery.dll prepare \
+          python eng/scripts/prepare_ci_control_inputs.py --application "${{ steps.control.outputs.application }}" prepare \
             --directory "$RUNNER_TEMP/ci-control-inputs" --event-name "$GITHUB_EVENT_NAME" \
             --event-path "$GITHUB_EVENT_PATH" --candidate "$GITHUB_SHA"
       - name: Setup candidate resource SDK
@@ -79,6 +87,11 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: ${{ steps.materialize.outputs.basis_directory }}/global.json
+      - name: Prepare locked unfiltered native endpoint facts
+        id: dotnet-group
+        run: |
+          python eng/scripts/run_dotnet_ci_group.py prepare --directory "$RUNNER_TEMP/dotnet-group" \
+            --endpoints "$RUNNER_TEMP/ci-control-inputs/group-endpoints.json"
       - name: Select work from the actual comparison
         id: select
         env:
@@ -88,15 +101,17 @@ jobs:
           FULL: ${{ steps.materialize.outputs.full }}
         run: |
           python --version
-          python eng/scripts/prepare_ci_control_inputs.py --application artifacts/ci-control-app/WorkflowDelivery.dll evaluate \
+          python eng/scripts/prepare_ci_control_inputs.py --application "${{ steps.control.outputs.application }}" evaluate \
             --request "$CONTROL_REQUEST" --response "$RUNNER_TEMP/ci-control-inputs/response.json"
           if [[ "$FULL" == 'true' ]]; then
             uv run --frozen --no-sync python eng/scripts/ci_scope.py --full --control-inputs "$RUNNER_TEMP/ci-control-inputs/response.json" \
-              --output artifacts/ci-scope.json
+              --output artifacts/ci-scope.json --application "${{ steps.control.outputs.application }}" \
+              --dotnet-group-request "${{ steps.dotnet-group.outputs.request }}"
           else
             uv run --frozen --no-sync python eng/scripts/ci_scope.py --from-ref "$COMPARISON_BASE" \
               --to-ref "$TESTED_CANDIDATE" --control-inputs "$RUNNER_TEMP/ci-control-inputs/response.json" \
-              --output artifacts/ci-scope.json
+              --output artifacts/ci-scope.json --application "${{ steps.control.outputs.application }}" \
+              --dotnet-group-request "${{ steps.dotnet-group.outputs.request }}"
           fi
       - name: Retain selection and reasons
         id: retain
@@ -104,6 +119,14 @@ jobs:
         with:
           name: ci-scope
           path: artifacts/ci-scope.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Transfer original plan and complete native control output
+        id: retain-dotnet
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-dotnet-plan
+          path: ${{ steps.control.outputs.transfer }}/
           if-no-files-found: error
           retention-days: 7
 
@@ -341,82 +364,78 @@ jobs:
       NUGET_AUTHORITY_DIAGNOSTICS_DIRECTORY: ${{ github.workspace }}/artifacts/nuget-authority-diagnostics
       NUGET_AUTHORITY_DUMP_TOOL: ${{ github.workspace }}/artifacts/nuget-authority-tools/dotnet-dump.exe
 
+    permissions:
+      contents: read
+      actions: read
     needs: scope
     if: ${{ !cancelled() }}
 
     steps:
-      - name: Require successful scope selection
-        id: scope
+      - name: Require successful scope and exact native plan artifact
         shell: bash
         env:
           SELECTION_RESULT: ${{ needs.scope.result }}
-          APPLICABLE: ${{ needs.scope.outputs.dotnet }}
+          PLAN_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
         run: |
-          case "$SELECTION_RESULT:$APPLICABLE" in
-            success:true) echo 'run=true' >> "$GITHUB_OUTPUT" ;;
-            success:false) echo 'run=false' >> "$GITHUB_OUTPUT"; echo 'Not applicable to this change.' ;;
-            *) echo 'Scope selection failed or omitted applicability.' >&2; exit 1 ;;
-          esac
+          test "$SELECTION_RESULT" = success
+          [[ "$PLAN_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
 
-      - name: Checkout
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+      - name: Checkout tested candidate
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
-      - name: Setup .NET SDK
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+      - name: Setup candidate SDK
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          cache: true
-          cache-dependency-path: '**/packages.lock.json'
 
-      - name: Restore dotnet tools
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        run: |
-          dotnet tool restore
+      - name: Read native artifact producer and lifetime
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
+        run: gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$PLAN_ARTIFACT_ID" > "$RUNNER_TEMP/dotnet-plan-artifact.json"
 
-      - name: Restore
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        run: dotnet restore dirs.proj -p:RestoreLockedMode=true
-
-      - name: Build
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        run: dotnet build dirs.proj -c Debug --no-restore -p:RestoreLockedMode=true
+      - name: Receive exact original plan and complete control distribution
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.scope.outputs.dotnet_artifact_id }}
+          path: ${{ runner.temp }}/dotnet-plan-transfer
+          merge-multiple: true
 
       - name: Prepare NuGet authority dump collection
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        continue-on-error: true
         shell: pwsh
         run: dotnet tool install dotnet-dump --version 10.0.745401 --tool-path (Split-Path $env:NUGET_AUTHORITY_DUMP_TOOL)
 
-      - name: Test
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        shell: pwsh
+      - name: Execute and collect the unchanged original native plan
+        shell: bash
+        env:
+          PLAN_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
+          COMPARISON_BASIS: ${{ needs.scope.outputs.base }}
+          TESTED_CANDIDATE: ${{ needs.scope.outputs.candidate }}
         run: |
-          $testProjects = Get-ChildItem -Path tests -Filter '*.csproj' -Recurse
+          python eng/scripts/run_dotnet_ci_group.py execute --transfer "$RUNNER_TEMP/dotnet-plan-transfer" \
+            --directory "$RUNNER_TEMP/dotnet-execution" --artifact-metadata "$RUNNER_TEMP/dotnet-plan-artifact.json" \
+            --artifact-id "$PLAN_ARTIFACT_ID" --run-id "$GITHUB_RUN_ID" --repository-id "$GITHUB_REPOSITORY_ID" \
+            --basis "$COMPARISON_BASIS" --candidate "$TESTED_CANDIDATE"
 
-          foreach ($project in $testProjects) {
-            $projectXml = Get-Content -Raw -Path $project.FullName
-
-            if ($projectXml.Contains('Sdk="MSTest.Sdk"') -or $projectXml.Contains('Include="xunit.v3.mtp-v2"')) {
-              dotnet test --project $project.FullName -c Debug --no-build -p:RestoreLockedMode=true
-              if ($LASTEXITCODE -ne 0) {
-                exit $LASTEXITCODE
-              }
-            } elseif ($projectXml.Contains('Include="xunit.runner.visualstudio"')) {
-              $testAssembly = Join-Path $project.DirectoryName "bin/Debug/net10.0/$($project.BaseName).dll"
-              dotnet vstest $testAssembly
-              if ($LASTEXITCODE -ne 0) {
-                exit $LASTEXITCODE
-              }
-            }
-          }
+      - name: Retain native planning, execution and collection facts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dotnet-group-results
+          path: ${{ runner.temp }}/dotnet-execution/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Retain NuGet authority diagnostics
+        continue-on-error: true
         if: >-
           (failure() || hashFiles('artifacts/nuget-authority-diagnostics/**/slow-process.txt') != '')
-          && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: nuget-authority-diagnostics-${{ github.run_attempt }}

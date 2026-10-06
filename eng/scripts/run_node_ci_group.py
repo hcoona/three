@@ -39,7 +39,12 @@ def write_json(path: Path, value: object) -> None:
 
 
 def validate_scope_artifact(
-    metadata: dict[str, Any], artifact: int, run_id: int, repository: int
+    metadata: dict[str, Any],
+    artifact: int,
+    run_id: int,
+    repository: int,
+    *,
+    name: str = "ci-scope",
 ) -> None:
     """Use native artifact/run identity at the receiving boundary."""
     if any(
@@ -51,7 +56,7 @@ def validate_scope_artifact(
     workflow = metadata.get("workflow_run")
     if (
         metadata.get("id") != artifact
-        or metadata.get("name") != "ci-scope"
+        or metadata.get("name") != name
         or metadata.get("expired") is not False
         or not isinstance(workflow, dict)
         or workflow.get("id") != run_id
