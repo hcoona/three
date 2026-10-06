@@ -5,11 +5,10 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import yaml
@@ -18,6 +17,9 @@ from three_workflow_delivery_v3.repository.python_provider import (
 )
 
 from .workflow_shell import executable, resolve, run_step
+
+if TYPE_CHECKING:
+    import subprocess
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 CHILD_FAILURE = 73
@@ -111,6 +113,19 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
             "${{ steps.materialize.outputs.basis_directory }}" + "/global.json"
         )
         assert not step.get("continue-on-error", False)
+    elif key == "dotnet-tests" and step["name"] in {
+        "Prepare NuGet authority dump collection",
+        "Retain NuGet authority diagnostics",
+    }:
+        assert step["continue-on-error"] is True
+        if "run" in step:
+            assert step["shell"] == "pwsh"
+            assert step["run"] == (
+                "dotnet tool install dotnet-dump --version 10.0.745401 "
+                "--tool-path (Split-Path $env:NUGET_AUTHORITY_DUMP_TOOL)"
+            )
+        else:
+            assert step["uses"].startswith("actions/upload-artifact@")
     elif "Retain" not in step["name"] and step.get("if") != "cancelled()":
         _required_step(step)
 
@@ -118,6 +133,19 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
 def _bindings(tmp_path: Path) -> dict[str, str]:
     return {
         "github.workspace": str(tmp_path),
+        "github.token": "fixture-token",
+        "needs.scope.result": "success",
+        "needs.scope.outputs.dotnet_artifact_id": "1054",
+        "steps.control.outputs.application": str(
+            tmp_path
+            / "runner-state/dotnet-group/transfer/control/WorkflowDelivery.dll"
+        ),
+        "steps.control.outputs.transfer": str(
+            tmp_path / "runner-state/dotnet-group/transfer"
+        ),
+        "steps.dotnet-group.outputs.request": str(
+            tmp_path / "runner-state/dotnet-group/request.json"
+        ),
         "secrets.GITHUB_TOKEN": "fixture-token",
         "github.event.pull_request.base.sha": "a" * 40,
         "github.event.pull_request.head.sha": "b" * 40,
@@ -657,88 +685,30 @@ def test_python_check_propagates_command_failure(
         assert not any(command[:2] == ["uv", "run"] for command in calls)
 
 
-def _dotnet_projects(tmp_path: Path) -> dict[str, Path]:
-    declarations = {
-        "mstest": '<Project Sdk="MSTest.Sdk" />',
-        "xunit-mtp": (
-            '<Project><PackageReference Include="xunit.v3.mtp-v2" /></Project>'
-        ),
-        "vstest": (
-            "<Project><PackageReference "
-            'Include="xunit.runner.visualstudio" /></Project>'
-        ),
-        "library": '<Project Sdk="Microsoft.NET.Sdk" />',
-    }
-    projects = {}
-    for name, content in declarations.items():
-        path = tmp_path / "tests" / name / f"{name}.csproj"
-        path.parent.mkdir(parents=True)
-        path.write_text(content)
-        projects[name] = path
-    return projects
-
-
 def _run_dotnet(
     workflow: dict[str, Any],
     tmp_path: Path,
     env: dict[str, str],
+    *,
+    bindings: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    """Exercise required receiver bodies through the maintained shell helper."""
     job = workflow["jobs"]["dotnet-tests"]
-    pwsh = shutil.which("pwsh")
-    assert pwsh is not None, "The managed CI toolchain must provide PowerShell."
     result = None
     for step in job["steps"]:
-        if (
-            "run" not in step
-            or step.get("id") == "scope"
-            or step.get("if") == "cancelled()"
-        ):
+        if "run" not in step or step.get("if") == "cancelled()":
+            continue
+        if step.get("continue-on-error", False):
+            _required_context_step("dotnet-tests", step)
             continue
         _required_step(step)
-        process_env = {**os.environ, **env}
-        shell = "pwsh"
-        directory = "."
-        for scope in (workflow, job, step):
-            process_env.update(
-                {
-                    key: resolve(str(value), _bindings(tmp_path))
-                    for key, value in scope.get("env", {}).items()
-                }
-            )
-            defaults = scope.get("defaults", {}).get("run", {})
-            shell = defaults.get("shell", shell)
-            directory = defaults.get("working-directory", directory)
-        shell = step.get("shell", shell)
-        directory = step.get("working-directory", directory)
-        assert shell == "pwsh", f"Unsupported shell: {shell}"
-        working_directory = tmp_path / resolve(directory, _bindings(tmp_path))
-        body = resolve(step["run"], _bindings(tmp_path))
-        # Actions prepends error handling and propagates native command status.
-        script = (
-            "$ErrorActionPreference = 'stop'\n"
-            + body
-            + (
-                "\nif (Test-Path -LiteralPath variable:\\LASTEXITCODE) "
-                "{ exit $LASTEXITCODE }\n"
-            )
-        )
-        path = tmp_path / "step.ps1"
-        path.write_text(script)
-        result = subprocess.run(  # noqa: S603 - checked-in shell, controlled tools
-            [
-                pwsh,
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                f". '{path}'",
-            ],
-            cwd=working_directory,
-            env=process_env,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=30,
+        result = run_step(
+            step,
+            cwd=tmp_path,
+            env=env,
+            bindings=_bindings(tmp_path) | (bindings or {}),
+            workflow=workflow,
+            job=job,
         )
         if result.returncode:
             break
@@ -746,87 +716,181 @@ def _run_dotnet(
     return result
 
 
-def test_dotnet_check_executes_restore_build_and_supported_test_projects(
+def _dotnet_commands(tmp_path: Path) -> dict[str, str]:
+    env = _commands(tmp_path)
+    Path(env["RUNNER_TEMP"]).mkdir()
+    env.update(
+        GITHUB_REPOSITORY="hcoona/three",
+        GITHUB_REPOSITORY_ID="12345",
+        GITHUB_RUN_ID="67890",
+    )
+    executable(
+        Path(env["PATH"]) / "gh",
+        COMMAND_RECORDER + "\nprint('fixture-artifact-metadata')\n",
+    )
+    return env
+
+
+def _dotnet_receiver_command(
+    tmp_path: Path, artifact: str = "1054"
+) -> list[str]:
+    temporary = tmp_path / "runner-state"
+    return [
+        "python",
+        "eng/scripts/run_dotnet_ci_group.py",
+        "execute",
+        "--transfer",
+        str(temporary / "dotnet-plan-transfer"),
+        "--directory",
+        str(temporary / "dotnet-execution"),
+        "--artifact-metadata",
+        str(temporary / "dotnet-plan-artifact.json"),
+        "--artifact-id",
+        artifact,
+        "--run-id",
+        "67890",
+        "--repository-id",
+        "12345",
+        "--basis",
+        "a" * 40,
+        "--candidate",
+        "d" * 40,
+    ]
+
+
+def test_dotnet_check_receives_original_plan_and_complete_control(
     workflow: dict[str, Any],
     tmp_path: Path,
 ) -> None:
-    """Run locked build and both test platforms with real project selection."""
+    """Transfer the producer's full output by ID and bind receiver lifetime."""
+    scope = workflow["jobs"]["scope"]
     job = workflow["jobs"]["dotnet-tests"]
     assert job["runs-on"].startswith("windows-")
-    assert (
-        _action(job, "actions/setup-dotnet")["with"]["global-json-file"]
-        == "global.json"
+    assert job["permissions"] == {"contents": "read", "actions": "read"}
+    assert "needs.scope.outputs.dotnet }}" not in json.dumps(job)
+    assert _action(job, "actions/setup-dotnet")["with"] == {
+        "global-json-file": "global.json"
+    }
+    checkout = _action(job, "actions/checkout")
+    assert checkout["with"]["ref"] == "${{ github.sha }}"
+    assert checkout["with"]["persist-credentials"] is False
+    assert checkout["with"]["fetch-depth"] == 0
+    producer = next(
+        step for step in scope["steps"] if step.get("id") == "control"
     )
-    projects = _dotnet_projects(tmp_path)
-    env = _commands(tmp_path)
+    assert producer["run"].strip() == (
+        "python eng/scripts/run_dotnet_ci_group.py bootstrap "
+        '--directory "$RUNNER_TEMP/dotnet-group"'
+    )
+    upload = next(
+        step for step in scope["steps"] if step.get("id") == "retain-dotnet"
+    )
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    assert upload["with"]["path"] == "${{ steps.control.outputs.transfer }}/"
+    assert upload["with"]["if-no-files-found"] == "error"
+    assert scope["outputs"]["dotnet_artifact_id"] == (
+        "${{ steps.retain-dotnet.outputs.artifact-id }}"
+    )
+    download = _action(job, "actions/download-artifact")
+    assert download["with"] == {
+        "artifact-ids": "${{ needs.scope.outputs.dotnet_artifact_id }}",
+        "path": "${{ runner.temp }}/dotnet-plan-transfer",
+        "merge-multiple": True,
+    }
+    metadata = next(
+        step for step in job["steps"] if "GH_TOKEN" in step.get("env", {})
+    )
+    expression = "${{ github.token }}"
+    assert metadata["env"]["GH_TOKEN"] == expression
+    execute = next(
+        step for step in job["steps"] if " execute " in step.get("run", "")
+    )
+    assert scope["steps"].index(producer) < scope["steps"].index(upload)
+    assert (
+        job["steps"].index(metadata)
+        < job["steps"].index(download)
+        < job["steps"].index(execute)
+    )
+    env = _dotnet_commands(tmp_path)
     result = _run_dotnet(workflow, tmp_path, env)
     assert result.returncode == 0, result.stderr
-    calls = [item["command"] for item in _observations(env)]
-    restore = calls.index(
-        ["dotnet", "restore", "dirs.proj", "-p:RestoreLockedMode=true"]
-    )
-    build = calls.index(
-        [
-            "dotnet",
-            "build",
-            "dirs.proj",
-            "-c",
-            "Debug",
-            "--no-restore",
-            "-p:RestoreLockedMode=true",
-        ]
-    )
-    assert calls.index(["dotnet", "tool", "restore"]) < restore < build
-    dump_install = [
-        "dotnet",
-        "tool",
-        "install",
-        "dotnet-dump",
-        "--version",
-        "10.0.745401",
-        "--tool-path",
-        str(tmp_path / "artifacts/nuget-authority-tools"),
+    assert [item["command"] for item in _observations(env)] == [
+        ["gh", "api", "repos/hcoona/three/actions/artifacts/1054"],
+        _dotnet_receiver_command(tmp_path),
     ]
-    assert calls[build + 1] == dump_install
-    expected = [
-        [
-            "dotnet",
-            "test",
-            "--project",
-            str(projects[name]),
-            "-c",
-            "Debug",
-            "--no-build",
-            "-p:RestoreLockedMode=true",
-        ]
-        for name in ("mstest", "xunit-mtp")
-    ]
-    expected.append(
-        [
-            "dotnet",
-            "vstest",
-            str(projects["vstest"].parent / "bin/Debug/net10.0/vstest.dll"),
-        ]
-    )
-    assert {tuple(command) for command in calls[build + 2 :]} == {
-        tuple(command) for command in expected
-    }
+    assert (
+        tmp_path / "runner-state/dotnet-plan-artifact.json"
+    ).read_text() == ("fixture-artifact-metadata\n")
 
 
-@pytest.mark.parametrize("command", ["test", "vstest"])
-def test_dotnet_check_propagates_test_failure(
+@pytest.mark.parametrize("failure", ["metadata", "execute"])
+def test_dotnet_check_propagates_required_command_failure(
     workflow: dict[str, Any],
     tmp_path: Path,
-    command: str,
+    failure: str,
 ) -> None:
-    """Keep failed MTP and VSTest native commands visible as failed steps."""
-    _dotnet_projects(tmp_path)
-    env = _commands(tmp_path)
-    env["FAIL_COMMAND"] = json.dumps(["dotnet", command])
+    """Propagate required metadata and receiver failures."""
+    env = _dotnet_commands(tmp_path)
+    command = (
+        ["gh", "api", "repos/hcoona/three/actions/artifacts/1054"]
+        if failure == "metadata"
+        else _dotnet_receiver_command(tmp_path)
+    )
+    env["FAIL_COMMAND"] = json.dumps(command)
     result = _run_dotnet(workflow, tmp_path, env)
-    # The Actions PowerShell -Command wrapper maps failed script exits to 1.
-    assert result.returncode == 1, result.stderr
-    assert _observations(env)[-1]["command"][:2] == ["dotnet", command]
+    assert result.returncode == CHILD_FAILURE, result.stderr
+    calls = [item["command"] for item in _observations(env)]
+    assert calls == [
+        ["gh", "api", "repos/hcoona/three/actions/artifacts/1054"],
+        *(
+            []
+            if failure == "metadata"
+            else [_dotnet_receiver_command(tmp_path)]
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("selection", "artifact", "succeeds"),
+    [
+        ("success", "1054", True),
+        ("success", "1", True),
+        ("failure", "1054", False),
+        ("cancelled", "1054", False),
+        ("skipped", "1054", False),
+        ("", "1054", False),
+        ("success", "", False),
+        ("success", "0", False),
+        ("success", "-1", False),
+        ("success", "1x", False),
+        ("success", "01", False),
+    ],
+)
+def test_dotnet_group_requires_received_original_plan(
+    workflow, tmp_path, selection, artifact, succeeds
+):
+    """Reject failed planning or invalid native IDs before any receiver work."""
+    env = _dotnet_commands(tmp_path)
+    result = _run_dotnet(
+        workflow,
+        tmp_path,
+        env,
+        bindings={
+            "needs.scope.result": selection,
+            "needs.scope.outputs.dotnet_artifact_id": artifact,
+        },
+    )
+    assert (result.returncode == 0) is succeeds, result.stderr
+    if not succeeds:
+        assert _observations(env) == []
+        assert not (
+            tmp_path / "runner-state/dotnet-plan-artifact.json"
+        ).exists()
+    else:
+        assert [item["command"] for item in _observations(env)] == [
+            ["gh", "api", f"repos/hcoona/three/actions/artifacts/{artifact}"],
+            _dotnet_receiver_command(tmp_path, artifact),
+        ]
 
 
 @pytest.mark.parametrize(
@@ -845,7 +909,7 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
 ):
     """Distinguish valid non-applicability from lost required work."""
     for name, job in workflow["jobs"].items():
-        if name in {"scope", "validation", "node-group"}:
+        if name in {"scope", "validation", "node-group", "dotnet-tests"}:
             continue
         assert job["needs"] == (
             ["scope", "node-group"] if name == "node-tests" else "scope"
@@ -994,20 +1058,26 @@ def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
             "always()" if name == "validation" else "${{ !cancelled() }}"
         )
         for step in job["steps"][1:-1]:
-            if name == "node-group":
+            if name == "dotnet-tests":
+                if step["name"] == "Retain NuGet authority diagnostics":
+                    assert step["continue-on-error"] is True
+                    assert step["if"] == (
+                        "(failure() || "
+                        "hashFiles('artifacts/nuget-authority-diagnostics/"
+                        "**/slow-process.txt') != '')"
+                    )
+                elif step["name"] == "Prepare NuGet authority dump collection":
+                    assert step["continue-on-error"] is True
+                    assert step["shell"] == "pwsh"
+                elif "Retain" in step["name"]:
+                    assert step["if"] == "always()"
+                    assert step["uses"].startswith("actions/upload-artifact@")
+                    assert not step.get("continue-on-error", False)
+                else:
+                    _required_step(step)
+            elif name == "node-group":
                 assert step.get("if", "success()") in {"success()", "always()"}
                 assert not step.get("continue-on-error", False)
-            elif step.get("name") == "Retain NuGet authority diagnostics":
-                assert name == "dotnet-tests"
-                assert step.get("uses", "").startswith(
-                    "actions/upload-artifact@"
-                )
-                assert step["if"] == (
-                    "(failure() || "
-                    "hashFiles('artifacts/nuget-authority-diagnostics/"
-                    "**/slow-process.txt') != '') "
-                    "&& steps.scope.outputs.run == 'true'"
-                )
             elif step["if"].startswith("always() &&"):
                 assert step.get("uses", "").startswith(
                     "actions/upload-artifact@"
@@ -1064,7 +1134,7 @@ def test_scope_selection_uses_project_python_and_tested_comparison(
         "python",
         "eng/scripts/prepare_ci_control_inputs.py",
         "--application",
-        "artifacts/ci-control-app/WorkflowDelivery.dll",
+        _bindings(tmp_path)["steps.control.outputs.application"],
         "evaluate",
         "--request",
         request,
@@ -1087,6 +1157,10 @@ def test_scope_selection_uses_project_python_and_tested_comparison(
         response,
         "--output",
         "artifacts/ci-scope.json",
+        "--application",
+        _bindings(tmp_path)["steps.control.outputs.application"],
+        "--dotnet-group-request",
+        _bindings(tmp_path)["steps.dotnet-group.outputs.request"],
     ]
     if failure is not None:
         env["FAIL_COMMAND"] = json.dumps(

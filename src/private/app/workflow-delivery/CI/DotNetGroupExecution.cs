@@ -61,8 +61,21 @@ internal static class DotNetGroupExecution
         await DotNetPackageExecution.ReadChecksAsync(packagePlan, materialization, token);
         DotNetRunResult native = await retained(nativePlan, request with
         { Scratch = Directory.CreateDirectory(Path.Combine(scratch, "retained")).FullName }, token);
-        DotNetPackageRunResult package = await packages(packagePlan, request with
-        { Scratch = Directory.CreateDirectory(Path.Combine(scratch, "packages")).FullName }, token);
+        DotNetPackageRunResult package;
+        try
+        {
+            package = packagePlan.Checks.Length == 0
+                ? new(plan.Candidate, [], [], [], [], [])
+                : await packages(packagePlan, request with
+                { Scratch = Directory.CreateDirectory(Path.Combine(scratch, "packages")).FullName },
+                    token);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            package = new(plan.Candidate, packagePlan.Checks.Select(item =>
+                new CheckResult(plan.Candidate, item.Work.Key, CheckStatus.Cancelled)).ToArray(),
+                [], [], [], []);
+        }
         CheckResult[] results = [.. native.Results, .. package.Results];
         CiOutcome outcome = ResultCollector.Collect(plan, results);
         if (native.Candidate != plan.Candidate || package.Candidate != plan.Candidate)

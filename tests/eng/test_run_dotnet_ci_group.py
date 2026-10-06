@@ -262,12 +262,7 @@ def test_empty_original_plan_still_reaches_receiver_and_collector(
         root, transfer, tmp_path / "execution", BASIS, CANDIDATE
     )
     assert outcome["satisfied"] is True
-    assert {label for label, _ in commands} == {
-        "tools",
-        "restore",
-        "execution",
-        "collection",
-    }
+    assert [label for label, _ in commands] == ["execution", "collection"]
     assert plan_path.read_text(encoding="utf-8") == raw
 
 

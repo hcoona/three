@@ -48,8 +48,23 @@ LEGACY_RELEASE_TESTS = "tests/eng/test_legacy_release_contract.py"
         pytest.param(
             "eng/scripts/run_node_ci_group.py",
             {"python"},
-            {"tests/eng/test_run_node_ci_group.py"},
+            {
+                "tests/eng/test_run_node_ci_group.py",
+                "tests/eng/test_run_dotnet_ci_group.py",
+            },
             id="node-caller-source",
+        ),
+        pytest.param(
+            "eng/scripts/run_dotnet_ci_group.py",
+            {"python"},
+            {"tests/eng/test_run_dotnet_ci_group.py"},
+            id="dotnet-caller-source",
+        ),
+        pytest.param(
+            "tests/eng/test_run_dotnet_ci_group.py",
+            {"python"},
+            {"tests/eng/test_run_dotnet_ci_group.py"},
+            id="dotnet-caller-test",
         ),
         ("eng/scripts/hk_file_operands.py", {"python"}, {V3_TESTS}),
         (scope.V3 + "/docs/requirements.md", set(), set()),

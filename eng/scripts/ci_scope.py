@@ -294,6 +294,14 @@ def _python_tests(
             and path == "eng/scripts/run_node_ci_group.py"
         )
         or (
+            test == "tests/eng/test_run_dotnet_ci_group.py"
+            and path
+            in {
+                "eng/scripts/run_dotnet_ci_group.py",
+                "eng/scripts/run_node_ci_group.py",
+            }
+        )
+        or (
             test.startswith("src/public/lib/nbgv-python/")
             and path in DOTNET_INPUTS
         )

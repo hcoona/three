@@ -222,16 +222,17 @@ def execute(
         message = "The complete candidate control distribution is missing"
         raise ValueError(message)
     directory.mkdir(parents=True, exist_ok=False)
-    node.run(root, directory, "tools", "dotnet", "tool", "restore")
-    node.run(
-        root,
-        directory,
-        "restore",
-        "dotnet",
-        "restore",
-        "dirs.proj",
-        *PROPERTIES,
-    )
+    if plan["checks"]:
+        node.run(root, directory, "tools", "dotnet", "tool", "restore")
+        node.run(
+            root,
+            directory,
+            "restore",
+            "dotnet",
+            "restore",
+            "dirs.proj",
+            *PROPERTIES,
+        )
     scratch = directory / "execution"
     scratch.mkdir()
     request_path = directory / "request.json"

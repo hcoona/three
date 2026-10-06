@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from ci_scope import CONTROL_PROJECT, ROOT, git, owner_present
@@ -13,16 +14,24 @@ from ci_scope import CONTROL_PROJECT, ROOT, git, owner_present
 
 def run(root: Path, *arguments: str) -> str:
     """Run one required native operation without repair or fallback."""
-    return subprocess.run(
-        arguments,
-        cwd=root,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-        timeout=300,
-    ).stdout
+    try:
+        return subprocess.run(
+            arguments,
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            timeout=300,
+        ).stdout
+    except subprocess.CalledProcessError as error:
+        try:
+            sys.stderr.write(error.stdout or "")
+            sys.stderr.write(error.stderr or "")
+        except (OSError, UnicodeError):
+            pass
+        raise
 
 
 def prepare(

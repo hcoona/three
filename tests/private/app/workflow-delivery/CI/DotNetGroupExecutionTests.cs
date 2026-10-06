@@ -1,5 +1,6 @@
 using System.Text.Json;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Tests.CI;
@@ -160,6 +161,53 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
             item.Key.Check == DotNetChecks.Build).Status);
         Assert.AreEqual(status, result.Results.Single(item => item.Key.Check ==
             DotNetChecks.Test).Status);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ActualCancellationRetainsCompletedPartition(bool selectedPackages)
+    {
+        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken);
+        CiPlan retained = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
+            fixture.Candidate, "MTP", project: DotNetPackageFixture.Project);
+        CiPlan original = retained with
+        { Checks = [.. retained.Checks, .. selectedPackages ? fixture.Plan.Checks : []] };
+        string serialized = JsonSerializer.Serialize(original, TransferJson.Default.CiPlan);
+        DotNetRunResult? completed = null;
+        DotNetGroupRunResult result = await DotNetGroupExecution.RunAsync(original, fixture.Request,
+            async (plan, _, token) =>
+            {
+                cancellation.Cancel();
+                CheckKey test = plan.Checks.Single(item =>
+                    item.Work.Key.Check == DotNetChecks.Test).Work.Key;
+                var command = new NativeCommand("dotnet", fixture.Repo.Directory, ["test"], 60);
+                NativeCommandResult observation = await NativeProcess.ExecuteAsync(command, token);
+                Assert.AreEqual(NativeTermination.Cancelled, observation.Termination);
+                completed = new(plan.Candidate, plan.Checks.Select(item =>
+                    new CheckResult(plan.Candidate, item.Work.Key,
+                        item.Work.Key.Check == DotNetChecks.Build ? CheckStatus.Passed :
+                            CheckStatus.Cancelled)).ToArray(), [new(test, command, observation)],
+                    [], []);
+                return completed;
+            }, DotNetPackageExecution.RunAsync, cancellation.Token);
+        Assert.IsFalse(result.Outcome.Satisfied);
+        Assert.AreSame(completed, result.Retained);
+        Assert.AreEqual(NativeTermination.Cancelled,
+            Assert.ContainsSingle(result.Retained.Commands).Result.Termination);
+        Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
+            item.Key.Check == DotNetChecks.Build).Status);
+        Assert.AreEqual(CheckStatus.Cancelled, result.Results.Single(item =>
+            item.Key.Check == DotNetChecks.Test).Status);
+        Assert.HasCount(selectedPackages ? 3 : 0, result.Packages.Results);
+        Assert.IsTrue(result.Packages.Results.All(item => item.Status == CheckStatus.Cancelled));
+        Assert.IsEmpty(result.Packages.Commands);
+        Assert.IsEmpty(result.Packages.Packages);
+        Assert.HasCount(original.Checks.Length, result.Results);
+        Assert.AreEqual(serialized,
+            JsonSerializer.Serialize(original, TransferJson.Default.CiPlan));
     }
 
     [TestMethod]
