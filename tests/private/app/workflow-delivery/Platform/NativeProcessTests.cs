@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Platform;
@@ -70,24 +71,57 @@ public sealed class NativeProcessTests
     [TestMethod]
     public async Task RunCancellationTerminatesOwnedProcess()
     {
-        using var fixture = new ProcessFixture(
-            "[System.IO.File]::WriteAllText($args[0], [string]$PID); Start-Sleep -Seconds 60");
+        var fixture = new ProcessFixture(
+            "$staging = $args[0] + '.tmp'; " +
+            "[System.IO.File]::WriteAllText($staging, [string]$PID); " +
+            "[System.IO.File]::Move($staging, $args[0]); Start-Sleep -Seconds 60");
         string pidPath = Path.Combine(fixture.Directory, "pid.txt");
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.CancellationToken);
         cancellation.CancelAfter(TimeSpan.FromSeconds(15));
         Task<string> query = fixture.RunAsync(cancellation.Token, pidPath);
-        while (!File.Exists(pidPath) && !query.IsCompleted)
-            await Task.Delay(50, cancellation.Token);
-        Assert.IsTrue(File.Exists(pidPath), "The child process must start before cancellation.");
-        int pid = int.Parse(await File.ReadAllTextAsync(pidPath, cancellation.Token),
-            System.Globalization.CultureInfo.InvariantCulture);
-        using Process child = Process.GetProcessById(pid);
+        Exception? failure = null;
+        try
+        {
+            while (!File.Exists(pidPath) && !query.IsCompleted)
+                await Task.Delay(50, cancellation.Token);
+            Assert.IsTrue(File.Exists(pidPath),
+                "The child process must start before cancellation.");
+            int pid = int.Parse(await File.ReadAllTextAsync(pidPath, cancellation.Token),
+                System.Globalization.CultureInfo.InvariantCulture);
+            using Process child = Process.GetProcessById(pid);
 
-        await cancellation.CancelAsync();
-        await Assert.ThrowsAsync<OperationCanceledException>(() => query);
+            await cancellation.CancelAsync();
+            await Assert.ThrowsAsync<OperationCanceledException>(() => query);
 
-        Assert.IsTrue(child.HasExited, "The owned root must exit before RunAsync returns.");
+            Assert.IsTrue(child.HasExited, "The owned root must exit before RunAsync returns.");
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+        finally
+        {
+            try
+            {
+                await cancellation.CancelAsync();
+                await query;
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+            catch (Exception exception)
+            {
+                failure = failure is null ? exception : new AggregateException(failure, exception);
+            }
+            try
+            {
+                fixture.Dispose();
+            }
+            catch (Exception exception)
+            {
+                failure = failure is null ? exception : new AggregateException(failure, exception);
+            }
+        }
+        if (failure is not null) ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
     [TestMethod]
