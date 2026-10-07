@@ -183,6 +183,33 @@ public sealed class ImpactPlannerPairedReasonsTests
     }
 
     [TestMethod]
+    [DataRow("checks", false)]
+    [DataRow("checks", true)]
+    [DataRow("preset", false)]
+    [DataRow("preset", true)]
+    [DataRow("native-preset", false)]
+    [DataRow("native-preset", true)]
+    public void PairedReasonsRejectMalformedDeletedOwnersBeforeClosure(string defect, bool full)
+    {
+        ProjectFacts owner = Scenario.Project("removed", qualityConsumers: Consumer);
+        owner = defect switch
+        {
+            "checks" => owner with { Checks = [] },
+            "preset" => owner with { QualityPreset = null },
+            "native-preset" => owner with { Origin = CheckOrigin.NativeRetained },
+            _ => throw new ArgumentException("Unknown fixture defect.", nameof(defect)),
+        };
+        var request = new PlanRequest(Scenario.Facts("base", owner,
+            Scenario.Project("consumer")), Scenario.Facts("candidate",
+            Scenario.Project("consumer")), InputPaths, full);
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            ImpactPlanner.SelectProjects(request, [new(Input, "base", owner.Id)]));
+
+        Assert.Contains("Unresolved quality contract for removed", error.Message);
+    }
+
+    [TestMethod]
     public void PairedReasonPreservesExplicitFullMode()
     {
         PlanRequest request = Scenario.Request([Scenario.Project("c"),

@@ -25,14 +25,7 @@ internal static class ImpactPlanner
         {
             if (!candidate.TryGetValue(id, out ProjectFacts? project))
                 continue;
-            bool resolvedOrigin = project.Origin switch
-            {
-                CheckOrigin.Preset => !string.IsNullOrWhiteSpace(project.QualityPreset),
-                CheckOrigin.NativeRetained => project.QualityPreset is null,
-                _ => false,
-            };
-            if (!resolvedOrigin || project.Checks.Length == 0)
-                throw new InvalidDataException($"Unresolved quality contract for {id}.");
+            ValidateQualityOwner(project);
             string[] presets = project.Origin == CheckOrigin.Preset
                 ? [project.QualityPreset!] : [];
             foreach (CheckSpec check in project.Checks)
@@ -103,6 +96,10 @@ internal static class ImpactPlanner
                         reason.Revision != request.Candidate.Revision) ||
                     (!basis.ContainsKey(reason.Project) && !candidate.ContainsKey(reason.Project)))
                     throw new InvalidDataException("Unresolved paired selection reason.");
+                if (basis.TryGetValue(reason.Project, out ProjectFacts? before))
+                    ValidateQualityOwner(before);
+                if (candidate.TryGetValue(reason.Project, out ProjectFacts? after))
+                    ValidateQualityOwner(after);
                 AddReason(reasons, reason.Project, reason);
                 pairedPaths.Add(reason.Path);
             }
@@ -240,6 +237,18 @@ internal static class ImpactPlanner
                     .Count() != package.Outputs.Length)
                 throw new InvalidDataException("Unresolved complete package outputs.");
         }
+    }
+
+    private static void ValidateQualityOwner(ProjectFacts project)
+    {
+        bool resolvedOrigin = project.Origin switch
+        {
+            CheckOrigin.Preset => !string.IsNullOrWhiteSpace(project.QualityPreset),
+            CheckOrigin.NativeRetained => project.QualityPreset is null,
+            _ => false,
+        };
+        if (!resolvedOrigin || project.Checks.Length == 0)
+            throw new InvalidDataException($"Unresolved quality contract for {project.Id}.");
     }
 
     internal static void ValidateKey(CheckKey key)
