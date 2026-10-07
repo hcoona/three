@@ -21,6 +21,11 @@ qualifies that fixture's native composition and effects. The adopted Node group
 and selected retained Node matrix now execute under root CI;
 [PR #1042](https://github.com/hcoona/three/pull/1042) retains their ordinary hosted
 transfer and execution qualification. The exclusive npm CI shadow is retired.
+Python passive extraction, the pinned native supplement, metadata adaptation and
+dependency projection have controlled component boundaries. The
+[primitive Linux observation](docs/research/python-native-planning.md#primitive-native-observation)
+qualifies the pinned helper composition; complete fact assembly, native caller
+qualification and Python execution cutover remain pending.
 Other quality presets, ecosystem execution cutover and Release remain pending.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim

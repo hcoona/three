@@ -73,3 +73,7 @@ extend-words = { ist = 'ist' }
 [type."account-history.content.ts"]
 extend-glob = ["account-history.content.ts"]
 extend-ignore-re = ["const PAYMENT_CLASS = 'wth_payment';"]
+
+[type.python-native-metadata]
+extend-glob = ["python-metadata.json"]
+extend-words = { certifi = "certifi" } # Preserve the native package name in recorded output.

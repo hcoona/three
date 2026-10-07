@@ -6,14 +6,15 @@ This source assessment supports the next Python CI integration under the
 [implementation plan](../migration-strategy.md#native-facts-and-first-supported-shapes).
 It identifies the native facts available at the repository's UV 0.12.23 pin and a
 specific missing relation. It is not an accepted reader, complete Python graph,
-implementation choice or runtime qualification.
+implementation choice or complete runtime qualification. The later
+[primitive observation](#primitive-native-observation) retains its separate scope.
 
 The source pin is UV commit
 [`46b84fd0bfec23b72f29e8e2185ba68a65052f48`][uv-pin]. The committed
 [`mise.toml`][repository-uv-pin] and [`mise.lock`][repository-uv-lock] select
 0.12.23. The source conclusions below use pinned public source and repository
 files. No workspace evaluation, resolver, installation, backend hook or build
-was executed for this assessment.
+was executed for the source assessment; the later observation is separate evidence.
 
 ## Available Native Facts
 
@@ -90,38 +91,62 @@ build requirements under build isolation; it is not a passive graph query.
 PyPA `build` offers the public
 [`ProjectBuilder.build_system_requires`][pypa-build] property for declared/default
 requirements. The planning contract bounds its composition with UV's native
-parsing/lowering to an explicit declared shape. Actual error and identity behavior
-still need native qualification; arbitrary default contexts are not established.
+parsing/lowering to an explicit declared shape. The source finding alone does not
+qualify error and identity behavior; arbitrary default contexts remain unestablished.
 Dynamic PEP 517 hooks execute backend code and do not promise a complete input
 inventory.
 
 UV [labels][uv-versioning] its component crates internal and unstable. Public Rust
 exports do not establish a supported external integration or compatibility
 promise. The pinned [workspace manifest][uv-cargo] declares Rust 1.97.0, and
-[`uv-distribution`][uv-distribution-cargo] declares version 0.0.90. A supplement would add a real Rust preparation dependency alongside Python
-requirement extraction. Neither compilation, runtime availability nor platform
-feasibility has been established here.
+[`uv-distribution`][uv-distribution-cargo] declares version 0.0.90. A supplement adds a real Rust preparation dependency alongside Python
+requirement extraction. These source findings alone do not establish compilation,
+runtime availability or platform feasibility.
 
 This candidate does not yet establish an unavoidable product tradeoff. The
 accepted HLD permits native-language library helpers; the owner's PNPM-specific
 CLI choice does not impose a Python CLI-only requirement. The planning contract selects a finite composition from this evidence. Its
-preparation and support/maintenance cost remain unqualified. It must not claim the missing relation has already
+complete integration and support/maintenance cost remain unqualified. Source
+findings alone must not claim complete relations have already
 been recovered, relax completeness, add duplicate declarations, or implement UV
 source semantics in the application.
 
+## Primitive Native Observation
+
+The independently accepted [native outcome](https://github.com/hcoona/three/pull/1063#issuecomment-6045152503)
+and [retained originals](https://github.com/hcoona/three/pull/1063#issuecomment-6045108404)
+qualify the pinned ordered C# reader, passive extraction and UV Rust supplement
+on Linux 6.6.157.1-1.azl3/x86_64/glibc 2.38, CPython 3.14.3, UV 0.12.23 and
+Rust 1.97.0. The evidence archive SHA256 is
+`f8952378e7b7341d20ae6f12ae8657f67150ac965a3ed4eadc85189d2b11ce25`.
+The protocol manifest SHA256 is
+`83e68edfa26e634ed8d3b0d504ddb2d67bc92f4c8d81d61fb69f6a880cd22a06`.
+The actual composition preserves build-only and ordinary-plus-build associations,
+local build chains/extras, native marker/interpreter/group answers and finite
+negative diagnostic outcomes. The two actual repository endpoints deliberately
+materialize the same reviewed tree. Synthetic ordinary relations are controls,
+not observed native ordinary edges.
+
+This observation does not establish complete Workflow ownership/activity/impact
+assembly, different-commit deletion/rename, check execution, package consumers,
+caller cutover, Windows, publication, future compatibility, zero egress or
+universal containment. The first independently accepted success stopped the
+campaign; both unused diagnostic reserves expired. Retained replay fixtures
+exercise application adaptation without reopening that campaign. Any necessary
+later native experiment needs its own accepted concrete protocol and effects
+bounds; these results do not authorize it.
+
 ## Next Evidence and Recheck
 
-Before selecting a complete reader, the remaining questions are requirement
-extraction alignment, native build-source association, build-only and transitive
-relations at both endpoints, operation dimensions/markers, backend configuration
-and generated/version input ownership, and helper preparation feasibility.
+Before selecting a complete reader, the remaining questions are complete
+endpoint operation/activity and committed ownership assembly, generated/version
+input consumers, Python check/prerequisite/execution mapping and caller cutover.
 Undeclared dynamic inputs retain the implementation plan's unsupported boundary.
 No generic helper framework is implied.
 
-If native execution is needed, its chosen interface first needs a concrete,
-accepted isolated protocol. A build-only consumer, an ordinary-plus-build control,
-a local backend chain, missing-member/source errors and conditional native sources
-are useful candidate scenarios. This assessment does not authorize those calls.
+If further native execution is needed, its exact remaining subject first needs
+a concrete accepted isolated protocol. Reuse the retained primitive evidence
+for its qualified boundary; do not repeat it as a complete-reader test.
 
 Recheck these source findings when the repository UV pin changes or the next
 Python integration review relies on them. Its author checks the affected native
