@@ -2,8 +2,9 @@ namespace WorkflowDelivery.CI;
 
 internal static class ImpactPlanner
 {
-    internal static CiPlan Plan(PlanRequest request)
-        => PlanSelected(request, SelectProjects(request));
+    internal static CiPlan Plan(PlanRequest request,
+        IReadOnlyCollection<SelectionReason>? pairedReasons = null)
+        => PlanSelected(request, SelectProjects(request, pairedReasons));
 
     internal static CiPlan PlanSelected(PlanRequest request,
         IReadOnlyDictionary<string, HashSet<SelectionReason>> reasons)
@@ -73,7 +74,8 @@ internal static class ImpactPlanner
         );
     }
 
-    internal static Dictionary<string, HashSet<SelectionReason>> SelectProjects(PlanRequest request)
+    internal static Dictionary<string, HashSet<SelectionReason>> SelectProjects(PlanRequest request,
+        IReadOnlyCollection<SelectionReason>? pairedReasons = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         Dictionary<string, ProjectFacts> basis = ValidateFacts(request.Basis);
@@ -87,10 +89,29 @@ internal static class ImpactPlanner
         AddRelations(basis, consumers);
         AddRelations(candidate, consumers);
 
+        // The binder owns committed input completeness. A paired consumer can exist
+        // only at the other endpoint; the reason retains the initiating input revision.
+        var pairedPaths = new HashSet<string>(StringComparer.Ordinal);
+        if (pairedReasons is not null)
+            foreach (SelectionReason reason in pairedReasons)
+            {
+                ArgumentNullException.ThrowIfNull(reason);
+                ValidatePath(reason.Path);
+                RequireText(reason.Project, "paired selection owner");
+                if (!request.ChangedPaths.Contains(reason.Path, StringComparer.Ordinal) ||
+                    (reason.Revision != request.Basis.Revision &&
+                        reason.Revision != request.Candidate.Revision) ||
+                    (!basis.ContainsKey(reason.Project) && !candidate.ContainsKey(reason.Project)))
+                    throw new InvalidDataException("Unresolved paired selection reason.");
+                AddReason(reasons, reason.Project, reason);
+                pairedPaths.Add(reason.Path);
+            }
+
         foreach (string path in request.ChangedPaths)
         {
             ValidatePath(path);
-            bool known = SelectOwners(request.Basis, path, reasons);
+            bool known = pairedPaths.Contains(path);
+            known |= SelectOwners(request.Basis, path, reasons);
             known |= SelectOwners(request.Candidate, path, reasons);
             if (!known)
                 throw new InvalidDataException($"Unresolved changed path: {path}");

@@ -52,6 +52,14 @@ PNPM integration invokes the repository-selected CLI directly. The implemented
 selection/result core consumes resolved facts and does not
 interpret ecosystem manifests, dependency specifiers or version inheritance.
 
+The internal impact-selection operation also accepts caller-bound paired
+`SelectionReason` roots under the MLD's
+[quality-owner transfer contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#python-quality-owners-and-input-only-members).
+It validates changed paths, initiating revisions and actual union owners before
+the ordinary relation, Release Unit, check and prerequisite closure. This seam
+does not change the supplied-fact command format or establish Python fact assembly
+or native caller qualification.
+
 The Python passive extractor returns declared build strings and maintained
 plugin coordinates. The pinned Rust supplement and ordered configuration
 preflight have controlled unit boundaries. Metadata adaptation and operation
