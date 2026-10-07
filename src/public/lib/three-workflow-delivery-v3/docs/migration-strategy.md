@@ -210,10 +210,17 @@ source semantics. Retire producers and consumers atomically only after accepting
 check/prerequisite and transfer mapping and qualifying the implemented facts/callers. Release,
 publication and spent campaigns remain excluded.
 
-Before actual native qualification, bind reviewed helper/tool/field/source identities and concrete
-runtime preparation, then accept an exact experiment protocol covering commands, isolation,
+The [primitive native observation](./research/python-native-planning.md#primitive-native-observation)
+is independently accepted and stopped; both unused diagnostic reserves expired.
+It qualifies the pinned helper composition on its recorded Linux host, not complete
+fact assembly or caller integration. Do not repeat that campaign.
+
+Before later native qualification of complete fact assembly and callers, bind reviewed
+helper/tool/field/source identities and concrete runtime preparation, then accept a separate
+exact experiment protocol covering commands, isolation,
 configuration/environment/cache/download effects, finite time/state, observations, stop and owned
-cleanup/evidence. No executable helper hash or protocol is selected here. Keep a finite diagnostic buffer and stop at the first independently accepted success
+cleanup/evidence. No later executable helper hash or protocol is selected here.
+Keep a finite diagnostic buffer and stop at the first independently accepted success
 or the exhausted/unsafe bounds. Repetitions within the accepted protocol need no
 repeated owner approval.
 
