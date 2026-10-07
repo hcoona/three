@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from ci_scope import CONTROL_PROJECT, ROOT, git, owner_present
@@ -13,16 +14,24 @@ from ci_scope import CONTROL_PROJECT, ROOT, git, owner_present
 
 def run(root: Path, *arguments: str) -> str:
     """Run one required native operation without repair or fallback."""
-    return subprocess.run(
-        arguments,
-        cwd=root,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-        timeout=300,
-    ).stdout
+    try:
+        return subprocess.run(
+            arguments,
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            timeout=300,
+        ).stdout
+    except subprocess.CalledProcessError as error:
+        try:
+            sys.stderr.write(error.stdout or "")
+            sys.stderr.write(error.stderr or "")
+        except (OSError, UnicodeError):
+            pass
+        raise
 
 
 def prepare(
@@ -76,25 +85,34 @@ def prepare(
         str(after),
         comparison["candidate"],
     )
-    before = None
-    if before_present:
-        if comparison["basis"] == comparison["candidate"]:
-            before = after
-        else:
-            before = directory / "basis"
-            run(
-                root,
-                "git",
-                "worktree",
-                "add",
-                "--detach",
-                str(before),
-                comparison["basis"],
-            )
+    if comparison["basis"] == comparison["candidate"]:
+        before = after
+    else:
+        before = directory / "basis"
+        run(
+            root,
+            "git",
+            "worktree",
+            "add",
+            "--detach",
+            str(before),
+            comparison["basis"],
+        )
+    endpoints = {
+        "full": comparison["full"],
+        "basis": {"directory": str(before), "reference": comparison["basis"]},
+        "candidate": {
+            "directory": str(after),
+            "reference": comparison["candidate"],
+        },
+    }
+    (directory / "group-endpoints.json").write_text(
+        json.dumps(endpoints, indent=2) + "\n", encoding="utf-8"
+    )
     request = {
         "comparison": comparison,
         "repository": str(root),
-        "basisDirectory": str(before) if before is not None else None,
+        "basisDirectory": str(before) if before_present else None,
         "candidateDirectory": str(after),
     }
     request_path = directory / "request.json"
@@ -106,7 +124,7 @@ def prepare(
             stream.write(
                 f"request={request_path}\ncandidate_directory={after}\n"
             )
-            stream.write(f"basis_directory={before or ''}\n")
+            stream.write(f"basis_directory={before}\n")
             separate = str(before is not None and before != after).lower()
             stream.write(f"basis_separate={separate}\n")
             stream.write(

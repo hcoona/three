@@ -48,8 +48,23 @@ LEGACY_RELEASE_TESTS = "tests/eng/test_legacy_release_contract.py"
         pytest.param(
             "eng/scripts/run_node_ci_group.py",
             {"python"},
-            {"tests/eng/test_run_node_ci_group.py"},
+            {
+                "tests/eng/test_run_node_ci_group.py",
+                "tests/eng/test_run_dotnet_ci_group.py",
+            },
             id="node-caller-source",
+        ),
+        pytest.param(
+            "eng/scripts/run_dotnet_ci_group.py",
+            {"python"},
+            {"tests/eng/test_run_dotnet_ci_group.py"},
+            id="dotnet-caller-source",
+        ),
+        pytest.param(
+            "tests/eng/test_run_dotnet_ci_group.py",
+            {"python"},
+            {"tests/eng/test_run_dotnet_ci_group.py"},
+            id="dotnet-caller-test",
         ),
         ("eng/scripts/hk_file_operands.py", {"python"}, {V3_TESTS}),
         (scope.V3 + "/docs/requirements.md", set(), set()),
@@ -980,7 +995,7 @@ def test_endpoint_owners_use_committed_member_dependencies(
 def test_endpoint_owners_retain_multiple_native_and_project_responsibilities(
     comparison,
 ):
-    """Keep general .NET, special-job and native resource reasons separate."""
+    """Keep outside jobs and resources without general .NET heuristics."""
     root, _, base = comparison
     azure = root / scope.AZURE / "Sample.csproj"
     azure.parent.mkdir(parents=True)
@@ -1011,7 +1026,6 @@ def test_endpoint_owners_retain_multiple_native_and_project_responsibilities(
         str(source.relative_to(root))
     ]["reasons"]
     assert {(item["owner"], item["target"]) for item in azure_reasons} == {
-        ("dotnet", str(azure.relative_to(root))),
         ("azureauth", scope.AZURE),
     }
     native_reasons = _owner_rows(selected, "candidate")[
@@ -1023,12 +1037,6 @@ def test_endpoint_owners_retain_multiple_native_and_project_responsibilities(
             "target": scope.CONTROL_PROJECT,
             "rule": "native-embedded-resource",
             "sources": [scope.CONTROL_PROJECT],
-        },
-        {
-            "owner": "dotnet",
-            "target": scope.CONTROL_PROJECT,
-            "rule": "retained-project-input",
-            "sources": ["dirs.proj", scope.CONTROL_PROJECT],
         },
     ]
     assert selected["scopes"]["dotnet"]

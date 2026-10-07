@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Repository;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
@@ -35,6 +36,7 @@ public sealed class GitMaterializationTests(TestContext context)
     [DataRow("modified")]
     [DataRow("staged")]
     [DataRow("missing")]
+    [DataRow("renamed")]
     public async Task BindRejectsWrongMissingOrDirtyCheckout(string defect)
     {
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
@@ -67,10 +69,24 @@ public sealed class GitMaterializationTests(TestContext context)
             case "missing":
                 File.Delete(Path.Combine(repo.Directory, "content.txt"));
                 break;
+            case "renamed":
+                await repo.GitAsync("mv", "--", "content.txt", "renamed file.txt");
+                break;
         }
 
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             GitMaterialization.BindAsync(repo.Directory, revision, context.CancellationToken));
+        if (defect != "wrong-head")
+        {
+            string status = await repo.GitAsync("status", "--porcelain=v1", "-z",
+                "--untracked-files=no", "--ignore-submodules=none");
+            Assert.Contains(JsonSerializer.Serialize(Path.GetFullPath(repo.Directory)),
+                error.Message);
+            Assert.Contains(JsonSerializer.Serialize(status), error.Message);
+            Assert.DoesNotContain('\0', error.Message);
+            if (defect == "renamed")
+                Assert.AreEqual("R  renamed file.txt\0content.txt\0", status);
+        }
     }
 
     [TestMethod]

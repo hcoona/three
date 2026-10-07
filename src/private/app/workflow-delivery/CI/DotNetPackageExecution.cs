@@ -41,36 +41,7 @@ internal static class DotNetPackageExecution
                 "Native package execution requires its exact candidate.");
         GitMaterialization materialization = await GitMaterialization.BindAsync(checkout,
             revision, token);
-        var facts = new Dictionary<CheckKey, (DotNetGraphNode Node,
-            Dictionary<string, string> Values)>();
-        foreach (PlannedCheck item in plan.Checks)
-        {
-            if (!item.Origins.SequenceEqual([CheckOrigin.Preset]) ||
-                !item.QualityPresets.SequenceEqual([DotNetPackageChecks.Preset]))
-                throw new InvalidDataException(
-                    "Unsupported selected native package quality contract.");
-            PackageTarget subject = item.Work.Package ??
-                throw new InvalidDataException("Missing selected native package association.");
-            string declaration = await materialization.ReadOptionalTextAsync(subject.Declaration,
-                token) ?? throw new InvalidDataException(
-                    "Missing committed release-unit declaration.");
-            if (!revision.Entries.Any(entry => entry.Path == subject.EntryPoint &&
-                    entry.ObjectType == "blob" && entry.Mode is "100644" or "100755"))
-                throw new InvalidDataException(
-                    "Selected native package project is not committed source.");
-            facts.Add(item.Work.Key, DotNetPackageChecks.Read(item.Work, checkout,
-                ReleaseUnitDeclarationReader.Read(declaration, subject.Declaration)));
-        }
-        foreach (var group in plan.Checks.GroupBy(item =>
-                     (item.Work.Key.Target, item.Work.Key.Variant)))
-            if (group.Count() != 3 || group.Select(item => item.Work.Key.Check).ToHashSet()
-                .SetEquals([DotNetPackageChecks.Pack, DotNetPackageChecks.Contents,
-                    DotNetPackageChecks.Consumer]) is false ||
-                group.Any(item => !item.Work.Dimensions.OrderBy(pair => pair.Key)
-                    .SequenceEqual(group.First().Work.Dimensions.OrderBy(pair => pair.Key)) ||
-                    !ImpactPlanner.SamePackage(item.Work.Package, group.First().Work.Package)))
-                throw new InvalidDataException(
-                    "Incomplete or conflicting native package obligations.");
+        var facts = await ReadChecksAsync(plan, materialization, token);
         var results = new Dictionary<CheckKey, CheckResult>();
         var commands = new List<DotNetCommandObservation>();
         var packages = new List<DotNetOriginalPackage>();
@@ -160,6 +131,44 @@ internal static class DotNetPackageExecution
         }
         return new(plan.Candidate, plan.Checks.Select(item => results[item.Work.Key]).ToArray(),
             commands.ToArray(), packages.ToArray(), outputs.ToArray(), failures.ToArray());
+    }
+
+    internal static async Task<Dictionary<CheckKey, (DotNetGraphNode Node,
+        Dictionary<string, string> Values)>> ReadChecksAsync(CiPlan plan,
+        GitMaterialization materialization, CancellationToken token)
+    {
+        string checkout = materialization.Root;
+        var facts = new Dictionary<CheckKey, (DotNetGraphNode Node,
+            Dictionary<string, string> Values)>();
+        foreach (PlannedCheck item in plan.Checks)
+        {
+            if (!item.Origins.SequenceEqual([CheckOrigin.Preset]) ||
+                !item.QualityPresets.SequenceEqual([DotNetPackageChecks.Preset]))
+                throw new InvalidDataException(
+                    "Unsupported selected native package quality contract.");
+            PackageTarget subject = item.Work.Package ??
+                throw new InvalidDataException("Missing selected native package association.");
+            string declaration = await materialization.ReadOptionalTextAsync(subject.Declaration,
+                token) ?? throw new InvalidDataException(
+                    "Missing committed release-unit declaration.");
+            if (!materialization.Revision.Entries.Any(entry => entry.Path == subject.EntryPoint &&
+                    entry.ObjectType == "blob" && entry.Mode is "100644" or "100755"))
+                throw new InvalidDataException(
+                    "Selected native package project is not committed source.");
+            facts.Add(item.Work.Key, DotNetPackageChecks.Read(item.Work, checkout,
+                ReleaseUnitDeclarationReader.Read(declaration, subject.Declaration)));
+        }
+        foreach (var group in plan.Checks.GroupBy(item =>
+                     (item.Work.Key.Target, item.Work.Key.Variant)))
+            if (group.Count() != 3 || group.Select(item => item.Work.Key.Check).ToHashSet()
+                .SetEquals([DotNetPackageChecks.Pack, DotNetPackageChecks.Contents,
+                    DotNetPackageChecks.Consumer]) is false ||
+                group.Any(item => !item.Work.Dimensions.OrderBy(pair => pair.Key)
+                    .SequenceEqual(group.First().Work.Dimensions.OrderBy(pair => pair.Key)) ||
+                    !ImpactPlanner.SamePackage(item.Work.Package, group.First().Work.Package)))
+                throw new InvalidDataException(
+                    "Incomplete or conflicting native package obligations.");
+        return facts;
     }
 
     internal static DotNetOriginalPackage Archive(PackageTarget subject, JsonElement root,

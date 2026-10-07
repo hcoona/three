@@ -85,22 +85,8 @@ public sealed class CliApplicationTests
     [Fact]
     public void DoctorPassesStructurallyReadyNuGetCandidateWithoutClaimingSelection()
     {
-        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
-        var nuGetOptions = new NuGetPhase10VerticalSliceOptions
-        {
-            StateDirectoryPath = Path.Combine(pythonFixture.RootPath, "nuget-state"),
-            UserHomeDirectoryPath = Path.Combine(pythonFixture.RootPath, "nuget-home"),
-            EnvironmentVariableReader = _ => null,
-        };
-        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(pythonFixture) with
-        {
-            NuGetPhase10Options = nuGetOptions,
-        };
-
-        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "git").ExitCode);
-        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "nuget").ExitCode);
-
-        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+        using var fixture = new NuGetDoctorCliFixture();
+        CommandResult doctor = InvokeWithRuntime(fixture.Runtime, "doctor");
 
         Assert.Equal(0, doctor.ExitCode);
         AssertDoctorCheck(
@@ -128,29 +114,12 @@ public sealed class CliApplicationTests
         bool expectedSuccess
     )
     {
-        using var pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
         string? overrideValue = null;
-        var nuGetOptions = new NuGetPhase10VerticalSliceOptions
-        {
-            StateDirectoryPath = Path.Combine(pythonFixture.RootPath, "nuget-state"),
-            UserHomeDirectoryPath = Path.Combine(pythonFixture.RootPath, "nuget-home"),
-            EnvironmentVariableReader = name =>
-                string.Equals(
-                    name,
-                    "NUGET_NETCORE_PLUGIN_PATHS",
-                    StringComparison.Ordinal
-                )
-                    ? overrideValue
-                    : null,
-        };
-        CliRuntimeOptions runtime = CreateHealthyDoctorRuntimeOptions(pythonFixture) with
-        {
-            NuGetPhase10Options = nuGetOptions,
-        };
-
-        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "git").ExitCode);
-        Assert.Equal(0, InvokeWithRuntime(runtime, "configure", "nuget").ExitCode);
-        var nuGetService = new NuGetPhase10VerticalSliceService(nuGetOptions);
+        using var fixture = new NuGetDoctorCliFixture(name =>
+            string.Equals(name, "NUGET_NETCORE_PLUGIN_PATHS", StringComparison.Ordinal)
+                ? overrideValue
+                : null);
+        NuGetPhase10VerticalSliceService nuGetService = fixture.Service;
         if (string.Equals(mode, "missing", StringComparison.Ordinal))
         {
             File.Delete(nuGetService.Paths.PluginEntrypointPath);
@@ -158,7 +127,7 @@ public sealed class CliApplicationTests
         overrideValue = mode switch
         {
             "included" or "missing" => nuGetService.Paths.PluginEntrypointPath,
-            "excluded" => Path.Combine(pythonFixture.RootPath, "third-party.dll"),
+            "excluded" => Path.Combine(fixture.RootPath, "third-party.dll"),
             "incomplete" =>
                 nuGetService.Paths.PluginEntrypointPath
                 + Path.PathSeparator
@@ -166,7 +135,7 @@ public sealed class CliApplicationTests
             _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null),
         };
 
-        CommandResult doctor = InvokeWithRuntime(runtime, "doctor");
+        CommandResult doctor = InvokeWithRuntime(fixture.Runtime, "doctor");
 
         Assert.Equal(expectedSuccess ? 0 : 1, doctor.ExitCode);
         AssertDoctorCheck(
@@ -10565,7 +10534,7 @@ public sealed class CliApplicationTests
     {
         private readonly PythonDoctorFixture _pythonFixture;
 
-        public NuGetDoctorCliFixture()
+        public NuGetDoctorCliFixture(Func<string, string?>? environmentVariableReader = null)
         {
             _pythonFixture = new PythonDoctorFixture(PythonDoctorFixtureMode.Healthy);
             string applicationRoot = Path.Combine(
@@ -10586,20 +10555,30 @@ public sealed class CliApplicationTests
                 StateDirectoryPath = Path.Combine(_pythonFixture.RootPath, "nuget-state"),
                 ApplicationPayloadRootPath = applicationRoot,
                 UserHomeDirectoryPath = Path.Combine(_pythonFixture.RootPath, "nuget-home"),
-                EnvironmentVariableReader = _ => null,
+                EnvironmentVariableReader = environmentVariableReader ?? (_ => null),
             };
             Runtime = CreateHealthyDoctorRuntimeOptions(_pythonFixture) with
             {
                 NuGetPhase10Options = options,
             };
             Service = new NuGetPhase10VerticalSliceService(options);
-            Assert.Equal(0, InvokeWithRuntime(Runtime, "configure", "git").ExitCode);
-            Assert.Equal(0, InvokeWithRuntime(Runtime, "configure", "nuget").ExitCode);
+            RequireSetupSucceeded(InvokeWithRuntime(Runtime, "configure", "git"), "git");
+            RequireSetupSucceeded(InvokeWithRuntime(Runtime, "configure", "nuget"), "nuget");
         }
+
+        public string RootPath => _pythonFixture.RootPath;
 
         public CliRuntimeOptions Runtime { get; }
 
         public NuGetPhase10VerticalSliceService Service { get; }
+
+        private static void RequireSetupSucceeded(CommandResult result, string ecosystem)
+        {
+            Assert.True(result.ExitCode == 0,
+                $"Fixture configure {ecosystem} expected exit 0, actual {result.ExitCode}. "
+                + "stdout: " + result.StdOut[..Math.Min(result.StdOut.Length, 2048)]
+                + " stderr: " + result.StdErr[..Math.Min(result.StdErr.Length, 2048)]);
+        }
 
         public void Dispose() => _pythonFixture.Dispose();
 

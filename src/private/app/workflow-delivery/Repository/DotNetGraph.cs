@@ -10,7 +10,7 @@ internal sealed record DotNetGraphRequest(string Revision, string Root, string E
 internal sealed record DotNetNodeIdentity(string Project, Dictionary<string, string> Globals);
 internal sealed record DotNetGraphNode(DotNetNodeIdentity Identity, bool OuterBuild,
     MsBuildDimension Dimension, string TargetFrameworks, string RuntimeIdentifiers,
-    string[] OwnedPaths, string TestCapability);
+    string[] OwnedPaths, string TestCapability, string VersionBaseDirectory = "");
 internal sealed record DotNetGraphEdge(DotNetNodeIdentity Consumer, DotNetNodeIdentity Dependency);
 internal sealed record DotNetGraphInput(string Path, string Role, string Stage,
     DotNetNodeIdentity Consumer, DotNetInputProvider? Provider = null);
@@ -68,12 +68,29 @@ internal static class DotNetGraph
             imports.TryAdd(instance, project.Imports.ToArray());
             return instance;
         });
-        var identities = graph.ProjectNodes.ToDictionary(node => node,
+        HashSet<ProjectGraphNode> helpers = DotNetNbgvCaching.Helpers(graph);
+        ProjectGraphNode[] retained = graph.ProjectNodes.Where(node => !helpers.Contains(node))
+            .ToArray();
+        var identities = retained.ToDictionary(node => node,
             node => Identity(node.ProjectInstance));
-        var ownership = new DotNetOwnership(root, graph.ProjectNodes.Select(node =>
+        var ownership = new DotNetOwnership(root, retained.Select(node =>
             node.ProjectInstance), request.CommittedPaths);
         var producers = new DotNetRepositoryTargets(root, request.CommittedPaths);
-        DotNetGraphNode[] nodes = graph.ProjectNodes.Select(node =>
+        var restored = retained.ToDictionary(node => node, RestoreInputs);
+        foreach (ProjectGraphNode helper in helpers)
+            foreach (ProjectGraphNode consumer in helper.ReferencingProjects)
+            {
+                if (!restored.TryGetValue(consumer, out DotNetRestoreInputs[]? restore))
+                    throw new InvalidDataException("Unsupported nested NBGV helper relation.");
+                try { DotNetNbgvCaching.Validate(helper, consumer, restore); }
+                catch (InvalidDataException error)
+                {
+                    throw Unavailable(identities[consumer], "NbgvCachingHelper", error.Message);
+                }
+                producers.Validate(helper.ProjectInstance, reason => Unavailable(
+                    identities[consumer], "RepositoryTarget", reason));
+            }
+        DotNetGraphNode[] nodes = retained.Select(node =>
         {
             ProjectInstance project = node.ProjectInstance;
             producers.Validate(project, reason => Unavailable(identities[node],
@@ -88,20 +105,32 @@ internal static class DotNetGraph
                     project.GetPropertyValue("RuntimeIdentifier")),
                 project.GetPropertyValue("TargetFrameworks"),
                 project.GetPropertyValue("RuntimeIdentifiers"), ownership.Read(project),
-                TestCapability(project, identities[node]));
+                TestCapability(project, identities[node]), VersionBase(project));
         }).ToArray();
-        DotNetGraphEdge[] edges = graph.ProjectNodes.SelectMany(node =>
-            node.ProjectReferences.Select(dependency =>
+        DotNetGraphEdge[] edges = retained.SelectMany(node =>
+            node.ProjectReferences.Where(dependency => !helpers.Contains(dependency))
+            .Select(dependency =>
                 new DotNetGraphEdge(identities[node], identities[dependency]))).ToArray();
-        DotNetGraphInput[] inputs = graph.ProjectNodes.SelectMany(node =>
+        DotNetGraphInput[] inputs = retained.SelectMany(node =>
         {
             ProjectInstance project = node.ProjectInstance;
             DotNetNodeIdentity consumer = identities[node];
-            DotNetRestoreInputs[] restore = RestoreInputs(node);
+            DotNetRestoreInputs[] restore = restored[node];
             var providers = new DotNetNativeInputs(project, imports[project], restore,
                 request.CommittedPaths);
-            return new[] { new DotNetGraphInput(Absolute(project.FullPath), "Project",
-                    "Evaluation", consumer) }
+            return EvaluatedInputs(project, consumer, "Project")
+                .Concat(DotNetConfigurationInputs.Candidates(project, consumer, root))
+                .Concat(restore.SelectMany(value => value.Inputs))
+                .Concat(node.ProjectReferences.Where(helpers.Contains).SelectMany(helper =>
+                    EvaluatedInputs(helper.ProjectInstance, consumer, "Import")))
+                .Select(providers.Classify);
+        }).ToArray();
+        return new(request.Revision, root, entry, nodes, edges, inputs);
+
+        IEnumerable<DotNetGraphInput> EvaluatedInputs(ProjectInstance project,
+            DotNetNodeIdentity consumer, string projectRole) =>
+            new[] { new DotNetGraphInput(Absolute(project.FullPath), projectRole,
+                "Evaluation", consumer) }
                 .Concat(project.ImportPaths.Select(path => new DotNetGraphInput(Absolute(path),
                     "Import", "Evaluation", consumer)))
                 .Concat(EvaluatedInputTypes.SelectMany(type => project.GetItems(type)
@@ -113,12 +142,22 @@ internal static class DotNetGraph
                     .Where(property => property.Value.Length != 0)
                     .Select(property => new DotNetGraphInput(Path.GetFullPath(property.Value,
                             Path.GetDirectoryName(project.FullPath)!), property.Name,
-                        "Evaluation", consumer)))
-                .Concat(DotNetConfigurationInputs.Candidates(project, consumer, root))
-                .Concat(restore.SelectMany(value => value.Inputs))
-                .Select(providers.Classify);
-        }).ToArray();
-        return new(request.Revision, root, entry, nodes, edges, inputs);
+                        "Evaluation", consumer)));
+
+        string VersionBase(ProjectInstance project)
+        {
+            string repository = project.GetPropertyValue("GitRepoRoot");
+            if ((repository.Length != 0 && !string.Equals(
+                    Path.TrimEndingDirectorySeparator(Absolute(repository)), root,
+                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
+                        StringComparison.Ordinal)) ||
+                project.GetPropertyValue("ProjectPathRelativeToGitRepoRoot").Length != 0)
+                throw new InvalidDataException("Unsupported native NBGV repository context.");
+            string directory = project.GetPropertyValue("GitVersionBaseDirectory");
+            return directory.Length == 0 ? DotNetOwnership.IsManagedProject(project)
+                ? Path.GetDirectoryName(project.FullPath)! : "" :
+                Path.TrimEndingDirectorySeparator(Absolute(directory));
+        }
 
         string TestCapability(ProjectInstance project, DotNetNodeIdentity identity)
         {
@@ -137,13 +176,17 @@ internal static class DotNetGraph
         InvalidDataException Unavailable(DotNetNodeIdentity identity, string role, string reason) =>
             new($"Native fact unavailable at revision {request.Revision}, endpoint {root}, " +
                 $"project {identity.Project}, globals " +
-                System.Text.Json.JsonSerializer.Serialize(identity.Globals) +
+                System.Text.Json.JsonSerializer.Serialize(identity.Globals,
+                    TransferJson.Default.DictionaryStringString) +
                 $", role {role}: {reason}");
 
         DotNetRestoreInputs[] RestoreInputs(ProjectGraphNode node)
         {
             ProjectInstance project = node.ProjectInstance;
-            if (!DotNetOwnership.IsManagedProject(project)) return [];
+            if (!DotNetOwnership.IsManagedProject(project))
+                return project.GetPropertyValue("UsingMicrosoftTraversalSdk") == "true"
+                    ? [DotNetConfigurationInputs.Traversal(project, identities[node], root,
+                        request.CommittedPaths)] : [];
             ProjectInstance[] sources = [project];
             if (string.IsNullOrEmpty(project.GetPropertyValue("ProjectAssetsFile")) &&
                 string.Equals(project.GetPropertyValue("IsCrossTargetingBuild"), "true",

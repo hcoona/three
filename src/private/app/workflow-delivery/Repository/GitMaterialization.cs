@@ -1,3 +1,4 @@
+using System.Text.Json;
 using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Repository;
@@ -34,7 +35,9 @@ internal sealed class GitMaterialization
             ["--no-lazy-fetch", "--no-replace-objects", "status", "--porcelain=v1", "-z",
                 "--untracked-files=no", "--ignore-submodules=none"], token);
         if (status.Length != 0)
-            throw new InvalidDataException("Planning requires a clean tracked checkout.");
+            throw new InvalidDataException("Planning requires a clean tracked checkout. " +
+                $"Root: \"{JsonEncodedText.Encode(root)}\"; " +
+                $"Git status: \"{JsonEncodedText.Encode(status)}\".");
         return new(root, revision);
     }
 

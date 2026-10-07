@@ -32,6 +32,9 @@ internal static class ControlBuildDependencyReader
                 ) != operation.Dimension.TargetFramework)
             throw new InvalidDataException(
                 "Native restore belongs to a different control operation.");
+        if (restore.ConfigFilePaths.Any(path =>
+            !Path.IsPathFullyQualified(path) || !File.Exists(path)))
+            throw new InvalidDataException("Native restore configuration is unavailable.");
         var directories = new Dictionary<string, ControlDependencyDirectory>(
             StringComparer.Ordinal);
         foreach (LockFileLibrary library in assets.Libraries)
@@ -79,6 +82,7 @@ internal static class ControlBuildDependencyReader
             directories.TryAdd(directory, new(identity.Id + "/" +
                 identity.Version.ToNormalizedString(), directory, files));
         }
+        AddWorkloadAutoImports(operation, log, directories);
         AddFrameworkPacks(operation, log, directories);
         string extensions = restore.OutputPath;
         string project = Path.GetFileName(operation.Project);
@@ -86,6 +90,48 @@ internal static class ControlBuildDependencyReader
             restore.ConfigFilePaths.Select(Path.GetFullPath).ToArray(),
             [operation.AssetsFile, Path.Combine(extensions, project + ".nuget.g.props"),
                 Path.Combine(extensions, project + ".nuget.g.targets")]);
+    }
+
+    private static void AddWorkloadAutoImports(ControlBuildContext operation, ControlBuildLog log,
+        Dictionary<string, ControlDependencyDirectory> directories)
+    {
+        StringComparer paths = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        string importer = Path.Combine(operation.SdkDirectory, "Sdks", "Microsoft.NET.Sdk",
+            "targets", "Microsoft.NET.Sdk.ImportWorkloads.props");
+        var packs = new Dictionary<string, HashSet<string>>(paths);
+        foreach (ControlBuildImport seed in log.Imports)
+        {
+            if (seed.Evaluation is null || !paths.Equals(seed.Project, operation.Project) ||
+                !paths.Equals(seed.Importer, importer) ||
+                seed.UnexpandedProject != "AutoImport.props" ||
+                !Path.IsPathFullyQualified(seed.Path) || !File.Exists(seed.Path) ||
+                !paths.Equals(Path.GetFileName(seed.Path), "AutoImport.props")) continue;
+            string sdk = Path.GetDirectoryName(seed.Path)!;
+            if (!paths.Equals(Path.GetFileName(sdk), "Sdk")) continue;
+            string pack = Directory.GetParent(sdk)!.FullName;
+            var files = new HashSet<string>(paths) { seed.Path };
+            bool added;
+            do
+            {
+                added = false;
+                foreach (ControlBuildImport child in log.Imports)
+                {
+                    if (child.Evaluation != seed.Evaluation ||
+                        !paths.Equals(child.Project, seed.Project) || child.Importer is null ||
+                        !files.Contains(child.Importer) ||
+                        !Path.IsPathFullyQualified(child.Path) || !File.Exists(child.Path) ||
+                        !IsChild(pack, child.Path)) continue;
+                    added |= files.Add(child.Path);
+                }
+            } while (added);
+            if (!packs.TryGetValue(pack, out HashSet<string>? observed))
+                packs.Add(pack, observed = new(paths));
+            observed.UnionWith(files);
+        }
+        foreach ((string pack, HashSet<string> files) in packs)
+            directories.TryAdd(pack, new("selected SDK workload autoimport", pack,
+                files.Order(paths).ToArray()));
     }
 
     private static void AddFrameworkPacks(ControlBuildContext operation, ControlBuildLog log,

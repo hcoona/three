@@ -34,28 +34,7 @@ internal static class DotNetExecution
         ResultCollector.Collect(plan, []);
         if (plan.Scope != DotNetFactsAssembler.Scope)
             throw new InvalidDataException("Unsupported native .NET execution scope.");
-        var nodes = new Dictionary<CheckKey, DotNetGraphNode>();
-        foreach (PlannedCheck item in plan.Checks)
-        {
-            if (!item.Origins.SequenceEqual([CheckOrigin.NativeRetained]) ||
-                item.QualityPresets.Length != 0)
-                throw new InvalidDataException("Unsupported selected .NET quality contract.");
-            nodes.Add(item.Work.Key, DotNetChecks.Read(item.Work, checkout));
-        }
-        foreach (var identity in plan.Checks.GroupBy(item =>
-                     (item.Work.Key.Target, item.Work.Key.Variant)))
-        {
-            PlannedCheck build = identity.SingleOrDefault(item =>
-                item.Work.Key.Check == DotNetChecks.Build) ??
-                throw new InvalidDataException("Missing native Build obligation.");
-            CheckSpec[] complete = DotNetChecks.Expand(build.Work.Key.Target,
-                nodes[build.Work.Key]);
-            if (identity.Count() != complete.Length || complete.Any(check =>
-                    !nodes.TryGetValue(check.Key, out DotNetGraphNode? node) ||
-                    node.Dimension != nodes[build.Work.Key].Dimension ||
-                    node.TestCapability != nodes[build.Work.Key].TestCapability))
-                throw new InvalidDataException("Incomplete selected native identity obligations.");
-        }
+        Dictionary<CheckKey, DotNetGraphNode> nodes = ReadChecks(plan, checkout);
         GitRevision revision = await new GitReader(checkout).ReadAsync(plan.Candidate, token);
         if (revision.Commit != plan.Candidate)
             throw new InvalidDataException("Native .NET execution requires its exact candidate.");
@@ -128,6 +107,33 @@ internal static class DotNetExecution
             }
             results.Add(check.Key, new(plan.Candidate, check.Key, status));
         }
+    }
+
+    internal static Dictionary<CheckKey, DotNetGraphNode> ReadChecks(CiPlan plan, string checkout)
+    {
+        var nodes = new Dictionary<CheckKey, DotNetGraphNode>();
+        foreach (PlannedCheck item in plan.Checks)
+        {
+            if (!item.Origins.SequenceEqual([CheckOrigin.NativeRetained]) ||
+                item.QualityPresets.Length != 0)
+                throw new InvalidDataException("Unsupported selected .NET quality contract.");
+            nodes.Add(item.Work.Key, DotNetChecks.Read(item.Work, checkout));
+        }
+        foreach (var identity in plan.Checks.GroupBy(item =>
+                     (item.Work.Key.Target, item.Work.Key.Variant)))
+        {
+            PlannedCheck build = identity.SingleOrDefault(item =>
+                item.Work.Key.Check == DotNetChecks.Build) ??
+                throw new InvalidDataException("Missing native Build obligation.");
+            CheckSpec[] complete = DotNetChecks.Expand(build.Work.Key.Target,
+                nodes[build.Work.Key]);
+            if (identity.Count() != complete.Length || complete.Any(check =>
+                    !nodes.TryGetValue(check.Key, out DotNetGraphNode? node) ||
+                    node.Dimension != nodes[build.Work.Key].Dimension ||
+                    node.TestCapability != nodes[build.Work.Key].TestCapability))
+                throw new InvalidDataException("Incomplete selected native identity obligations.");
+        }
+        return nodes;
     }
 
     private static async Task<string> ReadOutputAsync(string response, string obligation,

@@ -190,7 +190,7 @@ internal static class ControlBuildInputProjection
             foreach (ControlBuildImport import in log.Imports)
                 AddFile(import.Path, "import");
             foreach (string config in restore.RestoreConfigurationFiles)
-                AddFile(config, "native restore configuration");
+                AddRestoreConfiguration(config);
             foreach (string candidate in operation.EditorConfigCandidates
                 .Concat(operation.GlobalConfigCandidates))
                 AddFile(candidate, "native configuration candidate", optional: true);
@@ -399,6 +399,14 @@ internal static class ControlBuildInputProjection
             }
             if (optional && !File.Exists(path) && !Directory.Exists(path)) return;
             AddExternal(path);
+        }
+
+        private void AddRestoreConfiguration(string path)
+        {
+            if (!Path.IsPathFullyQualified(path) || !File.Exists(path))
+                throw new InvalidDataException("Native restore configuration is unavailable.");
+            if (Below(checkout.Root, path)) AddFile(path, "native restore configuration");
+            else external.Add(new(path, "native restore environment"));
         }
 
         private void AddExternal(string path)

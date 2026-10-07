@@ -35,6 +35,21 @@ internal sealed class DotNetNativeInputs
                 var provider = new DotNetInputProvider("Sdk", Path.GetFullPath(root),
                     sdk.SdkReference.Name, sdk.Version ?? "");
                 native.Add(provider);
+                if (StringComparer.OrdinalIgnoreCase.Equals(provider.Identity,
+                        "Microsoft.NET.SDK.WorkloadAutoImportPropsLocator") &&
+                    Paths.Equals(Path.GetFileName(
+                        Path.TrimEndingDirectorySeparator(provider.Root)), "Sdk") &&
+                    Paths.Equals(import.ImportedProject.FullPath,
+                        Path.Combine(provider.Root, "AutoImport.props")))
+                {
+                    // The native workload resolver returns packRoot/Sdk. Its
+                    // observed AutoImport.props can import sibling pack inputs.
+                    native.Add(provider with
+                    {
+                        Root = Directory.GetParent(Path.TrimEndingDirectorySeparator(
+                            provider.Root))!.FullName,
+                    });
+                }
                 if (provider.Identity != "Microsoft.Build.Artifacts") continue;
                 string sdkProps = Path.Combine(provider.Root, "Sdk.props");
                 string sdkTargets = Path.Combine(provider.Root, "Sdk.targets");

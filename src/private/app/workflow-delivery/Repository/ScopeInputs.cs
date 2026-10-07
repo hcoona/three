@@ -56,6 +56,20 @@ internal sealed record ScopeInputs(CiComparison Comparison, string[] ChangedPath
             candidate with { UnaffectedPaths = known }, ChangedPaths, Comparison.Full);
     }
 
+    internal ScopeInputs WithResponsibilities(GitComparison native,
+        ScopeCoordinate[] basis, ScopeCoordinate[] candidate)
+    {
+        if (Comparison.Basis != native.Basis.Commit ||
+            Comparison.Candidate != native.Candidate.Commit ||
+            !ChangedPaths.ToHashSet(StringComparer.Ordinal).SetEquals(native.ChangedPaths))
+            throw new InvalidDataException("Responsibilities have a different native comparison.");
+        return this with
+        {
+            Basis = ValidateEndpoint(basis, native.Basis, ChangedPaths),
+            Candidate = ValidateEndpoint(candidate, native.Candidate, ChangedPaths),
+        };
+    }
+
     private static ScopeCoordinate[] Endpoint(JsonElement value, GitRevision native,
         string[] changed)
     {
@@ -89,7 +103,41 @@ internal sealed record ScopeInputs(CiComparison Comparison, string[] ChangedPath
         }
         if (!rows.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(changed))
             throw new InvalidDataException("Scope endpoint omitted or added changed coordinates.");
-        return rows.Values.OrderBy(row => row.Path, StringComparer.Ordinal).ToArray();
+        return ValidateEndpoint(rows.Values.ToArray(), native, changed);
+    }
+
+    private static ScopeCoordinate[] ValidateEndpoint(ScopeCoordinate[] rows,
+        GitRevision native, string[] changed)
+    {
+        var entries = native.Entries.ToDictionary(entry => entry.Path, StringComparer.Ordinal);
+        if (rows.Length != changed.Length || !rows.Select(row => row.Path)
+            .ToHashSet(StringComparer.Ordinal).SetEquals(changed))
+            throw new InvalidDataException("Scope endpoint omitted or repeated coordinates.");
+        foreach (ScopeCoordinate row in rows)
+        {
+            ImpactPlanner.ValidatePath(row.Path);
+            bool present = entries.TryGetValue(row.Path, out GitEntry? entry);
+            if (row.Present != present || row.Mode != entry?.Mode)
+                throw new InvalidDataException("Scope entry differs from native Git: " + row.Path);
+            foreach (ScopeResponsibility reason in row.Reasons)
+            {
+                if (!present || string.IsNullOrWhiteSpace(reason.Owner) ||
+                    string.IsNullOrWhiteSpace(reason.Target) ||
+                    string.IsNullOrWhiteSpace(reason.Rule) || reason.Sources.Length == 0 ||
+                    reason.Sources.Distinct(StringComparer.Ordinal).Count() !=
+                        reason.Sources.Length)
+                    throw new InvalidDataException("Scope responsibility has no committed source.");
+                foreach (string source in reason.Sources)
+                {
+                    ImpactPlanner.ValidatePath(source);
+                    if (!entries.TryGetValue(source, out GitEntry? origin) ||
+                        origin.ObjectType != "blob" || origin.Mode is not ("100644" or "100755"))
+                        throw new InvalidDataException(
+                            "Scope responsibility has no committed source.");
+                }
+            }
+        }
+        return rows.OrderBy(row => row.Path, StringComparer.Ordinal).ToArray();
     }
 
     private static string[] Paths(JsonElement value)

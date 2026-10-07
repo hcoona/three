@@ -191,9 +191,10 @@ do not introduce a second toolchain authority in this plan.
 ### Native .NET CI Group
 
 This group replaces general .NET CI selection and execution using the current
-Windows Debug operation. It does not migrate Release or test frameworks. Its
-source design is a contract for implementation; task loading, native facts,
-selected execution and changed-code hosted transfer remain qualification gates.
+Windows Debug operation. It does not migrate Release or test frameworks. Root CI
+consumes the implemented group under ordinary changed-code Windows qualification
+in [PR #1054](https://github.com/hcoona/three/pull/1054). The following contract and
+eight qualification gates continue to govern changes to this operation.
 
 #### Native Process and Endpoint Facts
 
@@ -222,12 +223,33 @@ name the endpoint, project/node when known, role and reason; they are errors.
 
 The CLI binds physical native paths to exact endpoint roots and committed Git
 spelling. SDK/package/generated paths retain their environmental/producer roles.
+The native workload autoimport locator associates a returned `Sdk` directory's
+immediate parent pack only when that result actually imports its `AutoImport.props`.
+Consume primary and additional paths without an installed-pack inventory or a
+second workload resolver. Other SDK roots and unknown external hooks do not gain
+that expansion; native provider identity/version do not claim an exact pack pin.
+Control-build collection separately consumes the successful import's immediate
+parent, unexpanded text and native evaluation identity. The selected SDK's literal
+autoimport seeds exact file membership for observed connected imports in that
+same evaluation and pack; no directory inventory or reconstructed SDK result
+supplies missing membership.
 Reject unsupported semantic globals containing endpoint-dependent coordinates;
 do not invent path rewriting or AssemblyName/relocation aliases. Aggregate native
 relations into business project-path IDs for the shared impact planner, retaining
 full native identity for execution. Both-endpoint relation union handles removed
 projects/references and rename coordinates; selected surviving projects expand
 all supported candidate inner variants.
+
+Retain NBGV's default `MSBuildTargetCaching`. The native
+`NBGV_InnerProject` reference and the consuming project's validated restored NBGV
+package pin identify its `build/PrivateP2PCaching.proj` helper. Adapt this concrete
+tool dependency separately from business projects: leave the native graph
+unchanged, omit the helper's internal identity and edges from portable business
+facts, and preserve its observed input responsibilities for each business
+consumer. Arbitrary external projects and unsupported helper overrides gain no
+exception. The receiving native operation reconstructs local helper paths.
+The [pinned NBGV source findings](./research/nbgv-native-inputs.md#native-msbuild-caching)
+explain this boundary; source support does not qualify hosted execution.
 
 #### Finite Input and Ownership Coverage
 
@@ -242,6 +264,20 @@ populated native metadata, exact project identity and the current committed
 serialized presence. Do not parse configuration hierarchy or add a second JSON
 reader. Native NBGV supplies actual configuration/version inputs; generated `obj`
 outputs retain their native producers instead of becoming committed diff paths.
+
+The root Traversal SDK project uses its own actual NuGet assets and generated
+imports, with effective restored global-package pins checked against native assets.
+Inactive declarations supply no provider; NuGet owns applicability.
+Its package providers describe the restored closure without claiming a committed
+traversal lock; the managed-project lock requirement is unchanged. Do not borrow
+descendant assets or add a lock solely to fit a business-project validator.
+Native version-input subjects bind effective `GitVersionBaseDirectory` to the
+endpoint's committed directory and union business consumers across variants.
+Traversal's unused self-version metadata does not add semantic product inputs.
+Its genuine project/configuration/provider/helper inputs keep their native
+reachable consumers. Business projects may still consume a root version subject.
+These physical subjects are not transferred check globals. Quality selection remains at the
+product directory. Unsupported external/repository-relative contexts fail.
 Build and native inner `GetTargetPath` supply runnable output at their proper
 stage; passive evaluation does not promise target-produced values.
 
@@ -462,8 +498,14 @@ Normalize repository paths in their native project/task context to the exact
 endpoint's committed spelling. Only supported regular Git files become source
 inputs. A generated file must join a supported native producer/configuration
 relation. Files outside the checkout must join the selected SDK or locked restore
-package/tool identity; unknown external files fail. Do not invent source paths
-from output basenames or treat all external files as pinned dependencies.
+package/tool identity or be an exact configuration contributor reported by that
+operation's native locked restore. Require absolute existing contributor files
+before normalization; committed files retain source precedence. Outside-checkout
+contributors remain invocation-local restore-environment facts, without exact
+pins or portable Git coordinates. This configuration-role association grants no
+membership to imports, task implementations or compiler inputs. Unknown external
+files still fail. Do not invent source paths from output basenames or treat all
+external files as pinned dependencies.
 
 This is a maintained adapter for the concrete CLI build, not a filesystem trace
 or an arbitrary-MSBuild completeness promise. Review additions to custom tasks,

@@ -15,6 +15,106 @@ namespace WorkflowDelivery.Tests.CI;
 public sealed class DotNetPackageNativeTests(TestContext context)
 {
     [TestMethod]
+    [Timeout(600000, CooperativeCancellation = true)]
+    public async Task NativeOriginalPlanExecutesInDifferentCheckout()
+    {
+        using var fixture = await ProductFixture.CreateAsync(context.CancellationToken,
+            discoverGraph: true);
+        DotNetGraphNode? discovered = fixture.DiscoveredNode;
+        Assert.IsNotNull(discovered);
+        string original = JsonSerializer.Serialize(fixture.Plan, TransferJson.Default.CiPlan);
+        CiPlan transferred = JsonSerializer.Deserialize(original, TransferJson.Default.CiPlan)!;
+        Dictionary<string, string> globals = JsonSerializer.Deserialize(
+            transferred.Checks[0].Work.Dimensions["globals"],
+            TransferJson.Default.DictionaryStringString)!;
+        CollectionAssert.AreEquivalent(discovered.Identity.Globals.ToArray(), globals.ToArray());
+        Assert.IsFalse(globals.ContainsKey("GitVersionBaseDirectory"));
+        Assert.IsTrue(globals.Values.All(value => !value.Contains(fixture.Checkout,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
+                StringComparison.Ordinal)));
+        using JsonDocument planning = await ProductFixture.NbgvReceiptAsync(fixture.Checkout,
+            globals, context.CancellationToken);
+        AssertNativeContext(planning, fixture.Checkout);
+        string receiver = Path.Combine(fixture.Scratch, "receiver");
+        NativeCommandResult checkout = await NativeProcess.ExecuteAsync(new("git", fixture.Checkout,
+            ["worktree", "add", "--detach", receiver, transferred.Candidate], 30,
+            new Dictionary<string, string?> { ["GIT_LFS_SKIP_SMUDGE"] = "1" }),
+            context.CancellationToken);
+        DotNetNativeFixture.RequireSuccess(checkout, "Transferred exact candidate checkout");
+        NativeCommandResult restore = await NativeProcess.ExecuteAsync(new("dotnet", receiver,
+            ["restore", ProductFixture.Project, "--locked-mode"], 60),
+            context.CancellationToken);
+        DotNetNativeFixture.RequireSuccess(restore, "Transferred locked package preparation");
+        using JsonDocument received = await ProductFixture.NbgvReceiptAsync(receiver, globals,
+            context.CancellationToken);
+        AssertNativeContext(received, receiver);
+        string execution = Directory.CreateDirectory(
+            Path.Combine(fixture.Scratch, "received-run")).FullName;
+        DotNetGroupRunResult result = await DotNetGroupExecution.RunAsync(transferred,
+            new(receiver, execution, 60), context.CancellationToken);
+        Retain(fixture, result.Packages, "cross-root");
+        context.WriteLine(JsonSerializer.Serialize(result,
+            TransferJson.Default.DotNetGroupRunResult));
+        context.WriteLine(JsonSerializer.Serialize(fixture.Native,
+            TransferJson.Default.DictionaryStringString));
+        string receipt = result.Packages.Commands[0].Command.Arguments.Single(argument =>
+            argument.StartsWith("-getResultOutputFile:", StringComparison.Ordinal))
+            ["-getResultOutputFile:".Length..];
+        context.WriteLine(await File.ReadAllTextAsync(receipt, context.CancellationToken));
+        Assert.AreNotEqual(fixture.Checkout, receiver);
+        Assert.IsTrue(result.Outcome.Satisfied,
+            string.Join("; ", result.Packages.Failures.Select(item => item.Error)));
+        Assert.HasCount(3, result.Outcome.Checks);
+        Assert.IsEmpty(result.Retained.Commands);
+        CollectionAssert.AreEqual(transferred.Checks.Select(item => item.Work.Key).ToArray(),
+            result.Results.Select(item => item.Key).ToArray());
+        Assert.AreEqual(original, JsonSerializer.Serialize(transferred,
+            TransferJson.Default.CiPlan));
+        NativeCommand pack = result.Packages.Commands[0].Command;
+        Assert.AreEqual(receiver, pack.Directory);
+        Assert.Contains(Path.GetFullPath(Path.Combine(receiver, ProductFixture.Project)),
+            pack.Arguments);
+        Assert.IsFalse(pack.Arguments.Any(argument => argument.Contains("NBGV_CacheMode",
+            StringComparison.OrdinalIgnoreCase)));
+        CollectionAssert.IsSubsetOf(DotNetChecks.Properties(globals), pack.Arguments);
+        Assert.HasCount(1, result.Packages.Packages);
+        Assert.HasCount(1, result.Packages.ConsumerOutputs);
+        Assert.AreEqual(DotNetPackageConsumer.Marker,
+            result.Packages.Commands[^1].Result.Stdout.Trim());
+
+        void AssertNativeContext(JsonDocument receipt, string root)
+        {
+            context.WriteLine(receipt.RootElement.GetRawText());
+            JsonElement properties = receipt.RootElement.GetProperty("Properties");
+            Assert.AreEqual("MSBuildTargetCaching", properties.GetProperty("NBGV_CacheMode")
+                .GetString());
+            string directory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(
+                properties.GetProperty("GitVersionBaseDirectory").GetString()!));
+            string expected = Path.TrimEndingDirectorySeparator(Path.GetFullPath(
+                Path.Combine(root, Path.GetRelativePath(fixture.Checkout,
+                    discovered.VersionBaseDirectory))));
+            Assert.AreEqual(expected, directory, OperatingSystem.IsWindows()
+                ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+            JsonElement reference = Assert.ContainsSingle(receipt.RootElement.GetProperty("Items")
+                .GetProperty("ProjectReference").EnumerateArray().Where(item =>
+                    item.TryGetProperty("NBGV_InnerProject", out JsonElement marker) &&
+                    marker.GetString() == "true"));
+            string helper = reference.GetProperty("FullPath").GetString()!;
+            Assert.AreEqual(Path.GetFullPath(properties.GetProperty("NBGV_CachingProjectReference")
+                .GetString()!), Path.GetFullPath(helper));
+            Assert.AreEqual("PrivateP2PCaching.proj", Path.GetFileName(helper));
+            LockFile assets = new LockFileFormat().Read(properties.GetProperty("ProjectAssetsFile")
+                .GetString()!);
+            LockFileLibrary package = Assert.ContainsSingle(assets.Libraries.Where(library =>
+                library.Name == "Nerdbank.GitVersioning"));
+            Assert.AreEqual("3.10.94", package.Version.ToNormalizedString());
+            Assert.IsTrue(assets.PackageFolders.Any(folder => Path.GetFullPath(Path.Combine(
+                folder.Path, package.Path, "build", "PrivateP2PCaching.proj")) ==
+                Path.GetFullPath(helper)));
+        }
+    }
+
+    [TestMethod]
     public async Task NativeProductPackAndCleanConsumerAgreeWithNbgv()
     {
         using var fixture = await ProductFixture.CreateAsync(context.CancellationToken);
@@ -293,7 +393,7 @@ public sealed class DotNetPackageNativeTests(TestContext context)
 
     private sealed class ProductFixture(string checkout, string scratch, CiPlan plan,
         Dictionary<string, string> native, string sourceRevision, string projectSha256,
-        string candidateCommitText) : IDisposable
+        string candidateCommitText, DotNetGraphNode? discoveredNode = null) : IDisposable
     {
         internal string Checkout { get; } = checkout;
         internal string Scratch { get; } = scratch;
@@ -303,12 +403,15 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         internal string Candidate => Plan.Candidate;
         internal string ProjectSha256 { get; } = projectSha256;
         internal string CandidateCommitText { get; } = candidateCommitText;
+        internal DotNetGraphNode? DiscoveredNode { get; } = discoveredNode;
+        private static readonly string[] GraphRestoreProperties = ["-property:Configuration=Debug",
+            "-property:ContinuousIntegrationBuild=true"];
         private int run;
         internal const string Project = "src/public/lib/hcoona-release-smoke-github-packages/" +
             "hcoona-release-smoke-github-packages.csproj";
 
         internal static async Task<ProductFixture> CreateAsync(CancellationToken token,
-            bool wrongMarker = false)
+            bool wrongMarker = false, bool discoverGraph = false)
         {
             string source = AppContext.BaseDirectory;
             while (!File.Exists(Path.Combine(source, "global.json")) ||
@@ -325,7 +428,7 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                 string[] checkoutArguments = ["checkout", "--detach", revision.Commit];
                 // This package fixture needs Git history, not unrelated products' LFS payloads.
                 NativeCommandResult checkoutResult = await NativeProcess.ExecuteAsync(
-                    new("git", checkout, checkoutArguments, 30,
+                    new("git", checkout, checkoutArguments, 120,
                         new Dictionary<string, string?> { ["GIT_LFS_SKIP_SMUDGE"] = "1" }), token);
                 DotNetNativeFixture.RequireSuccess(checkoutResult,
                     "Fixture git " + string.Join(' ', checkoutArguments) + " in " + checkout);
@@ -335,6 +438,14 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                 string projectSha256 = Convert.ToHexStringLower(SHA256.HashData(projectBytes));
                 await File.WriteAllBytesAsync(Path.Combine(checkout, Project), projectBytes, token);
                 var paths = new List<string> { Project };
+                if (discoverGraph)
+                {
+                    await File.WriteAllTextAsync(Path.Combine(checkout, "dirs.proj"), $"""
+                        <Project><ItemGroup><ProjectReference Include="{Project}" />
+                        </ItemGroup></Project>
+                        """, token);
+                    paths.Add("dirs.proj");
+                }
                 if (wrongMarker)
                 {
                     string marker = DotNetRepositoryReader.Parent(Project) + "/Smoke.cs";
@@ -366,7 +477,8 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                 string candidateCommitText = await NativeProcess.RunAsync("git", checkout,
                     ["cat-file", "commit", candidate], token);
                 NativeCommandResult preparation = await NativeProcess.ExecuteAsync(new("dotnet",
-                    checkout, ["restore", Project, "--locked-mode"], 60), token);
+                    checkout, ["restore", Project, "--locked-mode", .. (discoverGraph
+                        ? GraphRestoreProperties : [])], 60), token);
                 DotNetNativeFixture.RequireSuccess(preparation, "Exact product locked preparation");
                 string declaration = "src/public/lib/hcoona-release-smoke-github-packages/" +
                     "workflow-delivery.release-unit.yml";
@@ -377,6 +489,24 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                     Path.GetFullPath(Path.Combine(checkout, Project)),
                     DotNetNativeFixture.Globals(appHost: false)), false,
                     new("Debug", "net10.0", ""), "", "", [], "None");
+                if (discoverGraph)
+                {
+                    string graph = Directory.CreateDirectory(Path.Combine(scratch, "graph"))
+                        .FullName;
+                    GitMaterialization materialization = await GitMaterialization.BindAsync(
+                        checkout, revision, token);
+                    var reader = new DotNetRepositoryReader(materialization, new(
+                        typeof(DotNetGraphTask).Assembly.Location, Path.Combine(graph, "read.proj"),
+                        Path.Combine(graph, "request.json"),
+                        Path.Combine(graph, "response.json"), 60));
+                    DotNetRevisionInputs inputs = await reader.ReadAsync(token);
+                    node = Assert.ContainsSingle(inputs.Nodes.Where(bound =>
+                        bound.Project == Project && !bound.Native.OuterBuild)).Native;
+                    Assert.IsTrue(inputs.Nodes.All(bound =>
+                        bound.Project is "dirs.proj" or Project));
+                    Assert.IsFalse(inputs.Graph.Edges.Any(edge =>
+                        Path.GetFileName(edge.Dependency.Project) == "PrivateP2PCaching.proj"));
+                }
                 var project = new ProjectFacts(Project, DotNetRepositoryReader.Parent(Project),
                     [], [], unit.Id, DotNetPackageChecks.Preset, [], [Project]);
                 var facts = new RepositoryFacts(revision.Commit, DotNetFactsAssembler.Scope,
@@ -392,9 +522,24 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                 Dictionary<string, string> native = DotNetPackageChecks.Read(plan.Checks[0].Work,
                     checkout, unit).Values;
                 return new(checkout, scratch, plan, native, sourceRevision, projectSha256,
-                    candidateCommitText);
+                    candidateCommitText, discoverGraph ? node : null);
             }
             catch { Cleanup(scratch); throw; }
+        }
+
+        internal static async Task<JsonDocument> NbgvReceiptAsync(string checkout,
+            Dictionary<string, string> globals, CancellationToken token)
+        {
+            NativeCommandResult result = await NativeProcess.ExecuteAsync(new("dotnet", checkout,
+                ["msbuild", Path.Combine(checkout, Project), "-nologo", "-noAutoResponse",
+                    .. DotNetChecks.Properties(globals), "-property:IsGraphBuild=true",
+                    "-getItem:ProjectReference",
+                    "-getProperty:NBGV_CacheMode,NBGV_CachingProjectReference," +
+                    "GitVersionBaseDirectory,ProjectAssetsFile"],
+                60), token);
+            token.ThrowIfCancellationRequested();
+            DotNetNativeFixture.RequireSuccess(result, "Native receiving NBGV context");
+            return JsonDocument.Parse(result.Stdout);
         }
 
         internal Task<DotNetPackageRunResult> RunAsync(CancellationToken token) =>

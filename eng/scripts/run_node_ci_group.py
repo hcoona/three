@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +40,12 @@ def write_json(path: Path, value: object) -> None:
 
 
 def validate_scope_artifact(
-    metadata: dict[str, Any], artifact: int, run_id: int, repository: int
+    metadata: dict[str, Any],
+    artifact: int,
+    run_id: int,
+    repository: int,
+    *,
+    name: str = "ci-scope",
 ) -> None:
     """Use native artifact/run identity at the receiving boundary."""
     if any(
@@ -51,7 +57,7 @@ def validate_scope_artifact(
     workflow = metadata.get("workflow_run")
     if (
         metadata.get("id") != artifact
-        or metadata.get("name") != "ci-scope"
+        or metadata.get("name") != name
         or metadata.get("expired") is not False
         or not isinstance(workflow, dict)
         or workflow.get("id") != run_id
@@ -62,7 +68,12 @@ def validate_scope_artifact(
 
 
 def run(
-    root: Path, directory: Path, label: str, *args: str, required: bool = True
+    root: Path,
+    directory: Path,
+    label: str,
+    *args: str,
+    required: bool = True,
+    timeout: int = 900,
 ) -> str:
     """Retain the actual native outcome; never repair or retry an invocation."""
     outcome: dict[str, Any] = {"arguments": args, "cwd": str(root)}
@@ -72,7 +83,7 @@ def run(
             cwd=root,
             capture_output=True,
             check=False,
-            timeout=900,
+            timeout=timeout,
             env=os.environ
             | {"MSBUILDLOGTASKINPUTS": "1", "MSBUILDLOGTASKOUTPUTS": "1"},
         )
@@ -86,14 +97,22 @@ def run(
     write_json(directory / (label + ".command.json"), outcome)
     try:
         output = stdout.decode("utf-8", errors="strict")
-        stderr.decode("utf-8", errors="strict")
+        error_output = stderr.decode("utf-8", errors="strict")
     except UnicodeDecodeError:
         if required:
             raise
         return ""
+    if required and (
+        outcome["termination"] == "timedOut" or outcome["exitCode"]
+    ):
+        try:
+            sys.stderr.write(output)
+            sys.stderr.write(error_output)
+        except (OSError, UnicodeError):
+            pass
     if outcome["termination"] == "timedOut":
         if required:
-            raise subprocess.TimeoutExpired(args, 900, stdout, stderr)
+            raise subprocess.TimeoutExpired(args, timeout, stdout, stderr)
         return ""
     if not required and outcome["exitCode"] not in (0, 1):
         return ""
@@ -183,6 +202,7 @@ def build(root: Path, directory: Path, name: str) -> tuple[Path, Path]:
         name + "-restore",
         "mise",
         "exec",
+        "--locked",
         "--",
         "dotnet",
         "restore",
@@ -200,6 +220,7 @@ def build(root: Path, directory: Path, name: str) -> tuple[Path, Path]:
         name + "-build",
         "mise",
         "exec",
+        "--locked",
         "--",
         "dotnet",
         "msbuild",
@@ -216,6 +237,7 @@ def build(root: Path, directory: Path, name: str) -> tuple[Path, Path]:
         name + "-target",
         "mise",
         "exec",
+        "--locked",
         "--",
         "dotnet",
         "msbuild",

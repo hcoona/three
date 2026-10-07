@@ -116,6 +116,14 @@ internal static class DotNetFactsAssembler
     {
         var request = new PlanRequest(Assemble(basis, basisUnaffected),
             Assemble(candidate, candidateUnaffected), changedPaths, full);
+        return Select(request, candidate);
+    }
+
+    internal static DotNetSelection Select(PlanRequest request, DotNetRevisionInputs candidate)
+    {
+        if (request.Candidate.Revision != candidate.Revision.Commit ||
+            request.Candidate.Scope != Scope || request.Basis.Scope != Scope)
+            throw new InvalidDataException("Different bound native .NET selection context.");
         Dictionary<string, HashSet<SelectionReason>> selected =
             ImpactPlanner.SelectProjects(request);
         return new(request, selected, candidate.Nodes.Where(node => node.Project != "dirs.proj")
@@ -158,7 +166,8 @@ internal static class DotNetFactsAssembler
             string project = nodes[consumer].Project;
             Add(input.Path!, project == "dirs.proj" ? Reachable(consumer) : [project]);
         }
-        foreach (SharedInput input in inputs.SelectionInputs) Add(input.Path, input.Consumers);
+        foreach (SharedInput input in inputs.SelectionInputs)
+            Add(input.Path, input.Consumers);
         Dictionary<string, string> membership = DotNetReleaseUnits.Associate(inputs);
         foreach (ReleaseUnitDeclaration unit in inputs.Units)
             Add(unit.SourcePath, membership.Where(pair => pair.Value == unit.Id)

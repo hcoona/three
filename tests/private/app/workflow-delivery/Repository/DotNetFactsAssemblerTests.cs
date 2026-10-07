@@ -9,6 +9,180 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
     private static readonly string[] Projects = ["product/A.csproj", "product/B.csproj"];
     private static readonly string[] Dependency = ["product/B.csproj"];
     private static readonly string[] Owned = ["product/A.csproj", "product/code.cs"];
+    private static readonly string[] VersionDirectories = [".", "product"];
+    private static readonly string[] NativeFrameworks = ["net10.0", "net9.0"];
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task EffectiveNativeVersionBaseSelectsRootInputsDespiteLocalShadow(
+        bool mixedVariants)
+    {
+        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+        const string rootInput = "shared/root-version-input.txt";
+        await fixture.Repo.SetAsync(rootInput);
+        await fixture.Repo.SetAsync("version.json", """
+            {"version":"1.0","pathFilters":["./shared/root-version-input.txt"]}
+            """);
+        await fixture.Repo.SetAsync("product/version.json", """
+            {"version":"2.0","pathFilters":["./code.cs"]}
+            """);
+        await fixture.CommitAsync();
+        fixture.Graph = fixture.Response();
+        fixture.Graph = fixture.Graph with
+        {
+            Nodes = fixture.Graph.Nodes.Select(node => node.Identity.Project ==
+                fixture.PathOf("dirs.proj") ? node with { VersionBaseDirectory = fixture.Root } :
+                node.Identity.Project == fixture.PathOf("product/A.csproj") ? node with
+                {
+                    VersionBaseDirectory = mixedVariants &&
+                        node.Dimension.TargetFramework != "net9.0"
+                        ? fixture.PathOf("product") : fixture.Root,
+                } : node).ToArray(),
+        };
+        DotNetRevisionInputs inputs = await fixture.BindAsync();
+        CollectionAssert.AreEquivalent(VersionDirectories,
+            inputs.Versions.Select(version => version.Directory).Distinct().ToArray());
+        Assert.IsFalse(inputs.SelectionInputs.Any(input =>
+            input.Consumers.Contains("dirs.proj", StringComparer.Ordinal)));
+        Assert.Contains(rootInput, Assert.ContainsSingle(inputs.Versions.Where(version =>
+            version.Directory == ".")).Paths);
+        Assert.DoesNotContain(rootInput, Assert.ContainsSingle(inputs.Versions.Where(version =>
+            version.Directory == "product")).Paths);
+        DotNetSelection selected = DotNetFactsAssembler.Select(inputs, inputs,
+            [rootInput], false, [], []);
+        Assert.AreEqual("product/A.csproj", Assert.ContainsSingle(selected.Reasons.Keys));
+        SharedInput root = Assert.ContainsSingle(selected.Request.Candidate.SharedInputs.Where(
+            input => input.Path == rootInput));
+        Assert.AreEqual("product/A.csproj", Assert.ContainsSingle(root.Consumers));
+        SharedInput shadow = Assert.ContainsSingle(selected.Request.Candidate.SharedInputs.Where(
+            input => input.Path == "product/version.json"));
+        CollectionAssert.AreEquivalent(mixedVariants ? Projects : Dependency, shadow.Consumers);
+        Assert.IsTrue(selected.Request.Candidate.Projects.All(project =>
+            project.Directory == "product"));
+        CiPlan plan = DotNetFactsAssembler.Complete(selected, context.CancellationToken);
+        Assert.HasCount(2, plan.Checks);
+        Assert.IsTrue(plan.Checks.All(check => check.Work.Key.Target == "product/A.csproj"));
+        CollectionAssert.AreEquivalent(NativeFrameworks, plan.Checks.Select(check =>
+            DotNetChecks.Read(check.Work, fixture.Root).Dimension.TargetFramework).ToArray());
+        Assert.IsTrue(plan.Checks.All(check => check.Work.Dimensions.Count == 3 &&
+            !check.Work.Dimensions.ContainsKey("VersionBaseDirectory")));
+    }
+
+    [TestMethod]
+    public async Task TraversalSelfVersionDoesNotWidenBusinessSelection()
+    {
+        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+        const string unrelated = "node/app/index.ts";
+        const string configuration = "Directory.Build.props";
+        string[] otherOwned = [unrelated];
+        await fixture.Repo.SetAsync(unrelated, "export const value = 1;");
+        await fixture.Repo.SetAsync(configuration, "<Project />");
+        await fixture.Repo.SetAsync("version.json", """
+            {"version":"1.0","pathFilters":[":!product/fixtures"]}
+            """);
+        await fixture.Repo.SetAsync("product/version.json", """
+            {"version":"2.0","inherit":false,"pathFilters":["./code.cs"]}
+            """);
+        await fixture.CommitAsync();
+        fixture.Graph = fixture.Response();
+        fixture.Graph = fixture.Graph with
+        {
+            Nodes = fixture.Graph.Nodes.Select(node => node with
+            {
+                VersionBaseDirectory = node.Identity.Project == fixture.PathOf("dirs.proj")
+                    ? fixture.Root : fixture.PathOf("product"),
+            }).ToArray(),
+            Inputs = [.. fixture.Graph.Inputs, new(fixture.PathOf(configuration), "Import",
+                "Evaluation", fixture.Identity("dirs.proj"))],
+        };
+        NbgvInputs traversalVersion = new NbgvInputReader(fixture.Root).Read(fixture.Revision,
+            ".", context.CancellationToken);
+        Assert.Contains(unrelated, traversalVersion.Paths);
+        DotNetRevisionInputs inputs = await fixture.BindAsync();
+        NbgvInputs businessVersion = Assert.ContainsSingle(inputs.Versions);
+        Assert.AreEqual("product", businessVersion.Directory);
+        Assert.Contains("product/code.cs", businessVersion.Paths);
+        Assert.DoesNotContain(unrelated, businessVersion.Paths);
+        Assert.IsFalse(inputs.SelectionInputs.Any(input =>
+            input.Consumers.Contains("dirs.proj", StringComparer.Ordinal)));
+        Assert.IsFalse(inputs.SelectionInputs.Any(input => input.Path == unrelated));
+        DotNetSelection excluded = DotNetFactsAssembler.Select(inputs, inputs,
+            otherOwned, false, otherOwned, otherOwned);
+        Assert.IsEmpty(excluded.Reasons);
+        Assert.IsFalse(excluded.Request.Candidate.SharedInputs.Any(input =>
+            input.Path == unrelated));
+        Assert.IsEmpty(DotNetFactsAssembler.Complete(excluded, context.CancellationToken).Checks);
+        foreach (string path in new[] { "dirs.proj", configuration, "product/code.cs" })
+        {
+            DotNetSelection required = DotNetFactsAssembler.Select(inputs, inputs,
+                [path], false, otherOwned, otherOwned);
+            CollectionAssert.AreEquivalent(Projects, required.Reasons.Keys.ToArray());
+            SharedInput shared = Assert.ContainsSingle(required.Request.Candidate.SharedInputs
+                .Where(input => input.Path == path));
+            CollectionAssert.AreEquivalent(Projects, shared.Consumers);
+        }
+        foreach (string path in new[] { "dirs.proj", configuration })
+        {
+            DotNetBoundInput native = Assert.ContainsSingle(inputs.Inputs.Where(input =>
+                input.Path == path));
+            Assert.AreEqual("dirs.proj", Path.GetRelativePath(fixture.Root,
+                native.Native.Consumer.Project));
+            Assert.AreEqual(path == configuration ? "Import" : "Project", native.Native.Role);
+            Assert.AreEqual("Evaluation", native.Native.Stage);
+        }
+        DotNetSelection linked = DotNetFactsAssembler.Select(inputs, inputs,
+            ["linked/data.txt"], false, otherOwned, otherOwned);
+        Assert.AreEqual("product/A.csproj", Assert.ContainsSingle(linked.Reasons.Keys));
+        SharedInput linkedInput = Assert.ContainsSingle(linked.Request.Candidate.SharedInputs
+            .Where(input => input.Path == "linked/data.txt"));
+        Assert.AreEqual("product/A.csproj", Assert.ContainsSingle(linkedInput.Consumers));
+    }
+
+    [TestMethod]
+    [DataRow("shared/nbgv-aux.targets", "Import")]
+    [DataRow("shared/aux-input.txt", "AdditionalFiles")]
+    public async Task NbgvAuxiliaryInputChangeSelectsOnlyOwningBusinessConsumer(
+        string path, string role)
+    {
+        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+        await fixture.Repo.SetAsync(path, "original committed auxiliary input");
+        await fixture.CommitAsync();
+        DotNetRevisionInputs basis = await BindAuxiliaryAsync();
+        await fixture.Repo.SetAsync(path, "changed committed auxiliary input");
+        await fixture.CommitAsync();
+        DotNetRevisionInputs candidate = await BindAuxiliaryAsync();
+        DotNetSelection selected = DotNetFactsAssembler.Select(basis, candidate,
+            [path], false, [], []);
+        Assert.AreEqual("product/A.csproj", Assert.ContainsSingle(selected.Reasons.Keys));
+        Assert.IsTrue(selected.Reasons["product/A.csproj"].Any(reason => reason.Path == path));
+        SharedInput input = Assert.ContainsSingle(selected.Request.Candidate.SharedInputs.Where(
+            input => input.Path == path));
+        Assert.AreEqual("product/A.csproj", Assert.ContainsSingle(input.Consumers));
+        DotNetBoundInput[] bound = candidate.Inputs.Where(input => input.Path == path).ToArray();
+        Assert.HasCount(3, bound);
+        Assert.IsTrue(bound.All(input => input.Native.Role == role &&
+            input.Native.Provider is null && input.Native.Consumer.Project ==
+                fixture.PathOf("product/A.csproj")));
+        CiPlan plan = DotNetFactsAssembler.Complete(selected, context.CancellationToken);
+        Assert.HasCount(2, plan.Checks);
+        Assert.IsTrue(plan.Checks.All(check => check.Work.Key.Target == "product/A.csproj"));
+        CollectionAssert.AreEquivalent(NativeFrameworks, plan.Checks.Select(check =>
+            DotNetChecks.Read(check.Work, fixture.Root).Dimension.TargetFramework).ToArray());
+
+        async Task<DotNetRevisionInputs> BindAuxiliaryAsync()
+        {
+            fixture.Graph = fixture.Response();
+            fixture.Graph = fixture.Graph with
+            {
+                Inputs = [.. fixture.Graph.Inputs, .. fixture.Graph.Nodes.Where(node =>
+                    node.Identity.Project == fixture.PathOf("product/A.csproj")).Select(node =>
+                    new DotNetGraphInput(fixture.PathOf(path), role, "Evaluation", node.Identity))],
+            };
+            return await fixture.BindAsync();
+        }
+    }
+
     [TestMethod]
     public async Task SelectionUsesExactOwnershipAndExplicitConsumers()
     {

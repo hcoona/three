@@ -429,118 +429,160 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
     [DataRow("ordinary")]
     [DataRow("native-reader")]
     [DataRow("different-operation")]
+    [DataRow("external-config")]
     public async Task NativeRestoreAndSdkImportsSupplyDependencyIdentity(string scenario)
     {
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        string project = """
-            <Project Sdk="Microsoft.NET.Sdk">
-              <PropertyGroup>
-                <TargetFramework>net10.0</TargetFramework>
-                <OutputType>Exe</OutputType>
-                <ImplicitUsings>enable</ImplicitUsings>
-                <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-              </PropertyGroup>
-            </Project>
-            """;
-        await repo.SetAsync("Program.cs", "System.Console.WriteLine(\"fixture\");\n");
-        if (scenario == "native-reader")
+        string environmentDirectory = repo.Directory + ".restore-environment";
+        try
         {
-            await repo.SetAsync("data.txt", "internal static class NativeFixture { }\n");
-            project = project.Replace("</Project>", """
-                <Target Name="GenerateNativeInput" BeforeTargets="CoreCompile">
-                  <ReadLinesFromFile File="data.txt">
-                    <Output TaskParameter="Lines" ItemName="NativeLines" />
-                  </ReadLinesFromFile>
-                  <WriteLinesToFile File="$(IntermediateOutputPath)NativeGenerated.cs"
-                                    Lines="@(NativeLines)" Overwrite="true" />
-                  <ItemGroup>
-                    <Compile Include="$(IntermediateOutputPath)NativeGenerated.cs" />
-                  </ItemGroup>
-                </Target>
+            string project = """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup>
+                    <TargetFramework>net10.0</TargetFramework>
+                    <OutputType>Exe</OutputType>
+                    <ImplicitUsings>enable</ImplicitUsings>
+                    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+                  </PropertyGroup>
                 </Project>
-                """, StringComparison.Ordinal);
-        }
-        await repo.SetAsync("Directory.Build.props", """
-            <Project>
-              <PropertyGroup>
-                <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
-              </PropertyGroup>
-            </Project>
-            """);
-        await repo.SetAsync("Control.csproj", project);
-        await repo.SetAsync("nuget.config",
-            "<configuration><packageSources><clear /></packageSources></configuration>");
-        await repo.CommitAsync();
-        await repo.GitAsync("reset", "--hard", "HEAD");
-        string binlog = System.IO.Path.Combine(context.TestResultsDirectory!,
-            "control-consumption-" + Guid.NewGuid().ToString("N") + ".binlog");
-        Directory.CreateDirectory(context.TestResultsDirectory!);
-        NativeCommandResult initialized = await NativeProcess.ExecuteAsync(new("dotnet",
-            repo.Directory,
-            ["restore", "Control.csproj", "--configfile", "nuget.config"], 30),
-            context.CancellationToken);
-        Assert.IsTrue(initialized.Succeeded, initialized.Stdout + initialized.Stderr);
-        await repo.SetAsync("packages.lock.json", await File.ReadAllTextAsync(
-            System.IO.Path.Combine(repo.Directory, "packages.lock.json"),
-                context.CancellationToken));
-        await repo.CommitAsync();
-        await repo.GitAsync("reset", "--hard", "HEAD");
-        Directory.Delete(System.IO.Path.Combine(repo.Directory, "obj"), recursive: true);
-        NativeCommandResult restored = await NativeProcess.ExecuteAsync(new("dotnet",
-            repo.Directory,
-            ["restore", "Control.csproj", "--locked-mode", "--configfile", "nuget.config",
-                "-p:ContinuousIntegrationBuild=true", "-bl:" + binlog + ".restore.binlog"], 30),
-            context.CancellationToken);
-        Assert.IsTrue(restored.Succeeded, restored.Stdout + restored.Stderr);
-        string ci = scenario == "different-operation" ? "false" : "true";
-        NativeCommandResult built = await NativeProcess.ExecuteAsync(new("dotnet", repo.Directory,
-            ["build", "Control.csproj", "--no-restore", "-noAutoResponse",
-                "-p:Configuration=Debug", "-p:NuGetInteractive=false",
-                "-p:ContinuousIntegrationBuild=" + ci, "-p:RestoreLockedMode=" + ci,
-                "-p:MSBuildLogVerboseTaskParameters=true", "-bl:" + binlog], 30),
-            context.CancellationToken);
-        Assert.IsTrue(built.Succeeded, built.Stdout + built.Stderr);
-        GitRevision revision = await new GitReader(repo.Directory).ReadAsync("HEAD",
-            context.CancellationToken);
-        GitMaterialization checkout = await GitMaterialization.BindAsync(repo.Directory, revision,
-            context.CancellationToken);
-        ControlBuildContext operation = await new ControlBuildContextReader(checkout).ReadAsync(
-            "Control.csproj", context.CancellationToken);
-        ControlBuildLog log = ControlBuildLogReader.Read(binlog, operation.Project,
-            context.CancellationToken);
+                """;
+            await repo.SetAsync("Program.cs", "System.Console.WriteLine(\"fixture\");\n");
+            if (scenario == "native-reader")
+            {
+                await repo.SetAsync("data.txt", "internal static class NativeFixture { }\n");
+                project = project.Replace("</Project>", """
+                    <Target Name="GenerateNativeInput" BeforeTargets="CoreCompile">
+                      <ReadLinesFromFile File="data.txt">
+                        <Output TaskParameter="Lines" ItemName="NativeLines" />
+                      </ReadLinesFromFile>
+                      <WriteLinesToFile File="$(IntermediateOutputPath)NativeGenerated.cs"
+                                        Lines="@(NativeLines)" Overwrite="true" />
+                      <ItemGroup>
+                        <Compile Include="$(IntermediateOutputPath)NativeGenerated.cs" />
+                      </ItemGroup>
+                    </Target>
+                    </Project>
+                    """, StringComparison.Ordinal);
+            }
+            await repo.SetAsync("Directory.Build.props", """
+                <Project>
+                  <PropertyGroup>
+                    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+                  </PropertyGroup>
+                </Project>
+                """);
+            await repo.SetAsync("Control.csproj", project);
+            await repo.SetAsync("nuget.config",
+                "<configuration><packageSources><clear /></packageSources></configuration>");
+            string configFile = System.IO.Path.Combine(repo.Directory, "nuget.config");
+            if (scenario == "external-config")
+            {
+                Directory.CreateDirectory(environmentDirectory);
+                configFile = System.IO.Path.Combine(environmentDirectory, "nuget.config");
+                await File.WriteAllTextAsync(configFile,
+                    "<configuration><packageSources><clear /></packageSources></configuration>",
+                    context.CancellationToken);
+            }
+            await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", "HEAD");
+            string binlog = System.IO.Path.Combine(context.TestResultsDirectory!,
+                "control-consumption-" + Guid.NewGuid().ToString("N") + ".binlog");
+            Directory.CreateDirectory(context.TestResultsDirectory!);
+            NativeCommandResult initialized = await NativeProcess.ExecuteAsync(new("dotnet",
+                repo.Directory,
+                ["restore", "Control.csproj", "--configfile", configFile], 30),
+                context.CancellationToken);
+            Assert.IsTrue(initialized.Succeeded, initialized.Stdout + initialized.Stderr);
+            await repo.SetAsync("packages.lock.json", await File.ReadAllTextAsync(
+                System.IO.Path.Combine(repo.Directory, "packages.lock.json"),
+                    context.CancellationToken));
+            await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", "HEAD");
+            Directory.Delete(System.IO.Path.Combine(repo.Directory, "obj"), recursive: true);
+            NativeCommandResult restored = await NativeProcess.ExecuteAsync(new("dotnet",
+                repo.Directory,
+                ["restore", "Control.csproj", "--locked-mode", "--configfile", configFile,
+                    "-p:ContinuousIntegrationBuild=true", "-bl:" + binlog + ".restore.binlog"], 30),
+                context.CancellationToken);
+            Assert.IsTrue(restored.Succeeded, restored.Stdout + restored.Stderr);
+            string ci = scenario == "different-operation" ? "false" : "true";
+            NativeCommandResult built = await NativeProcess.ExecuteAsync(new("dotnet",
+                repo.Directory,
+                ["build", "Control.csproj", "--no-restore", "-noAutoResponse",
+                    "-p:Configuration=Debug", "-p:NuGetInteractive=false",
+                    "-p:ContinuousIntegrationBuild=" + ci, "-p:RestoreLockedMode=" + ci,
+                    "-p:MSBuildLogVerboseTaskParameters=true", "-bl:" + binlog], 30),
+                context.CancellationToken);
+            Assert.IsTrue(built.Succeeded, built.Stdout + built.Stderr);
+            GitRevision revision = await new GitReader(repo.Directory).ReadAsync("HEAD",
+                context.CancellationToken);
+            GitMaterialization checkout = await GitMaterialization.BindAsync(repo.Directory,
+                revision,
+                context.CancellationToken);
+            ControlBuildContext operation = await new ControlBuildContextReader(checkout).ReadAsync(
+                "Control.csproj", context.CancellationToken);
+            ControlBuildLog log = ControlBuildLogReader.Read(binlog, operation.Project,
+                context.CancellationToken);
 
-        if (scenario == "different-operation")
-        {
-            Assert.AreEqual("false", log.Properties["ContinuousIntegrationBuild"]);
-            Assert.AreEqual("false", log.GlobalProperties["RestoreLockedMode"]);
-            Assert.ThrowsExactly<InvalidDataException>(() =>
-                ControlBuildDependencyReader.Read(operation, log));
-            Assert.ThrowsExactly<InvalidDataException>(() => ControlBuildInputProjection.Project(
-                checkout, operation, log, new([], [], []), []));
-            return;
-        }
+            if (scenario == "different-operation")
+            {
+                Assert.AreEqual("false", log.Properties["ContinuousIntegrationBuild"]);
+                Assert.AreEqual("false", log.GlobalProperties["RestoreLockedMode"]);
+                Assert.ThrowsExactly<InvalidDataException>(() =>
+                    ControlBuildDependencyReader.Read(operation, log));
+                Assert.ThrowsExactly<InvalidDataException>(() =>
+                    ControlBuildInputProjection.Project(checkout, operation, log,
+                        new([], [], []), []));
+                return;
+            }
 
-        ControlBuildDependencies dependencies = ControlBuildDependencyReader.Read(operation, log);
-        ControlBuildConsumption result = ControlBuildInputProjection.Project(checkout, operation,
-            log, dependencies, []);
+            ControlBuildDependencies dependencies = ControlBuildDependencyReader.Read(
+                operation, log);
+            ControlBuildConsumption result = ControlBuildInputProjection.Project(checkout,
+                operation, log, dependencies, []);
 
-        Assert.Contains(System.IO.Path.Combine(repo.Directory, "nuget.config"),
-            dependencies.RestoreConfigurationFiles);
-        Assert.Contains(operation.AssetsFile, dependencies.RestoreGeneratedFiles);
-        Assert.Contains(new ControlSourceInput("Program.cs", "compiler Sources", true),
-            result.Sources);
-        Assert.Contains(new ControlSourceInput("Directory.Build.props", "import", true),
-            result.Sources);
-        Assert.IsTrue(result.Generated.Any(g => g.Producer == "WriteCodeFragment"));
-        Assert.IsTrue(result.External.Any(e => e.Dependency.StartsWith(
-            "selected SDK pack/Microsoft.NETCore.App.Ref/", StringComparison.Ordinal)));
-        if (scenario == "native-reader")
-        {
-            Assert.Contains(new ControlSourceInput("data.txt", "native reader File", true),
+            var nativeAssets = new LockFileFormat().Read(operation.AssetsFile);
+            Assert.IsNotNull(nativeAssets);
+            ProjectRestoreMetadata? nativeRestore = nativeAssets.PackageSpec?.RestoreMetadata;
+            Assert.IsNotNull(nativeRestore);
+            CollectionAssert.AreEqual(new[] { configFile },
+                nativeRestore.ConfigFilePaths.ToArray());
+            CollectionAssert.AreEqual(new[] { configFile }, dependencies.RestoreConfigurationFiles);
+            Assert.IsFalse(dependencies.Directories.Any(d => d.Files.Contains(configFile)));
+            if (scenario == "external-config")
+            {
+                Assert.Contains(new ControlExternalInput(configFile, "native restore environment"),
+                    result.External);
+                Assert.AreEqual(1, result.External.Count(e => e.Path == configFile));
+                Assert.IsFalse(result.Sources.Any(s => s.Role == "native restore configuration"));
+            }
+            else
+            {
+                Assert.Contains(new ControlSourceInput("nuget.config",
+                    "native restore configuration", true), result.Sources);
+                Assert.IsFalse(result.External.Any(e => e.Path == configFile));
+            }
+            Assert.Contains(operation.AssetsFile, dependencies.RestoreGeneratedFiles);
+            Assert.Contains(new ControlSourceInput("Program.cs", "compiler Sources", true),
                 result.Sources);
-            Assert.Contains(new ControlGeneratedInput(System.IO.Path.Combine(
-                operation.IntermediateDirectory, "NativeGenerated.cs"), "WriteLinesToFile"),
-                result.Generated);
+            Assert.Contains(new ControlSourceInput("Directory.Build.props", "import", true),
+                result.Sources);
+            Assert.IsTrue(result.Generated.Any(g => g.Producer == "WriteCodeFragment"));
+            Assert.IsTrue(result.External.Any(e => e.Dependency.StartsWith(
+                "selected SDK pack/Microsoft.NETCore.App.Ref/", StringComparison.Ordinal)));
+            if (scenario == "native-reader")
+            {
+                Assert.Contains(new ControlSourceInput("data.txt", "native reader File", true),
+                    result.Sources);
+                Assert.Contains(new ControlGeneratedInput(System.IO.Path.Combine(
+                    operation.IntermediateDirectory, "NativeGenerated.cs"), "WriteLinesToFile"),
+                    result.Generated);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(environmentDirectory))
+                Directory.Delete(environmentDirectory, recursive: true);
         }
     }
 
@@ -604,6 +646,221 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
             ControlBuildDependencyReader.Read(operation, fixture.Log([])));
 
         Assert.StartsWith("Native restore", error.Message);
+    }
+
+    [TestMethod]
+    [DataRow("committed")]
+    [DataRow("external")]
+    public async Task RestoreConfigurationContributorsRespectCommittedPrecedence(string location)
+    {
+        using Fixture fixture = await CreateAsync();
+        string config = location == "committed" ? fixture.Path("control/settings.json")
+            : System.IO.Path.Combine(fixture.ToolDirectory, "environment", "nuget.config");
+        if (location == "external")
+        {
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(config)!);
+            await File.WriteAllTextAsync(config, "opaque contract fixture",
+                context.CancellationToken);
+        }
+        WriteRestoreAssets(fixture.Operation, config);
+        ControlBuildLog log = fixture.Log([fixture.Compiler("Source.cs")]);
+
+        ControlBuildDependencies dependencies = ControlBuildDependencyReader.Read(
+            fixture.Operation, log);
+        ControlBuildConsumption result = fixture.Project(log, dependencies);
+
+        CollectionAssert.AreEqual(new[] { config }, dependencies.RestoreConfigurationFiles);
+        Assert.IsEmpty(dependencies.Directories);
+        Assert.Contains(new ControlSourceInput("control/Source.cs", "compiler Sources", true),
+            result.Sources);
+        if (location == "committed")
+        {
+            Assert.Contains(new ControlSourceInput("control/settings.json",
+                "native restore configuration", true), result.Sources);
+            Assert.IsFalse(result.External.Any(e => e.Path == config));
+        }
+        else
+        {
+            Assert.Contains(new ControlExternalInput(config, "native restore environment"),
+                result.External);
+            Assert.AreEqual(1, result.External.Count(e => e.Path == config));
+            Assert.IsFalse(result.Sources.Any(s => s.Role == "native restore configuration"));
+        }
+    }
+
+    [TestMethod]
+    [DataRow("missing")]
+    [DataRow("directory")]
+    [DataRow("relative")]
+    [DataRow("empty")]
+    public async Task MissingOrRelativeRestoreContributorsCannotBecomeFacts(string defect)
+    {
+        using Fixture fixture = await CreateAsync();
+        Directory.CreateDirectory(fixture.ToolDirectory);
+        string config = defect switch
+        {
+            "missing" => System.IO.Path.Combine(fixture.ToolDirectory, "missing.config"),
+            "directory" => fixture.ToolDirectory,
+            "relative" => Guid.NewGuid().ToString("N") + ".restore-input",
+            "empty" => "",
+            _ => throw new InvalidOperationException("Unknown contributor defect."),
+        };
+        string? ownedFile = defect == "relative"
+            ? System.IO.Path.Combine(Environment.CurrentDirectory, config) : null;
+        try
+        {
+            if (ownedFile is not null)
+            {
+                await File.WriteAllTextAsync(ownedFile, "opaque contract fixture",
+                    context.CancellationToken);
+                Assert.IsFalse(System.IO.Path.IsPathFullyQualified(config));
+                Assert.IsTrue(File.Exists(config));
+            }
+            WriteRestoreAssets(fixture.Operation, config);
+            var assets = new LockFileFormat().Read(fixture.Operation.AssetsFile);
+            Assert.IsNotNull(assets);
+            ProjectRestoreMetadata? restore = assets.PackageSpec?.RestoreMetadata;
+            Assert.IsNotNull(restore);
+            CollectionAssert.AreEqual(new[] { config }, restore.ConfigFilePaths.ToArray());
+            ControlBuildLog log = fixture.Log([fixture.Compiler("Source.cs")]);
+
+            InvalidDataException readerError = Assert.ThrowsExactly<InvalidDataException>(() =>
+                ControlBuildDependencyReader.Read(fixture.Operation, log));
+            InvalidDataException projectionError = Assert.ThrowsExactly<InvalidDataException>(() =>
+                fixture.Project(log, new([], [config], [])));
+
+            Assert.AreEqual("Native restore configuration is unavailable.", readerError.Message);
+            Assert.AreEqual("Native restore configuration is unavailable.",
+                projectionError.Message);
+        }
+        finally
+        {
+            if (ownedFile is not null) File.Delete(ownedFile);
+        }
+    }
+
+    [TestMethod]
+    [DataRow("import")]
+    [DataRow("References")]
+    [DataRow("AdditionalFiles")]
+    [DataRow("task-definition")]
+    [DataRow("task-implementation")]
+    [DataRow("reader")]
+    [DataRow("sibling")]
+    public async Task RestoreContributorAssociationCannotAuthorizeOtherInputRoles(string role)
+    {
+        using Fixture fixture = await CreateAsync();
+        string directory = System.IO.Path.Combine(fixture.ToolDirectory, "environment");
+        Directory.CreateDirectory(directory);
+        string config = System.IO.Path.Combine(directory, "nuget.config");
+        string sibling = System.IO.Path.Combine(directory, "unobserved.dll");
+        await File.WriteAllTextAsync(config, "opaque contract fixture", context.CancellationToken);
+        await File.WriteAllTextAsync(sibling, "unrelated input", context.CancellationToken);
+        WriteRestoreAssets(fixture.Operation, config);
+        ControlBuildTask compiler = fixture.Compiler("Source.cs");
+        ControlBuildLog baseline = fixture.Log([compiler]);
+        ControlBuildDependencies dependencies = ControlBuildDependencyReader.Read(
+            fixture.Operation, baseline);
+        ControlBuildConsumption accepted = fixture.Project(baseline, dependencies);
+
+        CollectionAssert.AreEqual(new[] { config }, dependencies.RestoreConfigurationFiles);
+        Assert.IsEmpty(dependencies.Directories);
+        Assert.Contains(new ControlExternalInput(config, "native restore environment"),
+            accepted.External);
+        Assert.IsFalse(accepted.External.Any(e => e.Path == sibling));
+        string input = role == "sibling" ? sibling : config;
+        ControlBuildLog log = role switch
+        {
+            "import" => fixture.Log([compiler], [new(fixture.Operation.Project, config)]),
+            "task-definition" => fixture.Log([compiler with { Definition = config }]),
+            "task-implementation" => fixture.Log([compiler with { Implementation = config }]),
+            "reader" => fixture.Log([compiler, fixture.Task("ReadLinesFromFile",
+                "Microsoft.Build.Tasks.Core.dll", Input("File", config))]),
+            _ => fixture.Log([compiler with
+            {
+                Parameters = [Input("Sources", "Source.cs"),
+                    Input(role == "sibling" ? "References" : role, input)],
+            }]),
+        };
+        // Read the same official contributor with the actual misused-role log as well.
+        dependencies = ControlBuildDependencyReader.Read(fixture.Operation, log);
+        Assert.IsEmpty(dependencies.Directories);
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            fixture.Project(log, dependencies));
+
+        Assert.AreEqual(role == "task-implementation"
+            ? "Unsupported native task implementation: Csc"
+            : "Unresolved native external input: " + input, error.Message);
+    }
+
+    [TestMethod]
+    [DataRow("logged-project")]
+    [DataRow("working-directory")]
+    [DataRow("global")]
+    [DataRow("restore-project")]
+    public async Task RestoreContributorFactsRemainBoundToControlOperation(string defect)
+    {
+        using Fixture fixture = await CreateAsync();
+        Directory.CreateDirectory(fixture.ToolDirectory);
+        string config = System.IO.Path.Combine(fixture.ToolDirectory, "nuget.config");
+        await File.WriteAllTextAsync(config, "opaque contract fixture", context.CancellationToken);
+        WriteRestoreAssets(fixture.Operation, config);
+        ControlBuildLog log = fixture.Log([fixture.Compiler("Source.cs")]);
+        ControlBuildDependencies dependencies = ControlBuildDependencyReader.Read(
+            fixture.Operation, log);
+        Assert.Contains(new ControlExternalInput(config, "native restore environment"),
+            fixture.Project(log, dependencies).External);
+        switch (defect)
+        {
+            case "logged-project": log = log with { Project = fixture.Path("other.csproj") }; break;
+            case "working-directory":
+                var properties = new Dictionary<string, string>(log.Properties)
+                {
+                    ["MSBuildStartupDirectory"] = fixture.ToolDirectory,
+                };
+                log = log with { Properties = properties };
+                break;
+            case "global":
+                var globals = new Dictionary<string, string>(log.GlobalProperties)
+                {
+                    ["ContinuousIntegrationBuild"] = "false",
+                };
+                log = log with { GlobalProperties = globals };
+                break;
+            case "restore-project":
+                WriteRestoreAssets(fixture.Operation, config, fixture.Path("other.csproj"));
+                break;
+            default: Assert.Fail("Unknown operation defect."); break;
+        }
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ControlBuildDependencyReader.Read(fixture.Operation, log));
+        if (defect != "restore-project")
+            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Project(log, dependencies));
+    }
+
+    private static void WriteRestoreAssets(ControlBuildContext operation, string config,
+        string? restoreProject = null)
+    {
+        var restore = new ProjectRestoreMetadata
+        {
+            ProjectPath = restoreProject ?? operation.Project,
+            OutputPath = operation.BaseIntermediateDirectory,
+            RestoreLockProperties = new("true", "", true),
+        };
+        restore.OriginalTargetFrameworks.Add(operation.Dimension.TargetFramework);
+        restore.ConfigFilePaths.Add(config);
+        var assets = new LockFile
+        {
+            Version = 3,
+            PackageSpec = new() { RestoreMetadata = restore },
+        };
+        assets.Targets.Add(new LockFileTarget
+        {
+            TargetFramework = NuGetFramework.ParseFolder(operation.Dimension.TargetFramework),
+        });
+        Directory.CreateDirectory(operation.BaseIntermediateDirectory);
+        new LockFileFormat().Write(operation.AssetsFile, assets);
     }
 
     private async Task<Fixture> CreateAsync()

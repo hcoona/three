@@ -21,7 +21,9 @@ component, selection, execution, transfer and outcome contracts. The
 [implementation plan](./migration-strategy.md) owns the concrete consumer inventory,
 integration contract outline and dependency-ordered caller transitions, including
 the [native .NET CI group](./migration-strategy.md#native-net-ci-group). That
-group's contract does not claim implemented native facts or caller cutover. The
+group is implemented in the private application and consumed by root CI, with
+ordinary Windows Debug qualification in
+[PR #1054](https://github.com/hcoona/three/pull/1054). The
 [feasibility record](./research/contraction-feasibility.md) distinguishes local
 observations from the owner's accepted Windows assumption. The
 [transition](./requirements.md#requirements-and-implementation-transition) keeps
@@ -31,13 +33,13 @@ do not claim conformity to the replacement. The
 [Wave](../../../../../docs/delivery-wave.md) covers the full contraction.
 The [private application entry](../../../../private/app/workflow-delivery/README.md)
 documents CI selection/result, GitHub event comparison, control-test resource inputs,
-native Node fact assembly and the adopted check executor. Root CI's existing scope
-job consumes native comparison/resource inputs; the original .NET job remains its
-sole test executor. The [bounded native observation](./research/node-ci-native-execution.md)
+native Node/.NET fact assembly and check execution. Root CI's existing Windows
+scope job plans both .NET endpoints and transfers the original selected plan and
+complete control distribution to its sole .NET execution/result owner. The [bounded native observation](./research/node-ci-native-execution.md)
 qualifies the adopted fixture composition on Linux. Root CI owns the adopted Node
 group and selected retained Node matrix, with ordinary hosted transfer and
 execution qualification in [PR #1042](https://github.com/hcoona/three/pull/1042).
-The exclusive npm CI shadow is retired. Other quality presets, ecosystem
+The exclusive npm CI shadow is retired. Other quality presets, Python/Ruby
 execution cutover and Release remain pending.
 
 The pre-contraction normal-Live baseline was merged across the
@@ -207,13 +209,15 @@ The [Git native fact evidence](./research/git-native-facts.md) supports committe
 revision inventory, direct endpoint changes and strict native path decoding.
 The [MSBuild native item evidence](./research/msbuild-native-items.md) supports a
 narrow evaluated resource-input projection for a specified project/dimension;
-root CI now consumes the control-test resource projection and retains its existing
-.NET test executor. Membership, wider .NET facts and complete group integration
-remain separate work.
+root CI consumes this resource projection as part of the native .NET group.
+Its wider membership, facts and group qualification have their separate basis in
+the [native group contract](./migration-strategy.md#native-net-ci-group) and
+[PR #1054](https://github.com/hcoona/three/pull/1054).
 The [NBGV native-input assessment](./research/nbgv-native-inputs.md) identifies
 public configuration/filter APIs and bounded Linux application observations for
-official-package delivery and the existing PNPM reader. Complete CI integration
-remains pending.
+official-package delivery and the existing PNPM reader. Root Node/.NET integration
+has separate hosted qualification; Python/Ruby execution cutover and Release
+remain pending.
 The [Node CI native execution observation](./research/node-ci-native-execution.md)
 retains the completed adopted-fixture Linux composition/effects evidence,
 independent reviews and stopped protocol. It does not establish caller cutover.

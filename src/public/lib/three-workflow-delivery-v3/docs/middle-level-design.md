@@ -132,12 +132,49 @@ resolver, parse project XML or schedule compilation nodes. The
 [integration contract](./migration-strategy.md#native-net-ci-group) identifies
 the finite input roles and preparation stages supported by this operation.
 
-Keep each native graph node's project path and complete effective globals,
-including outer/inner identity and native reference edges. Business impact uses
+Keep each retained business or traversal node's project path and complete
+effective globals, including outer/inner identity and native reference edges.
+Business impact uses
 the committed project path as its project ID. Aggregate native relations for
 selection only; every surviving selected candidate project's supported inner
 variants expand their complete checks. A changed framework/global tuple must not
 make a surviving project's new variant disappear from execution.
+
+NBGV's native caching project is a finite tool adapter exception. Keep it in
+MSBuild's local graph and retain the default native caching mode. Identify it
+through the marked native reference and the consumer's validated restored NBGV package pin,
+not a general rule for external projects. Its internal configuration, physical
+globals and tool-only reference edges do not become portable business nodes or
+checks. Preserve its necessary observed inputs for its business consumers.
+Receiving checkouts let MSBuild/NBGV construct their own local helper context;
+Workflow does not replay helper coordinates or implement version caching.
+
+Native provider associations can include finite sibling inputs. The workload
+autoimport locator's successful returned `Sdk` directory and its actual
+`AutoImport.props` import associate that specific parent pack with the native SDK
+provider. This does not admit all installed packs, expand unrelated SDK roots or
+implement workload resolution. Preserve the native locator identity and version
+field without claiming an exact pack version; unknown external inputs remain
+unsupported. The [application entry](../../../../private/app/workflow-delivery/README.md)
+retains the source basis and implementation boundary. At the separate
+control-build binlog boundary, the selected SDK's literal autoimport and its
+native evaluation/import lineage associate only observed, connected files
+inside the specific pack. This supplies exact dependency membership without
+reconstructing SDK results or enumerating installed pack files.
+
+Exact native locked-restore configuration contributors remain source inputs when
+committed and invocation-local environment facts when outside the checkout.
+Require absolute existing files and preserve the restore role; this association
+adds no generic dependency membership or configuration-directory authority.
+
+Bind version-input discovery to each supported effective native
+`GitVersionBaseDirectory`, not necessarily the product directory. Union native
+business variant consumers. Traversal's unused self-version metadata does not
+widen product selection; genuine root configuration/provider/helper inputs retain
+their consumers. Business projects may use a root version subject.
+Keep this physical subject local to the endpoint; portable checks retain only
+product globals. Quality adoption continues to use the product directory.
+Unsupported external or ambiguous native version contexts remain unavailable.
 
 `ProjectFacts.OwnedPaths` is optional: null retains existing nearest-directory
 ownership; a populated array names exact committed endpoint coordinates. The

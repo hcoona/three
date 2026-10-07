@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -241,12 +242,63 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
             Path.Combine(fixture.Scratch, "failed.response.json"), 30);
         var reader = new DotNetRepositoryReader(fixture.Checkout, files, (_, _) =>
             Task.FromResult(new NativeCommandResult(NativeTermination.Exited, 1,
-                "", "task load failed", 0, null)));
+                "partial graph output", "task load failed", 0, "native failure detail")));
         InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             reader.ReadAsync(context.CancellationToken));
         Assert.Contains("task load failed", failure.Message);
+        Assert.Contains("partial graph output", failure.Message);
+        Assert.Contains("native failure detail", failure.Message);
+        Assert.Contains("Native graph Exited, exit 1", failure.Message);
+        Assert.Contains("role Invocation", failure.Message);
         Assert.Contains(fixture.Revision.Commit, failure.Message);
+        Assert.Contains(fixture.Root, failure.Message);
         Assert.IsFalse(File.Exists(files.Response));
+    }
+
+    [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task NativeReaderContractsRunWithReflectionDisabled()
+    {
+        const string childMarker = "WORKFLOW_NATIVE_JSON_TEST_CHILD";
+        if (Environment.GetEnvironmentVariable(childMarker) == "1")
+        {
+            Assert.IsFalse(JsonSerializer.IsReflectionEnabledByDefault);
+            await ReadCancellationAndNativeFailureReturnNoFacts();
+            await ReadPreservesNativeVariantsAndOriginalGitCoordinates();
+            await ReadRejectsSubstitutedNativeFacts("unknown-role");
+            using var native = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+            DotNetNodeIdentity original = native.Identity("product/A.csproj", "net10.0");
+            DotNetNodeIdentity reordered = original with
+            {
+                Globals = original.Globals.Reverse().ToDictionary(
+                    pair => pair.Key.ToUpperInvariant(), pair => pair.Value,
+                    StringComparer.Ordinal)
+            };
+            Assert.AreEqual(DotNetRepositoryReader.Key(original),
+                DotNetRepositoryReader.Key(reordered));
+            Assert.AreNotEqual(DotNetRepositoryReader.Key(original),
+                DotNetRepositoryReader.Key(native.Identity("product/A.csproj", "net9.0")));
+            return;
+        }
+
+        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+        string assembly = typeof(DotNetRepositoryReaderTests).Assembly.Location;
+        JsonNode configuration = JsonNode.Parse(await File.ReadAllTextAsync(
+            Path.ChangeExtension(assembly, ".runtimeconfig.json"), context.CancellationToken))!;
+        configuration["runtimeOptions"]!["configProperties"]![
+            "System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault"] = false;
+        string runtime = Path.Combine(fixture.Scratch, "reflection-disabled.runtimeconfig.json");
+        await File.WriteAllTextAsync(runtime, configuration.ToJsonString(),
+            context.CancellationToken);
+        NativeCommandResult child = await NativeProcess.ExecuteAsync(new("dotnet", fixture.Root,
+            ["exec", "--runtimeconfig", runtime, assembly, "--filter",
+                "FullyQualifiedName=WorkflowDelivery.Tests.Repository." +
+                "DotNetRepositoryReaderTests." +
+                nameof(NativeReaderContractsRunWithReflectionDisabled),
+                "--minimum-expected-tests", "1"], 45,
+            new Dictionary<string, string?> { [childMarker] = "1" }),
+            context.CancellationToken);
+        Assert.IsTrue(child.Succeeded, child.Stdout + child.Stderr + child.Error);
     }
 
     [TestMethod]

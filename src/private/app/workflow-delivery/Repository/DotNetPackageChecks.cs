@@ -93,6 +93,16 @@ internal static class DotNetPackageChecks
         Dictionary<string, string> values)
     {
         Validate(context.Node, values);
+        var expectations = new Dictionary<string, string>(values, StringComparer.Ordinal);
+        // Native physical identity belongs to each checkout, not to the transferred plan.
+        expectations.Remove("MSBuildProjectFullPath");
+        return PortableChecks(context, expectations);
+    }
+
+    private static CheckSpec[] PortableChecks(DotNetPackageContext context,
+        Dictionary<string, string> values)
+    {
+        ValidateExpectations(context.Node, values);
         ReleaseBuild build = context.Build;
         var subject = new PackageTarget(context.Unit.Id, context.Unit.SourcePath, build.Id,
             build.Definition, DotNetRepositoryReader.Parent(context.Project), context.Project,
@@ -143,7 +153,7 @@ internal static class DotNetPackageChecks
         DotNetPackageContext context = Resolve(new(subject.EntryPoint, subject.Directory,
             [], [], subject.Unit, Preset, []), [node], [unit]);
         CheckSpec? expected =
-            Expand(context, values).SingleOrDefault(item => item.Key == check.Key);
+            PortableChecks(context, values).SingleOrDefault(item => item.Key == check.Key);
         if (expected is null || expected.Runner != check.Runner || !check.Required ||
             !expected.Prerequisites.SequenceEqual(check.Prerequisites) ||
             !ImpactPlanner.SamePackage(expected.Package, subject))
@@ -153,14 +163,25 @@ internal static class DotNetPackageChecks
 
     internal static void Validate(DotNetGraphNode node, Dictionary<string, string> values)
     {
-        if (values.Count != NativeProperties.Length ||
-            NativeProperties.Any(name => !values.ContainsKey(name)) ||
-            values.Any(pair => pair.Value is null) ||
-            !Path.IsPathFullyQualified(values["MSBuildProjectFullPath"]) ||
-            !Path.GetFullPath(values["MSBuildProjectFullPath"]).Equals(
+        if (!values.TryGetValue("MSBuildProjectFullPath", out string? project) ||
+            string.IsNullOrWhiteSpace(project) || !Path.IsPathFullyQualified(project) ||
+            !Path.GetFullPath(project).Equals(
                 Path.GetFullPath(node.Identity.Project),
                 OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
-                    StringComparison.Ordinal) ||
+                    StringComparison.Ordinal))
+            throw new InvalidDataException("Different native package project identity.");
+        var expectations = new Dictionary<string, string>(values, StringComparer.Ordinal);
+        expectations.Remove("MSBuildProjectFullPath");
+        ValidateExpectations(node, expectations);
+    }
+
+    private static void ValidateExpectations(DotNetGraphNode node,
+        Dictionary<string, string> values)
+    {
+        if (values.Count != NativeProperties.Length - 1 ||
+            NativeProperties.Where(name => name != "MSBuildProjectFullPath")
+                .Any(name => !values.ContainsKey(name)) ||
+            values.Any(pair => pair.Value is null) ||
             values["TargetFramework"] != node.Dimension.TargetFramework ||
             values["RuntimeIdentifier"] != node.Dimension.RuntimeIdentifier ||
             !values["IsPackable"].Equals("true", StringComparison.OrdinalIgnoreCase) ||

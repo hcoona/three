@@ -349,15 +349,20 @@ def test_failed_runtime_cannot_omit_original_required_results(caller, missing):
     ("exit_code", "timeout"),
     [(0, False), (1, False), (2, False), (3, False), (None, True)],
 )
+@pytest.mark.parametrize("budget", [None, 3600], ids=["default", "explicit"])
 def test_native_command_retains_failure_or_timeout(
-    tmp_path, monkeypatch, exit_code, timeout
+    tmp_path, monkeypatch, exit_code, timeout, budget
 ):
     """Native command retains failure or timeout."""
+    calls = []
+    expected_budget = 900 if budget is None else budget
+    options = {} if budget is None else {"timeout": budget}
 
-    def native(*_args, **_kwargs):
+    def native(*args, **kwargs):
+        calls.append((args, kwargs))
         if timeout:
             raise subprocess.TimeoutExpired(
-                ["native"], 900, b"partial", b"deadline"
+                ["native"], kwargs["timeout"], b"partial", b"deadline"
             )
         return subprocess.CompletedProcess(
             ["native"], exit_code, b"partial", b"failure"
@@ -365,8 +370,10 @@ def test_native_command_retains_failure_or_timeout(
 
     monkeypatch.setattr(group.subprocess, "run", native)
     assert group.run(
-        tmp_path, tmp_path, "native", "native", required=False
+        tmp_path, tmp_path, "native", "native", required=False, **options
     ) == ("partial" if exit_code in (0, 1) else "")
+    assert len(calls) == 1
+    assert calls[0][1]["timeout"] == expected_budget
     observation = group.read_json(tmp_path / "native.command.json")
     assert observation == {
         "arguments": ["native"],
@@ -378,6 +385,148 @@ def test_native_command_retains_failure_or_timeout(
     assert (tmp_path / "native.stderr").read_bytes() == (
         b"deadline" if timeout else b"failure"
     )
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [(False, False), (False, True), (True, False), (True, True)],
+    ids=[
+        "exit-report",
+        "exit-broken-report",
+        "timeout-report",
+        "timeout-broken-report",
+    ],
+)
+@pytest.mark.parametrize("budget", [None, 3600], ids=["default", "explicit"])
+def test_required_native_failure_reports_streams_and_preserves_exception(
+    tmp_path, monkeypatch, capsys, failure, budget
+):
+    """Retain required failure details even if reporting itself fails."""
+    timeout, reporting_fails = failure
+    calls = []
+    error_output = b"deadline" if timeout else b"failure"
+    expected_budget = 900 if budget is None else budget
+    options = {} if budget is None else {"timeout": budget}
+
+    def native(*args, **kwargs):
+        calls.append((args, kwargs))
+        if timeout:
+            raise subprocess.TimeoutExpired(
+                ["native"], kwargs["timeout"], b"partial", error_output
+            )
+        return subprocess.CompletedProcess(
+            ["native"], 2, b"partial", error_output
+        )
+
+    class BrokenStream:
+        def write(self, _text):
+            raise OSError
+
+    monkeypatch.setattr(group.subprocess, "run", native)
+    exception = (
+        subprocess.TimeoutExpired if timeout else subprocess.CalledProcessError
+    )
+    with monkeypatch.context() as reporting:
+        if reporting_fails:
+            reporting.setattr(group.sys, "stderr", BrokenStream())
+        with pytest.raises(exception) as captured:
+            group.run(tmp_path, tmp_path, "required", "native", **options)
+    assert len(calls) == 1
+    assert calls[0][1]["timeout"] == expected_budget
+    assert captured.value.cmd == ("native",)
+    assert captured.value.output == b"partial"
+    assert captured.value.stderr == error_output
+    if timeout:
+        assert captured.value.timeout == expected_budget
+    else:
+        assert captured.value.returncode == 2
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == (
+        "" if reporting_fails else "partial" + error_output.decode("utf-8")
+    )
+    assert (tmp_path / "required.stdout").read_bytes() == b"partial"
+    assert (tmp_path / "required.stderr").read_bytes() == error_output
+    assert group.read_json(tmp_path / "required.command.json") == {
+        "arguments": ["native"],
+        "cwd": str(tmp_path),
+        "exitCode": None if timeout else 2,
+        "termination": "timedOut" if timeout else "exited",
+    }
+
+
+def test_successful_native_json_remains_quiet(tmp_path, monkeypatch, capsys):
+    """Return the original successful stdout without mixing diagnostics."""
+    payload = b'{"value":1}'
+    monkeypatch.setattr(
+        group.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            ["native"], 0, payload, b"warning"
+        ),
+    )
+    assert group.run(tmp_path, tmp_path, "success", "native") == (
+        payload.decode("utf-8")
+    )
+    output = capsys.readouterr()
+    assert output.out == output.err == ""
+    assert (tmp_path / "success.stdout").read_bytes() == payload
+    assert (tmp_path / "success.stderr").read_bytes() == b"warning"
+
+
+@pytest.mark.parametrize("failed_action", [None, "restore", "build", "target"])
+def test_control_build_uses_locked_native_runtime_preparation(
+    tmp_path, monkeypatch, failed_action
+):
+    """Keep control inputs pristine and stop on native prerequisite failure."""
+    root = tmp_path / "source"
+    target = root / "bin/Debug/net10.0/WorkflowDelivery.dll"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"control")
+    directory = tmp_path / "logs"
+    directory.mkdir()
+    calls = []
+    error = subprocess.CalledProcessError(
+        2, "mise", output=b"partial", stderr=b"locked prerequisite unavailable"
+    )
+
+    def native(checkout, carrier, label, *args):
+        calls.append((checkout, carrier, label, args))
+        if label == "control-" + str(failed_action):
+            raise error
+        return str(target) + "\n" if label == "control-target" else ""
+
+    monkeypatch.setattr(group, "run", native)
+    if failed_action:
+        with pytest.raises(subprocess.CalledProcessError) as captured:
+            group.build(root, directory, "control")
+        assert captured.value is error
+    else:
+        assert group.build(root, directory, "control") == (
+            directory / "control.binlog",
+            target,
+        )
+    labels = ["control-restore", "control-build", "control-target"]
+    if failed_action:
+        labels = labels[: labels.index("control-" + failed_action) + 1]
+    assert [label for _, _, label, _ in calls] == labels
+    for checkout, carrier, _, args in calls:
+        assert checkout == root
+        assert carrier == directory
+        assert args[:5] == ("mise", "exec", "--locked", "--", "dotnet")
+        assert group.CONTROL_PROJECT in args
+        assert set(group.BUILD_PROPERTIES) <= set(args)
+    restore = calls[0][3]
+    assert "--locked-mode" in restore
+    assert restore[restore.index("--configfile") + 1] == str(
+        root / "nuget.config"
+    )
+    if len(calls) > 1:
+        assert "-target:Build" in calls[1][3]
+        assert "-noAutoResponse" in calls[1][3]
+    if len(calls) > 2:
+        assert "-getProperty:TargetPath" in calls[2][3]
+        assert "-noAutoResponse" in calls[2][3]
 
 
 @pytest.mark.parametrize("probe_selected", [False, True])
