@@ -18,7 +18,7 @@ dev = [
   "PyYAML>=6.0.2",
   "ruff==0.16.10",
 ]
-workflow-delivery-python = ["build==1.4.1", "nbgv-python"]
+workflow-delivery-python = ["build==1.6.1", "nbgv-python"]
 
 [tool.uv.workspace]
 # The current Python workspace is rooted under src/; legacy OnePython paths are retired.
