@@ -1,6 +1,8 @@
 using System.Security;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Build.Framework;
+using Microsoft.Build.Logging;
 using NuGet.ProjectModel;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
@@ -30,6 +32,52 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             context.CancellationToken);
         context.WriteLine(native.RootElement.GetRawText());
         context.WriteLine(traversal.RootElement.GetRawText());
+        JsonElement nativeProperties = traversal.RootElement.GetProperty("Properties");
+        string commonRoot = nativeProperties.GetProperty("PkgMicrosoft_SourceLink_Common")
+            .GetString()!;
+        string commonProps = Path.Combine(commonRoot, "build", "Microsoft.SourceLink.Common.props");
+        string nativeDiagnostic = "Traversal properties: " + nativeProperties.GetRawText();
+        Assert.IsTrue(Path.IsPathFullyQualified(commonRoot), nativeDiagnostic);
+        Assert.IsTrue(File.Exists(commonProps), commonProps + "\n" + nativeDiagnostic);
+        string assetsPath = Path.Combine(nativeProperties
+            .GetProperty("MSBuildProjectExtensionsPath").GetString()!, "project.assets.json");
+        LockFile assets = new LockFileFormat().Read(assetsPath)
+            ?? throw new InvalidDataException("Native traversal assets are unavailable.");
+        LockFileLibrary common = Assert.ContainsSingle(assets.Libraries.Where(library =>
+            library.Name == "Microsoft.SourceLink.Common"), nativeDiagnostic);
+        Assert.AreEqual("package", common.Type);
+        Assert.Contains("build/Microsoft.SourceLink.Common.props", common.Files, nativeDiagnostic);
+        Assert.ContainsSingle(assets.PackageFolders.Where(folder => PhysicalPathComparer.Equals(
+            Path.GetFullPath(Path.Combine(folder.Path, common.Path)),
+            Path.GetFullPath(commonRoot))), nativeDiagnostic);
+        Assert.IsNotEmpty(assets.ProjectFileDependencyGroups, nativeDiagnostic);
+        Assert.IsFalse(assets.ProjectFileDependencyGroups.SelectMany(group =>
+            group.Dependencies).Any(dependency => dependency.StartsWith(
+                "Microsoft.SourceLink.Common ", StringComparison.Ordinal)),
+            "Common must remain a transitive fixture dependency. " + nativeDiagnostic);
+        var imports = new List<string>();
+        var replay = new BinaryLogReplayEventSource { AllowForwardCompatibility = false };
+        replay.AnyEventRaised += (_, entry) =>
+        {
+            if (entry is ProjectImportedEventArgs import && !import.ImportIgnored &&
+                PhysicalPathComparer.Equals(import.ProjectFile, fixture.PathOf("dirs.proj")) &&
+                import.ImportedProjectFile is not null)
+                imports.Add(import.ImportedProjectFile);
+        };
+        string queryLog = fixture.PathOf("dirs.proj.query.binlog");
+        replay.Replay(queryLog, context.CancellationToken);
+        context.WriteLine("Native traversal imports: " + string.Join("; ", imports));
+        Directory.CreateDirectory(context.TestResultsDirectory!);
+        string evidence = Path.Combine(context.TestResultsDirectory!,
+            "nbgv-transitive-" + Guid.NewGuid().ToString("N"));
+        File.Copy(queryLog, evidence + ".query.binlog");
+        File.Copy(assetsPath, evidence + ".assets.json");
+        File.Copy(Path.Combine(Path.GetDirectoryName(assetsPath)!, "dirs.proj.nuget.g.props"),
+            evidence + ".nuget.g.props");
+        context.WriteLine("Native traversal evidence: " + evidence);
+        Assert.IsTrue(imports.Any(path => PhysicalPathComparer.Equals(path, commonProps)),
+            "Expected actual traversal import " + commonProps + "\n" + nativeDiagnostic +
+            "\nObserved imports: " + string.Join("; ", imports));
         string helper = NativeHelper(native);
         Assert.AreEqual(helper, NativeHelper(traversal));
         string versionBase = rootVersionBase ? fixture.Root : fixture.PathOf("product");
@@ -148,11 +196,16 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         Assert.IsTrue(response.Inputs.Any(input => SameIdentity(input.Consumer, root.Identity) &&
             input.Role == "RestoreAssets"));
         Assert.IsTrue(response.Inputs.Any(input => SameIdentity(input.Consumer, root.Identity) &&
+            PhysicalPathComparer.Equals(input.Path, commonProps) && input.Role == "Import" &&
             input.Provider is
             {
                 Kind: "TraversalPackage",
                 Identity: "Microsoft.SourceLink.Common"
-            }));
+            } && input.Provider.Version == common.Version.ToNormalizedString()),
+            "Expected traversal provider for " + commonProps + "\n" + nativeDiagnostic +
+            "\nObserved Common inputs: " + string.Join("; ", response.Inputs.Where(input =>
+                Path.GetFileName(input.Path) == "Microsoft.SourceLink.Common.props").Select(input =>
+                $"{input.Consumer.Project}: {input.Role} {input.Path} {input.Provider}")));
         foreach (DotNetGraphNode node in consumers.Where(node => !node.OuterBuild))
         {
             CheckSpec[] checks = DotNetChecks.Expand("product/consumer.csproj", node);
@@ -1130,8 +1183,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             const string lockPath =
                 "$(MSBuildThisFileDirectory)packages.$(MSBuildProjectName).lock.json";
             const string auxiliaryPath = "$(MSBuildThisFileDirectory)shared/nbgv-aux.targets";
-            const string sourceLinkCommon = "$(NuGetPackageRoot)microsoft.sourcelink.common/" +
-                "10.0.401/build/Microsoft.SourceLink.Common.props";
+            const string sourceLinkCommon = "$(PkgMicrosoft_SourceLink_Common)/" +
+                "build/Microsoft.SourceLink.Common.props";
             Write("global.json", """
                 {"sdk":{"version":"10.0.401","rollForward":"disable"},
                  "msbuild-sdks":{"Microsoft.Build.Traversal":"4.1.82"}}
@@ -1166,7 +1219,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                   <!-- Explicitly consume a restored transitive package asset;
                        the SDK supplies SourceLink by default. -->
                   <Import Project="{{sourceLinkCommon}}"
-                    Condition="Exists('{{sourceLinkCommon}}')" />
+                    Condition="'$(PkgMicrosoft_SourceLink_Common)' != ''" />
                 </Project>
                 """);
             string versionBase = rootVersionBase ? "" :
@@ -1229,7 +1282,10 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                     "-property:IsGraphBuild=true", .. DotNetChecks.Properties(Globals),
                     "-getItem:ProjectReference",
                     "-getProperty:NBGV_CacheMode,NBGV_CachingProjectReference," +
-                    "GitVersionBaseDirectory"],
+                    "GitVersionBaseDirectory,MSBuildProjectExtensionsPath,NuGetPackageRoot," +
+                    "PkgMicrosoft_SourceLink_Common",
+                    "-binaryLogger:" + PathOf(
+                        System.IO.Path.GetFileName(project) + ".query.binlog")],
                 30), token);
             token.ThrowIfCancellationRequested();
             Assert.IsTrue(result.Succeeded, result.Error + result.Stdout + result.Stderr);
