@@ -188,6 +188,35 @@ Use Ubuntu runners for the initial Node/Python/Ruby groups and Windows for gener
 Tool versions come from `global.json`, `mise.toml`/`mise.lock` and native locks;
 do not introduce a second toolchain authority in this plan.
 
+### Python Planning Integration and Later Caller Cutover
+
+Accept the finite planning-fact contract before implementing its private-app auxiliary code.
+Planning extraction is separate from Python preparation/build/check execution. It selects source
+impact from native facts; it neither installs local build requirements nor proves successful
+wheel/sdist consumers. The [source assessment](./research/python-native-planning.md) supplies its evidence
+basis; this design owns the selection.
+
+Retain the current root pytest testpaths, selected/full frozen package-preparation obligations,
+tableless quality owners and root shared inputs through the existing implementation plan. Root
+pytest does not require building all workspace packages. Preserve the smoke quality declaration's
+wheel and sdist outputs, distribution-content checks, wheel install/import and Git-free sdist
+build/install/import, with their actual prerequisites and variants. Do not duplicate inventories
+or freeze current counts as architecture. Maintain project-scoped NBGV/plugin/template/generated
+consumers even where a generated file is absent or current staged execution removes a plugin.
+
+Current ci_scope.py declaration/name heuristics, generated constraints and retained adapter
+no-config/no-sources choices identify execution consumers, not replacement native lock/default/
+source semantics. Retire producers and consumers atomically only after accepting the execution,
+check/prerequisite and transfer mapping and qualifying the implemented facts/callers. Release,
+publication and spent campaigns remain excluded.
+
+Before actual native qualification, bind reviewed helper/tool/field/source identities and concrete
+runtime preparation, then accept an exact experiment protocol covering commands, isolation,
+configuration/environment/cache/download effects, finite time/state, observations, stop and owned
+cleanup/evidence. No executable helper hash or protocol is selected here. Keep a finite diagnostic buffer and stop at the first independently accepted success
+or the exhausted/unsafe bounds. Repetitions within the accepted protocol need no
+repeated owner approval.
+
 ### Native .NET CI Group
 
 This group replaces general .NET CI selection and execution using the current

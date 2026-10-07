@@ -25,9 +25,11 @@ The [first Node execution group](./migration-strategy.md#first-node-execution-gr
 specifies the initial caller's endpoint responsibility, native control inputs,
 runtime/check ownership and atomic fixture relocation. The
 [native .NET CI group](./migration-strategy.md#native-net-ci-group) defines the
-next group's extraction and caller contract. Each group requires its own native
-implementation and hosted qualification before cutover; source design acceptance
-does not establish those results.
+Windows extraction and caller contract. The
+[native Python planning facts](#native-python-planning-facts) select its next
+extraction boundary; execution and caller mapping remain separate design work.
+Each group requires its own native implementation and applicable qualification
+before cutover; source design acceptance does not establish those results.
 
 ## Components and Native Responsibilities
 
@@ -122,6 +124,69 @@ CI must obtain enough ownership and reverse-consumer facts to justify both
 selection and exclusion. An incomplete graph cannot certify that a changed path
 has no consumers. Release resolves its selected unit's complete input/build/check
 closure; it need not evaluate unrelated projects.
+
+### Native Python Planning Facts
+
+Within the existing private app's `Native/Python`, use the repository-pinned UV metadata CLI, passive PyPA build string extraction
+and the pinned UV Rust parsing/lowering interfaces in the
+[source assessment](./research/python-native-planning.md). Standard tomllib supplies
+physical key/shape guards only. Native libraries own requirements, defaults, sources, markers
+and NBGV semantics. No parallel parser/settings interpreter/resolver, record chain or
+compatibility promise.
+
+For each exact basis/candidate checkout, bind revision, workspace root, interpreter/tool
+identity and operation dimensions. Invoke `uv workspace metadata --frozen --python <interpreter>` at that workspace root, without sync/active/script mode. Consume each endpoint's committed lock under the existing synchronized-lock guarantee;
+frozen does not revalidate freshness. Consume pinned
+preview schema, native member paths/names, structured sources, opaque graph IDs, ordinary
+edges, group/extra entry IDs, markers and `requires_python`. Never decode IDs or guess owners
+from package names, URLs, prefixes or caches.
+
+Admit the current explicit default-index, source-enabled request. Read project settings through
+`uv_settings::FilesystemOptions::find(root)`/`into_options`; use public `ResolverOptions::from`,
+`IndexLocations::from` and `NoSources::from_args` for native settings construction. Under the
+finite guard, these yield native default index locations and NoSources::None. Admit tool.uv
+workspace/sources only; additional necessary settings are unsupported until native adaptation,
+not ignored. Malformed settings remain errors. Do not port private CLI precedence or suppress
+configuration/sources. DiscoveryOptions defaults discover all members; stop_discovery_at=None
+for endpoint trees, not a sandbox.
+
+Construct a credential-free child request with owned HOME/XDG/cache/temp roots, explicit
+interpreter, downloads disabled and no inherited UV/PIP/index/credential settings. Use `FilesystemOptions::user()`/`system()` with their native result/error semantics,
+including the `/etc/uv/uv.toml` fallback. Relevant returned ambient settings are
+outside this default request. Do not add filesystem proofs of native configuration
+results or reproduce CLI precedence. Bind project configuration and
+version-file inputs. Select an owned absent UV_PROJECT_ENVIRONMENT: metadata can inspect/lock
+existing environments, so unexpected environment facts fail this request. Native Cache,
+WorkspaceCache and empty CredentialsCache supply owned state; no new cache/proof service.
+
+For named package contexts with explicit Hatchling build tables, no backend-path/package
+override, obtain unchanged strings from `ProjectBuilder.build_system_requires`. Parse through
+UV Requirement::from_str and lower with `BuildRequires::from_project_maybe_workspace`, native
+name/install path/settings, editable=true and owned caches. Reject necessary
+unsupported native source shapes before a fetch-capable lowering branch. Join typed Directory.install_path
+exactly to endpoint-native member roots and committed ownership. Repeat extraction for every
+necessary local build-requirement source, combining its ordinary local dependencies/requested
+extras with its build associations. Workflow computes transitive/reverse closure and cycles.
+Such sources can be plugins: nbgv-python is a build requirement/Hatch version-source plugin;
+Hatchling remains the backend. Association does not prove isolated version satisfaction or
+build success. Tableless native quality/group contexts remain; necessary forced package builds,
+default backends or undeclared dynamic inputs are unsupported.
+
+Use native Interpreter::query(...).markers(), MarkerTree parsing/evaluation,
+VirtualProject::default_groups_for_packages and DependencyGroups::from_args(...).with_defaults.
+Root pytest preparation includes root plus selected quality owners;
+control preparation uses native DevMode::Exclude for no-dev; build-requirement ordinary legs use no development groups.
+Initial operation-selected extras are empty; native build-requirement extras retain producer
+entry IDs. Require native conflicts empty; necessary unknown group/extra/marker/conflict
+selection fails. Preserve endpoint, interpreter/platform, groups/extras and check/build variant;
+resolve activity or its justified finite union before markerless ProjectFacts.Dependencies.
+Union both endpoints so removed/renamed producers retain consumers.
+
+Adapt into existing RepositoryFacts/ProjectFacts/SharedInput/CheckSpec and impact closure;
+keep quality consumers separate from build inputs and root ownership explicit. Managed NBGV
+and passive plugin coordinates supply project-scoped version/generated input consumers.
+Missing/ambiguous ownership, native errors or unmodeled necessary scope fail planning;
+no reduced completeness, parser fallback or all-run.
 
 ### Native .NET Project Facts
 
