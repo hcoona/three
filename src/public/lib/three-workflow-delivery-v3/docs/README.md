@@ -45,7 +45,9 @@ execution cutover and Release remain pending.
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration
 preflight, metadata adaptation and operation dependency projection with controlled
-unit boundaries. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
+unit boundaries. The private app's [bounded native pytest configuration component](../../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
+also has controlled tests; complete ownership, collection and native query
+composition remain unqualified. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. Complete fact assembly, native caller
 qualification and caller mapping remain pending.
 

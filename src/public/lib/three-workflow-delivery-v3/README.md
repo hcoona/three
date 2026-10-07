@@ -22,7 +22,10 @@ and selected retained Node matrix now execute under root CI;
 [PR #1042](https://github.com/hcoona/three/pull/1042) retains their ordinary hosted
 transfer and execution qualification. The exclusive npm CI shadow is retired.
 Python passive extraction, the pinned native supplement, metadata adaptation and
-dependency projection have controlled component boundaries. The
+dependency projection have controlled component boundaries. The private app also
+provides a [bounded native pytest configuration component](../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
+with controlled tests; complete ownership, collection and native query composition
+remain unqualified. The
 [primitive Linux observation](docs/research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition; complete fact assembly, native caller
 qualification and Python execution cutover remain pending.
