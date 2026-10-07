@@ -13,14 +13,15 @@ This is an operating handoff, not a second specification. The
 execution, transfer and outcome contracts. The HLD owns terminology and
 implementation order. The [implementation plan](./migration-strategy.md) identifies
 concrete callers, integration contracts and retirement dependencies.
-Node execution ownership is cut over for the adopted fixture and selected retained
-Node matrix; other ecosystem execution ownership remains pending. The next
-[native .NET CI group](./migration-strategy.md#native-net-ci-group) reuses Windows
-scope planning and the existing execution owner. Its native facts, ownership and
-check-origin contracts require implementation and ordinary qualification before
-cutover; source design does not establish runtime acceptance. Root CI's
-existing scope job now consumes native event comparison and control-test resource
-inputs, with the existing .NET job retaining sole execution ownership. The
+Root CI owns the adopted Node fixture, selected retained Node matrix and
+[native .NET CI group](./migration-strategy.md#native-net-ci-group). Its existing
+Windows scope job consumes both .NET endpoint graphs, native event comparison and
+control-test resources. The existing .NET job receives the original selected plan
+and complete candidate control distribution, executes selected native and adopted
+NuGet checks, and collects every required result without replanning. Ordinary
+Windows Debug qualification is recorded in
+[PR #1054](https://github.com/hcoona/three/pull/1054). Other ecosystem execution
+cutover and Release remain pending. The
 [private application's entry](../../../../private/app/workflow-delivery/README.md)
 describes its implemented CI selection/result interface, GitHub event comparison,
 native Node facts, control-test resource interface and check execution. The
@@ -29,7 +30,7 @@ the adopted fixture composition/effects on Linux. Its finite allowance is stoppe
 and the unused reserve expired. Root CI's adopted Node group and selected retained
 Node matrix have ordinary hosted transfer/execution qualification in
 [PR #1042](https://github.com/hcoona/three/pull/1042). The exclusive npm CI shadow
-and bootstrap projection are retired. Other quality presets, ecosystem execution
+and bootstrap projection are retired. Other quality presets, Python/Ruby execution
 cutover and Release remain pending. The
 [requirements transition](./requirements.md#requirements-and-implementation-transition)
 defines the retained implementation/evidence scope of the old

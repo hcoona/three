@@ -15,8 +15,9 @@ The supplied-fact command and Node revision-to-plan command share one impact
 algorithm and comparison/responsibility binder. The core accepts exact committed
 ownership and resolved preset/native-retained check origins. The native .NET group
 command joins both endpoints, completes selected checks and collects their original
-plan through the existing executors. Whole-group qualification and the proposed
-root CI caller cutover remain pending. The Node command reads exact
+plan through the existing executors. Root CI consumes this interface through its
+existing Windows scope and .NET execution jobs, qualified for the current Debug
+operation in [PR #1054](https://github.com/hcoona/three/pull/1054). The Node command reads exact
 caller-prepared checkouts, native
 PNPM relations, NBGV inputs and existing application declarations, then expands
 selected project and package checks. A concrete Node executor runs the adopted
@@ -349,8 +350,8 @@ available for later completion. Selection-stage checks stay empty.
 
 Isolated native-process and exact-Git selection tests exercise this bounded projection.
 The group interface below composes this reader with both-endpoint native Node and
-control consumption. Its complete repository preparation, selected execution and
-changed-code Windows plan transfer still require the eight whole-group gates.
+control consumption. The root caller qualifies complete repository preparation,
+selected execution and original-plan transfer for its Windows Debug operation.
 Additional producer adapters require their own concrete operation scope.
 
 ### Native .NET Selected Checks and Execution
@@ -411,8 +412,8 @@ Isolated native integration tests exercise original globals, references/analyzer
 inner multi-TFM MTP with apphost and hostless execution, VSTest settings, redirected
 outputs, intentional skips, no-tests policies and active cancellation/deadlines.
 These tests cover their concrete fixture composition. The CLI below composes retained
-native checks and the adopted NuGet recipe. Whole-group qualification and ordinary
-Windows artifact/result transfer remain separate gates.
+native checks and the adopted NuGet recipe. The root caller below supplies the
+separate whole-group and ordinary Windows artifact/result qualification.
 
 ### Native .NET Group Interface
 
@@ -447,7 +448,7 @@ expectations before qualifying archives and clean consumers.
 [`run_dotnet_ci_group.py`](../../../../eng/scripts/run_dotnet_ci_group.py) builds the
 complete candidate control output once, prepares each endpoint with its selected SDK
 and locked unfiltered traversal restore, and finalizes scope only after native planning.
-The proposed existing Windows `scope`/`dotnet-tests` caller transfers the original plan
+The existing Windows `scope`/`dotnet-tests` caller transfers the original plan
 and complete distribution through a native artifact ID. The receiver validates the
 actual producer/lifetime, prepares the candidate and executes without rebuilding control
 or replanning. Empty work still crosses execution and collection; missing planning,
@@ -455,8 +456,9 @@ transfer or required results fail. No second test launcher, scheduler or cache i
 The whole sequential execution has a finite one-hour caller budget; each native
 phase retains its fifteen-minute deadline. Preparation and collection keep their
 existing command deadlines. Reaching either execution limit remains failure.
-The required `Build & Test (.NET 10)` owner remains the existing Windows job. Ordinary
-changed-code Windows qualification is required before accepting that caller cutover.
+The required `Build & Test (.NET 10)` owner remains the existing Windows job. Its
+ordinary changed-code qualification is recorded in
+[PR #1054](https://github.com/hcoona/three/pull/1054); this scope does not migrate Release.
 
 [`ControlTestInputs`](Repository/ControlTestInputs.cs) exposes one concrete root-CI
 consumer through `ci control-inputs`: the control test project's embedded resources,
@@ -488,9 +490,9 @@ reasons. The retained Node manifest heuristic supplies no authoritative Node
 owner, and unconditional source conformance supplies no per-path owner. Native
 PNPM ownership and complete product/control consumption come from the native
 group readers. Basis-only reasons do not execute removed targets. The Node group
-consumes the final `ci-scope` artifact. The proposed .NET caller
-transfers its original plan separately with the complete control distribution;
-its ordinary Windows qualification remains pending.
+consumes the final `ci-scope` artifact. The .NET caller
+transfers its original plan separately with the complete control distribution,
+under the Windows qualification described above.
 
 ### Input Consumer Mapping
 

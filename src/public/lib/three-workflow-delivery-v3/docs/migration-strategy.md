@@ -191,9 +191,10 @@ do not introduce a second toolchain authority in this plan.
 ### Native .NET CI Group
 
 This group replaces general .NET CI selection and execution using the current
-Windows Debug operation. It does not migrate Release or test frameworks. Its
-source design is a contract for implementation; task loading, native facts,
-selected execution and changed-code hosted transfer remain qualification gates.
+Windows Debug operation. It does not migrate Release or test frameworks. Root CI
+consumes the implemented group under ordinary changed-code Windows qualification
+in [PR #1054](https://github.com/hcoona/three/pull/1054). The following contract and
+eight qualification gates continue to govern changes to this operation.
 
 #### Native Process and Endpoint Facts
 
