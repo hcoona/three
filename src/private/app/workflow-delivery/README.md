@@ -972,6 +972,29 @@ revision identity. The Node transaction associates native entries and the curren
 registered package definition; other definitions/variants remain unavailable and
 must reject unresolved necessary facts.
 
+### Paired Python Producer-to-Owner Component
+
+[`PythonOwnerProjection`](Repository/PythonOwnerProjection.cs) consumes the complete
+resolved native ordinary/build/group graph and supplied actual quality bindings at
+both committed endpoints. It unions producer relations before following paths to
+quality owners, retaining input-only intermediaries, cycles, nested nearest-member
+ownership and each initiating path/revision. Repository directory coordinates join
+the endpoint graphs; names and opaque native IDs do not associate moves. Removed
+and added coordinates retain their independent endpoint input associations.
+
+Standalone targets and root/shared inputs require exact supplied consumers. A known
+native input with no reachable quality owner yields an explicit empty owner set;
+missing scope, dangling relations, unknown owners and unsupported committed entry
+kinds fail. The component returns owner associations, including basis-only owners,
+without selecting deleted checks or changing the core's origin/check guards.
+
+This is a supplied-fact projection, not a second target declaration or native
+collector. Callers must bind complete native graphs and derive actual quality
+bindings from native pytest configuration/adopted checks. Target expansion,
+preparation, candidate surviving-work binding, `SharedInput`/`OwnedPaths` adaptation,
+complete fact assembly and caller qualification remain pending. Existing Python
+callers remain active. Controlled projection tests execute no native Python helper.
+
 ## Validation and CI Ownership
 
 The single test project is

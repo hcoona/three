@@ -27,6 +27,9 @@ dependency projection have controlled unit boundaries. The private app's
 [bounded native pytest configuration component](../../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
 also has controlled tests; complete ownership, collection and native query
 composition remain unqualified. The
+[paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
+has controlled supplied-fact coverage; complete native collection and candidate
+check binding remain pending. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned ordered helper composition; its campaign is stopped and
 both unused diagnostic reserves expired. Complete fact assembly, native caller

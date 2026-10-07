@@ -47,7 +47,9 @@ has passive extraction, a pinned Rust supplement, ordered configuration
 preflight, metadata adaptation and operation dependency projection with controlled
 unit boundaries. The private app's [bounded native pytest configuration component](../../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
 also has controlled tests; complete ownership, collection and native query
-composition remain unqualified. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
+composition remain unqualified. The [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
+has controlled supplied-fact coverage; complete native collection and candidate
+check binding remain pending. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. Complete fact assembly, native caller
 qualification and caller mapping remain pending.
 
