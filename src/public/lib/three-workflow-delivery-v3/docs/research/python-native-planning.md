@@ -61,14 +61,6 @@ edge can conceal that omission. This is not an observed failed UV invocation or
 CI run. Metadata alone therefore lacks a necessary premise for the required
 Python impact closure.
 
-Other inspected CLI outputs do not supply that premise. `tree` and lock exports
-change the representation of ordinary resolution. Workspace list/dir gives
-membership. Installed distributions describe a selected environment. UV's hidden
-build file listing is specific to its own backend and does not inventory
-Hatchling's build inputs. Build constraints constrain versions rather than add
-consumer relations. These outputs must not be combined into a log/cache scraper
-or a second UV source resolver.
-
 ## Native Library Candidate and Its Limits
 
 UV [documents][build-sources] that its build frontend respects `tool.uv.sources`
