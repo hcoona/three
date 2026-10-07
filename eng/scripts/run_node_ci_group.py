@@ -68,7 +68,12 @@ def validate_scope_artifact(
 
 
 def run(
-    root: Path, directory: Path, label: str, *args: str, required: bool = True
+    root: Path,
+    directory: Path,
+    label: str,
+    *args: str,
+    required: bool = True,
+    timeout: int = 900,
 ) -> str:
     """Retain the actual native outcome; never repair or retry an invocation."""
     outcome: dict[str, Any] = {"arguments": args, "cwd": str(root)}
@@ -78,7 +83,7 @@ def run(
             cwd=root,
             capture_output=True,
             check=False,
-            timeout=900,
+            timeout=timeout,
             env=os.environ
             | {"MSBUILDLOGTASKINPUTS": "1", "MSBUILDLOGTASKOUTPUTS": "1"},
         )
@@ -107,7 +112,7 @@ def run(
             pass
     if outcome["termination"] == "timedOut":
         if required:
-            raise subprocess.TimeoutExpired(args, 900, stdout, stderr)
+            raise subprocess.TimeoutExpired(args, timeout, stdout, stderr)
         return ""
     if not required and outcome["exitCode"] not in (0, 1):
         return ""

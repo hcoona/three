@@ -256,6 +256,7 @@ def execute(
         str(plan_path),
         str(request_path),
         required=False,
+        timeout=3600,
     )
     if not result:
         message = "Native .NET execution did not emit a result"

@@ -124,7 +124,9 @@ def test_absent_basis_control_still_prepares_both_native_endpoints(
         stderr=b"locked URLs unavailable",
     )
 
-    def native(endpoint, _directory, label, *args, **_options):
+    def native(endpoint, _directory, label, *args, required=True, timeout=900):
+        assert required is True
+        assert timeout == 900
         commands.append((endpoint, label, args))
         if locked_failure and args[:2] == ("mise", "install"):
             raise error
@@ -146,6 +148,9 @@ def test_absent_basis_control_still_prepares_both_native_endpoints(
     request = group.node.read_json(request_path)
     assert request["basisControl"] is None
     assert request["basisBuildLog"] is None
+    assert request["basisFiles"]["deadlineSeconds"] == 900
+    assert request["candidateFiles"]["deadlineSeconds"] == 900
+    assert request["completion"]["deadlineSeconds"] == 900
     assert request["basis"] == endpoints["basis"]
     restores = [
         (endpoint, args)
@@ -247,16 +252,21 @@ def test_only_successful_planning_finalizes_applicability(
     assert preliminary["scopes"]["dotnet"] is True
 
 
-def test_empty_original_plan_still_reaches_receiver_and_collector(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize(
+    ("populated", "termination"),
+    [(False, "passed"), (True, "passed"), (True, "failed"), (True, "timedOut")],
+)
+def test_original_plan_still_reaches_receiver_and_collector(
+    tmp_path, monkeypatch, populated, termination
 ):
-    """Empty original work still crosses both process boundaries."""
+    """Preserve original work and terminal outcomes under finite budgets."""
     root, transfer = tmp_path / "root", tmp_path / "transfer"
     (transfer / "control").mkdir(parents=True)
-    (transfer / "control/WorkflowDelivery.dll").write_bytes(
-        b"complete fixture distribution"
-    )
+    application = transfer / "control/WorkflowDelivery.dll"
+    application.write_bytes(b"complete fixture distribution")
     plan_path = transfer / "dotnet-plan.json"
+    key = {"target": "control", "check": "test", "variant": "net10.0"}
+    checks = [{"work": {"key": key}, "reasons": []}] if populated else []
     raw = (
         '{ "comparison": "'
         + BASIS
@@ -264,36 +274,91 @@ def test_empty_original_plan_still_reaches_receiver_and_collector(
         + CANDIDATE
         + '", "scope": "'
         + SCOPE
-        + '", "checks": [] }\n'
+        + '", "checks": '
+        + json.dumps(checks)
+        + " }\n"
     )
     plan_path.write_text(raw, encoding="utf-8")
+    results = (
+        [
+            {
+                "candidate": CANDIDATE,
+                "key": key,
+                "status": "Failed" if termination == "failed" else "Passed",
+            }
+        ]
+        if populated
+        else []
+    )
+    outcome = {
+        "comparison": BASIS,
+        "candidate": CANDIDATE,
+        "scope": SCOPE,
+        "satisfied": termination == "passed",
+    }
     commands = []
+    directory = tmp_path / "execution"
     monkeypatch.setattr(group.node, "comparison", lambda *_: (BASIS, CANDIDATE))
 
-    def native(_, __, label, *args, **___):
-        commands.append((label, args))
+    def native(args, **options):
+        label = {
+            "tool": "tools",
+            "restore": "restore",
+            "run-dotnet": "execution",
+            "result": "collection",
+        }[args[3] if args[1] == str(application) else args[1]]
+        commands.append((label, options["timeout"]))
         if label == "execution":
             assert args[4] == str(plan_path)
-            return json.dumps({"candidate": CANDIDATE, "results": []})
-        if label == "collection":
+            if termination == "timedOut":
+                raise subprocess.TimeoutExpired(
+                    args, options["timeout"], b"partial", b"deadline"
+                )
+            payload = {"candidate": CANDIDATE, "results": results}
+        elif label == "collection":
             assert args[4] == str(plan_path)
-            return json.dumps(
-                {
-                    "comparison": BASIS,
-                    "candidate": CANDIDATE,
-                    "scope": SCOPE,
-                    "satisfied": True,
-                }
-            )
-        return ""
+            assert group.node.read_json(Path(args[5])) == results
+            payload = outcome
+        else:
+            return subprocess.CompletedProcess(args, 0, b"", b"")
+        return subprocess.CompletedProcess(
+            args,
+            int(termination == "failed"),
+            json.dumps(payload).encode("utf-8"),
+            b"native diagnostics",
+        )
 
-    monkeypatch.setattr(group.node, "run", native)
-    outcome = group.execute(
-        root, transfer, tmp_path / "execution", BASIS, CANDIDATE
+    monkeypatch.setattr(group.node.subprocess, "run", native)
+    if termination == "timedOut":
+        with pytest.raises(ValueError, match="did not emit a result"):
+            group.execute(root, transfer, directory, BASIS, CANDIDATE)
+        assert not (directory / "results.json").exists()
+        assert (directory / "execution.stdout").read_bytes() == b"partial"
+        assert (directory / "execution.stderr").read_bytes() == b"deadline"
+    elif termination == "failed":
+        with pytest.raises(subprocess.CalledProcessError) as captured:
+            group.execute(root, transfer, directory, BASIS, CANDIDATE)
+        assert captured.value.returncode == 1
+        assert json.loads(captured.value.output) == outcome
+        assert captured.value.stderr == b"native diagnostics"
+    else:
+        assert (
+            group.execute(root, transfer, directory, BASIS, CANDIDATE)
+            == outcome
+        )
+        assert group.node.read_json(directory / "outcome.json") == outcome
+    assert commands == (
+        ([("tools", 900), ("restore", 900)] if populated else [])
+        + [("execution", 3600)]
+        + ([] if termination == "timedOut" else [("collection", 900)])
     )
-    assert outcome["satisfied"] is True
-    assert [label for label, _ in commands] == ["execution", "collection"]
+    assert (
+        group.node.read_json(directory / "request.json")["deadlineSeconds"]
+        == 900
+    )
     assert plan_path.read_text(encoding="utf-8") == raw
+    if termination != "passed":
+        assert not (directory / "outcome.json").exists()
 
 
 def test_wrong_original_plan_binding_stops_before_preparation(

@@ -452,6 +452,9 @@ and complete distribution through a native artifact ID. The receiver validates t
 actual producer/lifetime, prepares the candidate and executes without rebuilding control
 or replanning. Empty work still crosses execution and collection; missing planning,
 transfer or required results fail. No second test launcher, scheduler or cache is added.
+The whole sequential execution has a finite one-hour caller budget; each native
+phase retains its fifteen-minute deadline. Preparation and collection keep their
+existing command deadlines. Reaching either execution limit remains failure.
 The required `Build & Test (.NET 10)` owner remains the existing Windows job. Ordinary
 changed-code Windows qualification is required before accepting that caller cutover.
 

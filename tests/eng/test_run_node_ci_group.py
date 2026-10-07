@@ -349,15 +349,20 @@ def test_failed_runtime_cannot_omit_original_required_results(caller, missing):
     ("exit_code", "timeout"),
     [(0, False), (1, False), (2, False), (3, False), (None, True)],
 )
+@pytest.mark.parametrize("budget", [None, 3600], ids=["default", "explicit"])
 def test_native_command_retains_failure_or_timeout(
-    tmp_path, monkeypatch, exit_code, timeout
+    tmp_path, monkeypatch, exit_code, timeout, budget
 ):
     """Native command retains failure or timeout."""
+    calls = []
+    expected_budget = 900 if budget is None else budget
+    options = {} if budget is None else {"timeout": budget}
 
-    def native(*_args, **_kwargs):
+    def native(*args, **kwargs):
+        calls.append((args, kwargs))
         if timeout:
             raise subprocess.TimeoutExpired(
-                ["native"], 900, b"partial", b"deadline"
+                ["native"], kwargs["timeout"], b"partial", b"deadline"
             )
         return subprocess.CompletedProcess(
             ["native"], exit_code, b"partial", b"failure"
@@ -365,8 +370,10 @@ def test_native_command_retains_failure_or_timeout(
 
     monkeypatch.setattr(group.subprocess, "run", native)
     assert group.run(
-        tmp_path, tmp_path, "native", "native", required=False
+        tmp_path, tmp_path, "native", "native", required=False, **options
     ) == ("partial" if exit_code in (0, 1) else "")
+    assert len(calls) == 1
+    assert calls[0][1]["timeout"] == expected_budget
     observation = group.read_json(tmp_path / "native.command.json")
     assert observation == {
         "arguments": ["native"],
@@ -380,20 +387,32 @@ def test_native_command_retains_failure_or_timeout(
     )
 
 
-@pytest.mark.parametrize("timeout", [False, True])
-@pytest.mark.parametrize("reporting_fails", [False, True])
+@pytest.mark.parametrize(
+    "failure",
+    [(False, False), (False, True), (True, False), (True, True)],
+    ids=[
+        "exit-report",
+        "exit-broken-report",
+        "timeout-report",
+        "timeout-broken-report",
+    ],
+)
+@pytest.mark.parametrize("budget", [None, 3600], ids=["default", "explicit"])
 def test_required_native_failure_reports_streams_and_preserves_exception(
-    tmp_path, monkeypatch, capsys, timeout, reporting_fails
+    tmp_path, monkeypatch, capsys, failure, budget
 ):
     """Retain required failure details even if reporting itself fails."""
+    timeout, reporting_fails = failure
     calls = []
     error_output = b"deadline" if timeout else b"failure"
+    expected_budget = 900 if budget is None else budget
+    options = {} if budget is None else {"timeout": budget}
 
     def native(*args, **kwargs):
         calls.append((args, kwargs))
         if timeout:
             raise subprocess.TimeoutExpired(
-                ["native"], 900, b"partial", error_output
+                ["native"], kwargs["timeout"], b"partial", error_output
             )
         return subprocess.CompletedProcess(
             ["native"], 2, b"partial", error_output
@@ -411,13 +430,14 @@ def test_required_native_failure_reports_streams_and_preserves_exception(
         if reporting_fails:
             reporting.setattr(group.sys, "stderr", BrokenStream())
         with pytest.raises(exception) as captured:
-            group.run(tmp_path, tmp_path, "required", "native")
+            group.run(tmp_path, tmp_path, "required", "native", **options)
     assert len(calls) == 1
+    assert calls[0][1]["timeout"] == expected_budget
     assert captured.value.cmd == ("native",)
     assert captured.value.output == b"partial"
     assert captured.value.stderr == error_output
     if timeout:
-        assert captured.value.timeout == 900
+        assert captured.value.timeout == expected_budget
     else:
         assert captured.value.returncode == 2
     output = capsys.readouterr()
