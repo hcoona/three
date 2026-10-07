@@ -283,6 +283,84 @@ def test_cli_explains_unsupported_context(
     builder.assert_not_called()
 
 
+def test_configuration_preflight_reads_ancestors_without_native_extraction(
+    project, builder, monkeypatch, capsys
+):
+    """Config-only preflight never enters unrelated build or plugin code."""
+    ancestor = project.parent
+    manifest = MANIFEST.replace("hatchling.build", "unrelated_backend")
+    (ancestor / "pyproject.toml").write_text(
+        manifest + '[tool.hatch.version]\nsource = "nbgv"\n'
+    )
+    plugin = Mock(side_effect=AssertionError("No plugin extraction allowed"))
+    monkeypatch.setitem(sys.modules, "nbgv_python", SimpleNamespace())
+    monkeypatch.setitem(
+        sys.modules,
+        "nbgv_python.config",
+        SimpleNamespace(PluginConfig=SimpleNamespace(from_mapping=plugin)),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["passive", "--configuration-only", str(project), str(ancestor)],
+    )
+
+    assert passive.main() == 0
+
+    result = capsys.readouterr()
+    assert json.loads(result.out) == {
+        "configuration_inputs": [
+            str(project.resolve() / "pyproject.toml"),
+            str(ancestor.resolve() / "pyproject.toml"),
+        ]
+    }
+    assert result.err == ""
+    builder.assert_not_called()
+    plugin.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        (
+            '[tool.uv]\noffline = "private-setting"\n',
+            (
+                "Unsupported Python context: "
+                "The requested UV settings need native adaptation.\n"
+            ),
+        ),
+        (
+            "[private-malformed",
+            "Passive extraction failed (TOMLDecodeError).\n",
+        ),
+        (
+            "tool = false\n",
+            "Unsupported Python context: The tool table must be a table.\n",
+        ),
+    ],
+)
+def test_configuration_preflight_rejects_ancestor_settings(
+    project, builder, monkeypatch, capsys, case
+):
+    """A later invalid context yields no partial input list or native calls."""
+    ancestor = project.parent
+    manifest, diagnostic = case
+    (ancestor / "pyproject.toml").write_text(manifest)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["passive", "--configuration-only", str(project), str(ancestor)],
+    )
+
+    assert passive.main() == 1
+
+    result = capsys.readouterr()
+    assert result.out == ""
+    assert result.err == diagnostic
+    assert "private-" not in result.err
+    builder.assert_not_called()
+
+
 @pytest.mark.parametrize("fails", [False, True])
 def test_native_warnings_preserve_cli_outcome_and_do_not_escape(
     project, builder, monkeypatch, capsys, fails

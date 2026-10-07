@@ -1,0 +1,23 @@
+[package]
+name = "workflow-python-native-facts"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97.0"
+publish = false
+
+[dependencies]
+uv-distribution = { git = "https://github.com/astral-sh/uv", rev = "46b84fd0bfec23b72f29e8e2185ba68a65052f48" }
+uv-pypi-types = { git = "https://github.com/astral-sh/uv", rev = "46b84fd0bfec23b72f29e8e2185ba68a65052f48" }
+uv-pep508 = { git = "https://github.com/astral-sh/uv", rev = "46b84fd0bfec23b72f29e8e2185ba68a65052f48" }
+uv-distribution-types = { git = "https://github.com/astral-sh/uv", rev = "46b84fd0bfec23b72f29e8e2185ba68a65052f48" }
+uv-workspace = { git = "https://github.com/astral-sh/uv", rev = "46b84fd0bfec23b72f29e8e2185ba68a65052f48" }
+uv-settings = { git = "https://github.com/astral-sh/uv", rev = "46b84fd0bfec23b72f29e8e2185ba68a65052f48" }
+uv-configuration = { git = "https://github.com/astral-sh/uv", rev = "46b84fd0bfec23b72f29e8e2185ba68a65052f48" }
+uv-cache = { git = "https://github.com/astral-sh/uv", rev = "46b84fd0bfec23b72f29e8e2185ba68a65052f48" }
+uv-auth = { git = "https://github.com/astral-sh/uv", rev = "46b84fd0bfec23b72f29e8e2185ba68a65052f48" }
+uv-python = { git = "https://github.com/astral-sh/uv", rev = "46b84fd0bfec23b72f29e8e2185ba68a65052f48" }
+uv-normalize = { git = "https://github.com/astral-sh/uv", rev = "46b84fd0bfec23b72f29e8e2185ba68a65052f48" }
+uv-pep440 = { git = "https://github.com/astral-sh/uv", rev = "46b84fd0bfec23b72f29e8e2185ba68a65052f48" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

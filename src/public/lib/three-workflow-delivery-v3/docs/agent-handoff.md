@@ -21,9 +21,10 @@ and complete candidate control distribution, executes selected native and adopte
 NuGet checks, and collects every required result without replanning. Ordinary
 Windows Debug qualification is recorded in
 [PR #1054](https://github.com/hcoona/three/pull/1054). The [native Python planning-fact contract](./middle-level-design.md#native-python-planning-facts)
-selects the next extraction boundary. A passive extractor has controlled unit
-boundaries; Rust supplementation, complete fact assembly, native qualification
-and execution/caller mapping remain pending. Other ecosystem execution cutover and
+selects the next extraction boundary. Passive extraction, the pinned Rust
+supplement and ordered configuration preflight have controlled unit boundaries;
+complete fact assembly, native qualification and execution/caller mapping remain
+pending. Other ecosystem execution cutover and
 Release remain pending. The
 [private application's entry](../../../../private/app/workflow-delivery/README.md)
 describes its implemented CI selection/result interface, GitHub event comparison,
