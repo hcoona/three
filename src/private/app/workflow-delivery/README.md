@@ -52,12 +52,48 @@ PNPM integration invokes the repository-selected CLI directly. The implemented
 selection/result core consumes resolved facts and does not
 interpret ecosystem manifests, dependency specifiers or version inheritance.
 
+The Python passive extractor returns declared build strings and maintained
+plugin coordinates. Its controlled unit boundaries are implemented; Rust native
+supplementation, complete fact assembly, native qualification and caller mapping
+remain pending under the [planning contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-planning-facts).
+
 Native integrations must supply complete ownership and reverse-consumer facts for
 their declared scope, including base and candidate relations, selected quality
 presets and all required variants. They must report incomplete evaluation or
 unsupported relevant shapes in `errors`. An empty error array is a producer's
 result, not an admission certificate or proof that a reader is implemented.
 The scope label must agree across revisions; it is not a coverage inference.
+
+### Python Passive Extraction
+
+[`passive.py`](Native/Python/passive.py) accepts one project-directory argument
+and returns one complete JSON response: resolved `directory`, nullable
+`build_requirements` and nullable `nbgv` coordinates (`working_directory` and
+`generated_file`). A missing build table leaves the build requirements absent;
+quality/group contexts do not receive a synthetic backend. Explicit named
+Hatchling tables without backend paths are admitted. Structural guards reject
+additional UV settings before extraction; source/default resolution remains a
+later native responsibility.
+
+PyPA `ProjectBuilder.build_system_requires` supplies unchanged strings;
+`nbgv_python.config.PluginConfig.from_mapping` supplies plugin coordinates.
+There are no requirement/default/source parsers or backend/generation calls.
+Failures produce a nonzero exit without partial facts. Physical request guards
+explain the unsupported shape using fixed application messages; native failures
+report the exception type without forwarding raw messages. The caller must bind
+the actual directory and native request before using these outputs for planning.
+Scoped native warning capture prevents source-valued warning diagnostics from
+escaping that response boundary while preserving native success/error outcomes.
+
+The root `workflow-delivery-python` dependency group prepares pinned PyPA build
+and the existing workspace plugin through the ordinary UV lock. This is helper
+tool preparation, separate from project build environments. The
+[unit tests](../../../../tests/private/app/workflow-delivery/Native/Python/test_passive.py)
+substitute the native property/config boundaries; root pytest owns them and
+selects them for helper or maintained-plugin source changes. They do not qualify
+actual PyPA extraction, native lowering, complete ownership/activity/closure or
+runtime effects. Those require the later concrete native protocol and remaining
+planning integration. Python execution, Release and caller cutover are pending.
 
 ### PNPM Graph Component
 

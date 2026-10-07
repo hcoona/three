@@ -39,6 +39,16 @@ LEGACY_RELEASE_TESTS = "tests/eng/test_legacy_release_contract.py"
     ("path", "jobs", "roots"),
     [
         ("docs/README.md", set(), set()),
+        (
+            "src/private/app/workflow-delivery/Native/Python/passive.py",
+            {"python", "dotnet"},
+            {scope.PYTHON_PASSIVE_TESTS},
+        ),
+        (
+            "tests/private/app/workflow-delivery/Native/Python/test_passive.py",
+            {"python", "dotnet"},
+            {scope.PYTHON_PASSIVE_TESTS},
+        ),
         pytest.param(
             "tests/eng/test_run_node_ci_group.py",
             {"python"},
@@ -103,7 +113,7 @@ LEGACY_RELEASE_TESTS = "tests/eng/test_legacy_release_contract.py"
         (
             "src/public/lib/nbgv-python/src/nbgv_python/cli.py",
             {"python", "azureauth"},
-            {NBGV_TESTS, AZURE_TESTS, V3_TESTS},
+            {NBGV_TESTS, AZURE_TESTS, V3_TESTS, scope.PYTHON_PASSIVE_TESTS},
         ),
         (
             "src/private/app/workflow-delivery-v3-nuget-consumer/Program.cs",

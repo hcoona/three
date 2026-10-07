@@ -18,6 +18,7 @@ dev = [
   "PyYAML>=6.0.2",
   "ruff==0.16.10",
 ]
+workflow-delivery-python = ["build==1.4.1", "nbgv-python"]
 
 [tool.uv.workspace]
 # The current Python workspace is rooted under src/; legacy OnePython paths are retired.
@@ -200,6 +201,7 @@ convention = "google" # Match the Google Python Style Guide docstring structure.
 addopts = "--import-mode=importlib"
 tmp_path_retention_policy = "failed"
 testpaths = [
+  "tests/private/app/workflow-delivery/Native/Python",
   "tests/eng/test_ci_scope.py",
   "tests/eng/test_run_node_ci_group.py",
   "tests/eng/test_run_dotnet_ci_group.py",
