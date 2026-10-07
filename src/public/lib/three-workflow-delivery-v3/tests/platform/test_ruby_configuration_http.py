@@ -493,7 +493,7 @@ def test_public_rubygems_owners_location_is_durable_sanitized_failure(
     tmp_path, monkeypatch, capfd, headers, reply
 ):
     """An anomalous project reply spends once and cannot establish absence."""
-    selected = ledger(tmp_path / "ledger", "rubygems")
+    selected = ledger(tmp_path / "ledger", "rubygems", now=datetime.now(UTC))
     phase = selected.begin("initial-owners", now=datetime.now(UTC))
     log = tmp_path / "requests.jsonl"
     _fake_https(
@@ -608,7 +608,7 @@ def test_transport_callbacks_join_real_ledger_and_validated_original(
     tmp_path, monkeypatch, valid_owner
 ):
     """Validate response identity before closing a durable send."""
-    selected = ledger(tmp_path / "ledger")
+    selected = ledger(tmp_path / "ledger", now=datetime.now(UTC))
     phase = selected.begin("initial-controls", now=datetime.now(UTC))
     body = canonicalize(OWNER if valid_owner else {"login": "foreign", "id": 1})
     log = tmp_path / "requests.jsonl"

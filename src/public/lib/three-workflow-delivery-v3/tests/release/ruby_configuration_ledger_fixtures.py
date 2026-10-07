@@ -17,7 +17,7 @@ EVIDENCE = canonicalize({"fixture": "sanitized controlled response"})
 REPOSITORY = "/repos/hcoona/three"
 
 
-def plan_document(directory, destination="github-packages"):
+def plan_document(directory, destination="github-packages", *, now=NOW):
     """Select exact canonical local plan inputs for the public validator."""
     return {
         "schema": "workflow-delivery/v3/ruby-configuration-plan-v1",
@@ -27,18 +27,18 @@ def plan_document(directory, destination="github-packages"):
         "source-commit": TARGET,
         "caller-digest": DIGEST,
         "protocol-digest": DIGEST,
-        "issued-at": instant(NOW),
-        "expires-at": instant(NOW + timedelta(days=7)),
+        "issued-at": instant(now),
+        "expires-at": instant(now + timedelta(days=7)),
         "phases": configuration_phase_limits(destination),
     }
 
 
-def ledger(directory, destination="github-packages", **changes):
+def ledger(directory, destination="github-packages", *, now=NOW, **changes):
     """Initialize one fresh ledger through the actual plan validator."""
-    doc = plan_document(directory, destination)
+    doc = plan_document(directory, destination, now=now)
     doc.update(changes)
     plan = RubyConfigurationPlan(canonicalize(doc))
-    initialize_ruby_configuration_ledger(plan, now=NOW)
+    initialize_ruby_configuration_ledger(plan, now=now)
     return RubyConfigurationLedger(plan)
 
 

@@ -42,6 +42,10 @@ execution qualification in [PR #1042](https://github.com/hcoona/three/pull/1042)
 The exclusive npm CI shadow is retired. Other quality presets, Python/Ruby
 execution cutover and Release remain pending.
 
+The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
+has a passive extractor with controlled unit boundaries. Rust supplementation,
+complete fact assembly, native qualification and caller mapping remain pending.
+
 The pre-contraction normal-Live baseline was merged across the
 requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.
 The implementation includes active-only Observation, fresh

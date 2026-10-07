@@ -136,6 +136,20 @@ def test_initialize_is_exclusive_and_never_refreshes_original_plan(tmp_path):
     assert RubyConfigurationLedger(plan).plan.content == plan.content
 
 
+def test_fixture_plan_and_initialization_share_explicit_clock(tmp_path):
+    """An alternate clock keeps the same bounded lifetime and expiry guard."""
+    now = NOW + timedelta(days=30)
+    selected = ledger(tmp_path / "ledger", now=now)
+
+    assert selected.plan.document["issued-at"] == instant(now)
+    assert selected.plan.document["expires-at"] == instant(
+        now + timedelta(days=7)
+    )
+    selected.begin("initial-controls", now=now)
+    with pytest.raises(ValueError, match="not current"):
+        selected.plan.require_current(now + timedelta(days=7))
+
+
 @pytest.mark.parametrize("change", ["missing", "replaced", "symlink"])
 def test_missing_or_replaced_plan_blocks_reopen_and_existing_ledger(
     tmp_path, change

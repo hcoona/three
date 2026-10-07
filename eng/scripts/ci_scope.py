@@ -43,6 +43,8 @@ ALL_INPUTS = {
 CONTROL_PROJECT = (
     "tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj"
 )
+PYTHON_PASSIVE_TESTS = "tests/private/app/workflow-delivery/Native/Python"
+PYTHON_PASSIVE_SOURCE = "src/private/app/workflow-delivery/Native/Python"
 PYTHON_INPUTS = {
     "pyproject.toml",
     "uv.lock",
@@ -281,6 +283,13 @@ def _python_tests(
         test
         for test in test_roots
         if _under(path, test)
+        or (
+            test == PYTHON_PASSIVE_TESTS
+            and (
+                _under(path, PYTHON_PASSIVE_SOURCE)
+                or _under(path, "src/public/lib/nbgv-python")
+            )
+        )
         or any(_under(test, directory) for directory in affected)
         or (test.startswith(V3 + "/") and _v3_input(path))
         or (test.startswith(AZURE + "/") and _azure_input(path))
