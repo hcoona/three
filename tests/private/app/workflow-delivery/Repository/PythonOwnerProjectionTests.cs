@@ -196,6 +196,24 @@ public sealed class PythonOwnerProjectionTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void UnknownSharedInputMemberFailsWithValidOppositeEndpoint(bool invalidBasis)
+    {
+        var valid = Endpoint("valid", [Member("."), Member("src/a")],
+            [new("pytest:a", "src/a", [])], ["shared.json"],
+            [new("shared.json", [], [])]);
+        var invalid = valid with
+        {
+            Inputs = [new("shared.json", ["missing"], [])]
+        };
+
+        Assert.ThrowsExactly<InvalidDataException>(() => PythonOwnerProjection.Project(
+            invalidBasis ? invalid : valid, invalidBasis ? valid : invalid,
+            ["shared.json"]));
+    }
+
+    [TestMethod]
     public void MemberOnlySharedInputReachesIndirectQualityOwner()
     {
         var basis = Endpoint("before", [Member("."), Member("src/a"), Member("src/b"),
