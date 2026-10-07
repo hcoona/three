@@ -239,7 +239,7 @@ internal static class ImpactPlanner
         }
     }
 
-    private static void ValidateQualityOwner(ProjectFacts project)
+    internal static void ValidateQualityOwner(ProjectFacts project)
     {
         bool resolvedOrigin = project.Origin switch
         {
