@@ -10,7 +10,13 @@ internal sealed record ControlBuildParameter(TaskParameterMessageKind Kind, stri
     string? ItemType, string? PropertyName, ControlBuildValue[] Values);
 internal sealed record ControlBuildTask(string Project, string Name, string Definition,
     string Implementation, ControlBuildParameter[] Parameters);
-internal sealed record ControlBuildImport(string Project, string Path);
+internal readonly record struct ControlBuildEvaluation(int Submission, int Node, int Evaluation);
+internal sealed record ControlBuildImport(string Project, string Path)
+{
+    internal ControlBuildEvaluation? Evaluation { get; init; }
+    internal string? Importer { get; init; }
+    internal string? UnexpandedProject { get; init; }
+}
 internal sealed record ControlBuildLog(string Project, ControlBuildTask[] Tasks,
     ControlBuildImport[] Imports, IReadOnlyDictionary<string, string> Properties,
     IReadOnlyDictionary<string, string> GlobalProperties);
@@ -114,7 +120,14 @@ internal static class ControlBuildLogReader
                         "The native operation ignored an invalid import.");
                     // The SDK emits null for a false condition or a glob with no matches.
                     if (import.ImportedProjectFile is not null)
-                        imports.Add(new(importingProject!, FullPath(import.ImportedProjectFile)));
+                        imports.Add(new(importingProject!, FullPath(import.ImportedProjectFile))
+                        {
+                            Evaluation = new(importKey.Submission, importKey.Node,
+                                importKey.Evaluation),
+                            Importer = string.IsNullOrEmpty(import.ProjectFile) ? null :
+                                FullPath(import.ProjectFile),
+                            UnexpandedProject = import.UnexpandedProject,
+                        });
                     break;
                 case ProjectStartedEventArgs start:
                     Require(started && !finished, "Project is outside the native build.");

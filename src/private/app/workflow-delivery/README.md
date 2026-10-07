@@ -274,7 +274,20 @@ pack version. Generic SDKs, the workload manifest locator, unmatched imports and
 hooks outside that pack receive no expanded provider boundary. Observed eligible
 inputs still require existing files and retain committed-file precedence.
 
+The separate control-build binlog boundary retains each successful import's
+immediate parent, unexpanded import text and native evaluation identity. An
+existing absolute `Sdk/AutoImport.props` imported by the selected SDK's
+`Microsoft.NET.Sdk.ImportWorkloads.props` with literal `AutoImport.props` seeds
+a finite pack association. Only observed imports connected to that seed within
+the same evaluation and pack become exact dependency files. Disconnected,
+missing or escaping files gain no membership; ordinary task/role restrictions
+and committed-file precedence remain. This consumes the [SDK import contract][workload-import]
+and [native import event fields][native-import-event], without reconstructing
+SDK results, enumerating pack contents or claiming an exact workload version.
+
 [workload-resolver]: https://github.com/dotnet/dotnet/blob/e34a38d2ae1fc26406a317517196e55c68ff83ab/src/sdk/src/Resolvers/Microsoft.NET.Sdk.WorkloadMSBuildSdkResolver/CachingWorkloadResolver.cs#L115
+[workload-import]: https://github.com/dotnet/dotnet/blob/e34a38d2ae1fc26406a317517196e55c68ff83ab/src/sdk/src/Tasks/Microsoft.NET.Build.Tasks/targets/Microsoft.NET.Sdk.ImportWorkloads.props#L14
+[native-import-event]: https://github.com/dotnet/dotnet/blob/e34a38d2ae1fc26406a317517196e55c68ff83ab/src/msbuild/src/Build/Evaluation/Evaluator.cs#L2247
 [workload-autoimport]: https://github.com/dotnet/macios/blob/354c2a645855dfdf774cc5e098cd214764f475b5/dotnet/targets/AutoImport.template.props#L1
 
 Roslyn's evaluated `PotentialEditorConfigFiles` and `GlobalAnalyzerConfigFiles`

@@ -135,10 +135,16 @@ public sealed class ControlBuildLogReaderTests(TestContext context)
     }
 
     [TestMethod]
-    public void ImportsRetainTheirNativeEvaluationProject()
+    [DataRow(true, true)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    [DataRow(false, false)]
+    public void ImportsRetainTheirNativeEvaluationProject(bool hasParent, bool hasUnexpanded)
     {
         BuildEventContext evaluation = new(1, 1, 10, -1, -2, -1, -1);
         string imported = Path.GetFullPath("shared/Directory.Build.props");
+        string? parent = hasParent ? Path.GetFullPath("shared/other.targets") : null;
+        string? unexpanded = hasUnexpanded ? "AutoImport.props" : null;
         var events = SuccessfulEvents();
         events.InsertRange(1,
         [
@@ -146,7 +152,7 @@ public sealed class ControlBuildLogReaderTests(TestContext context)
                 { ProjectFile = Project, BuildEventContext = evaluation },
             new ProjectImportedEventArgs
             {
-                ProjectFile = Path.GetFullPath("shared/other.targets"),
+                ProjectFile = parent, UnexpandedProject = unexpanded,
                 ImportedProjectFile = imported, BuildEventContext = evaluation,
             },
             new ProjectImportedEventArgs
@@ -163,6 +169,51 @@ public sealed class ControlBuildLogReaderTests(TestContext context)
         ControlBuildImport import = Assert.ContainsSingle(result.Imports);
         Assert.AreEqual(Project, import.Project);
         Assert.AreEqual(imported, import.Path);
+        Assert.AreEqual(parent, import.Importer);
+        Assert.AreEqual(unexpanded, import.UnexpandedProject);
+        Assert.AreEqual(new ControlBuildEvaluation(1, 1, 10), import.Evaluation);
+    }
+
+    [TestMethod]
+    [DataRow(2, 1, 10)]
+    [DataRow(1, 2, 10)]
+    [DataRow(1, 1, 20)]
+    public void ImportLineageRetainsSeparateNativeEvaluationContexts(
+        int submission, int node, int evaluationId)
+    {
+        string parent = Path.GetFullPath("sdk/Microsoft.NET.Sdk.ImportWorkloads.props");
+        string imported = Path.GetFullPath("packs/Fixture/Sdk/AutoImport.props");
+        BuildEventContext[] contexts = [new(1, 1, 10, -1, -2, -1, -1),
+            new(submission, node, evaluationId, -1, -2, -1, -1)];
+        var events = SuccessfulEvents();
+        foreach (BuildEventContext evaluation in contexts)
+            events.InsertRange(1,
+            [
+                new ProjectEvaluationStartedEventArgs("", "")
+                    { ProjectFile = Project, BuildEventContext = evaluation },
+                new ProjectImportedEventArgs
+                {
+                    ProjectFile = parent, ImportedProjectFile = imported,
+                    UnexpandedProject = "AutoImport.props", BuildEventContext = evaluation,
+                },
+                new ProjectEvaluationFinishedEventArgs("", "")
+                    { ProjectFile = Project, BuildEventContext = evaluation },
+            ]);
+
+        ControlBuildLog result = Read(events);
+
+        Assert.HasCount(2, result.Imports);
+        foreach (BuildEventContext evaluation in contexts)
+        {
+            var expected = new ControlBuildEvaluation(evaluation.SubmissionId,
+                evaluation.NodeId, evaluation.EvaluationId);
+            ControlBuildImport import = Assert.ContainsSingle(result.Imports.Where(value =>
+                value.Evaluation == expected));
+            Assert.AreEqual(Project, import.Project);
+            Assert.AreEqual(imported, import.Path);
+            Assert.AreEqual(parent, import.Importer);
+            Assert.AreEqual("AutoImport.props", import.UnexpandedProject);
+        }
     }
 
     [TestMethod]

@@ -227,6 +227,11 @@ immediate parent pack only when that result actually imports its `AutoImport.pro
 Consume primary and additional paths without an installed-pack inventory or a
 second workload resolver. Other SDK roots and unknown external hooks do not gain
 that expansion; native provider identity/version do not claim an exact pack pin.
+Control-build collection separately consumes the successful import's immediate
+parent, unexpanded text and native evaluation identity. The selected SDK's literal
+autoimport seeds exact file membership for observed connected imports in that
+same evaluation and pack; no directory inventory or reconstructed SDK result
+supplies missing membership.
 Reject unsupported semantic globals containing endpoint-dependent coordinates;
 do not invent path rewriting or AssemblyName/relocation aliases. Aggregate native
 relations into business project-path IDs for the shared impact planner, retaining

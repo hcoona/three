@@ -156,7 +156,11 @@ provider. This does not admit all installed packs, expand unrelated SDK roots or
 implement workload resolution. Preserve the native locator identity and version
 field without claiming an exact pack version; unknown external inputs remain
 unsupported. The [application entry](../../../../private/app/workflow-delivery/README.md)
-retains the source basis and implementation boundary.
+retains the source basis and implementation boundary. At the separate
+control-build binlog boundary, the selected SDK's literal autoimport and its
+native evaluation/import lineage associate only observed, connected files
+inside the specific pack. This supplies exact dependency membership without
+reconstructing SDK results or enumerating installed pack files.
 
 Bind version-input discovery to each supported effective native
 `GitVersionBaseDirectory`, not necessarily the product directory. Union native
