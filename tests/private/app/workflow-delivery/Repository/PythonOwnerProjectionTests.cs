@@ -161,6 +161,44 @@ public sealed class PythonOwnerProjectionTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void EitherIncompleteEndpointFailsDespiteValidOtherEndpoint(bool invalidBasis)
+    {
+        var valid = Endpoint("valid", [Member("."), Member("src/a")],
+            [new("pytest:a", "src/a", [])], ["src/a/source.py"]);
+        var invalid = valid with
+        {
+            Revision = valid.Revision with { Commit = "invalid" },
+            Projects = [Member("src/a")]
+        };
+
+        Assert.ThrowsExactly<InvalidDataException>(() => PythonOwnerProjection.Project(
+            invalidBasis ? invalid : valid, invalidBasis ? valid : invalid,
+            ["src/a/source.py"]));
+    }
+
+    [TestMethod]
+    public void MemberOnlySharedInputReachesIndirectQualityOwner()
+    {
+        var basis = Endpoint("before", [Member("."), Member("src/a"), Member("src/b"),
+            Member("src/unrelated")], [new("pytest:b", "src/b", []),
+                new("pytest:unrelated", "src/unrelated", [])], ["shared.json"],
+            [new("shared.json", ["src/a"], [])]);
+        var candidate = Endpoint("after", [Member("."), Member("src/a"),
+            Member("src/b", ["src/a"]), Member("src/unrelated")],
+            [new("pytest:b", "src/b", []), new("pytest:unrelated", "src/unrelated", [])],
+            []);
+
+        PythonOwnerImpact impact = Assert.ContainsSingle(PythonOwnerProjection.Project(
+            basis, candidate, ["shared.json"]));
+
+        Assert.AreEqual("shared.json", impact.Path);
+        Assert.AreEqual("before", impact.Revision);
+        Assert.AreEqual("pytest:b", Assert.ContainsSingle(impact.Owners));
+    }
+
+    [TestMethod]
     [DataRow("unknown")]
     [DataRow("absent")]
     [DataRow("dangling")]
