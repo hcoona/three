@@ -153,6 +153,9 @@ marker expressions with their exact extra scopes and binds the graph to supplied
 native group operations and interpreter constraints. `PythonNativeActivities`
 associates answers by request ID, preserving false activity and empty group sets.
 The projection unions actual operation answers without reconstructing defaults.
+Zero-package operations retain their directory scope; a single selected package
+retains its native member group ownership and the original base context. Multiple
+selected packages remain unsupported until their native ownership is adapted.
 `PythonPassiveReader` retains PyPA build strings and the maintained NBGV plugin's
 working-directory and generated-file coordinates, including an absent generated
 file. It does not interpret requirements or plugin configuration.

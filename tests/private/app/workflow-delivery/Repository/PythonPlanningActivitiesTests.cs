@@ -16,11 +16,14 @@ public sealed class PythonPlanningActivitiesTests
     private static readonly string[] Quality = ["quality"];
 
     private static PythonPlanningActivities Create(bool build = true,
-        PythonGroupOperation[]? operations = null)
+        PythonGroupOperation[]? operations = null, bool rootQuality = false)
     {
         var nodes = new Dictionary<string, PythonMetadataNode>(StringComparer.Ordinal)
         {
-            ["root"] = new("root", "workspace", null, null, null, [], [], []),
+            ["root"] = new("root", "workspace", null, null, null, [],
+                rootQuality ? [new("quality", "root-quality")] : [], []),
+            ["root-quality"] = new("root-quality", "group", "quality", "root", null,
+                [new("dep", null)], [], []),
             ["consumer"] = Package("consumer", [], [new("quality", "quality")]),
             ["plugin"] = Package("plugin", [new("dep", Expression)], [],
                 [new("feature", "feature")]),
@@ -55,7 +58,8 @@ public sealed class PythonPlanningActivitiesTests
 
     // Controlled response; answer semantics are supplied, never evaluated in Workflow.
     private static PythonSupplementResult Answer(PythonPlanningActivities planning,
-        bool build = true, bool supported = true, bool quality = false, bool omit = false)
+        bool build = true, bool supported = true, bool quality = false, bool omit = false,
+        string qualityOperation = "consumer-quality")
     {
         PythonSupplementRequest request = planning.Request;
         var facts = new
@@ -65,7 +69,7 @@ public sealed class PythonPlanningActivitiesTests
             group_operations = request.GroupOperations.Reverse().Select(operation => new
             {
                 id = operation.Id,
-                groups = quality && operation.Id == "consumer-quality"
+                groups = quality && operation.Id == qualityOperation
                     ? Quality : []
             }),
             markers = request.Markers.Skip(omit ? 1 : 0).Reverse().Select(marker => new
@@ -113,6 +117,34 @@ public sealed class PythonPlanningActivitiesTests
         Assert.IsEmpty(consumer.Build);
         Assert.IsEmpty(planning.Project(Answer(planning))
             .Single(item => item.Directory == "src/consumer").Ordinary);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void SingleSelectedPackageKeepsNativeGroupOwner(bool sameNamedRootGroup)
+    {
+        PythonPlanningActivities planning = Create(build: false, rootQuality: sameNamedRootGroup);
+        PythonProjectDependencies[] result = planning.Project(Answer(planning, quality: true,
+            qualityOperation: "root-quality"));
+        CollectionAssert.AreEqual(Plugin,
+            result.Single(item => item.Directory == "src/consumer").Ordinary);
+        PythonProjectDependencies root = result.Single(item => item.Directory == ".");
+        Assert.IsEmpty(root.Ordinary);
+        Assert.IsEmpty(root.Build);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void UnknownOrMultipleSelectedPackagesFailBeforeNativeRequest(bool multiple)
+    {
+        PythonGroupOperation[] operations = Operations();
+        operations[0] = operations[0] with
+        {
+            Packages = multiple ? ["consumer", "plugin"] : ["absent-member"]
+        };
+        Assert.ThrowsExactly<InvalidDataException>(() => Create(operations: operations));
     }
 
     [TestMethod]
