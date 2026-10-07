@@ -9,11 +9,11 @@ specific missing relation. It is not an accepted reader, complete Python graph,
 implementation choice or runtime qualification.
 
 The source pin is UV commit
-[`46b84fd0bfec23b72f29e8e2185ba68a65052f48`][uv-pin]. Repository `mise.toml`
-selects 0.12.23; the inspected locked tool reports that version. Bare PATH's
-0.12.19 is not the repository authority. No workspace evaluation, resolver,
-installation, backend hook or build was executed for this assessment. Inspection
-used public source, existing repository files and tool version/help output.
+[`46b84fd0bfec23b72f29e8e2185ba68a65052f48`][uv-pin]. The committed
+[`mise.toml`][repository-uv-pin] and [`mise.lock`][repository-uv-lock] select
+0.12.23. The source conclusions below use pinned public source and repository
+files. No workspace evaluation, resolver, installation, backend hook or build
+was executed for this assessment.
 
 ## Available Native Facts
 
@@ -29,13 +29,16 @@ member paths and reachability from packages recorded in the native lock. The
 These are source findings, not observed output or proof of complete source inputs.
 The synchronized lock at each exact endpoint remains a planning prerequisite.
 
-Both `workspace metadata` and `tree --format json` are experimental at this pin.
-The metadata schema reports `preview`; UV warns that these interfaces can change
-without warning. An exact version/schema consumer is a candidate, but pinning
+Both `workspace metadata` and [`tree --format json`][tree-warning] are
+experimental at this pin. The metadata documentation labels the
+[schema][metadata-preview] `preview`; UV's [metadata warning][metadata-warning]
+says the interface can change without warning. An exact version/schema consumer
+is a candidate, but pinning
 cannot supply missing facts or promise future compatibility.
 
-`--frozen` consumes the existing lock without checking freshness. `--locked`
-asserts freshness through UV's lock operation. The accepted repository lock
+The native [lock flags][uv-lock-flags] distinguish `--frozen`, which consumes the
+existing lock without checking freshness, from `--locked`, which asserts freshness
+through UV's [lock operation][metadata-lock-operation]. The accepted repository lock
 synchronization prerequisite can support a frozen consumer of each exact endpoint;
 it cannot justify borrowing another checkout's lock. `--sync` permits environment
 installation and adds module ownership. Installed module ownership is not the
@@ -76,9 +79,11 @@ which a finite adapter could join to native project roots. This is source
 association, not complete build dependency resolution, exact version-satisfaction
 proof or arbitrary file-read discovery.
 
-The extraction boundary is still unresolved. UV's passive build-system extractor
-is private. Public build setup performs resolution and installation; it is not a
-passive graph query. PyPA `build` offers the public
+The extraction boundary is still unresolved. UV's passive
+[build-system extractor][uv-extractor] is private. Public
+[build setup][uv-build-setup] [resolves and installs][uv-build-setup-effects]
+build requirements under build isolation; it is not a passive graph query.
+PyPA `build` offers the public
 [`ProjectBuilder.build_system_requires`][pypa-build] property for declared/default
 requirements. Combining that property with UV's native parsing and lowering is a
 candidate, with defaults and error behavior still needing contract review.
@@ -87,8 +92,8 @@ inventory.
 
 UV [labels][uv-versioning] its component crates internal and unstable. Public Rust
 exports do not establish a supported external integration or compatibility
-promise. The inspected source declares Rust 1.97.0 and component version 0.0.90.
-A supplement would add a real Rust preparation dependency alongside Python
+promise. The pinned [workspace manifest][uv-cargo] declares Rust 1.97.0, and
+[`uv-distribution`][uv-distribution-cargo] declares version 0.0.90. A supplement would add a real Rust preparation dependency alongside Python
 requirement extraction. Neither compilation, runtime availability nor platform
 feasibility has been established here.
 
@@ -131,3 +136,15 @@ findings separate from later operation observations and support claims.
 [build-lowering]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-distribution/src/metadata/build_requires.rs#L18-L168
 [pypa-build]: https://github.com/pypa/build/blob/bd889569a1b9e2e7722682378c2d0cec469166a2/src/build/_builder.py#L199-L226
 [uv-versioning]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/docs/reference/policies/versioning.md#L14-L28
+[repository-uv-pin]: https://github.com/hcoona/three/blob/5eb196692be8b45298a506c71f521e19f9a9d226/mise.toml#L25-L27
+[repository-uv-lock]: https://github.com/hcoona/three/blob/5eb196692be8b45298a506c71f521e19f9a9d226/mise.lock#L815-L817
+[tree-warning]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/project/tree.rs#L84-L90
+[uv-extractor]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-build-frontend/src/lib.rs#L661-L678
+[uv-build-setup]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-build-frontend/src/lib.rs#L289-L335
+[uv-build-setup-effects]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-build-frontend/src/lib.rs#L391-L417
+[uv-cargo]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/Cargo.toml#L10-L16
+[uv-distribution-cargo]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-distribution/Cargo.toml#L1-L6
+[metadata-preview]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/docs/reference/internals/metadata.md#L160-L170
+[metadata-warning]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/workspace/metadata.rs#L66-L73
+[uv-lock-flags]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-cli/src/lib.rs#L7879-L7892
+[metadata-lock-operation]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/workspace/metadata.rs#L99-L174
