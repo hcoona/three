@@ -497,8 +497,14 @@ Normalize repository paths in their native project/task context to the exact
 endpoint's committed spelling. Only supported regular Git files become source
 inputs. A generated file must join a supported native producer/configuration
 relation. Files outside the checkout must join the selected SDK or locked restore
-package/tool identity; unknown external files fail. Do not invent source paths
-from output basenames or treat all external files as pinned dependencies.
+package/tool identity or be an exact configuration contributor reported by that
+operation's native locked restore. Require absolute existing contributor files
+before normalization; committed files retain source precedence. Outside-checkout
+contributors remain invocation-local restore-environment facts, without exact
+pins or portable Git coordinates. This configuration-role association grants no
+membership to imports, task implementations or compiler inputs. Unknown external
+files still fail. Do not invent source paths from output basenames or treat all
+external files as pinned dependencies.
 
 This is a maintained adapter for the concrete CLI build, not a filesystem trace
 or an arbitrary-MSBuild completeness promise. Review additions to custom tasks,

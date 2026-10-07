@@ -285,6 +285,16 @@ and committed-file precedence remain. This consumes the [SDK import contract][wo
 and [native import event fields][native-import-event], without reconstructing
 SDK results, enumerating pack contents or claiming an exact workload version.
 
+Control-build restore consumes the official model's exact configuration
+contributors under the existing locked operation binding. Require absolute
+existing files before normalization. Committed contributors remain repository
+sources; outside-checkout contributors are invocation-local restore-environment
+facts. The [native metadata][restore-configurations] names the configurations
+used by NuGet; Workflow neither parses their contents nor reconstructs hierarchy.
+This role grants no generic dependency membership, directory trust or exact pin,
+and does not admit the same file as an unrelated import, task or compiler input.
+
+[restore-configurations]: https://github.com/dotnet/dotnet/blob/e34a38d2ae1fc26406a317517196e55c68ff83ab/src/nuget-client/src/NuGet.Core/NuGet.ProjectModel/ProjectRestoreMetadata.cs#L68
 [workload-resolver]: https://github.com/dotnet/dotnet/blob/e34a38d2ae1fc26406a317517196e55c68ff83ab/src/sdk/src/Resolvers/Microsoft.NET.Sdk.WorkloadMSBuildSdkResolver/CachingWorkloadResolver.cs#L115
 [workload-import]: https://github.com/dotnet/dotnet/blob/e34a38d2ae1fc26406a317517196e55c68ff83ab/src/sdk/src/Tasks/Microsoft.NET.Build.Tasks/targets/Microsoft.NET.Sdk.ImportWorkloads.props#L14
 [native-import-event]: https://github.com/dotnet/dotnet/blob/e34a38d2ae1fc26406a317517196e55c68ff83ab/src/msbuild/src/Build/Evaluation/Evaluator.cs#L2247

@@ -32,6 +32,9 @@ internal static class ControlBuildDependencyReader
                 ) != operation.Dimension.TargetFramework)
             throw new InvalidDataException(
                 "Native restore belongs to a different control operation.");
+        if (restore.ConfigFilePaths.Any(path =>
+            !Path.IsPathFullyQualified(path) || !File.Exists(path)))
+            throw new InvalidDataException("Native restore configuration is unavailable.");
         var directories = new Dictionary<string, ControlDependencyDirectory>(
             StringComparer.Ordinal);
         foreach (LockFileLibrary library in assets.Libraries)

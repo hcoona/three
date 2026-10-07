@@ -162,6 +162,11 @@ native evaluation/import lineage associate only observed, connected files
 inside the specific pack. This supplies exact dependency membership without
 reconstructing SDK results or enumerating installed pack files.
 
+Exact native locked-restore configuration contributors remain source inputs when
+committed and invocation-local environment facts when outside the checkout.
+Require absolute existing files and preserve the restore role; this association
+adds no generic dependency membership or configuration-directory authority.
+
 Bind version-input discovery to each supported effective native
 `GitVersionBaseDirectory`, not necessarily the product directory. Union native
 business variant consumers. Traversal's unused self-version metadata does not
