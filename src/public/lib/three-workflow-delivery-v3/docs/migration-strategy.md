@@ -229,6 +229,17 @@ full native identity for execution. Both-endpoint relation union handles removed
 projects/references and rename coordinates; selected surviving projects expand
 all supported candidate inner variants.
 
+Retain NBGV's default `MSBuildTargetCaching`. The native
+`NBGV_InnerProject` reference and the consuming project's validated restored NBGV
+package pin identify its `build/PrivateP2PCaching.proj` helper. Adapt this concrete
+tool dependency separately from business projects: leave the native graph
+unchanged, omit the helper's internal identity and edges from portable business
+facts, and preserve its observed input responsibilities for each business
+consumer. Arbitrary external projects and unsupported helper overrides gain no
+exception. The receiving native operation reconstructs local helper paths.
+The [pinned NBGV source findings](./research/nbgv-native-inputs.md#native-msbuild-caching)
+explain this boundary; source support does not qualify hosted execution.
+
 #### Finite Input and Ownership Coverage
 
 Evaluation supplies main projects/imports, native source/resource/AdditionalFiles/
@@ -242,6 +253,20 @@ populated native metadata, exact project identity and the current committed
 serialized presence. Do not parse configuration hierarchy or add a second JSON
 reader. Native NBGV supplies actual configuration/version inputs; generated `obj`
 outputs retain their native producers instead of becoming committed diff paths.
+
+The root Traversal SDK project uses its own actual NuGet assets and generated
+imports, with effective restored global-package pins checked against native assets.
+Inactive declarations supply no provider; NuGet owns applicability.
+Its package providers describe the restored closure without claiming a committed
+traversal lock; the managed-project lock requirement is unchanged. Do not borrow
+descendant assets or add a lock solely to fit a business-project validator.
+Native version-input subjects bind effective `GitVersionBaseDirectory` to the
+endpoint's committed directory and union business consumers across variants.
+Traversal's unused self-version metadata does not add semantic product inputs.
+Its genuine project/configuration/provider/helper inputs keep their native
+reachable consumers. Business projects may still consume a root version subject.
+These physical subjects are not transferred check globals. Quality selection remains at the
+product directory. Unsupported external/repository-relative contexts fail.
 Build and native inner `GetTargetPath` supply runnable output at their proper
 stage; passive evaluation does not promise target-produced values.
 

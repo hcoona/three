@@ -2,6 +2,7 @@ using System.Security;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using NuGet.ProjectModel;
+using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
@@ -12,6 +13,227 @@ public sealed class DotNetGraphTaskTests(TestContext context)
 {
     private static readonly StringComparer PhysicalPathComparer = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+    private static readonly string[] NativeFrameworks = ["net10.0", "net9.0"];
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    [Timeout(360000, CooperativeCancellation = true)]
+    public async Task NativeNbgvHelperPreservesBusinessVariantsAndInputs(bool rootVersionBase)
+    {
+        using var fixture = new GraphFixture();
+        fixture.ConfigureNbgv(rootVersionBase);
+        fixture.Globals.Add("BusinessSentinel", "original semantic value");
+        using JsonDocument native = await fixture.QueryAsync("product/consumer.csproj",
+            context.CancellationToken);
+        using JsonDocument traversal = await fixture.QueryAsync("dirs.proj",
+            context.CancellationToken);
+        context.WriteLine(native.RootElement.GetRawText());
+        context.WriteLine(traversal.RootElement.GetRawText());
+        string helper = NativeHelper(native);
+        Assert.AreEqual(helper, NativeHelper(traversal));
+        string versionBase = rootVersionBase ? fixture.Root : fixture.PathOf("product");
+        Assert.IsTrue(PhysicalPathComparer.Equals(versionBase, Path.TrimEndingDirectorySeparator(
+            native.RootElement.GetProperty("Properties").GetProperty("GitVersionBaseDirectory")
+                .GetString()!)));
+        Assert.IsFalse(File.Exists(fixture.PathOf("packages.dirs.lock.json")));
+
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+        Assert.HasCount(6, response.Nodes);
+        Assert.IsFalse(response.Nodes.Any(node => PhysicalPathComparer.Equals(
+            node.Identity.Project, helper)));
+        Assert.IsTrue(response.Nodes.All(node => node.Dimension.Configuration == "Debug"));
+        foreach (DotNetGraphNode node in response.Nodes)
+        {
+            foreach ((string name, string value) in fixture.Globals)
+                Assert.AreEqual(value, node.Identity.Globals[name], name);
+            Assert.IsFalse(node.Identity.Globals.ContainsKey("GitVersionBaseDirectory"));
+            Assert.IsFalse(node.Identity.Globals.ContainsKey("NBGV_PrivateP2PAuxTargets"));
+            Assert.IsFalse(node.Identity.Globals.ContainsKey("WrapperSentinel"));
+        }
+        DotNetGraphNode[] consumers = response.Nodes.Where(node => PhysicalPathComparer.Equals(
+            node.Identity.Project, fixture.PathOf("product/consumer.csproj"))).ToArray();
+        Assert.HasCount(3, consumers);
+        DotNetGraphNode outer = Assert.ContainsSingle(consumers.Where(node => node.OuterBuild));
+        foreach (DotNetGraphNode node in consumers)
+        {
+            Assert.IsTrue(PhysicalPathComparer.Equals(versionBase,
+                Path.TrimEndingDirectorySeparator(node.VersionBaseDirectory)));
+            Dictionary<string, string> expected = new(outer.Identity.Globals,
+                StringComparer.Ordinal);
+            if (!node.OuterBuild)
+            {
+                Assert.Contains(node.Dimension.TargetFramework, NativeFrameworks);
+                expected["TargetFramework"] = node.Dimension.TargetFramework;
+                foreach (string project in new[] { "dependency/dependency.csproj",
+                    "analyzer/analyzer.csproj" })
+                    Assert.HasCount(1, response.Edges.Where(edge =>
+                        SameIdentity(edge.Consumer, node.Identity) && PhysicalPathComparer.Equals(
+                            edge.Dependency.Project, fixture.PathOf(project))));
+            }
+            CollectionAssert.AreEquivalent(expected.ToArray(), node.Identity.Globals.ToArray());
+            if (node.OuterBuild)
+            {
+                Assert.IsTrue(response.Inputs.Any(input => input.Role == "RestoreAssets" &&
+                    SameIdentity(input.Consumer, node.Identity)));
+                continue;
+            }
+            foreach ((string path, string role) in new[]
+            {
+                ("shared/nbgv-aux.targets", "Import"),
+                ("shared/aux-input.txt", "AdditionalFiles"),
+            })
+            {
+                DotNetGraphInput input = Assert.ContainsSingle(response.Inputs.Where(input =>
+                    SameIdentity(input.Consumer, node.Identity) && input.Role == role &&
+                    PhysicalPathComparer.Equals(input.Path, fixture.PathOf(path))),
+                    $"Expected {role} {path} for {node.Dimension.TargetFramework} " +
+                    $"outer={node.OuterBuild}. " +
+                    "Observed helper consumers: " + string.Join("; ", response.Inputs.Where(input =>
+                        input.Path == helper || input.Path == fixture.PathOf(path)).Select(input =>
+                        $"{input.Role}: {input.Consumer.Project}, " +
+                        JsonSerializer.Serialize(input.Consumer.Globals,
+                            TransferJson.Default.DictionaryStringString))));
+                Assert.AreEqual("Evaluation", input.Stage);
+                Assert.IsNull(input.Provider);
+            }
+            foreach (string name in new[] { "PrivateP2PCaching.proj",
+                "Nerdbank.GitVersioning.Inner.targets", "Nerdbank.GitVersioning.Common.targets" })
+            {
+                DotNetGraphInput[] inputs = response.Inputs.Where(input =>
+                    SameIdentity(input.Consumer, node.Identity) && input.Role == "Import" &&
+                    Path.GetFileName(input.Path) == name).ToArray();
+                Assert.IsNotEmpty(inputs, name);
+                Assert.IsTrue(inputs.All(input => input.Stage == "Evaluation" &&
+                    input.Provider is
+                    {
+                        Kind: "LockedPackage",
+                        Identity: "Nerdbank.GitVersioning", Version: "3.10.94"
+                    }));
+            }
+        }
+        Assert.IsTrue(response.Edges.All(edge => response.Nodes.Any(node =>
+            SameIdentity(node.Identity, edge.Consumer)) && response.Nodes.Any(node =>
+            SameIdentity(node.Identity, edge.Dependency))));
+        Assert.IsTrue(response.Inputs.All(input => response.Nodes.Any(node =>
+            SameIdentity(node.Identity, input.Consumer))));
+        DotNetGraphNode root = Assert.ContainsSingle(response.Nodes.Where(node =>
+            node.Identity.Project == fixture.PathOf("dirs.proj")));
+        // The official traversal graph also consumes the reachable native helper.
+        DotNetGraphInput[] auxiliary = response.Inputs.Where(input =>
+            input.Role == "AdditionalFiles" && PhysicalPathComparer.Equals(input.Path,
+                fixture.PathOf("shared/aux-input.txt"))).ToArray();
+        DotNetNodeIdentity[] expectedAuxiliaryConsumers = consumers.Where(node => !node.OuterBuild)
+            .Select(node => node.Identity).Append(root.Identity).ToArray();
+        Assert.HasCount(expectedAuxiliaryConsumers.Length, auxiliary);
+        foreach (DotNetNodeIdentity consumer in expectedAuxiliaryConsumers)
+            Assert.ContainsSingle(auxiliary.Where(input => SameIdentity(consumer, input.Consumer)));
+        Assert.IsEmpty(root.OwnedPaths);
+        Assert.HasCount(1, response.Edges.Where(edge =>
+            SameIdentity(edge.Consumer, root.Identity) &&
+            SameIdentity(edge.Dependency, outer.Identity)));
+        Assert.HasCount(2, response.Edges.Where(edge =>
+            SameIdentity(edge.Consumer, outer.Identity) && consumers.Any(node =>
+                !node.OuterBuild && SameIdentity(edge.Dependency, node.Identity))));
+        Assert.IsFalse(response.Inputs.Any(input => SameIdentity(input.Consumer, root.Identity) &&
+            input.Role == "RestoreLock"));
+        Assert.IsTrue(response.Inputs.Any(input => SameIdentity(input.Consumer, root.Identity) &&
+            input.Path == helper && input.Provider is
+            {
+                Kind: "TraversalPackage",
+                Identity: "Nerdbank.GitVersioning", Version: "3.10.94"
+            }));
+        Assert.IsTrue(response.Inputs.Any(input => SameIdentity(input.Consumer, root.Identity) &&
+            input.Provider?.Kind == "RestoreGenerated"));
+        Assert.IsTrue(response.Inputs.Any(input => SameIdentity(input.Consumer, root.Identity) &&
+            input.Role == "RestoreAssets"));
+        Assert.IsTrue(response.Inputs.Any(input => SameIdentity(input.Consumer, root.Identity) &&
+            input.Provider is
+            {
+                Kind: "TraversalPackage",
+                Identity: "Microsoft.SourceLink.Common"
+            }));
+        foreach (DotNetGraphNode node in consumers.Where(node => !node.OuterBuild))
+        {
+            CheckSpec[] checks = DotNetChecks.Expand("product/consumer.csproj", node);
+            Assert.AreEqual("product/consumer.csproj", Assert.ContainsSingle(checks).Key.Target);
+            Dictionary<string, string> globals = JsonSerializer.Deserialize(
+                checks[0].Dimensions["globals"], TransferJson.Default.DictionaryStringString)!;
+            CollectionAssert.AreEquivalent(node.Identity.Globals.ToArray(), globals.ToArray());
+        }
+
+        string NativeHelper(JsonDocument receipt)
+        {
+            JsonElement properties = receipt.RootElement.GetProperty("Properties");
+            Assert.AreEqual("MSBuildTargetCaching", properties.GetProperty("NBGV_CacheMode")
+                .GetString());
+            JsonElement reference = Assert.ContainsSingle(receipt.RootElement.GetProperty("Items")
+                .GetProperty("ProjectReference").EnumerateArray().Where(item =>
+                    item.TryGetProperty("NBGV_InnerProject", out JsonElement marker) &&
+                    marker.GetString() == "true"));
+            string path = reference.GetProperty("FullPath").GetString()!;
+            Assert.AreEqual("PrivateP2PCaching.proj", Path.GetFileName(path));
+            Assert.IsTrue(PhysicalPathComparer.Equals(path,
+                properties.GetProperty("NBGV_CachingProjectReference").GetString()));
+            return path;
+        }
+    }
+
+    [TestMethod]
+    [Timeout(300000, CooperativeCancellation = true)]
+    public async Task CommittedNbgvAuxiliaryProducerFailsWithoutAResponse()
+    {
+        using var fixture = new GraphFixture();
+        fixture.ConfigureNbgv(rootVersionBase: true);
+        fixture.Write("shared/nbgv-aux.targets", """
+            <Project><Target Name="UnsupportedNbgvAuxiliaryProducer" /></Project>
+            """);
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(context.CancellationToken));
+        foreach (string expected in new[] { "RepositoryTarget", "UnsupportedNbgvAuxiliaryProducer",
+            "nbgv-aux.targets", GraphFixture.Revision })
+            Assert.Contains(expected, error.Message);
+        Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task UnsupportedMarkedNbgvHelperFailsWithoutAResponse(bool packageMissing)
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", """
+            <Project><ItemGroup>
+              <ProjectReference Include="consumer.csproj" />
+            </ItemGroup></Project>
+            """);
+        fixture.Write("consumer.csproj", """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+              <TargetFramework>net10.0</TargetFramework>
+            </PropertyGroup><ItemGroup>
+              <ProjectReference Include="PrivateP2PCaching.proj" NBGV_InnerProject="true" />
+            </ItemGroup></Project>
+            """);
+        fixture.Write("PrivateP2PCaching.proj", "<Project />");
+        if (!packageMissing)
+            fixture.Write("Directory.Build.targets", """
+                <Project><ItemGroup>
+                  <PackageReference Include="Nerdbank.GitVersioning" Version="3.10.94"
+                    PrivateAssets="all" />
+                </ItemGroup></Project>
+                """);
+        fixture.CommittedPaths = [fixture.PathOf("dirs.proj"),
+            fixture.PathOf("consumer.csproj"), fixture.PathOf("PrivateP2PCaching.proj")];
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(context.CancellationToken));
+        Assert.Contains("NBGV", error.Message);
+        Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
+    }
+
+    private static bool SameIdentity(DotNetNodeIdentity first, DotNetNodeIdentity second) =>
+        new DotNetRepositoryReader.NativeIdentityComparer().Equals(
+            DotNetRepositoryReader.Key(first), DotNetRepositoryReader.Key(second));
 
     [TestMethod]
     // Eight restores and one query retain their own 30-second command deadlines.
@@ -720,6 +942,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     public async Task NativeProvidersRetainResolvedSdkAndGeneratedRestoreImports()
     {
         using var fixture = new GraphFixture();
+        fixture.EnableTraversalRestore();
         fixture.Write("global.json", """
             {"sdk":{"version":"10.0.401","rollForward":"disable"},
              "msbuild-sdks":{"Microsoft.Build.Traversal":"4.1.82",
@@ -738,7 +961,9 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         fixture.Write("Directory.Build.props", """
             <Project><PropertyGroup>
               <BaseIntermediateOutputPath>obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
-              <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+              <RestorePackagesWithLockFile
+                Condition="'$(MSBuildProjectExtension)' != '.proj'"
+                >true</RestorePackagesWithLockFile>
               <NuGetLockFilePath>packages.$(MSBuildProjectName).lock.json</NuGetLockFilePath>
               <NuGetAudit>false</NuGetAudit>
               <CustomAfterArtifactsProps
@@ -753,10 +978,39 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                 input.Provider is { Kind: "Sdk" } provider && provider.Identity == identity));
         DotNetGraphInput[] generated = response.Inputs.Where(input =>
             input.Provider?.Kind == "RestoreGenerated").ToArray();
-        Assert.HasCount(2, generated);
-        Assert.IsTrue(generated.All(input => input.Role == "Import" &&
-            input.Stage == "Evaluation" &&
-            input.Consumer.Project == fixture.PathOf("main.csproj")));
+        Assert.HasCount(4, generated);
+        foreach (string project in new[] { "dirs.proj", "main.csproj" })
+        {
+            DotNetGraphNode consumer = Assert.ContainsSingle(response.Nodes.Where(node =>
+                PhysicalPathComparer.Equals(node.Identity.Project, fixture.PathOf(project))));
+            foreach (string suffix in new[] { "props", "targets" })
+            {
+                string path = fixture.PathOf("obj/" + Path.GetFileNameWithoutExtension(project) +
+                    "/" + project + ".nuget.g." + suffix);
+                DotNetGraphInput input = Assert.ContainsSingle(generated.Where(input =>
+                    PhysicalPathComparer.Equals(input.Path, path)));
+                Assert.IsTrue(SameIdentity(consumer.Identity, input.Consumer));
+                Assert.AreEqual("Import", input.Role);
+                Assert.AreEqual("Evaluation", input.Stage);
+                Assert.AreEqual(new DotNetInputProvider("RestoreGenerated", path,
+                    fixture.PathOf(project), ""), input.Provider);
+            }
+        }
+        DotNetGraphNode root = Assert.ContainsSingle(response.Nodes.Where(node =>
+            PhysicalPathComparer.Equals(node.Identity.Project, fixture.PathOf("dirs.proj"))));
+        DotNetGraphInput rootAssets = Assert.ContainsSingle(response.Inputs.Where(input =>
+            SameIdentity(root.Identity, input.Consumer) && input.Role == "RestoreAssets"));
+        string assetsPath = fixture.PathOf("obj/dirs/project.assets.json");
+        Assert.AreEqual(assetsPath, rootAssets.Path);
+        Assert.AreEqual("LockedRestore", rootAssets.Stage);
+        Assert.AreEqual(new DotNetInputProvider("RestoreAssets", assetsPath,
+            root.Identity.Project, ""), rootAssets.Provider);
+        Assert.IsFalse(response.Inputs.Any(input => SameIdentity(root.Identity, input.Consumer) &&
+            input.Role == "RestoreLock"));
+        Assert.IsFalse(File.Exists(fixture.PathOf("packages.dirs.lock.json")));
+        Assert.IsTrue(response.Inputs.Any(input => input.Role == "RestoreLock" &&
+            PhysicalPathComparer.Equals(input.Path, fixture.PathOf("packages.main.lock.json")) &&
+            PhysicalPathComparer.Equals(input.Consumer.Project, fixture.PathOf("main.csproj"))));
         Assert.IsTrue(response.Inputs.Any(input => input.Provider?.Kind == "Toolset"));
         Assert.IsTrue(response.Inputs.Any(input => input.Provider?.Kind == "LockedPackage"));
         foreach (string name in new[] { "Microsoft.Build.Artifacts.props",
@@ -835,6 +1089,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         internal string[] CommittedPaths { get; set; } = [];
         internal string? RequestRoot { get; set; }
         internal bool IncludeRootConfiguration { get; set; } = true;
+        private bool _restoreTraversal;
         private readonly HashSet<string> _projects = new(StringComparer.Ordinal);
         private bool _prepared;
 
@@ -867,6 +1122,85 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                 _projects.Add(path);
         }
 
+        internal void ConfigureNbgv(bool rootVersionBase)
+        {
+            EnableTraversalRestore();
+            const string intermediatePath =
+                "$(MSBuildThisFileDirectory)obj/$(MSBuildProjectName)/";
+            const string lockPath =
+                "$(MSBuildThisFileDirectory)packages.$(MSBuildProjectName).lock.json";
+            const string auxiliaryPath = "$(MSBuildThisFileDirectory)shared/nbgv-aux.targets";
+            const string sourceLinkCommon = "$(NuGetPackageRoot)microsoft.sourcelink.common/" +
+                "10.0.401/build/Microsoft.SourceLink.Common.props";
+            Write("global.json", """
+                {"sdk":{"version":"10.0.401","rollForward":"disable"},
+                 "msbuild-sdks":{"Microsoft.Build.Traversal":"4.1.82"}}
+                """);
+            Write("Directory.Build.props", $$"""
+                <Project><PropertyGroup>
+                  <BaseIntermediateOutputPath
+                    >{{intermediatePath}}</BaseIntermediateOutputPath>
+                  <RestorePackagesWithLockFile
+                    Condition="'$(MSBuildProjectExtension)' != '.proj'"
+                    >true</RestorePackagesWithLockFile>
+                  <NuGetLockFilePath>{{lockPath}}</NuGetLockFilePath>
+                  <NuGetAudit>false</NuGetAudit>
+                  <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+                  <GitVersionBaseDirectory>$(MSBuildThisFileDirectory)</GitVersionBaseDirectory>
+                  <NBGV_PrivateP2PAuxTargets Condition="'$(MSBuildProjectName)' == 'consumer'"
+                    >{{auxiliaryPath}}</NBGV_PrivateP2PAuxTargets>
+                </PropertyGroup><ItemGroup>
+                  <GlobalPackageReference Include="DotNet.ReproducibleBuilds" Version="2.0.5" />
+                  <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.10.94" />
+                  <GlobalPackageReference Include="Microsoft.SourceLink.GitHub"
+                    Version="10.0.401" />
+                </ItemGroup></Project>
+                """);
+            Write("Directory.Packages.props", "<Project />");
+            Write("dirs.proj", $$"""
+                <Project Sdk="Microsoft.Build.Traversal">
+                <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+                <ItemGroup>
+                  <ProjectReference Include="product/consumer.csproj" />
+                </ItemGroup>
+                  <!-- Explicitly consume a restored transitive package asset;
+                       the SDK supplies SourceLink by default. -->
+                  <Import Project="{{sourceLinkCommon}}"
+                    Condition="Exists('{{sourceLinkCommon}}')" />
+                </Project>
+                """);
+            string versionBase = rootVersionBase ? "" :
+                "<GitVersionBaseDirectory>$(MSBuildProjectDirectory)</GitVersionBaseDirectory>";
+            Write("product/consumer.csproj", $$"""
+                <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+                  <TargetFrameworks>net10.0;net9.0</TargetFrameworks>
+                  {{versionBase}}
+                </PropertyGroup><ItemGroup>
+                  <ProjectReference Include="../dependency/dependency.csproj" />
+                  <ProjectReference Include="../analyzer/analyzer.csproj" OutputItemType="Analyzer"
+                    ReferenceOutputAssembly="false" />
+                </ItemGroup></Project>
+                """);
+            Write("dependency/dependency.csproj", Project.Replace("net10.0", "net9.0"));
+            Write("analyzer/analyzer.csproj", Project);
+            Write("version.json", """{"version":"1.0"}""");
+            Write("product/version.json", """{"version":"2.0"}""");
+            Write("shared/nbgv-aux.targets", """
+                <Project><ItemGroup>
+                  <AdditionalFiles Include="$(MSBuildThisFileDirectory)aux-input.txt" />
+                </ItemGroup></Project>
+                """);
+            Write("shared/aux-input.txt", "Committed helper input.");
+            CommittedPaths = [PathOf("global.json"), PathOf("Directory.Build.props"),
+                PathOf("Directory.Packages.props"),
+                PathOf("dirs.proj"), PathOf("product/consumer.csproj"),
+                PathOf("dependency/dependency.csproj"), PathOf("analyzer/analyzer.csproj"),
+                PathOf("version.json"), PathOf("product/version.json"),
+                PathOf("shared/nbgv-aux.targets"), PathOf("shared/aux-input.txt")];
+        }
+
+        internal void EnableTraversalRestore() => _restoreTraversal = true;
+
         internal async Task PrepareAsync(CancellationToken token)
         {
             if (_prepared) return;
@@ -880,7 +1214,26 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                 await RestoreAsync(
                     ["restore", project, "--locked-mode", "--force", .. operation], token);
             }
+            if (_restoreTraversal)
+                await RestoreAsync(["restore", PathOf("dirs.proj"), "--locked-mode",
+                    "-property:Configuration=Debug", "-property:ContinuousIntegrationBuild=true"],
+                    token);
             _prepared = true;
+        }
+
+        internal async Task<JsonDocument> QueryAsync(string project, CancellationToken token)
+        {
+            await PrepareAsync(token);
+            NativeCommandResult result = await NativeProcess.ExecuteAsync(new("dotnet", Root,
+                ["msbuild", PathOf(project), "-nologo", "-noAutoResponse",
+                    "-property:IsGraphBuild=true", .. DotNetChecks.Properties(Globals),
+                    "-getItem:ProjectReference",
+                    "-getProperty:NBGV_CacheMode,NBGV_CachingProjectReference," +
+                    "GitVersionBaseDirectory"],
+                30), token);
+            token.ThrowIfCancellationRequested();
+            Assert.IsTrue(result.Succeeded, result.Error + result.Stdout + result.Stderr);
+            return JsonDocument.Parse(result.Stdout);
         }
 
         private async Task RestoreAsync(string[] arguments, CancellationToken token)

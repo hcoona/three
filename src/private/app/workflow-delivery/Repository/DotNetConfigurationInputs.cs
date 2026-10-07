@@ -15,6 +15,19 @@ internal static class DotNetConfigurationInputs
 
     internal static DotNetRestoreInputs Restore(ProjectInstance project,
         DotNetNodeIdentity consumer, string root, string[] committedPaths)
+        => Read(project, consumer, root, committedPaths, false);
+
+    internal static DotNetRestoreInputs Traversal(ProjectInstance project,
+        DotNetNodeIdentity consumer, string root, string[] committedPaths)
+    {
+        if (!Paths.Equals(Path.GetFullPath(project.FullPath), Path.Combine(root, "dirs.proj")) ||
+            project.GetPropertyValue("UsingMicrosoftTraversalSdk") != "true")
+            throw new InvalidDataException("Unsupported traversal restore subject.");
+        return Read(project, consumer, root, committedPaths, true);
+    }
+
+    private static DotNetRestoreInputs Read(ProjectInstance project,
+        DotNetNodeIdentity consumer, string root, string[] committedPaths, bool traversal)
     {
         string assetsPath = Absolute(project.GetPropertyValue("ProjectAssetsFile"));
         LockFile assets = new LockFileFormat().Read(assetsPath)
@@ -34,16 +47,37 @@ internal static class DotNetConfigurationInputs
             !restore.ConfigFilePaths.Select(Absolute).Contains(configuration, Paths) ||
             !committedPaths.Contains(configuration, Paths))
             throw new InvalidDataException("Missing or different native locked restore metadata.");
-        string lockPath = Absolute(PackagesLockFileUtilities.GetNuGetLockFilePath(spec));
-        if (!File.Exists(assetsPath) || !File.Exists(lockPath) ||
+        if (!File.Exists(assetsPath) ||
             restore.ConfigFilePaths.Any(path => !File.Exists(Absolute(path))))
             throw new InvalidDataException("Native locked restore input is unavailable.");
         var inputs = new List<DotNetGraphInput>
         {
             new(assetsPath, "RestoreAssets", "LockedRestore", consumer,
                 new("RestoreAssets", assetsPath, restore.ProjectPath, "")),
-            new(lockPath, "RestoreLock", "LockedRestore", consumer),
         };
+        if (!traversal)
+        {
+            string lockPath = Absolute(PackagesLockFileUtilities.GetNuGetLockFilePath(spec));
+            if (!File.Exists(lockPath))
+                throw new InvalidDataException("Native locked restore input is unavailable.");
+            inputs.Add(new(lockPath, "RestoreLock", "LockedRestore", consumer));
+        }
+        else
+        {
+            foreach (ProjectItemInstance reference in project.GetItems("GlobalPackageReference"))
+            {
+                string version = reference.GetMetadataValue("Version");
+                var library = assets.Libraries.SingleOrDefault(value => value.Type == "package" &&
+                    value.Name.Equals(reference.EvaluatedInclude,
+                        StringComparison.OrdinalIgnoreCase));
+                // NuGet owns applicability. An inactive declaration supplies no provider.
+                if (library is not null && version != library.Version.ToNormalizedString())
+                    throw new InvalidDataException(
+                        "Traversal global package differs from its native restore: " +
+                        reference.EvaluatedInclude + ", declared " + version + ", restored " +
+                        library.Version.ToNormalizedString());
+            }
+        }
         foreach (string path in restore.ConfigFilePaths)
             inputs.Add(new(Absolute(path), "RestoreConfiguration", "LockedRestore", consumer,
                 new("RestoreEnvironment", Absolute(path), restore.ProjectPath, "")));
@@ -54,7 +88,8 @@ internal static class DotNetConfigurationInputs
         DotNetInputProvider[] packages = assets.Libraries.Where(library =>
             library.Type == "package" && !string.IsNullOrEmpty(library.Path))
             .SelectMany(library => assets.PackageFolders.Select(folder =>
-                new DotNetInputProvider("LockedPackage", Path.GetFullPath(Path.Combine(
+                new DotNetInputProvider(traversal ? "TraversalPackage" : "LockedPackage",
+                    Path.GetFullPath(Path.Combine(
                     Absolute(folder.Path), library.Path)), library.Name,
                     library.Version.ToNormalizedString()))).ToArray();
         string[] generated = new[] { BuildAssetsUtils.PropsExtension,

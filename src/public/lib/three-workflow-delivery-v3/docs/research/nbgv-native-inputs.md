@@ -36,6 +36,33 @@ is a source finding, not an inspected Cake archive or selected integration.
 No public single-call complete input list was found in the inspected interfaces;
 this is not an exhaustive claim about every maintained extension.
 
+## Native MSBuild Caching
+
+The same pinned 3.10.94 source defines `NBGV_CacheMode=MSBuildTargetCaching`
+as the default. It reuses version target results inside an MSBuild build session;
+`None` computes separately in each project. The [native props][cache-props]
+state that caching mode changes performance and compatible systems, not computed
+versions. This is not a persistent cache across jobs or checkouts, nor a promise
+of one version calculation for different monorepo version inputs.
+
+The [native caching targets][cache-targets] declare a graph-only
+`ProjectReference` marked `NBGV_InnerProject=true`. Its package-owned
+`PrivateP2PCaching.proj` executes version targets with input-keyed global
+properties, including local `GitVersionBaseDirectory`. It removes TFM/RID
+properties that do not affect version calculation and uses internal
+`Configuration=Release`. These are tool execution facts, not a product build
+configuration or portable business-check identity. The [helper][cache-helper]
+imports the versioning targets and optionally `NBGV_PrivateP2PAuxTargets`;
+ignoring its actual inputs would lose that consumer relationship.
+
+The owner selected a finite helper adapter with native caching retained.
+The .NET business projection identifies the marked native dependency through
+the consuming project's validated restored package pin, retains necessary helper input
+responsibilities, and leaves helper execution to MSBuild/NBGV. Product globals
+remain complete and unsupported endpoint-dependent product globals still fail.
+These pinned source findings establish the adaptation basis; the delivery PR
+retains local integration and changed-source hosted qualification separately.
+
 ## Integration Candidate and Limits
 
 Use the pinned official public API through a compile-time assembly reference.
@@ -233,3 +260,6 @@ renews spent budgets nor supplies runtime evidence by source comparison alone.
 [cake]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/Cake.GitVersioning/Cake.GitVersioning.csproj#L55-L80
 [projection-context]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/NerdBank.GitVersioning/VersionOracle.cs#L44-L117
 [managed-context]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/NerdBank.GitVersioning/Managed/ManagedGitContext.cs#L50-L67
+[cache-props]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/Nerdbank.GitVersioning.Tasks/build/Nerdbank.GitVersioning.props
+[cache-targets]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/Nerdbank.GitVersioning.Tasks/build/MSBuildTargetCaching.targets
+[cache-helper]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/Nerdbank.GitVersioning.Tasks/build/PrivateP2PCaching.proj

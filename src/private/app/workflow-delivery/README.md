@@ -201,8 +201,21 @@ Caller TFM/RID selector names are rejected case-insensitively before discovery;
 native-propagated TFM/RID globals remain in each node's complete identity.
 MSBuild constructs the `ProjectGraph`; wrapper properties do not become graph
 globals. Project paths plus complete global maps identify native nodes. The
-response retains outer/inner nodes, configuration/TFM/RID and native reference
-edges, including analyzer references. Endpoint-dependent semantic globals fail.
+response retains business/traversal outer/inner nodes, configuration/TFM/RID and
+native reference edges, including analyzer references. Endpoint-dependent
+business semantic globals fail.
+
+[`DotNetNbgvCaching`](Repository/DotNetNbgvCaching.cs) adapts only the pinned
+NBGV caching helper. An evaluated `NBGV_InnerProject` reference and the consumer's
+own restored NBGV 3.10.94 provider must identify the exact package helper; every
+incoming relation must be supported and the helper cannot have outgoing project
+references. MSBuild keeps the complete local graph and default caching mode.
+The business response omits helper identities and tool-only edges while retaining
+its main file, actual imports and supported evaluated inputs for each native
+consumer. Repository producer validation also applies to helper imports.
+Internal `Release` configuration and local helper globals never become checks;
+receiving MSBuild/NBGV constructs its own helper context. Arbitrary marked or
+external projects gain no exemption.
 
 [`DotNetOwnership`](Repository/DotNetOwnership.cs) projects ordinary committed
 paths into the nearest managed project directory; projects sharing that directory
@@ -230,8 +243,15 @@ the committed endpoint `nuget.config` contributor are required. Actual NuGet
 configuration contributors and the official effective lock path retain each
 native consumer; assets retain a generated restore role. An outer node without
 an evaluated assets path consumes the same project's referenced native inner
-nodes. Traversal nodes do not require managed assets. Projection performs no
-restore or repair.
+nodes. The root Traversal SDK project consumes its own prepared NuGet model,
+generated imports and configuration contributors. Restored global packages must
+agree with their evaluated exact pins; inactive declarations supply no provider.
+NuGet owns dependency applicability. Repository configuration does
+not create a committed traversal lock; `TraversalPackage` therefore identifies
+its actual restored package closure separately from managed `LockedPackage`
+providers. No descendant inventory or invented lock supplies that context.
+Other traversal shapes do not acquire a managed restore requirement. Projection
+performs no restore or repair.
 
 [`DotNetNativeInputs`](Repository/DotNetNativeInputs.cs) uses native toolset paths,
 successful public SDK results captured through the graph's project-instance factory,
@@ -269,8 +289,16 @@ from a caller-prepared exact checkout with the complete application distribution
 and caller-owned scratch paths. It binds physical coordinates to original Git
 spelling, validates full node/edge/input identities and rejects necessary unsupported
 source. Finite absent in-endpoint configuration candidates retain possible-addition
-consumers; existing untracked source is not absence. NBGV supplies committed version
-inputs, and nearest committed quality YAML retains adoption or unadopted native intent.
+consumers; existing untracked source is not absence. The native effective
+`GitVersionBaseDirectory` binds NBGV's committed version-input subject separately
+from the product directory; business version inputs union across native variants.
+Traversal's unused self-version metadata does not create product consumers.
+Its actual project, configuration, provider and helper inputs retain their native
+consumers. Business projects may still use a root version subject.
+External or unsupported
+repository-relative version contexts fail. The physical base remains invocation
+local and is not a replayed check global. Nearest committed quality YAML still
+uses the product directory and retains adoption or unadopted native intent.
 
 [`DotNetFactsAssembler`](Repository/DotNetFactsAssembler.cs) aggregates native
 variants into distinct committed project IDs only for `ImpactPlanner.SelectProjects`.

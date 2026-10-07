@@ -117,6 +117,7 @@ internal sealed class DotNetRepositoryReader
                 node.RuntimeIdentifiers is null || node.Dimension.Configuration != "Debug" ||
                 node.Dimension.TargetFramework is null ||
                 node.Dimension.RuntimeIdentifier is null ||
+                node.VersionBaseDirectory is null ||
                 node.TestCapability is not ("None" or "MTP" or "VSTest"))
                 throw Unavailable("Node", "Incomplete native node.");
             string project = RequireFile(node.Identity.Project, "Project");
@@ -194,10 +195,12 @@ internal sealed class DotNetRepositoryReader
         var versions = new List<NbgvInputs>();
         var selections = new QualitySelectionReader(checkout.Root,
             checkout.ReadOptionalTextAsync);
-        foreach (IGrouping<string, string> group in projects.GroupBy(Parent))
+        foreach (var group in nodes.Values.Where(node => node.Project != "dirs.proj")
+                     .GroupBy(VersionDirectory))
         {
             token.ThrowIfCancellationRequested();
-            string[] consumers = group.ToArray();
+            string[] consumers = group.Select(node => node.Project)
+                .Distinct(StringComparer.Ordinal).ToArray();
             NbgvInputs version = new NbgvInputReader(checkout.Root).Read(checkout.Revision,
                 group.Key, token);
             if (version.Commit != checkout.Revision.Commit || version.Directory != group.Key)
@@ -207,6 +210,11 @@ internal sealed class DotNetRepositoryReader
                 shared.Add(new(RequireFile(Path.Combine(checkout.Root, path), "NBGV"), consumers));
             foreach (string path in version.ConfigurationCandidates)
                 shared.Add(new(BindCandidate(path, "NBGV"), consumers));
+        }
+        foreach (IGrouping<string, string> group in projects.GroupBy(Parent))
+        {
+            token.ThrowIfCancellationRequested();
+            string[] consumers = group.ToArray();
             QualitySelection? selection = await selections.ReadAsync(group.Key, "dotnet", token);
             foreach (string project in consumers) quality.Add(project, selection);
             string directory = group.Key;
@@ -239,6 +247,27 @@ internal sealed class DotNetRepositoryReader
             if (!nodes.ContainsKey(Key(identity)))
                 throw Unavailable("Relation", "Dangling/substituted complete native identity.",
                     identity);
+        }
+
+        string VersionDirectory(DotNetBoundNode node)
+        {
+            string native = node.Native.VersionBaseDirectory;
+            if (native.Length == 0) return Parent(node.Project);
+            string absolute = Absolute(native);
+            if (PhysicalPaths.Equals(absolute, checkout.Root)) return ".";
+            if (!IsInside(absolute))
+                throw Unavailable("NBGV", "Version base is outside the endpoint.",
+                    node.Native.Identity);
+            string directory = Relative(absolute);
+            string[] committed = checkout.Revision.Entries.Where(entry =>
+                    entry.Path.StartsWith(directory + "/", OperatingSystem.IsWindows()
+                        ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                .Select(entry => entry.Path[..directory.Length])
+                .Distinct(StringComparer.Ordinal).ToArray();
+            if (committed.Length != 1)
+                throw Unavailable("NBGV", "Version base has no unique committed directory.",
+                    node.Native.Identity);
+            return committed[0];
         }
     }
 
@@ -286,6 +315,10 @@ internal sealed class DotNetRepositoryReader
                 "Toolset" or "Sdk" or "LockedPackage" => input.Stage == "Evaluation" &&
                     input.Role is not ("Project" or "CentralPackageConfiguration") &&
                     !IsCandidate(input.Role),
+                "TraversalPackage" => input.Stage == "Evaluation" &&
+                    input.Role is not ("Project" or "CentralPackageConfiguration") &&
+                    !IsCandidate(input.Role) && PhysicalPaths.Equals(input.Consumer.Project,
+                        Path.Combine(checkout.Root, "dirs.proj")),
                 "RestoreGenerated" => input.Role == "Import" && input.Stage == "Evaluation",
                 "RestoreAssets" => input.Role == "RestoreAssets" && input.Stage == "LockedRestore",
                 "RestoreEnvironment" => input.Role == "RestoreConfiguration" &&

@@ -166,7 +166,8 @@ internal static class DotNetFactsAssembler
             string project = nodes[consumer].Project;
             Add(input.Path!, project == "dirs.proj" ? Reachable(consumer) : [project]);
         }
-        foreach (SharedInput input in inputs.SelectionInputs) Add(input.Path, input.Consumers);
+        foreach (SharedInput input in inputs.SelectionInputs)
+            Add(input.Path, input.Consumers);
         Dictionary<string, string> membership = DotNetReleaseUnits.Associate(inputs);
         foreach (ReleaseUnitDeclaration unit in inputs.Units)
             Add(unit.SourcePath, membership.Where(pair => pair.Value == unit.Id)
