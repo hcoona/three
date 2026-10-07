@@ -148,8 +148,19 @@ workspace, environment/script output, conflicts and unresolved graph identities.
 `PythonDependencyProjection` joins lowered local build paths to those native
 members and consumes native marker/group answers for a finite operation union.
 Build-plugin ordinary/extra legs exclude development groups. Cycles terminate
-without hiding reachable producers. These components do not yet collect native
-activity answers, assign committed ownership, expand checks or replace callers.
+without hiding reachable producers. `PythonPlanningActivities` collects unchanged
+marker expressions with their exact extra scopes and binds the graph to supplied
+native group operations and interpreter constraints. `PythonNativeActivities`
+associates answers by request ID, preserving false activity and empty group sets.
+The projection unions actual operation answers without reconstructing defaults.
+Zero-package operations retain their directory scope; a single selected package
+retains its native member group ownership and the original base context. Multiple
+selected packages remain unsupported until their native ownership is adapted.
+`PythonPassiveReader` retains PyPA build strings and the maintained NBGV plugin's
+working-directory and generated-file coordinates, including an absent generated
+file. It does not interpret requirements or plugin configuration.
+These controlled components do not invoke the complete collector, assign committed
+ownership, expand checks or replace callers.
 
 ### PNPM Graph Component
 
