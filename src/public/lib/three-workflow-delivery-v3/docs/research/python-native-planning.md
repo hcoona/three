@@ -66,6 +66,10 @@ Python impact closure.
 
 ## Native Library Candidate and Its Limits
 
+The [planning-fact contract](../middle-level-design.md#native-python-planning-facts)
+owns the selected integration and admitted shape. These source findings supply
+its evidence basis; they do not qualify its implementation.
+
 UV [documents][build-sources] that its build frontend respects `tool.uv.sources`
 for build requirements. PyPA `build` does not provide those UV source semantics.
 Using `--no-sources` changes the operation and cannot qualify the source-aware
@@ -79,14 +83,15 @@ which a finite adapter could join to native project roots. This is source
 association, not complete build dependency resolution, exact version-satisfaction
 proof or arbitrary file-read discovery.
 
-The extraction boundary is still unresolved. UV's passive
+The passive extraction interface has limits. UV's
 [build-system extractor][uv-extractor] is private. Public
 [build setup][uv-build-setup] [resolves and installs][uv-build-setup-effects]
 build requirements under build isolation; it is not a passive graph query.
 PyPA `build` offers the public
 [`ProjectBuilder.build_system_requires`][pypa-build] property for declared/default
-requirements. Combining that property with UV's native parsing and lowering is a
-candidate, with defaults and error behavior still needing contract review.
+requirements. The planning contract bounds its composition with UV's native
+parsing/lowering to an explicit declared shape. Actual error and identity behavior
+still need native qualification; arbitrary default contexts are not established.
 Dynamic PEP 517 hooks execute backend code and do not promise a complete input
 inventory.
 
@@ -99,9 +104,8 @@ feasibility has been established here.
 
 This candidate does not yet establish an unavoidable product tradeoff. The
 accepted HLD permits native-language library helpers; the owner's PNPM-specific
-CLI choice does not impose a Python CLI-only requirement. The next design review
-can compare the concrete composition and its support/maintenance cost with a
-sufficient upstream interface. It must not claim the missing relation has already
+CLI choice does not impose a Python CLI-only requirement. The planning contract selects a finite composition from this evidence. Its
+preparation and support/maintenance cost remain unqualified. It must not claim the missing relation has already
 been recovered, relax completeness, add duplicate declarations, or implement UV
 source semantics in the application.
 

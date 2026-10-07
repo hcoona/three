@@ -20,8 +20,10 @@ control-test resources. The existing .NET job receives the original selected pla
 and complete candidate control distribution, executes selected native and adopted
 NuGet checks, and collects every required result without replanning. Ordinary
 Windows Debug qualification is recorded in
-[PR #1054](https://github.com/hcoona/three/pull/1054). Other ecosystem execution
-cutover and Release remain pending. The
+[PR #1054](https://github.com/hcoona/three/pull/1054). The [native Python planning-fact contract](./middle-level-design.md#native-python-planning-facts)
+selects the next extraction boundary. Its helper implementation, native qualification
+and execution/caller mapping remain pending. Other ecosystem execution cutover and
+Release remain pending. The
 [private application's entry](../../../../private/app/workflow-delivery/README.md)
 describes its implemented CI selection/result interface, GitHub event comparison,
 native Node facts, control-test resource interface and check execution. The
