@@ -59,7 +59,7 @@ jobs:
           echo "target-sha=${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
       - name: Upload Release Intent
         id: upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ steps.request.outputs.intent-artifact-name }}
           path: .wdv3/${{ steps.request.outputs.intent-artifact-name }}
@@ -106,7 +106,7 @@ jobs:
           experimental: true
           install: true
       - name: Download Release Intent by artifact ID
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.request.outputs.intent-artifact-id }}
           path: .wdv3/input
@@ -151,7 +151,7 @@ jobs:
           echo "provider-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
       - name: Upload Provider Result
         id: upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ steps.provider.outputs.provider-artifact-name }}
           path: .wdv3/${{ steps.provider.outputs.provider-artifact-name }}
@@ -197,14 +197,14 @@ jobs:
         with:
           version-file: .config/uv/uv.toml
       - name: Download Release Intent by artifact ID
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.discover-node.outputs.intent-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
       - name: Download Provider Result by artifact ID
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.discover-node.outputs.provider-artifact-id }}
           path: .wdv3/input
@@ -233,7 +233,7 @@ jobs:
           echo "repository-model-artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
       - name: Upload admitted Repository Model
         id: upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ steps.compile.outputs.repository-model-artifact-name }}
           path: .wdv3/${{ steps.compile.outputs.repository-model-artifact-name }}
@@ -288,14 +288,14 @@ jobs:
           install: true
           install_args: core:dotnet node pnpm
       - name: Download Repository Model by artifact ID
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.compile-model.outputs.repository-model-artifact-id }}
           path: .wdv3/input
           skip-decompress: true
           digest-mismatch: error
       - name: Download Release Intent by artifact ID
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.compile-model.outputs.intent-artifact-id }}
           path: .wdv3/input
@@ -355,7 +355,7 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
       - name: Upload Live Eligibility Decision
         id: upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ steps.eligibility.outputs.live-eligibility-artifact-name }}
           path: .wdv3/${{ steps.eligibility.outputs.live-eligibility-artifact-name }}

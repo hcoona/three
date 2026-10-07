@@ -400,7 +400,7 @@ jobs:
         run: gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$PLAN_ARTIFACT_ID" > "$RUNNER_TEMP/dotnet-plan-artifact.json"
 
       - name: Receive exact original plan and complete control distribution
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.scope.outputs.dotnet_artifact_id }}
           path: ${{ runner.temp }}/dotnet-plan-transfer
@@ -634,7 +634,7 @@ jobs:
           SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
         run: gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$SCOPE_ARTIFACT_ID" > "$RUNNER_TEMP/ci-scope-artifact.json"
       - name: Download the exact scope artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.scope.outputs.artifact_id }}
           path: artifacts/node-scope
