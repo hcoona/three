@@ -111,6 +111,50 @@ findings alone must not claim complete relations have already
 been recovered, relax completeness, add duplicate declarations, or implement UV
 source semantics in the application.
 
+## Pytest Configuration Source Basis
+
+Immutable pytest 9.1.1 source at
+[`cf470ec0bf7eb89cd97dd56df4859eae5db46447`][pytest-source] supplies the candidate
+configuration query used by the
+[quality-owner contract](../middle-level-design.md#python-quality-owners-and-input-only-members).
+Public `pytest.main(..., plugins=[...])` calls the first-result
+`pytest_cmdline_main` hook after native configuration parsing. A supplied plugin
+can return a result before the default configure/collect/run lifecycle while
+reading `Config.getini`, `rootpath` and `inipath`. The
+[configuration source][pytest-config], [hook contract][pytest-hook] and
+[default main lifecycle][pytest-main] establish these source-level boundaries.
+
+Native parsing can already import explicit plugins and alter Python paths before
+that hook. Disabling autoload and conftest discovery does not disable explicit
+plugin processing; inherited `PYTEST_ADDOPTS` and `PYTEST_PLUGINS` also affect the
+request. Native target selection expands configured globs and can fall back to
+the invocation directory when configured targets do not resolve. Reading declared
+`testpaths` alone therefore does not establish arbitrary effective execution scope.
+The initial design admits only explicit committed targets without those unsupported
+necessary behaviors; it does not port the private selection algorithm.
+
+These are public-source findings and a bounded integration inference, not a helper
+runtime observation. No pytest query/helper was executed for this assessment.
+Actual complete fact/caller qualification still needs its separately accepted
+concrete protocol and complete operation/ownership/check mapping.
+
+## PyPA Dependency Pin Recheck
+
+Accepted repository [helper preparation][pypa-helper-pin] now selects PyPA
+`build` 1.6.1. Inspection of the [locked wheel source][pypa-build-wheel] with
+SHA256 `ecd351a4be9d35a9eaaba244a7687143c9c7d4aea6ac964e7e7ddab20cbcf4e7`
+finds that `build/_builder.py` still reads native TOML and constructs its hook caller
+in `ProjectBuilder.__init__` (lines 177–221); `build_system_requires` (lines 249–256)
+returns the native declared requirement strings as a set without invoking a backend.
+The wheel was inspected as source bytes, not imported, installed or executed.
+
+This supports the narrow property-consumption source contract for the admitted
+explicit Hatchling/no-backend-path shape. It does not qualify actual composition
+with 1.6.1 or the current UV lock revision. The primitive observation below remains
+bound to its original tools, including PyPA 1.4.1; its stopped campaign and expired
+reserves are unchanged. A future complete collector/caller protocol must bind the
+actual accepted dependencies and lock format instead of upgrading the old observation.
+
 ## Primitive Native Observation
 
 The independently accepted [native outcome](https://github.com/hcoona/three/pull/1063#issuecomment-6045152503)
@@ -177,3 +221,9 @@ findings separate from later operation observations and support claims.
 [metadata-warning]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/workspace/metadata.rs#L66-L73
 [uv-lock-flags]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-cli/src/lib.rs#L7879-L7892
 [metadata-lock-operation]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/workspace/metadata.rs#L99-L174
+[pytest-source]: https://github.com/pytest-dev/pytest/tree/cf470ec0bf7eb89cd97dd56df4859eae5db46447
+[pytest-config]: https://github.com/pytest-dev/pytest/blob/cf470ec0bf7eb89cd97dd56df4859eae5db46447/src/_pytest/config/__init__.py
+[pytest-hook]: https://github.com/pytest-dev/pytest/blob/cf470ec0bf7eb89cd97dd56df4859eae5db46447/src/_pytest/hookspec.py
+[pytest-main]: https://github.com/pytest-dev/pytest/blob/cf470ec0bf7eb89cd97dd56df4859eae5db46447/src/_pytest/main.py
+[pypa-helper-pin]: https://github.com/hcoona/three/blob/8d2ed8ed86ebea8df509a0a2d78b0671ecb7a1b8/pyproject.toml#L21
+[pypa-build-wheel]: https://files.pythonhosted.org/packages/ad/9b/9fb3585dabcd73a1b2a6267f63f62649347c9e6d072c9fde365b105abb2c/build-1.6.1-py3-none-any.whl

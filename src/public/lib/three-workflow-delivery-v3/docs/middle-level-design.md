@@ -188,6 +188,54 @@ and passive plugin coordinates supply project-scoped version/generated input con
 Missing/ambiguous ownership, native errors or unmodeled necessary scope fail planning;
 no reduced completeness, parser fallback or all-run.
 
+### Python Quality Owners and Input-Only Members
+
+Native workspace membership does not imply a build or test obligation. Keep the
+complete native producer graph, including tableless and unadopted members. Actual
+retained pytest targets and adopted package checks define runnable quality owners.
+Resolve nearest source ownership over all native members before restricting the
+result to runnable owners; an input-only nested member is not its ancestor's source.
+
+The paired assembler associates endpoint-native identities and unions resolved
+ordinary, build and quality relations from both comparison revisions before
+computing producer-to-runnable-owner closure. Do not compose only endpoint-local
+closures after removing intermediate producers. For example, a basis relation
+`A -> B` and candidate relation `B -> C`, expressed as producer-to-consumer, must
+select surviving runnable `C` for a changed `A` input even when `B` has no checks.
+Keep each endpoint's committed path association and initiating path/revision reason;
+resolve executable work against surviving candidate owners. Do not infer native
+identity matches from package names or opaque graph ID spelling.
+
+Adapt the resulting exact input consumers into existing `SharedInput` and explicit
+`ProjectFacts.OwnedPaths` values. Only actual runnable owners become `ProjectFacts`
+with nonempty resolved checks; input-only members retain their graph role without
+synthetic builds, empty-check policy or a new core origin. A path can enter
+`UnaffectedPaths` only when the complete paired analysis establishes no applicable
+owner. An endpoint-local empty closure, missing facts or unknown ownership cannot
+justify exclusion. The core selected-check guard remains unchanged.
+
+Read root pytest configuration through its public `pytest.main(..., plugins=[...])`
+and `pytest_cmdline_main` hook, using native `Config.getini`, `rootpath` and `inipath`.
+The initial request admits the current nonempty explicit committed `testpaths` and
+the existing import-mode option. Reject necessary unsupported glob, implicit
+invocation-directory fallback, escaping target, custom plugin or option behavior;
+do not copy pytest's configuration precedence or private target-selection algorithm.
+Configuration parsing can import explicit plugins and alter Python paths before
+the main hook: the query runs unprivileged with owned state, no inherited
+`PYTEST_ADDOPTS`/`PYTEST_PLUGINS`, disabled plugin autoload and conftest discovery.
+Those switches alone do not prove absence of explicit plugin processing. This
+finite native query supplies configuration facts, not successful test collection
+or execution. Its source basis is recorded in the
+[Python planning assessment](./research/python-native-planning.md#pytest-configuration-source-basis).
+
+Associate configured targets under native members with their actual quality owners;
+standalone repository tests are concrete target consumers, not invented workspace
+members. Preparation uses root plus selected quality-member contexts and native
+operation groups. Input analysis does not require building every workspace package.
+Retain adopted package checks, complete outputs and their own prerequisites. The
+[caller mapping](./migration-strategy.md#python-quality-and-caller-mapping) owns the
+concrete engineering relations that native package tools cannot discover.
+
 ### Native .NET Project Facts
 
 MSBuild owns .NET discovery, SDK resolution, evaluation, graph identity and

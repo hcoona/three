@@ -224,6 +224,46 @@ Keep a finite diagnostic buffer and stop at the first independently accepted suc
 or the exhausted/unsafe bounds. Repetitions within the accepted protocol need no
 repeated owner approval.
 
+#### Python Quality and Caller Mapping
+
+Implement the [paired producer-to-owner projection](./middle-level-design.md#python-quality-owners-and-input-only-members)
+before Python fact assembly or caller cutover. Root pytest configuration remains
+the sole test-target declaration; native UV membership and dependency answers
+remain the package graph. Read both revisions and preserve the following concrete
+consumers currently expressed by `eng/scripts/ci_scope.py`. This table defines
+migration responsibilities, not another package or test-target roster.
+
+| Current consumer relation                                 | Replacement association and retained behavior                                                                                                                                                                                                                                           |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native member source and local dependency consumers       | Resolve ownership over all native members, union both revisions' ordinary/build/group/quality relations, then map to actual configured member test or adopted package owners. Preserve removed edges and input-only intermediaries.                                                     |
+| Root pytest `testpaths` and direct target inputs          | Query native pytest configuration and bind each explicit committed target to its endpoint. Changes within a configured target select its complete check; standalone repository targets have exact input consumers and no blanket root ownership.                                        |
+| `ALL_INPUTS` and `PYTHON_INPUTS`                          | Retain root CI/toolchain, native workspace/lock/configuration, test configuration and Python preparation-script consumers for the actual retained Python target set. Keep source-input reasons and distinguish helper preparation from product build inputs.                            |
+| Passive Python helper tests                               | Retain native helper source and maintained `nbgv-python` source as inputs to the configured passive test target. This does not turn the helper into a publishable project.                                                                                                              |
+| Retained V3 Python tests and `_v3_input`                  | Preserve the existing concrete workflow, adapter, fixture, native helper, HK and configuration input consumers until the corresponding tests/callers retire. These relations provide test coverage, never Release authority.                                                            |
+| Azure credential-provider Python tests and `_azure_input` | Retain source, .NET interoperability, engineering script, maintained plugin and Python configuration consumers. Keep its independent special-job ownership.                                                                                                                             |
+| Maintained NBGV plugin tests                              | Retain required .NET tooling/configuration inputs as well as native member-source consumers. Native plugin coordinates and managed NBGV input discovery supply version/template/generated consumers, including absent generated files.                                                  |
+| `tests/eng` source associations                           | Retain selector, Python runtime/version projection, HK wrapper and Node/.NET execution-script consumers; retain the exact typo-configuration and legacy-release-contract consumers. Derive target membership from native pytest configuration and retain cross-target script relations. |
+| Adopted Python distribution checks                        | Preserve wheel/sdist build outputs, distribution contents, wheel install/import and Git-free sdist build/install/import, with their complete required variants and actual prerequisites. Keep these obligations separate from root pytest preparation.                                  |
+
+Prepare root plus selected quality-member package contexts with native UV group
+answers, retaining the current frozen selected/full preparation behavior. Do not
+install unrelated workspace tools or force input-only members to build. Executors
+receive the original candidate-bound selected work and required results, without
+recomputing impact or changing native target selection. Keep the existing
+`ci_scope.py`, `run_python_tests.py` and smoke PR callers until the replacement
+selection, preparation, execution and transfer group is accepted together.
+
+Controlled validation must include a mixed-endpoint `A -> B -> C` closure through
+input-only `B`, nested native ownership, changed/deleted producer edges, a known
+input with no consumers versus unresolved scope, tableless quality owners,
+native pytest endpoint/configuration/target errors and cancellation, root shared
+inputs, selected package/group preparation, and every required distribution/result
+transfer. The existing core nonempty selected-check contract remains intact.
+Complete native collection/query qualification requires its own accepted exact
+protocol using the actual current tools and lock format; the stopped primitive
+campaign is not reused or repeated. Ordinary PR CI remains available for its
+authorized caller-integration qualification after contract acceptance.
+
 ### Native .NET CI Group
 
 This group replaces general .NET CI selection and execution using the current
