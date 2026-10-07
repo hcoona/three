@@ -206,13 +206,28 @@ Keep each endpoint's committed path association and initiating path/revision rea
 resolve executable work against surviving candidate owners. Do not infer native
 identity matches from package names or opaque graph ID spelling.
 
-Adapt the resulting exact input consumers into existing `SharedInput` and explicit
-`ProjectFacts.OwnedPaths` values. Only actual runnable owners become `ProjectFacts`
-with nonempty resolved checks; input-only members retain their graph role without
-synthetic builds, empty-check policy or a new core origin. A path can enter
+Keep same-endpoint exact input consumers in existing `SharedInput` and explicit
+`ProjectFacts.OwnedPaths` values. A paired input association may reach a runnable
+owner present only at the other endpoint. Transfer that direct selection through
+the existing `SelectionReason(Path, Revision, Project)` value: `Project` identifies
+the resolved quality consumer, while `Revision` identifies the committed input's
+initiating endpoint. It does not assert that consumer's presence at that endpoint.
+Only actual endpoint runnable owners become `ProjectFacts` with nonempty resolved
+checks; input-only members retain their graph role without synthetic builds,
+empty-check policy, candidate-only basis proxies or a new core origin. A path can enter
 `UnaffectedPaths` only when the complete paired analysis establishes no applicable
 owner. An endpoint-local empty closure, missing facts or unknown ownership cannot
 justify exclusion. The core selected-check guard remains unchanged.
+
+The shared selection operation accepts these paired direct reasons before its
+existing union relation and Release Unit closure. Validate each reason against a
+normalized changed path, an exact comparison revision and a real owner in the
+union of actual endpoint owners. Native Git/ownership binding establishes input
+presence and complete scope before this transfer. A valid reason resolves only
+its own path; other unresolved changed paths still fail, including in full mode.
+Do not clear the changed-path set, transfer an externally completed plan or bypass
+ordinary fact validation. Candidate survival, complete checks/variants, selected
+origins and prerequisite expansion remain the shared core's responsibilities.
 
 Read root pytest configuration through its public `pytest.main(..., plugins=[...])`
 and `pytest_cmdline_main` hook, using native `Config.getini`, `rootpath` and `inipath`.
@@ -384,7 +399,8 @@ remain separate integration responsibilities.
 2. Read changed paths, including both sides of rename/deletion. Resolve ownership
    and relevant relations in the comparison basis and candidate. Changes to
    dependency declarations must not erase the evidence needed to select consumers.
-3. Select directly affected projects and shared-input consumers. Follow required
+3. Select directly affected projects and shared-input consumers, including valid
+   paired direct-selection reasons above. Follow required
    transitive reverse dependencies and quality-consumer relations from both sides.
 4. Resolve surviving work against the candidate revision. A deleted project is
    not a runnable target; its surviving consumers and changed declarations still

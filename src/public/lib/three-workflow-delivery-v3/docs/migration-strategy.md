@@ -264,6 +264,17 @@ protocol using the actual current tools and lock format; the stopped primitive
 campaign is not reused or repeated. Ordinary PR CI remains available for its
 authorized caller-integration qualification after contract acceptance.
 
+Implement the MLD's paired direct-reason transfer into the existing shared core
+before full Python fact assembly. Keep both endpoint project sets actual; no
+candidate-only owner proxy is inserted into basis facts. Controlled integration
+must cover a basis-only input reaching candidate-only `C`, deleted quality owners,
+candidate Release Unit siblings, all selected variants/checks/prerequisites and
+initiating path/revision reasons. Reject foreign seed owners/revisions, reasons
+outside the changed-path set and unrelated unresolved changes; preserve explicit
+full mode and the existing nonempty selected-check/origin guards. Do not duplicate
+shared relation/unit expansion inside Python or call `PlanSelected` with an
+externally completed selection that skipped that expansion.
+
 ### Native .NET CI Group
 
 This group replaces general .NET CI selection and execution using the current
