@@ -162,7 +162,7 @@ jobs:
 
       - name: Set up mise
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
         with:
           experimental: true
           install: false
@@ -285,7 +285,7 @@ jobs:
 
       - name: Mise Install Tools
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
         with:
           experimental: true
           install: false
@@ -604,7 +604,7 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Setup native tools
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
         with:
           experimental: true
           install: false
@@ -870,7 +870,7 @@ jobs:
 
       - name: Set up mise, HK, and Pkl
         if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_v3 == 'true'
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
         with:
           experimental: true
           install_args: aqua:jdx/hk pkl
@@ -1121,7 +1121,7 @@ jobs:
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: Set up mise
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
         with:
           experimental: true
           install: false
