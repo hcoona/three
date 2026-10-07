@@ -54,11 +54,14 @@ public sealed class PythonOwnerProjectionTests
     {
         var endpoint = Endpoint("same", [Member("."), Member("src/parent"),
             Member("src/parent/input")], [new("pytest:parent", "src/parent", [])],
-            ["src/parent/input/data.py", "src/parent/source.py"]);
+            ["src/parent/input/data.py", "src/parent/source.py", "src/parent-other/data.py"],
+            [new("src/parent-other/data.py", [], [])]);
         PythonOwnerImpact[] result = PythonOwnerProjection.Project(endpoint, endpoint,
-            ["src/parent/input/data.py", "src/parent/source.py"]);
+            ["src/parent/input/data.py", "src/parent/source.py", "src/parent-other/data.py"]);
+        Assert.HasCount(6, result);
         foreach (PythonOwnerImpact impact in result)
-            if (impact.Path == "src/parent/input/data.py") Assert.IsEmpty(impact.Owners);
+            if (impact.Path is "src/parent/input/data.py" or "src/parent-other/data.py")
+                Assert.IsEmpty(impact.Owners);
             else CollectionAssert.AreEqual(Parent, impact.Owners);
     }
 
@@ -161,16 +164,30 @@ public sealed class PythonOwnerProjectionTests
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public void EitherIncompleteEndpointFailsDespiteValidOtherEndpoint(bool invalidBasis)
+    [DataRow("root", false)]
+    [DataRow("root", true)]
+    [DataRow("revision", false)]
+    [DataRow("revision", true)]
+    [DataRow("manifest", false)]
+    [DataRow("manifest", true)]
+    public void EitherIncompleteEndpointFailsDespiteValidOtherEndpoint(string defect,
+        bool invalidBasis)
     {
         var valid = Endpoint("valid", [Member("."), Member("src/a")],
             [new("pytest:a", "src/a", [])], ["src/a/source.py"]);
-        var invalid = valid with
+        PythonOwnerEndpoint invalid = defect switch
         {
-            Revision = valid.Revision with { Commit = "invalid" },
-            Projects = [Member("src/a")]
+            "root" => valid with { Projects = [Member("src/a")] },
+            "revision" => valid with { Revision = valid.Revision with { Commit = " " } },
+            "manifest" => valid with
+            {
+                Revision = valid.Revision with
+                {
+                    Entries = valid.Revision.Entries.Where(entry =>
+                        entry.Path != "src/a/pyproject.toml").ToArray()
+                }
+            },
+            _ => throw new ArgumentException("Unknown fixture defect.", nameof(defect)),
         };
 
         Assert.ThrowsExactly<InvalidDataException>(() => PythonOwnerProjection.Project(
