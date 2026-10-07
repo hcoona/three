@@ -1069,6 +1069,10 @@ def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
                 elif step["name"] == "Prepare NuGet authority dump collection":
                     assert step["continue-on-error"] is True
                     assert step["shell"] == "pwsh"
+                    assert step["if"] == (
+                        "${{ success() && "
+                        "needs.scope.outputs.dotnet == 'true' }}"
+                    )
                 elif "Retain" in step["name"]:
                     assert step["if"] == "always()"
                     assert step["uses"].startswith("actions/upload-artifact@")

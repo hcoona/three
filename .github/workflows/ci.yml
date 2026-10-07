@@ -407,6 +407,7 @@ jobs:
           merge-multiple: true
 
       - name: Prepare NuGet authority dump collection
+        if: ${{ success() && needs.scope.outputs.dotnet == 'true' }}
         continue-on-error: true
         shell: pwsh
         run: dotnet tool install dotnet-dump --version 10.0.745401 --tool-path (Split-Path $env:NUGET_AUTHORITY_DUMP_TOOL)
