@@ -162,6 +162,23 @@ file. It does not interpret requirements or plugin configuration.
 These controlled components do not invoke the complete collector, assign committed
 ownership, expand checks or replace callers.
 
+### Native Pytest Configuration Component
+
+[`pytest_configuration.py`](Native/Python/pytest_configuration.py) uses public
+`pytest.main`, an early `pytest_cmdline_main` hook and native configuration fields.
+It clears inherited pytest addopts/plugins and disables autoload, conftest and
+cache-provider behavior. Configuration processing can still load explicit plugins
+before the hook; these controls do not qualify arbitrary configuration effects.
+`PythonPytestConfigurationReader` consumes the response through `NativeCommand`,
+requiring its endpoint root, explicit configuration input, nonempty unique normalized
+target declarations and the supported import-mode option. Necessary additional
+Python search paths or required plugins remain unsupported. It does not parse
+configuration files or copy pytest's private target-selection algorithm.
+Controlled producer and reader tests substitute the native query/process boundary.
+No actual query composition, committed target ownership, test collection, complete
+fact assembly or caller cutover is qualified by this component. Those remain subject
+to the accepted native qualification and complete Python caller contracts.
+
 ### PNPM Graph Component
 
 [`PnpmGraphReader`](Repository/PnpmGraphReader.cs) reads wanted-lock workspace
