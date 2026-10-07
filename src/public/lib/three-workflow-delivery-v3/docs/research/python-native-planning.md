@@ -55,11 +55,11 @@ work. A prospective example in the source does not establish emitted edges.
 The repository has a concrete source counterexample. The Python smoke
 [`pyproject.toml`][smoke-manifest] declares `nbgv-python` in
 `build-system.requires`, an empty ordinary dependency list, and a native
-workspace source for the backend. The [sample manifest][sample-manifest] declares
+workspace source for that build requirement. The [sample manifest][sample-manifest] declares
 both the build requirement and an ordinary dependency on that package.
 
 The resulting inference is narrow: an ordinary-dependency reverse closure can
-exclude a smoke build affected by a local backend change; the sample's ordinary
+exclude a smoke build affected by a local build-requirement/plugin change; the sample's ordinary
 edge can conceal that omission. This is not an observed failed UV invocation or
 CI run. Metadata alone therefore lacks a necessary premise for the required
 Python impact closure.
