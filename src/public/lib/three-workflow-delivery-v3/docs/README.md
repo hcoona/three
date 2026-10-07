@@ -203,6 +203,9 @@ The [implementation plan](./migration-strategy.md) maps the actual cutover group
 and their validation dependencies.
 Local observations and the Windows assumption
 are recorded in [contraction feasibility](./research/contraction-feasibility.md).
+The [Python native planning source assessment](./research/python-native-planning.md)
+examines UV metadata and native build-source association candidates for the next
+Python integration.
 The [PNPM native planning assessment](./research/pnpm-native-planning.md) compares
 the pinned v12 library and CLI interfaces for replacement repository analysis.
 The [Git native fact evidence](./research/git-native-facts.md) supports committed
