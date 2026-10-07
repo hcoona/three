@@ -222,6 +222,11 @@ name the endpoint, project/node when known, role and reason; they are errors.
 
 The CLI binds physical native paths to exact endpoint roots and committed Git
 spelling. SDK/package/generated paths retain their environmental/producer roles.
+The native workload autoimport locator associates a returned `Sdk` directory's
+immediate parent pack only when that result actually imports its `AutoImport.props`.
+Consume primary and additional paths without an installed-pack inventory or a
+second workload resolver. Other SDK roots and unknown external hooks do not gain
+that expansion; native provider identity/version do not claim an exact pack pin.
 Reject unsupported semantic globals containing endpoint-dependent coordinates;
 do not invent path rewriting or AssemblyName/relocation aliases. Aggregate native
 relations into business project-path IDs for the shared impact planner, retaining

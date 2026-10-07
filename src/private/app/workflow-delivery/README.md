@@ -261,6 +261,22 @@ import paths. Microsoft's Artifacts SDK has four finite sibling build imports;
 its arbitrary custom hooks gain no provider authority. Package-cache or `obj`
 residence alone does not classify an input. Committed files bind first.
 
+The workload autoimport locator has one finite native association. For successful
+`Microsoft.NET.SDK.WorkloadAutoImportPropsLocator` results, an actual import of
+the returned `Sdk/AutoImport.props` associates its immediate parent pack directory
+with that SDK provider. Primary and additional returned paths are considered
+separately. The [SDK 10.0.401 workload resolver][workload-resolver] returns the
+fixed `packRoot/Sdk` child; the [maintained autoimport template][workload-autoimport]
+imports sibling `targets` inputs. This is source evidence for the association,
+not qualification of the hosted pack's exact bytes. Keep the native locator name
+and native SDK version field, which may be empty; they do not identify an exact
+pack version. Generic SDKs, the workload manifest locator, unmatched imports and
+hooks outside that pack receive no expanded provider boundary. Observed eligible
+inputs still require existing files and retain committed-file precedence.
+
+[workload-resolver]: https://github.com/dotnet/dotnet/blob/e34a38d2ae1fc26406a317517196e55c68ff83ab/src/sdk/src/Resolvers/Microsoft.NET.Sdk.WorkloadMSBuildSdkResolver/CachingWorkloadResolver.cs#L115
+[workload-autoimport]: https://github.com/dotnet/macios/blob/354c2a645855dfdf774cc5e098cd214764f475b5/dotnet/targets/AutoImport.template.props#L1
+
 Roslyn's evaluated `PotentialEditorConfigFiles` and `GlobalAnalyzerConfigFiles`
 retain absent linked-source candidates and respect native discovery switches.
 Evaluated CPM paths and finite SDK/Directory.Build/CPM/NuGet/lock search candidates

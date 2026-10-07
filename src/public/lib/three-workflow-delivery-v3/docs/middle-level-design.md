@@ -149,6 +149,15 @@ checks. Preserve its necessary observed inputs for its business consumers.
 Receiving checkouts let MSBuild/NBGV construct their own local helper context;
 Workflow does not replay helper coordinates or implement version caching.
 
+Native provider associations can include finite sibling inputs. The workload
+autoimport locator's successful returned `Sdk` directory and its actual
+`AutoImport.props` import associate that specific parent pack with the native SDK
+provider. This does not admit all installed packs, expand unrelated SDK roots or
+implement workload resolution. Preserve the native locator identity and version
+field without claiming an exact pack version; unknown external inputs remain
+unsupported. The [application entry](../../../../private/app/workflow-delivery/README.md)
+retains the source basis and implementation boundary.
+
 Bind version-input discovery to each supported effective native
 `GitVersionBaseDirectory`, not necessarily the product directory. Union native
 business variant consumers. Traversal's unused self-version metadata does not
