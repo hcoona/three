@@ -1,0 +1,4628 @@
+{
+  "schema": {
+    "version": "preview"
+  },
+  "workspace_root": "/recorded/python-endpoint",
+  "workspace": {
+    "path": "/recorded/python-endpoint",
+    "id": "workspace+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis"
+  },
+  "requires_python": ">=3.14",
+  "conflicts": {
+    "sets": []
+  },
+  "members": [
+    {
+      "name": "azure-document-intelligence-lab",
+      "path": "/recorded/python-endpoint/src/lab/azure-document-intelligence-lab",
+      "id": "azure-document-intelligence-lab@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/lab/azure-document-intelligence-lab"
+    },
+    {
+      "name": "azureauth-credprovider-keyring",
+      "path": "/recorded/python-endpoint/src/private/app/azureauth-credprovider/python",
+      "id": "azureauth-credprovider-keyring@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/azureauth-credprovider/python"
+    },
+    {
+      "name": "factorio-cycle-calculator",
+      "path": "/recorded/python-endpoint/src/private/app/factorio-cycle-calculator",
+      "id": "factorio-cycle-calculator==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/factorio-cycle-calculator"
+    },
+    {
+      "name": "git-commit-heatmap",
+      "path": "/recorded/python-endpoint/src/private/app/git-commit-heatmap",
+      "id": "git-commit-heatmap==0.0.0.dev0@virtual+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/git-commit-heatmap"
+    },
+    {
+      "name": "hcoona-release-smoke-python",
+      "path": "/recorded/python-endpoint/src/public/lib/hcoona-release-smoke-python",
+      "id": "hcoona-release-smoke-python@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/lib/hcoona-release-smoke-python"
+    },
+    {
+      "name": "hcoona-three-monorepo",
+      "path": "/recorded/python-endpoint",
+      "id": "hcoona-three-monorepo==0.0.0.dev0@virtual+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis"
+    },
+    {
+      "name": "html-sm-processor",
+      "path": "/recorded/python-endpoint/src/private/app/html-sm-processor",
+      "id": "html-sm-processor==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/html-sm-processor"
+    },
+    {
+      "name": "llm-text-splitter",
+      "path": "/recorded/python-endpoint/src/private/app/llm-text-splitter",
+      "id": "llm-text-splitter==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/llm-text-splitter"
+    },
+    {
+      "name": "markdown-hybrid-search-mcp",
+      "path": "/recorded/python-endpoint/src/public/app/markdown-hybrid-search-mcp",
+      "id": "markdown-hybrid-search-mcp==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/app/markdown-hybrid-search-mcp"
+    },
+    {
+      "name": "music-flash-card-generator",
+      "path": "/recorded/python-endpoint/src/private/app/music-flash-card-generator",
+      "id": "music-flash-card-generator==0.0.0.dev0@virtual+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/music-flash-card-generator"
+    },
+    {
+      "name": "nbgv-hatch-demo",
+      "path": "/recorded/python-endpoint/src/sample/nbgv-hatch-demo",
+      "id": "nbgv-hatch-demo@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/sample/nbgv-hatch-demo"
+    },
+    {
+      "name": "nbgv-python",
+      "path": "/recorded/python-endpoint/src/public/lib/nbgv-python",
+      "id": "nbgv-python==2.1.0.dev1@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/lib/nbgv-python"
+    },
+    {
+      "name": "rag-postgresql-openai",
+      "path": "/recorded/python-endpoint/src/private/app/rag-postgresql-openai",
+      "id": "rag-postgresql-openai==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/rag-postgresql-openai"
+    },
+    {
+      "name": "supermemo-mcp",
+      "path": "/recorded/python-endpoint/src/private/app/supermemo-mcp",
+      "id": "supermemo-mcp==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/supermemo-mcp"
+    },
+    {
+      "name": "three-workflow-delivery-v3",
+      "path": "/recorded/python-endpoint/src/public/lib/three-workflow-delivery-v3",
+      "id": "three-workflow-delivery-v3==0.1.0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/lib/three-workflow-delivery-v3"
+    },
+    {
+      "name": "transcribe",
+      "path": "/recorded/python-endpoint/src/private/app/transcribe",
+      "id": "transcribe==0.0.0.dev0@virtual+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/transcribe"
+    }
+  ],
+  "resolution": {
+    "absl-py==2.5.0@registry+https://pypi.org/simple": {
+      "name": "absl-py",
+      "version": "2.5.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "aiofile==3.12.3@registry+https://pypi.org/simple": {
+      "name": "aiofile",
+      "version": "3.12.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "caio==0.12.2@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "aiofiles==25.1.0@registry+https://pypi.org/simple": {
+      "name": "aiofiles",
+      "version": "25.1.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "aiohappyeyeballs==2.7.1@registry+https://pypi.org/simple": {
+      "name": "aiohappyeyeballs",
+      "version": "2.7.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "aiohttp==3.14.3@registry+https://pypi.org/simple": {
+      "name": "aiohttp",
+      "version": "3.14.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "aiohappyeyeballs==2.7.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "aiosignal==1.4.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "attrs==26.1.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "frozenlist==1.8.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "multidict==6.7.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "propcache==0.5.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "yarl==1.24.5@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "aiosignal==1.4.0@registry+https://pypi.org/simple": {
+      "name": "aiosignal",
+      "version": "1.4.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "frozenlist==1.8.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "altair==6.2.2@registry+https://pypi.org/simple": {
+      "name": "altair",
+      "version": "6.2.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "jinja2==3.1.6@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "jsonschema==4.26.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "narwhals==2.25.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "packaging==26.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple",
+          "marker": "python_full_version < '3.15'"
+        }
+      ]
+    },
+    "annotated-types==0.8.0@registry+https://pypi.org/simple": {
+      "name": "annotated-types",
+      "version": "0.8.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "anyio==4.14.2@registry+https://pypi.org/simple": {
+      "name": "anyio",
+      "version": "4.14.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "idna==3.19@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "appnope==1.0.0@registry+https://pypi.org/simple": {
+      "name": "appnope",
+      "version": "1.0.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "argcomplete==3.7.2@registry+https://pypi.org/simple": {
+      "name": "argcomplete",
+      "version": "3.7.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "asttokens==3.0.2@registry+https://pypi.org/simple": {
+      "name": "asttokens",
+      "version": "3.0.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "attrs==26.1.0@registry+https://pypi.org/simple": {
+      "name": "attrs",
+      "version": "26.1.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "audioop-lts==0.2.2@registry+https://pypi.org/simple": {
+      "name": "audioop-lts",
+      "version": "0.2.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "authlib==1.8.0@registry+https://pypi.org/simple": {
+      "name": "authlib",
+      "version": "1.8.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "cryptography==50.0.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "joserfc==1.7.5@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "azure-ai-documentintelligence==1.0.2@registry+https://pypi.org/simple": {
+      "name": "azure-ai-documentintelligence",
+      "version": "1.0.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "azure-core==1.41.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "isodate==0.7.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "azure-core==1.41.0@registry+https://pypi.org/simple": {
+      "name": "azure-core",
+      "version": "1.41.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "requests==2.34.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "azure-document-intelligence-lab:dev@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/lab/azure-document-intelligence-lab": {
+      "name": "azure-document-intelligence-lab",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/lab/azure-document-intelligence-lab"
+      },
+      "kind": {
+        "group": "dev"
+      },
+      "dependencies": [
+        {
+          "id": "ipykernel==7.3.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-dotenv==1.2.3@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "azure-document-intelligence-lab@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/lab/azure-document-intelligence-lab": {
+      "name": "azure-document-intelligence-lab",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/lab/azure-document-intelligence-lab"
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "aiofiles==25.1.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "aiohttp==3.14.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "azure-ai-documentintelligence==1.0.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "azure-identity==1.25.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "msgpack==1.2.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pillow==12.3.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pypdfium2==5.13.0@registry+https://pypi.org/simple"
+        }
+      ],
+      "dependency_groups": [
+        {
+          "name": "dev",
+          "id": "azure-document-intelligence-lab:dev@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/lab/azure-document-intelligence-lab"
+        }
+      ]
+    },
+    "azure-identity==1.25.3@registry+https://pypi.org/simple": {
+      "name": "azure-identity",
+      "version": "1.25.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "azure-core==1.41.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "cryptography==50.0.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "msal==1.38.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "msal-extensions==1.3.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "azureauth-credprovider-keyring:dev@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/azureauth-credprovider/python": {
+      "name": "azureauth-credprovider-keyring",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/private/app/azureauth-credprovider/python"
+      },
+      "kind": {
+        "group": "dev"
+      },
+      "dependencies": [
+        {
+          "id": "keyring==25.7.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pytest==9.1.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "azureauth-credprovider-keyring@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/azureauth-credprovider/python": {
+      "name": "azureauth-credprovider-keyring",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/private/app/azureauth-credprovider/python"
+      },
+      "kind": "package",
+      "dependencies": [],
+      "dependency_groups": [
+        {
+          "name": "dev",
+          "id": "azureauth-credprovider-keyring:dev@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/azureauth-credprovider/python"
+        }
+      ]
+    },
+    "beartype==0.22.9@registry+https://pypi.org/simple": {
+      "name": "beartype",
+      "version": "0.22.9",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "beautifulsoup4==4.15.0@registry+https://pypi.org/simple": {
+      "name": "beautifulsoup4",
+      "version": "4.15.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "soupsieve==2.9.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "black==26.5.1@registry+https://pypi.org/simple": {
+      "name": "black",
+      "version": "26.5.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "click==8.5.0@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        },
+        {
+          "id": "mypy-extensions==1.1.0@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        },
+        {
+          "id": "packaging==26.3@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        },
+        {
+          "id": "pathspec==1.1.1@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        },
+        {
+          "id": "platformdirs==4.11.6@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        },
+        {
+          "id": "pytokens==0.4.1@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        }
+      ]
+    },
+    "blinker==1.9.0@registry+https://pypi.org/simple": {
+      "name": "blinker",
+      "version": "1.9.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "build==1.4.1@registry+https://pypi.org/simple": {
+      "name": "build",
+      "version": "1.4.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "colorama==0.4.6@registry+https://pypi.org/simple",
+          "marker": "os_name == 'nt'"
+        },
+        {
+          "id": "packaging==26.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyproject-hooks==1.2.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "cachetools==7.1.8@registry+https://pypi.org/simple": {
+      "name": "cachetools",
+      "version": "7.1.8",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "caio==0.12.2@registry+https://pypi.org/simple": {
+      "name": "caio",
+      "version": "0.12.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "cairocffi==1.7.1@registry+https://pypi.org/simple": {
+      "name": "cairocffi",
+      "version": "1.7.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "cffi==2.1.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "cairosvg==2.9.0@registry+https://pypi.org/simple": {
+      "name": "cairosvg",
+      "version": "2.9.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "cairocffi==1.7.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "cssselect2==0.10.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "defusedxml==0.7.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pillow==12.3.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "tinycss2==1.5.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "certifi==2026.7.22@registry+https://pypi.org/simple": {
+      "name": "certifi",
+      "version": "2026.7.22",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "cffi==2.1.1@registry+https://pypi.org/simple": {
+      "name": "cffi",
+      "version": "2.1.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "pycparser==3.0@registry+https://pypi.org/simple",
+          "marker": "implementation_name != 'PyPy'"
+        }
+      ]
+    },
+    "charset-normalizer==3.5.1@registry+https://pypi.org/simple": {
+      "name": "charset-normalizer",
+      "version": "3.5.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "click==8.5.0@registry+https://pypi.org/simple": {
+      "name": "click",
+      "version": "8.5.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "cohere==7.1.1@registry+https://pypi.org/simple": {
+      "name": "cohere",
+      "version": "7.1.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "fastavro==1.12.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "httpx==0.28.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pydantic==2.13.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pydantic-core==2.46.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "requests==2.34.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "tokenizers==0.23.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "types-requests==2.33.0.20260712@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "colorama==0.4.6@registry+https://pypi.org/simple": {
+      "name": "colorama",
+      "version": "0.4.6",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "comm==0.2.3@registry+https://pypi.org/simple": {
+      "name": "comm",
+      "version": "0.2.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "comtypes==1.4.16@registry+https://pypi.org/simple": {
+      "name": "comtypes",
+      "version": "1.4.16",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "contourpy==1.3.3@registry+https://pypi.org/simple": {
+      "name": "contourpy",
+      "version": "1.3.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "numpy==2.5.2@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "cryptography==50.0.1@registry+https://pypi.org/simple": {
+      "name": "cryptography",
+      "version": "50.0.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "cffi==2.1.1@registry+https://pypi.org/simple",
+          "marker": "platform_python_implementation != 'PyPy'"
+        }
+      ]
+    },
+    "cssselect2==0.10.1@registry+https://pypi.org/simple": {
+      "name": "cssselect2",
+      "version": "0.10.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "tinycss2==1.5.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "webencodings==0.6.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "cycler==0.12.1@registry+https://pypi.org/simple": {
+      "name": "cycler",
+      "version": "0.12.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "cyclopts==4.23.3@registry+https://pypi.org/simple": {
+      "name": "cyclopts",
+      "version": "4.23.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "attrs==26.1.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "docstring-parser==0.18.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "rich==15.0.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "rich-rst==2.1.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "datamodel-code-generator==0.76.0@registry+https://pypi.org/simple": {
+      "name": "datamodel-code-generator",
+      "version": "0.76.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "argcomplete==3.7.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "black==26.5.1@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        },
+        {
+          "id": "genson==1.4.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "inflect==7.5.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "isort==8.0.1@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        },
+        {
+          "id": "jinja2==3.1.6@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pydantic==2.13.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyyaml==6.0.3@registry+https://pypi.org/simple"
+        }
+      ],
+      "optional_dependencies": [
+        {
+          "name": "debug",
+          "id": "datamodel-code-generator[debug]==0.76.0@registry+https://pypi.org/simple"
+        },
+        {
+          "name": "http",
+          "id": "datamodel-code-generator[http]==0.76.0@registry+https://pypi.org/simple"
+        },
+        {
+          "name": "ruff",
+          "id": "datamodel-code-generator[ruff]==0.76.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "datamodel-code-generator[debug]==0.76.0@registry+https://pypi.org/simple": {
+      "name": "datamodel-code-generator",
+      "version": "0.76.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": {
+        "extra": "debug"
+      },
+      "dependencies": [
+        {
+          "id": "datamodel-code-generator==0.76.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pysnooper==1.2.3@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "datamodel-code-generator[http]==0.76.0@registry+https://pypi.org/simple": {
+      "name": "datamodel-code-generator",
+      "version": "0.76.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": {
+        "extra": "http"
+      },
+      "dependencies": [
+        {
+          "id": "datamodel-code-generator==0.76.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "httpx==0.28.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "datamodel-code-generator[ruff]==0.76.0@registry+https://pypi.org/simple": {
+      "name": "datamodel-code-generator",
+      "version": "0.76.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": {
+        "extra": "ruff"
+      },
+      "dependencies": [
+        {
+          "id": "datamodel-code-generator==0.76.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "ruff==0.16.10@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "debugpy==1.8.21@registry+https://pypi.org/simple": {
+      "name": "debugpy",
+      "version": "1.8.21",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "defusedxml==0.7.1@registry+https://pypi.org/simple": {
+      "name": "defusedxml",
+      "version": "0.7.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "distlib==0.4.3@registry+https://pypi.org/simple": {
+      "name": "distlib",
+      "version": "0.4.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "distro==1.9.0@registry+https://pypi.org/simple": {
+      "name": "distro",
+      "version": "1.9.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "dnspython==2.8.0@registry+https://pypi.org/simple": {
+      "name": "dnspython",
+      "version": "2.8.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "docstring-parser==0.18.0@registry+https://pypi.org/simple": {
+      "name": "docstring-parser",
+      "version": "0.18.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "email-validator==2.3.0@registry+https://pypi.org/simple": {
+      "name": "email-validator",
+      "version": "2.3.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "dnspython==2.8.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "idna==3.19@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "exceptiongroup==1.3.1@registry+https://pypi.org/simple": {
+      "name": "exceptiongroup",
+      "version": "1.3.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "executing==2.2.1@registry+https://pypi.org/simple": {
+      "name": "executing",
+      "version": "2.2.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "factorio-cycle-calculator:dev==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/factorio-cycle-calculator": {
+      "name": "factorio-cycle-calculator",
+      "version": "0.0.0.dev0",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/private/app/factorio-cycle-calculator"
+      },
+      "kind": {
+        "group": "dev"
+      },
+      "dependencies": [
+        {
+          "id": "datamodel-code-generator[debug]==0.76.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "datamodel-code-generator[http]==0.76.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "datamodel-code-generator[ruff]==0.76.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "factorio-cycle-calculator==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/factorio-cycle-calculator": {
+      "name": "factorio-cycle-calculator",
+      "version": "0.0.0.dev0",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/private/app/factorio-cycle-calculator"
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "ortools==9.15.6755@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pillow==12.3.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-dotenv==1.2.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "streamlit==1.62.0@registry+https://pypi.org/simple"
+        }
+      ],
+      "dependency_groups": [
+        {
+          "name": "dev",
+          "id": "factorio-cycle-calculator:dev==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/factorio-cycle-calculator"
+        }
+      ]
+    },
+    "fastavro==1.12.2@registry+https://pypi.org/simple": {
+      "name": "fastavro",
+      "version": "1.12.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "fastmcp-slim==4.0.0@registry+https://pypi.org/simple": {
+      "name": "fastmcp-slim",
+      "version": "4.0.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "mcp-types==2.1.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "platformdirs==4.11.6@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pydantic[email]==2.13.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pydantic-settings==2.15.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-dotenv==1.2.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "rich==15.0.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ],
+      "optional_dependencies": [
+        {
+          "name": "client",
+          "id": "fastmcp-slim[client]==4.0.0@registry+https://pypi.org/simple"
+        },
+        {
+          "name": "server",
+          "id": "fastmcp-slim[server]==4.0.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "fastmcp-slim[client]==4.0.0@registry+https://pypi.org/simple": {
+      "name": "fastmcp-slim",
+      "version": "4.0.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": {
+        "extra": "client"
+      },
+      "dependencies": [
+        {
+          "id": "fastmcp-slim==4.0.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "authlib==1.8.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "exceptiongroup==1.3.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "httpx2==2.12.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "mcp==2.1.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "opentelemetry-api==1.44.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "py-key-value-aio[filetree]==0.4.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "py-key-value-aio[keyring]==0.4.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "py-key-value-aio[memory]==0.4.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "starlette==1.6.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "fastmcp-slim[server]==4.0.0@registry+https://pypi.org/simple": {
+      "name": "fastmcp-slim",
+      "version": "4.0.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": {
+        "extra": "server"
+      },
+      "dependencies": [
+        {
+          "id": "fastmcp-slim==4.0.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "authlib==1.8.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "cyclopts==4.23.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "exceptiongroup==1.3.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "griffelib==2.2.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "httpx2==2.12.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "joserfc==1.7.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "jsonref==1.1.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "jsonschema-path==0.5.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "mcp==2.1.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "openapi-pydantic==0.5.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "opentelemetry-api==1.44.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "packaging==26.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "py-key-value-aio[filetree]==0.4.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "py-key-value-aio[keyring]==0.4.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "py-key-value-aio[memory]==0.4.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyperclip==1.11.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-multipart==0.0.32@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyyaml==6.0.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "starlette==1.6.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "uncalled-for==0.4.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "uvicorn==0.52.4@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "watchfiles==1.2.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "websockets==16.1.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "fastmcp==4.0.0@registry+https://pypi.org/simple": {
+      "name": "fastmcp",
+      "version": "4.0.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "fastmcp-slim[client]==4.0.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "fastmcp-slim[server]==4.0.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "filelock==3.32.5@registry+https://pypi.org/simple": {
+      "name": "filelock",
+      "version": "3.32.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "fonttools==4.64.0@registry+https://pypi.org/simple": {
+      "name": "fonttools",
+      "version": "4.64.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "frozenlist==1.8.0@registry+https://pypi.org/simple": {
+      "name": "frozenlist",
+      "version": "1.8.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "fsspec==2026.7.0@registry+https://pypi.org/simple": {
+      "name": "fsspec",
+      "version": "2026.7.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "genson==1.4.0@registry+https://pypi.org/simple": {
+      "name": "genson",
+      "version": "1.4.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "git-commit-heatmap==0.0.0.dev0@virtual+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/git-commit-heatmap": {
+      "name": "git-commit-heatmap",
+      "version": "0.0.0.dev0",
+      "source": {
+        "virtual": "/recorded/python-endpoint/src/private/app/git-commit-heatmap"
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "gitpython==3.1.61@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "matplotlib==3.11.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pandas==3.0.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "seaborn==0.13.2@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "gitdb==4.0.12@registry+https://pypi.org/simple": {
+      "name": "gitdb",
+      "version": "4.0.12",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "smmap==5.0.3@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "gitpython==3.1.61@registry+https://pypi.org/simple": {
+      "name": "gitpython",
+      "version": "3.1.61",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "gitdb==4.0.12@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "griffelib==2.2.0@registry+https://pypi.org/simple": {
+      "name": "griffelib",
+      "version": "2.2.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "h11==0.16.0@registry+https://pypi.org/simple": {
+      "name": "h11",
+      "version": "0.16.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "hatch==1.18.0@registry+https://pypi.org/simple": {
+      "name": "hatch",
+      "version": "1.18.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "click==8.5.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "distro==1.9.0@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'linux'"
+        },
+        {
+          "id": "hatchling==1.32.4@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "httpx2==2.12.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "hyperlink==21.0.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "keyring==25.7.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "packaging==26.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pexpect==4.9.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "platformdirs==4.11.6@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyproject-hooks==1.2.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-discovery==1.6.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "rich==15.0.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "shellingham==1.5.4@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "tomli-w==1.2.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "tomlkit==0.15.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "userpath==1.9.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "uv==0.12.8@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "virtualenv==21.7.7@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "hatchling==1.32.4@registry+https://pypi.org/simple": {
+      "name": "hatchling",
+      "version": "1.32.4",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "packaging==26.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pathspec==1.1.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pluggy==1.6.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "tomlkit==0.15.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "trove-classifiers==2026.6.1.19@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "hcoona-release-smoke-python@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/lib/hcoona-release-smoke-python": {
+      "name": "hcoona-release-smoke-python",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/public/lib/hcoona-release-smoke-python"
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "hcoona-three-monorepo:dev==0.0.0.dev0@virtual+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis": {
+      "name": "hcoona-three-monorepo",
+      "version": "0.0.0.dev0",
+      "source": {
+        "virtual": "/recorded/python-endpoint"
+      },
+      "kind": {
+        "group": "dev"
+      },
+      "dependencies": [
+        {
+          "id": "hatchling==1.32.4@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyrefly==1.2.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pytest==9.1.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyyaml==6.0.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "ruff==0.16.10@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "hcoona-three-monorepo:workflow-delivery-python==0.0.0.dev0@virtual+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis": {
+      "name": "hcoona-three-monorepo",
+      "version": "0.0.0.dev0",
+      "source": {
+        "virtual": "/recorded/python-endpoint"
+      },
+      "kind": {
+        "group": "workflow-delivery-python"
+      },
+      "dependencies": [
+        {
+          "id": "build==1.4.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "nbgv-python==2.1.0.dev1@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/lib/nbgv-python"
+        }
+      ]
+    },
+    "hcoona-three-monorepo==0.0.0.dev0@virtual+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis": {
+      "name": "hcoona-three-monorepo",
+      "version": "0.0.0.dev0",
+      "source": {
+        "virtual": "/recorded/python-endpoint"
+      },
+      "kind": "package",
+      "dependencies": [],
+      "dependency_groups": [
+        {
+          "name": "dev",
+          "id": "hcoona-three-monorepo:dev==0.0.0.dev0@virtual+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis"
+        },
+        {
+          "name": "workflow-delivery-python",
+          "id": "hcoona-three-monorepo:workflow-delivery-python==0.0.0.dev0@virtual+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis"
+        }
+      ]
+    },
+    "hf-xet==1.6.0@registry+https://pypi.org/simple": {
+      "name": "hf-xet",
+      "version": "1.6.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "html-sm-processor==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/html-sm-processor": {
+      "name": "html-sm-processor",
+      "version": "0.0.0.dev0",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/private/app/html-sm-processor"
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "beautifulsoup4==4.15.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "cairosvg==2.9.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "lxml==6.1.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "matplotlib==3.11.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "niquests==3.21.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "html2text==2025.4.15@registry+https://pypi.org/simple": {
+      "name": "html2text",
+      "version": "2025.4.15",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "httpcore2==2.12.0@registry+https://pypi.org/simple": {
+      "name": "httpcore2",
+      "version": "2.12.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "h11==0.16.0@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        },
+        {
+          "id": "truststore==0.10.4@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        }
+      ]
+    },
+    "httpcore==1.0.9@registry+https://pypi.org/simple": {
+      "name": "httpcore",
+      "version": "1.0.9",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "certifi==2026.7.22@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "h11==0.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "httptools==0.8.0@registry+https://pypi.org/simple": {
+      "name": "httptools",
+      "version": "0.8.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "httpx2-jsfetch==1.0@registry+https://pypi.org/simple": {
+      "name": "httpx2-jsfetch",
+      "version": "1.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "httpx2==2.12.0@registry+https://pypi.org/simple": {
+      "name": "httpx2",
+      "version": "2.12.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "anyio==4.14.2@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        },
+        {
+          "id": "httpcore2==2.12.0@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        },
+        {
+          "id": "httpx2-jsfetch==1.0@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'emscripten'"
+        },
+        {
+          "id": "idna==3.19@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "truststore==0.10.4@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        }
+      ]
+    },
+    "httpx==0.28.1@registry+https://pypi.org/simple": {
+      "name": "httpx",
+      "version": "0.28.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "anyio==4.14.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "certifi==2026.7.22@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "httpcore==1.0.9@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "idna==3.19@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "huggingface-hub==1.29.0@registry+https://pypi.org/simple": {
+      "name": "huggingface-hub",
+      "version": "1.29.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "click==8.5.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "filelock==3.32.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "fsspec==2026.7.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "hf-xet==1.6.0@registry+https://pypi.org/simple",
+          "marker": "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'"
+        },
+        {
+          "id": "httpx==0.28.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "packaging==26.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyyaml==6.0.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "tqdm==4.70.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "hyperlink==21.0.0@registry+https://pypi.org/simple": {
+      "name": "hyperlink",
+      "version": "21.0.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "idna==3.19@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "idna==3.19@registry+https://pypi.org/simple": {
+      "name": "idna",
+      "version": "3.19",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "immutabledict==4.3.1@registry+https://pypi.org/simple": {
+      "name": "immutabledict",
+      "version": "4.3.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "inflect==7.5.0@registry+https://pypi.org/simple": {
+      "name": "inflect",
+      "version": "7.5.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "more-itertools==11.1.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typeguard==4.6.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "iniconfig==2.3.0@registry+https://pypi.org/simple": {
+      "name": "iniconfig",
+      "version": "2.3.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "ipykernel==7.3.0@registry+https://pypi.org/simple": {
+      "name": "ipykernel",
+      "version": "7.3.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "appnope==1.0.0@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'darwin'"
+        },
+        {
+          "id": "comm==0.2.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "debugpy==1.8.21@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "ipython==9.17.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "jupyter-client==8.10.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "jupyter-core==5.9.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "matplotlib-inline==0.2.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "nest-asyncio2==1.7.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "packaging==26.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "psutil==7.2.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyzmq==27.2.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "tornado==6.5.8@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "traitlets==5.16.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "ipython-pygments-lexers==1.1.1@registry+https://pypi.org/simple": {
+      "name": "ipython-pygments-lexers",
+      "version": "1.1.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "pygments==2.21.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "ipython==9.17.0@registry+https://pypi.org/simple": {
+      "name": "ipython",
+      "version": "9.17.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "colorama==0.4.6@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'win32'"
+        },
+        {
+          "id": "ipython-pygments-lexers==1.1.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "jedi==0.20.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "matplotlib-inline==0.2.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pexpect==4.9.0@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten' and sys_platform != 'win32'"
+        },
+        {
+          "id": "prompt-toolkit==3.0.53@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "psutil==7.2.2@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'cygwin' and sys_platform != 'emscripten'"
+        },
+        {
+          "id": "pygments==2.21.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "stack-data==0.6.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "traitlets==5.16.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "isodate==0.7.2@registry+https://pypi.org/simple": {
+      "name": "isodate",
+      "version": "0.7.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "isort==8.0.1@registry+https://pypi.org/simple": {
+      "name": "isort",
+      "version": "8.0.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "itsdangerous==2.2.0@registry+https://pypi.org/simple": {
+      "name": "itsdangerous",
+      "version": "2.2.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "jaraco-classes==3.4.0@registry+https://pypi.org/simple": {
+      "name": "jaraco-classes",
+      "version": "3.4.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "more-itertools==11.1.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "jaraco-context==6.1.2@registry+https://pypi.org/simple": {
+      "name": "jaraco-context",
+      "version": "6.1.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "jaraco-functools==4.6.0@registry+https://pypi.org/simple": {
+      "name": "jaraco-functools",
+      "version": "4.6.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "more-itertools==11.1.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "jedi==0.20.0@registry+https://pypi.org/simple": {
+      "name": "jedi",
+      "version": "0.20.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "parso==0.8.7@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "jeepney==0.9.0@registry+https://pypi.org/simple": {
+      "name": "jeepney",
+      "version": "0.9.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "jh2==5.0.14@registry+https://pypi.org/simple": {
+      "name": "jh2",
+      "version": "5.0.14",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "jinja2==3.1.6@registry+https://pypi.org/simple": {
+      "name": "jinja2",
+      "version": "3.1.6",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "markupsafe==3.0.3@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "jiter==0.16.0@registry+https://pypi.org/simple": {
+      "name": "jiter",
+      "version": "0.16.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "joserfc==1.7.5@registry+https://pypi.org/simple": {
+      "name": "joserfc",
+      "version": "1.7.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "cryptography==50.0.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "jsonref==1.1.0@registry+https://pypi.org/simple": {
+      "name": "jsonref",
+      "version": "1.1.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "jsonschema-path==0.5.0@registry+https://pypi.org/simple": {
+      "name": "jsonschema-path",
+      "version": "0.5.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "attrs==26.1.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pathable==0.6.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyyaml==6.0.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "referencing==0.37.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "jsonschema-specifications==2025.9.1@registry+https://pypi.org/simple": {
+      "name": "jsonschema-specifications",
+      "version": "2025.9.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "referencing==0.37.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "jsonschema==4.26.0@registry+https://pypi.org/simple": {
+      "name": "jsonschema",
+      "version": "4.26.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "attrs==26.1.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "jsonschema-specifications==2025.9.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "referencing==0.37.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "rpds-py==2026.6.3@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "jupyter-client==8.10.0@registry+https://pypi.org/simple": {
+      "name": "jupyter-client",
+      "version": "8.10.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "jupyter-core==5.9.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-dateutil==2.9.0.post0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyzmq==27.2.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "tornado==6.5.8@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "traitlets==5.16.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "jupyter-core==5.9.1@registry+https://pypi.org/simple": {
+      "name": "jupyter-core",
+      "version": "5.9.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "platformdirs==4.11.6@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "traitlets==5.16.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "keyring==25.7.0@registry+https://pypi.org/simple": {
+      "name": "keyring",
+      "version": "25.7.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "jaraco-classes==3.4.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "jaraco-context==6.1.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "jaraco-functools==4.6.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "jeepney==0.9.0@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'linux'"
+        },
+        {
+          "id": "pywin32-ctypes==0.2.3@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'win32'"
+        },
+        {
+          "id": "secretstorage==3.5.0@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'linux'"
+        }
+      ]
+    },
+    "kiwisolver==1.5.1@registry+https://pypi.org/simple": {
+      "name": "kiwisolver",
+      "version": "1.5.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "llm-text-splitter:dev==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/llm-text-splitter": {
+      "name": "llm-text-splitter",
+      "version": "0.0.0.dev0",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/private/app/llm-text-splitter"
+      },
+      "kind": {
+        "group": "dev"
+      },
+      "dependencies": [
+        {
+          "id": "python-dotenv==1.2.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "streamlit==1.62.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "llm-text-splitter==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/llm-text-splitter": {
+      "name": "llm-text-splitter",
+      "version": "0.0.0.dev0",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/private/app/llm-text-splitter"
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "openai==3.6.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "openai-agents==0.22.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pydantic==2.13.5@registry+https://pypi.org/simple"
+        }
+      ],
+      "dependency_groups": [
+        {
+          "name": "dev",
+          "id": "llm-text-splitter:dev==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/llm-text-splitter"
+        }
+      ]
+    },
+    "lxml==6.1.2@registry+https://pypi.org/simple": {
+      "name": "lxml",
+      "version": "6.1.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "markdown-hybrid-search-mcp==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/app/markdown-hybrid-search-mcp": {
+      "name": "markdown-hybrid-search-mcp",
+      "version": "0.0.0.dev0",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/public/app/markdown-hybrid-search-mcp"
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "fastmcp==4.0.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "markdown-it-py==4.2.0@registry+https://pypi.org/simple": {
+      "name": "markdown-it-py",
+      "version": "4.2.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "mdurl==0.1.2@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "markupsafe==3.0.3@registry+https://pypi.org/simple": {
+      "name": "markupsafe",
+      "version": "3.0.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "matplotlib-inline==0.2.2@registry+https://pypi.org/simple": {
+      "name": "matplotlib-inline",
+      "version": "0.2.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "traitlets==5.16.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "matplotlib==3.11.1@registry+https://pypi.org/simple": {
+      "name": "matplotlib",
+      "version": "3.11.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "contourpy==1.3.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "cycler==0.12.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "fonttools==4.64.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "kiwisolver==1.5.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "numpy==2.5.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "packaging==26.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pillow==12.3.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyparsing==3.3.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-dateutil==2.9.0.post0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "mcp-types==2.1.1@registry+https://pypi.org/simple": {
+      "name": "mcp-types",
+      "version": "2.1.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "pydantic==2.13.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "mcp==2.1.1@registry+https://pypi.org/simple": {
+      "name": "mcp",
+      "version": "2.1.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "anyio==4.14.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "httpx2==2.12.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "jsonschema==4.26.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "mcp-types==2.1.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "opentelemetry-api==1.44.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pydantic==2.13.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyjwt[crypto]==2.13.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-multipart==0.0.32@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pywin32==312@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'win32'"
+        },
+        {
+          "id": "sse-starlette==3.4.8@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "starlette==1.6.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-inspection==0.4.4@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "uvicorn==0.52.4@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        }
+      ]
+    },
+    "mdurl==0.1.2@registry+https://pypi.org/simple": {
+      "name": "mdurl",
+      "version": "0.1.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "more-itertools==11.1.0@registry+https://pypi.org/simple": {
+      "name": "more-itertools",
+      "version": "11.1.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "msal-extensions==1.3.1@registry+https://pypi.org/simple": {
+      "name": "msal-extensions",
+      "version": "1.3.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "msal==1.38.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "msal==1.38.0@registry+https://pypi.org/simple": {
+      "name": "msal",
+      "version": "1.38.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "cryptography==50.0.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyjwt[crypto]==2.13.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "requests==2.34.2@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "msgpack==1.2.2@registry+https://pypi.org/simple": {
+      "name": "msgpack",
+      "version": "1.2.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "multidict==6.7.1@registry+https://pypi.org/simple": {
+      "name": "multidict",
+      "version": "6.7.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "music-flash-card-generator==0.0.0.dev0@virtual+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/music-flash-card-generator": {
+      "name": "music-flash-card-generator",
+      "version": "0.0.0.dev0",
+      "source": {
+        "virtual": "/recorded/python-endpoint/src/private/app/music-flash-card-generator"
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "ninja-syntax==1.7.2@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "mypy-extensions==1.1.0@registry+https://pypi.org/simple": {
+      "name": "mypy-extensions",
+      "version": "1.1.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "narwhals==2.25.0@registry+https://pypi.org/simple": {
+      "name": "narwhals",
+      "version": "2.25.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "nbgv-hatch-demo:dev@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/sample/nbgv-hatch-demo": {
+      "name": "nbgv-hatch-demo",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/sample/nbgv-hatch-demo"
+      },
+      "kind": {
+        "group": "dev"
+      },
+      "dependencies": [
+        {
+          "id": "hatch==1.18.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "nbgv-hatch-demo@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/sample/nbgv-hatch-demo": {
+      "name": "nbgv-hatch-demo",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/sample/nbgv-hatch-demo"
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "nbgv-python==2.1.0.dev1@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/lib/nbgv-python"
+        }
+      ],
+      "dependency_groups": [
+        {
+          "name": "dev",
+          "id": "nbgv-hatch-demo:dev@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/sample/nbgv-hatch-demo"
+        }
+      ]
+    },
+    "nbgv-python:dev==2.1.0.dev1@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/lib/nbgv-python": {
+      "name": "nbgv-python",
+      "version": "2.1.0.dev1",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/public/lib/nbgv-python"
+      },
+      "kind": {
+        "group": "dev"
+      },
+      "dependencies": [
+        {
+          "id": "hatchling==1.32.4@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pytest==9.1.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "nbgv-python==2.1.0.dev1@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/lib/nbgv-python": {
+      "name": "nbgv-python",
+      "version": "2.1.0.dev1",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/public/lib/nbgv-python"
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "packaging==26.3@registry+https://pypi.org/simple"
+        }
+      ],
+      "dependency_groups": [
+        {
+          "name": "dev",
+          "id": "nbgv-python:dev==2.1.0.dev1@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/lib/nbgv-python"
+        }
+      ]
+    },
+    "nest-asyncio2==1.7.2@registry+https://pypi.org/simple": {
+      "name": "nest-asyncio2",
+      "version": "1.7.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "ninja-syntax==1.7.2@registry+https://pypi.org/simple": {
+      "name": "ninja-syntax",
+      "version": "1.7.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "niquests==3.21.1@registry+https://pypi.org/simple": {
+      "name": "niquests",
+      "version": "3.21.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "charset-normalizer==3.5.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "urllib3-future==2.24.905@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "wassima==2.1.4@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'emscripten'"
+        }
+      ]
+    },
+    "numpy==2.5.2@registry+https://pypi.org/simple": {
+      "name": "numpy",
+      "version": "2.5.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "openai-agents==0.22.0@registry+https://pypi.org/simple": {
+      "name": "openai-agents",
+      "version": "0.22.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "griffelib==2.2.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "mcp==2.1.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "openai==3.6.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pydantic==2.13.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "requests==2.34.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "websockets==16.1.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "openai==3.6.0@registry+https://pypi.org/simple": {
+      "name": "openai",
+      "version": "3.6.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "anyio==4.14.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "httpx2==2.12.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "jiter==0.16.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pydantic==2.13.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "sniffio==1.3.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "openapi-pydantic==0.5.1@registry+https://pypi.org/simple": {
+      "name": "openapi-pydantic",
+      "version": "0.5.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "pydantic==2.13.5@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "opentelemetry-api==1.44.0@registry+https://pypi.org/simple": {
+      "name": "opentelemetry-api",
+      "version": "1.44.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "ortools==9.15.6755@registry+https://pypi.org/simple": {
+      "name": "ortools",
+      "version": "9.15.6755",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "absl-py==2.5.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "immutabledict==4.3.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "numpy==2.5.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pandas==3.0.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "protobuf==6.33.6@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "packaging==26.3@registry+https://pypi.org/simple": {
+      "name": "packaging",
+      "version": "26.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pandas==3.0.5@registry+https://pypi.org/simple": {
+      "name": "pandas",
+      "version": "3.0.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "numpy==2.5.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-dateutil==2.9.0.post0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "tzdata==2026.3@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'emscripten' or sys_platform == 'win32'"
+        }
+      ]
+    },
+    "parso==0.8.7@registry+https://pypi.org/simple": {
+      "name": "parso",
+      "version": "0.8.7",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pathable==0.6.0@registry+https://pypi.org/simple": {
+      "name": "pathable",
+      "version": "0.6.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pathspec==1.1.1@registry+https://pypi.org/simple": {
+      "name": "pathspec",
+      "version": "1.1.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pexpect==4.9.0@registry+https://pypi.org/simple": {
+      "name": "pexpect",
+      "version": "4.9.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "ptyprocess==0.7.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "pgvector==0.5.0@registry+https://pypi.org/simple": {
+      "name": "pgvector",
+      "version": "0.5.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pillow==12.3.0@registry+https://pypi.org/simple": {
+      "name": "pillow",
+      "version": "12.3.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "platformdirs==4.11.6@registry+https://pypi.org/simple": {
+      "name": "platformdirs",
+      "version": "4.11.6",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pluggy==1.6.0@registry+https://pypi.org/simple": {
+      "name": "pluggy",
+      "version": "1.6.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "prompt-toolkit==3.0.53@registry+https://pypi.org/simple": {
+      "name": "prompt-toolkit",
+      "version": "3.0.53",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "wcwidth==0.8.3@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "propcache==0.5.2@registry+https://pypi.org/simple": {
+      "name": "propcache",
+      "version": "0.5.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "protobuf==6.33.6@registry+https://pypi.org/simple": {
+      "name": "protobuf",
+      "version": "6.33.6",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "psutil==7.2.2@registry+https://pypi.org/simple": {
+      "name": "psutil",
+      "version": "7.2.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "psycopg-binary==3.3.5@registry+https://pypi.org/simple": {
+      "name": "psycopg-binary",
+      "version": "3.3.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "psycopg==3.3.5@registry+https://pypi.org/simple": {
+      "name": "psycopg",
+      "version": "3.3.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "tzdata==2026.3@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'win32'"
+        }
+      ],
+      "optional_dependencies": [
+        {
+          "name": "binary",
+          "id": "psycopg[binary]==3.3.5@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "psycopg[binary]==3.3.5@registry+https://pypi.org/simple": {
+      "name": "psycopg",
+      "version": "3.3.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": {
+        "extra": "binary"
+      },
+      "dependencies": [
+        {
+          "id": "psycopg==3.3.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "psycopg-binary==3.3.5@registry+https://pypi.org/simple",
+          "marker": "implementation_name != 'pypy'"
+        }
+      ]
+    },
+    "ptyprocess==0.7.0@registry+https://pypi.org/simple": {
+      "name": "ptyprocess",
+      "version": "0.7.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pure-eval==0.2.3@registry+https://pypi.org/simple": {
+      "name": "pure-eval",
+      "version": "0.2.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "py-key-value-aio==0.4.5@registry+https://pypi.org/simple": {
+      "name": "py-key-value-aio",
+      "version": "0.4.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "beartype==0.22.9@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ],
+      "optional_dependencies": [
+        {
+          "name": "filetree",
+          "id": "py-key-value-aio[filetree]==0.4.5@registry+https://pypi.org/simple"
+        },
+        {
+          "name": "keyring",
+          "id": "py-key-value-aio[keyring]==0.4.5@registry+https://pypi.org/simple"
+        },
+        {
+          "name": "memory",
+          "id": "py-key-value-aio[memory]==0.4.5@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "py-key-value-aio[filetree]==0.4.5@registry+https://pypi.org/simple": {
+      "name": "py-key-value-aio",
+      "version": "0.4.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": {
+        "extra": "filetree"
+      },
+      "dependencies": [
+        {
+          "id": "py-key-value-aio==0.4.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "aiofile==3.12.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "anyio==4.14.2@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "py-key-value-aio[keyring]==0.4.5@registry+https://pypi.org/simple": {
+      "name": "py-key-value-aio",
+      "version": "0.4.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": {
+        "extra": "keyring"
+      },
+      "dependencies": [
+        {
+          "id": "py-key-value-aio==0.4.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "keyring==25.7.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "py-key-value-aio[memory]==0.4.5@registry+https://pypi.org/simple": {
+      "name": "py-key-value-aio",
+      "version": "0.4.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": {
+        "extra": "memory"
+      },
+      "dependencies": [
+        {
+          "id": "py-key-value-aio==0.4.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "cachetools==7.1.8@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "pyarrow==25.0.1@registry+https://pypi.org/simple": {
+      "name": "pyarrow",
+      "version": "25.0.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pycparser==3.0@registry+https://pypi.org/simple": {
+      "name": "pycparser",
+      "version": "3.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pydantic-core==2.46.5@registry+https://pypi.org/simple": {
+      "name": "pydantic-core",
+      "version": "2.46.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "pydantic-settings==2.15.0@registry+https://pypi.org/simple": {
+      "name": "pydantic-settings",
+      "version": "2.15.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "pydantic==2.13.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-dotenv==1.2.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-inspection==0.4.4@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "pydantic==2.13.5@registry+https://pypi.org/simple": {
+      "name": "pydantic",
+      "version": "2.13.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "annotated-types==0.8.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pydantic-core==2.46.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-inspection==0.4.4@registry+https://pypi.org/simple"
+        }
+      ],
+      "optional_dependencies": [
+        {
+          "name": "email",
+          "id": "pydantic[email]==2.13.5@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "pydantic[email]==2.13.5@registry+https://pypi.org/simple": {
+      "name": "pydantic",
+      "version": "2.13.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": {
+        "extra": "email"
+      },
+      "dependencies": [
+        {
+          "id": "pydantic==2.13.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "email-validator==2.3.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "pydeck==0.9.3@registry+https://pypi.org/simple": {
+      "name": "pydeck",
+      "version": "0.9.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "jinja2==3.1.6@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "numpy==2.5.2@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "pydub==0.25.1@registry+https://pypi.org/simple": {
+      "name": "pydub",
+      "version": "0.25.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pygments==2.21.0@registry+https://pypi.org/simple": {
+      "name": "pygments",
+      "version": "2.21.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pyjwt==2.13.0@registry+https://pypi.org/simple": {
+      "name": "pyjwt",
+      "version": "2.13.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [],
+      "optional_dependencies": [
+        {
+          "name": "crypto",
+          "id": "pyjwt[crypto]==2.13.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "pyjwt[crypto]==2.13.0@registry+https://pypi.org/simple": {
+      "name": "pyjwt",
+      "version": "2.13.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": {
+        "extra": "crypto"
+      },
+      "dependencies": [
+        {
+          "id": "pyjwt==2.13.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "cryptography==50.0.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "pyparsing==3.3.2@registry+https://pypi.org/simple": {
+      "name": "pyparsing",
+      "version": "3.3.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pypdfium2==5.13.0@registry+https://pypi.org/simple": {
+      "name": "pypdfium2",
+      "version": "5.13.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pyperclip==1.11.0@registry+https://pypi.org/simple": {
+      "name": "pyperclip",
+      "version": "1.11.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pyproject-hooks==1.2.0@registry+https://pypi.org/simple": {
+      "name": "pyproject-hooks",
+      "version": "1.2.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pyrefly==1.2.0@registry+https://pypi.org/simple": {
+      "name": "pyrefly",
+      "version": "1.2.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pysnooper==1.2.3@registry+https://pypi.org/simple": {
+      "name": "pysnooper",
+      "version": "1.2.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pytest==9.1.1@registry+https://pypi.org/simple": {
+      "name": "pytest",
+      "version": "9.1.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "colorama==0.4.6@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'win32'"
+        },
+        {
+          "id": "iniconfig==2.3.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "packaging==26.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pluggy==1.6.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pygments==2.21.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "python-dateutil==2.9.0.post0@registry+https://pypi.org/simple": {
+      "name": "python-dateutil",
+      "version": "2.9.0.post0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "six==1.17.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "python-discovery==1.6.0@registry+https://pypi.org/simple": {
+      "name": "python-discovery",
+      "version": "1.6.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "filelock==3.32.5@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "python-dotenv==1.2.3@registry+https://pypi.org/simple": {
+      "name": "python-dotenv",
+      "version": "1.2.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "python-multipart==0.0.32@registry+https://pypi.org/simple": {
+      "name": "python-multipart",
+      "version": "0.0.32",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "python-slugify==8.0.4@registry+https://pypi.org/simple": {
+      "name": "python-slugify",
+      "version": "8.0.4",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "text-unidecode==1.3@registry+https://pypi.org/simple"
+        }
+      ],
+      "optional_dependencies": [
+        {
+          "name": "unidecode",
+          "id": "python-slugify[unidecode]==8.0.4@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "python-slugify[unidecode]==8.0.4@registry+https://pypi.org/simple": {
+      "name": "python-slugify",
+      "version": "8.0.4",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": {
+        "extra": "unidecode"
+      },
+      "dependencies": [
+        {
+          "id": "python-slugify==8.0.4@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "unidecode==1.4.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "pytokens==0.4.1@registry+https://pypi.org/simple": {
+      "name": "pytokens",
+      "version": "0.4.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pywin32-ctypes==0.2.3@registry+https://pypi.org/simple": {
+      "name": "pywin32-ctypes",
+      "version": "0.2.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pywin32==312@registry+https://pypi.org/simple": {
+      "name": "pywin32",
+      "version": "312",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pyyaml==6.0.3@registry+https://pypi.org/simple": {
+      "name": "pyyaml",
+      "version": "6.0.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "pyzmq==27.2.0@registry+https://pypi.org/simple": {
+      "name": "pyzmq",
+      "version": "27.2.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "cffi==2.1.1@registry+https://pypi.org/simple",
+          "marker": "implementation_name == 'pypy'"
+        }
+      ]
+    },
+    "qh3==1.9.4@registry+https://pypi.org/simple": {
+      "name": "qh3",
+      "version": "1.9.4",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "rag-postgresql-openai:dev==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/rag-postgresql-openai": {
+      "name": "rag-postgresql-openai",
+      "version": "0.0.0.dev0",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/private/app/rag-postgresql-openai"
+      },
+      "kind": {
+        "group": "dev"
+      },
+      "dependencies": [
+        {
+          "id": "python-dotenv==1.2.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "streamlit==1.62.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "rag-postgresql-openai==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/rag-postgresql-openai": {
+      "name": "rag-postgresql-openai",
+      "version": "0.0.0.dev0",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/private/app/rag-postgresql-openai"
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "beautifulsoup4==4.15.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "cohere==7.1.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "html2text==2025.4.15@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "lxml==6.1.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "openai==3.6.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "openai-agents==0.22.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pgvector==0.5.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "psycopg[binary]==3.3.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pydantic==2.13.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-slugify[unidecode]==8.0.4@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "tiktoken==0.14.0@registry+https://pypi.org/simple"
+        }
+      ],
+      "dependency_groups": [
+        {
+          "name": "dev",
+          "id": "rag-postgresql-openai:dev==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/rag-postgresql-openai"
+        }
+      ]
+    },
+    "referencing==0.37.0@registry+https://pypi.org/simple": {
+      "name": "referencing",
+      "version": "0.37.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "attrs==26.1.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "rpds-py==2026.6.3@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "regex==2026.9.3@registry+https://pypi.org/simple": {
+      "name": "regex",
+      "version": "2026.9.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "requests==2.34.2@registry+https://pypi.org/simple": {
+      "name": "requests",
+      "version": "2.34.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "certifi==2026.7.22@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "charset-normalizer==3.5.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "idna==3.19@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "urllib3==2.7.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "rfc8785==0.1.4@registry+https://pypi.org/simple": {
+      "name": "rfc8785",
+      "version": "0.1.4",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "rich-rst==2.1.0@registry+https://pypi.org/simple": {
+      "name": "rich-rst",
+      "version": "2.1.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "pygments==2.21.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "rich==15.0.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "rich==15.0.0@registry+https://pypi.org/simple": {
+      "name": "rich",
+      "version": "15.0.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "markdown-it-py==4.2.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pygments==2.21.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "rpds-py==2026.6.3@registry+https://pypi.org/simple": {
+      "name": "rpds-py",
+      "version": "2026.6.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "ruff==0.16.10@registry+https://pypi.org/simple": {
+      "name": "ruff",
+      "version": "0.16.10",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "seaborn==0.13.2@registry+https://pypi.org/simple": {
+      "name": "seaborn",
+      "version": "0.13.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "matplotlib==3.11.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "numpy==2.5.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pandas==3.0.5@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "secretstorage==3.5.0@registry+https://pypi.org/simple": {
+      "name": "secretstorage",
+      "version": "3.5.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "cryptography==50.0.1@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'linux'"
+        },
+        {
+          "id": "jeepney==0.9.0@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'linux'"
+        }
+      ]
+    },
+    "shellingham==1.5.4@registry+https://pypi.org/simple": {
+      "name": "shellingham",
+      "version": "1.5.4",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "six==1.17.0@registry+https://pypi.org/simple": {
+      "name": "six",
+      "version": "1.17.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "smmap==5.0.3@registry+https://pypi.org/simple": {
+      "name": "smmap",
+      "version": "5.0.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "sniffio==1.3.1@registry+https://pypi.org/simple": {
+      "name": "sniffio",
+      "version": "1.3.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "soupsieve==2.9.2@registry+https://pypi.org/simple": {
+      "name": "soupsieve",
+      "version": "2.9.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "sse-starlette==3.4.8@registry+https://pypi.org/simple": {
+      "name": "sse-starlette",
+      "version": "3.4.8",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "anyio==4.14.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "starlette==1.6.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "stack-data==0.6.3@registry+https://pypi.org/simple": {
+      "name": "stack-data",
+      "version": "0.6.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "asttokens==3.0.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "executing==2.2.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pure-eval==0.2.3@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "starlette==1.6.0@registry+https://pypi.org/simple": {
+      "name": "starlette",
+      "version": "1.6.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "anyio==4.14.2@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "streamlit==1.62.0@registry+https://pypi.org/simple": {
+      "name": "streamlit",
+      "version": "1.62.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "altair==6.2.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "anyio==4.14.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "blinker==1.9.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "click==8.5.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "httptools==0.8.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "itsdangerous==2.2.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "numpy==2.5.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "packaging==26.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pandas==3.0.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pillow==12.3.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "protobuf==6.33.6@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyarrow==25.0.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pydeck==0.9.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-multipart==0.0.32@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "requests==2.34.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "starlette==1.6.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "toml==0.10.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "uvicorn==0.52.4@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "watchdog==6.0.0@registry+https://pypi.org/simple",
+          "marker": "sys_platform != 'darwin'"
+        },
+        {
+          "id": "websockets==16.1.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "supermemo-mcp==0.0.0.dev0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/supermemo-mcp": {
+      "name": "supermemo-mcp",
+      "version": "0.0.0.dev0",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/private/app/supermemo-mcp"
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "beautifulsoup4==4.15.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "fastmcp==4.0.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "psutil==7.2.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "uiautomation==2.0.29@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "text-unidecode==1.3@registry+https://pypi.org/simple": {
+      "name": "text-unidecode",
+      "version": "1.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "three-workflow-delivery-v3:dev==0.1.0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/lib/three-workflow-delivery-v3": {
+      "name": "three-workflow-delivery-v3",
+      "version": "0.1.0",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/public/lib/three-workflow-delivery-v3"
+      },
+      "kind": {
+        "group": "dev"
+      },
+      "dependencies": [
+        {
+          "id": "pytest==9.1.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "three-workflow-delivery-v3==0.1.0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/lib/three-workflow-delivery-v3": {
+      "name": "three-workflow-delivery-v3",
+      "version": "0.1.0",
+      "source": {
+        "editable": "/recorded/python-endpoint/src/public/lib/three-workflow-delivery-v3"
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "nbgv-python==2.1.0.dev1@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/lib/nbgv-python"
+        },
+        {
+          "id": "packaging==26.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pyyaml==6.0.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "rfc8785==0.1.4@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "tomli-w==1.2.0@registry+https://pypi.org/simple"
+        }
+      ],
+      "dependency_groups": [
+        {
+          "name": "dev",
+          "id": "three-workflow-delivery-v3:dev==0.1.0@editable+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/public/lib/three-workflow-delivery-v3"
+        }
+      ]
+    },
+    "tiktoken==0.14.0@registry+https://pypi.org/simple": {
+      "name": "tiktoken",
+      "version": "0.14.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "regex==2026.9.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "requests==2.34.2@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "tinycss2==1.5.1@registry+https://pypi.org/simple": {
+      "name": "tinycss2",
+      "version": "1.5.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "webencodings==0.6.1@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "tokenizers==0.23.1@registry+https://pypi.org/simple": {
+      "name": "tokenizers",
+      "version": "0.23.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "huggingface-hub==1.29.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "toml==0.10.2@registry+https://pypi.org/simple": {
+      "name": "toml",
+      "version": "0.10.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "tomli-w==1.2.0@registry+https://pypi.org/simple": {
+      "name": "tomli-w",
+      "version": "1.2.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "tomlkit==0.15.1@registry+https://pypi.org/simple": {
+      "name": "tomlkit",
+      "version": "0.15.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "tornado==6.5.8@registry+https://pypi.org/simple": {
+      "name": "tornado",
+      "version": "6.5.8",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "tqdm==4.70.0@registry+https://pypi.org/simple": {
+      "name": "tqdm",
+      "version": "4.70.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "colorama==0.4.6@registry+https://pypi.org/simple",
+          "marker": "sys_platform == 'win32'"
+        }
+      ]
+    },
+    "traitlets==5.16.1@registry+https://pypi.org/simple": {
+      "name": "traitlets",
+      "version": "5.16.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "transcribe==0.0.0.dev0@virtual+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis/src/private/app/transcribe": {
+      "name": "transcribe",
+      "version": "0.0.0.dev0",
+      "source": {
+        "virtual": "/recorded/python-endpoint/src/private/app/transcribe"
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "audioop-lts==0.2.2@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "azure-identity==1.25.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "openai==3.6.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "pydub==0.25.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-dotenv==1.2.3@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "trove-classifiers==2026.6.1.19@registry+https://pypi.org/simple": {
+      "name": "trove-classifiers",
+      "version": "2026.6.1.19",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "truststore==0.10.4@registry+https://pypi.org/simple": {
+      "name": "truststore",
+      "version": "0.10.4",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "typeguard==4.6.0@registry+https://pypi.org/simple": {
+      "name": "typeguard",
+      "version": "4.6.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "types-requests==2.33.0.20260712@registry+https://pypi.org/simple": {
+      "name": "types-requests",
+      "version": "2.33.0.20260712",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "urllib3==2.7.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "typing-extensions==4.16.0@registry+https://pypi.org/simple": {
+      "name": "typing-extensions",
+      "version": "4.16.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "typing-inspection==0.4.4@registry+https://pypi.org/simple": {
+      "name": "typing-inspection",
+      "version": "0.4.4",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "typing-extensions==4.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "tzdata==2026.3@registry+https://pypi.org/simple": {
+      "name": "tzdata",
+      "version": "2026.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "uiautomation==2.0.29@registry+https://pypi.org/simple": {
+      "name": "uiautomation",
+      "version": "2.0.29",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "comtypes==1.4.16@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "uncalled-for==0.4.0@registry+https://pypi.org/simple": {
+      "name": "uncalled-for",
+      "version": "0.4.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "unidecode==1.4.0@registry+https://pypi.org/simple": {
+      "name": "unidecode",
+      "version": "1.4.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "urllib3-future==2.24.905@registry+https://pypi.org/simple": {
+      "name": "urllib3-future",
+      "version": "2.24.905",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "h11==0.16.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "jh2==5.0.14@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "qh3==1.9.4@registry+https://pypi.org/simple",
+          "marker": "(platform_machine == 'AMD64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'ARM64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'arm64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'armv7l' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'i686' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'ppc64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'ppc64le' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'riscv64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'riscv64gc' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 's390x' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'x86' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'AMD64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'ARM64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'arm64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'armv7l' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'i686' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'ppc64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'ppc64le' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'riscv64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'riscv64gc' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 's390x' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'AMD64' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'ARM64' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'arm64' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'armv7l' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'i686' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'ppc64' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'ppc64le' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'riscv64' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'riscv64gc' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 's390x' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'x86' and platform_python_implementation == 'CPython' and sys_platform == 'win32') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'win32')"
+        }
+      ]
+    },
+    "urllib3==2.7.0@registry+https://pypi.org/simple": {
+      "name": "urllib3",
+      "version": "2.7.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "userpath==1.9.2@registry+https://pypi.org/simple": {
+      "name": "userpath",
+      "version": "1.9.2",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "click==8.5.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "uv==0.12.8@registry+https://pypi.org/simple": {
+      "name": "uv",
+      "version": "0.12.8",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "uvicorn==0.52.4@registry+https://pypi.org/simple": {
+      "name": "uvicorn",
+      "version": "0.52.4",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "click==8.5.0@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "h11==0.16.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "virtualenv==21.7.7@registry+https://pypi.org/simple": {
+      "name": "virtualenv",
+      "version": "21.7.7",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "distlib==0.4.3@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "filelock==3.32.5@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "platformdirs==4.11.6@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "python-discovery==1.6.0@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "wassima==2.1.4@registry+https://pypi.org/simple": {
+      "name": "wassima",
+      "version": "2.1.4",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "watchdog==6.0.0@registry+https://pypi.org/simple": {
+      "name": "watchdog",
+      "version": "6.0.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "watchfiles==1.2.0@registry+https://pypi.org/simple": {
+      "name": "watchfiles",
+      "version": "1.2.0",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "anyio==4.14.2@registry+https://pypi.org/simple"
+        }
+      ]
+    },
+    "wcwidth==0.8.3@registry+https://pypi.org/simple": {
+      "name": "wcwidth",
+      "version": "0.8.3",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "webencodings==0.6.1@registry+https://pypi.org/simple": {
+      "name": "webencodings",
+      "version": "0.6.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "websockets==16.1.1@registry+https://pypi.org/simple": {
+      "name": "websockets",
+      "version": "16.1.1",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": []
+    },
+    "workspace+/workspace/workflow-v3-node-ci-buffer-recovery/carrier/python-native-qualification-packet3/generation1/basis": {
+      "kind": "workspace",
+      "path": "/recorded/python-endpoint",
+      "dependencies": []
+    },
+    "yarl==1.24.5@registry+https://pypi.org/simple": {
+      "name": "yarl",
+      "version": "1.24.5",
+      "source": {
+        "registry": {
+          "url": "https://pypi.org/simple"
+        }
+      },
+      "kind": "package",
+      "dependencies": [
+        {
+          "id": "idna==3.19@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "multidict==6.7.1@registry+https://pypi.org/simple"
+        },
+        {
+          "id": "propcache==0.5.2@registry+https://pypi.org/simple"
+        }
+      ]
+    }
+  }
+}

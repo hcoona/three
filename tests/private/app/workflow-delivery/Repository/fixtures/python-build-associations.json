@@ -1,0 +1,212 @@
+{
+  "workspace_root": "/recorded/python-endpoint",
+  "members": [
+    {
+      "name": "azure-document-intelligence-lab",
+      "directory": "/recorded/python-endpoint/src/lab/azure-document-intelligence-lab"
+    },
+    {
+      "name": "azureauth-credprovider-keyring",
+      "directory": "/recorded/python-endpoint/src/private/app/azureauth-credprovider/python"
+    },
+    {
+      "name": "factorio-cycle-calculator",
+      "directory": "/recorded/python-endpoint/src/private/app/factorio-cycle-calculator"
+    },
+    {
+      "name": "git-commit-heatmap",
+      "directory": "/recorded/python-endpoint/src/private/app/git-commit-heatmap"
+    },
+    {
+      "name": "hcoona-release-smoke-python",
+      "directory": "/recorded/python-endpoint/src/public/lib/hcoona-release-smoke-python"
+    },
+    {
+      "name": "hcoona-three-monorepo",
+      "directory": "/recorded/python-endpoint"
+    },
+    {
+      "name": "html-sm-processor",
+      "directory": "/recorded/python-endpoint/src/private/app/html-sm-processor"
+    },
+    {
+      "name": "llm-text-splitter",
+      "directory": "/recorded/python-endpoint/src/private/app/llm-text-splitter"
+    },
+    {
+      "name": "markdown-hybrid-search-mcp",
+      "directory": "/recorded/python-endpoint/src/public/app/markdown-hybrid-search-mcp"
+    },
+    {
+      "name": "music-flash-card-generator",
+      "directory": "/recorded/python-endpoint/src/private/app/music-flash-card-generator"
+    },
+    {
+      "name": "nbgv-hatch-demo",
+      "directory": "/recorded/python-endpoint/src/sample/nbgv-hatch-demo"
+    },
+    {
+      "name": "nbgv-python",
+      "directory": "/recorded/python-endpoint/src/public/lib/nbgv-python"
+    },
+    {
+      "name": "rag-postgresql-openai",
+      "directory": "/recorded/python-endpoint/src/private/app/rag-postgresql-openai"
+    },
+    {
+      "name": "supermemo-mcp",
+      "directory": "/recorded/python-endpoint/src/private/app/supermemo-mcp"
+    },
+    {
+      "name": "three-workflow-delivery-v3",
+      "directory": "/recorded/python-endpoint/src/public/lib/three-workflow-delivery-v3"
+    },
+    {
+      "name": "transcribe",
+      "directory": "/recorded/python-endpoint/src/private/app/transcribe"
+    }
+  ],
+  "build_requirements": [
+    {
+      "directory": "/recorded/python-endpoint/src/lab/azure-document-intelligence-lab",
+      "requirements": [
+        {
+          "name": "hatchling",
+          "specifier": ">=1.24",
+          "index": null,
+          "conflict": null
+        },
+        {
+          "name": "nbgv-python",
+          "editable": "/recorded/python-endpoint/src/public/lib/nbgv-python"
+        }
+      ]
+    },
+    {
+      "directory": "/recorded/python-endpoint/src/private/app/azureauth-credprovider/python",
+      "requirements": [
+        {
+          "name": "hatchling",
+          "specifier": ">=1.24.2",
+          "index": null,
+          "conflict": null
+        },
+        {
+          "name": "nbgv-python",
+          "editable": "/recorded/python-endpoint/src/public/lib/nbgv-python"
+        }
+      ]
+    },
+    {
+      "directory": "/recorded/python-endpoint/src/private/app/factorio-cycle-calculator",
+      "requirements": [
+        {
+          "name": "hatchling",
+          "specifier": ">=1.24.2",
+          "index": null,
+          "conflict": null
+        }
+      ]
+    },
+    {
+      "directory": "/recorded/python-endpoint/src/private/app/html-sm-processor",
+      "requirements": [
+        {
+          "name": "hatchling",
+          "index": null,
+          "conflict": null
+        }
+      ]
+    },
+    {
+      "directory": "/recorded/python-endpoint/src/private/app/llm-text-splitter",
+      "requirements": [
+        {
+          "name": "hatchling",
+          "index": null,
+          "conflict": null
+        }
+      ]
+    },
+    {
+      "directory": "/recorded/python-endpoint/src/private/app/rag-postgresql-openai",
+      "requirements": [
+        {
+          "name": "hatchling",
+          "index": null,
+          "conflict": null
+        }
+      ]
+    },
+    {
+      "directory": "/recorded/python-endpoint/src/private/app/supermemo-mcp",
+      "requirements": [
+        {
+          "name": "hatchling",
+          "index": null,
+          "conflict": null
+        }
+      ]
+    },
+    {
+      "directory": "/recorded/python-endpoint/src/public/app/markdown-hybrid-search-mcp",
+      "requirements": [
+        {
+          "name": "hatchling",
+          "index": null,
+          "conflict": null
+        }
+      ]
+    },
+    {
+      "directory": "/recorded/python-endpoint/src/public/lib/hcoona-release-smoke-python",
+      "requirements": [
+        {
+          "name": "hatchling",
+          "specifier": "==1.32.4",
+          "index": null,
+          "conflict": null
+        },
+        {
+          "name": "nbgv-python",
+          "editable": "/recorded/python-endpoint/src/public/lib/nbgv-python"
+        }
+      ]
+    },
+    {
+      "directory": "/recorded/python-endpoint/src/public/lib/nbgv-python",
+      "requirements": [
+        {
+          "name": "hatchling",
+          "index": null,
+          "conflict": null
+        }
+      ]
+    },
+    {
+      "directory": "/recorded/python-endpoint/src/public/lib/three-workflow-delivery-v3",
+      "requirements": [
+        {
+          "name": "hatchling",
+          "index": null,
+          "conflict": null
+        }
+      ]
+    },
+    {
+      "directory": "/recorded/python-endpoint/src/sample/nbgv-hatch-demo",
+      "requirements": [
+        {
+          "name": "hatchling",
+          "specifier": ">=1.24",
+          "index": null,
+          "conflict": null
+        },
+        {
+          "name": "nbgv-python",
+          "editable": "/recorded/python-endpoint/src/public/lib/nbgv-python"
+        }
+      ]
+    }
+  ]
+}

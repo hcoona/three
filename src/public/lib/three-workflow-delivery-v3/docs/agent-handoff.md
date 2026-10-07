@@ -22,8 +22,12 @@ NuGet checks, and collects every required result without replanning. Ordinary
 Windows Debug qualification is recorded in
 [PR #1054](https://github.com/hcoona/three/pull/1054). The [native Python planning-fact contract](./middle-level-design.md#native-python-planning-facts)
 selects the next extraction boundary. Passive extraction, the pinned Rust
-supplement and ordered configuration preflight have controlled unit boundaries;
-complete fact assembly, native qualification and execution/caller mapping remain
+supplement, ordered configuration preflight, metadata adaptation and operation
+dependency projection have controlled unit boundaries. The
+[primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
+qualifies the pinned ordered helper composition; its campaign is stopped and
+both unused diagnostic reserves expired. Complete fact assembly, native caller
+qualification and execution/caller mapping remain
 pending. Other ecosystem execution cutover and
 Release remain pending. The
 [private application's entry](../../../../private/app/workflow-delivery/README.md)

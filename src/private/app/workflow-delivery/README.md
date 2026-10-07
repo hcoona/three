@@ -54,7 +54,10 @@ interpret ecosystem manifests, dependency specifiers or version inheritance.
 
 The Python passive extractor returns declared build strings and maintained
 plugin coordinates. The pinned Rust supplement and ordered configuration
-preflight have controlled unit boundaries. Complete fact assembly, native
+preflight have controlled unit boundaries. Metadata adaptation and operation
+dependency projection retain native IDs, dimensions and build-source associations.
+The [primitive Linux observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-planning.md#primitive-native-observation)
+qualifies the pinned helper boundary; complete fact assembly, native caller
 qualification and caller mapping remain pending under the
 [planning contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-planning-facts).
 
@@ -134,9 +137,19 @@ the helper-owned lock fixes transitive dependencies. From its directory, run
 The existing Ubuntu Python CI job performs those source checks when the passive
 helper test root is selected. Pure parsing/admission/transport tests and
 controlled C# command responses do not qualify actual native workspace,
-interpreter, lowering, metadata or effects. A concrete accepted native protocol,
-complete endpoint/activity/closure assembly and Python caller cutover remain
-pending; there is no Python planning command or support claim yet.
+interpreter, lowering, metadata or effects. The separately retained primitive
+observation qualifies the pinned ordered helper composition on its Linux host.
+Complete endpoint/activity/ownership assembly and Python caller cutover remain
+pending; there is no Python planning command or complete integration claim yet.
+
+`PythonMetadataReader` consumes the pinned preview schema, structured sources,
+opaque resolution IDs and ordinary/group/extra edges. It rejects a different
+workspace, environment/script output, conflicts and unresolved graph identities.
+`PythonDependencyProjection` joins lowered local build paths to those native
+members and consumes native marker/group answers for a finite operation union.
+Build-plugin ordinary/extra legs exclude development groups. Cycles terminate
+without hiding reachable producers. These components do not yet collect native
+activity answers, assign committed ownership, expand checks or replace callers.
 
 ### PNPM Graph Component
 
