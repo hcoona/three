@@ -4,6 +4,7 @@
     <CurrentTargetFramework>net10.0</CurrentTargetFramework>
     <CurrentWpfTargetFramework>net10.0-windows</CurrentWpfTargetFramework>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <TestingPlatformShowTestsFailure Condition="'$(TestingPlatformShowTestsFailure)' == ''">true</TestingPlatformShowTestsFailure>
     <ProduceReferenceAssembly Condition="'$(MSBuildProjectExtension)' == '.csproj'">true</ProduceReferenceAssembly>
     <Deterministic>true</Deterministic>
     <RestorePackagesWithLockFile Condition="'$(RestorePackagesWithLockFile)' == '' and '$(MSBuildProjectExtension)' != '.proj'">true</RestorePackagesWithLockFile>
