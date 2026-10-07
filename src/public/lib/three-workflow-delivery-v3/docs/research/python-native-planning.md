@@ -4,13 +4,13 @@
 
 This source assessment supports the next Python CI integration under the
 [implementation plan](../migration-strategy.md#native-facts-and-first-supported-shapes).
-It identifies the native facts available at the repository's UV 0.12.22 pin and a
+It identifies the native facts available at the repository's UV 0.12.23 pin and a
 specific missing relation. It is not an accepted reader, complete Python graph,
 implementation choice or runtime qualification.
 
 The source pin is UV commit
-[`70fe1196a546e49148a73b1c592b2f74c33af80e`][uv-pin]. Repository `mise.toml`
-selects 0.12.22; the inspected locked tool reports that version. Bare PATH's
+[`46b84fd0bfec23b72f29e8e2185ba68a65052f48`][uv-pin]. Repository `mise.toml`
+selects 0.12.23; the inspected locked tool reports that version. Bare PATH's
 0.12.19 is not the repository authority. No workspace evaluation, resolver,
 installation, backend hook or build was executed for this assessment. Inspection
 used public source, existing repository files and tool version/help output.
@@ -22,6 +22,12 @@ resolution graph with workspace members, native source coordinates, dependencies
 markers, extras and groups. The [serializer][metadata-source] emits member
 names, absolute paths and node IDs, plus structured source kinds. IDs are opaque
 join keys; parsing their readable spelling would invent another source decoder.
+
+The current [exporter construction][metadata-construction] derives workspace
+member paths and reachability from packages recorded in the native lock. The
+[command][metadata-command] can use lockfile-based workspace discovery when frozen.
+These are source findings, not observed output or proof of complete source inputs.
+The synchronized lock at each exact endpoint remains a planning prerequisite.
 
 Both `workspace metadata` and `tree --format json` are experimental at this pin.
 The metadata schema reports `preview`; UV warns that these interfaces can change
@@ -89,7 +95,7 @@ inventory.
 
 UV [labels][uv-versioning] its component crates internal and unstable. Public Rust
 exports do not establish a supported external integration or compatibility
-promise. The inspected source declares Rust 1.97.0 and component version 0.0.89.
+promise. The inspected source declares Rust 1.97.0 and component version 0.0.90.
 A supplement would add a real Rust preparation dependency alongside Python
 requirement extraction. Neither compilation, runtime availability nor platform
 feasibility has been established here.
@@ -122,12 +128,14 @@ interfaces and omissions; an independent evidence reviewer evaluates the result.
 The next Python integration review is the fallback event. Keep immutable source
 findings separate from later operation observations and support claims.
 
-[uv-pin]: https://github.com/astral-sh/uv/tree/70fe1196a546e49148a73b1c592b2f74c33af80e
-[metadata-doc]: https://github.com/astral-sh/uv/blob/70fe1196a546e49148a73b1c592b2f74c33af80e/docs/reference/internals/metadata.md#L3-L35
-[metadata-source]: https://github.com/astral-sh/uv/blob/70fe1196a546e49148a73b1c592b2f74c33af80e/crates/uv-lock/src/lock/export/metadata.rs
+[uv-pin]: https://github.com/astral-sh/uv/tree/46b84fd0bfec23b72f29e8e2185ba68a65052f48
+[metadata-doc]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/docs/reference/internals/metadata.md#L3-L35
+[metadata-source]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-lock/src/lock/export/metadata.rs
+[metadata-construction]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-lock/src/lock/export/metadata.rs#L1255-L1305
+[metadata-command]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/workspace/metadata.rs#L77-L107
 [smoke-manifest]: https://github.com/hcoona/three/blob/48539dd209a5247b86b7c7e28bfce405e15a0c7c/src/public/lib/hcoona-release-smoke-python/pyproject.toml
 [sample-manifest]: https://github.com/hcoona/three/blob/48539dd209a5247b86b7c7e28bfce405e15a0c7c/src/sample/nbgv-hatch-demo/pyproject.toml
-[build-sources]: https://github.com/astral-sh/uv/blob/70fe1196a546e49148a73b1c592b2f74c33af80e/docs/concepts/projects/dependencies.md#L800-L838
-[build-lowering]: https://github.com/astral-sh/uv/blob/70fe1196a546e49148a73b1c592b2f74c33af80e/crates/uv-distribution/src/metadata/build_requires.rs#L18-L168
+[build-sources]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/docs/concepts/projects/dependencies.md#L800-L838
+[build-lowering]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-distribution/src/metadata/build_requires.rs#L18-L168
 [pypa-build]: https://github.com/pypa/build/blob/bd889569a1b9e2e7722682378c2d0cec469166a2/src/build/_builder.py#L199-L226
-[uv-versioning]: https://github.com/astral-sh/uv/blob/70fe1196a546e49148a73b1c592b2f74c33af80e/docs/reference/policies/versioning.md#L14-L28
+[uv-versioning]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/docs/reference/policies/versioning.md#L14-L28
