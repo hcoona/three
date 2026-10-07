@@ -14,11 +14,8 @@ class UnsupportedContextError(ValueError):
     """Report physical request guards without source values."""
 
 
-def inspect_project(directory: Path) -> dict[str, object]:
-    """Keep native strings opaque without backend or generator execution."""
-    root = directory.resolve(strict=True)
-    with (root / "pyproject.toml").open("rb") as stream:
-        document = tomllib.load(stream)
+def _guard_uv_configuration(document: dict) -> None:
+    """Check physical table shapes without interpreting native settings."""
     tool = document.get("tool", {})
     if not isinstance(tool, dict):
         message = "The tool table must be a table."
@@ -30,6 +27,30 @@ def inspect_project(directory: Path) -> dict[str, object]:
     if set(uv) - {"workspace", "sources"}:
         message = "The requested UV settings need native adaptation."
         raise UnsupportedContextError(message)
+
+
+def inspect_configuration(directories: list[Path]) -> dict[str, object]:
+    """Preflight supplied contexts without native extraction."""
+    inputs = []
+    for directory in directories:
+        root = directory.resolve(strict=True)
+        manifest = root / "pyproject.toml"
+        if str(manifest) in inputs:
+            message = "Configuration contexts must be distinct."
+            raise UnsupportedContextError(message)
+        with manifest.open("rb") as stream:
+            _guard_uv_configuration(tomllib.load(stream))
+        inputs.append(str(manifest))
+    return {"configuration_inputs": inputs}
+
+
+def inspect_project(directory: Path) -> dict[str, object]:
+    """Keep native strings opaque without backend or generator execution."""
+    root = directory.resolve(strict=True)
+    with (root / "pyproject.toml").open("rb") as stream:
+        document = tomllib.load(stream)
+    _guard_uv_configuration(document)
+    tool = document.get("tool", {})
 
     requirements = None
     if "build-system" in document:
@@ -76,12 +97,19 @@ def inspect_project(directory: Path) -> dict[str, object]:
 def main() -> int:
     """Return one complete response or a sanitized terminal diagnostic."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=Path)
+    parser.add_argument("--configuration-only", action="store_true")
+    parser.add_argument("directory", type=Path, nargs="+")
     arguments = parser.parse_args()
+    if not arguments.configuration_only and len(arguments.directory) != 1:
+        parser.error("Project extraction requires one directory.")
     try:
         # Preserve native outcomes without forwarding source-valued warnings.
         with warnings.catch_warnings(record=True):
-            response = inspect_project(arguments.directory)
+            response = (
+                inspect_configuration(arguments.directory)
+                if arguments.configuration_only
+                else inspect_project(arguments.directory[0])
+            )
     except UnsupportedContextError as error:
         print(f"Unsupported Python context: {error}", file=sys.stderr)  # noqa: T201
         return 1

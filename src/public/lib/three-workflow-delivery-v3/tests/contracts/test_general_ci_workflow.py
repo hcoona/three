@@ -23,6 +23,13 @@ if TYPE_CHECKING:
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 CHILD_FAILURE = 73
+PYTHON_NATIVE_ROOT = "tests/private/app/workflow-delivery/Native/Python"
+PYTHON_NATIVE_DIRECTORY = "src/private/app/workflow-delivery/Native/Python/uv"
+PYTHON_NATIVE_CONDITION = (
+    "success() && !cancelled() && steps.scope.outputs.run == 'true' "
+    "&& contains(fromJson(needs.scope.outputs.python_roots), "
+    f"'{PYTHON_NATIVE_ROOT}')"
+)
 NODE_PACKAGE_DIR = "src/public/lib/hexo-renderer-asciidoc"
 NODE_RETAINED = [NODE_PACKAGE_DIR, "src/retained"]
 NODE_ADOPTED = (
@@ -87,6 +94,7 @@ def _required_step(scope: dict[str, Any]) -> None:
         "true",
         "success()",
         "${{ success() }}",
+        PYTHON_NATIVE_CONDITION,
         "success() && !cancelled() && steps.scope.outputs.run == 'true'",
         (
             "success() && !cancelled() && steps.scope.outputs.run == 'true' "
@@ -181,6 +189,8 @@ def _commands(tmp_path: Path, *, missing: str | None = None) -> dict[str, str]:
         "uv",
         "hk",
         "python",
+        "rustup",
+        "cargo",
     }:
         if name != missing:
             executable(tools / name, COMMAND_RECORDER)
@@ -204,7 +214,10 @@ def _observations(env: dict[str, str]) -> list[dict[str, Any]]:
         else []
     )
     for observation in observations:
-        assert Path(observation["cwd"]) == log.parent
+        expected = log.parent
+        if observation["command"][0] in {"rustup", "cargo"}:
+            expected /= PYTHON_NATIVE_DIRECTORY
+        assert Path(observation["cwd"]) == expected
     return observations
 
 
@@ -234,6 +247,10 @@ def _run_bash_steps(
                 "needs.scope.outputs.python_packages": env.get(
                     "SELECTED_PACKAGES",
                     _bindings(tmp_path)["needs.scope.outputs.python_packages"],
+                ),
+                "needs.scope.outputs.python_roots": env.get(
+                    "SELECTED_PYTHON_ROOTS",
+                    _bindings(tmp_path)["needs.scope.outputs.python_roots"],
                 ),
             },
             workflow=workflow,
@@ -606,13 +623,115 @@ def _run_python(workflow, tmp_path, env, *, native=True):
         f"os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])",
     )
     job = workflow["jobs"]["python-tests"]
+    roots = json.loads(
+        env.get(
+            "SELECTED_PYTHON_ROOTS",
+            _bindings(tmp_path)["needs.scope.outputs.python_roots"],
+        )
+    )
     # Choose the known selected-consumer branch; do not emulate Actions.
     steps = [
         step
         for step in job["steps"]
-        if native or "needs.scope.outputs.python_" not in step.get("if", "")
+        if (
+            PYTHON_NATIVE_ROOT in roots
+            if PYTHON_NATIVE_ROOT in step.get("if", "")
+            else native
+            or "needs.scope.outputs.python_" not in step.get("if", "")
+        )
     ]
     return _run_bash_steps(steps, workflow, job, tmp_path, env)
+
+
+@pytest.mark.parametrize("selected", [False, True])
+@pytest.mark.parametrize("native", [False, True])
+def test_python_native_helper_checks_use_selected_scope(
+    workflow: dict[str, Any],
+    tmp_path: Path,
+    *,
+    selected: bool,
+    native: bool,
+) -> None:
+    """Helper checks follow their selected root independently of V3 setup."""
+    env = _commands(tmp_path)
+    env["SELECTED_PYTHON_ROOTS"] = json.dumps(
+        [PYTHON_NATIVE_ROOT] if selected else ["tests/eng/test_ci_scope.py"]
+    )
+    env["SELECTED_PACKAGES"] = json.dumps(
+        ["hcoona-three-monorepo", "three-workflow-delivery-v3"]
+        if native
+        else ["hcoona-three-monorepo"]
+    )
+    (tmp_path / PYTHON_NATIVE_DIRECTORY).mkdir(parents=True)
+    steps = workflow["jobs"]["python-tests"]["steps"]
+    helper_steps = [
+        step for step in steps if PYTHON_NATIVE_ROOT in step.get("if", "")
+    ]
+    assert [step["name"] for step in helper_steps] == [
+        "Prepare Python native helper toolchain",
+        "Check Python native helper source",
+    ]
+    for step in helper_steps:
+        assert step["if"] == PYTHON_NATIVE_CONDITION
+        assert step["working-directory"] == PYTHON_NATIVE_DIRECTORY
+        _required_step(step)
+    result = _run_python(workflow, tmp_path, env, native=native)
+    assert result.returncode == 0, result.stderr
+    calls = [item["command"] for item in _observations(env)]
+    helper_calls = [call for call in calls if call[0] in {"rustup", "cargo"}]
+    assert helper_calls == (
+        [
+            ["rustup", "show"],
+            ["cargo", "fmt", "--all", "--", "--check"],
+            ["cargo", "build", "--locked", "--all-targets", "--jobs", "4"],
+            ["cargo", "test", "--locked", "--all-targets", "--jobs", "4"],
+            [
+                "cargo",
+                "clippy",
+                "--locked",
+                "--all-targets",
+                "--jobs",
+                "4",
+                "--",
+                "-D",
+                "warnings",
+            ],
+        ]
+        if selected
+        else []
+    )
+    if selected:
+        assert calls.index(helper_calls[-1]) < calls.index(
+            ["uv", "run", "--no-sync", "python", "-"]
+        )
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        ["rustup", "show"],
+        *[
+            ["cargo", operation]
+            for operation in ("fmt", "build", "test", "clippy")
+        ],
+    ],
+    ids=["toolchain", "fmt", "build", "test", "clippy"],
+)
+def test_python_native_helper_propagates_command_failure(
+    workflow: dict[str, Any],
+    tmp_path: Path,
+    failure: list[str],
+) -> None:
+    """A failed helper check prevents later preparation and pytest."""
+    env = _commands(tmp_path)
+    env["SELECTED_PYTHON_ROOTS"] = json.dumps([PYTHON_NATIVE_ROOT])
+    env["FAIL_COMMAND"] = json.dumps(failure)
+    (tmp_path / PYTHON_NATIVE_DIRECTORY).mkdir(parents=True)
+    result = _run_python(workflow, tmp_path, env, native=False)
+    assert result.returncode == CHILD_FAILURE, result.stderr
+    calls = [item["command"] for item in _observations(env)]
+    assert calls[-1][: len(failure)] == failure
+    assert not any(call[0] == "uv" for call in calls)
 
 
 @pytest.mark.parametrize("native", [False, True])

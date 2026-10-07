@@ -53,9 +53,10 @@ selection/result core consumes resolved facts and does not
 interpret ecosystem manifests, dependency specifiers or version inheritance.
 
 The Python passive extractor returns declared build strings and maintained
-plugin coordinates. Its controlled unit boundaries are implemented; Rust native
-supplementation, complete fact assembly, native qualification and caller mapping
-remain pending under the [planning contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-planning-facts).
+plugin coordinates. The pinned Rust supplement and ordered configuration
+preflight have controlled unit boundaries. Complete fact assembly, native
+qualification and caller mapping remain pending under the
+[planning contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-planning-facts).
 
 Native integrations must supply complete ownership and reverse-consumer facts for
 their declared scope, including base and candidate relations, selected quality
@@ -94,6 +95,48 @@ selects them for helper or maintained-plugin source changes. They do not qualify
 actual PyPA extraction, native lowering, complete ownership/activity/closure or
 runtime effects. Those require the later concrete native protocol and remaining
 planning integration. Python execution, Release and caller cutover are pending.
+
+`passive.py --configuration-only <directory>...` applies the same physical UV
+table/key guard to supplied project and ancestor contexts. It returns their
+actual `configuration_inputs` paths only after the complete batch succeeds.
+It invokes neither PyPA extraction nor the NBGV plugin for those contexts;
+UV still owns settings and workspace/source interpretation.
+
+### Python Native Supplement
+
+The [Rust helper](Native/Python/uv/Cargo.toml) uses UV's exact source pin for
+requirement parsing/build-source lowering, native workspace identity, group
+defaults, interpreter markers and Python constraints. It admits native
+configuration before conversion and rejects necessary unsupported sources before
+fetch-capable lowering. It does not resolve/install build environments, execute
+backends or compute Workflow's impact closure. Its JSON request contains
+workspace/interpreter/cache coordinates, passive project build strings, group
+operations and opaque marker/constraint IDs. Failed queries return a fixed
+attributed diagnostic without partial facts or raw native errors.
+
+[`PythonNativeSupplementReader`](Repository/PythonNativeSupplementReader.cs)
+collects the same project/root-ancestor preflight contexts, runs the
+configuration-only Python call and checks its complete returned input set before
+writing the transient native request and invoking Rust. Failure, cancellation or
+an incomplete preflight result prevents the Rust call. Both stages use the
+caller's supplied native environment through the existing bounded process
+runner. The caller supplies exact checkouts/tools, a fresh external scratch
+directory and owned credential-free configuration/cache/temp roots; a dictionary
+or input-path response does not prove that isolation. The caller retains and
+cleans its scratch state. The Rust entry requires this ordered composition;
+direct invocation does not supply the physical preflight.
+
+The helper's [native toolchain file](Native/Python/uv/rust-toolchain.toml) selects
+the compiler; `Cargo.toml` declares its minimum version and exact UV pin, while
+the helper-owned lock fixes transitive dependencies. From its directory, run
+`rustup show`, `cargo build --locked --all-targets`, `cargo test --locked`,
+`cargo fmt --all -- --check` and `cargo clippy --locked --all-targets -- -D warnings`.
+The existing Ubuntu Python CI job performs those source checks when the passive
+helper test root is selected. Pure parsing/admission/transport tests and
+controlled C# command responses do not qualify actual native workspace,
+interpreter, lowering, metadata or effects. A concrete accepted native protocol,
+complete endpoint/activity/closure assembly and Python caller cutover remain
+pending; there is no Python planning command or support claim yet.
 
 ### PNPM Graph Component
 

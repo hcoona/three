@@ -918,6 +918,20 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_dotnet == 'true'
         run: dotnet tool restore
 
+      - name: Prepare Python native helper toolchain
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && contains(fromJson(needs.scope.outputs.python_roots), 'tests/private/app/workflow-delivery/Native/Python')
+        working-directory: src/private/app/workflow-delivery/Native/Python/uv
+        run: rustup show
+
+      - name: Check Python native helper source
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && contains(fromJson(needs.scope.outputs.python_roots), 'tests/private/app/workflow-delivery/Native/Python')
+        working-directory: src/private/app/workflow-delivery/Native/Python/uv
+        run: |
+          cargo fmt --all -- --check
+          cargo build --locked --all-targets --jobs 4
+          cargo test --locked --all-targets --jobs 4
+          cargo clippy --locked --all-targets --jobs 4 -- -D warnings
+
       - name: Install Node dependencies
         if: success() && !cancelled() && steps.scope.outputs.run == 'true' && needs.scope.outputs.python_v3 == 'true'
         run: pnpm install --frozen-lockfile
