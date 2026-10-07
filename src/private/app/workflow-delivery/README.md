@@ -175,9 +175,14 @@ target declarations and the supported import-mode option. Necessary additional
 Python search paths or required plugins remain unsupported. It does not parse
 configuration files or copy pytest's private target-selection algorithm.
 Controlled producer and reader tests substitute the native query/process boundary.
-No actual query composition, committed target ownership, test collection, complete
-fact assembly or caller cutover is qualified by this component. Those remain subject
-to the accepted native qualification and complete Python caller contracts.
+[`PythonPytestTargets`](Repository/PythonPytestTargets.cs) binds those supplied native
+targets to complete committed file inputs and the nearest native member. Standalone
+targets keep their own coordinates without becoming root workspace members. A
+target spanning descendant member roots is unsupported rather than assigned a
+guessed owner. Controlled binding tests establish these supplied-fact behaviors.
+No actual query composition, test collection, complete fact assembly or caller
+cutover is qualified by these components. Those remain subject to the accepted
+native qualification and complete Python caller contracts.
 
 ### PNPM Graph Component
 
