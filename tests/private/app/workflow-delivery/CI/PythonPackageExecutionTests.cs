@@ -12,6 +12,7 @@ namespace WorkflowDelivery.Tests.CI;
 public sealed class PythonPackageExecutionTests(TestContext context)
 {
     private static readonly string[] DistributionKinds = ["python-wheel", "python-sdist"];
+    private static readonly string[] ToolGroups = ["dev", "workflow-delivery-python"];
 
     [TestMethod]
     public async Task CompleteRecipeRetainsOriginalsAndBothIndependentConsumers()
@@ -60,6 +61,10 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         NativeCommand[] syncs = result.Commands.Select(item => item.Command)
             .Where(command => command.Arguments[0] == "sync").ToArray();
         Assert.Contains("--no-install-workspace", syncs[0].Arguments);
+        CollectionAssert.AreEquivalent(ToolGroups,
+            syncs[1].Arguments.Zip(syncs[1].Arguments.Skip(1))
+                .Where(pair => pair.First == "--only-group")
+                .Select(pair => pair.Second).ToArray());
         Assert.Contains("--no-editable", syncs[1].Arguments);
         Assert.Contains("--no-build-isolation", syncs[1].Arguments);
         Assert.AreEqual(fixture.Plan.Candidate, result.Candidate);

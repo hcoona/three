@@ -516,9 +516,10 @@ selected boundaries from unqualified runtime behavior.
 For the current adopted Python distribution contract, prepare an owned native
 project environment from the existing root `dev` and `workflow-delivery-python`
 groups and synchronized lock. Frozen root-dev sync excludes local workspace
-products; subsequent frozen build/plugin-group sync uses native shared build
-mode and `--no-editable`. Reuse installed build tools according to UV's native
-shared-environment contract. The root-dev footprint is existing infrastructure,
+products; subsequent frozen sync selects both existing groups with native shared
+build mode and `--no-editable`. Exact sync removes omitted tools, so the final
+selection includes the development backend tools as well as the build/plugin
+group. The root-dev footprint is existing infrastructure,
 not an application-maintained minimal backend roster. Actual selection and
 installation must establish that unrelated workspace products are not built.
 This package-tool preparation does not replace root pytest's selected/full
