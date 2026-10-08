@@ -63,12 +63,15 @@ qualification. The controlled Python assembly below consumes this seam.
 The Python passive extractor returns declared build strings and maintained
 plugin coordinates. The pinned Rust supplement and ordered configuration
 preflight have controlled unit boundaries. Group answers use the native current
-or exact singleton manifest, native group presence and native default/no-dev
-selection. Root or other member groups cannot become another owner's defaults;
-managed metadata association remains strict. The
-[current-tool observations](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#first-diagnostic-and-group-owner-correction)
-retain failed main and first diagnostic captures; the corrected complete graph
-remains unqualified. Metadata adaptation and operation
+or exact singleton manifest, native flattened dependency contributions and native
+default/no-dev selection. Root or other member groups cannot become another owner's
+defaults. Selected groups with empty native requirements need no metadata node;
+selected empty groups carrying Python constraints stop with an attributed diagnostic
+until a constraint-preserving transfer exists. Nonempty metadata associations remain
+strict. The
+[current-tool observations](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#final-diagnostic-and-empty-group-correction)
+retain three failed captures and exhausted execution slots; corrected complete graph
+collection remains unqualified. Metadata adaptation and operation
 dependency projection retain native IDs, dimensions and build-source associations.
 The [primitive Linux observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper boundary; complete native fact collection, native caller
@@ -166,6 +169,8 @@ without hiding reachable producers. `PythonPlanningActivities` collects unchange
 marker expressions with their exact extra scopes and binds the graph to supplied
 native group operations and interpreter constraints. `PythonNativeActivities`
 associates answers by request ID, preserving false activity and empty group sets.
+Group names describe selected dependency contributions, not every declared group;
+UV flattens includes before the helper tests requirement-vector emptiness.
 The projection unions actual operation answers without reconstructing defaults.
 Zero-package operations retain their directory scope; a single selected package
 retains its native member group ownership and the original base context. Multiple

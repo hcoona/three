@@ -7,8 +7,8 @@ repository lock and prepared tools. It implements the accepted
 [Python integration order](../migration-strategy.md#python-planning-integration-and-later-caller-cutover)
 within the accepted [Delivery Wave](../../../../../../docs/delivery-wave.md).
 Exact source, preparation and protocol review and protected delivery must complete
-before any newly admitted query. The failed main and first diagnostic captures and their bounded corrections
-are retained below.
+before any newly admitted query. All three failed captures and their corrections are retained below. The finite
+execution allowance is exhausted; source correction does not authorize another run.
 
 The stopped [primitive campaign](python-native-planning.md#primitive-native-observation)
 and its expired reserves remain unchanged. This new subject is complete production
@@ -303,7 +303,8 @@ native group presence with the existing native default/no-dev selection.
 provide maintained group presence, including legacy dev declarations. We do not
 copy group inheritance, legacy parsing or native installation algorithms.
 Missing, ambiguous or multiple selected package identities remain terminal;
-any returned group must still resolve uniquely in the managed owner's metadata.
+any returned nonempty dependency contribution must still resolve uniquely in the
+managed owner's metadata, as clarified by the final diagnostic below.
 An owner with no selected declared group legitimately returns an empty answer.
 
 Independently reviewed source4 cleanup was executed once per failed attempt.
@@ -351,6 +352,57 @@ unchanged; this does not admit enrichment, check/package execution or Release.
 [uv-group-install]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/project/install_target.rs#L138
 [uv-group-presence]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-workspace/src/dependency_groups.rs#L30
 [dotnet-diagnostics]: https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-environment-variables#dotnet_enablediagnostics
+
+## Final Diagnostic and Empty-Group Correction
+
+After protected [PR #1080](https://github.com/hcoona/three/pull/1080), the final
+source4 diagnostic occupied attempt3 and failed. All 21 native commands succeeded;
+the managed terminal retained only `System.IO.InvalidDataException`, without its
+message or stack. No complete graph or no-dev capture exists. Attempt-level elapsed
+was `2.5452930339961313` seconds; the separate outer receipt records
+`2.426829556992743` seconds, exit 1 and completed Linux group stop. Current and
+aggregate state observations were complete and below the existing bounds. Both
+endpoint identities, tracked status, lock hashes and absent project environments
+remained unchanged. This is bounded failed collection, not universal no-effect
+or complete collector qualification.
+
+All 58 regular originals are preserved in archive SHA256
+`d1cc102cbd5a149e0a80005740782fc254c6c903764b1a57639afb12d3441b07`.
+Independent engineering/evidence review and separate triage classified
+`PY-NATIVE-EMPTY-GROUP-001` as true positive. The music-flash-card-generator
+manifest declares `dev = []`; native activity selects that group for directory
+`context-7` and singleton `package-9`, while native metadata has no corresponding
+dependency-group node. Every other observed selected-owner group join resolves.
+UV's [flattened declaration API][uv-group-presence] can retain an empty requirement
+vector, whereas its [metadata serializer][uv-empty-group-metadata] emits group
+nodes from lock dependency-group edges. Our assumption that declaration presence
+implies a graph node is the transfer defect. Attribution to the strict managed
+lookup is static inference, not an observed throwing line; other integration
+defects remain possible.
+
+The correction returns selected owner groups only when UV's flattened requirement
+vector is nonempty. This answer is a dependency-contribution list, not a complete
+inventory of declarations. Native include flattening, default/no-dev selection,
+owner identity and malformed-group failures remain authoritative. No raw TOML
+emptiness test, missing-metadata fallback, generated graph ID, manifest repair or
+parallel C# parser is added. Nonempty graph joins remain strict. An empty selected
+group with native `requires_python` stops as `EmptyGroupPythonConstraint`; that
+unsupported constraint-only shape cannot silently lose a necessary fact. Excluded
+groups remain excluded. Controlled tests cover the narrow transfer correction;
+they do not qualify actual complete composition.
+
+All three graph slots are consumed. Charged capture and prior cleanup total
+`6.355224625993287` seconds before the attempt3 cleanup invocation. That invocation
+used a relative campaign path and retained exit 0/completed stop after
+`0.02923420601291582` seconds, but postcheck found the intended owned roots still
+present. The child received a relative root interpreted under its attempt cwd;
+cleanup completion is therefore unestablished. Original cleanup receipts remain
+retained; this invocation is charged, bringing the total to
+`6.384458832006203` seconds. The path defect is independently triaged separately
+from the native transfer defect before any recovery. No repeated cleanup or fourth
+diagnostic is authorized by this correction. Any necessary additional graph run
+requires separately accepted concrete bounds and protected protocol delivery;
+unused time cannot refund a slot or reset this campaign.
 
 ## Exact Identity Appendix
 
@@ -748,3 +800,5 @@ Both `ordinary` and `no-dev` use the complete identical file table below.
 | `src/public/lib/three-workflow-delivery-v3/pyproject.toml`     | `2aca03a5b489c313d8e2bca7820bb488e100d1332175bc10c272b76e6f0b396d` |
 | `src/sample/nbgv-hatch-demo/pyproject.toml`                    | `a6b27cbe850f9a08951fbcb40f1ce855fd73af1030b1d89ae71ea644058a5531` |
 | `uv.lock`                                                      | `d123e4b9e3d41c6c3ab0208b2374dc4cf05d71945e974b7c0e4f437cbbf6d8ca` |
+
+[uv-empty-group-metadata]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-lock/src/lock/export/metadata.rs#L1344
