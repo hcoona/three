@@ -87,6 +87,32 @@ unsupported relevant shapes in `errors`. An empty error array is a producer's
 result, not an admission certificate or proof that a reader is implemented.
 The scope label must agree across revisions; it is not a coverage inference.
 
+### Python Package Execution Component
+
+`ci run-python-package <plan.json> <request.json>` executes the selected adopted
+package partition. The original plan retains complete build, contents, wheel
+install/import and Git-free sdist build/install/import as four required checks.
+The request supplies caller-bound native members, the prepared checkout, fresh
+external scratch and native tool/helper coordinates. The executor validates the
+committed release declaration and selected check contract before native effects.
+
+UV prepares the existing frozen root groups, installs the maintained plugin
+noneditable and owns PEP 517 dispatch with native build-dependency checking.
+[`packages.py`](Native/Python/packages.py) consumes maintained backend metadata,
+normal distribution metadata and standard archive readers; its registered
+quality check owns the adopted product's payload and installed API. It introduces
+no dependency inventory, backend resolver, version conversion or V3 witness.
+The serialized result retains original wheel/sdist file paths, declared outputs,
+lengths and SHA256 identities. Callers retain the original artifact files for
+downstream transfer and consumption.
+Command failure, timeout, cancellation and prerequisite skips remain visible.
+
+Controlled tests cover this component and CLI transfer. Actual frozen selection,
+noneditable plugin independence and both native consumers remain unqualified
+until the accepted concrete native protocol completes. Existing Python callers,
+root pytest preparation and Release remain active; this component does not
+switch or retire them.
+
 ### Python Passive Extraction
 
 [`passive.py`](Native/Python/passive.py) accepts one project-directory argument

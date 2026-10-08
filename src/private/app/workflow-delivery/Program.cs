@@ -17,10 +17,29 @@ internal static class Program
     internal static int Run(string[] args, TextWriter output, TextWriter error,
         Func<CiPlan, NodeRunRequest, CancellationToken, Task<NodeRunResult>>? runNode = null,
         Func<CiPlan, DotNetRunRequest, CancellationToken, Task<DotNetGroupRunResult>>?
-            runDotNet = null)
+            runDotNet = null,
+        Func<CiPlan, PythonPackageRunRequest, CancellationToken, Task<PythonPackageRunResult>>?
+            runPythonPackage = null)
     {
         try
         {
+            if (args is ["ci", "run-python-package", var pythonPlanPath, var pythonRequestPath])
+            {
+                CiPlan plan = JsonSerializer.Deserialize(File.ReadAllText(pythonPlanPath),
+                    TransferJson.Default.CiPlan) ??
+                    throw new InvalidDataException("Missing native Python package plan.");
+                PythonPackageRunRequest request = JsonSerializer.Deserialize(
+                    File.ReadAllText(pythonRequestPath),
+                        TransferJson.Default.PythonPackageRunRequest)
+                    ?? throw new InvalidDataException("Missing native Python package request.");
+                PythonPackageRunResult result =
+                    (runPythonPackage ?? PythonPackageExecution.RunAsync)(
+                    plan, request, CancellationToken.None).GetAwaiter().GetResult();
+                output.WriteLine(JsonSerializer.Serialize(result,
+                    TransferJson.Default.PythonPackageRunResult));
+                return result.Candidate == plan.Candidate &&
+                    ResultCollector.Collect(plan, result.Results).Satisfied ? 0 : 1;
+            }
             if (args is ["ci", "plan-dotnet-group", var dotnetGroupPath])
             {
                 DotNetGroupRequest request = JsonSerializer.Deserialize(
@@ -136,6 +155,7 @@ internal static class Program
                     + " | ci plan-node-group <request.json>"
                     + " | ci plan-dotnet-group <request.json>"
                     + " | ci run-dotnet <plan.json> <request.json>"
+                    + " | ci run-python-package <plan.json> <request.json>"
                     + " | ci run-node <plan.json> <request.json>"
                     + " | ci result <plan.json> <results.json>"
             );
@@ -173,6 +193,8 @@ internal static class Program
 [JsonSerializable(typeof(DotNetGroupRequest))]
 [JsonSerializable(typeof(DotNetGroupReadback))]
 [JsonSerializable(typeof(DotNetGroupRunResult))]
+[JsonSerializable(typeof(PythonPackageRunRequest))]
+[JsonSerializable(typeof(PythonPackageRunResult))]
 [JsonSerializable(typeof(NodePlanRequest))]
 [JsonSerializable(typeof(NodeGroupRequest))]
 [JsonSerializable(typeof(NodeGroupReadback))]
