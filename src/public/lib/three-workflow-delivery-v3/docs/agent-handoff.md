@@ -43,9 +43,11 @@ bind supplied actual check owners to repository engineering inputs. The separate
 qualifies native pytest, committed NBGV/quality inputs and producer input mapping
 on the exact retained Linux subjects; full caller behavior remains pending. The
 [controlled Python package component](../../../../private/app/workflow-delivery/README.md#python-package-execution-component)
-implements finite adopted preset expansion, preparation and execution. Actual
-frozen selection, noneditable plugin independence, original wheel and Git-free
-sdist native consumers remain unqualified; complete caller mapping, root pytest
+implements finite adopted preset expansion, preparation and execution. The
+[final package experiment](./research/python-native-package-qualification.md#final-package-failure-and-spent-campaign)
+failed at native workspace build-requirement checking; all package lifetimes are
+spent. The corrected phase contract remains unimplemented and unqualified. Actual
+original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
 preparation/cutover and Release remain pending. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned ordered helper composition; its campaign is stopped and

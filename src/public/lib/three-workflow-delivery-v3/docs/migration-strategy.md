@@ -286,8 +286,10 @@ the adopted project's payload/API expectations in its registered quality
 implementation, separate from ordinary native distribution validity.
 
 Reuse the committed root development/build-tool groups and maintained
-`nbgv-python` plugin, with native frozen/shared/noneditable preparation and
-build-dependency checking. Bind the repository-pinned official NBGV command
+`nbgv-python` plugin, with the MLD's phase-specific native frozen preparation
+and build-dependency checking. Preserve declared workspace editability through
+original distribution creation; reconcile the same tools to noneditable native
+installation before Git-free original-archive consumption. Bind the repository-pinned official NBGV command
 through the plugin's existing command selection, exact runtime and full relevant
 Git inputs. Native backend builds may compute version again; agreement, rather
 than a single invocation, is required. No generated backend roster, alternate

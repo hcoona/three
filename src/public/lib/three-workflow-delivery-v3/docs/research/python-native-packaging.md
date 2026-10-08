@@ -5,9 +5,10 @@
 Use native ecosystem contracts to prepare the existing adopted Python package,
 build its complete wheel/sdist set and consume the original distributions
 without a second dependency declaration or application implementation of UV.
-This is pinned public-source evidence and a narrow design inference. No package
-sync, backend import, NBGV computation, build, install or consumer has executed
-for this assessment. The [MLD](../middle-level-design.md#native-python-package-execution)
+This is pinned public-source evidence and a narrow design inference. The separate
+[final failed observation](python-native-package-qualification.md#final-package-failure-and-spent-campaign)
+records actual unsuccessful integration; the corrected phase composition remains
+unobserved. The [MLD](../middle-level-design.md#native-python-package-execution)
 owns the selected integration; the separate
 [concrete package protocol](python-native-package-qualification.md) and actual
 observation remain prerequisites for qualification.
@@ -37,22 +38,37 @@ delivery carrier; immutable public locations below recover each passage.
   project inspection.
 - [Installed requirement checks](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-installer/src/site_packages.rs)
   lines 476–620 use native markers, extras and transitive metadata. Build
-  checking uses permissive compatible-version satisfaction and does not prove
-  strict source type or original wheel hashes. Frozen native preparation
+  checking uses permissive compatible-version satisfaction, but Directory
+  requirements retain source-specific checks.
+  [Directory satisfaction](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-installer/src/satisfies.rs#L363-L396)
+  requires equal requested/installed editability before path/cache checks.
+  Neither behavior proves original wheel hashes. Frozen native preparation
   remains responsible for the selected installation.
 
 The existing root `dev` group declares Hatchling and quality tools;
 `workflow-delivery-python` declares `build` and workspace `nbgv-python`. The
 maintained plugin has its own static version and Hatchling backend. Reusing
 these declarations avoids a backend roster or lock parser. The candidate
-two-stage frozen preparation excludes local products first, then selects both
-existing groups for the final exact sync with shared build mode and noneditable
-distributions. The [first native preparation failure](python-native-package-qualification.md#first-native-preparation-failure)
+bootstrap excludes local products first, then selects both existing groups with
+shared build mode and native declared workspace editability for source building. The [first native preparation failure](python-native-package-qualification.md#first-native-preparation-failure)
 shows that selecting only the build/plugin group removes the previously installed
 backend tools. Shared build mode does not preserve an omitted group.
-Noneditable installation is needed to avoid an implicit editable source-checkout
-input during Git-free consumption. Neither source finding proves the actual
-installed footprint, source independence or full backend suitability.
+The final failed observation established that noneditable sync before checked
+source building does not satisfy this workspace requirement.
+[Build requirement extraction](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-build-frontend/src/lib.rs#L770-L787)
+lowers native workspace requirements with editability enabled;
+[workspace lowering](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-distribution/src/metadata/lowering.rs#L816-L858)
+uses the existing declaration's value or the native editable default. Installed
+noneditable metadata and this source trace support an installation-mode mismatch
+at confidence 9/10; the exact runtime comparison branch was not traced. No UV bug
+or operator defect is established.
+
+After complete original archives exist, one additional frozen both-groups sync
+with shared build mode and `--no-editable` reconciles the same owned tools before
+Git-free sdist consumption. Noneditable installation avoids an implicit editable
+source-checkout input in that consumer. The proposed source phase and conversion
+retain native dependency checks and the same declarations; neither source finding
+proves actual installation, removal of source links or clean consumer behavior.
 
 Native [build documentation](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/docs/concepts/projects/build.md)
 assigns interpreter/frontend behavior to UV and filenames/payload to the backend.
@@ -60,6 +76,34 @@ Default native build produces sdist then wheel from that sdist; explicit both-fo
 selection can build both from source. Native archive input, package selection,
 prepared interpreter and output directory are available. These contracts do not
 make an arbitrary isolated backend resolution lock-frozen.
+
+## Native Original-Archive Build Identity
+
+For the pinned UV source, archive-file input selects `WheelFromSdist` in
+[build-plan selection](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/build_frontend.rs#L1579-L1596).
+[Archive extraction](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/build_frontend.rs#L980-L1024)
+provides the backend tree, while
+[build dispatch](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/build_frontend.rs#L1313-L1332)
+passes the original archive file as `install_path`. The
+[dispatcher](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-dispatch/src/lib.rs#L524-L600)
+retains that distinction.
+
+[Build requirement lowering](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-distribution/src/metadata/build_requires.rs#L41-L81)
+uses the install identity for project discovery.
+[Discovery](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-workspace/src/workspace.rs#L1665-L1710)
+cannot read a child pyproject from an archive file; it returns no project and
+lowering uses ordinary PEP 517 metadata, without the checkout's workspace
+sources. Backend-reported requirements retain the file identity at
+[lines 1206–1229](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-build-frontend/src/lib.rs#L1206-L1229).
+Native dependency checking remains enabled. Invoking an extracted directory would
+change this basis and is outside the selected consumer contract.
+
+Source-directory default sdist-to-wheel building retains its original directory
+identity at
+[lines 845–907](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/build_frontend.rs#L845-L907).
+Keep workspace-compatible tools through both original outputs before conversion.
+The separate archive-file route supports the phase design at source level; it is
+not observed package qualification or proof of source-independent consumer imports.
 
 ## Native Hatchling Version Reuse
 
