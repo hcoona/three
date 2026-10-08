@@ -5,9 +5,10 @@ This record defines the finite local package experiment for the accepted
 It is a protocol, not a runtime result. Its delivery PR must independently review
 and protect this exact protocol and executable packet before the first launch.
 The existing Python callers remain active until complete qualification and cutover.
-The original packet below is spent. The [first fresh diagnostic](#first-fresh-diagnostic)
-binds the separately prepared subject for the next launch; it cannot reuse the
-original failed lifetime.
+The original packet and [first fresh diagnostic](#first-fresh-diagnostic) are
+spent. The [accepted current observation](#accepted-current-observation) supplies
+separate current facts for preparing the final diagnostic; it does not admit a
+package launch or change the earlier failed outcomes.
 
 ## Question and Scope
 
@@ -576,3 +577,179 @@ three-lifetime/1,800-second campaign, 32-call/600-second lifetime and 60-second
 native command ceilings remain unchanged. The first accepted success ends spare
 capacity; no stopped graph allowance, publication, dispatch, access change,
 caller cutover, root pytest, Release or Windows qualification is supplied here.
+
+## Accepted Current Observation
+
+Protected [PR #1094](https://github.com/hcoona/three/pull/1094), merge
+`e5bd15d33e5fc85bbd32bad4b76bb59a2d15f10a`, and its
+[union-tree receipt](https://github.com/hcoona/three/pull/1094#issuecomment-6065421102)
+delivered corrected source6 and binding6. Fresh complete file-only readiness
+preceded one `observe 1` invocation. It completed in 1.0944990249990951 seconds
+of externally retained inclusive time. All seven read-only Git commands succeeded,
+retaining 354,260 stream bytes. Current HEAD, tree, complete clean status, 404 refs,
+2,488 committed entries and both bound LFS payloads matched protected preparation3.
+All 53 original failure records remained byte-identical.
+
+Sequential before/after metadata samples contained 655,246,268 logical bytes,
+17,486 entries, 1,082 links and exactly the two retained CLR FIFOs. No FIFO data
+was read or cleanup attempted. Both process samples retained 31 same-user rows,
+no positive relevant association and two unreadable supplemental `cwd` fields.
+Those two path relationships remain unknown and nonblocking under the accepted
+trusted-tool scope; this is no universal absence or containment proof. The
+new observer's coherent leader remained unreaped through owned-group signaling,
+then reaped with exit zero and no sampled remaining members. The identity-missing
+direct-child fallback was not exercised.
+
+The [independent actual interpretation](https://github.com/hcoona/three/pull/1094#issuecomment-6065528710)
+accepted these separate current checkout, state and stopped-process facts as
+sufficient for fresh final-diagnostic preparation, with no material findings and
+confidence 9/10. Original missing historical receipts remain missing. One of six
+read-only slots was spent; first complete independent acceptance ended all five
+unused slots. No further observer follows from this budget. The complete
+[four-part observation archive](https://github.com/hcoona/three/pull/1094#issuecomment-6065509811)
+and [independent actual hosted reconstruction](https://github.com/hcoona/three/pull/1094#issuecomment-6065587589)
+preserve all 56 complete original/public payload mappings and 58 archive members.
+Archive SHA256 is
+`ed28b5386bb9d83221cf67b334ea65fad71694bb4f6f8aea947691a3f946a05a`.
+
+This acceptance supplies no package success, historical repair, failed-state
+cleanup or slot-three admission. The final diagnostic still needs fresh exact
+source, environment, compiled subject and packet binding, independent review,
+actual hosted acceptance, protected protocol delivery and complete current
+readiness. Both earlier package lifetimes remain failed and spent; their 23
+reserved calls and 11.098563230014406 inclusive seconds remain charged.
+
+## Final Diagnostic Source and Lifecycle
+
+Source8 added the supported `DOTNET_EnableDiagnostics=0` candidate and future
+checkout3 coordinate. Its independent complete source review found
+PKG-OWN-001: the inherited temporary supervisor could reap an exited direct
+child through `poll()` before signaling its numeric process group. A different
+reviewer classified this source defect as a true positive, confidence 10/10,
+without claiming an observed wrong-group signal or application defect. The
+finite correction remains within the existing package experiment contract,
+confidence 9/10 for that scope assessment. Source8 and the historical sources
+and failures remain immutable; source8 is not an alternative executable packet.
+
+Corrected source9 uses Linux `waitid(P_PID, WEXITED | WNOHANG | WNOWAIT)` to
+observe completion while retaining the directly owned child unreaped through
+its group signal. A single trusted supervisor with no competing reaper owns
+that lifecycle. It requires the default SIGCHLD policy before launch, rejects
+an already reaped child or unavailable waitability before signaling, then reaps
+within the remaining stop reserve and preserves the actual terminal code. No
+positive timeout floor extends an expired reserve. A stop failure retains
+unavailable remaining-group facts and any earlier native error and partial
+streams; it does not become successful stop evidence. No numeric group signal
+follows reap. Sampled remaining membership is finite evidence, not universal
+descendant containment or a reusable recovery service.
+
+Fifteen controlled transport tests passed. Five added methods cover zero,
+nonzero, signaled and timeout completion with a waitable-child sentinel; rejected
+released/unavailable targets; exhausted reap reserve; preserved native and stop
+errors with partial bytes; and rejected ignored SIGCHLD policy. The ten existing
+controls retain limit, quiet-descendant, terminal Git, failed-state, runtime-copy
+and owned-cleanup coverage. The final request binds all five source identities
+before and after execution. These are ordinary controlled stdlib children and
+mocked unavailable identities, without real PID-reuse pressure or unrelated
+signals. They do not execute the adopted package recipe, spend a package or
+read-only slot, or establish native package qualification.
+
+The diagnostic setting remains a source-supported candidate before each .NET
+host. The existing planning dictionary, typed request, package executor and
+native process environment preserve it; the Git-free sdist environment removes
+only Git overrides, and maintained UV/plugin children inherit the setting.
+Actual FIFO suppression remains unobserved. No production setting, special-file
+exemption, resolver, backend declaration, version engine or reduced business
+check is introduced. Frozen preparation, all four required package checks,
+original wheel/sdist distinction, reservations, deadlines, stream/state/process
+ceilings, terminal Git and success-only owned cleanup remain unchanged.
+
+All source, controls, classification and exact preparation identities must be
+independently accepted with the final compiled packet before launch. The final
+package lifetime remains separately gated under the original three-lifetime
+ceiling; this source narrative does not admit an unbound executable.
+
+### Exact Final Preparation and Packet
+
+Ordinary preparation9 completed once after independent exact source9 acceptance.
+It created independent detached full-history checkout3 at protected component
+`e5bd15d33e5fc85bbd32bad4b76bb59a2d15f10a`, tree
+`1d627cfb86ef3519158391ac2082e74cfc8ddf44`, with 2,488 committed entries,
+408 retained refs and complete clean status. Adopted committed product, helper,
+root lock and group inputs match preparation3; the complete private application
+source is unchanged from its separately corrected protected component. The
+new checkout leaves retained checkout2 and both failed lifetimes untouched.
+
+Fresh application and friend harness compilation succeeded with zero warnings
+and errors and a unique binlog. Initial preparation binding4 retained all 229
+prepared files, but independent compiled review found PKG-DEPS-001: packet4
+invoked the application from the harness output, which omitted a runtime asset
+named in the application's own native dependency manifest. The complete native
+application output already contained that asset. A different reviewer classified
+this manifest/file defect as a true positive, confidence 10/10; no application
+startup failure or historical cause was observed.
+
+The accepted finite correction, scope confidence 9/10, binds the existing complete
+native application output separately from the existing complete harness output.
+Successor packet5 invokes the same application bytes from checkout3's native
+`src/private/app/workflow-delivery/bin/Debug/net10.0` output. Binding5 retains all
+199 application-output and 203 harness-output members, both native dependency and
+runtimeconfig manifests, the unchanged 229 preparation files, exact compiler
+request/receipt, source/review/classification lineage and committed inputs. Full
+pinned host/tool/runtime identities were rehashed. Each separately invoked subject
+uses its own native output closure; no resolver, new probing path, hand-selected
+DLL, dependency declaration or source change is introduced.
+
+Ordinary rebinding performed no build or native recipe operation. Preparation9,
+packet4 and binding4 remain immutable, and packet4 remains blocked; they are not
+alternate launch subjects. Neither harness nor application has launched in the
+adopted recipe. Compilation and file rebinding are not FIFO-suppression or package
+qualification evidence.
+
+The following SHA256 values identify original bytes before guarded public
+absolute-prefix aliasing:
+
+| Final subject           | Original SHA256                                                    |
+| ----------------------- | ------------------------------------------------------------------ |
+| Operator9               | `7df501c71b458418aa1a0ad49af354ca53aebed2940c461c3eae1241f9081072` |
+| Controlled tests9       | `e29b7e022f2e2317f226e3e9095cd6a9d6109a9060b099a839531f20b4b1681a` |
+| Friend harness project9 | `3a0e5a1332b29a14583d6569b4f8174baf4753ad6bdc5363064d03a41188fb29` |
+| Prepared application9   | `bdb0091fed9bb18313c4183103560ee4e671750102992f9ab93aec8641ebb208` |
+| Prepared harness9       | `2eada0aae0b1ec337e72f3a3f940e77fe7bd09ba960b4068885b01f8773a2dd6` |
+| Exact packet draft5     | `709bb2c4dfa871d1f462aab7b4828ddd8dd4ef36f3a2db99493f54b5e9064610` |
+| Preparation binding5    | `8f3e672651023db0726b70dd432b01dd523ff6de09c350d88ba5525114966b50` |
+| Runtime inventory4      | `d865931bacac858bb2eebda252feac38fecf9fab935d5bbb78cc2df3dd37468e` |
+
+Unchanged full Program.cs and installed observer identities, selected .NET
+SDK/runtime and official NBGV distribution, UV, Python and Git pins, modes and
+full inventories remain in binding5. Source9 is the sole final candidate;
+preparation8's blocked source and unexecuted preparation script are historical
+subjects, not alternate launchers.
+
+Use the bound original CPython 3.14.3 with `-I -B`, exact operator9 `observe`,
+packet draft5 and fresh absent destination
+`/evidence/python-package-native-campaign1/lifetime-3`. Binding5 retains the
+complete actual bootstrap argv. The operator constructs the existing explicit
+owned environment, adding only `DOTNET_EnableDiagnostics=0`; it retains
+credential-free native indexes, owned cache/config/temp paths, exact NBGV command
+and all existing frozen selection and shared/noneditable build controls. The
+complete environment is reviewable in the full source and native command
+requests, not a second maintained policy file.
+
+Independent engineering/OCR, record/research, complete public representation and
+actual hosted acceptance plus protected protocol delivery must precede fresh
+readiness and the single final launch. Rehash every bound source, compiled file,
+tool/runtime, committed input and complete checkout identity/status, and confirm
+absent lifetime3. A mismatch stops without rebuilding or repairing in place.
+
+This is the third and last package lifetime under the existing 1,800-second
+campaign. The two failed lifetimes' 23 reserved calls and
+11.098563230014406 inclusive seconds remain spent. The same 22-call success
+recipe, 32-call/600-second per-lifetime ceiling, 60-second native command limit
+and all prior stop/stream/state/process/terminal/cleanup bounds apply. No
+read-only or stopped graph capacity supplements it. Preserve complete actual
+output and obtain independent package/plugin/backend/version/archive/consumer
+and stop/cleanup interpretation before claiming success. A failure remains
+failed; no automatic fourth lifetime, failed-state cleanup or reduced-check
+fallback follows. Root pytest preparation, paired caller transfer/cutover,
+retirement, Release and Windows qualification remain separate obligations.
