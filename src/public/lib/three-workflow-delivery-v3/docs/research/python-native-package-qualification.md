@@ -1092,3 +1092,91 @@ independent output audit must pass before the second launch. The earlier owner
 grant already covers this bounded correction and remaining allowance; no new
 scope or numerical authorization is inferred. Complete native qualification,
 root pytest preparation, paired caller cutover and Release remain pending.
+
+### Second Lifetime Editable Preparation Failure
+
+After protected successor delivery in
+[PR #1100](https://github.com/hcoona/three/pull/1100), exact readiness8 ran once:
+exit 0, 3.001381136 outer seconds, 1.992528128 native seconds, eight Git reads,
+7,645 bound checks and complete owned cleanup. A fresh independent actual-output
+audit passed, confidence 9/10; root verification matched its 10,025 finite inputs.
+The full unchanged report is retained in
+[the governing PR](https://github.com/hcoona/three/pull/1100#issuecomment-6070848912).
+This supplied the exact second-lifetime launch prerequisite, not package success.
+
+Binding4's complete bootstrap arguments then launched lifetime-2 once. The outer
+invocation returned exit 1 in 8.110376897035167 seconds; the internal failed
+receipt records 8.053749850951135 seconds. Four planning calls and sixteen
+executor calls were reserved before dispatch, spending twenty of the thirty-two
+call ceiling. Only two executor command receipts returned. Unreturned
+reservations remain spent; neither the short duration nor unused call capacity
+permits a replay or transfers to another lifetime.
+
+Native planning metadata, noneditable tool preparation and identity succeeded.
+The application used a separate fresh package-tool environment. Its frozen
+dev-only sync succeeded, installing twelve packages including Hatchling 1.32.4.
+The subsequent both-groups shared-mode sync retained workspace editability and
+failed while building local `nbgv-python`: Hatchling's editable builder imported
+`editables` and raised `ModuleNotFoundError`. The native diagnostic is retained
+inside the application's complete result JSON; empty enclosing stderr is not
+success. Product identity/build, original archive checks and consumers were not
+reached.
+
+| Required result                              | Actual outcome |
+| -------------------------------------------- | -------------- |
+| Complete wheel/sdist build                   | Failed         |
+| Distribution contents                        | Skipped        |
+| Original-wheel install/import                | Skipped        |
+| Git-free original-sdist build/install/import | Skipped        |
+
+The independent actual-outcome audit, SHA256
+`1ecaeb9b66ca0f9995561a07c74fb17ecbc1694ec05f571f0cde1b0454312d56`,
+records the immediate missing-module cause at confidence 10/10 and the complete
+failed qualification verdict at 9/10. Root verification matched all 150 finite
+inputs. The full unchanged audit is retained in
+[PR #1100](https://github.com/hcoona/three/pull/1100#issuecomment-6070948653).
+Separate independent triage of `EDITABLE-PREPARATION-001`, SHA256
+`a4133d3702ddf646bfcd156f70eee8b59fd76ac717b43b4e1978f1f8cb2df089`,
+classified it as a true positive, blocking exact qualification and reserve use
+without the correction gates. It assigns confidence 9/10 to shared-mode
+preparation without the dynamic editable prerequisite as the integration cause.
+Root verification matched its 104 finite inputs; the full triage is retained in
+[the same PR](https://github.com/hcoona/three/pull/1100#issuecomment-6071018111).
+
+The backend advertises the dependency through its maintained dynamic editable
+hook. The generic tool hint does not prove an incorrect static plugin declaration
+or a UV/Hatchling defect. The source-supported
+[native tool preparation correction](python-native-packaging.md#native-editable-tool-preparation)
+delegates auxiliary requirements to default native isolation, without a second
+roster or manual hook orchestration. Its affected
+[package contract](../middle-level-design.md#native-python-package-execution)
+must be accepted before implementation. The correction is not yet implemented,
+prepared or natively qualified; source11, packet2 and binding4 remain failed
+historical subjects rather than admission for changed execution.
+
+Terminal Git captures retain the exact implementation HEAD and complete empty
+status, with no errors. The final observed state was 701,641,855 logical bytes
+and 17,703 entries, within the existing sampled ceilings. Failed owned state
+remains retained with cleanup pending; no cleanup, product archive retention,
+consumer inventory or rebuilt product wheel was produced. These terminal and
+sampled observations do not prove absence of transient writes or OS containment.
+
+Both new-campaign lifetimes are failed and spent. Conservative outer-time charge
+is 8.165730143035167 seconds including the first startup failure. At most one
+separately admitted package lifetime remains, with its own thirty-two-call and
+600-inclusive-second ceilings inside the unchanged 1,800-second campaign ceiling.
+Readiness6 and readiness8 consume two of nine preparations; seven remain, each
+still limited to 120 seconds/eight Git reads inside the 1,260-second cumulative
+ceiling. Their conservative outer-time total is 5.961342122 seconds. No allowance
+is refunded or transferred.
+
+Independent triage identifies no additional owner scope/effects decision for the
+bounded correction. It still requires accepted contracts, implementation review,
+fresh exact compilation/preparation, engineering and records/research review,
+protected protocol delivery, exact readiness and its independent actual audit
+before another launch. Existing public-only owned effects and every product
+version, original-byte, content and consumer obligation remain unchanged.
+Auxiliary isolated backend resolution is not claimed lock-frozen. Larger effects,
+reduced guarantees, unavailable necessary capability or exhausted allowance still
+return to the owner. No root pytest, caller cutover, Windows, Release or
+publication qualification follows from this failed observation.

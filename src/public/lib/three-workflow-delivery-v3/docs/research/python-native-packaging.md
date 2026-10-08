@@ -7,8 +7,10 @@ build its complete wheel/sdist set and consume the original distributions
 without a second dependency declaration or application implementation of UV.
 This is pinned public-source evidence and a narrow design inference. The separate
 [final failed observation](python-native-package-qualification.md#final-package-failure-and-spent-campaign)
-records actual unsuccessful integration; the corrected phase composition remains
-unobserved. The [MLD](../middle-level-design.md#native-python-package-execution)
+records actual unsuccessful integration. The later
+[editable preparation failure](python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
+also leaves the corrected composition unqualified. The
+[MLD](../middle-level-design.md#native-python-package-execution)
 owns the selected integration; the separate
 [concrete package protocol](python-native-package-qualification.md) and actual
 observation remain prerequisites for qualification.
@@ -49,8 +51,9 @@ The existing root `dev` group declares Hatchling and quality tools;
 `workflow-delivery-python` declares `build` and workspace `nbgv-python`. The
 maintained plugin has its own static version and Hatchling backend. Reusing
 these declarations avoids a backend roster or lock parser. The candidate
-bootstrap excludes local products first, then selects both existing groups with
-shared build mode and native declared workspace editability for source building. The [first native preparation failure](python-native-package-qualification.md#first-native-preparation-failure)
+earlier bootstrap excluded local products first, then selected both existing
+groups with shared build mode and native workspace editability for source building.
+The [first native preparation failure](python-native-package-qualification.md#first-native-preparation-failure)
 shows that selecting only the build/plugin group removes the previously installed
 backend tools. Shared build mode does not preserve an omitted group.
 The final failed observation established that noneditable sync before checked
@@ -76,6 +79,51 @@ Default native build produces sdist then wheel from that sdist; explicit both-fo
 selection can build both from source. Native archive input, package selection,
 prepared interpreter and output directory are available. These contracts do not
 make an arbitrary isolated backend resolution lock-frozen.
+
+## Native Editable Tool Preparation
+
+The separately audited second corrected-campaign lifetime failed while preparing
+editable `nbgv-python`: Hatchling could not import `editables`. Product build,
+contents and both original consumers were not reached. Independent triage
+classified `EDITABLE-PREPARATION-001` as a true positive, confidence 10/10 for the
+observed failure and 9/10 for the integration cause. The
+[actual observation](python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
+retains the exact subject, failed results and remaining allowance.
+
+At pinned Hatchling `c4abc454f908bb4fc2a92452a82cb33dac14abf3`, the public
+[editable requirement hook](https://github.com/pypa/hatch/blob/c4abc454f908bb4fc2a92452a82cb33dac14abf3/backend/src/hatchling/build.py#L61-L69)
+returns configured requirements plus `EDITABLES_REQUIREMENT`. The
+[editable builder](https://github.com/pypa/hatch/blob/c4abc454f908bb4fc2a92452a82cb33dac14abf3/backend/src/hatchling/builders/wheel.py#L543-L550)
+imports that module. This is a maintained dynamic requirement channel; the
+generic UV hint about a likely missing static declaration does not establish a
+plugin manifest defect.
+
+Pinned UV's [build environment preparation](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-build-frontend/src/lib.rs#L373-L510)
+assumes a supplied environment in shared mode. Isolated preparation queries the
+backend and resolves/installs its additional requirements. The separately exposed
+requirement-query method remains available to shared-mode callers; this source
+finding does not claim that no such caller can query requirements. The actual
+capture observes a failed import, without tracing every hook invocation.
+
+The source-supported correction uses one frozen native sync of the existing
+`dev` and `workflow-delivery-python` groups with default isolation and declared
+workspace editability. It removes the redundant dev bootstrap and forced shared
+editable installation. UV supplies auxiliary requirements; Workflow adds no
+backend roster, plugin/root declaration amendment or manual hook orchestration.
+Auxiliary isolated backend requirements are native-resolved and are not promised
+lock-frozen. Final installed tools still come from the selected locked groups;
+relevant observed builder/version inputs remain part of qualification evidence.
+The complete original product build retains prepared tools, shared mode and
+native build-dependency checking. Same-tools noneditable reconciliation and
+Git-free original-archive consumption remain unchanged.
+
+This is source evidence and a correction inference, not successful runtime
+qualification. Accept the affected contract before implementation, then bind and
+review a fresh exact subject/protocol/readiness before using the remaining
+package lifetime. Existing owned public-only installation/build/cache effects,
+credentials/TLS restrictions and finite bounds apply. No additional owner decision
+was identified for this bounded candidate; changed effects, reduced guarantees or
+exhausted allowance still require owner disposition.
 
 ## Native Original-Archive Build Identity
 
