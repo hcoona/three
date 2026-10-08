@@ -45,8 +45,11 @@ The existing root `dev` group declares Hatchling and quality tools;
 `workflow-delivery-python` declares `build` and workspace `nbgv-python`. The
 maintained plugin has its own static version and Hatchling backend. Reusing
 these declarations avoids a backend roster or lock parser. The candidate
-two-stage frozen preparation excludes local products first, then installs the
-build/plugin group with shared build mode and noneditable distributions.
+two-stage frozen preparation excludes local products first, then selects both
+existing groups for the final exact sync with shared build mode and noneditable
+distributions. The [first native preparation failure](python-native-package-qualification.md#first-native-preparation-failure)
+shows that selecting only the build/plugin group removes the previously installed
+backend tools. Shared build mode does not preserve an omitted group.
 Noneditable installation is needed to avoid an implicit editable source-checkout
 input during Git-free consumption. Neither source finding proves the actual
 installed footprint, source independence or full backend suitability.

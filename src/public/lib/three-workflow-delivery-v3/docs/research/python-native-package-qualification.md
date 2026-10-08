@@ -246,3 +246,45 @@ protocols. Recheck native contracts when pins/backend/preparation change or at t
 next Python integration review. Do not turn this single observation into future
 compatibility, arbitrary-backend, Windows, publication or complete contraction
 acceptance.
+
+## First Native Preparation Failure
+
+The first admitted lifetime executed under protected protocol
+[PR #1088](https://github.com/hcoona/three/pull/1088), merge
+`3bf79a4ba11676e9ec74934b0402edb10f7928b7`, against the exact PR #1087
+component and packet above. It remains failed. The protocol delivery carrier
+retains all 38 original failure records, complete streams and receipts, the
+981,588-byte native workspace metadata response, outer transport evidence and
+independent classification. Failed owned state remains retained; no retry or
+cleanup ran.
+
+Observed on the pinned Linux tools: frozen metadata and both planning syncs
+succeeded. The first sync installed Hatchling from `dev`. The second exact sync
+selected only `workflow-delivery-python`, successfully built the maintained
+`nbgv-python` distribution, then reported removal of 11 packages including
+Hatchling. The subsequent maintained identity query returned exit 1 and
+`ModuleNotFoundError`. It did not reach the planning harness, application
+executor, product distribution build or either consumer.
+
+The helper's first identity import requires Hatchling, and the retained installed
+files lack it. This is the independently classified causal inference; the
+sanitized command error does not itself name the missing module. The production
+executor contains the same two-sync selection, so the defect also affects its
+source-derived recipe. UV's exact reconciliation worked as requested. Shared
+build mode does not preserve a dependency group omitted from the final selection.
+
+The smallest correction keeps the bootstrap dev sync and makes the final native
+sync select both existing `dev` and `workflow-delivery-python` groups. It retains
+the frozen lock, shared build mode and noneditable plugin without another
+dependency declaration or an inexact environment-retention fallback. This
+correction is not native qualification. A fresh diagnostic needs separately
+protected corrected component, operator and exact packet identities; the original
+failed packet and lifetime must not be repurposed.
+
+The failed lifetime spent four UV/Python calls and 4.366 seconds, with an outer
+elapsed time of 4.424 seconds. All supervised commands reported no remaining
+process-group members. Terminal HEAD and complete status remained unchanged and
+clean. Final sampled state was 423,517,350 logical bytes, 14,712 entries and 1,066
+links; owned cleanup remains pending. These observations establish the early
+failure and its bounded stop, not installed-plugin independence, complete runtime
+relocation, version agreement, original archives, consumers or caller cutover.

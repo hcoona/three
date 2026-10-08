@@ -94,9 +94,9 @@ internal static class PythonPackageExecution
                             Directory.CreateDirectory(archives);
                             await UvAsync(checkout, ["sync", "--frozen", "--only-group", "dev",
                                 "--no-install-workspace", "--python", request.Interpreter]);
-                            await UvAsync(checkout, ["sync", "--frozen", "--only-group",
-                                "workflow-delivery-python", "--no-build-isolation", "--no-editable",
-                                "--python", request.Interpreter]);
+                            await UvAsync(checkout, ["sync", "--frozen", "--only-group", "dev",
+                                "--only-group", "workflow-delivery-python", "--no-build-isolation",
+                                "--no-editable", "--python", request.Interpreter]);
                             NativeCommandResult identity = await HelperAsync(python, checkout,
                                 ["identity", Path.Combine(checkout, subject.Directory)]);
                             using JsonDocument native = JsonDocument.Parse(identity.Stdout);
