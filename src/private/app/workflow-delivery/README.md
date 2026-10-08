@@ -70,8 +70,10 @@ selected empty groups carrying Python constraints stop with an attributed diagno
 until a constraint-preserving transfer exists. Nonempty metadata associations remain
 strict. The
 [current-tool observations](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#final-diagnostic-and-empty-group-correction)
-retain three failed captures and exhausted execution slots; corrected complete graph
-collection remains unqualified. Metadata adaptation and operation
+retain three failed captures and the exhausted original allowance; corrected complete graph
+collection remains unqualified. Any further capture follows the
+[current-tool protocol's accepted extension](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#six-slot-current-tool-extension)
+and execution gates. Metadata adaptation and operation
 dependency projection retain native IDs, dimensions and build-source associations.
 The [primitive Linux observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper boundary; complete native fact collection, native caller
