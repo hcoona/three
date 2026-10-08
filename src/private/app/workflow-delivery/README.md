@@ -170,6 +170,29 @@ file. It does not interpret requirements or plugin configuration.
 These controlled components do not invoke the complete collector, assign committed
 ownership, expand checks or replace callers.
 
+### Controlled Native Python Graph Collection
+
+[`PythonNativeGraphReader`](Repository/PythonNativeGraphReader.cs) composes metadata,
+passive extraction, ordered supplementation and activity projection for one caller-prepared
+endpoint. Metadata supplies the complete member roster; root and tableless contexts remain
+visible. A synchronous caller-owned factory receives that same metadata answer once and
+constructs actual operation dimensions from native member/root contexts. UV retains group
+and default semantics; no second metadata query or maintained member roster is needed.
+Passive NBGV working-directory/generated-file coordinates remain available to the later
+committed-input binding. The collector returns native dependency facts, operation
+identities, interpreter and configuration inputs; it does not create runnable checks.
+
+The bootstrap supplement lowers build strings before the activity request can include their
+unchanged marker expressions. A second ordered supplement answers the complete native
+marker/group/constraint request in distinct fresh scratch. Native tools own semantics;
+Workflow joins their resolved coordinates. No additional parser, project declaration,
+cache or persistent graph record is introduced. Failure or cancellation prevents a partial
+return. The caller owns checkout/tool preparation, credential-free process environment,
+configuration/cache/temp roots and cleanup. Controlled command-substitute tests qualify
+this composition only. Actual current-tool native collection, committed version/quality
+input binding, package preset expansion, preparation/execution and caller cutover remain
+pending; the stopped primitive campaign supplies no execution allowance.
+
 ### Controlled Python Input Consumer Mapping
 
 [`PythonInputConsumers`](Repository/PythonInputConsumers.cs) maps supplied native
