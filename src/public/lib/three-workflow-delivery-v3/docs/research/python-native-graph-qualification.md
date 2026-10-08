@@ -165,7 +165,7 @@ parallel semantics or weaken coverage.
 
 Retain original evidence before making separately sanitized public copies. The
 independent audit decides whether the exact collector observation is sufficient;
-source findings, observations and inferences remain distinct. Nineteen controlled
+source findings, observations and inferences remain distinct. Twenty-two controlled source4
 supervisor tests establish only synthetic supervisor behavior, not this native
 observation.
 
