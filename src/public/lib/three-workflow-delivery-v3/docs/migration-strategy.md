@@ -275,6 +275,38 @@ full mode and the existing nonempty selected-check/origin guards. Do not duplica
 shared relation/unit expansion inside Python or call `PlanSelected` with an
 externally completed selection that skipped that expansion.
 
+#### Native Python Package Execution Integration
+
+Implement the [native package contract](./middle-level-design.md#native-python-package-execution)
+in the existing private app after accepting its native source basis. C# owns
+finite check expansion and orchestration; a minimal Python helper may call
+maintained packaging, native installed metadata and standard archive interfaces
+where needed. It does not parse UV lock/dependency/backend semantics. Preserve
+the adopted project's payload/API expectations in its registered quality
+implementation, separate from ordinary native distribution validity.
+
+Reuse the committed root development/build-tool groups and maintained
+`nbgv-python` plugin, with native frozen/shared/noneditable preparation and
+build-dependency checking. Bind the repository-pinned official NBGV command
+through the plugin's existing command selection, exact runtime and full relevant
+Git inputs. Native backend builds may compute version again; agreement, rather
+than a single invocation, is required. No generated backend roster, alternate
+version injection, smoke witness or static-project rewrite is introduced.
+
+Controlled validation covers complete declared outputs and version agreement,
+failed/missing required checks, native preparation/build failure, installed
+consumer origin, Git-free sdist invocation, cancellation and original result
+transfer. Native qualification additionally observes actual selected frozen
+installation, noneditable plugin independence, shared backend requirements,
+wheel/sdist contents and both clean consumers using one concrete protected finite
+protocol with a diagnostic buffer. Stop at the first accepted success. Source
+findings alone do not establish those results.
+
+Keep existing build-constraint generators, adapter constants, root pytest
+preparation and Python workflow callers until their complete replacement
+consumers are accepted and can retire atomically. Package implementation alone
+does not qualify paired caller/cutover or migrate Release.
+
 ### Native .NET CI Group
 
 This group replaces general .NET CI selection and execution using the current

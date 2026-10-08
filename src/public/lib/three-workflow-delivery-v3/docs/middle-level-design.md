@@ -501,6 +501,64 @@ the repository's Windows default unless a declared variant selects another runne
 
 ## Builds, Packages and Consumers
 
+### Native Python Package Execution
+
+Use the private C# application to expand adopted package checks, invoke native
+operations and join their outcomes through existing `CheckSpec`, `PackageTarget`
+and result contracts. UV owns frozen group/workspace selection, noneditable
+installation, PEP 517 backend requirements and build dispatch. The maintained
+`nbgv-python` plugin owns official NBGV invocation. Do not port these semantics,
+maintain a second backend-requirement declaration, rewrite project version
+metadata or inject a replacement version engine. The
+[source assessment](./research/python-native-packaging.md) distinguishes these
+selected boundaries from unqualified runtime behavior.
+
+For the current adopted Python distribution contract, prepare an owned native
+project environment from the existing root `dev` and `workflow-delivery-python`
+groups and synchronized lock. Frozen root-dev sync excludes local workspace
+products; subsequent frozen build/plugin-group sync uses native shared build
+mode and `--no-editable`. Reuse installed build tools according to UV's native
+shared-environment contract. The root-dev footprint is existing infrastructure,
+not an application-maintained minimal backend roster. Actual selection and
+installation must establish that unrelated workspace products are not built.
+This package-tool preparation does not replace root pytest's selected/full
+member preparation obligations.
+
+Build the complete declared wheel/sdist set with native `uv build`, the selected
+package and prepared interpreter. Enable the pinned native
+`build-dependency-check` preview with shared build mode; it checks declared,
+backend-reported and transitive requirements. Missing native prerequisites fail;
+there is no skip flag or application fallback. Frozen preparation remains the
+selected installation authority: permissive installed-version checks do not
+establish strict source or original-archive identity. A changed tool or necessary
+backend shape requires the affected native-contract review before use.
+
+Consume normal native distribution metadata through maintained packaging and
+Python library interfaces. Preserve necessary archive path, size and ambiguous
+member checks without requiring a universal literal payload, tar encoding or
+V3 witness. Distribution spelling does not determine its import module. The
+registered project quality implementation retains actual payload and installed
+API expectations; those expectations are not universal package-format rules.
+
+Wheel consumption installs the original wheel in a fresh owned environment.
+Git-free sdist consumption builds the original archive from a neutral directory
+outside Git, using prepared noneditable backend/plugin distributions, then
+installs its resulting wheel into another clean environment. Neither consumer
+implicitly imports the source checkout. Native installed metadata, import origin
+and the applicable project API check must agree with the intended native version
+and outputs; command exit alone cannot satisfy them. Native Hatchling metadata
+reuse is a source-supported candidate for retaining the sdist version, not an
+accepted Git-free runtime result. Do not rewrite `pyproject.toml` to force success.
+
+Keep complete build, contents, wheel install/import and Git-free sdist
+build/install/import obligations individually visible even when one native
+build serves multiple checks. Native fact selection remains separate from
+execution. The exact tools/helper/harness, environment/download/cache effects,
+finite command/diagnostic/time/state bounds, stop and owned cleanup must receive
+independent review and protected protocol acceptance before native qualification.
+Earlier graph/enrichment campaigns supply no package allowance. Missing necessary
+native capability stops for owner disposition without reduced check coverage.
+
 Build and qualification operations receive the selected revision, native entry
 point, dimensions, expected native version projections and relevant locked inputs.
 Planning may calculate NBGV; builds may calculate it again under the same relevant

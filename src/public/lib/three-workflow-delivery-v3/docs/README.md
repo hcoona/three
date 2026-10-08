@@ -228,6 +228,10 @@ The [implementation plan](./migration-strategy.md) maps the actual cutover group
 and their validation dependencies.
 Local observations and the Windows assumption
 are recorded in [contraction feasibility](./research/contraction-feasibility.md).
+The [native Python packaging assessment](./research/python-native-packaging.md)
+supplies the source basis for frozen/shared/noneditable preparation and native
+Git-free version reuse; actual package execution remains unqualified.
+
 The [Python native planning source assessment](./research/python-native-planning.md)
 examines UV metadata and native build-source association candidates for the next
 Python integration.
