@@ -357,3 +357,142 @@ independently classified and protected diagnostic remains if this one fails.
 The first independently accepted success terminates unused diagnostics. No graph
 capture allowance, publication authority or failed-state cleanup is borrowed.
 Root pytest, caller cutover, Release and Windows support remain separate obligations.
+
+## Second Native Failure and Separate Post-Stop Inspection
+
+The first fresh diagnostic ran once after protected
+[PR #1090](https://github.com/hcoona/three/pull/1090), merge
+`6edb46f04d5c8ae51fe48b3f95c159211ddd1e94`, and its
+[union-tree verification](https://github.com/hcoona/three/pull/1090#issuecomment-6058712335).
+The second lifetime remains failed, spent and retained. Its four preliminary
+native calls succeeded, including the corrected two-group preparation and
+maintained identity. The planning harness produced all four required checks.
+The supervisor then terminated the application because its nonfollowing state
+scan encountered two CLR debug FIFOs in the newly owned temporary directory.
+No application business result or complete package/consumer qualification was
+captured. The same scan prevented both terminal Git commands from starting;
+original terminal HEAD/status and final state remain unavailable.
+
+Independent classification identifies an experiment-monitor/runtime mismatch,
+rather than an observed product failure. The pinned .NET runtime source supports
+explicit `DOTNET_EnableDiagnostics=0` before each .NET host as a candidate for a
+later finite diagnostic. That is source evidence, not observed corrected behavior
+or a production setting. Disabling diagnostic IPC alone does not establish that
+debugger FIFOs are suppressed. No application adapter change follows from this
+monitor failure.
+
+The delivery carrier retains the complete original failure, its 53-record
+inventory, special-file metadata, independent classification, full public
+representation review and exact original/public mappings. Original inventory
+SHA256 is `15f6de9c156f6bbb60be00facd34b2a2ff0263ff4d8a311b7c48d71af59a31ad`;
+independent classification SHA256 is
+`f2a67f080ed6c84becfb6c5212554736f6429b2d0e11ec5ece29d90a97710044`.
+Original unavailable receipts must not be repaired or retrospectively relabeled.
+The first two lifetimes consumed 23 reserved calls and 11.098563230014406
+inclusive seconds. Uncertain application starts are not refunded. Numerical
+capacity for slot three does not establish admission.
+
+### Bounded Read-Only Recovery Subject
+
+Permit one separately protected, exact read-only inspection of the retained
+second lifetime and its independent checkout at `cb3b3f52`. Its purpose is to
+capture separate current facts needed for an independent next-launch decision;
+it cannot reconstruct the missing historical terminal observations. This
+inspection is not a package lifetime or permission to run slot three.
+
+Before execution, the delivery PR must bind and independently review the full
+temporary source, immutable subject inventories, exact interpreter/Git/runtime
+identities, argv, minimal environment, absent fresh evidence destination and
+complete original/public representation. Protected merge and actual hosted
+evidence acceptance precede the once-only invocation. A source, subject or
+environment mismatch stops without repair or an automatic retry.
+
+The inspection may only read and hash the original 53 failure records, observe
+same-user current process/path and recorded PID/start correlations, enumerate
+retained state without following links, read native Git HEAD/tree/complete
+status/committed entries/refs, and verify committed file modes/content and the
+two previously bound LFS payloads. Bind the exact local Git configuration, which
+has no executable filter, fsmonitor or include/worktree-configuration setting;
+reject a configuration mismatch before native reads and recheck it afterward.
+Exclude system/global configuration, optional index writes, credentials, prompts
+and lazy network fetching. Process observations
+are finite current correlations, not universal containment or proof of the
+specific FIFO creator. Enumerate the two exact known FIFO paths/modes using
+metadata-only Linux handles; do not open a FIFO data endpoint, read, remove or
+trust its payload. Anchor directory traversal and regular reads to validated
+descriptors, without following filesystem links. Reject any
+unexplained special node. Ordinary committed symlinks are verified as link bytes.
+
+The exact temporary operator must enforce a 60-second inclusive inspection
+deadline: 48 seconds for the inner inspection, at most 50 seconds for outer
+collection, five seconds reserved for group stop and five for terminal retention.
+At most seven native read-only Git commands receive at most ten seconds
+each inside that deadline. Retained child streams total at most 8 MiB, partitioned
+as 7 MiB across all Git stdout/stderr and 1 MiB across both outer streams. A 64 MiB
+per-file reading ceiling, and the existing sampled 4 GiB/40,000-entry state
+ceilings. Its enclosing one-shot transport must bound stop and terminal evidence
+retention rather than depending solely on cooperative deadline checks. The
+inspector and its Git children share the outer-owned process group; trusted Git
+uses the bound nonexecuting configuration. Stop the owned group and preserve
+unavailable facts if collection or the inspection fails. Complete
+requests, streams, receipts and unavailable errors remain separately retained.
+The original and later observations have distinct destinations and identities.
+
+Hash original evidence before and after. Record current complete checkout and
+materialized input identities against protected preparation binding3, current
+state/special-node metadata and process correlations. Compare only facts actually
+captured; aggregate byte/entry counts do not prove unchanged file contents. No
+UV, package Python, backend, NBGV, build, import, install or consumer operation,
+failed-state cleanup, launch replay or Git mutation is permitted. The outer
+stdlib inspection itself is visible and separate from package native calls.
+
+The exact one-shot source is `python-package-native-poststop-recovery4.py`,
+25,317 original bytes, SHA256
+`31511c616f2f41a43ec9baf10a298392a84cc9923be57ddc5b5d510e9f3ab14a`.
+Its full preparation binding4 is 1,582,097 original bytes, SHA256
+`dc27a63e8c3c0d43825207622efbf2e89921650bfa85c28709548a4c61f41097`.
+The carrier retains the complete source, binding, original drafts and independent
+finding classification before corrections. Binding4 joins all 53 unchanged
+failure records, original protected preparation/runtime lineage, exact local
+Git configuration, closed two-path LFS roster and 6,694 pinned Python runtime
+file/link identities. Preparation hashes do not establish current native pointer
+or terminal facts; those remain the observation's subject.
+
+Use the existing pinned CPython 3.14.3 executable with `-I -B`, this exact
+source's `observe` entry and the absent
+`/evidence/python-package-native-poststop-recovery4` destination. Binding4
+retains actual argv/cwd/coordinates and the minimal explicit environment:
+PATH `/usr/bin:/bin`, LANG/LC_ALL `C.UTF-8`, `GIT_CONFIG_NOSYSTEM=1`,
+`GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0`
+and `GIT_NO_LAZY_FETCH=1`; inherit no other overrides. Git remains the exact
+prepared `/usr/bin/git` identity. Public absolute prefixes are aliases; original
+hashes identify original bytes and public hashes identify complete mapped bodies.
+Rehash every bound execution subject and original failure record before the
+once-only launch; an absent destination and successful protected/hosted admission
+must be current. Earlier nonexecuting drafts are not alternate entry points.
+
+### Interpretation and Remaining Diagnostic Gate
+
+An independent reviewer must inspect the actual complete recovery, join it to
+the original failed records and classify whether current checkout identity,
+state limits and stopped-process facts are sufficient for a separately prepared
+diagnostic. Preserve missing historical observations as missing. A changed
+subject, remaining relevant process, unexplained state, unavailable required
+fact, deadline/stream failure or incomplete evidence prevents admission and
+requires concrete owner disposition; no recovery loop follows.
+
+The deliberately retained failed owned state is not a successful cleanup claim.
+If the separate current facts are independently accepted, that known retained
+state alone does not bar fresh preparation at an absent lifetime-three
+destination. This narrow recovery does not waive unexplained changes, live
+children, failed attempted cleanup or any final successful capture/cleanup gate.
+It adds no reusable recovery service or live special-file allowlist.
+
+Slot three still requires its own fresh exact source/operator/environment/packet
+binding, protected protocol, independent reviews and readiness. The candidate
+diagnostics setting must propagate to the harness, application and inherited
+official NBGV children without weakening a business check. The original
+three-lifetime/1,800-second campaign, 32-call/600-second lifetime and 60-second
+native command ceilings remain unchanged. The first accepted success ends spare
+capacity; no stopped graph allowance, publication, dispatch, access change,
+caller cutover, root pytest, Release or Windows qualification is supplied here.
