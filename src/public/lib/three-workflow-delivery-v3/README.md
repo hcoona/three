@@ -24,8 +24,9 @@ transfer and execution qualification. The exclusive npm CI shadow is retired.
 Python passive extraction, the pinned native supplement, metadata adaptation and
 dependency projection have controlled component boundaries. The private app also
 provides a [bounded native pytest configuration component](../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
-with controlled tests; complete native ownership and query qualification remain
-pending. The
+with controlled tests; the separate planning-input observation below qualifies
+its exact native query and target/input composition. Complete caller ownership
+and qualification remain pending. The
 [paired Python producer-to-owner component](../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
 has controlled supplied-fact coverage. The
 [controlled paired Python fact assembly](../../../private/app/workflow-delivery/README.md#controlled-paired-python-fact-assembly)

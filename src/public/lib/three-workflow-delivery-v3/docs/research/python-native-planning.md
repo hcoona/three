@@ -182,9 +182,10 @@ bounds; these results do not authorize it.
 
 ## Next Evidence and Recheck
 
-Before selecting a complete reader, the remaining questions are complete
-endpoint operation/activity and committed ownership assembly, generated/version
-input consumers, Python check/prerequisite/execution mapping and caller cutover.
+Before selecting a complete runnable caller, the remaining questions are
+complete endpoint operation/activity and runnable ownership assembly, integration
+of the qualified generated/version producer inputs into actual check consumers,
+Python check/prerequisite/execution mapping and caller cutover.
 Undeclared dynamic inputs retain the implementation plan's unsupported boundary.
 No generic helper framework is implied.
 
