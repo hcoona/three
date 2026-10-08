@@ -53,12 +53,14 @@ has controlled supplied-fact coverage. The
 binds supplied native targets and actual checks. The
 [controlled native Python graph collector](../../../../private/app/workflow-delivery/README.md#controlled-native-python-graph-collection)
 composes metadata, passive inputs and ordered native dependency answers with
-caller operations bound to the same metadata. These controlled tests do not
-qualify actual current-tool native collection. The [controlled Python repository input associations](../../../../private/app/workflow-delivery/README.md#controlled-python-repository-input-associations)
+caller operations bound to the same metadata. The separately accepted
+[current-tool observation](./research/python-native-graph-qualification.md#completed-ordinary-and-no-dev-observation)
+qualifies exact complete ordinary/no-dev graph composition on its pinned Linux
+subjects; its campaign and cleanup are complete, and remaining captures stopped. The [controlled Python repository input associations](../../../../private/app/workflow-delivery/README.md#controlled-python-repository-input-associations)
 bind supplied actual check owners to repository engineering inputs; native queries
 and full caller behavior remain pending. Package preset expansion and
 preparation/execution remain pending. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
-qualifies the pinned helper composition. Complete native query composition, native
+qualifies the pinned helper composition. Native pytest/NBGV input composition, complete native
 caller qualification and caller mapping remain pending.
 
 The pre-contraction normal-Live baseline was merged across the

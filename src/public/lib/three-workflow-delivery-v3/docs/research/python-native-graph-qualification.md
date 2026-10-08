@@ -6,11 +6,12 @@ This protocol qualifies the actual managed collector against the current
 repository lock and prepared tools. It implements the accepted
 [Python integration order](../migration-strategy.md#python-planning-integration-and-later-caller-cutover)
 within the accepted [Delivery Wave](../../../../../../docs/delivery-wave.md).
-Exact source, preparation and protocol review and protected delivery must complete
-before any newly admitted query. All three failed captures and their corrections are retained below. The original three-capture
-allowance is exhausted. The owner-approved [six-slot extension](#six-slot-current-tool-extension)
-admits bounded additional captures only after its exact protected acceptance;
-source correction alone does not authorize another run.
+The campaign completed with the independently accepted ordinary/no-dev
+[observation](#completed-ordinary-and-no-dev-observation) and once-only owned
+cleanup. All four captures, including the three failed lifetimes, and the unique
+attempt-3 cleanup recovery remain preserved. The first accepted success stopped
+all remaining slots. This retained protocol and its historical extension grant
+no further capture or cleanup.
 
 The stopped [primitive campaign](python-native-planning.md#primitive-native-observation)
 and its expired reserves remain unchanged. This new subject is complete production
@@ -188,13 +189,11 @@ an attempt.
 
 ## Outcome and Recheck
 
-The first main capture failed before completing ordinary collection. Its partial
-results and runtime/cleanup correction are described below. Qualified success
-would establish only complete current-tool collector composition on the recorded
-Linux host. It would not establish native pytest qualification, managed NBGV
-query binding, quality preset expansion, preparation/install/build/check execution,
-package consumers, full paired caller behavior, caller cutover, Windows or release
-readiness.
+The completed observation establishes only complete current-tool collector
+composition on the recorded Linux host. It does not establish native pytest
+qualification, managed NBGV query binding, quality preset expansion,
+preparation/install/build/check execution, package consumers, full paired caller
+behavior, caller cutover, Windows or release readiness.
 
 Recheck affected source/operation contracts when tools, lock format, source or
 necessary environment changes, or the next integration review relies on them.
@@ -204,6 +203,9 @@ protocol stop for owner disposition. Routine repetitions within its accepted
 finite boundary need no repeated owner approval.
 
 ## Six-Slot Current-Tool Extension
+
+This extension is complete and stopped. The following terms retain the exact
+accepted execution and recovery basis; they authorize no repeat.
 
 The owner approved six additional captures on 2026-10-08 after the original
 three captures failed. Number them attempt 4 through attempt 9 in the same
@@ -227,7 +229,8 @@ admits cleanup indices 1 through 9. Source5 and source4 bytes and all earlier
 receipts remain immutable. The protocol delivery PR retains exact source6,
 controlled tests, source/helper/packet hashes, original/public mapping and
 independent engineering, record-system and research-evidence review. Controlled
-validation establishes supervisor behavior only; actual capture remains unqualified.
+validation establishes supervisor behavior only; the later accepted observation
+below separately establishes actual collector composition.
 
 The sole exception to the cleanup-stop rules above is the recorded attempt-3
 exit-zero cleanup whose owned-target absence was not established. Before attempt
@@ -257,6 +260,54 @@ authentication, Environment/access change or other ecosystem operation. Those
 retain their existing distinct prerequisites. After exact protocol/preparation
 acceptance and protected merge, routine executions within this finite boundary
 require no repeated owner confirmation.
+
+## Completed Ordinary and No-Dev Observation
+
+Attempt 4 ran once under protected protocol
+`ae36e8eff1577731bf2336bd298743de641a5c4f`, with the fixed application,
+endpoints and tools above and the corrected source6/helper packet. Independent
+composition review by `/root/python_pytest_query_review` accepted the actual
+complete result with no material findings, confidence 9/10. Independent cleanup
+review by `/root/python_group_owner_final_review` accepted actual absence,
+preservation and complete accounting with no material findings, confidence 9/10.
+The delivery PR retains their full reports and original/public evidence mapping.
+
+Both endpoints completed all 21 requested native commands. Native metadata
+contains 16 members including the root; all 16 passive contexts, 32 directory
+and singleton package operations, 17 unique marker requests, the interpreter
+constraint and 16 configuration input paths transfer completely. Recorded
+native answers reproduce every managed ordinary/build dependency set. The
+build-only smoke consumer and ordinary-plus-build sample both retain their
+maintained-plugin relation; input-only and tableless members remain present.
+Ordinary operations retain their actual owner groups; no-dev retains none.
+The same resulting local dependency graph is an observation of this snapshot,
+not general equivalence between ordinary and no-dev modes.
+
+| Retained original            | SHA256                                                             |
+| ---------------------------- | ------------------------------------------------------------------ |
+| Ordinary graph               | `53a50328f1b1368fb0e0db1959f1f7d35bf75773bb1e6c4c667c05cb18ff904c` |
+| No-dev graph                 | `ecff1a979a9bd98132ba7e2ef2b47f89b16afb94b1709354db97e802d647b808` |
+| Original 116-file manifest   | `0aeb422edf61f57eaabfda0196294c369dc8ec5e07254bf97a1870ff448573d7` |
+| Original 191104-byte archive | `e0003c98336e2253ba786ee9e1537da88d98e5f402d7cc60f873c5f2aa10f88c` |
+
+Both outer leaders exited zero with completed group stops. Runtime state
+observations completed within the accepted bounds. Independent endpoint and
+runtime readback found unchanged commits, locks, tools and inputs, with project
+environments absent. Original retention preceded cleanup. All 100 nonowned
+originals remain byte-identical; the 16 removed owned originals remain in the
+116-file archive. All six authorized attempt-4 roots are absent. Historical
+failures, original cleanup and the unique attempt-3 recovery remain unchanged.
+
+The capture charged `5.051158706017304` seconds and complete cleanup charged
+`0.032500535977305844` seconds. Including every earlier capture, cleanup and
+recovery, final campaign charge is `11.603933855018113` seconds. No duration,
+slot or reserve was refunded. The first independently accepted complete success
+stopped attempts 5 through 9; unused capacity is not a continuing grant.
+
+These results qualify only the exact native collector composition. Subsequent
+[planning-input enrichment](python-planning-enrichment-qualification.md) reuses
+these retained answers and requires its own accepted exact protocol before
+querying pytest or managed NBGV inputs. It issues no new UV graph query.
 
 ## First Capture and Runtime Correction
 

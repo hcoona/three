@@ -32,14 +32,18 @@ has controlled supplied-fact coverage. The
 binds supplied native targets and actual checks. The
 [controlled native Python graph collector](../../../private/app/workflow-delivery/README.md#controlled-native-python-graph-collection)
 composes metadata, passive inputs and ordered native dependency answers with
-caller operations bound to the same metadata. These controlled tests do not
-qualify actual current-tool native collection. The [controlled Python repository input associations](../../../private/app/workflow-delivery/README.md#controlled-python-repository-input-associations)
-bind supplied actual check owners to repository engineering inputs; native queries
-and full caller behavior remain pending. Package preset expansion and
+caller operations bound to the same metadata. The separately accepted
+[current-tool observation](docs/research/python-native-graph-qualification.md#completed-ordinary-and-no-dev-observation)
+qualifies complete ordinary/no-dev native graph composition on its exact Linux
+subjects. Its campaign and cleanup are complete, and remaining captures stopped.
+The [controlled Python repository input associations](../../../private/app/workflow-delivery/README.md#controlled-python-repository-input-associations)
+bind supplied actual check owners to repository engineering inputs; native pytest
+and committed-input composition and full caller behavior remain pending. Package preset expansion and
 preparation/execution remain pending. The
 [primitive Linux observation](docs/research/python-native-planning.md#primitive-native-observation)
-qualifies the pinned helper composition; complete native query composition, native
-caller qualification and Python execution cutover remain pending.
+qualifies the pinned helper composition; native pytest and committed-input
+composition, complete caller qualification and Python execution cutover remain
+pending.
 Other quality presets, ecosystem execution cutover and Release remain pending.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
