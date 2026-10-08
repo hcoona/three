@@ -211,6 +211,30 @@ complete Python caller input coverage. Caller-specific lock/toolchain/preparatio
 and root/standalone pytest associations remain explicit caller inputs. Necessary
 outside-endpoint configuration or plugin coordinates are unsupported.
 
+### Controlled Python Repository Input Associations
+
+[`PythonRepositoryInputs`](Repository/PythonRepositoryInputs.cs) associates supplied
+native pytest targets and adopted package check owners with repository engineering
+inputs. It preserves shared CI/Python preparation, passive/plugin, retained V3, Azure
+interoperability, NBGV tooling and exact engineering/legacy contract consumers.
+It reuses native target binding, preserves absent shared configuration candidates
+and emits deterministic owner relations without creating producers or runnable
+targets. Unknown source scope remains unresolved.
+
+`Pair` evaluates the same finite input relations against both actual endpoint
+owner sets and emits committed initiating path/revision reasons. Supply its complete
+result to `PythonFactsAssembler.Assemble` before classifying unresolved scope or
+unaffected paths. A deleted input can reach a candidate-only standalone check;
+owners remain in their actual endpoint facts and the shared core retires absent
+candidate work. An omitted paired result is not complete repository association.
+
+Controlled mapping and paired selection tests retain endpoint-specific input
+reasons, surviving check owners and complete candidate check variants. This does
+not query native tools, implement dependency semantics, expand presets or replace
+the Azure independent job. Actual
+native graph/pytest qualification, complete caller preparation, distribution and
+execution obligations, transfer and atomic caller retirement remain pending.
+
 ### Native Pytest Configuration Component
 
 [`pytest_configuration.py`](Native/Python/pytest_configuration.py) uses public
