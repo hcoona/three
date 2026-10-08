@@ -177,6 +177,33 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow(1)]
+    [DataRow(2)]
+    [DataRow(3)]
+    [DataRow(4)]
+    [DataRow(5)]
+    [DataRow(6)]
+    [DataRow(7)]
+    [DataRow(8)]
+    public async Task CancelledNativeResultStopsBeforeFollowingStage(int stage)
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken);
+        using var fixture = new Fixture
+        {
+            CancelAt = stage,
+            Cancellation = cancellation,
+            ReturnCancelledResult = true
+        };
+        OperationCanceledException failure = await Assert.ThrowsAsync<OperationCanceledException>(
+            () => fixture.ReadAsync(cancellation.Token));
+        Assert.AreEqual(cancellation.Token, failure.CancellationToken);
+        Assert.HasCount(stage, fixture.Commands);
+        Assert.HasCount(stage < 6 ? 0 : stage < 8 ? 1 : 2, fixture.Requests);
+        Assert.AreEqual(stage == 1 ? 0 : 1, fixture.FactoryCalls);
+    }
+
+    [TestMethod]
     [DataRow("bootstrap-members")]
     [DataRow("bootstrap-builds")]
     [DataRow("activity-markers")]
@@ -389,6 +416,7 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
         internal bool SupportsPython { get; init; } = true;
         internal int FailAt { get; init; }
         internal int CancelAt { get; init; }
+        internal bool ReturnCancelledResult { get; init; }
         internal CancellationTokenSource? Cancellation { get; init; }
         internal string? Fault { get; init; }
         private PythonGraphRequest? request;
@@ -432,7 +460,12 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
             NativeCommandResult result = new(NativeTermination.Exited, 0, Output(command),
                 "", 0, null);
             if (Commands.Count == FailAt) result = result with { ExitCode = 1 };
-            if (Commands.Count == CancelAt) Cancellation!.Cancel();
+            if (Commands.Count == CancelAt)
+            {
+                Cancellation!.Cancel();
+                if (ReturnCancelledResult)
+                    result = new(NativeTermination.Cancelled, null, "", "", 0, null);
+            }
             return Task.FromResult(result);
         }
 

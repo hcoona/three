@@ -21,9 +21,16 @@ internal sealed class PythonNativeGraphReader
     internal PythonNativeGraphReader(
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute)
     {
-        metadataReader = new(execute);
-        passiveReader = new(execute);
-        supplementReader = new(execute);
+        async Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
+            CancellationToken token)
+        {
+            NativeCommandResult result = await execute(command, token);
+            token.ThrowIfCancellationRequested();
+            return result;
+        }
+        metadataReader = new(ExecuteAsync);
+        passiveReader = new(ExecuteAsync);
+        supplementReader = new(ExecuteAsync);
     }
 
     internal async Task<PythonNativeGraph> ReadAsync(PythonGraphRequest request,

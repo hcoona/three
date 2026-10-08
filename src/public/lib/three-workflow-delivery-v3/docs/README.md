@@ -46,12 +46,16 @@ The [native Python planning contract](./middle-level-design.md#native-python-pla
 has passive extraction, a pinned Rust supplement, ordered configuration
 preflight, metadata adaptation and operation dependency projection with controlled
 unit boundaries. The private app's [bounded native pytest configuration component](../../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
-also has controlled tests; complete ownership, collection and native query
-composition remain unqualified. The [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
+also has controlled tests; complete native ownership and query qualification
+remain pending. The [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
 has controlled supplied-fact coverage. The
 [controlled paired Python fact assembly](../../../../private/app/workflow-delivery/README.md#controlled-paired-python-fact-assembly)
-binds supplied native targets and actual checks; complete native collection,
-package preset expansion and preparation/execution remain pending. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
+binds supplied native targets and actual checks. The
+[controlled native Python graph collector](../../../../private/app/workflow-delivery/README.md#controlled-native-python-graph-collection)
+composes metadata, passive inputs and ordered native dependency answers with
+caller operations bound to the same metadata. These controlled tests do not
+qualify actual current-tool native collection. Package preset expansion and
+preparation/execution remain pending. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. Complete native query composition, native
 caller qualification and caller mapping remain pending.
 
