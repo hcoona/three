@@ -96,7 +96,7 @@ internal static class PythonPackageExecution
                                 "--no-install-workspace", "--python", request.Interpreter]);
                             await UvAsync(checkout, ["sync", "--frozen", "--only-group", "dev",
                                 "--only-group", "workflow-delivery-python", "--no-build-isolation",
-                                "--no-editable", "--python", request.Interpreter]);
+                                "--python", request.Interpreter]);
                             NativeCommandResult identity = await HelperAsync(python, checkout,
                                 ["identity", Path.Combine(checkout, subject.Directory)]);
                             using JsonDocument native = JsonDocument.Parse(identity.Stdout);
@@ -137,6 +137,12 @@ internal static class PythonPackageExecution
                             string install = original.Path;
                             if (kind == PythonPackageChecks.Sdist)
                             {
+                                await UvAsync(checkout, ["sync", "--frozen", "--only-group", "dev",
+                                    "--only-group", "workflow-delivery-python",
+                                    "--no-build-isolation", "--no-editable", "--python",
+                                    request.Interpreter]);
+                                foreach (PythonOriginalDistribution retained in originals)
+                                    RequireOriginal(retained);
                                 // No Git coordinates or editable plugin enter this native build.
                                 var neutral = new Dictionary<string, string?>(environment,
                                     StringComparer.Ordinal);

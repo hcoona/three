@@ -96,8 +96,12 @@ The request supplies caller-bound native members, the prepared checkout, fresh
 external scratch and native tool/helper coordinates. The executor validates the
 committed release declaration and selected check contract before native effects.
 
-UV prepares the existing frozen root groups, installs the maintained plugin
-noneditable and owns PEP 517 dispatch with native build-dependency checking.
+UV prepares the existing frozen root groups with native workspace editability
+through creation of both originals and owns PEP 517 dispatch with native
+build-dependency checking. Before Git-free sdist consumption, one frozen sync
+reconciles the same tools environment to noneditable backend/plugin installation.
+Conversion failure, cancellation or timeout stops sdist consumption and preserves
+the completed original-wheel result; changed original bytes stop the consumer.
 [`packages.py`](Native/Python/packages.py) consumes maintained backend metadata,
 normal distribution metadata and standard archive readers; its registered
 quality check owns the adopted product's payload and installed API. It introduces
@@ -112,8 +116,9 @@ Controlled tests cover this component and CLI transfer. The
 failed before distribution creation: prebuild noneditable preparation conflicts
 with UV's native workspace requirement. The
 [corrected phase contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-package-execution)
-requires an implementation change; complete native qualification remains pending
-and all historical package lifetimes are spent. Existing Python callers,
+now has controlled success, conversion failure/cancellation/timeout and original-integrity
+coverage. Complete native qualification remains pending and all historical package
+lifetimes are spent. Existing Python callers,
 root pytest preparation and Release remain active; this component does not
 switch or retire them.
 
