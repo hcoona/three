@@ -66,7 +66,8 @@ on the exact retained Linux subjects; full caller behavior remains pending. The
 implements finite adopted preset expansion, preparation and execution. The
 [final package experiment](./research/python-native-package-qualification.md#final-package-failure-and-spent-campaign)
 failed at native workspace build-requirement checking; all package lifetimes are
-spent. The corrected phase contract remains unimplemented and unqualified. Actual
+spent. The corrected phase contract has controlled implementation coverage; complete
+native qualification remains pending. Actual
 original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
 preparation/cutover and Release remain pending. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. Complete native caller qualification

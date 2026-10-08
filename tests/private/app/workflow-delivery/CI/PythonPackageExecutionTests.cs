@@ -65,9 +65,100 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             syncs[1].Arguments.Zip(syncs[1].Arguments.Skip(1))
                 .Where(pair => pair.First == "--only-group")
                 .Select(pair => pair.Second).ToArray());
-        Assert.Contains("--no-editable", syncs[1].Arguments);
+        Assert.Contains("--frozen", syncs[1].Arguments);
+        Assert.DoesNotContain("--no-editable", syncs[1].Arguments);
         Assert.Contains("--no-build-isolation", syncs[1].Arguments);
+        PythonPackageCommand sourcePreparation = result.Commands.Single(item =>
+            item.Check.Check == PythonPackageChecks.Build &&
+            item.Command.Arguments[0] == "sync" &&
+            item.Command.Arguments.Contains("workflow-delivery-python"));
+        PythonPackageCommand conversion = result.Commands.Single(item =>
+            item.Check.Check == PythonPackageChecks.Sdist &&
+            item.Command.Arguments[0] == "sync");
+        Assert.Contains("--no-editable", conversion.Command.Arguments);
+        CollectionAssert.AreEqual(sourcePreparation.Command.Arguments,
+            conversion.Command.Arguments.Where(argument => argument != "--no-editable")
+                .ToArray());
+        Assert.AreEqual(sourcePreparation.Command.Directory, conversion.Command.Directory);
+        Assert.AreEqual(fixture.Repo.Directory, conversion.Command.Directory);
+        Assert.AreEqual(sourcePreparation.Command.Environment!["UV_PROJECT_ENVIRONMENT"],
+            conversion.Command.Environment!["UV_PROJECT_ENVIRONMENT"]);
+        NativeCommand sourceBuild = builds.Single(command =>
+            !command.Arguments.Contains("--wheel"));
+        Assert.Contains("build-dependency-check", sourceBuild.Arguments);
+        Assert.IsLessThan(Array.FindIndex(result.Commands, item => item.Command == sourceBuild),
+            Array.IndexOf(result.Commands, sourcePreparation));
+        Assert.AreEqual(sourceBuild.Arguments[Array.IndexOf(sourceBuild.Arguments, "--python") + 1],
+            gitFree.Arguments[Array.IndexOf(gitFree.Arguments, "--python") + 1]);
+        int conversionIndex = Array.IndexOf(result.Commands, conversion);
+        Assert.IsLessThan(conversionIndex, Array.FindIndex(result.Commands, item =>
+            item.Check.Check == PythonPackageChecks.Wheel &&
+            item.Command.Arguments.Contains("consume")));
+        Assert.IsLessThan(Array.FindIndex(result.Commands, item => item.Command == gitFree),
+            conversionIndex);
         Assert.AreEqual(fixture.Plan.Candidate, result.Candidate);
+    }
+
+    [TestMethod]
+    [DataRow("Failed")]
+    [DataRow("Cancelled")]
+    [DataRow("TimedOut")]
+    public async Task FailedSdistPreparationPreservesOriginalsAndCompletedWheel(string statusName)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        fixture.Failure = "sdist-prepare";
+        fixture.Terminal = Enum.Parse<CheckStatus>(statusName);
+        PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
+
+        Assert.AreEqual(fixture.Terminal, result.Results.Single(item =>
+            item.Key.Check == PythonPackageChecks.Sdist).Status);
+        Assert.IsTrue(result.Results.Where(item => item.Key.Check != PythonPackageChecks.Sdist)
+            .All(item => item.Status == CheckStatus.Passed));
+        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+        Assert.HasCount(4, result.Results);
+        Assert.HasCount(2, result.Distributions);
+        foreach (PythonOriginalDistribution original in result.Distributions)
+        {
+            Assert.AreEqual("original", await File.ReadAllTextAsync(original.Path,
+                context.CancellationToken));
+            Assert.AreEqual(Convert.ToHexStringLower(SHA256.HashData("original"u8)),
+                original.Sha256);
+        }
+        Assert.Contains(PythonPackageChecks.Sdist,
+            result.Failures.Select(failure => failure.Check.Check));
+        Assert.Contains(PythonPackageChecks.Wheel,
+            result.Commands.Where(item => item.Command.Arguments.Contains("consume"))
+                .Select(item => item.Check.Check));
+        Assert.IsEmpty(result.Commands.Where(item =>
+            item.Check.Check == PythonPackageChecks.Sdist && item.Command.Arguments[0] != "sync"));
+    }
+
+    [TestMethod]
+    [DataRow("python-wheel")]
+    [DataRow("python-sdist")]
+    public async Task ChangedOriginalDuringSdistPreparationStopsConsumer(string changedKind)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        fixture.Failure = "conversion-original-changed";
+        fixture.ChangedKind = changedKind;
+        PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
+
+        Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
+            item.Key.Check == PythonPackageChecks.Sdist).Status);
+        Assert.IsTrue(result.Results.Where(item => item.Key.Check != PythonPackageChecks.Sdist)
+            .All(item => item.Status == CheckStatus.Passed));
+        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+        Assert.HasCount(2, result.Distributions);
+        PythonOriginalDistribution changed = result.Distributions.Single(item =>
+            item.Output.Kind == changedKind);
+        Assert.AreEqual("changed!", await File.ReadAllTextAsync(changed.Path,
+            context.CancellationToken));
+        Assert.AreEqual(Convert.ToHexStringLower(SHA256.HashData("original"u8)), changed.Sha256);
+        PythonPackageFailure failure = Assert.ContainsSingle(result.Failures);
+        Assert.AreEqual(PythonPackageChecks.Sdist, failure.Check.Check);
+        Assert.Contains("Original Python distribution bytes changed", failure.Error);
+        Assert.IsEmpty(result.Commands.Where(item =>
+            item.Check.Check == PythonPackageChecks.Sdist && item.Command.Arguments[0] != "sync"));
     }
 
     [TestMethod]
@@ -290,6 +381,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             "python-package-").FullName;
         internal List<NativeCommand> Commands { get; } = [];
         internal string? Failure { get; set; }
+        internal string? ChangedKind { get; set; }
         internal CheckStatus Terminal { get; set; } = CheckStatus.Failed;
 
         internal static async Task<Fixture> CreateAsync(CancellationToken token)
@@ -340,7 +432,9 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             Commands.Add(command);
             string[] arguments = command.Arguments;
             bool build = arguments[0] == "build";
+            bool conversion = arguments[0] == "sync" && arguments.Contains("--no-editable");
             bool fail = (Failure == "prepare" && arguments[0] == "sync") ||
+                (Failure == "sdist-prepare" && conversion) ||
                 (Failure == "build" && build) || (Failure == "wheel-consumer" &&
                     arguments.Contains("consume") && command.Directory.Contains(
                         "python-wheel-consumer",
@@ -352,6 +446,12 @@ public sealed class PythonPackageExecutionTests(TestContext context)
                 CheckStatus.TimedOut => NativeTermination.TimedOut,
                 _ => NativeTermination.Exited,
             }, 1, "", "controlled failure", 0.1, null);
+            if (Failure == "conversion-original-changed" && conversion)
+            {
+                string archive = Path.Combine(Scratch, "package-0", "archives",
+                    ChangedKind == "python-wheel" ? "original.whl" : "original.tar.gz");
+                await File.WriteAllTextAsync(archive, "changed!", token);
+            }
             if (build)
             {
                 string destination = arguments[Array.IndexOf(arguments, "--out-dir") + 1];
