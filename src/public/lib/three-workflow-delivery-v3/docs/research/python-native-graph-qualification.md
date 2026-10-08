@@ -127,8 +127,10 @@ to at most 1200 seconds per attempt and 3600 cumulatively. Reserve 30 seconds fo
 owned cleanup inside the attempt budget, with five seconds for process stop
 inside each supervisor deadline. Human review/idle retention is not executable
 time and cannot refill any budget. The supervisor records monotonic elapsed after
-bounded final observations. Incomplete receipts or missing/failed cleanup prevent
-a diagnostic; cleanup elapsed is added before another attempt.
+bounded final observations. Incomplete receipts prevent a diagnostic. Missing or
+failed cleanup also prevents a diagnostic, subject only to the recorded attempt-3
+exception in the [six-slot extension](#six-slot-current-tool-extension). Cleanup
+elapsed is added before another attempt.
 
 Retain at most 32 MiB per outer stream; preserve the available prefix on overflow.
 The production runner's smaller individual capture remains unchanged. Sample
@@ -180,7 +182,9 @@ standard-library child removes only `endpoint-1`/`endpoint-2` generation-owned
 receipts, requests, graph, packet and original evidence. Preserve endpoint source
 snapshots, shared tools/configuration and historical campaigns. Original cleanup
 request/output/termination/elapsed remain retained. Cleanup failure stops later
-launches; unused time does not add an attempt.
+launches, subject only to the recorded attempt-3 exception in the
+[six-slot extension](#six-slot-current-tool-extension). Unused time does not add
+an attempt.
 
 ## Outcome and Recheck
 
@@ -225,8 +229,10 @@ controlled tests, source/helper/packet hashes, original/public mapping and
 independent engineering, record-system and research-evidence review. Controlled
 validation establishes supervisor behavior only; actual capture remains unqualified.
 
-Before attempt 4, invoke the separately reviewed `--recover-attempt3` entry once
-against the absolute existing campaign path. It removes only the six original
+The sole exception to the cleanup-stop rules above is the recorded attempt-3
+exit-zero cleanup whose owned-target absence was not established. Before attempt
+4, invoke the separately reviewed `--recover-attempt3` entry once against the
+absolute existing campaign path. It removes only the six original
 attempt-3 endpoint environment/bootstrap/activity roots. Retain the original
 incomplete cleanup receipt and output; write distinct `cleanup-recovery1`
 receipts and accounting. Deduct the original `0.02923420601291582` seconds from
@@ -235,6 +241,9 @@ the five-second process-stop reservation. No reserve refill or broader cleanup.
 Independently verify target absence, preserved evidence/endpoints and complete
 charge before any next capture. Missing, unreadable, invalid or failed recovery
 accounting blocks further activity; never estimate lost time or replay recovery.
+Only independently accepted recovery completion, target absence, evidence
+preservation and complete valid accounting permit attempt 4. Every other missing
+or failed cleanup, and any failed or incomplete recovery, remains terminal.
 
 The previously charged `6.384458832006203` seconds remain deducted. All existing
 1200-second attempt and 3600-second cumulative limits, state/stream limits,
