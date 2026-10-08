@@ -395,7 +395,15 @@ capacity for slot three does not establish admission.
 
 ### Bounded Read-Only Recovery Subject
 
-Permit one separately protected, exact read-only inspection of the retained
+The original once-only inspection is spent. It failed before native Git reads
+because supplemental process `cwd` access was denied; its outer enriched scan
+also left remaining-group membership unavailable. Preserve those failed facts
+and all original historical nulls. The owner accepted the finite process-evidence
+scope below and six additional read-only inspections, each separately admitted
+under this protocol. This is an independent read-only budget, not package or
+graph capacity.
+
+Permit at most six separately protected, exact read-only inspections of the retained
 second lifetime and its independent checkout at
 `cb3b3f521161819831cb9ddc4b560958b2f958e7`. Its purpose is to
 capture separate current facts needed for an independent next-launch decision;
@@ -406,11 +414,11 @@ Before execution, the delivery PR must bind and independently review the full
 temporary source, immutable subject inventories, exact interpreter/Git/runtime
 identities, argv, minimal environment, absent fresh evidence destination and
 complete original/public representation. Protected merge and actual hosted
-evidence acceptance precede the once-only invocation. A source, subject or
+evidence acceptance precede every invocation. A source, subject or
 environment mismatch stops without repair or an automatic retry.
 
 The inspection may only read and hash the original 53 failure records, observe
-same-user current process/path and recorded PID/start correlations, enumerate
+finite current process associations described below, enumerate
 retained state without following links, read native Git HEAD/tree/complete
 status/committed entries/refs, and verify committed file modes/content and the
 two previously bound LFS payloads. Bind the exact local Git configuration, which
@@ -448,31 +456,95 @@ UV, package Python, backend, NBGV, build, import, install or consumer operation,
 failed-state cleanup, launch replay or Git mutation is permitted. The outer
 stdlib inspection itself is visible and separate from package native calls.
 
-The exact one-shot source is `python-package-native-poststop-recovery4.py`,
-25,317 original bytes, SHA256
-`31511c616f2f41a43ec9baf10a298392a84cc9923be57ddc5b5d510e9f3ab14a`.
-Its full preparation binding4 is 1,582,097 original bytes, SHA256
-`dc27a63e8c3c0d43825207622efbf2e89921650bfa85c28709548a4c61f41097`.
-The [delivery carrier](https://github.com/hcoona/three/pull/1091) retains the
-complete source, binding, original drafts and independent
-finding classification before corrections. Binding4 joins all 53 unchanged
-failure records, original protected preparation/runtime lineage, exact local
-Git configuration, closed two-path LFS roster and 6,694 pinned Python runtime
-file/link identities. Preparation hashes do not establish current native pointer
-or terminal facts; those remain the observation's subject.
+### Finite Process-Evidence Scope
 
-Use the existing pinned CPython 3.14.3 executable with `-I -B`, this exact
-source's `observe` entry and the absent
-`/evidence/python-package-native-poststop-recovery4` destination. Binding4
-retains actual argv/cwd/coordinates and the minimal explicit environment:
-PATH `/usr/bin:/bin`, LANG/LC_ALL `C.UTF-8`, `GIT_CONFIG_NOSYSTEM=1`,
-`GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0`
-and `GIT_NO_LAZY_FETCH=1`; inherit no other overrides. Git remains the exact
-prepared `/usr/bin/git` identity. Public absolute prefixes are aliases; original
-hashes identify original bytes and public hashes identify complete mapped bodies.
-Rehash every bound execution subject and original failure record before the
-once-only launch; an absent destination and successful protected/hosted admission
-must be current. Earlier nonexecuting drafts are not alternate entry points.
+Capture coherent PID, state, process-group, session, start and ownership facts
+using documented basic fields and anchored descriptors. Identity changes or
+unavailable mandatory basic facts block admission. Retain all recorded PID/start
+and recoverable recorded owned-group associations. Group numbers alone are not
+lifetime identities; an unresolved matching live association blocks and does not
+authorize signaling a historical group. The original 53 records contain no
+nonempty historical PID/group roster. The exact two FIFO filenames supply one
+PID/start correlation, not proof of their creator; absent associations remain
+absent.
+
+Command and working-directory reads are independent supplemental correlations.
+Retain per-field denied/disappeared status and coherent basic identity. Every
+available positive retained-path or recorded association remains effective even
+when another supplemental field is unavailable. Positively associated live
+processes block; zombies are separately retained. An unreadable, unassociated
+process retains unknown path relevance but does not alone block this trusted-tool
+experiment. This accepted scope retires a blanket promise to prove all arbitrary
+same-user processes unrelated; it does not exclude escaped or unassociated
+children or reconstruct historical missing facts. No elevated permission or host
+policy change is authorized.
+
+The new observer's own stop inventory uses basic membership without supplemental
+enrichment. Preserve its actual leader identity immediately after launch. Keep
+the direct child unreaped through group signaling, using Linux [`waitid`](https://man7.org/linux/man-pages/man2/wait.2.html) with
+`WNOWAIT` for outer collection, so its PID is not released for reuse before that
+signal. Validate coherent leader PID/start/group/session before signaling only
+that newly owned group; missing ownership facts stop without signaling another
+group. Under the trusted single-owner supervisor with no competing reaper, an
+identity-unavailable failure directly signals only its already-created unreaped
+child before bounded wait; it never signals a numeric PID after reaping. Preserve
+that direct-child terminal or unavailable result and available partial streams
+inside the existing stop reserve. Group facts remain unavailable and admission
+failed; direct-child completion is not descendant-stop proof. Then reap the child
+and retain complete sampled live/zombie membership or
+explicit unavailable facts. Remaining live members, failed stop or unavailable
+required group facts prevent admission. This temporary mechanism does not claim
+hostile-process containment or become an application recovery service.
+
+### Exact Corrected Subject and Six-Slot Budget
+
+The frozen original source4 and binding4 remain immutable in the
+[PR1091 carrier](https://github.com/hcoona/three/pull/1091), together with their
+complete hosted review and failed once-only observation. The new carrier retains
+the full actual failure/classification, explicit classifier source-location
+correction, owner scope decision, full independently reviewed proposal and exact
+corrected source/binding. Public prefixes remain `/evidence`, `/workspaces` and
+`/home/operator`; original hashes identify original bytes, and mapped hashes
+identify complete public bodies. Earlier drafts are not alternative entrypoints.
+
+Corrected source `python-package-native-poststop-recovery6.py` is 30,875 original
+bytes, SHA256 `ec64e64c0a79ee25b2fdb280f0b4802aaba28edfa4a5d49a0119f7bb4304bbd2`.
+Binding6 is 1,590,154 original bytes, SHA256
+`e86116d3708ef167beacd2acadca1c9d0cf1d7dcdb3b0f35eeda15dfad7e5fd3`.
+It joins unchanged protected preparation3, all 53 original failure records,
+6,694 pinned Python runtime identities, exact local configuration and the closed
+two-path LFS roster. Thirteen controlled boundary tests passed with mocked OS
+and process calls, including identity-unavailable direct-child completion. They
+do not establish current native facts or corrected behavior.
+
+Use the bound pinned CPython 3.14.3 with `-I -B`, exact corrected source's
+`observe <slot>` entry and one fresh absent destination
+`/evidence/python-package-native-poststop-readonly-campaign1/slot-<slot>` for slot
+1 through 6. Binding6 retains all six exact argv/destinations. The eight-variable
+minimal environment remains PATH `/usr/bin:/bin`, LANG/LC_ALL `C.UTF-8`,
+`GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0`,
+`GIT_OPTIONAL_LOCKS=0`, `GIT_NO_LAZY_FETCH=1`; inherit no other overrides.
+Git remains the exact prepared `/usr/bin/git` identity.
+
+Each dispatch spends one slot, including start failure or incomplete receipt;
+never replay a destination, refund a slot or run slots concurrently. Maximum
+cumulative inclusive execution time is 360 seconds and maximum reserved Git reads
+is 42, with unchanged per-observation 60-second/seven-command and all stream,
+regular-read, sampled-state and process-enumeration limits above. Retained child
+streams are at most 48 MiB across six observations. Each slot observes the same
+retained subject; sampled repeated state is not a new state allocation or an
+aggregate content-stability guarantee.
+
+Before each launch, retain current full bound subject/runtime/original-record
+rehash and absent destination readiness. The governing work carrier records all
+spent slot/time/Git reservations and complete receipts; do not install a product
+policy file. After a failure, preserve the entire output, obtain independent
+classification and admit the next exact correction under protected review before
+another slot. The buffer avoids repeated numerical permission requests for
+routine corrections inside this accepted contract; it does not admit an
+unexplained state, remaining live process, missing mandatory capability, changed
+scope or new access requirement. Such a decision still returns to the owner.
+The first independently accepted complete observation ends unused slots.
 
 ### Interpretation and Remaining Diagnostic Gate
 
@@ -482,7 +554,12 @@ state limits and stopped-process facts are sufficient for a separately prepared
 diagnostic. Preserve missing historical observations as missing. A changed
 subject, remaining relevant process, unexplained state, unavailable required
 fact, deadline/stream failure or incomplete evidence prevents admission and
-requires concrete owner disposition; no recovery loop follows.
+requires independent classification and stops admission. Routine inspector
+corrections inside the accepted six-slot contract may receive independently
+reviewed protected admission without another numerical authorization. An
+unexplained change, remaining relevant live process, missing mandatory native
+capability or broader scope/risk choice still requires concrete owner disposition;
+no automatic recovery loop follows.
 
 The deliberately retained failed owned state is not a successful cleanup claim.
 If the separate current facts are independently accepted, that known retained
