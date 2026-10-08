@@ -193,6 +193,24 @@ this composition only. Actual current-tool native collection, committed version/
 input binding, package preset expansion, preparation/execution and caller cutover remain
 pending; the stopped primitive campaign supplies no execution allowance.
 
+### Controlled Python Input Consumer Mapping
+
+[`PythonInputConsumers`](Repository/PythonInputConsumers.cs) maps supplied native
+configuration, passive plugin, managed NBGV and effective quality answers to native
+producer coordinates. Root configuration reaches every producer; a shared NBGV
+working directory can serve several producers without another member declaration
+or native query. Committed source inputs must be regular Git files; absent native
+configuration candidates, generated-file coordinates and quality declaration
+candidates remain available for paired added/deleted input reasons. Quality lookup
+uses the existing declaration search boundary without interpreting presets.
+
+Controlled mapping and paired projection tests cover input-only producers,
+mixed-endpoint dependency closure and original committed reasons. The mapper does
+not assign checks, qualify actual native queries, prepare environments or establish
+complete Python caller input coverage. Caller-specific lock/toolchain/preparation
+and root/standalone pytest associations remain explicit caller inputs. Necessary
+outside-endpoint configuration or plugin coordinates are unsupported.
+
 ### Native Pytest Configuration Component
 
 [`pytest_configuration.py`](Native/Python/pytest_configuration.py) uses public
