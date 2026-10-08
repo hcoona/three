@@ -374,7 +374,8 @@ captured. The same scan prevented both terminal Git commands from starting;
 original terminal HEAD/status and final state remain unavailable.
 
 Independent classification identifies an experiment-monitor/runtime mismatch,
-rather than an observed product failure. The pinned .NET runtime source supports
+rather than an observed product failure. The pinned
+[.NET runtime initialization gate](https://github.com/dotnet/runtime/blob/4271d88e0aebf3d04f188f1334c2220d80555ef6/src/coreclr/debug/ee/debugger.cpp#L1898-L1911) supports
 explicit `DOTNET_EnableDiagnostics=0` before each .NET host as a candidate for a
 later finite diagnostic. That is source evidence, not observed corrected behavior
 or a production setting. Disabling diagnostic IPC alone does not establish that
@@ -395,7 +396,8 @@ capacity for slot three does not establish admission.
 ### Bounded Read-Only Recovery Subject
 
 Permit one separately protected, exact read-only inspection of the retained
-second lifetime and its independent checkout at `cb3b3f52`. Its purpose is to
+second lifetime and its independent checkout at
+`cb3b3f521161819831cb9ddc4b560958b2f958e7`. Its purpose is to
 capture separate current facts needed for an independent next-launch decision;
 it cannot reconstruct the missing historical terminal observations. This
 inspection is not a package lifetime or permission to run slot three.
@@ -451,7 +453,8 @@ The exact one-shot source is `python-package-native-poststop-recovery4.py`,
 `31511c616f2f41a43ec9baf10a298392a84cc9923be57ddc5b5d510e9f3ab14a`.
 Its full preparation binding4 is 1,582,097 original bytes, SHA256
 `dc27a63e8c3c0d43825207622efbf2e89921650bfa85c28709548a4c61f41097`.
-The carrier retains the complete source, binding, original drafts and independent
+The [delivery carrier](https://github.com/hcoona/three/pull/1091) retains the
+complete source, binding, original drafts and independent
 finding classification before corrections. Binding4 joins all 53 unchanged
 failure records, original protected preparation/runtime lineage, exact local
 Git configuration, closed two-path LFS roster and 6,694 pinned Python runtime
