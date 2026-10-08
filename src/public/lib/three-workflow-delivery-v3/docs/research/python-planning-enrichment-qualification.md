@@ -86,9 +86,10 @@ source and absence semantics; it creates no second native declaration.
 
 ## Environment and Effects
 
-Reuse the collector's exact finite outer/child environment, owned HOME/XDG/temp
-and cache roots, absent `UV_PROJECT_ENVIRONMENT`, offline/no-download settings
-and `DOTNET_EnableDiagnostics=0`. Set enrichment-only `GIT_OPTIONAL_LOCKS=0`
+Reuse the collector's finite outer/child environment and owned HOME/XDG/temp
+and cache roots. Set `UV_PROJECT_ENVIRONMENT` to each generation-owned
+`absent-project-environment` path; that directory must remain absent. Retain the
+offline/no-download settings and `DOTNET_EnableDiagnostics=0`. Set enrichment-only `GIT_OPTIONAL_LOCKS=0`
 for Git's native optional-index-refresh suppression. `PATH=/usr/bin:/bin`
 selects the bound Git executable. `PYTHONPATH` orders exact pytest dependencies,
 the endpoint maintained plugin, then existing passive dependencies.

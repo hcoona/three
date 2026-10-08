@@ -250,9 +250,10 @@ candidate work. An omitted paired result is not complete repository association.
 Controlled mapping and paired selection tests retain endpoint-specific input
 reasons, surviving check owners and complete candidate check variants. This does
 not query native tools, implement dependency semantics, expand presets or replace
-the Azure independent job. Actual
-native graph/pytest qualification, complete caller preparation, distribution and
-execution obligations, transfer and atomic caller retirement remain pending.
+the Azure independent job. The current-tool graph observation is separately
+accepted; native pytest and committed-input composition, complete caller
+preparation, distribution and execution obligations, transfer and atomic caller
+retirement remain pending.
 
 ### Native Pytest Configuration Component
 
