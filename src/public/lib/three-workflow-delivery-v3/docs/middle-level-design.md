@@ -521,7 +521,7 @@ fails analysis rather than introducing platform emulation.
 Planning binds each materialized endpoint to its own native membership,
 configuration, interpreter/platform, operation groups and committed inputs.
 Prepare a separately owned query-tool environment for each endpoint with native
-`uv sync --frozen --only-group dev --only-group workflow-delivery-python`,
+`uv sync --frozen --only-group dev --only-group workflow-delivery-python --no-editable`,
 noneditable workspace dependency installation and default build isolation. Use
 that endpoint's committed root groups, lock and source configuration, and the
 bound Linux interpreter. UV owns the selected tool-group closure and any native
