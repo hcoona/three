@@ -63,7 +63,7 @@ qualification. The controlled Python assembly below consumes this seam.
 The Python passive extractor returns declared build strings and maintained
 plugin coordinates. The pinned Rust supplement and ordered configuration
 preflight have controlled unit boundaries. Group answers use the native current
-or exact singleton manifest, native flattened dependency contributions and native
+or exact singleton manifest, native flattened declarations and native
 default/no-dev selection. Root or other member groups cannot become another owner's
 defaults. Selected groups with empty native requirements need no metadata node;
 selected empty groups carrying Python constraints stop with an attributed diagnostic
@@ -169,8 +169,13 @@ without hiding reachable producers. `PythonPlanningActivities` collects unchange
 marker expressions with their exact extra scopes and binds the graph to supplied
 native group operations and interpreter constraints. `PythonNativeActivities`
 associates answers by request ID, preserving false activity and empty group sets.
-Group names describe selected dependency contributions, not every declared group;
-UV flattens includes before the helper tests requirement-vector emptiness.
+Group names describe selected nonempty native declarations awaiting strict graph
+association; UV flattens includes before the helper tests requirement-vector
+emptiness. A nonempty declaration entirely excluded by native Python applicability
+can still have no metadata node. That existing transfer shape remains explicitly
+unsupported; missing nodes are not silently dropped. The
+[qualification record](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#final-diagnostic-and-empty-group-correction)
+retains the source finding and its next integration review trigger.
 The projection unions actual operation answers without reconstructing defaults.
 Zero-package operations retain their directory scope; a single selected package
 retains its native member group ownership and the original base context. Multiple

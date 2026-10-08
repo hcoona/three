@@ -212,7 +212,7 @@ fn group_owner_manifest<'a>(
     }
 }
 
-/// Transfer selected owner groups with native dependency contributions.
+/// Transfer selected owner groups with nonempty native declarations.
 fn owner_selected_groups(
     manifest: &PyProjectToml,
     directory: &Path,

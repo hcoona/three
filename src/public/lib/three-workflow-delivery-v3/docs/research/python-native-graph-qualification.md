@@ -381,8 +381,8 @@ lookup is static inference, not an observed throwing line; other integration
 defects remain possible.
 
 The correction returns selected owner groups only when UV's flattened requirement
-vector is nonempty. This answer is a dependency-contribution list, not a complete
-inventory of declarations. Native include flattening, default/no-dev selection,
+vector is nonempty. These are candidate contributions awaiting strict native graph
+association, not a complete declaration inventory or proof of a surviving edge. Native include flattening, default/no-dev selection,
 owner identity and malformed-group failures remain authoritative. No raw TOML
 emptiness test, missing-metadata fallback, generated graph ID, manifest repair or
 parallel C# parser is added. Nonempty graph joins remain strict. An empty selected
@@ -390,6 +390,22 @@ group with native `requires_python` stops as `EmptyGroupPythonConstraint`; that
 unsupported constraint-only shape cannot silently lose a necessary fact. Excluded
 groups remain excluded. Controlled tests cover the narrow transfer correction;
 they do not qualify actual complete composition.
+
+A later [platform review finding](https://github.com/hcoona/three/pull/1081#discussion_r4214344232)
+was independently classified as a true positive, medium severity, for an existing
+support gap rather than a regression from this empty-vector fix. Native
+[resolver applicability][uv-group-applicability] can discard every requirement in
+a nonempty flattened group when its marker is disjoint from the workspace Python
+range. Native [resolved group construction][uv-resolved-groups] then need not
+create a metadata group entry. A synchronized lock does not guarantee a graph
+node for every nonempty declaration. The metadata-free preview preservation path
+is not a guarantee for ordinary locks and is not selected as a workaround.
+This valid UV shape remains unsupported by the application's strict association;
+missing metadata alone is not used to suppress a required fact. At the next Python
+integration review, the author must define and independently review a maintained
+native no-contribution transfer before claiming support for that shape or complete
+group-transfer behavior. The current narrow empty-vector fix and recorded failures
+remain unchanged. No new runtime observation follows from this source finding.
 
 All three graph slots are consumed. Charged capture and prior cleanup total
 `6.355224625993287` seconds before the attempt3 cleanup invocation. That invocation
@@ -802,3 +818,5 @@ Both `ordinary` and `no-dev` use the complete identical file table below.
 | `uv.lock`                                                      | `d123e4b9e3d41c6c3ab0208b2374dc4cf05d71945e974b7c0e4f437cbbf6d8ca` |
 
 [uv-empty-group-metadata]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-lock/src/lock/export/metadata.rs#L1344
+[uv-group-applicability]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-resolver/src/resolver/requirements.rs#L255
+[uv-resolved-groups]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-lock/src/lock/mod.rs#L6688
