@@ -722,9 +722,9 @@ absolute-prefix aliasing:
 
 Unchanged full Program.cs and installed observer identities, selected .NET
 SDK/runtime and official NBGV distribution, UV, Python and Git pins, modes and
-full inventories remain in binding5. Source9 is the sole final candidate;
-preparation8's blocked source and unexecuted preparation script are historical
-subjects, not alternate launchers.
+full inventories remain in binding5. Source9 and packet5 remain the retained compiled preparation. The native Git LFS
+successor below is the only candidate for the remaining launch; preparation8's
+blocked source and unexecuted preparation script remain historical subjects.
 
 Use the bound original CPython 3.14.3 with `-I -B`, exact operator9 `observe`,
 packet draft5 and fresh absent destination
@@ -753,3 +753,91 @@ and stop/cleanup interpretation before claiming success. A failure remains
 failed; no automatic fourth lifetime, failed-state cleanup or reduced-check
 fallback follows. Root pytest preparation, paired caller transfer/cutover,
 retirement, Release and Windows qualification remain separate obligations.
+
+### Native Git LFS Preparation Successor
+
+PR #1095 protected-delivered the compiled packet5 protocol as
+`78f4024e474abff5694d834514ca9ee0af310220`, tree
+`e4282dae25d3e453bf5e0aaf87ee666fad83d1dd`. Its complete hosted text evidence and
+independent acceptance are retained in that PR. The first readiness4 invocation
+then failed before its result or package launch: isolated Git status reported the
+two existing materialized LFS files as modified. Both complete payloads exactly
+match their bound LFS pointer identities. The failed preflight remains failed;
+no native package lifetime, call or cleanup ran.
+
+A different reviewer classified the readiness/operator configuration defect as a
+true positive, confidence 10/10. The omitted maintained clean filter is the
+source-supported causal inference, confidence 9/10; corrected retained-checkout
+behavior remains unobserved. Preparation9 obtained clean status using ordinary
+configuration, while readiness4 and operator9 excluded system/global Git
+configuration without restoring LFS conversion. The same omission affects the
+initial and terminal recipe status checks. Compiled dependency closure remains
+accepted for packet5, but packet5/readiness4 cannot admit a launch. They remain
+immutable historical subjects, without rerun or in-place repair.
+
+Source10 restores only the existing maintained native Git LFS clean command,
+required=true, through inherited transient `GIT_CONFIG_COUNT` entries. The
+executable is selected by its bound absolute path, with shell-safe native filter
+configuration; bare `git-lfs` is outside the isolated PATH. System/global Git
+configuration stays excluded. No smudge, process filter, download, upload,
+credential, custom extension or host configuration is enabled.
+
+Git LFS owns conversion of materialized files and already-clean pointers. Its
+pinned [clean command][lfs-clean-source] writes local objects and installs hooks;
+its [configuration][lfs-configuration-source] selects `lfs.storage` and
+`core.hooksPath`. Source10 directs both to fresh owned paths, alongside owned
+HOME/TMP/cache. The existing local `.git/config` already declares repository
+format0; its exact bytes/mode are bound and rechecked before native filter use,
+so the [native initialization][lfs-initialization-source] need not write that
+setting. `.lfsconfig` remains absent. No pointer conversion, dirty-status
+normalization or shared cache is implemented by the experiment.
+
+Seventeen controlled methods passed: all fifteen prior lifecycle/retention
+controls plus a fresh local native Git/LFS fixture proving clean unchanged
+materialization, visible changed content, owned object/hook effects and unchanged
+checkout Git files; an unavailable absolute required filter fails visibly. The
+fixture has no remote and does not query checkout3 or launch the package recipe.
+Those observations do not establish the retained checkout's readiness, arbitrary
+LFS extensions or universal network containment.
+
+Packet6 retains the same checkout3, application199/harness203 output closures,
+229 preparation files, runtime4, package/backend/version inputs and original
+compiler evidence. No build, source-materialization change or new dependency
+resolver occurs. Its only executable-environment correction is source10 plus the
+bound existing Git LFS binary and owned native clean effects. Complete successor
+and classification/source/test identities are retained in binding6:
+
+| Successor subject    | Original SHA256                                                    |
+| -------------------- | ------------------------------------------------------------------ |
+| Operator10           | `a1e06ba7a293bf737ba6676b19743b01901da460b539738604f6d6c2ed0b1703` |
+| Controlled tests10   | `cb0caa42d1a89ea179b16cfa1f0f6de805f31e07d55266db15608663054ae36b` |
+| Exact packet draft6  | `cdaf94b2799d11d82c83a50eb6ff9736b78d35a18fb08df1f41a035089e8f20f` |
+| Preparation binding6 | `9666d51759110eada931a8d5031dedee6e66ed2c8f8b59cd5fed52c5285587f7` |
+| Readiness5 source    | `d1a25b2b2cfc93a06e1e2a6044ddc8f3388913b37332dbec430d575365edbefc` |
+| Native Git LFS3.7.1  | `6b92b05c4588b4a5373b2b4102dbb302757d8ec6671da67cf9e4f9ccb01cd349` |
+
+After complete independent engineering/OCR, record/research, public/actual-hosted
+acceptance and protected delivery, readiness5 performs the full existing rehash
+before one fresh native preparation. That preparation uses source10's reviewed
+supervisor and environment for native Git HEAD/tree/history/refs/entries/status
+and LFS-pointer reads. It has a 120-second inclusive ceiling, 10-second command
+ceilings and the existing sampled state/process/stream/stop limits, with time
+reserved for success-only owned cleanup. Requests, complete streams, receipts
+and pre-cleanup state remain retained. Config/index/HEAD/refs/hooks must remain
+unchanged. The fresh local storage/hooks are removed only after complete success
+and stopped children; failure retains their state and never permits automatic
+replay or repair. Readiness5 is native local preparation, not a purely read-only
+hash receipt or another ended observation campaign.
+
+Its exact readiness result and absent lifetime3 then admit only packet6's bound
+bootstrap argv for the third and last package lifetime. Source9/packet5/readiness4
+are not alternate launch paths. The original 23 spent calls and
+11.098563230014406 package seconds remain unchanged; the same three-lifetime/
+1,800-second campaign, 22-call success recipe, 32-call/600-second lifetime and
+60-second native command ceilings apply. Native clean storage/hooks participate
+in the existing lifetime state and success-only owned cleanup. No fourth lifetime,
+observer capacity, reduced business checks or failed-state cleanup follows.
+
+[lfs-clean-source]: https://github.com/git-lfs/git-lfs/blob/b84b33847fe6458f36ef521534dc0eac953cb379/commands/command_clean.go
+[lfs-configuration-source]: https://github.com/git-lfs/git-lfs/blob/b84b33847fe6458f36ef521534dc0eac953cb379/config/config.go
+[lfs-initialization-source]: https://github.com/git-lfs/git-lfs/blob/b84b33847fe6458f36ef521534dc0eac953cb379/commands/commands.go
