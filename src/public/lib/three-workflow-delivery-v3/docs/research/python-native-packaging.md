@@ -8,7 +8,8 @@ without a second dependency declaration or application implementation of UV.
 This is pinned public-source evidence and a narrow design inference. No package
 sync, backend import, NBGV computation, build, install or consumer has executed
 for this assessment. The [MLD](../middle-level-design.md#native-python-package-execution)
-owns the selected integration; a separate concrete protected protocol and actual
+owns the selected integration; the separate
+[concrete package protocol](python-native-package-qualification.md) and actual
 observation remain prerequisites for qualification.
 
 ## Native UV Responsibility

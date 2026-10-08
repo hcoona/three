@@ -234,7 +234,9 @@ Local observations and the Windows assumption
 are recorded in [contraction feasibility](./research/contraction-feasibility.md).
 The [native Python packaging assessment](./research/python-native-packaging.md)
 supplies the source basis for frozen/shared/noneditable preparation and native
-Git-free version reuse; actual package execution remains unqualified.
+Git-free version reuse. The [finite package protocol](./research/python-native-package-qualification.md)
+binds the exact protected component, preparation and observation boundary; actual
+package execution remains unqualified.
 
 The [Python native planning source assessment](./research/python-native-planning.md)
 examines UV metadata and native build-source association candidates for the next
