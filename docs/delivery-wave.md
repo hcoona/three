@@ -55,10 +55,18 @@ ends a grant. Git and the proposing PR retain the reason and history.
   Repository delivery follows its existing protected merge process. A native
   experiment still requires its accepted concrete protocol; this grant alone
   does not authorize an external experiment or instantiate a release request.
+  The owner-approved [current-tool Python graph extension](../src/public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#six-slot-current-tool-extension)
+  permits at most six additional captures in the existing campaign and one
+  distinct recovery of attempt 3's incomplete cleanup, under that protocol.
+  Preserve consumed attempts; stop at the first independently accepted success.
+  This changes the finite capture allowance only, retaining all time, state,
+  operation and effect ceilings. It does not reopen another campaign.
 - **Exclusions:** no new ecosystem or production-product migration, new registry
   publication, hosted release/proving dispatch, credential acquisition,
   Environment/account/publisher/access changes, deletion/yank/restore, or revival
-  of completed npm, NuGet, Python or Ruby campaigns and spent slots. Do not
+  of completed npm, NuGet, Python or Ruby campaigns or refund of spent slots.
+  The explicitly admitted current-tool graph extension above adds bounded new
+  slots to its existing campaign; it does not revive spent slots. Do not
   reclassify historical results or discard evidence still needed by a current
   reader. Any required live validation or configuration change needs its own
   explicit bounded authorization; simulated or local success is not live

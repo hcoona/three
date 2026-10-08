@@ -7,8 +7,10 @@ repository lock and prepared tools. It implements the accepted
 [Python integration order](../migration-strategy.md#python-planning-integration-and-later-caller-cutover)
 within the accepted [Delivery Wave](../../../../../../docs/delivery-wave.md).
 Exact source, preparation and protocol review and protected delivery must complete
-before any newly admitted query. All three failed captures and their corrections are retained below. The finite
-execution allowance is exhausted; source correction does not authorize another run.
+before any newly admitted query. All three failed captures and their corrections are retained below. The original three-capture
+allowance is exhausted. The owner-approved [six-slot extension](#six-slot-current-tool-extension)
+admits bounded additional captures only after its exact protected acceptance;
+source correction alone does not authorize another run.
 
 The stopped [primitive campaign](python-native-planning.md#primitive-native-observation)
 and its expired reserves remain unchanged. This new subject is complete production
@@ -107,7 +109,9 @@ egress nor universal containment.
 
 ## Limits and Terminal Handling
 
-Allow one main attempt and at most two diagnostics. Each diagnostic requires an
+The original allowance is one main attempt and at most two diagnostics. The
+[six-slot extension](#six-slot-current-tool-extension) adds at most six diagnostics
+in this same campaign, for nine total captures including consumed attempts. Each diagnostic requires an
 independently triaged failure or rejected interpretation and a fresh reviewed
 packet and owned state. No automatic retry. Stop at the first independently
 accepted success or exhausted/unsafe bounds. Captured transport is not acceptance.
@@ -194,6 +198,56 @@ The author evaluates affected interfaces; independent domain/evidence review
 checks the result. Necessary material effects or product changes outside this
 protocol stop for owner disposition. Routine repetitions within its accepted
 finite boundary need no repeated owner approval.
+
+## Six-Slot Current-Tool Extension
+
+The owner approved six additional captures on 2026-10-08 after the original
+three captures failed. Number them attempt 4 through attempt 9 in the same
+current-tool campaign. Stop at the first independently accepted complete
+ordinary/no-dev result. Each later capture requires independent classification
+of the preceding failure or rejected interpretation, a fresh reviewed exact
+source/preparation packet, preserved originals and verified owned cleanup.
+There is no automatic retry, slot refund, replacement campaign or revival of the
+stopped primitive campaign. Scope approval is not collector qualification.
+
+Keep the fixed application, harness, endpoint snapshots, interpreter and native
+UV revision above. The first extension packet uses the corrected helper accepted
+by protected commit `b02a9aa64f4fa259792ec984bb222cad2345d466`, reviewed tree
+`6d5dc60152333c16751166545f7de189619a1059`. Later necessary source corrections
+retain the same native responsibility boundary and require exact independent
+review and protected delivery before invocation. No parallel dependency parser,
+marker evaluator, maintained roster or missing-managed-node fallback is admitted.
+
+The source6 supervisor changes only source5's finite capture cap to nine and
+admits cleanup indices 1 through 9. Source5 and source4 bytes and all earlier
+receipts remain immutable. The protocol delivery PR retains exact source6,
+controlled tests, source/helper/packet hashes, original/public mapping and
+independent engineering, record-system and research-evidence review. Controlled
+validation establishes supervisor behavior only; actual capture remains unqualified.
+
+Before attempt 4, invoke the separately reviewed `--recover-attempt3` entry once
+against the absolute existing campaign path. It removes only the six original
+attempt-3 endpoint environment/bootstrap/activity roots. Retain the original
+incomplete cleanup receipt and output; write distinct `cleanup-recovery1`
+receipts and accounting. Deduct the original `0.02923420601291582` seconds from
+its 30-second cleanup reserve, leaving `29.970765793987084` seconds including
+the five-second process-stop reservation. No reserve refill or broader cleanup.
+Independently verify target absence, preserved evidence/endpoints and complete
+charge before any next capture. Missing, unreadable, invalid or failed recovery
+accounting blocks further activity; never estimate lost time or replay recovery.
+
+The previously charged `6.384458832006203` seconds remain deducted. All existing
+1200-second attempt and 3600-second cumulative limits, state/stream limits,
+command/member ceilings, environment and group-stop semantics remain unchanged.
+Recovery and later observations/cleanup are charged. More slots do not add time
+or state capacity. Failed cleanup or any exhausted/unsafe bound stops execution.
+
+This extension grants no pytest/enrichment, package/build/backend, NBGV, paired
+caller or Windows qualification query, registry publication, hosted dispatch,
+authentication, Environment/access change or other ecosystem operation. Those
+retain their existing distinct prerequisites. After exact protocol/preparation
+acceptance and protected merge, routine executions within this finite boundary
+require no repeated owner confirmation.
 
 ## First Capture and Runtime Correction
 
@@ -407,7 +461,7 @@ native no-contribution transfer before claiming support for that shape or comple
 group-transfer behavior. The current narrow empty-vector fix and recorded failures
 remain unchanged. No new runtime observation follows from this source finding.
 
-All three graph slots are consumed. Charged capture and prior cleanup total
+All three original graph slots are consumed. Charged capture and prior cleanup total
 `6.355224625993287` seconds before the attempt3 cleanup invocation. That invocation
 used a relative campaign path and retained exit 0/completed stop after
 `0.02923420601291582` seconds, but postcheck found the intended owned roots still
