@@ -956,9 +956,9 @@ calls before dispatch. Both original archives and every required native check
 remain authoritative. Its eighteen controlled tests and independent source
 engineering/OCR review passed; neither is a native result or execution admission.
 
-### Prospective Effects and Finite Buffer
+### Approved Effects and Finite Buffer
 
-This candidate proposes a fresh campaign of at most three separately admitted
+The owner approved a fresh campaign of at most three separately admitted
 lifetimes, with the same 32-call/600-inclusive-second lifetime and
 1,800-inclusive-second campaign ceilings. Stop at the first independently accepted
 success and expire unused reserve. The exact success recipe comprises four
@@ -987,8 +987,14 @@ native-preparation interval. It verifies complete checkout bytes, native LFS
 payloads and unchanged Git config/index/HEAD/refs/hooks. A failure stops and
 retains its owned preparation. It is native local preparation, not a purely
 read-only inspection or a package success. Any future readiness subject must
-receive the same separate protected review; at most one per proposed lifetime,
-with at most 360 inclusive native-preparation seconds across the new campaign.
+receive the same separate protected review. The owner additionally approved six
+preparations and 900 cumulative native-preparation seconds: at most nine exact
+readiness preparations and 1,260 cumulative seconds across the new campaign,
+including the original three-preparation/360-second allowance. Each preparation
+retains its 120-second individual ceiling, eight-read ceiling and owned cleanup.
+The diagnostic reserve is not restricted to one preparation per package lifetime;
+it grants no extra package lifetime, replay or failed-state cleanup. Charge every
+started preparation, including a failed or uncertain one, without refunds.
 
 After a failure, independently classify its actual cause before using reserve.
 Any corrected source, helper, tool, runtime, input, checkout or packet requires
@@ -1000,12 +1006,19 @@ permission to issue another invocation.
 
 ### Admission and Evidence Limits
 
-This prepared candidate is unadmitted. Before readiness or package execution,
-protect this exact source/tool/runtime/checkout/packet protocol and obtain fresh
-explicit finite owner authorization for the new package and readiness effects.
-The owner's six read-only checks do not supply that authorization. No readiness6
-or campaign2 lifetime has run. Nothing renews the spent three package lifetimes,
-ended historical observer slots, publication campaigns or failed-state cleanup.
+Protected protocol [PR #1099](https://github.com/hcoona/three/pull/1099) accepted
+the exact source/tool/runtime/checkout/packet subject. The owner subsequently
+approved the proposed three package lifetimes and original readiness allowance,
+then explicitly added six readiness preparations and fifteen cumulative minutes.
+This amendment records that decision; the enlarged readiness allowance is usable
+only after its independent review and protected delivery. The originally accepted
+readiness6 and first package lifetime already fit the approved original bounds.
+Separate exact readiness and independent actual-output audit still precede each
+package launch. The earlier six read-only checks are a distinct allowance and
+cannot be substituted for native effects. Nothing renews the spent historical
+three package lifetimes, ended observer slots, publication campaigns or
+failed-state cleanup. Native qualification requires actual independently accepted
+results; owner authorization and protocol acceptance alone establish no success.
 
 Accept native qualification only after independent inspection of actual frozen
 selection and editability phases, unchanged originals, native shared-backend
