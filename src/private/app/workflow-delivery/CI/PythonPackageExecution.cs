@@ -33,6 +33,7 @@ internal static class PythonPackageExecution
         _ = Absolute(request.Interpreter);
         _ = Absolute(request.Helper);
         if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
+            HasLinkedAncestor(checkout) || HasLinkedAncestor(scratch) ||
             Within(scratch, checkout) || Within(checkout, scratch) ||
             Directory.EnumerateFileSystemEntries(scratch).Any() || request.DeadlineSeconds <= 0)
             throw new InvalidDataException(
@@ -45,6 +46,9 @@ internal static class PythonPackageExecution
         if (plan.Scope != PythonFactsAssembler.Scope)
             throw new InvalidDataException("Unsupported Python package execution scope.");
         GitRevision revision = await new GitReader(checkout).ReadAsync(plan.Candidate, token);
+        if (revision.Commit != plan.Candidate)
+            throw new InvalidDataException(
+                "Python package candidate must be a full commit identity.");
         GitMaterialization materialization = await GitMaterialization.BindAsync(checkout,
             revision, token);
         await ValidateAsync(plan, request.Members, materialization, token);
@@ -289,6 +293,14 @@ internal static class PythonPackageExecution
     private static string Absolute(string path) => Path.IsPathFullyQualified(path)
         ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path))
         : throw new InvalidDataException("Python package paths must be absolute.");
+    private static bool HasLinkedAncestor(string path)
+    {
+        for (DirectoryInfo? directory = new(path); directory is not null;
+            directory = directory.Parent)
+            if ((directory.Attributes & FileAttributes.ReparsePoint) != 0)
+                return true;
+        return false;
+    }
     private static bool Within(string child, string parent) => child == parent ||
         child.StartsWith(parent + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);

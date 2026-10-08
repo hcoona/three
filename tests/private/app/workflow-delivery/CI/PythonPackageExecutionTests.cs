@@ -179,6 +179,104 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         Assert.IsEmpty(fixture.Commands);
     }
 
+    [TestMethod]
+    [DataRow("HEAD", false)]
+    [DataRow("branch", false)]
+    [DataRow("short", false)]
+    [DataRow("HEAD", true)]
+    [DataRow("branch", true)]
+    [DataRow("short", true)]
+    public async Task MutableOrAbbreviatedCandidateStopsBeforeNativeEffects(
+        string reference, bool emptyPartition)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        await fixture.Repo.GitAsync("branch", "package-candidate", fixture.Plan.Candidate);
+        string candidate = reference switch
+        {
+            "branch" => "package-candidate",
+            "short" => fixture.Plan.Candidate[..8],
+            _ => "HEAD",
+        };
+        CiPlan plan = fixture.Plan with { Candidate = candidate,
+            Checks = emptyPartition ? [] : fixture.Plan.Checks };
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(context.CancellationToken, plan));
+        Assert.IsEmpty(fixture.Commands);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+    }
+
+    [TestMethod]
+    [DataRow("scratch", false)]
+    [DataRow("scratch", true)]
+    [DataRow("checkout", false)]
+    [DataRow("checkout", true)]
+    public async Task LinkedScratchOrCheckoutStopsBeforeNativeEffects(
+        string boundary, bool linkedAncestor)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        string target = boundary == "scratch"
+            ? Directory.CreateDirectory(Path.Combine(fixture.Repo.Directory,
+                "neutral")).FullName : fixture.Repo.Directory;
+        if (boundary == "scratch" && linkedAncestor)
+            Directory.CreateDirectory(Path.Combine(target, "fresh"));
+        string linkTarget = boundary == "checkout" && linkedAncestor
+            ? Path.GetDirectoryName(target)! : target;
+        using var link = await DirectoryLinkFixture.CreateAsync(linkTarget,
+            context.CancellationToken);
+        string alias = linkedAncestor
+            ? Path.Combine(link.Link, boundary == "scratch" ? "fresh" : Path.GetFileName(target))
+            : link.Link;
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(context.CancellationToken,
+                checkout: boundary == "checkout" ? alias : null,
+                scratch: boundary == "scratch" ? alias : null));
+        Assert.IsEmpty(fixture.Commands);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+        if (boundary == "scratch")
+            Assert.IsEmpty(Directory.EnumerateFileSystemEntries(linkedAncestor
+                ? Path.Combine(target, "fresh") : target));
+        Assert.AreEqual(fixture.Plan.Candidate,
+            (await fixture.Repo.GitAsync("rev-parse", "HEAD")).Trim());
+        Assert.AreEqual("", (await fixture.Repo.GitAsync("status", "--porcelain")).Trim());
+    }
+
+    private sealed class DirectoryLinkFixture : IDisposable
+    {
+        private string Root { get; } = Directory.CreateTempSubdirectory(
+            "workflow-python-package-alias-").FullName;
+        internal string Link => Path.Combine(Root, "alias");
+
+        internal static async Task<DirectoryLinkFixture> CreateAsync(string target,
+            CancellationToken token)
+        {
+            var fixture = new DirectoryLinkFixture();
+            try
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    NativeCommandResult result = await NativeProcess.ExecuteAsync(new(
+                        "cmd.exe", fixture.Root,
+                        ["/d", "/c", "mklink", "/J", fixture.Link, target], 10), token);
+                    Assert.IsTrue(result.Succeeded, result.Stderr + result.Error);
+                }
+                else
+                    Directory.CreateSymbolicLink(fixture.Link, target);
+                return fixture;
+            }
+            catch
+            {
+                fixture.Dispose();
+                throw;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Link)) Directory.Delete(Link);
+            Directory.Delete(Root, recursive: true);
+        }
+    }
+
     private sealed class Fixture(GitFixture repo, CiPlan plan) : IDisposable
     {
         internal GitFixture Repo { get; } = repo;
@@ -223,9 +321,10 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         }
 
         internal Task<PythonPackageRunResult> RunAsync(CancellationToken token,
-            CiPlan? plan = null) =>
+            CiPlan? plan = null, string? checkout = null, string? scratch = null) =>
             PythonPackageExecution.RunAsync(plan ?? Plan,
-                new(Repo.Directory, Scratch, "controlled-uv", Path.Combine(Scratch, "python"),
+                new(checkout ?? Repo.Directory, scratch ?? Scratch, "controlled-uv",
+                    Path.Combine(Scratch, "python"),
                     Path.Combine(Scratch, "helper.py"), PythonPackageChecksTests.Members, 30,
                     new Dictionary<string, string?> { ["GIT_DIR"] = "excluded-from-consumer" }),
                 ExecuteAsync, token);
