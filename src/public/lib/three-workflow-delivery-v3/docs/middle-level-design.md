@@ -501,7 +501,7 @@ the repository's Windows default unless a declared variant selects another runne
 
 ### Native Python CI Group
 
-The existing Linux Python job receives one original candidate-bound plan for
+The existing Linux Python job selects and executes one original candidate-bound plan for
 configured pytest targets and adopted distribution checks. This group composes
 the native graph collector, pytest configuration/target binding, repository input
 associations and paired fact assembler already defined above. It adds no project,
@@ -520,8 +520,31 @@ fails analysis rather than introducing platform emulation.
 
 Planning binds each materialized endpoint to its own native membership,
 configuration, interpreter/platform, operation groups and committed inputs.
-Prepare the query tools separately from product/test environments. Reuse the
-accepted native metadata, passive extraction, UV supplement and pytest query;
+Prepare a separately owned query-tool environment for each endpoint with native
+`uv sync --frozen --only-group dev --only-group workflow-delivery-python`,
+noneditable workspace dependency installation and default build isolation. Use
+that endpoint's committed root groups, lock and source configuration, and the
+bound Linux interpreter. UV owns the selected tool-group closure and any native
+backend preparation; no separate library or backend roster is maintained. The
+declared plugin may be built as a query-tool dependency without making unrelated
+workspace members product or quality owners. Passive query execution remains
+distinct from this tool installation. Keep the installed helper environment
+separate from product/test/package environments and from the owned absent
+`UV_PROJECT_ENVIRONMENT` required by native metadata/activity queries.
+
+Supply the candidate control version's existing `Native/Python/uv` supplement
+compiled for Linux using `cargo build --locked`, its committed Cargo manifests,
+lock, `rust-toolchain.toml` and sources, and an owned output directory. Transfer
+candidate control sources/resources rather than a Windows native executable.
+Bind helper source, toolchain, executable and runtime identities to both endpoint
+queries; each query retains its own endpoint configuration, lock, groups and
+actual Linux interpreter facts. Preserve native configuration preflight,
+ambient-setting/error behavior and owned credential-free query state. Necessary
+tool preparation or compilation failure, timeout or cancellation stops analysis.
+This proposed preparation still needs actual caller qualification; the stopped
+graph/enrichment observations do not establish installation or caller success.
+
+Reuse the accepted native metadata, passive extraction, UV supplement and pytest query;
 candidate facts cannot substitute for missing basis facts. Bind actual quality
 adoption and release declarations before complete paired selection. Existing
 shared-core closure selects surviving checks and supplies initiating path/revision
