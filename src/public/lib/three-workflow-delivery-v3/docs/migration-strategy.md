@@ -253,6 +253,25 @@ recomputing impact or changing native target selection. Keep the existing
 `ci_scope.py`, `run_python_tests.py` and smoke PR callers until the replacement
 selection, preparation, execution and transfer group is accepted together.
 
+Implement that group inside the existing private app using the
+[native Python CI group contract](./middle-level-design.md#native-python-ci-group).
+The Windows root scope caller transfers the exact event comparison and explicit
+full/incremental mode plus complete candidate control outputs. The existing Linux
+Python job materializes both endpoints, collects their native facts for its actual
+Linux product interpreter, invokes shared selection once, then runs the finite
+pytest and distribution partitions and collects against that original mixed plan.
+Start native analysis independently of legacy Windows Python selection outputs;
+an explainable empty affected scope performs no product preparation or execution.
+Reuse the current process/artifact transfer pattern; no additional workflow, job,
+public library or target roster is needed.
+
+Switch root CI, explicit local full preparation and smoke PR checks as one
+reviewed consumer group after controlled validation and ordinary PR CI qualify
+their complete replacement. Preserve independent special-job ownership and
+Release callers. Retirement then removes only the replaced Python selection,
+preparation and constraint producers/consumers; retained ecosystem or historical
+evidence readers continue to use their actual authorities.
+
 Controlled validation must include a mixed-endpoint `A -> B -> C` closure through
 input-only `B`, nested native ownership, changed/deleted producer edges, a known
 input with no consumers versus unresolved scope, tableless quality owners,
