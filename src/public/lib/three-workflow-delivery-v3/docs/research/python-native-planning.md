@@ -191,8 +191,9 @@ No generic helper framework is implied.
 The [current-tool collector protocol](python-native-graph-qualification.md)
 binds the next complete managed collection subject and retains its separate
 source/runtime/effects limits. It retains all three failed captures, native transfer
-corrections and exhausted execution slots; complete native collection remains
-unqualified. A source correction does not create another execution grant.
+corrections and the exhausted original allowance; complete native collection remains
+unqualified. Any further capture follows that protocol's accepted bounded extension
+and execution gates. A source correction does not create another execution grant.
 
 If further native execution is needed, its exact remaining subject first needs
 a concrete accepted isolated protocol. Reuse the retained primitive evidence
