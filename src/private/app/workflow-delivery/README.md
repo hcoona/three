@@ -73,8 +73,10 @@ strict. The
 qualifies the exact complete ordinary/no-dev graph collector composition on its
 pinned Linux subjects. Its campaign and owned cleanup are complete; remaining
 captures are stopped. Metadata adaptation and operation dependency projection
-retain native IDs, dimensions and build-source associations. Native pytest/NBGV
-planning-input composition, complete caller mapping and caller qualification
+retain native IDs, dimensions and build-source associations. The separate
+[planning-input observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-planning-enrichment-qualification.md#completed-planning-input-observation)
+qualifies native pytest, committed NBGV/quality inputs and producer input mapping
+on the exact retained Linux subjects. Complete caller mapping and qualification
 remain pending under the
 [planning contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-planning-facts).
 
@@ -208,9 +210,10 @@ return. The caller owns checkout/tool preparation, credential-free process envir
 configuration/cache/temp roots and cleanup. Controlled command-substitute tests qualify
 the controlled composition only. The separately accepted
 [current-tool observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#completed-ordinary-and-no-dev-observation)
-qualifies actual native collection on its exact subjects. Committed version/quality
-input binding, package preset expansion, preparation/execution and caller cutover
-remain pending; completed graph and primitive campaigns supply no execution allowance.
+qualifies actual native collection on its exact subjects. The separate planning-input
+observation qualifies committed version/quality input binding on those subjects.
+Package preset expansion, preparation/execution and caller cutover remain pending;
+completed graph, enrichment and primitive campaigns supply no execution allowance.
 
 ### Controlled Python Input Consumer Mapping
 
@@ -251,9 +254,9 @@ Controlled mapping and paired selection tests retain endpoint-specific input
 reasons, surviving check owners and complete candidate check variants. This does
 not query native tools, implement dependency semantics, expand presets or replace
 the Azure independent job. The current-tool graph observation is separately
-accepted; native pytest and committed-input composition, complete caller
-preparation, distribution and execution obligations, transfer and atomic caller
-retirement remain pending.
+accepted, as is the separate native pytest/committed-input composition. Complete
+caller preparation, distribution and execution obligations, transfer and atomic
+caller retirement remain pending.
 
 ### Native Pytest Configuration Component
 
@@ -273,9 +276,10 @@ targets to complete committed file inputs and the nearest native member. Standal
 targets keep their own coordinates without becoming root workspace members. A
 target spanning descendant member roots is unsupported rather than assigned a
 guessed owner. Controlled binding tests establish these supplied-fact behaviors.
-No actual query composition, test collection, complete native fact collection or caller
-cutover is qualified by these components. Those remain subject to the accepted
-native qualification and complete Python caller contracts.
+These controlled components do not qualify actual behavior. The separate
+planning-input observation qualifies the exact native query and target/input
+composition; test collection/execution, complete runnable caller facts and cutover
+remain subject to the complete Python caller contracts.
 
 ### PNPM Graph Component
 

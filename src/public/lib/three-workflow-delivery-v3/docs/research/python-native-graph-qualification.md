@@ -304,10 +304,10 @@ recovery, final campaign charge is `11.603933855018113` seconds. No duration,
 slot or reserve was refunded. The first independently accepted complete success
 stopped attempts 5 through 9; unused capacity is not a continuing grant.
 
-These results qualify only the exact native collector composition. Subsequent
-[planning-input enrichment](python-planning-enrichment-qualification.md) reuses
-these retained answers and requires its own accepted exact protocol before
-querying pytest or managed NBGV inputs. It issues no new UV graph query.
+These results qualify only the exact native collector composition. The separately
+accepted [planning-input observation](python-planning-enrichment-qualification.md#completed-planning-input-observation)
+reused these retained answers without a new UV graph query. Its own campaign and
+cleanup are complete; full caller, package and execution work remain separate.
 
 ## First Capture and Runtime Correction
 

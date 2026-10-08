@@ -46,8 +46,9 @@ The [native Python planning contract](./middle-level-design.md#native-python-pla
 has passive extraction, a pinned Rust supplement, ordered configuration
 preflight, metadata adaptation and operation dependency projection with controlled
 unit boundaries. The private app's [bounded native pytest configuration component](../../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
-also has controlled tests; complete native ownership and query qualification
-remain pending. The [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
+also has controlled tests; the separate planning-input observation below qualifies
+its exact native query and target/input composition. Complete caller ownership
+and qualification remain pending. The [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
 has controlled supplied-fact coverage. The
 [controlled paired Python fact assembly](../../../../private/app/workflow-delivery/README.md#controlled-paired-python-fact-assembly)
 binds supplied native targets and actual checks. The
@@ -57,11 +58,14 @@ caller operations bound to the same metadata. The separately accepted
 [current-tool observation](./research/python-native-graph-qualification.md#completed-ordinary-and-no-dev-observation)
 qualifies exact complete ordinary/no-dev graph composition on its pinned Linux
 subjects; its campaign and cleanup are complete, and remaining captures stopped. The [controlled Python repository input associations](../../../../private/app/workflow-delivery/README.md#controlled-python-repository-input-associations)
-bind supplied actual check owners to repository engineering inputs; native queries
-and full caller behavior remain pending. Package preset expansion and
+bind supplied actual check owners to repository engineering inputs. The separate
+[planning-input observation](./research/python-planning-enrichment-qualification.md#completed-planning-input-observation)
+qualifies native pytest, committed NBGV/quality inputs and producer input mapping
+on the exact retained Linux subjects; full caller behavior remains pending. Package preset expansion and
 preparation/execution remain pending. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
-qualifies the pinned helper composition. Native pytest/NBGV input composition, complete native
-caller qualification and caller mapping remain pending.
+qualifies the pinned helper composition. Complete native caller qualification
+and caller mapping remain pending. The enrichment campaign and cleanup are
+complete; both unused diagnostics stopped.
 
 The pre-contraction normal-Live baseline was merged across the
 requirements, HLD, glossary, five MLDs, migration policy, and first-slice LLD.

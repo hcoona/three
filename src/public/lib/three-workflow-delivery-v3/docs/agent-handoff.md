@@ -25,8 +25,9 @@ selects the next extraction boundary. Passive extraction, the pinned Rust
 supplement, ordered configuration preflight, metadata adaptation and operation
 dependency projection have controlled unit boundaries. The private app's
 [bounded native pytest configuration component](../../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
-also has controlled tests; complete native ownership and query qualification
-remain pending. The
+also has controlled tests; the separate planning-input observation below qualifies
+its exact native query and target/input composition. Complete caller ownership
+and qualification remain pending. The
 [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
 has controlled supplied-fact coverage. The
 [controlled paired Python fact assembly](../../../../private/app/workflow-delivery/README.md#controlled-paired-python-fact-assembly)
@@ -37,13 +38,16 @@ caller operations bound to the same metadata. The separately accepted
 [current-tool observation](./research/python-native-graph-qualification.md#completed-ordinary-and-no-dev-observation)
 qualifies exact complete ordinary/no-dev graph composition on its pinned Linux
 subjects; its campaign and cleanup are complete, and remaining captures stopped. The [controlled Python repository input associations](../../../../private/app/workflow-delivery/README.md#controlled-python-repository-input-associations)
-bind supplied actual check owners to repository engineering inputs; native queries
-and full caller behavior remain pending. Package preset expansion and
+bind supplied actual check owners to repository engineering inputs. The separate
+[planning-input observation](./research/python-planning-enrichment-qualification.md#completed-planning-input-observation)
+qualifies native pytest, committed NBGV/quality inputs and producer input mapping
+on the exact retained Linux subjects; full caller behavior remains pending. Package preset expansion and
 preparation/execution remain pending. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned ordered helper composition; its campaign is stopped and
-both unused diagnostic reserves expired. Native pytest/NBGV input composition, complete native
-caller qualification and execution/caller mapping remain pending. Other ecosystem execution cutover and
+both unused diagnostic reserves expired. Complete native caller qualification
+and execution/caller mapping remain pending. The separate enrichment campaign
+and cleanup are complete; both unused diagnostics stopped. Other ecosystem execution cutover and
 Release remain pending. The
 [private application's entry](../../../../private/app/workflow-delivery/README.md)
 describes its implemented CI selection/result interface, GitHub event comparison,

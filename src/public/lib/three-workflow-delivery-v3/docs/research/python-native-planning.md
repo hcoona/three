@@ -192,10 +192,13 @@ The [current-tool collector observation](python-native-graph-qualification.md#co
 qualifies exact complete ordinary/no-dev graph composition, separately from
 this source assessment and the primitive observation. Its failed lifetimes,
 corrections and final cleanup remain retained; the first accepted success stopped
-all remaining captures. Native pytest/NBGV input composition and full caller
-behavior remain pending. The next
-[planning-input enrichment protocol](python-planning-enrichment-qualification.md)
-reuses retained graph answers without another UV query.
+all remaining captures. The separate
+[planning-input observation](python-planning-enrichment-qualification.md#completed-planning-input-observation)
+qualifies native pytest, committed NBGV/quality inputs and producer input mapping
+on those exact Linux subjects. It reused retained graph answers without another
+UV query; its campaign and cleanup are complete, and both unused diagnostics
+stopped. Complete runnable caller facts, package preparation/execution and
+caller cutover remain pending.
 
 If further native execution is needed, its exact remaining subject first needs
 a concrete accepted isolated protocol. Reuse the retained primitive evidence
