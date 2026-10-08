@@ -62,7 +62,13 @@ qualification. The controlled Python assembly below consumes this seam.
 
 The Python passive extractor returns declared build strings and maintained
 plugin coordinates. The pinned Rust supplement and ordered configuration
-preflight have controlled unit boundaries. Metadata adaptation and operation
+preflight have controlled unit boundaries. Group answers use the native current
+or exact singleton manifest, native group presence and native default/no-dev
+selection. Root or other member groups cannot become another owner's defaults;
+managed metadata association remains strict. The
+[current-tool observations](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#first-diagnostic-and-group-owner-correction)
+retain failed main and first diagnostic captures; the corrected complete graph
+remains unqualified. Metadata adaptation and operation
 dependency projection retain native IDs, dimensions and build-source associations.
 The [primitive Linux observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper boundary; complete native fact collection, native caller

@@ -9,13 +9,14 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use uv_auth::CredentialsCache;
 use uv_cache::Cache;
-use uv_configuration::NoSources;
+use uv_configuration::{DependencyGroupsWithDefaults, NoSources};
 use uv_distribution_types::{IndexLocations, Requirement};
-use uv_normalize::{ExtraName, GroupName, PackageName};
+use uv_normalize::{DEV_DEPENDENCIES, ExtraName, GroupName, PackageName};
 use uv_pep440::VersionSpecifiers;
 use uv_pep508::MarkerTree;
 use uv_python::Interpreter;
 use uv_settings::{FilesystemOptions, Options, ResolverOptions};
+use uv_workspace::dependency_groups::FlatDependencyGroups;
 use uv_workspace::pyproject::PyProjectToml;
 use uv_workspace::{DiscoveryOptions, ProjectWorkspace, VirtualProject, WorkspaceCache};
 use workflow_python_native_facts::{
@@ -189,6 +190,49 @@ fn request_directories(request: &Request) -> Result<BTreeSet<PathBuf>, HelperErr
     Ok(project_directories)
 }
 
+/// Match the native default-selection owner within the admitted zero/singleton scope.
+fn group_owner_manifest<'a>(
+    current: &'a PyProjectToml,
+    packages: &[PackageName],
+    members: impl Iterator<Item = (&'a PackageName, &'a PyProjectToml)>,
+) -> Result<&'a PyProjectToml, HelperError> {
+    match packages {
+        [] => Ok(current),
+        [name] => {
+            let mut matches = members.filter(|(member, _)| *member == name);
+            let (_, manifest) = matches
+                .next()
+                .ok_or(HelperError::Stage("GroupOwnerIdentity"))?;
+            if matches.next().is_some() {
+                return Err(HelperError::Stage("GroupOwnerIdentity"));
+            }
+            Ok(manifest)
+        }
+        _ => Err(HelperError::Stage("GroupOwnerIdentity")),
+    }
+}
+
+/// Transfer only groups present in the selected owner's maintained native facts.
+fn owner_selected_groups(
+    manifest: &PyProjectToml,
+    directory: &Path,
+    selected: &DependencyGroupsWithDefaults,
+) -> Result<Vec<GroupName>, HelperError> {
+    let native_groups = FlatDependencyGroups::from_pyproject_toml(directory, manifest)
+        .map_err(|_| HelperError::Stage("NativeOwnerGroups"))?;
+    let candidates = manifest
+        .dependency_groups
+        .iter()
+        .flat_map(|groups| groups.keys())
+        .chain(std::iter::once(&*DEV_DEPENDENCIES));
+    Ok(candidates
+        .filter(|group| native_groups.get(group).is_some() && selected.contains(group))
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect())
+}
+
 async fn extract(request: Request) -> Result<Response, HelperError> {
     let project_directories = request_directories(&request)?;
     for project in &request.projects {
@@ -309,24 +353,18 @@ async fn extract(request: Request) -> Result<Response, HelperError> {
                 .await
                 .map_err(|_| HelperError::Stage("NativeGroupContext"))?;
         let selected = select_groups(&native, &operation.packages, operation.no_dev)?;
-        let mut observed = BTreeSet::new();
-        for manifest in std::iter::once(native.workspace().pyproject_toml()).chain(
+        let manifest = group_owner_manifest(
+            native.pyproject_toml(),
+            &operation.packages,
             native
                 .workspace()
                 .packages()
-                .values()
-                .map(|member| member.pyproject_toml()),
-        ) {
-            if let Some(groups) = &manifest.dependency_groups {
-                observed.extend(groups.keys().cloned());
-            }
-        }
+                .iter()
+                .map(|(name, member)| (name, member.pyproject_toml())),
+        )?;
         group_operations.push(GroupSelection {
             id: operation.id,
-            groups: observed
-                .into_iter()
-                .filter(|group| selected.contains(group))
-                .collect(),
+            groups: owner_selected_groups(manifest, &operation.directory, &selected)?,
         });
     }
     let interpreter = Interpreter::query(&request.interpreter, &cache)
@@ -419,6 +457,123 @@ mod tests {
             "python_constraints": []
         }))
         .expect("complete internal request")
+    }
+
+    fn manifest(groups: &str) -> PyProjectToml {
+        PyProjectToml::from_string(groups.into(), PathBuf::from("/controlled/pyproject.toml"))
+            .expect("controlled native manifest")
+    }
+
+    fn selection(no_dev: bool) -> DependencyGroupsWithDefaults {
+        use uv_configuration::{DependencyGroups, DevMode};
+        use uv_normalize::DefaultGroups;
+        DependencyGroups::from_args(
+            no_dev.then_some(DevMode::Exclude),
+            vec![],
+            vec![],
+            false,
+            vec![],
+            false,
+        )
+        .with_defaults(DefaultGroups::List(vec![
+            "dev".parse().unwrap(),
+            "quality".parse().unwrap(),
+        ]))
+    }
+
+    #[test]
+    fn owner_local_groups_do_not_inherit_other_manifests() {
+        let root = manifest("[dependency-groups]\ndev = []\n");
+        let with_groups = manifest("[dependency-groups]\ndev = []\nquality = []\n");
+        let without_groups = manifest("");
+        let package: PackageName = "with-groups".parse().unwrap();
+        let empty_package: PackageName = "without-groups".parse().unwrap();
+        let members = [(&package, &with_groups), (&empty_package, &without_groups)];
+        for (current, packages, expected) in [
+            (&root, vec![], vec!["dev"]),
+            (&with_groups, vec![], vec!["dev", "quality"]),
+            (&without_groups, vec![], vec![]),
+            (&root, vec![package.clone()], vec!["dev", "quality"]),
+            (&root, vec![empty_package.clone()], vec![]),
+            (&with_groups, vec![empty_package.clone()], vec![]),
+        ] {
+            let owner = group_owner_manifest(current, &packages, members.iter().copied())
+                .expect("exact native owner");
+            let result = owner_selected_groups(owner, Path::new("/controlled"), &selection(false))
+                .expect("owner-local native groups");
+            assert_eq!(
+                result
+                    .iter()
+                    .map(|group| group.as_ref())
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            let suppressed =
+                owner_selected_groups(owner, Path::new("/controlled"), &selection(true))
+                    .expect("native no-dev");
+            assert_eq!(
+                suppressed
+                    .iter()
+                    .map(|group| group.as_ref())
+                    .collect::<Vec<_>>(),
+                expected
+                    .into_iter()
+                    .filter(|name| *name != "dev")
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn native_group_presence_and_no_dev_preserve_owner_scope() {
+        let legacy =
+            manifest("[tool.uv]\ndev-dependencies = []\n[dependency-groups]\nquality = []\n");
+        for (no_dev, expected) in [(false, vec!["dev", "quality"]), (true, vec!["quality"])] {
+            let result =
+                owner_selected_groups(&legacy, Path::new("/controlled"), &selection(no_dev))
+                    .expect("native legacy presence and selection");
+            assert_eq!(
+                result
+                    .iter()
+                    .map(|group| group.as_ref())
+                    .collect::<Vec<_>>(),
+                expected
+            );
+        }
+        let invalid = manifest("[dependency-groups]\nquality = [{include-group = 'missing'}]\n");
+        assert_eq!(
+            owner_selected_groups(&invalid, Path::new("/controlled"), &selection(false))
+                .unwrap_err()
+                .to_string(),
+            "Python native extraction failed (NativeOwnerGroups)."
+        );
+    }
+
+    #[test]
+    fn unsupported_group_owner_requests_are_terminal() {
+        let current = manifest("");
+        let name: PackageName = "member".parse().unwrap();
+        let missing: PackageName = "missing".parse().unwrap();
+        let members = [(&name, &current)];
+        for packages in [vec![missing], vec![name.clone(), name.clone()]] {
+            assert_eq!(
+                group_owner_manifest(&current, &packages, members.iter().copied())
+                    .unwrap_err()
+                    .to_string(),
+                "Python native extraction failed (GroupOwnerIdentity)."
+            );
+        }
+        let duplicate = [(&name, &current), (&name, &current)];
+        assert_eq!(
+            group_owner_manifest(
+                &current,
+                std::slice::from_ref(&name),
+                duplicate.iter().copied()
+            )
+            .unwrap_err()
+            .to_string(),
+            "Python native extraction failed (GroupOwnerIdentity)."
+        );
     }
 
     #[test]

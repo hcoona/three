@@ -7,8 +7,8 @@ repository lock and prepared tools. It implements the accepted
 [Python integration order](../migration-strategy.md#python-planning-integration-and-later-caller-cutover)
 within the accepted [Delivery Wave](../../../../../../docs/delivery-wave.md).
 Exact source, preparation and protocol review and protected delivery must complete
-before any newly admitted query. The first failed capture and its bounded runtime
-correction are retained below.
+before any newly admitted query. The failed main and first diagnostic captures and their bounded corrections
+are retained below.
 
 The stopped [primitive campaign](python-native-planning.md#primitive-native-observation)
 and its expired reserves remain unchanged. This new subject is complete production
@@ -221,9 +221,10 @@ The exact source4 correction uses the documented process-scoped
 [`DOTNET_EnableDiagnostics=0`][dotnet-diagnostics] setting. Microsoft describes
 it as disabling debugging, profiling and diagnostic-port facilities. This narrows
 optional harness IPC effects without changing the collector, tools, native
-requests or ordinary JSON/stdio evidence. Suppression on this exact host remains
-unobserved until an independently interpreted diagnostic; documentation and
-controlled environment assertions do not establish runtime success.
+requests or ordinary JSON/stdio evidence. The first diagnostic below completed normal state observation without the original
+nonregular-entry failure. This narrow observation does not establish complete
+collection; documentation and controlled environment assertions alone supply
+no runtime success.
 
 Source4 keeps normal capture's strict nonregular rejection. During the single
 bounded cleanup only, its metadata scanner may count FIFO entries inside the
@@ -263,6 +264,92 @@ behavior, including preservation of failed originals and rejection of evidence
 FIFOs/symlinks. They do not qualify native graph collection or later pytest/NBGV,
 preparation, execution, caller cutover, Windows or Release.
 
+## First Diagnostic and Group-Owner Correction
+
+The source4 diagnostic occupied attempt2 and remains failed and consumed. All
+21 requested native commands succeeded: frozen metadata, 16 passive contexts,
+configuration preflight and bootstrap supplement, then configuration preflight
+and activity supplement. The managed terminal reports
+`System.IO.InvalidDataException`; its exact exception message and stack were
+not retained. No complete graph or no-dev endpoint collection exists.
+
+The attempt receipt records `2.5036566519993357` seconds elapsed. The outer
+receipt records exit 1 and a completed Linux group stop. Current and aggregate
+state observations are complete
+and below their existing limits. Read-only post-stop inspection confirmed both
+endpoint commits, trees, empty tracked status, lock hashes and absent project
+environments unchanged. All 58 regular originals are retained in archive SHA256
+`d2a8b801b49064b23d29d66df458c2f924c76d1615fd1d192d280d2cebe084f0`.
+This establishes bounded failed collection, not universal absence of effects.
+
+Separate engineering review and independent triage confirmed
+`PY-NATIVE-GROUP-SCOPE-001`: our native supplement enumerated candidate group
+names from every workspace manifest, while the managed projection joins each
+answer to one owner. The retained activity result supplies `dev` for seven
+members with no owner-local `dev` entry. This is our transfer defect, not a
+claim that UV CLI incorrectly selects groups. Static attribution to the strict
+owner-local join is strongly supported; the first rejecting owner and exact
+exception text were not observed or replayed. Other integration defects remain
+possible.
+
+Pinned UV's [current manifest and singleton default APIs][uv-group-owner]
+identify the native selection owner. Its internal
+[installation group handling][uv-group-install] excludes inherited workspace-root
+default groups for a selected member; arbitrary explicit-group behavior is outside
+this request's admitted scope. The correction selects the current native manifest
+for zero packages or the exact singleton member manifest, then intersects its
+native group presence with the existing native default/no-dev selection.
+[`FlatDependencyGroups::from_pyproject_toml` and `get`][uv-group-presence]
+provide maintained group presence, including legacy dev declarations. We do not
+copy group inheritance, legacy parsing or native installation algorithms.
+Missing, ambiguous or multiple selected package identities remain terminal;
+any returned group must still resolve uniquely in the managed owner's metadata.
+An owner with no selected declared group legitimately returns an empty answer.
+
+Independently reviewed source4 cleanup was executed once per failed attempt.
+Attempt1 cleanup took `0.029969797004014254` seconds and attempt2 cleanup took
+`0.02994868901441805` seconds; each exited 0 with completed group stop. The
+cumulative charged time is `3.809931591997156` seconds. Original failures,
+requests, results and archives remain unchanged. At most one diagnostic reserve
+remains, conditional on reviewed exact corrected source/preparation/packet and
+protected protocol acceptance; no blind retry or allowance refill follows.
+
+### Final Diagnostic Subject
+
+The final diagnostic uses the exact independently reviewed source correction
+in this delivery and its prepared helper binary below. The UV source pin,
+Cargo dependency manifest/lock/toolchain, managed application/harness, runtimes,
+clean interpreter, wheels, endpoint snapshots and committed locks retain their
+accepted identities. The source4 supervisor and its 22 previously passing
+controlled tests are unchanged. The new executable packet differs from the
+accepted first diagnostic packet only in its supplement path, pointing to a
+separately owned copy of the corrected binary. Old binaries and packets remain.
+The preparation manifest binds all copied native source files and actual bytes;
+the delivery retains it, exact compile/test receipts and the public packet with
+consistent original-to-public aliases.
+
+| Corrected subject                                         | SHA256                                                           |
+| --------------------------------------------------------- | ---------------------------------------------------------------- |
+| Corrected `src/main.rs`                                   | 67e9b2ee924e77ba27ce59ca808f41a5c7d60bdbb8731d587bfd99b9c143258f |
+| Unchanged `src/lib.rs`                                    | c38468def7e590338745cde21df38908e434622da21dfaec17400ba79f968196 |
+| Prepared corrected helper binary                          | 9c50b615d87b25adaac15abc6147946f97af32f9b5869ea04d7815dd2bb3e763 |
+| Original executable `packet-group-scope-diagnostic2.json` | 500a130fb73c09418a4c4c4084a3ee74a5383d22e4521537c17848e75ff4ef11 |
+| Original `preparation-manifest1.json`                     | 074a8834225282acc37cfe1ee0714022a4424860fa9089757ab321b53b30cbbf |
+
+Use source4 with this exact packet for one fresh final diagnostic only after
+complete source, preparation, protocol and public-packet reviews and protected
+delivery of the correction. Fresh read-only verification must establish all
+unchanged original subjects, corrected prepared bytes, both clean endpoints,
+absent generation-owned project environments and remaining bounds immediately
+before launch. Attempt3 is the final reserve: the main and first diagnostic are
+not replayed or refunded. Stop after success or failure and independently
+interpret the actual results before any further work that requires a complete
+graph. All existing effect, state, capture, command, stop and cleanup limits stay
+unchanged; this does not admit enrichment, check/package execution or Release.
+
+[uv-group-owner]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-workspace/src/workspace.rs#L2331
+[uv-group-install]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/project/install_target.rs#L138
+[uv-group-presence]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-workspace/src/dependency_groups.rs#L30
 [dotnet-diagnostics]: https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-environment-variables#dotnet_enablediagnostics
 
 ## Exact Identity Appendix
