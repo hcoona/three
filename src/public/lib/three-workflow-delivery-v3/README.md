@@ -27,11 +27,13 @@ provides a [bounded native pytest configuration component](../../../private/app/
 with controlled tests; complete ownership, collection and native query composition
 remain unqualified. The
 [paired Python producer-to-owner component](../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
-has controlled supplied-fact coverage; complete native collection and candidate
-check binding remain pending. The
+has controlled supplied-fact coverage. The
+[controlled paired Python fact assembly](../../../private/app/workflow-delivery/README.md#controlled-paired-python-fact-assembly)
+binds supplied native targets and actual checks; complete native collection,
+package preset expansion and preparation/execution remain pending. The
 [primitive Linux observation](docs/research/python-native-planning.md#primitive-native-observation)
-qualifies the pinned helper composition; complete fact assembly, native caller
-qualification and Python execution cutover remain pending.
+qualifies the pinned helper composition; complete native query composition, native
+caller qualification and Python execution cutover remain pending.
 Other quality presets, ecosystem execution cutover and Release remain pending.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim

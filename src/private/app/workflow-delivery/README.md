@@ -57,15 +57,15 @@ The internal impact-selection operation also accepts caller-bound paired
 [quality-owner transfer contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#python-quality-owners-and-input-only-members).
 It validates changed paths, initiating revisions and actual union owners before
 the ordinary relation, Release Unit, check and prerequisite closure. This seam
-does not change the supplied-fact command format or establish Python fact assembly
-or native caller qualification.
+does not change the supplied-fact command format or establish native caller
+qualification. The controlled Python assembly below consumes this seam.
 
 The Python passive extractor returns declared build strings and maintained
 plugin coordinates. The pinned Rust supplement and ordered configuration
 preflight have controlled unit boundaries. Metadata adaptation and operation
 dependency projection retain native IDs, dimensions and build-source associations.
 The [primitive Linux observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-planning.md#primitive-native-observation)
-qualifies the pinned helper boundary; complete fact assembly, native caller
+qualifies the pinned helper boundary; complete native fact collection, native caller
 qualification and caller mapping remain pending under the
 [planning contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-planning-facts).
 
@@ -147,7 +147,7 @@ helper test root is selected. Pure parsing/admission/transport tests and
 controlled C# command responses do not qualify actual native workspace,
 interpreter, lowering, metadata or effects. The separately retained primitive
 observation qualifies the pinned ordered helper composition on its Linux host.
-Complete endpoint/activity/ownership assembly and Python caller cutover remain
+Complete native endpoint collection and Python caller cutover remain
 pending; there is no Python planning command or complete integration claim yet.
 
 `PythonMetadataReader` consumes the pinned preview schema, structured sources,
@@ -188,7 +188,7 @@ targets to complete committed file inputs and the nearest native member. Standal
 targets keep their own coordinates without becoming root workspace members. A
 target spanning descendant member roots is unsupported rather than assigned a
 guessed owner. Controlled binding tests establish these supplied-fact behaviors.
-No actual query composition, test collection, complete fact assembly or caller
+No actual query composition, test collection, complete native fact collection or caller
 cutover is qualified by these components. Those remain subject to the accepted
 native qualification and complete Python caller contracts.
 
@@ -1003,10 +1003,37 @@ without selecting deleted checks or changing the core's origin/check guards.
 
 This is a supplied-fact projection, not a second target declaration or native
 collector. Callers must bind complete native graphs and derive actual quality
-bindings from native pytest configuration/adopted checks. Target expansion,
-preparation, candidate surviving-work binding, `SharedInput`/`OwnedPaths` adaptation,
-complete fact assembly and caller qualification remain pending. Existing Python
-callers remain active. Controlled projection tests execute no native Python helper.
+bindings from native pytest configuration/adopted checks. The controlled assembly
+below binds supplied targets and actual checks. Complete native collection, quality
+preset expansion, preparation/execution and caller qualification remain pending.
+Existing Python callers remain active. Controlled projection tests execute no
+native Python helper.
+
+### Controlled Paired Python Fact Assembly
+
+[`PythonFactsAssembler`](Repository/PythonFactsAssembler.cs) composes supplied native
+endpoint graphs, committed Git entries, pytest configuration and fully resolved
+package checks. `PythonPytestTargets` binds actual configured targets; the assembler
+retains the supplied runner, variant, native dimensions and supported import mode.
+It creates no independent target roster, dependency parser or synthetic quality
+owner for input-only members.
+
+Package owners retain complete supplied checks, presets, Release Unit relations
+and explicit inputs outside their member directories. Exact committed ownership
+uses nearest membership across all native producers, including nested input-only
+members. All actual quality owners and available core relations/prerequisites are
+validated before any path is certified, including unselected and basis-only owners.
+Possible missing explicit inputs remain in native projection, while ordinary core
+input coordinates include only committed endpoint paths.
+
+The existing producer projection completes paired closure and preserves each
+initiating path/revision. Only complete empty closure at every present endpoint
+certifies an unaffected path. The shared core receives the original changed paths,
+full-mode flag and paired reasons; it owns candidate survival, relation/unit
+expansion and complete checks/prerequisites. Controlled integration tests establish
+this supplied-fact composition. They execute no native Python helper and do not
+qualify complete native collection, package preset expansion, preparation/execution
+or caller cutover.
 
 ## Validation and CI Ownership
 
