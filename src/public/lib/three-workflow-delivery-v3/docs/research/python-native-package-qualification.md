@@ -5,10 +5,12 @@ This record defines the finite local package experiment for the accepted
 It is a protocol, not a runtime result. Its delivery PR must independently review
 and protect this exact protocol and executable packet before the first launch.
 The existing Python callers remain active until complete qualification and cutover.
-The original packet and [first fresh diagnostic](#first-fresh-diagnostic) are
-spent. The [accepted current observation](#accepted-current-observation) supplies
-separate current facts for preparing the final diagnostic; it does not admit a
-package launch or change the earlier failed outcomes.
+All three package lifetimes are failed and spent. The
+[final package failure](#final-package-failure-and-spent-campaign) records the
+terminal observation and independently classified integration defect. Earlier
+preparation and admission sections describe historical subjects; none admits a
+further launch. The corrected phase recipe below remains prospective and
+requires a distinct exact subject and fresh bounded authorization.
 
 ## Question and Scope
 
@@ -841,3 +843,59 @@ observer capacity, reduced business checks or failed-state cleanup follows.
 [lfs-clean-source]: https://github.com/git-lfs/git-lfs/blob/b84b33847fe6458f36ef521534dc0eac953cb379/commands/command_clean.go
 [lfs-configuration-source]: https://github.com/git-lfs/git-lfs/blob/b84b33847fe6458f36ef521534dc0eac953cb379/config/config.go
 [lfs-initialization-source]: https://github.com/git-lfs/git-lfs/blob/b84b33847fe6458f36ef521534dc0eac953cb379/commands/commands.go
+
+## Final Package Failure and Spent Campaign
+
+[PR #1096](https://github.com/hcoona/three/pull/1096) protected-delivered the
+native LFS preparation correction at `407722800d64ede519b3e029ad19203a45d8c566`.
+The [once-only union-tree receipt](https://github.com/hcoona/three/pull/1096#issuecomment-6067813671)
+preceded exact readiness5 and the final package lifetime. Readiness5 passed:
+7,678 bound paths, 2,488 Git entries, both existing LFS materializations and clean
+status matched; its owned preparation cleanup completed. No package ran during
+readiness.
+
+The final package lifetime failed once. Frozen dev and both-group noneditable
+preparation succeeded, and maintained identity agreed with
+`hcoona-release-smoke-python / 0.1.0b155+ge5bd15d`. Native checked `uv build`
+then exited 2 because the workspace `nbgv-python` build requirement was not
+satisfied. No original distributions were produced; contents and both consumer
+checks were skipped. The [independent complete failure audit](https://github.com/hcoona/three/pull/1096#issuecomment-6068059435)
+confirmed actual integration failure at confidence 10/10. A
+[different independent classification](https://github.com/hcoona/three/pull/1096#issuecomment-6068192368)
+classified PKG-EDITABILITY-001 as true positive: installed noneditable metadata
+conflicts with UV's native editable workspace requirement, causal confidence
+9/10. The exact runtime comparison branch was not traced; a UV bug or operator
+defect is not established.
+
+The final lifetime spent 19 reserved calls and 8.808122279006056 inclusive seconds;
+eight actual top-level UV/Python operations were observed. Unexecuted reserved
+calls receive no refund. All three lifetimes consumed 42 reserved calls and
+19.906685509020463 inclusive seconds. Terminal Git HEAD/status were unchanged;
+failed owned state remains retained and cleanup is not authorized. All five
+unused observer slots previously expired. No fourth old lifetime, replay or
+reused admission exists. Package qualification and caller cutover remain blocked.
+
+## Prospective Phase Recipe
+
+The [MLD](../middle-level-design.md#native-python-package-execution) selects native
+workspace-compatible preparation through complete original outputs, followed by
+one frozen both-groups noneditable reconciliation of the same tools before
+Git-free original-archive consumption. Source evidence supports this composition;
+its source build, conversion and consumers remain unobserved. All four required
+checks, native dependency/version checks, original-byte integrity, clean consumer
+origins and existing effects/stop boundaries remain required.
+
+With unchanged four planning calls and three success-only inventories, this recipe
+has sixteen executor calls and twenty-three success-path top-level UV/Python calls.
+Those figures are planning assumptions, not observed costs or capacity. The exact
+successor operator must reserve all sixteen executor calls before dispatch and
+retain conversion failure/cancellation/timeout and downstream stop behavior.
+Planning identity preparation may retain its own noneditable installation because
+it does not perform the rejected checked source build.
+
+No successor executable packet is admitted by this amendment. Before another
+native qualification, accept the affected implementation and a distinct protected
+exact source/tool/runtime/checkout/packet protocol, with explicit fresh finite
+owner authorization, inclusive command/lifetime/state/stream bounds, terminal
+readback and owned cleanup rules. Preserve every historical failed subject and
+its evidence; neither remaining numerical headroom nor this recipe renews a grant.

@@ -63,9 +63,11 @@ bind supplied actual check owners to repository engineering inputs. The separate
 qualifies native pytest, committed NBGV/quality inputs and producer input mapping
 on the exact retained Linux subjects; full caller behavior remains pending. The
 [controlled Python package component](../../../../private/app/workflow-delivery/README.md#python-package-execution-component)
-implements finite adopted preset expansion, preparation and execution. Actual
-frozen selection, noneditable plugin independence, original wheel and Git-free
-sdist native consumers remain unqualified; complete caller mapping, root pytest
+implements finite adopted preset expansion, preparation and execution. The
+[final package experiment](./research/python-native-package-qualification.md#final-package-failure-and-spent-campaign)
+failed at native workspace build-requirement checking; all package lifetimes are
+spent. The corrected phase contract remains unimplemented and unqualified. Actual
+original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
 preparation/cutover and Release remain pending. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. Complete native caller qualification
 and caller mapping remain pending. The enrichment campaign and cleanup are
@@ -233,10 +235,11 @@ and their validation dependencies.
 Local observations and the Windows assumption
 are recorded in [contraction feasibility](./research/contraction-feasibility.md).
 The [native Python packaging assessment](./research/python-native-packaging.md)
-supplies the source basis for frozen/shared/noneditable preparation and native
-Git-free version reuse. The [finite package protocol](./research/python-native-package-qualification.md)
-binds the exact protected component, preparation and observation boundary; actual
-package execution remains unqualified.
+supplies the source basis for the MLD's phase-specific frozen native preparation
+and candidate Git-free version reuse. The
+[finite package protocol](./research/python-native-package-qualification.md)
+retains the failed/spent subjects and prospective phase recipe; no successor
+packet is admitted and actual package execution remains unqualified.
 
 The [Python native planning source assessment](./research/python-native-planning.md)
 examines UV metadata and native build-source association candidates for the next

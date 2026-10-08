@@ -505,8 +505,8 @@ the repository's Windows default unless a declared variant selects another runne
 
 Use the private C# application to expand adopted package checks, invoke native
 operations and join their outcomes through existing `CheckSpec`, `PackageTarget`
-and result contracts. UV owns frozen group/workspace selection, noneditable
-installation, PEP 517 backend requirements and build dispatch. The maintained
+and result contracts. UV owns frozen group/workspace selection, phase-specific native installation,
+PEP 517 backend requirements and build dispatch. The maintained
 `nbgv-python` plugin owns official NBGV invocation. Do not port these semantics,
 maintain a second backend-requirement declaration, rewrite project version
 metadata or inject a replacement version engine. The
@@ -517,9 +517,11 @@ For the current adopted Python distribution contract, prepare an owned native
 project environment from the existing root `dev` and `workflow-delivery-python`
 groups and synchronized lock. Frozen root-dev sync excludes local workspace
 products; subsequent frozen sync selects both existing groups with native shared
-build mode and `--no-editable`. Exact sync removes omitted tools, so the final
-selection includes the development backend tools as well as the build/plugin
-group. The root-dev footprint is existing infrastructure,
+build mode and the workspace's declared editability. Keep that installation through
+completion of the original wheel/sdist set: native source-build requirements
+retain workspace source and editability semantics. Exact sync removes omitted
+tools, so selection includes the development backend tools as well as the
+build/plugin group. The root-dev footprint is existing infrastructure,
 not an application-maintained minimal backend roster. Actual selection and
 installation must establish that unrelated workspace products are not built.
 This package-tool preparation does not replace root pytest's selected/full
@@ -530,8 +532,9 @@ package and prepared interpreter. Enable the pinned native
 `build-dependency-check` preview with shared build mode; it checks declared,
 backend-reported and transitive requirements. Missing native prerequisites fail;
 there is no skip flag or application fallback. Frozen preparation remains the
-selected installation authority: permissive installed-version checks do not
-establish strict source or original-archive identity. A changed tool or necessary
+selected installation authority. Native Directory requirements still enforce
+editability equality under permissive checking; compatible-version checks do not
+prove original-archive identity. A changed tool or necessary
 backend shape requires the affected native-contract review before use.
 
 Consume normal native distribution metadata through maintained packaging and
@@ -542,9 +545,20 @@ registered project quality implementation retains actual payload and installed
 API expectations; those expectations are not universal package-format rules.
 
 Wheel consumption installs the original wheel in a fresh owned environment.
-Git-free sdist consumption builds the original archive from a neutral directory
-outside Git, using prepared noneditable backend/plugin distributions, then
-installs its resulting wheel into another clean environment. Neither consumer
+Before Git-free sdist consumption, reconcile the same owned package-tool
+environment with one frozen native sync selecting both groups, shared build mode
+and `--no-editable`. Require successful reconciliation and unchanged original
+archive bytes before continuing; failure, cancellation or timeout fails the sdist
+check and prevents its downstream consumer operations. This does not erase an
+independently completed original-wheel result.
+
+Git-free sdist consumption builds the original archive file from a neutral
+directory outside Git using the reconciled noneditable backend/plugin
+distributions, then installs its resulting wheel into another clean environment.
+Pass the original archive file, rather than an extracted directory, to UV: its
+native archive path uses ordinary declared PEP 517 requirements without the
+source-directory workspace lowering. This source-supported distinction remains
+subject to complete native qualification. Neither consumer
 implicitly imports the source checkout. Native installed metadata, import origin
 and the applicable project API check must agree with the intended native version
 and outputs; command exit alone cannot satisfy them. Native Hatchling metadata
