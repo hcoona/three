@@ -55,6 +55,9 @@ protected review before another launch, not an unrecorded diagnostic adjustment.
 
 ## Record Consumer and Prepared Coordinates
 
+The coordinates and invocation in this section describe the historical, spent
+original admission. They are not the subject for the next launch.
+
 The integration author maintains this research protocol. Independent engineering
 and evidence reviewers use it to admit and interpret the finite package
 observation. The existing source assessment cannot carry an executable-packet
@@ -107,17 +110,23 @@ source review do not establish runtime relocation or package success. The first
 packet's nonexistent `.release-unit.yaml` path was caught by author precheck,
 never executed and is preserved as a superseded nonexecuting draft.
 
-The reviewed invocation uses the original pinned Python executable with
+The original reviewed invocation used the pinned Python executable with
 `-I -B`, the fresh operator's `observe` entry, packet draft2 and the absent
-`/evidence/python-package-native-campaign1/lifetime-1` destination. Each actual
+`/evidence/python-package-native-campaign1/lifetime-1` destination before its
+original launch. Each actual
 coordinate is retained in preparation binding2's `bootstrap_argv`; the public
-packet maps them consistently. Before launch, rehash every bound subject, verify
-unchanged checkout HEAD/full status and absent lifetime, and retain that read-only
-inspection. A mismatch stops admission, without rebuilding or repairing in place.
+packet maps them consistently. That admission required rehashing every bound
+subject, verifying unchanged checkout HEAD/full status and an absent lifetime,
+and retaining that read-only inspection. A mismatch stopped admission, without
+rebuilding or repairing in place.
 The concrete operator supplies the complete ordered commands and explicit child
 environment; no speculative probe precedes the lifetime.
 
 ## Recipe and Native Responsibilities
+
+These steps describe the original draft2 recipe. The
+[first fresh diagnostic](#first-fresh-diagnostic) retains this composition with
+its explicit two-group correction and separately bound subject.
 
 1. Within the lifetime, copy the complete pinned Python runtime (preserving modes
    and internal links) into the scanned owned subtree, then use its executable
@@ -125,8 +134,8 @@ environment; no speculative probe precedes the lifetime.
    complete clean status. Query UV workspace metadata
    with the frozen lock and pinned Python; preserve the complete original response.
 2. Prepare owned planning tools with root-dev frozen sync excluding workspace
-   products, then frozen shared/noneditable sync selecting both existing `dev`
-   and `workflow-delivery-python` groups. Both
+   products, then frozen shared/noneditable sync selecting only the existing
+   `workflow-delivery-python` group. Both
    consume the existing synchronized declarations and lock; no extra dependency
    manifest. Query the selected source directory through maintained Hatchling
    metadata and nbgv-python's official NBGV projection.
