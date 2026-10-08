@@ -175,8 +175,11 @@ ownership, expand checks or replace callers.
 [`PythonNativeGraphReader`](Repository/PythonNativeGraphReader.cs) composes metadata,
 passive extraction, ordered supplementation and activity projection for one caller-prepared
 endpoint. Metadata supplies the complete member roster; root and tableless contexts remain
-visible. Passive NBGV working-directory/generated-file coordinates remain available to the
-later committed-input binding. The collector returns native dependency facts, operation
+visible. A synchronous caller-owned factory receives that same metadata answer once and
+constructs actual operation dimensions from native member/root contexts. UV retains group
+and default semantics; no second metadata query or maintained member roster is needed.
+Passive NBGV working-directory/generated-file coordinates remain available to the later
+committed-input binding. The collector returns native dependency facts, operation
 identities, interpreter and configuration inputs; it does not create runnable checks.
 
 The bootstrap supplement lowers build strings before the activity request can include their

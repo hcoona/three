@@ -13,6 +13,9 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
         ["producer[feature]; python_version >= '3.13'"];
     private static readonly string[] ProducerPaths = ["src/plugin"];
     private static readonly string[] Feature = ["feature"];
+    private static readonly string[] BaseDirectories = [".", "src/consumer", "src/plugin"];
+    private static readonly string[] InputOnlyDirectories =
+        [".", "src/consumer", "src/plugin", "src/input-only"];
 
     [TestMethod]
     public async Task CollectsNativeGraphAndRetainsPassiveInputs()
@@ -22,7 +25,7 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
 
         Assert.AreEqual(fixture.Root, graph.Metadata.Root);
         Assert.AreEqual(fixture.Request.Interpreter, graph.Interpreter);
-        Assert.AreSame(fixture.Request.Operations, graph.Operations);
+        AssertOperations(fixture.Operations, graph.Operations);
         Assert.HasCount(3, graph.Passive);
         Assert.IsNull(graph.Passive.Single(input => input.Project.Directory ==
             fixture.Root).Project.BuildRequirements);
@@ -49,10 +52,10 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
         PythonSupplementRequest activity = fixture.Requests[1];
         Assert.AreEqual(fixture.Request.Interpreter, activity.Interpreter);
         Assert.AreEqual(fixture.Request.Cache, activity.Cache);
-        Assert.HasCount(fixture.Request.Operations.Length, activity.GroupOperations);
+        Assert.HasCount(fixture.Operations.Length, activity.GroupOperations);
         for (int index = 0; index < activity.GroupOperations.Length; index++)
         {
-            PythonGroupOperation expected = fixture.Request.Operations[index];
+            PythonGroupOperation expected = fixture.Operations[index];
             PythonGroupOperation actual = activity.GroupOperations[index];
             Assert.AreEqual(expected.Id, actual.Id);
             Assert.AreEqual(expected.Directory, actual.Directory);
@@ -66,7 +69,11 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
         Assert.ContainsSingle(activity.Markers.Where(item => item.Expression ==
             "python_version >= '3.13'" && item.Extras.Length == 0));
         foreach (NativeCommand command in fixture.Commands)
-            Assert.AreSame(fixture.Environment, command.Environment);
+        {
+            Assert.IsNotNull(command.Environment);
+            CollectionAssert.AreEquivalent(fixture.Environment.ToArray(),
+                command.Environment.ToArray());
+        }
         CollectionAssert.AreEqual(new[]
         {
             Path.Combine(fixture.Bootstrap, "python-supplement-request.json"),
@@ -191,15 +198,171 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
     public async Task ChangedOperationContextsFailBeforeActivityQuery(bool outside)
     {
         using var fixture = new Fixture();
-        PythonGraphRequest request = fixture.Request;
-        request = request with
-        {
-            Operations = outside ? [.. request.Operations,
-                new("outside", fixture.Parent, [], false)] : request.Operations[1..]
-        };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.ReadAsync(context.CancellationToken, request));
+            fixture.ReadAsync(context.CancellationToken, createOperations: metadata =>
+            {
+                PythonGroupOperation[] operations = CreateOperations(metadata);
+                return outside ? [.. operations, new("outside", fixture.Parent, [], false)] :
+                    operations[1..];
+            }));
         Assert.HasCount(1, fixture.Requests);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task OperationFactoryUsesSameMetadataAndNativeContexts(bool namedRoot)
+    {
+        using var fixture = new Fixture { NamedRoot = namedRoot };
+        PythonMetadata? seen = null;
+        PythonGroupOperation[] expected = [];
+        PythonNativeGraph graph = await fixture.ReadAsync(context.CancellationToken,
+            createOperations: metadata =>
+            {
+                seen = metadata;
+                expected = [.. CreateOperations(metadata),
+                    new("selected-consumer", metadata.Root, ["consumer"], true)];
+                return expected;
+            });
+
+        Assert.AreSame(seen, graph.Metadata);
+        Assert.AreEqual(1, fixture.FactoryCalls);
+        Assert.ContainsSingle(fixture.Commands.Where(command => command.Executable == "uv"));
+        AssertOperations(expected, graph.Operations);
+        AssertOperations(expected, fixture.Requests[1].GroupOperations);
+        CollectionAssert.AreEquivalent(new[] { fixture.Root, fixture.Consumer,
+            fixture.Producer }, graph.Operations.Select(operation => operation.Directory)
+                .Distinct(StringComparer.Ordinal).ToArray());
+        Assert.ContainsSingle(graph.Operations.Where(operation => operation.Id == "."));
+        Assert.AreEqual(namedRoot ? 3 : 2, graph.Metadata.Members.Length);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ChangedInputOnlyMembershipChangesFactoryContexts(bool inputOnlyMember)
+    {
+        using var fixture = new Fixture { InputOnlyMember = inputOnlyMember };
+        PythonNativeGraph graph = await fixture.ReadAsync(context.CancellationToken,
+            createOperations: CreateOperations);
+        string[] expected = inputOnlyMember ? [fixture.Root, fixture.Consumer,
+            fixture.Producer, fixture.InputOnly] : [fixture.Root, fixture.Consumer,
+            fixture.Producer];
+        CollectionAssert.AreEquivalent(expected,
+            graph.Operations.Select(operation => operation.Directory).ToArray());
+        CollectionAssert.AreEquivalent(inputOnlyMember ? InputOnlyDirectories : BaseDirectories,
+            graph.Projects.Select(project => project.Directory).ToArray());
+        Assert.AreEqual(1, fixture.FactoryCalls);
+        Assert.ContainsSingle(fixture.Commands.Where(command => command.Executable == "uv"));
+        if (inputOnlyMember)
+        {
+            Assert.IsNull(graph.Passive.Single(input => input.Project.Directory ==
+                fixture.InputOnly).Project.BuildRequirements);
+            Assert.IsEmpty(graph.Projects.Single(project =>
+                project.Directory == "src/input-only").Build);
+        }
+    }
+
+    [TestMethod]
+    public async Task FailedOperationFactoryStopsBeforePassiveExtraction()
+    {
+        using var fixture = new Fixture();
+        var failure = new InvalidOperationException("Caller operation construction failed.");
+        InvalidOperationException actual =
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => fixture.ReadAsync(
+                context.CancellationToken, createOperations: _ => throw failure));
+        Assert.AreSame(failure, actual);
+        Assert.AreEqual(1, fixture.FactoryCalls);
+        Assert.HasCount(1, fixture.Commands);
+        Assert.IsEmpty(fixture.Requests);
+    }
+
+    [TestMethod]
+    public async Task CancelledOperationFactoryStopsBeforePassiveExtraction()
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken);
+        using var fixture = new Fixture();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => fixture.ReadAsync(
+            cancellation.Token, createOperations: metadata =>
+            {
+                cancellation.Cancel();
+                return CreateOperations(metadata);
+            }));
+        Assert.AreEqual(1, fixture.FactoryCalls);
+        Assert.HasCount(1, fixture.Commands);
+        Assert.IsEmpty(fixture.Requests);
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(1)]
+    public async Task CancellationBeforeOperationFactoryDoesNotInvokeIt(int stage)
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken);
+        using var fixture = new Fixture { CancelAt = stage, Cancellation = cancellation };
+        if (stage == 0) cancellation.Cancel();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => fixture.ReadAsync(
+            cancellation.Token));
+        Assert.AreEqual(0, fixture.FactoryCalls);
+        Assert.HasCount(stage, fixture.Commands);
+        Assert.IsEmpty(fixture.Requests);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ScratchAliasesFailBeforeNativeWork(bool trailingSeparator)
+    {
+        using var fixture = new Fixture();
+        string alias = trailingSeparator ? fixture.Bootstrap + Path.DirectorySeparatorChar :
+            Path.Combine(fixture.Bootstrap, ".");
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => fixture.ReadAsync(
+            context.CancellationToken, fixture.Request with { ActivityScratch = alias }));
+        Assert.AreEqual(0, fixture.FactoryCalls);
+        Assert.IsEmpty(fixture.Commands);
+    }
+
+    [TestMethod]
+    public async Task CaseOnlyScratchAliasUsesPlatformSemantics()
+    {
+        using var fixture = new Fixture();
+        string alias = Path.Combine(fixture.Parent, "BOOTSTRAP");
+        Directory.CreateDirectory(alias);
+        PythonGraphRequest request = fixture.Request with { ActivityScratch = alias };
+        if (OperatingSystem.IsWindows())
+        {
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(() => fixture.ReadAsync(
+                context.CancellationToken, request));
+            Assert.AreEqual(0, fixture.FactoryCalls);
+            Assert.IsEmpty(fixture.Commands);
+        }
+        else
+        {
+            PythonNativeGraph graph = await fixture.ReadAsync(context.CancellationToken, request);
+            Assert.HasCount(3, graph.Projects);
+            Assert.HasCount(2, fixture.Requests);
+        }
+    }
+
+    private static PythonGroupOperation[] CreateOperations(PythonMetadata metadata) =>
+        metadata.Members.Select(member => member.Directory).Append(".")
+            .Distinct(StringComparer.Ordinal).Select(directory => new PythonGroupOperation(
+                directory, Path.GetFullPath(Path.Combine(metadata.Root, directory)), [], false))
+            .ToArray();
+
+    private static void AssertOperations(PythonGroupOperation[] expected,
+        PythonGroupOperation[] actual)
+    {
+        Assert.HasCount(expected.Length, actual);
+        for (int index = 0; index < expected.Length; index++)
+        {
+            Assert.AreEqual(expected[index].Id, actual[index].Id);
+            Assert.AreEqual(expected[index].Directory, actual[index].Directory);
+            Assert.AreEqual(expected[index].NoDev, actual[index].NoDev);
+            CollectionAssert.AreEqual(expected[index].Packages, actual[index].Packages);
+        }
     }
 
     private sealed class Fixture : IDisposable
@@ -209,6 +372,7 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
         internal string Root => Path.Combine(Parent, "checkout");
         internal string Consumer => Path.Combine(Root, "src", "consumer");
         internal string Producer => Path.Combine(Root, "src", "plugin");
+        internal string InputOnly => Path.Combine(Root, "src", "input-only");
         internal string Bootstrap => Path.Combine(Parent, "bootstrap");
         internal string Activity => Path.Combine(Parent, "activity");
         internal List<NativeCommand> Commands { get; } = [];
@@ -219,6 +383,7 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
             ["PIP_INDEX_URL"] = null
         };
         internal bool NamedRoot { get; init; }
+        internal bool InputOnlyMember { get; init; }
         internal bool OrdinaryActive { get; init; } = true;
         internal bool BuildActive { get; init; } = true;
         internal bool SupportsPython { get; init; } = true;
@@ -230,21 +395,34 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
         internal PythonGraphRequest Request => request ??= new(Root, "uv",
             Path.Combine(Parent, "python"),
             "helper-python", "passive-script", "native-supplement", Path.Combine(Parent, "cache"),
-            Bootstrap, Activity,
-            [new("root", Root, [], false),
-                new("consumer", Consumer, [], false), new("producer", Producer, [], true)]);
+            Bootstrap, Activity);
+        internal PythonGroupOperation[] Operations { get; private set; } = [];
+        internal PythonMetadata? Metadata { get; private set; }
+        internal int FactoryCalls { get; private set; }
 
         internal Fixture()
         {
             foreach (string directory in new[] { Parent, Root, Consumer, Producer,
-                Bootstrap, Activity }) Directory.CreateDirectory(directory);
-            foreach (string directory in new[] { Parent, Root, Consumer, Producer })
+                Bootstrap, Activity, InputOnly }) Directory.CreateDirectory(directory);
+            foreach (string directory in new[] { Parent, Root, Consumer, Producer, InputOnly })
                 File.WriteAllText(Path.Combine(directory, "pyproject.toml"), "");
         }
 
         internal Task<PythonNativeGraph> ReadAsync(CancellationToken token,
-            PythonGraphRequest? request = null) => new PythonNativeGraphReader(ExecuteAsync)
-                .ReadAsync(request ?? Request, Environment, token);
+            PythonGraphRequest? request = null,
+            Func<PythonMetadata, PythonGroupOperation[]>? createOperations = null) =>
+            new PythonNativeGraphReader(ExecuteAsync).ReadAsync(request ?? Request, metadata =>
+            {
+                Metadata = metadata;
+                FactoryCalls++;
+                Operations = createOperations is not null ? createOperations(metadata) :
+                    metadata.Members.Select(member => member.Directory).Append(".")
+                        .Distinct(StringComparer.Ordinal).Select(directory =>
+                            new PythonGroupOperation(directory,
+                                Path.GetFullPath(Path.Combine(metadata.Root, directory)), [],
+                                directory == "src/plugin")).ToArray();
+                return Operations;
+            }, Environment, token);
 
         private Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
             CancellationToken token)
@@ -274,6 +452,18 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
                         kind = "package",
                         name = "root-package",
                         source = new { @virtual = Root },
+                        dependencies = Array.Empty<object>()
+                    });
+                }
+                if (InputOnlyMember)
+                {
+                    metadata["members"]!.AsArray().Add(JsonSerializer.SerializeToNode(new
+                    { name = "input-only", path = InputOnly, id = "input-only-id" }));
+                    metadata["resolution"]!["input-only-id"] = JsonSerializer.SerializeToNode(new
+                    {
+                        kind = "package",
+                        name = "input-only",
+                        source = new { @virtual = InputOnly },
                         dependencies = Array.Empty<object>()
                     });
                 }
@@ -314,7 +504,9 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
                 {
                     new { directory = Consumer, name = "consumer" },
                     new { directory = Producer, name = "producer" }
-                }.Concat(NamedRoot ? [new { directory = Root, name = "root-package" }] : []),
+                }.Concat(NamedRoot ? [new { directory = Root, name = "root-package" }] : [])
+                    .Concat(InputOnlyMember ? [new { directory = InputOnly,
+                        name = "input-only" }] : []),
                 build_requirements = new[]
                 {
                     new { directory = Consumer, requirements = new[]

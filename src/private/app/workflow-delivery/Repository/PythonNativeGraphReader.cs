@@ -4,7 +4,7 @@ namespace WorkflowDelivery.Repository;
 
 internal sealed record PythonGraphRequest(string Root, string Uv, string Interpreter,
     string HelperPython, string PassiveScript, string SupplementExecutable, string Cache,
-    string BootstrapScratch, string ActivityScratch, PythonGroupOperation[] Operations);
+    string BootstrapScratch, string ActivityScratch);
 internal sealed record PythonNativeGraph(PythonMetadata Metadata, string Interpreter,
     PythonPassiveInputs[] Passive, PythonGroupOperation[] Operations,
     PythonProjectDependencies[] Projects, string[] ConfigurationInputs);
@@ -27,14 +27,23 @@ internal sealed class PythonNativeGraphReader
     }
 
     internal async Task<PythonNativeGraph> ReadAsync(PythonGraphRequest request,
+        Func<PythonMetadata, PythonGroupOperation[]> createOperations,
         IReadOnlyDictionary<string, string?> environment, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        if (Path.GetFullPath(request.BootstrapScratch) ==
-            Path.GetFullPath(request.ActivityScratch))
+        string bootstrapScratch = Path.TrimEndingDirectorySeparator(
+            Path.GetFullPath(request.BootstrapScratch));
+        string activityScratch = Path.TrimEndingDirectorySeparator(
+            Path.GetFullPath(request.ActivityScratch));
+        StringComparison paths = OperatingSystem.IsWindows() ?
+            StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (bootstrapScratch.Equals(activityScratch, paths))
             throw new InvalidDataException("Python graph requests require distinct scratch paths.");
         PythonMetadata metadata = await metadataReader.ReadAsync(request.Root, request.Uv,
             request.Interpreter, environment, token);
+        token.ThrowIfCancellationRequested();
+        PythonGroupOperation[] operations = createOperations(metadata);
+        token.ThrowIfCancellationRequested();
         var passive = new List<PythonPassiveInputs>();
         foreach (string directory in metadata.Members.Select(member =>
             Path.GetFullPath(Path.Combine(metadata.Root, member.Directory))).Append(metadata.Root)
@@ -53,14 +62,14 @@ internal sealed class PythonNativeGraphReader
         PythonBuildAssociation[] builds = PythonDependencyProjection.ReadBuildAssociations(
             metadata, bootstrap, projects);
         var activities = new PythonPlanningActivities(metadata, builds, request.Interpreter,
-            request.Cache, projects, request.Operations);
+            request.Cache, projects, operations);
         token.ThrowIfCancellationRequested();
         PythonSupplementResult result = await supplementReader.ReadAsync(activities.Request,
             request.HelperPython, request.PassiveScript, request.SupplementExecutable,
             request.ActivityScratch, environment, token);
         PythonProjectDependencies[] graph = activities.Project(result);
         token.ThrowIfCancellationRequested();
-        return new(metadata, request.Interpreter, passive.ToArray(), request.Operations, graph,
+        return new(metadata, request.Interpreter, passive.ToArray(), operations, graph,
             bootstrap.ConfigurationInputs.Concat(result.ConfigurationInputs)
                 .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray());
     }
