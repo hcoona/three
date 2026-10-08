@@ -69,15 +69,13 @@ defaults. Selected groups with empty native requirements need no metadata node;
 selected empty groups carrying Python constraints stop with an attributed diagnostic
 until a constraint-preserving transfer exists. Nonempty metadata associations remain
 strict. The
-[current-tool observations](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#final-diagnostic-and-empty-group-correction)
-retain three failed captures and the exhausted original allowance; corrected complete graph
-collection remains unqualified. Any further capture follows the
-[current-tool protocol's accepted extension](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#six-slot-current-tool-extension)
-and execution gates. Metadata adaptation and operation
-dependency projection retain native IDs, dimensions and build-source associations.
-The [primitive Linux observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-planning.md#primitive-native-observation)
-qualifies the pinned helper boundary; complete native fact collection, native caller
-qualification and caller mapping remain pending under the
+[current-tool observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#completed-ordinary-and-no-dev-observation)
+qualifies the exact complete ordinary/no-dev graph collector composition on its
+pinned Linux subjects. Its campaign and owned cleanup are complete; remaining
+captures are stopped. Metadata adaptation and operation dependency projection
+retain native IDs, dimensions and build-source associations. Native pytest/NBGV
+planning-input composition, complete caller mapping and caller qualification
+remain pending under the
 [planning contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-planning-facts).
 
 Native integrations must supply complete ownership and reverse-consumer facts for
@@ -158,8 +156,9 @@ helper test root is selected. Pure parsing/admission/transport tests and
 controlled C# command responses do not qualify actual native workspace,
 interpreter, lowering, metadata or effects. The separately retained primitive
 observation qualifies the pinned ordered helper composition on its Linux host.
-Complete native endpoint collection and Python caller cutover remain
-pending; there is no Python planning command or complete integration claim yet.
+The separately accepted current-tool observation qualifies complete native graph
+collection on its exact subjects. Python caller cutover remains pending; there
+is no Python planning command or complete integration claim yet.
 
 `PythonMetadataReader` consumes the pinned preview schema, structured sources,
 opaque resolution IDs and ordinary/group/extra edges. It rejects a different
@@ -207,9 +206,11 @@ Workflow joins their resolved coordinates. No additional parser, project declara
 cache or persistent graph record is introduced. Failure or cancellation prevents a partial
 return. The caller owns checkout/tool preparation, credential-free process environment,
 configuration/cache/temp roots and cleanup. Controlled command-substitute tests qualify
-this composition only. Actual current-tool native collection, committed version/quality
-input binding, package preset expansion, preparation/execution and caller cutover remain
-pending; the stopped primitive campaign supplies no execution allowance.
+the controlled composition only. The separately accepted
+[current-tool observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#completed-ordinary-and-no-dev-observation)
+qualifies actual native collection on its exact subjects. Committed version/quality
+input binding, package preset expansion, preparation/execution and caller cutover
+remain pending; completed graph and primitive campaigns supply no execution allowance.
 
 ### Controlled Python Input Consumer Mapping
 

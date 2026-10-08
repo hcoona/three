@@ -188,12 +188,14 @@ input consumers, Python check/prerequisite/execution mapping and caller cutover.
 Undeclared dynamic inputs retain the implementation plan's unsupported boundary.
 No generic helper framework is implied.
 
-The [current-tool collector protocol](python-native-graph-qualification.md)
-binds the next complete managed collection subject and retains its separate
-source/runtime/effects limits. It retains all three failed captures, native transfer
-corrections and the exhausted original allowance; complete native collection remains
-unqualified. Any further capture follows that protocol's accepted bounded extension
-and execution gates. A source correction does not create another execution grant.
+The [current-tool collector observation](python-native-graph-qualification.md#completed-ordinary-and-no-dev-observation)
+qualifies exact complete ordinary/no-dev graph composition, separately from
+this source assessment and the primitive observation. Its failed lifetimes,
+corrections and final cleanup remain retained; the first accepted success stopped
+all remaining captures. Native pytest/NBGV input composition and full caller
+behavior remain pending. The next
+[planning-input enrichment protocol](python-planning-enrichment-qualification.md)
+reuses retained graph answers without another UV query.
 
 If further native execution is needed, its exact remaining subject first needs
 a concrete accepted isolated protocol. Reuse the retained primitive evidence
