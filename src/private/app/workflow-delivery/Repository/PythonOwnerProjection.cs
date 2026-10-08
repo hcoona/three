@@ -15,12 +15,34 @@ internal sealed record PythonOwnerImpact(string Path, string Revision, string[] 
 internal static class PythonOwnerProjection
 {
     internal static PythonOwnerImpact[] Project(PythonOwnerEndpoint basis,
-        PythonOwnerEndpoint candidate, string[] changedPaths)
+        PythonOwnerEndpoint candidate, string[] changedPaths,
+        SelectionReason[]? pairedReasons = null)
     {
         Validate(basis);
         Validate(candidate);
         if (changedPaths.Distinct(StringComparer.Ordinal).Count() != changedPaths.Length)
             throw new InvalidDataException("Duplicate Python changed coordinate.");
+        var direct = new Dictionary<(string Path, string Revision), HashSet<string>>();
+        var unionOwners = basis.Quality.Concat(candidate.Quality).Select(binding => binding.Owner)
+            .ToHashSet(StringComparer.Ordinal);
+        var seen = new HashSet<SelectionReason>();
+        foreach (SelectionReason reason in pairedReasons ?? [])
+        {
+            ImpactPlanner.ValidatePath(reason.Path);
+            ImpactPlanner.RequireText(reason.Project, "paired Python quality owner");
+            PythonOwnerEndpoint[] sources = new[] { basis, candidate }.Where(endpoint =>
+                endpoint.Revision.Commit == reason.Revision && endpoint.Revision.Entries.Any(
+                    entry => entry.Path == reason.Path)).ToArray();
+            if (!seen.Add(reason) || !changedPaths.Contains(reason.Path, StringComparer.Ordinal) ||
+                !unionOwners.Contains(reason.Project) || sources.Length == 0)
+                throw new InvalidDataException("Unresolved paired Python input reason.");
+            foreach (PythonOwnerEndpoint source in sources)
+                Regular(source.Revision.Entries.Single(entry => entry.Path == reason.Path));
+            var coordinate = (reason.Path, reason.Revision);
+            if (!direct.TryGetValue(coordinate, out HashSet<string>? targets))
+                direct.Add(coordinate, targets = new(StringComparer.Ordinal));
+            targets.Add(reason.Project);
+        }
         // Repository coordinates associate producers across endpoints. Opaque UV IDs
         // and package names remain endpoint-local; moves retain their two coordinates.
         var consumers = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
@@ -49,6 +71,8 @@ internal static class PythonOwnerProjection
                 Regular(entry);
                 var members = new HashSet<string>(StringComparer.Ordinal);
                 var owners = new HashSet<string>(StringComparer.Ordinal);
+                if (direct.TryGetValue((path, endpoint.Revision.Commit),
+                        out HashSet<string>? pairedOwners)) owners.UnionWith(pairedOwners);
                 string? nearest = endpoint.Projects.Select(project => project.Directory)
                     .Where(directory => directory != "." && Under(path, directory))
                     .OrderByDescending(directory => directory.Length).FirstOrDefault();

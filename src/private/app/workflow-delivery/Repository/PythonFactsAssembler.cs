@@ -15,12 +15,13 @@ internal static class PythonFactsAssembler
     internal const string Scope = "python/native-paired-facts-v1";
 
     internal static PythonFactAssembly Assemble(PythonFactsEndpoint basis,
-        PythonFactsEndpoint candidate, string[] changedPaths, bool full)
+        PythonFactsEndpoint candidate, string[] changedPaths, bool full,
+        SelectionReason[]? pairedReasons = null)
     {
         var before = Endpoint(basis);
         var after = Endpoint(candidate);
         PythonOwnerImpact[] impacts = PythonOwnerProjection.Project(before.Owners,
-            after.Owners, changedPaths);
+            after.Owners, changedPaths, pairedReasons);
         var reasons = impacts.SelectMany(impact => impact.Owners.Select(owner =>
             new SelectionReason(impact.Path, impact.Revision, owner))).Distinct().ToArray();
         string[] unaffected = impacts.GroupBy(impact => impact.Path, StringComparer.Ordinal)
