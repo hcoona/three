@@ -188,6 +188,10 @@ input consumers, Python check/prerequisite/execution mapping and caller cutover.
 Undeclared dynamic inputs retain the implementation plan's unsupported boundary.
 No generic helper framework is implied.
 
+The [current-tool collector protocol](python-native-graph-qualification.md)
+binds the next complete managed collection subject and retains its separate
+source/runtime/effects limits. It contains no native outcome yet.
+
 If further native execution is needed, its exact remaining subject first needs
 a concrete accepted isolated protocol. Reuse the retained primitive evidence
 for its qualified boundary; do not repeat it as a complete-reader test.
