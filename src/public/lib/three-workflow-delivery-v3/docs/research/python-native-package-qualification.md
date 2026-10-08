@@ -956,9 +956,9 @@ calls before dispatch. Both original archives and every required native check
 remain authoritative. Its eighteen controlled tests and independent source
 engineering/OCR review passed; neither is a native result or execution admission.
 
-### Prospective Effects and Finite Buffer
+### Approved Effects and Finite Buffer
 
-This candidate proposes a fresh campaign of at most three separately admitted
+The owner approved a fresh campaign of at most three separately admitted
 lifetimes, with the same 32-call/600-inclusive-second lifetime and
 1,800-inclusive-second campaign ceilings. Stop at the first independently accepted
 success and expire unused reserve. The exact success recipe comprises four
@@ -987,8 +987,14 @@ native-preparation interval. It verifies complete checkout bytes, native LFS
 payloads and unchanged Git config/index/HEAD/refs/hooks. A failure stops and
 retains its owned preparation. It is native local preparation, not a purely
 read-only inspection or a package success. Any future readiness subject must
-receive the same separate protected review; at most one per proposed lifetime,
-with at most 360 inclusive native-preparation seconds across the new campaign.
+receive the same separate protected review. The owner additionally approved six
+preparations and 900 cumulative native-preparation seconds: at most nine exact
+readiness preparations and 1,260 cumulative seconds across the new campaign,
+including the original three-preparation/360-second allowance. Each preparation
+retains its 120-second individual ceiling, eight-read ceiling and owned cleanup.
+The diagnostic reserve is not restricted to one preparation per package lifetime;
+it grants no extra package lifetime, replay or failed-state cleanup. Charge every
+started preparation, including a failed or uncertain one, without refunds.
 
 After a failure, independently classify its actual cause before using reserve.
 Any corrected source, helper, tool, runtime, input, checkout or packet requires
@@ -1000,12 +1006,19 @@ permission to issue another invocation.
 
 ### Admission and Evidence Limits
 
-This prepared candidate is unadmitted. Before readiness or package execution,
-protect this exact source/tool/runtime/checkout/packet protocol and obtain fresh
-explicit finite owner authorization for the new package and readiness effects.
-The owner's six read-only checks do not supply that authorization. No readiness6
-or campaign2 lifetime has run. Nothing renews the spent three package lifetimes,
-ended historical observer slots, publication campaigns or failed-state cleanup.
+Protected protocol [PR #1099](https://github.com/hcoona/three/pull/1099) accepted
+the exact source/tool/runtime/checkout/packet subject. The owner subsequently
+approved the proposed three package lifetimes and original readiness allowance,
+then explicitly added six readiness preparations and fifteen cumulative minutes.
+This amendment records that decision; the enlarged readiness allowance is usable
+only after its independent review and protected delivery. The originally accepted
+readiness6 and first package lifetime already fit the approved original bounds.
+Separate exact readiness and independent actual-output audit still precede each
+package launch. The earlier six read-only checks are a distinct allowance and
+cannot be substituted for native effects. Nothing renews the spent historical
+three package lifetimes, ended observer slots, publication campaigns or
+failed-state cleanup. Native qualification requires actual independently accepted
+results; owner authorization and protocol acceptance alone establish no success.
 
 Accept native qualification only after independent inspection of actual frozen
 selection and editability phases, unchanged originals, native shared-backend
@@ -1021,3 +1034,61 @@ neither qualifies root pytest preparation, paired impact/caller transfer,
 Windows, arbitrary backends nor Release. Existing callers remain until their
 complete replacement group is independently qualified and accepted. The owner's
 Windows assumption remains as accepted; no separate Windows experiment is added.
+
+### First Bootstrap Failure and Exact Successor
+
+The first corrected-campaign bootstrap failed before native package dispatch.
+Its exact frozen arguments ran once, returning exit 1 with empty stdout and an
+805-byte `FileNotFoundError` traceback at source11's exclusive `root.mkdir()`.
+Ordinary preparation had left the new campaign parent absent. The exception
+preceded the internal timer, owned state, call reservation and recipe try/finally;
+there are no invented opened, call, terminal-Git or package-result receipts.
+The independent failure audit classified `STARTUP-PARENT-001` as a true positive,
+confidence 10/10. This establishes a preparation prerequisite defect, not a UV
+or backend defect, package phase result or host-wide absence of effects.
+
+Lifetime-1 remains failed and spent even though its destination is absent. Zero
+UV/Python recipe reservations were reached; the outer Python bootstrap did run.
+Conservatively charge its 0.055353246 outer seconds to the 1,800-second campaign
+ceiling. Two package lifetimes remain with unchanged individual ceilings. The
+successful first readiness remains consumed; its historical passing byte/Git
+checks are preserved, while its launch-readiness inference is narrowed by the
+observed missing-parent prerequisite. No lifetime or readiness refund, replay,
+failed-state cleanup or retroactive terminal evidence is permitted.
+
+The carrier retains the full independent failure report, SHA256
+`27343ff58f8da5cf34cc2b7e0a50fef29b7890380f369c9f69623ff02e947f63`,
+metadata, all four original captures and their finite root verification. The
+existing readiness audit's disclosed review-task command deviation has separate
+TP/advisory disposition; it neither caused nor repaired this startup failure.
+
+Ordinary successor preparation exclusively created only the owned campaign
+parent, leaving lifetime-2 absent for the unchanged operator's exclusive creation.
+All 9,999 finite inputs of the prior actual readiness audit matched before this
+preparation. No source, tool, application/harness output, runtime or checkout
+change required recompilation. Original packet1, binding2 and all failed captures
+remain unchanged. New packet2 selects only the absent second-lifetime destination;
+binding4 adds the exact parent receipt, completed ordinary preparation streams,
+source and independent failure lineage to the unchanged full prepared closure.
+
+| Exact successor subject           | SHA256                                                             |
+| --------------------------------- | ------------------------------------------------------------------ |
+| Phase packet2                     | `18d7d9f741cd1eeeae2d813ed2322cef522da84fa3f64a69c50abdc73012293f` |
+| Complete preparation10 binding4   | `e1e24351c2c389670c15fe6f37e41018a409e3c67237ed9e0f01030c4c3f3edc` |
+| Exact readiness8 source           | `fa06a7576a09efc51be87213fa33b5bb6c0c96687894dbcc0a41cb6fa3fa7574` |
+| Ordinary owned-parent preparation | `cc31895b9abe1cab5dedcb17ca603f69391b97758212aa71d2dcaf290ff4f7cd` |
+
+Readiness8 additionally requires the campaign parent to be a real directory,
+not a symlink, before native preparation and again before completion. Its eight-Git
+dispatch function is AST-identical to readiness6's controlled/reviewed function;
+all individual, stream, state, stop and owned-success-cleanup bounds are unchanged.
+The final absent destinations are campaign2/lifetime-2 and the distinct readiness8
+report/preparation paths. Unexecuted intermediate binding/readiness drafts supply
+no execution evidence or consumed slot.
+
+This exact successor is unadmitted until independent engineering and
+record/research review and protected protocol delivery. Actual readiness8 and its
+independent output audit must pass before the second launch. The earlier owner
+grant already covers this bounded correction and remaining allowance; no new
+scope or numerical authorization is inferred. Complete native qualification,
+root pytest preparation, paired caller cutover and Release remain pending.
