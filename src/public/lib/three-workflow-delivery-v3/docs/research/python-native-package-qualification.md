@@ -188,10 +188,10 @@ admission, not an application-maintained dynamic policy file.
 The success recipe contains 22 top-level UV/Python calls: four planning calls,
 15 execution calls and three inventories. A 32-call lifetime ceiling leaves at most
 10 extra call slots. They require separately described and protected diagnostic
-coordinates; no such extra calls are admitted by this main packet. Reserve calls before dispatch; the CLI reserves its entire15-call maximum
+coordinates; no such extra calls are admitted by this main packet. Reserve calls before dispatch; the CLI reserves its entire 15-call maximum
 before launch and records actual returned command count without refunding uncertain
 starts. Ordinary Git/planning/CLI invocations and one cleanup Python child are
-separately visible rather than hidden in22. Each native command receives 60 seconds;
+separately visible rather than hidden in 22. Each native command receives 60 seconds;
 the enclosing CLI remains within the inclusive lifetime, with 30 seconds reserved
 for terminal Git readback/retention/cleanup. Final native HEAD and complete status
 readbacks run on both success/failure paths, each with at most 10 seconds including
@@ -201,10 +201,10 @@ success without masking an earlier failure. Git/materialization/NBGV/backend chi
 their parent and enclosing process-group/time bound.
 
 The source-reviewed supervisor creates a separate process group, retains requests
-before start, captures each outer stream to at most32 MiB and retains terminal
+before start, captures each outer stream to at most 32 MiB and retains terminal
 receipts on failures. It samples nonfollowing owned state at one-second intervals
 and Linux process-group membership at 250 ms while quiet children execute. Observed
-thresholds: 4 GiB logical file/link bytes,40,000 entries including baseline checkout,
+thresholds: 4 GiB logical file/link bytes, 40,000 entries including baseline checkout,
 256 process-group members; three retained lifetimes at most 12 GiB thresholded state.
 Native interpreter/venv symlinks count their link bytes without traversing targets.
 Normal enumerated descendant disappearance during lstat/readlink/scandir is
