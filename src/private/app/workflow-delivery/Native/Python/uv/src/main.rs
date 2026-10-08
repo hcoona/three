@@ -212,7 +212,7 @@ fn group_owner_manifest<'a>(
     }
 }
 
-/// Transfer only groups present in the selected owner's maintained native facts.
+/// Transfer selected owner groups with nonempty native declarations.
 fn owner_selected_groups(
     manifest: &PyProjectToml,
     directory: &Path,
@@ -225,12 +225,22 @@ fn owner_selected_groups(
         .iter()
         .flat_map(|groups| groups.keys())
         .chain(std::iter::once(&*DEV_DEPENDENCIES));
-    Ok(candidates
-        .filter(|group| native_groups.get(group).is_some() && selected.contains(group))
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect())
+    let mut contributions = BTreeSet::new();
+    for group in candidates.filter(|group| selected.contains(group)) {
+        let Some(native_group) = native_groups.get(group) else {
+            continue;
+        };
+        if native_group.requirements.is_empty() {
+            // A constraint-only group has no metadata node. Do not discard its
+            // native constraint until that necessary shape has a transfer seam.
+            if native_group.requires_python.is_some() {
+                return Err(HelperError::Stage("EmptyGroupPythonConstraint"));
+            }
+            continue;
+        }
+        contributions.insert(group.clone());
+    }
+    Ok(contributions.into_iter().collect())
 }
 
 async fn extract(request: Request) -> Result<Response, HelperError> {
@@ -483,8 +493,8 @@ mod tests {
 
     #[test]
     fn owner_local_groups_do_not_inherit_other_manifests() {
-        let root = manifest("[dependency-groups]\ndev = []\n");
-        let with_groups = manifest("[dependency-groups]\ndev = []\nquality = []\n");
+        let root = manifest("[dependency-groups]\ndev = ['pytest']\n");
+        let with_groups = manifest("[dependency-groups]\ndev = ['pytest']\nquality = ['ruff']\n");
         let without_groups = manifest("");
         let package: PackageName = "with-groups".parse().unwrap();
         let empty_package: PackageName = "without-groups".parse().unwrap();
@@ -526,8 +536,9 @@ mod tests {
 
     #[test]
     fn native_group_presence_and_no_dev_preserve_owner_scope() {
-        let legacy =
-            manifest("[tool.uv]\ndev-dependencies = []\n[dependency-groups]\nquality = []\n");
+        let legacy = manifest(
+            "[tool.uv]\ndev-dependencies = ['pytest']\n[dependency-groups]\nquality = ['ruff']\n",
+        );
         for (no_dev, expected) in [(false, vec!["dev", "quality"]), (true, vec!["quality"])] {
             let result =
                 owner_selected_groups(&legacy, Path::new("/controlled"), &selection(no_dev))
@@ -547,6 +558,85 @@ mod tests {
                 .to_string(),
             "Python native extraction failed (NativeOwnerGroups)."
         );
+    }
+
+    #[test]
+    fn empty_native_groups_do_not_require_graph_nodes() {
+        for (source, ordinary, no_dev) in [
+            ("[dependency-groups]\ndev = []\n", vec![], vec![]),
+            ("[tool.uv]\ndev-dependencies = []\n", vec![], vec![]),
+            (
+                "[dependency-groups]\ndev = [{include-group = 'empty'}]\nempty = []\n",
+                vec![],
+                vec![],
+            ),
+            (
+                "[dependency-groups]\ndev = []\nquality = ['ruff']\n",
+                vec!["quality"],
+                vec!["quality"],
+            ),
+            (
+                "[dependency-groups]\ndev = [{include-group = 'tools'}]\ntools = ['pytest']\n",
+                vec!["dev"],
+                vec![],
+            ),
+        ] {
+            let owner = manifest(source);
+            for (excluded, expected) in [(false, ordinary), (true, no_dev)] {
+                let answer =
+                    owner_selected_groups(&owner, Path::new("/controlled"), &selection(excluded))
+                        .expect("native graph contributions");
+                assert_eq!(
+                    answer
+                        .iter()
+                        .map(|group| group.as_ref())
+                        .collect::<Vec<_>>(),
+                    expected,
+                    "source={source}, no_dev={excluded}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn singleton_empty_group_does_not_inherit_root_contributions() {
+        let root = manifest("[dependency-groups]\ndev = ['pytest']\n");
+        let member = manifest("[dependency-groups]\ndev = []\n");
+        let name: PackageName = "empty-member".parse().unwrap();
+        let owner = group_owner_manifest(
+            &root,
+            std::slice::from_ref(&name),
+            std::iter::once((&name, &member)),
+        )
+        .expect("singleton native owner");
+        for no_dev in [false, true] {
+            assert_eq!(
+                owner_selected_groups(owner, Path::new("/controlled"), &selection(no_dev))
+                    .expect("empty native contribution"),
+                Vec::<GroupName>::new()
+            );
+        }
+    }
+
+    #[test]
+    fn selected_empty_group_constraints_are_not_discarded() {
+        for source in [
+            "[dependency-groups]\ndev = []\n[tool.uv.dependency-groups]\ndev = {requires-python = '>=3.14'}\n",
+            "[dependency-groups]\ndev = [{include-group = 'empty'}]\nempty = []\n[tool.uv.dependency-groups]\nempty = {requires-python = '>=3.14'}\n",
+        ] {
+            let owner = manifest(source);
+            assert_eq!(
+                owner_selected_groups(&owner, Path::new("/controlled"), &selection(false))
+                    .unwrap_err()
+                    .to_string(),
+                "Python native extraction failed (EmptyGroupPythonConstraint)."
+            );
+            assert_eq!(
+                owner_selected_groups(&owner, Path::new("/controlled"), &selection(true))
+                    .expect("native dev exclusion"),
+                Vec::<GroupName>::new()
+            );
+        }
     }
 
     #[test]
