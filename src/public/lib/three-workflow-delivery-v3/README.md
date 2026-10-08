@@ -24,8 +24,9 @@ transfer and execution qualification. The exclusive npm CI shadow is retired.
 Python passive extraction, the pinned native supplement, metadata adaptation and
 dependency projection have controlled component boundaries. The private app also
 provides a [bounded native pytest configuration component](../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
-with controlled tests; complete native ownership and query qualification remain
-pending. The
+with controlled tests; the separate planning-input observation below qualifies
+its exact native query and target/input composition. Complete caller ownership
+and qualification remain pending. The
 [paired Python producer-to-owner component](../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
 has controlled supplied-fact coverage. The
 [controlled paired Python fact assembly](../../../private/app/workflow-delivery/README.md#controlled-paired-python-fact-assembly)
@@ -37,13 +38,15 @@ caller operations bound to the same metadata. The separately accepted
 qualifies complete ordinary/no-dev native graph composition on its exact Linux
 subjects. Its campaign and cleanup are complete, and remaining captures stopped.
 The [controlled Python repository input associations](../../../private/app/workflow-delivery/README.md#controlled-python-repository-input-associations)
-bind supplied actual check owners to repository engineering inputs; native pytest
-and committed-input composition and full caller behavior remain pending. Package preset expansion and
+bind supplied actual check owners to repository engineering inputs. The separate
+[planning-input observation](docs/research/python-planning-enrichment-qualification.md#completed-planning-input-observation)
+qualifies native pytest, committed NBGV/quality inputs and producer input mapping
+on the exact Linux subjects; full caller behavior remains pending. Package preset expansion and
 preparation/execution remain pending. The
 [primitive Linux observation](docs/research/python-native-planning.md#primitive-native-observation)
-qualifies the pinned helper composition; native pytest and committed-input
-composition, complete caller qualification and Python execution cutover remain
-pending.
+qualifies the pinned helper composition. Complete caller qualification and Python
+execution cutover remain pending; completed enrichment and graph campaigns
+supply no further execution allowance.
 Other quality presets, ecosystem execution cutover and Release remain pending.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
