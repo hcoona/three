@@ -899,3 +899,125 @@ exact source/tool/runtime/checkout/packet protocol, with explicit fresh finite
 owner authorization, inclusive command/lifetime/state/stream bounds, terminal
 readback and owned cleanup rules. Preserve every historical failed subject and
 its evidence; neither remaining numerical headroom nor this recipe renews a grant.
+
+## Corrected Phase Qualification Candidate
+
+This is a distinct prospective local qualification of the phase-corrected
+implementation, not a fourth lifetime of the spent campaign. Protected
+implementation [PR #1098](https://github.com/hcoona/three/pull/1098) merged as
+`5a96c13c054cff911bf7103a7807e3685844e25a`, with reviewed tree
+`4dc5ef5b0bc71bac42611cdb48b4287481de200b`. Its once-only merged-tree verification
+passed; all forty platform checks completed without failure and five effective
+required checks passed. These delivery checks and controlled tests do not qualify
+the corrected UV composition.
+
+### Prepared Exact Subject
+
+Ordinary preparation created a fresh detached full-history checkout at that
+implementation merge, with all 2,488 committed entries and clean complete
+status. The selected original product and declaration remain
+`src/public/lib/hcoona-release-smoke-python` and its
+`workflow-delivery.release-unit.yml`. Fresh application and friend harness
+compilation passed with zero warnings or errors and its unique binlog retained.
+The separately invoked output closures contain 199 application and 203 harness
+files. Neither compilation nor preparation launched the native package recipe.
+
+The retained preparation binds all five fresh source11 transport files, the
+complete independently invoked application and harness outputs, all prepared
+files, committed product/lock/group/helper inputs, Git refs/configuration/status,
+compiler streams and receipts, executable and full supported runtime inventories,
+host, exact packet and bootstrap arguments. It does not borrow earlier binaries
+or inspect or repair failed package state. Tools remain UV 0.12.23, CPython
+3.14.3, SDK 10.0.401/runtime 10.0.12, official NBGV 3.10.94 and native Git/LFS.
+Complete unchanged installed runtime/tool distributions were rehashed; Python
+copying into owned state remains inside any future authorized lifetime.
+
+| Original prepared subject           | SHA256                                                             |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| Source11 operator                   | `0f93ee016e061619899943a928421722a3c1bfbdaad6d3b3fb7c53c6c9fb2ea4` |
+| Source11 controlled tests           | `28364e7d535ef49e27e2555466ae389faf6754a4d1f819cb2aa91751d382750e` |
+| Friend harness source               | `c5c4970d428d115edbe46d11ff62f5fb624c746330c131d481c3548ae669705a` |
+| Friend harness project              | `f4971e753b8309a27e4360eff90e46c75874f2a9e1ee0d7a1eaa50147b661e97` |
+| Installed metadata observer         | `c9311c70bb76558e5cc99dc89fef44dc19cde0a593b073716d5faf4c0e68d22c` |
+| Exact phase packet1                 | `29f6c14a7c6589608e11f2dfb446de73b983de81eda695053f96c5d80d63a0ad` |
+| Complete preparation10 binding2     | `4ff6a4d821eb7ffe72ae569cc66455c148e25f3e4ecef46a53a52275804aa0f4` |
+| Complete runtime10 inventory        | `9ae7aff22c892e1e6194199db389d28700b5550b1017811ed58b201a4b5ebdbc` |
+| Prospective exact readiness6 source | `0d4061a7700918d35264b9f1a7f39e71e760cdc491d430dd02ccc05705aae376` |
+
+The delivery carrier retains `python-package-native-phases-packet1.json`,
+`python-package-native-phases-preparation10-binding2.json`,
+`python-package-native-phases-runtime10.json` and
+`python-package-native-phases-readiness6.py`. Original identities above precede
+public absolute-path aliasing; relative Git and business paths remain unchanged.
+The absent new destination is campaign2/lifetime-1; original campaign1 and
+checkout3 remain untouched. Source11 keeps existing supervisor/environment/
+terminal-readback/owned-success-cleanup behavior and reserves sixteen executor
+calls before dispatch. Both original archives and every required native check
+remain authoritative. Its eighteen controlled tests and independent source
+engineering/OCR review passed; neither is a native result or execution admission.
+
+### Prospective Effects and Finite Buffer
+
+This candidate proposes a fresh campaign of at most three separately admitted
+lifetimes, with the same 32-call/600-inclusive-second lifetime and
+1,800-inclusive-second campaign ceilings. Stop at the first independently accepted
+success and expire unused reserve. The exact success recipe comprises four
+planning calls, sixteen executor calls reserved before dispatch, and three
+success-only inventories. Its twenty-three top-level UV/Python calls are still
+source-derived estimates. Failed or uncertain dispatches remain charged, and
+actual receipts cannot refund pre-dispatch reservations.
+
+Keep the existing native installation/download/build/cache effects and isolation
+boundary: no inherited credentials or host configuration; maintained public tool
+interfaces and TLS verification; native LFS clean with owned storage/hooks;
+prepared .NET/NBGV tools remain read-only; complete Python copy is owned. Keep
+60-second native command limits, 32 MiB per supervised stream, 4 GiB/40,000
+observed state entries including checkout, 256 observed process-group members,
+existing stop/reap behavior and the thirty-second terminal reserve. These are
+observed transport bounds, not OS sandbox or universal resource guarantees.
+Success retains originals, rebuilt wheel, results and inventories before owned
+cleanup. Failure retains partial outputs and owned state; this candidate grants
+no failed-state cleanup, repair, blind retry or old-subject replay.
+
+Each launch also requires its exact accepted readiness subject. Readiness6
+rehashes the bound sources, outputs, tools, runtime and committed input closure,
+then uses the same owned native Git/LFS configuration for at most eight Git
+reads, ten seconds each, and one owned cleanup bootstrap within a 120-second
+native-preparation interval. It verifies complete checkout bytes, native LFS
+payloads and unchanged Git config/index/HEAD/refs/hooks. A failure stops and
+retains its owned preparation. It is native local preparation, not a purely
+read-only inspection or a package success. Any future readiness subject must
+receive the same separate protected review; at most one per proposed lifetime,
+with at most 360 inclusive native-preparation seconds across the new campaign.
+
+After a failure, independently classify its actual cause before using reserve.
+Any corrected source, helper, tool, runtime, input, checkout or packet requires
+fresh exact preparation, independent engineering and record/research review and
+protected protocol delivery before launch. The finite buffer may cover those
+reviewed corrections within this unchanged contract; a material capability,
+effects or scope change still returns to the owner. An uncertain result is not
+permission to issue another invocation.
+
+### Admission and Evidence Limits
+
+This prepared candidate is unadmitted. Before readiness or package execution,
+protect this exact source/tool/runtime/checkout/packet protocol and obtain fresh
+explicit finite owner authorization for the new package and readiness effects.
+The owner's six read-only checks do not supply that authorization. No readiness6
+or campaign2 lifetime has run. Nothing renews the spent three package lifetimes,
+ended historical observer slots, publication campaigns or failed-state cleanup.
+
+Accept native qualification only after independent inspection of actual frozen
+selection and editability phases, unchanged originals, native shared-backend
+requirements/version agreement, complete contents, original-wheel installed
+origin and Git-free original-sdist build/install/import, final checkout state and
+owned success cleanup. Preserve four independent required results and the
+completed wheel result on conversion failure. Source support for the archive
+path and Hatchling metadata reuse remains unobserved in the corrected recipe.
+A missing or failed required fact leaves the path unqualified.
+
+This qualification covers this exact Linux product/tool composition only. It
+neither qualifies root pytest preparation, paired impact/caller transfer,
+Windows, arbitrary backends nor Release. Existing callers remain until their
+complete replacement group is independently qualified and accepted. The owner's
+Windows assumption remains as accepted; no separate Windows experiment is added.
