@@ -7,7 +7,8 @@ repository lock and prepared tools. It implements the accepted
 [Python integration order](../migration-strategy.md#python-planning-integration-and-later-caller-cutover)
 within the accepted [Delivery Wave](../../../../../../docs/delivery-wave.md).
 Exact source, preparation and protocol review and protected delivery must complete
-before the first query. This record currently contains no runtime outcome.
+before any newly admitted query. The first failed capture and its bounded runtime
+correction are retained below.
 
 The stopped [primitive campaign](python-native-planning.md#primitive-native-observation)
 and its expired reserves remain unchanged. This new subject is complete production
@@ -82,13 +83,14 @@ The finite values are:
 
 - `PATH=/usr/bin:/bin`, `LANG=C.UTF-8`, `LC_ALL=C.UTF-8`;
 - generation-owned `HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`,
-  `TMPDIR`, `UV_CACHE_DIR`, and absent `UV_PROJECT_ENVIRONMENT`;
+  `TMPDIR` and `UV_CACHE_DIR`; `UV_PROJECT_ENVIRONMENT` is set to a
+  generation-owned path whose directory must remain absent;
 - `UV_OFFLINE=1`, `UV_PYTHON_DOWNLOADS=never`, `UV_NO_PROGRESS=1`;
 - `PYTHONNOUSERSITE=1`, `PYTHONSAFEPATH=1`, `PYTHONDONTWRITEBYTECODE=1`;
 - `PYTHONPATH` containing only the endpoint maintained plugin and the exact
   extracted dependency sources;
 - exact `DOTNET_ROOT`, `DOTNET_CLI_TELEMETRY_OPTOUT=1` and
-  `DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1`.
+  `DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1` and `DOTNET_EnableDiagnostics=0`.
 
 Do not inherit UV/PIP/PYTEST/proxy/credential/preload settings. Native ambient
 user/system settings returning Some or an error stop the default request; do not
@@ -163,7 +165,7 @@ parallel semantics or weaken coverage.
 
 Retain original evidence before making separately sanitized public copies. The
 independent audit decides whether the exact collector observation is sufficient;
-source findings, observations and inferences remain distinct. Nineteen controlled
+source findings, observations and inferences remain distinct. Twenty-two controlled source4
 supervisor tests establish only synthetic supervisor behavior, not this native
 observation.
 
@@ -178,7 +180,8 @@ launches; unused time does not add an attempt.
 
 ## Outcome and Recheck
 
-No actual collector query has executed under this protocol yet. Qualified success
+The first main capture failed before completing ordinary collection. Its partial
+results and runtime/cleanup correction are described below. Qualified success
 would establish only complete current-tool collector composition on the recorded
 Linux host. It would not establish native pytest qualification, managed NBGV
 query binding, quality preset expansion, preparation/install/build/check execution,
@@ -192,9 +195,82 @@ checks the result. Necessary material effects or product changes outside this
 protocol stop for owner disposition. Routine repetitions within its accepted
 finite boundary need no repeated owner approval.
 
+## First Capture and Runtime Correction
+
+The first main attempt remains failed and consumed. It retained eight managed
+command requests and seven successful results: frozen native metadata and six
+passive contexts. The eighth request has no result; a request carrier does not
+prove OS launch or completion. There is no complete graph, supplement, no-dev
+capture or terminal collection result. Both endpoint snapshots remain clean,
+with absent project environments and unchanged committed lock.
+
+The original receipt reports `StateObservationError` after
+`1.2463564539793879` seconds. State observations are incomplete with `Nonregular`
+and partial counters, not exceeded quotas. The outer leader was killed, with a
+separate completed Linux group stop. Read-only metadata inspection found two CLR
+debug FIFO entries in the owned temporary directory. Their attribution to the
+first rejected entry is an inference because the original receipt did not name
+that entry; the runtime/scanner incompatibility is established. The delivery PR
+retains all 27 regular originals through a sanitized copy, their original hashes,
+FIFO metadata and independent interpretation/triage. The original failed archive
+SHA256 is `75fa9983bab15b0baa905560053adc920355974f6c949e759c1e2b0dec597151`.
+
+Independent triage confirmed `PY-CURRENT-IPC-001`, `PY-CURRENT-ENV-002` and
+`PY-CURRENT-CLEANUP-003`; `PY-NATIVE-CLEANUP-001` is the same cleanup defect.
+The exact source4 correction uses the documented process-scoped
+[`DOTNET_EnableDiagnostics=0`][dotnet-diagnostics] setting. Microsoft describes
+it as disabling debugging, profiling and diagnostic-port facilities. This narrows
+optional harness IPC effects without changing the collector, tools, native
+requests or ordinary JSON/stdio evidence. Suppression on this exact host remains
+unobserved until an independently interpreted diagnostic; documentation and
+controlled environment assertions do not establish runtime success.
+
+Source4 keeps normal capture's strict nonregular rejection. During the single
+bounded cleanup only, its metadata scanner may count FIFO entries inside the
+six fixed `endpoint-1`/`endpoint-2` `environment`, `bootstrap` and `activity`
+deletion roots. It uses non-following stat, counts each entry and metadata size,
+and applies existing incremental deadline, byte and entry limits. It never
+opens a FIFO or follows links, exempts no subtree, and measures filesystem
+metadata rather than pipe payloads. FIFOs in retained evidence, symlinks anywhere
+and other unsupported types remain failures before cleanup child launch.
+The unchanged isolated standard-library child removes only those six paths;
+evidence, endpoint sources and shared tools remain. This correction permits
+reviewed cleanup of the already-retained pipes; future diagnostics suppression
+alone cannot remove them.
+
+Use source4 for the reviewed attempt1 cleanup and the fresh diagnostic packet
+below only after its complete source/protocol/public-packet reviews and protected
+delivery. Successful cleanup and charged elapsed are still prerequisites to
+another capture. Main is not replayed: one fresh diagnostic may occupy attempt2;
+the remaining diagnostic is neither automatic nor refunded. All original
+1200/3600-second, 30-second cleanup, state/capture/command/process-stop bounds
+remain unchanged. Source3's failed receipt and partial results remain failed.
+The diagnostic packet changes only its role to `independently-triaged-diagnostic`;
+application, harness, interpreter, helper, wheels, endpoint and lock bytes are
+unchanged. Fresh generation-owned directories provide its isolation state.
+
+| Corrected identity                                    | SHA256                                                           |
+| ----------------------------------------------------- | ---------------------------------------------------------------- |
+| Source4 `collector-driver.py`                         | 5cb78c4fbdfd2e38a3f7cc21e8aae2f4b6c604eb8fb8132e80eeb5ece558b493 |
+| Source4 `test_collector_driver.py`                    | 4b8c1fc2d4813d610b688839a786a1f5f858f74ffed76d002744d11be0e0e96d |
+| Original executable `packet-source4-diagnostic1.json` | 13f7df54c7d15e351c0474cd239182dea56f8d8147076d154bc0d314254a08d3 |
+| Sanitized source4/failed-observation public manifest  | 0299fb9dda31d11f433f37b05849318699a9a562f6eea8a533668fcf2b17a1f7 |
+
+The delivery PR retains source4, its exact original-to-public aliases, the failed
+observation, independent reviews and 22 passing controlled supervisor tests.
+Those tests establish only synthetic environment/cleanup/bounded-supervision
+behavior, including preservation of failed originals and rejection of evidence
+FIFOs/symlinks. They do not qualify native graph collection or later pytest/NBGV,
+preparation, execution, caller cutover, Windows or Release.
+
+[dotnet-diagnostics]: https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-environment-variables#dotnet_enablediagnostics
+
 ## Exact Identity Appendix
 
-These human review tables are part of this protocol. Before invocation, independent
+These original preparation tables are part of this protocol and retain source3
+identities and its pre-invocation counters. The source4 correction below supplies
+the changed executable identities; all other original subjects remain unchanged.
+Before invocation, independent
 source/evidence reviewers compare every identity against the retained preparation
 originals and exact public packet. The delivery PR retains the complete original
 JSON snapshot as preceding evidence, not a second maintained protocol or executable
@@ -204,7 +280,7 @@ The original snapshot is `python-native-graph-current-protocol-original-identiti
 SHA256 `49dac8b91ffb8ba56db2c099de37069b8a401d884fe7a815c5a0617699ac0bf8`. Exact source/preparation packet
 identities and original-to-public alias relationships remain retained with it.
 
-### Source, Endpoint and Host
+### Original Source, Endpoint and Host
 
 | Identity                      | Value                                                                                                                  |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |

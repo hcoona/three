@@ -190,7 +190,8 @@ No generic helper framework is implied.
 
 The [current-tool collector protocol](python-native-graph-qualification.md)
 binds the next complete managed collection subject and retains its separate
-source/runtime/effects limits. It contains no native outcome yet.
+source/runtime/effects limits. It retains the failed first capture and its
+bounded runtime correction; complete native collection remains unqualified.
 
 If further native execution is needed, its exact remaining subject first needs
 a concrete accepted isolated protocol. Reuse the retained primitive evidence
