@@ -5,6 +5,9 @@ This record defines the finite local package experiment for the accepted
 It is a protocol, not a runtime result. Its delivery PR must independently review
 and protect this exact protocol and executable packet before the first launch.
 The existing Python callers remain active until complete qualification and cutover.
+The original packet below is spent. The [first fresh diagnostic](#first-fresh-diagnostic)
+binds the separately prepared subject for the next launch; it cannot reuse the
+original failed lifetime.
 
 ## Question and Scope
 
@@ -31,7 +34,7 @@ authorize registry writes, authentication/access/Environment changes or dispatch
 
 ## Exact Preparation Subject
 
-Freeze the protected PR1087 component merge and its verified union tree, a fresh
+Freeze the protected component merge and its verified union tree, a fresh
 detached independent full-history checkout with committed source/lock/release/
 NBGV/group inputs, refs and clean status. Preparation uses ordinary Git/tool/build
 operations separately retained before the native lifetime; no package query,
@@ -61,7 +64,7 @@ The [source assessment](python-native-packaging.md) retains immutable UV/Hatchli
 passages and the [migration contract](../migration-strategy.md#native-python-package-execution-integration)
 retains caller retirement obligations. No permanent experiment service is added.
 
-The package component is protected by
+The original lifetime's package component was protected by
 [PR #1087](https://github.com/hcoona/three/pull/1087), merge
 `cd0bdda7af2e3f4b6590bd1a5991e2d1e7c7e8f2`, tree
 `4ac82405cc43aa2e230977629a8ecfe609992ffe`. Its
@@ -122,7 +125,8 @@ environment; no speculative probe precedes the lifetime.
    complete clean status. Query UV workspace metadata
    with the frozen lock and pinned Python; preserve the complete original response.
 2. Prepare owned planning tools with root-dev frozen sync excluding workspace
-   products, then `workflow-delivery-python` frozen shared/noneditable sync. Both
+   products, then frozen shared/noneditable sync selecting both existing `dev`
+   and `workflow-delivery-python` groups. Both
    consume the existing synchronized declarations and lock; no extra dependency
    manifest. Query the selected source directory through maintained Hatchling
    metadata and nbgv-python's official NBGV projection.
@@ -269,7 +273,7 @@ executor, product distribution build or either consumer.
 The helper's first identity import requires Hatchling, and the retained installed
 files lack it. This is the independently classified causal inference; the
 sanitized command error does not itself name the missing module. The production
-executor contains the same two-sync selection, so the defect also affects its
+executor at that revision contained the same two-sync selection, so the defect affected its
 source-derived recipe. UV's exact reconciliation worked as requested. Shared
 build mode does not preserve a dependency group omitted from the final selection.
 
@@ -288,3 +292,59 @@ clean. Final sampled state was 423,517,350 logical bytes, 14,712 entries and 1,0
 links; owned cleanup remains pending. These observations establish the early
 failure and its bounded stop, not installed-plugin independence, complete runtime
 relocation, version agreement, original archives, consumers or caller cutover.
+
+## First Fresh Diagnostic
+
+The narrow request correction and its regression assertion are protected by
+[PR #1089](https://github.com/hcoona/three/pull/1089), merge
+`cb3b3f521161819831cb9ddc4b560958b2f958e7`, tree
+`521f51fbf0c65b12a28135cb75a25a4dd7988286`, with an independent
+[actual hosted review](https://github.com/hcoona/three/pull/1089#issuecomment-6057572490)
+and [verified union-tree receipt](https://github.com/hcoona/three/pull/1089#issuecomment-6057926636).
+The correction selects both existing groups in the final exact sync. It adds no
+dependency declaration, resolver, inexact fallback or version engine. The native
+group union and complete package consumers remain unqualified until observation.
+
+Fresh preparation7 compiles the application and friend harness from a new
+independent detached full-history checkout2 at that corrected merge. The checkout
+has 2,488 committed entries, 404 retained refs and clean complete status. Compilation
+succeeded with zero warnings/errors and a unique binlog. The binding retains all
+229 prepared files, exact compiler request/receipt, committed inputs and full
+current tool/runtime rehash. Neither harness nor application has launched in this
+recipe. The original preparation6, failed packet and lifetime remain unchanged.
+
+These SHA256 values identify original bytes before the same guarded public
+absolute-prefix aliases used above:
+
+| Diagnostic subject             | Original SHA256                                                    |
+| ------------------------------ | ------------------------------------------------------------------ |
+| Operator7                      | `aa325b10a4041504d1c4d2aa8db13f0163fef84eb9e8f58a6447bc8499277eb0` |
+| Friend harness project7        | `fe652eba5496dd3011be1d30723c5d98e8e8eace17ac635072090ef95d576681` |
+| Prepared application7          | `e0395b59a7b58c5e55d451b8b20dba831cf56342474874925a9a39825b1fae52` |
+| Prepared harness7              | `d4b815d301075088a8d593b230dd40e263cad84cabd5bf980af3320d1c5eb576` |
+| Exact packet draft3            | `23de3d45fae4d11ac27d010dde76fdca251b6f31acf5ec5693d62373fc6ed7d3` |
+| Protected preparation binding3 | `3452e04b6891bda99bbc51402ba239c5ccff8c04834ab756822a1ae362f4515c` |
+| Current runtime inventory3     | `9ca5c61e92c2270ce78372110a0a40d589e3e159dfbdf6a6ed6827e43d9dd29e` |
+
+The harness source, installed observer and controlled operator tests retain their
+original identities in the complete binding. UV, Python, .NET and official NBGV
+pins, product/declaration/helper/lock/group authorities, child environment and
+all command/stream/state/process/retention/owned-cleanup bounds remain unchanged.
+The operator's sole recipe change selects both existing groups in the final
+planning sync; the application uses the independently reviewed matching correction.
+
+The fresh bootstrap uses original pinned Python `-I -B`, operator7 `observe`,
+packet draft3 and the absent
+`/evidence/python-package-native-campaign1/lifetime-2` destination. Binding3 retains
+the exact actual argv. This diagnostic must receive independent complete
+engineering/OCR, record/research and actual hosted representation review plus
+protected delivery before read-only readiness and one launch. Rehash every bound
+subject and full checkout, and confirm absent lifetime2; a mismatch stops admission.
+
+This is slot two within the original three-lifetime/1,800-second campaign ceiling.
+The first failed lifetime's four calls and 4.366 seconds remain spent. The unchanged
+22-call success recipe and 32-call per-lifetime ceiling apply; at most one further
+independently classified and protected diagnostic remains if this one fails.
+The first independently accepted success terminates unused diagnostics. No graph
+capture allowance, publication authority or failed-state cleanup is borrowed.
+Root pytest, caller cutover, Release and Windows support remain separate obligations.
