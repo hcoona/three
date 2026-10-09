@@ -167,6 +167,26 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task CancellationDuringPytestQueryPreservesCancellationAndStopsIdentity(
+        bool successfulResultRace)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken);
+        fixture.DuringPytest = cancellation.Cancel;
+        fixture.CancelledPytestResult = !successfulResultRace;
+
+        var error = await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+            () => fixture.ReadAsync(cancellation.Token));
+
+        Assert.AreEqual(cancellation.Token, error.CancellationToken);
+        NativeCommand query = Assert.ContainsSingle(fixture.Commands);
+        Assert.DoesNotContain("identity", query.Arguments);
+    }
+
+    [TestMethod]
     public async Task PairedRemovedProducerEdgeRetainsOriginalReasonAndCompleteChecks()
     {
         using var fixture = await Fixture.CreateAsync(context.CancellationToken);
@@ -256,6 +276,8 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         internal bool PytestError { get; set; }
         internal string Target { get; set; } = "src/c/tests";
         internal Action? AfterGraph { get; set; }
+        internal Action? DuringPytest { get; set; }
+        internal bool CancelledPytestResult { get; set; }
 
         internal static async Task<Fixture> CreateAsync(CancellationToken token)
         {
@@ -330,6 +352,10 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
                 cancellation.ThrowIfCancellationRequested();
                 Commands.Add(command);
                 if (command.Arguments.Contains("identity")) return Task.FromResult(Identity);
+                DuringPytest?.Invoke();
+                if (CancelledPytestResult)
+                    return Task.FromResult(new NativeCommandResult(NativeTermination.Cancelled,
+                        null, "", "", 0, "Controlled in-flight cancellation."));
                 return Task.FromResult(PytestError ? new(NativeTermination.Exited, 1, "", "", 0,
                     null) : Success(JsonSerializer.Serialize(new
                     {

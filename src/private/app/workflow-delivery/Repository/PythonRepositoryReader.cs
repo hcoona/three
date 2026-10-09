@@ -43,7 +43,7 @@ internal sealed class PythonRepositoryReader
             native.Interpreter != request.Graph.Interpreter)
             throw new InvalidDataException("Python native graph has a different query context.");
         PythonPytestConfiguration configuration = await new PythonPytestConfigurationReader(
-            execute).ReadAsync(checkout.Root, request.Graph.HelperPython, request.PytestHelper,
+            ExecuteAsync).ReadAsync(checkout.Root, request.Graph.HelperPython, request.PytestHelper,
                 environment, token);
         token.ThrowIfCancellationRequested();
         PythonPytestTargetSet targets = PythonPytestTargets.Bind(configuration,
@@ -126,11 +126,11 @@ internal sealed class PythonRepositoryReader
         PythonRepositoryRequest request, IReadOnlyDictionary<string, string?> environment,
         CancellationToken token)
     {
-        NativeCommandResult result = await execute(new(request.Graph.HelperPython, checkout.Root,
+        NativeCommandResult result = await ExecuteAsync(new(request.Graph.HelperPython,
+            checkout.Root,
             ["-I", request.PackageHelper, "identity",
                 Path.Combine(checkout.Root, member.Directory)],
             30, environment), token);
-        token.ThrowIfCancellationRequested();
         if (!result.Succeeded || result.Error is not null)
             throw new InvalidDataException("Native Python distribution identity failed.");
         try
@@ -148,6 +148,14 @@ internal sealed class PythonRepositoryReader
             throw new InvalidDataException("Invalid native Python distribution identity.",
                 exception);
         }
+    }
+
+    private async Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
+        CancellationToken token)
+    {
+        NativeCommandResult result = await execute(command, token);
+        token.ThrowIfCancellationRequested();
+        return result;
     }
 
     private static PythonGroupOperation[] Operations(PythonMetadata metadata) =>
