@@ -55,7 +55,9 @@ leaves the corrected composition unqualified. The
 is implemented with controlled coverage for one frozen both-group sync using
 default isolation and declared editability, retaining shared product build and
 same-tools noneditable conversion. Fresh exact qualification remains pending
-under the accepted package contract. Actual
+under the accepted package contract. The
+[fresh corrected subject](./research/python-native-package-qualification.md#default-isolated-tool-preparation-subject)
+binds the prepared packet and separately gated readiness before launch. Actual
 original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
 preparation/cutover and Release remain pending. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)

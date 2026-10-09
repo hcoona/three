@@ -122,7 +122,9 @@ uses one frozen both-group sync with default isolation and declared editability.
 Controlled tests cover that preparation contract, shared product build, same-tools
 noneditable conversion, preparation failure/cancellation/timeout and original
 integrity. Fresh exact native qualification is still required under the
-[package contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-package-execution).
+[package contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-package-execution). The
+[fresh corrected subject](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-package-qualification.md#default-isolated-tool-preparation-subject)
+binds the prepared packet and separately gated readiness before launch.
 Existing Python callers,
 root pytest preparation and Release remain active; this component does not
 switch or retire them.
