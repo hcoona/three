@@ -137,9 +137,14 @@ def flow(tmp_path, monkeypatch):
     group.node.write_json(directory / "context.json", context)
     state = {"checks": [], "satisfied": True, "defect": None}
     calls = []
-    monkeypatch.setattr(
-        group, "executable", lambda name: str(tmp_path / "tools" / name)
-    )
+    tool_requests = []
+
+    def executable(name):
+        tool_requests.append(name)
+        directory = "powershell" if name == "pwsh" else "tools"
+        return str(tmp_path / directory / name)
+
+    monkeypatch.setattr(group, "executable", executable)
     output = tmp_path / "github-output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
 
@@ -252,6 +257,7 @@ def flow(tmp_path, monkeypatch):
         state=state,
         calls=calls,
         output=output,
+        tool_requests=tool_requests,
     )
 
 
@@ -327,6 +333,7 @@ def test_no_work_has_no_product_or_auxiliary_preparation(flow):
     assert "selected=false" in flow.output.read_text()
     assert "legacy_v3=false" in flow.output.read_text()
     assert "native_helper=false" in flow.output.read_text()
+    assert "pwsh" not in flow.tool_requests
 
 
 @pytest.mark.parametrize("defect", ["preparation", "missing-result"])
@@ -358,12 +365,26 @@ def test_substituted_plan_stops_before_product_dispatch(flow, field):
     assert [row[0] for row in flow.calls] == ["preparation", "planning"]
 
 
-@pytest.mark.parametrize("target", [group.V3_TESTS, group.NATIVE_TESTS])
+@pytest.mark.parametrize(
+    "target",
+    [
+        group.V3_TESTS,
+        group.NATIVE_TESTS,
+        group.AZURE_TESTS,
+        "tests/eng/check.py",
+        None,
+    ],
+)
 def test_only_selected_native_target_prepares_auxiliary_tools(
     flow, tmp_path, target
 ):
     """Adapters follow selected targets and preserve owned contexts."""
-    flow.state["checks"] = [check("python/pytest-v1", target)]
+    selected = (
+        check("python/distribution-set-v1")
+        if target is None
+        else check("python/pytest-v1", target)
+    )
+    flow.state["checks"] = [selected]
     group.plan(flow.root, flow.directory)
     mise_data = tmp_path / "prepared-mise"
     mise_data.mkdir()
@@ -384,7 +405,7 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
         assert str(tmp_path / "tools") in native["environment"]["PATH"].split(
             os.pathsep
         )
-    else:
+    elif target == group.NATIVE_TESTS:
         assert labels == [
             "preparation",
             "planning",
@@ -398,6 +419,26 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
             assert options["environment"]["HOME"] == str(
                 flow.directory / "native-home"
             )
+    else:
+        assert labels == ["preparation", "planning", "execution"]
+    native = group.node.read_json(flow.directory / "execution-request.json")[
+        "native"
+    ]
+    paths = native["environment"]["PATH"].split(os.pathsep)
+    assert "/native/bin" in paths
+    assert (str(tmp_path / "powershell") in paths) is (
+        target == group.AZURE_TESTS
+    )
+    assert ("pwsh" in flow.tool_requests) is (target == group.AZURE_TESTS)
+    assert (
+        group.node.read_json(flow.directory / "preparation.json")["request"][
+            "candidate"
+        ]["environment"]["PATH"]
+        == "/native/bin"
+    )
+    assert group.node.read_json(flow.directory / "plan.json")["checks"] == [
+        selected
+    ]
 
 
 def test_shared_capture_replaces_environment_without_changing_default(
@@ -485,12 +526,16 @@ def test_receiver_rejects_foreign_artifact_before_materialization(
     assert not directory.exists()
 
 
-@pytest.mark.parametrize("kind", ["legacy_v3", "native_helper"])
+@pytest.mark.parametrize("kind", ["legacy_v3", "native_helper", "azure_bundle"])
 def test_failed_selected_auxiliary_cannot_dispatch_products(
     flow, tmp_path, monkeypatch, kind
 ):
     """Failed retained prerequisites remain terminal, with no replan."""
-    target = group.V3_TESTS if kind == "legacy_v3" else group.NATIVE_TESTS
+    target = {
+        "legacy_v3": group.V3_TESTS,
+        "native_helper": group.NATIVE_TESTS,
+        "azure_bundle": group.AZURE_TESTS,
+    }[kind]
     flow.state["checks"] = [check("python/pytest-v1", target)]
     group.plan(flow.root, flow.directory)
     data = tmp_path / "mise"
@@ -505,9 +550,22 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         return native_run(root, directory, label, *args, **options)
 
     monkeypatch.setattr(group.node, "run", run)
-    with pytest.raises(subprocess.CalledProcessError) as error:
-        group.execute(flow.root, flow.directory, data)
-    assert error.value.returncode == 17
+    if kind == "azure_bundle":
+        native_executable = group.executable
+
+        def executable(name):
+            if name == "pwsh":
+                message = "pwsh"
+                raise FileNotFoundError(message)
+            return native_executable(name)
+
+        monkeypatch.setattr(group, "executable", executable)
+        with pytest.raises(FileNotFoundError, match="pwsh"):
+            group.execute(flow.root, flow.directory, data)
+    else:
+        with pytest.raises(subprocess.CalledProcessError) as error:
+            group.execute(flow.root, flow.directory, data)
+        assert error.value.returncode == 17
     assert [row[0] for row in flow.calls] == ["preparation", "planning"]
     assert not (flow.directory / "result.json").exists()
     assert not (flow.directory / "outcome.json").exists()

@@ -18,6 +18,7 @@ NATIVE_SOURCE = "src/private/app/workflow-delivery/Native/Python"
 SCOPE = "python/native-paired-facts-v1"
 V3_TESTS = "src/public/lib/three-workflow-delivery-v3/tests"
 NATIVE_TESTS = "tests/private/app/workflow-delivery/Native/Python"
+AZURE_TESTS = "src/private/app/azureauth-credprovider/python/tests"
 
 
 def executable(name: str) -> str:
@@ -174,6 +175,7 @@ def auxiliary(plan_value: dict[str, Any]) -> dict[str, bool]:
             for target in targets
         ),
         "native_helper": NATIVE_TESTS in targets,
+        "azure_bundle": AZURE_TESTS in targets,
     }
 
 
@@ -192,6 +194,15 @@ def execute(
         raise ValueError(message)
     selected = auxiliary(plan_value)
     environment = dict(candidate["environment"])
+    if selected["azure_bundle"]:
+        environment["PATH"] = os.pathsep.join(
+            dict.fromkeys(
+                [
+                    str(Path(executable("pwsh")).parent),
+                    *environment["PATH"].split(os.pathsep),
+                ]
+            )
+        )
     if selected["legacy_v3"]:
         if (
             mise_data is None
