@@ -375,10 +375,22 @@ def test_substituted_plan_stops_before_product_dispatch(flow, field):
         None,
     ],
 )
+@pytest.mark.parametrize("configured", [False, True])
 def test_only_selected_native_target_prepares_auxiliary_tools(
-    flow, tmp_path, target
+    flow, tmp_path, monkeypatch, target, configured
 ):
     """Adapters follow selected targets and preserve owned contexts."""
+    native_settings = {
+        "DOTNET_ROOT": str(tmp_path / "runtime"),
+        "DOTNET_ROOT_X64": str(tmp_path / "runtime-x64"),
+        "DOTNET_ROOT_ARM64": str(tmp_path / "runtime-arm64"),
+        "HK_PROFILE": "small,medium",
+    }
+    for name, value in native_settings.items():
+        if configured:
+            monkeypatch.setenv(name, value)
+        else:
+            monkeypatch.delenv(name, raising=False)
     selected = (
         check("python/distribution-set-v1")
         if target is None
@@ -427,9 +439,23 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
     paths = native["environment"]["PATH"].split(os.pathsep)
     assert "/native/bin" in paths
     assert (str(tmp_path / "powershell") in paths) is (
-        target == group.AZURE_TESTS
+        target in (group.AZURE_TESTS, group.V3_TESTS)
     )
-    assert ("pwsh" in flow.tool_requests) is (target == group.AZURE_TESTS)
+    assert ("pwsh" in flow.tool_requests) is (
+        target in (group.AZURE_TESTS, group.V3_TESTS)
+    )
+    for name, value in native_settings.items():
+        consumer = group.V3_TESTS if name == "HK_PROFILE" else group.AZURE_TESTS
+        if configured and target == consumer:
+            assert native["environment"][name] == value
+        else:
+            assert name not in native["environment"]
+        assert (
+            name
+            not in group.node.read_json(flow.directory / "preparation.json")[
+                "request"
+            ]["candidate"]["environment"]
+        )
     assert (
         group.node.read_json(flow.directory / "preparation.json")["request"][
             "candidate"
@@ -526,7 +552,9 @@ def test_receiver_rejects_foreign_artifact_before_materialization(
     assert not directory.exists()
 
 
-@pytest.mark.parametrize("kind", ["legacy_v3", "native_helper", "azure_bundle"])
+@pytest.mark.parametrize(
+    "kind", ["legacy_v3", "native_helper", "azure_bundle", "legacy_v3_pwsh"]
+)
 def test_failed_selected_auxiliary_cannot_dispatch_products(
     flow, tmp_path, monkeypatch, kind
 ):
@@ -535,6 +563,7 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         "legacy_v3": group.V3_TESTS,
         "native_helper": group.NATIVE_TESTS,
         "azure_bundle": group.AZURE_TESTS,
+        "legacy_v3_pwsh": group.V3_TESTS,
     }[kind]
     flow.state["checks"] = [check("python/pytest-v1", target)]
     group.plan(flow.root, flow.directory)
@@ -550,7 +579,7 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         return native_run(root, directory, label, *args, **options)
 
     monkeypatch.setattr(group.node, "run", run)
-    if kind == "azure_bundle":
+    if kind in ("azure_bundle", "legacy_v3_pwsh"):
         native_executable = group.executable
 
         def executable(name):

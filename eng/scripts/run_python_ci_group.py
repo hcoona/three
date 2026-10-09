@@ -194,7 +194,7 @@ def execute(
         raise ValueError(message)
     selected = auxiliary(plan_value)
     environment = dict(candidate["environment"])
-    if selected["azure_bundle"]:
+    if selected["legacy_v3"] or selected["azure_bundle"]:
         environment["PATH"] = os.pathsep.join(
             dict.fromkeys(
                 [
@@ -202,6 +202,18 @@ def execute(
                     *environment["PATH"].split(os.pathsep),
                 ]
             )
+        )
+    if selected["azure_bundle"]:
+        environment.update(
+            {
+                name: os.environ[name]
+                for name in (
+                    "DOTNET_ROOT",
+                    "DOTNET_ROOT_X64",
+                    "DOTNET_ROOT_ARM64",
+                )
+                if name in os.environ
+            }
         )
     if selected["legacy_v3"]:
         if (
@@ -219,6 +231,13 @@ def execute(
         ]
         environment["MISE_DATA_DIR"] = str(mise_data)
         environment["MISE_TASK_RUN_AUTO_INSTALL"] = "false"
+        environment.update(
+            {
+                name: os.environ[name]
+                for name in ("HK_PROFILE",)
+                if name in os.environ
+            }
+        )
         environment["PATH"] = os.pathsep.join(
             dict.fromkeys(
                 [str(Path(path).parent) for path in native_tools]

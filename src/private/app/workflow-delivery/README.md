@@ -62,10 +62,12 @@ candidate-native readback to `ci run-python-group`, retaining every result and
 its original outcome. Failed preparation, missing transfer/output and cancellation
 cannot become no-work. Explainable empty selection performs no product or
 auxiliary preparation. Only actually selected retained V3/native helper targets
-prepare their existing native adapters; the selected AzureAuth bundle-test target
-receives the installed PowerShell directory in its product PATH. Unrelated work
-does not require that tool. Owned query, NBGV and product environments
-remain distinct; selected HK/Pkl use explicitly prepared mise tool data.
+prepare their existing native adapters. Selected V3 or AzureAuth bundle tests
+receive the installed PowerShell directory in their product PATH; unrelated work
+does not require that tool. AzureAuth apphosts retain configured native .NET
+runtime roots, and V3 HK consumers retain the configured native HK profile.
+Absent configuration keeps native defaults. Owned query, NBGV and product
+environments remain distinct; selected HK/Pkl use explicitly prepared mise tool data.
 
 Windows scope no longer parses Python dependency declarations or pytest targets,
 nor emits Python package/test selection. Its committed path responsibility tells
