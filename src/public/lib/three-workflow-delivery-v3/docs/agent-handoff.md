@@ -52,8 +52,10 @@ historical campaign are spent. The later
 [editable preparation failure](./research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
 leaves the corrected composition unqualified. The
 [native tool preparation correction](./research/python-native-packaging.md#native-editable-tool-preparation)
-requires implementation and fresh exact qualification under the accepted package
-contract. Actual
+is implemented with controlled coverage for one frozen both-group sync using
+default isolation and declared editability, retaining shared product build and
+same-tools noneditable conversion. Fresh exact qualification remains pending
+under the accepted package contract. Actual
 original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
 preparation/cutover and Release remain pending. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)

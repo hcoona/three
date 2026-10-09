@@ -11,9 +11,10 @@ retains its failed/spent lifetimes and does not authorize revival. The
 records its spent subjects and remaining conditional allowance. That allowance
 admits no changed exact subject: the
 [native tool preparation correction](python-native-packaging.md#native-editable-tool-preparation)
-remains unimplemented and unqualified. The existing gates for implementation review, exact subject/protocol review,
-protected delivery, readiness and independent actual audit still precede any
-launch. Earlier admitted subjects remain
+has controlled implementation coverage but remains natively unqualified. A
+changed exact execution subject is not yet admitted. The existing gates for
+implementation review, exact subject/protocol review, protected delivery,
+readiness and independent actual audit still precede any launch. Earlier admitted subjects remain
 historical and cannot authorize replay, refund or failed-state cleanup.
 
 ## Question and Scope
@@ -1154,9 +1155,12 @@ or a UV/Hatchling defect. The source-supported
 delegates auxiliary requirements to default native isolation, without a second
 roster or manual hook orchestration. Its affected
 [package contract](../middle-level-design.md#native-python-package-execution)
-must be accepted before implementation. The correction is not yet implemented,
-prepared or natively qualified; source11, packet2 and binding4 remain failed
-historical subjects rather than admission for changed execution.
+had to be accepted before implementation. At this observation the correction
+was not implemented, prepared or natively qualified. The current controlled
+implementation is described by the
+[private component](../../../../../private/app/workflow-delivery/README.md#python-package-execution-component);
+fresh exact native qualification remains pending. Source11, packet2 and binding4
+remain failed historical subjects rather than admission for changed execution.
 
 Terminal Git captures retain the exact implementation HEAD and complete empty
 status, with no errors. The final observed state was 701,641,855 logical bytes
