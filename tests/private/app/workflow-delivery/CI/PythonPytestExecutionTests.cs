@@ -36,7 +36,14 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         Assert.IsNull(preparation.Command.Environment["PYTHONPATH"]);
         Assert.IsNull(preparation.Command.Environment["PYTEST_ADDOPTS"]);
         Assert.IsNull(preparation.Command.Environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"]);
-        CollectionAssert.AreEqual(RootInvocation, result.Commands[1].Command.Arguments);
+        NativeCommand invocation = result.Commands[1].Command;
+        string junit = JunitOutput(invocation);
+        Assert.IsTrue(Path.IsPathFullyQualified(junit));
+        Assert.AreEqual(fixture.Scratch, Path.GetDirectoryName(junit));
+        Assert.EndsWith(".xml", junit);
+        string[] expectedInvocation = [.. RootInvocation[..^1], "--junitxml=" + junit,
+            RootInvocation[^1]];
+        CollectionAssert.AreEqual(expectedInvocation, invocation.Arguments);
         CollectionAssert.AreEqual(new[] { selected.Checks[0].Work.Key },
             result.Commands[1].Checks);
         Assert.IsEmpty(result.Failures);
@@ -68,6 +75,15 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         CollectionAssert.AreEqual(QualityTargets,
             result.Commands.Where(item => item.Command.Arguments[0] == "run")
                 .Select(item => item.Command.Arguments[^1]).ToArray());
+        string[] reports = result.Commands.Where(item => item.Command.Arguments[0] == "run")
+            .Select(item => JunitOutput(item.Command)).ToArray();
+        Assert.HasCount(QualityTargets.Length, reports.Distinct(StringComparer.Ordinal));
+        foreach (string report in reports)
+        {
+            Assert.IsTrue(Path.IsPathFullyQualified(report));
+            Assert.AreEqual(fixture.Scratch, Path.GetDirectoryName(report));
+            Assert.EndsWith(".xml", report);
+        }
     }
 
     [TestMethod]
@@ -260,6 +276,13 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     private static string[] Packages(NativeCommand command) => command.Arguments
         .Zip(command.Arguments.Skip(1)).Where(pair => pair.First == "--package")
         .Select(pair => pair.Second).ToArray();
+
+    private static string JunitOutput(NativeCommand command)
+    {
+        const string prefix = "--junitxml=";
+        return Assert.ContainsSingle(command.Arguments.Where(argument =>
+            argument.StartsWith(prefix, StringComparison.Ordinal)))[prefix.Length..];
+    }
 
     private sealed class Fixture(GitFixture repo, CiPlan plan, PythonPytestRunRequest request)
         : IDisposable

@@ -25,8 +25,9 @@ Python passive extraction, the pinned native supplement, metadata adaptation and
 dependency projection have controlled component boundaries. The private app also
 provides a [bounded native pytest configuration component](../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
 with controlled tests; the separate planning-input observation below qualifies
-its exact native query and target/input composition. Complete caller ownership
-and qualification remain pending. The
+its exact native query and target/input composition. Complete caller wiring is implemented;
+[PR #1114](https://github.com/hcoona/three/pull/1114) carries ordinary hosted
+qualification. The
 [paired Python producer-to-owner component](../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
 has controlled supplied-fact coverage. The
 [controlled paired Python fact assembly](../../../private/app/workflow-delivery/README.md#controlled-paired-python-fact-assembly)
@@ -41,7 +42,8 @@ The [controlled Python repository input associations](../../../private/app/workf
 bind supplied actual check owners to repository engineering inputs. The separate
 [planning-input observation](docs/research/python-planning-enrichment-qualification.md#completed-planning-input-observation)
 qualifies native pytest, committed NBGV/quality inputs and producer input mapping
-on the exact Linux subjects; full caller behavior remains pending. The
+on the exact Linux subjects; complete caller qualification has its separate
+ordinary PR CI gate. The
 [controlled Python package component](../../../private/app/workflow-delivery/README.md#python-package-execution-component)
 implements finite adopted preset expansion, preparation and execution. The
 [completed corrected Linux package observation](docs/research/python-native-package-qualification.md#completed-corrected-linux-package-observation)
@@ -57,12 +59,13 @@ retired. Actual root pytest and the complete Linux caller require ordinary hoste
 qualification before accepted cutover. Release remains separate.
 The [prepared endpoint collector](../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
 composes existing native readers and paired selection with controlled coverage;
-actual Linux query-tool preparation and complete caller qualification remain pending.
+actual Linux query-tool preparation and complete caller qualification require
+ordinary PR CI before accepted cutover.
 The replacement caller mapping is implemented; its whole consumer group must be
 qualified together. The
 [primitive Linux observation](docs/research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. Complete hosted caller qualification
-remains pending; completed enrichment and graph campaigns
+is carried by [PR #1114](https://github.com/hcoona/three/pull/1114); completed enrichment and graph campaigns
 supply no further execution allowance.
 Other quality presets, ecosystem execution cutover and Release remain pending.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)

@@ -39,7 +39,8 @@ complete control distribution to its sole .NET execution/result owner. The [boun
 qualifies the adopted fixture composition on Linux. Root CI owns the adopted Node
 group and selected retained Node matrix, with ordinary hosted transfer and
 execution qualification in [PR #1042](https://github.com/hcoona/three/pull/1042).
-The exclusive npm CI shadow is retired. Other quality presets, Python/Ruby
+The exclusive npm CI shadow is retired. Python caller wiring is implemented, with ordinary hosted qualification carried
+by [PR #1114](https://github.com/hcoona/three/pull/1114). Other quality presets, Ruby
 execution cutover and Release remain pending.
 
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
@@ -49,8 +50,9 @@ unit boundaries. The private app's [bounded native pytest configuration componen
 also has controlled tests; the separate planning-input observation below qualifies
 its exact native query and target/input composition. The
 [native Python caller](../../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
-composes root CI, committed local full and smoke PR retirement; ordinary complete
-caller qualification remains pending. The [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
+composes root CI, committed local full and smoke PR retirement;
+[PR #1114](https://github.com/hcoona/three/pull/1114) carries ordinary complete
+caller qualification. The [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
 has controlled supplied-fact coverage. The
 [controlled paired Python fact assembly](../../../../private/app/workflow-delivery/README.md#controlled-paired-python-fact-assembly)
 binds supplied native targets and actual checks. The
@@ -63,7 +65,8 @@ subjects; its campaign and cleanup are complete, and remaining captures stopped.
 bind supplied actual check owners to repository engineering inputs. The separate
 [planning-input observation](./research/python-planning-enrichment-qualification.md#completed-planning-input-observation)
 qualifies native pytest, committed NBGV/quality inputs and producer input mapping
-on the exact retained Linux subjects; full caller behavior remains pending. The
+on the exact retained Linux subjects; complete caller qualification has its separate
+ordinary PR CI gate. The
 [controlled Python package component](../../../../private/app/workflow-delivery/README.md#python-package-execution-component)
 implements finite adopted preset expansion, preparation and execution. The
 [completed corrected Linux package observation](./research/python-native-package-qualification.md#completed-corrected-linux-package-observation)
@@ -84,7 +87,7 @@ plan. Ordinary PR CI must qualify actual Linux query-tool preparation and the
 root/local/smoke replacement together before merge. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. The complete caller mapping is
-implemented; ordinary hosted qualification remains pending. The enrichment campaign and cleanup are
+implemented; [PR #1114](https://github.com/hcoona/three/pull/1114) carries ordinary hosted qualification. The enrichment campaign and cleanup are
 complete; both unused diagnostics stopped.
 
 The pre-contraction normal-Live baseline was merged across the
@@ -282,7 +285,7 @@ The [NBGV native-input assessment](./research/nbgv-native-inputs.md) identifies
 public configuration/filter APIs and bounded Linux application observations for
 official-package delivery and the existing PNPM reader. Root Node/.NET integration
 has separate hosted qualification. Python caller wiring is implemented with its
-ordinary hosted qualification gate still pending; Ruby execution cutover and
+ordinary hosted qualification carried by [PR #1114](https://github.com/hcoona/three/pull/1114); Ruby execution cutover and
 Release remain pending.
 The [Node CI native execution observation](./research/node-ci-native-execution.md)
 retains the completed adopted-fixture Linux composition/effects evidence,

@@ -85,14 +85,16 @@ internal static class PythonPytestExecution
             foreach (CheckKey key in keys) Add(key, preparation);
             return Finish();
         }
+        int ordinal = 0;
         foreach (PlannedCheck item in plan.Checks)
         {
+            string junit = Path.Combine(scratch, $"junit-{ordinal++}.xml");
             if (token.IsCancellationRequested)
                 results.Add(new(plan.Candidate, item.Work.Key, CheckStatus.Cancelled));
             else
                 Add(item.Work.Key, await RunAsync([item.Work.Key], ["run", "--no-sync",
                     "python", "-m", "pytest", "-c", request.Configuration.ConfigurationFile,
-                    item.Work.Dimensions["testPath"]]));
+                    "--junitxml=" + junit, item.Work.Dimensions["testPath"]]));
         }
         return Finish();
 
