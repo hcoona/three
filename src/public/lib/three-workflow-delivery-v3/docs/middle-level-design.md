@@ -499,6 +499,109 @@ one ordinary CI owner, selected by actual inputs/dependencies. CI never imports
 Release authority or exposes publication capability. General C# execution follows
 the repository's Windows default unless a declared variant selects another runner.
 
+### Native Python CI Group
+
+The existing Linux Python job selects and executes one original candidate-bound plan for
+configured pytest targets and adopted distribution checks. This group composes
+the native graph collector, pytest configuration/target binding, repository input
+associations and paired fact assembler already defined above. It adds no project,
+dependency, test-target or backend declaration. The
+[caller mapping](./migration-strategy.md#python-quality-and-caller-mapping)
+retains the concrete repository and special-job consumers.
+
+The Windows scope job transfers the exact event comparison and explicit
+full/incremental mode, together with the complete candidate control distribution.
+The existing Linux Python job performs the first Python selection: it materializes
+both exact endpoints and collects their native facts for its actual Linux product
+interpreter and supported operation dimensions. Windows interpreter activity
+cannot substitute for Linux marker answers. The selected control distribution
+and native query tools must run in that context; unavailable necessary capability
+fails analysis rather than introducing platform emulation.
+
+Planning binds each materialized endpoint to its own native membership,
+configuration, interpreter/platform, operation groups and committed inputs.
+Prepare a separately owned query-tool environment for each endpoint with native
+`uv sync --frozen --only-group dev --only-group workflow-delivery-python --no-editable`,
+noneditable workspace dependency installation and default build isolation. Use
+that endpoint's committed root groups, lock and source configuration, and the
+bound Linux interpreter. UV owns the selected tool-group closure and any native
+backend preparation; no separate library or backend roster is maintained. The
+declared plugin may be built as a query-tool dependency without making unrelated
+workspace members product or quality owners. Passive query execution remains
+distinct from this tool installation. Keep the installed helper environment
+separate from product/test/package environments and from the owned absent
+`UV_PROJECT_ENVIRONMENT` required by native metadata/activity queries.
+
+Supply the candidate control version's existing `Native/Python/uv` supplement
+compiled for Linux using `cargo build --locked`, its committed Cargo manifests,
+lock, `rust-toolchain.toml` and sources, and an owned output directory. Transfer
+candidate control sources/resources rather than a Windows native executable.
+Bind helper source, toolchain, executable and runtime identities to both endpoint
+queries; each query retains its own endpoint configuration, lock, groups and
+actual Linux interpreter facts. Preserve native configuration preflight,
+ambient-setting/error behavior and owned credential-free query state. Necessary
+tool preparation or compilation failure, timeout or cancellation stops analysis.
+This proposed preparation still needs actual caller qualification; the stopped
+graph/enrichment observations do not establish installation or caller success.
+
+Reuse the accepted native metadata, passive extraction, UV supplement and pytest query;
+candidate facts cannot substitute for missing basis facts. Bind actual quality
+adoption and release declarations before complete paired selection. Existing
+shared-core closure selects surviving checks and supplies initiating path/revision
+reasons. Explicit full mode states the supported group it covers; an incremental
+analysis failure cannot become a full run.
+
+Begin that analysis for every valid comparison, independently of legacy Windows
+Python applicability, target, package or special-input heuristics. Successful
+incremental analysis may establish that no checks are affected: report the
+explainable no-work scope and perform no product/test/package preparation or
+execution. Query-tool preparation remains separate. Missing facts, failed
+transfer, cancellation or timeout cannot become successful non-applicability.
+For selected work, keep the existing nonempty selected-check requirement.
+
+The Linux job invokes shared selection once, then passes its original plan to
+the finite executor in the same job. At that boundary, preserve candidate-native
+membership
+and pytest target bindings, tool/operation context and complete candidate control
+distribution. Validate their agreement with the receiving exact candidate before
+product dispatch. Native member names come from metadata, and target/member
+coordinates come from the existing native target binding. This request validation
+must not resolve dependencies, choose targets again or introduce a trust record.
+
+The finite executor partitions that plan into native-retained `python/pytest-v1`
+checks and the registered Python distribution preset. Validate both supported
+partitions and their complete prerequisites before either executes. Keep one
+required result per original check and collect against the original mixed plan;
+neither executor may remove or substitute the other partition. Empty partitions
+need no preparation. This follows the existing .NET group composition rather
+than introducing a task scheduler.
+
+For a nonempty pytest partition, prepare a separate test environment with native
+`uv sync --frozen`, selecting the root context plus every selected quality-member
+context. Resolve names from supplied native membership, retain the interpreter
+and native default-group operation, and let UV own installation and dependency
+semantics. Standalone repository targets require the root context; member targets
+also require their bound member. Dependency producers do not become automatic
+quality owners. Do not substitute the distribution-tool environment or force
+unrelated input-only members to build.
+
+Execute each original selected target with `uv run --no-sync python -m pytest`
+in that prepared context, retaining the supported native configuration/options.
+One invocation per target supplies its distinct required outcome while sharing
+preparation. A preparation failure, timeout or cancellation leaves every affected
+required target unsatisfied; it cannot produce an empty successful result. Keep
+independent package obligations visible even when pytest fails. The package
+partition retains its separate phase-specific preparation, original archives and
+four required distribution checks under the contract below.
+
+Controlled validation covers root-only and mixed member preparation, native
+name/target agreement, explicit full versus incremental selection, complete
+partition/result transfer and failures/cancellation. Ordinary authorized PR CI
+must qualify the complete caller group before cutover. The existing local full
+runner and smoke PR caller remain until their selected/full preparation and check
+consumers switch together. No local package experiment, historical campaign,
+Release or publication authority follows from this integration contract.
+
 ## Builds, Packages and Consumers
 
 ### Native Python Package Execution

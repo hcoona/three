@@ -27,7 +27,9 @@ dependency projection have controlled unit boundaries. The private app's
 [bounded native pytest configuration component](../../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
 also has controlled tests; the separate planning-input observation below qualifies
 its exact native query and target/input composition. Complete caller ownership
-and qualification remain pending. The
+and qualification remain pending; the
+[native Python CI group contract](./middle-level-design.md#native-python-ci-group)
+defines its planning, preparation, execution and transfer boundary. The
 [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
 has controlled supplied-fact coverage. The
 [controlled paired Python fact assembly](../../../../private/app/workflow-delivery/README.md#controlled-paired-python-fact-assembly)
