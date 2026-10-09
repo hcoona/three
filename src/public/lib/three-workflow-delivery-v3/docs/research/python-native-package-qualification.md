@@ -1329,3 +1329,63 @@ Readiness cannot substitute for exhausted package authority. No replay, refill,
 failed-state cleanup, root pytest/caller/Release cutover or publication follows.
 Another package execution requires a new finite owner grant and accepted exact
 subject/protocol/preparation/readiness with independent actual audit.
+
+## Fresh Output-Option Subject: Readiness Only
+
+The existing owner-approved readiness allowance remains separate from the spent
+package campaign. Readiness6, readiness8 and readiness12 spent three of nine
+preparations; six remain within the existing 120-second individual,
+eight-Git-read and 1,260-second cumulative native-preparation ceilings. Retained
+readiness charge is 9.232339018 seconds. This section adds no preparation,
+package lifetime, numerical reserve, effects or cleanup authority.
+
+The protected output-option correction is merge
+`042c14c327d9455e85e8b3c5fead35d23c2b387f`, tree
+`76fa334e7792e7a7dad11a5fdfb15b40d6840f16`. Fresh ordinary preparation compiled
+the application and planning harness from that revision without a native package
+call. It created a detached full-history checkout, preserved all 2,488 committed
+entries, bound the prepared execution sources, tools and complete runtime/output
+inventories, and created only the owned empty campaign parent. The package
+lifetime remains absent.
+
+The existing work carrier retains the complete preparation requests, streams,
+receipts and exact subjects:
+
+| Readiness subject                                          | SHA256                                                             |
+| ---------------------------------------------------------- | ------------------------------------------------------------------ |
+| `python-package-native-phases-packet4.json`                | `fafa1338443415d73924448c50666a69f09679f9e0802cd88b8c176c54fe2d47` |
+| `python-package-native-phases-preparation13-binding1.json` | `237b6f63f3dc7296d02df6ae3400e1ecd22e26e275b83b916bb6bc2571dd904c` |
+| `python-package-native-phases-readiness13.py`              | `1f0ec75622de358079000eba192011f42405303c5be6860e1f6abfa111843e1a` |
+
+The packet and binding's unapproved labels concern package execution and retain
+their historical preparation-time meaning. Acceptance of this section admits
+only the unchanged readiness subject, not the packet's recorded package bootstrap.
+The existing reserve may fund one invocation of readiness13 only after independent
+engineering and record/research review and protected delivery of the complete
+subject and this exact protocol.
+
+Readiness13 rehashes the bound sources, compiled files, tools, runtime inventories
+and lineage before native preparation. Its native Git dispatch is AST-identical
+to the accepted predecessor. It checks the real nonsymlink campaign parent and
+absent package lifetime, uses the same isolated owned Git/LFS clean storage and
+hooks, and retains at most eight Git reads at ten seconds each within the existing
+120-second native-preparation interval. It verifies complete committed bytes and
+LFS payloads, full history, refs, clean status and unchanged Git
+config/index/HEAD/refs/hooks. Success completes only owned preparation cleanup.
+Failure or uncertainty retains partial preparation and stops; no refund,
+repair, failed-state cleanup or blind retry follows.
+
+Charge this started readiness against the existing allowance, retain its actual
+request, complete streams, outer receipt, preparation receipt and report, then
+obtain a separate independent actual-output audit. That audit must inspect actual
+bound inputs and observations; source review or an exit-zero preparation receipt
+cannot substitute for it. No preparation success qualifies original wheel/sdist
+consumers, root pytest, paired callers, Windows, arbitrary backends or Release.
+
+All three package lifetimes remain spent. Readiness success cannot admit a
+package launch: a new explicit finite owner grant, independently reviewed and
+protected exact package protocol and separate actual-readiness acceptance remain
+necessary. The unapproved reserve proposal and the owner's instruction to
+continue preflight create no new package authority. No publication, dispatch,
+credentials, access/Environment changes, replay or failed-state cleanup are
+included.
