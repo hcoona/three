@@ -8,6 +8,23 @@ remain in their current namespace until the old Python application's last
 consumer retires. This entry describes the implemented interface, not a second
 architecture authority.
 
+## Prepared Python Endpoint Collection
+
+`PythonRepositoryReader` composes an exact materialized endpoint's existing native
+graph and pytest readers, committed quality/release declarations, managed NBGV
+input associations and maintained backend package identity. Native membership
+remains the complete producer graph; only configured pytest targets and adopted
+distribution checks become runnable owners. Missing native facts or incomplete
+quality adoption fail collection. `PythonGroupPlanning` joins both endpoint
+answers and repository input reasons through the existing paired assembler and
+shared impact planner, retaining explicit full mode and explainable empty scope.
+
+Controlled Git/command scenarios cover this composition. Query-tool installation,
+Linux supplement compilation, endpoint lifecycle, actual root pytest and atomic
+root/local/smoke caller qualification remain separate pending integration work.
+These internal components do not change existing callers or qualify a native
+campaign, Release or publication.
+
 ## Current Scope
 
 The application selects CI checks and collects candidate-bound check results.

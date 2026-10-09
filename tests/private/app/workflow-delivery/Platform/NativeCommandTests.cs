@@ -196,6 +196,24 @@ public sealed class NativeCommandTests(TestContext context)
                 ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", script, .. arguments],
                 DeadlineSeconds), token);
 
-        public void Dispose() => System.IO.Directory.Delete(Directory, recursive: true);
+        public void Dispose()
+        {
+            var elapsed = Stopwatch.StartNew();
+            while (true)
+            {
+                try
+                {
+                    System.IO.Directory.Delete(Directory, recursive: true);
+                    return;
+                }
+                catch (IOException exception) when (OperatingSystem.IsWindows() &&
+                    (exception.HResult == unchecked((int)0x80070020) ||
+                        exception.HResult == unchecked((int)0x80070021)) &&
+                    elapsed.Elapsed < TimeSpan.FromSeconds(5))
+                {
+                    Thread.Sleep(50);
+                }
+            }
+        }
     }
 }
