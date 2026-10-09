@@ -618,9 +618,12 @@ selected boundaries from unqualified runtime behavior.
 
 For the current adopted Python distribution contract, prepare an owned native
 project environment from the existing root `dev` and `workflow-delivery-python`
-groups and synchronized lock. Frozen root-dev sync excludes local workspace
-products; subsequent frozen sync selects both existing groups with native shared
-build mode and the workspace's declared editability. Keep that installation through
+groups and synchronized lock. Use one frozen sync selecting both groups with
+UV's default build isolation and the workspace's declared editability. UV owns
+declared and backend-reported auxiliary build requirements, including editable
+tool preparation. Do not precede it with a separate root-dev bootstrap, disable
+that native requirement preparation, maintain a backend roster or manually
+orchestrate requirement hooks. Keep the selected installed tools through
 completion of the original wheel/sdist set: native source-build requirements
 retain workspace source and editability semantics. Exact sync removes omitted
 tools, so selection includes the development backend tools as well as the
@@ -629,6 +632,13 @@ not an application-maintained minimal backend roster. Actual selection and
 installation must establish that unrelated workspace products are not built.
 This package-tool preparation does not replace root pytest's selected/full
 member preparation obligations.
+
+Frozen group selection owns the installed tools; it does not promise that
+auxiliary isolated backend resolution is lock-frozen. Preserve the distinction
+and any relevant native builder/version input in qualification evidence. Product
+builds below use the prepared selected tools and shared native build mode.
+Neither a frozen sync nor the lock alone establishes same-input byte
+reproducibility or Release/recovery qualification.
 
 Build the complete declared wheel/sdist set with native `uv build`, the selected
 package and prepared interpreter. Enable the pinned native
