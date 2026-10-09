@@ -266,7 +266,7 @@ def execute(
                 name: readback[name]
                 for name in ("members", "configuration", "targets", "operation")
             },
-            "deadlineSeconds": 900,
+            "deadlineSeconds": 1800,
             "environment": environment,
         },
         "packageHelper": candidate["collection"]["packageHelper"],
@@ -308,7 +308,9 @@ def invoke(  # noqa: PLR0913 - Concrete native phase invocation.
         root,
         directory,
         label,
-        executable("dotnet"),
+        node.read_json(directory / "preparation-request.json")["tools"][
+            "dotnet"
+        ],
         context["application"],
         "ci",
         command,

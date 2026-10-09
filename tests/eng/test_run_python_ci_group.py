@@ -511,3 +511,28 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
     assert [row[0] for row in flow.calls] == ["preparation", "planning"]
     assert not (flow.directory / "result.json").exists()
     assert not (flow.directory / "outcome.json").exists()
+
+
+def test_execution_retains_prepared_sdk_after_late_path_change(
+    flow, monkeypatch
+):
+    """Late adapter activation cannot replace the captured managed receiver."""
+    flow.state["checks"] = [check("python/pytest-v1", "tests/eng/check.py")]
+    group.plan(flow.root, flow.directory)
+    tools = group.node.read_json(flow.directory / "preparation-request.json")[
+        "tools"
+    ]
+    late = str(flow.directory / "late-mise-shims/dotnet")
+    monkeypatch.setattr(group, "executable", lambda _name: late)
+    monkeypatch.setenv("PATH", str(Path(late).parent))
+    outcome = group.execute(flow.root, flow.directory)
+    assert outcome["satisfied"] is True
+    execution = flow.calls[-1]
+    assert execution[0] == "execution"
+    assert execution[1][0] == tools["dotnet"]
+    assert execution[1][0] != late
+    assert execution[2]["environment"]["PATH"] == "/native/bin"
+    assert (
+        execution[2]["environment"]["HOME"]
+        == (execution[2]["environment"]["DOTNET_CLI_HOME"])
+    )
