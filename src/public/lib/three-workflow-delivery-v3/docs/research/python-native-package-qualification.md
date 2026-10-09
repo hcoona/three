@@ -2,20 +2,18 @@
 
 This record defines the finite local package experiment for the accepted
 [execution contract](../middle-level-design.md#native-python-package-execution).
-It is a protocol, not a runtime result. Its delivery PR must independently review
-and protect this exact protocol and executable packet before the first launch.
-The existing Python callers remain active until complete qualification and cutover.
-The [historical campaign's final failure](#final-package-failure-and-spent-campaign)
-retains its failed/spent lifetimes and does not authorize revival. The
-[third corrected-campaign lifetime](#third-lifetime-output-adoption-failure) passed
-native tool preparation, identity and checked product build, then failed output
-adoption. All three package lifetimes are spent; six readiness preparations remain
-separately. The [native output option correction](python-native-packaging.md#native-output-directory-metadata)
-requests UV's directory metadata switch without weakening output checks. Controlled
-coverage does not qualify actual corrected output adoption or consumers. Further
-native package execution requires a new explicit owner grant and accepted exact
-subject/protocol/preparation/readiness with independent actual audit. Earlier admitted
-subjects remain historical and cannot authorize replay, refund or failed-state cleanup.
+It is a protocol, not a package qualification result. The existing Python callers
+remain active until complete qualification and cutover. Historical failed and
+spent campaigns remain unchanged and supply no replay, refund or cleanup authority.
+
+The [fresh output-option package reserve](#fresh-output-option-package-reserve)
+records the owner-approved three-lifetime buffer and exact first subject. Its
+actual readiness and separate independent audit passed; original-wheel and
+Git-free original-sdist consumers remain unqualified. The native
+[output-option correction](python-native-packaging.md#native-output-directory-metadata)
+preserves strict archive checks. Launch still requires independent review and
+protected delivery of this package protocol. Five existing readiness preparations
+remain separately; no new readiness allowance is granted.
 
 ## Question and Scope
 
@@ -1414,3 +1412,162 @@ necessary. The unapproved reserve proposal and the owner's instruction to
 continue preflight create no new package authority. No publication, dispatch,
 credentials, access/Environment changes, replay or failed-state cleanup are
 included.
+
+## Fresh Output-Option Package Reserve
+
+### Current approval and purpose
+
+The owner approved three additional fresh package lifetimes for the repaired
+four-check composition, with at most 32 reserved recipe calls and 600 inclusive
+seconds per lifetime, and 1,800 cumulative inclusive seconds for this new reserve.
+Stop at the first independently accepted complete success and expire unused
+package reserve. A started or uncertain launch consumes a lifetime without refund.
+This is a new campaign, not renewal of any historical grant. The accepted
+[contraction Wave](../../../../../../docs/delivery-wave.md#complete-the-workflow-v3-contraction)
+continues to supply the repository-work authority and exclusions; this accepted
+concrete protocol supplies the bounded native recipe. Independent engineering/OCR
+and record/research review and normal protected merge precede the first launch.
+Owner approval does not substitute for those gates or prove native success.
+
+The prior three corrected-campaign lifetimes remain failed and spent. Readiness13
+subsequently passed under the existing preparation reserve: four of nine
+preparations are spent, five remain, and conservative outer charge is
+12.483163875 seconds within its unchanged 1,260-second cumulative ceiling.
+The existing 120-second individual native interval and eight-Git-read ceiling
+remain unchanged. The new package reserve adds no readiness preparations or time.
+Historical numerical and unapproved labels above retain their admission-time
+meaning; this section is the current exact first package admission and does not
+rewrite those records.
+
+### Exact first subject and completed readiness
+
+The package component remains protected merge
+`042c14c327d9455e85e8b3c5fead35d23c2b387f`, tree
+`76fa334e7792e7a7dad11a5fdfb15b40d6840f16`, under
+[PR #1105](https://github.com/hcoona/three/pull/1105). The separately protected
+readiness-only protocol is merge
+`582dcd2bb50cc9f7d9786cece8331c3986f99f09`, tree
+`5a176262335629af3b7ebb28d01530f47baf29eb`, under
+[PR #1106](https://github.com/hcoona/three/pull/1106). These are distinct component
+and protocol identities. The first launch uses the unchanged packet4,
+preparation13 binding1, runtime13, source13 and checkout6 already reviewed and
+prepared; no recompilation, replacement input, failed archive or historical
+owned state is reused. The nine direct ordinary-preparation subjects in the
+[readiness-only section](#fresh-output-option-subject-readiness-only) remain
+unchanged and are part of this exact admission.
+
+Readiness13 executed once with exit zero, outer elapsed 3.250824856979307 seconds,
+internal native-preparation interval 2.13753450702643 seconds, eight native Git
+reads, 7,633 bound checks over 7,429 distinct paths, matching declared closures
+and completed owned cleanup. The
+[fresh independent actual audit](https://github.com/hcoona/three/pull/1106#issuecomment-6074398652)
+found no material findings, confidence 9/10. Root report/input identity verification
+matched all 10,027 inputs without errors. It qualifies only that exact Linux
+x86_64/glibc 2.38 readiness invocation. Git-private before/after equality is a
+source-bound reported runtime observation; separate historical maps were not
+retained, so it is not an independently reproduced historical comparison or
+proof of no transient effects. The audit preserves sampled supervision limits
+and the independently classified METHOD-001 review-method supplement. It does
+not qualify corrected archive adoption or any package consumer.
+
+The existing carrier retains these original identities; hashes precede any public
+absolute-path aliasing. The exact actual audit and its public delivery supplement
+the unchanged usage receipt's historical audit-pending field.
+
+| First package admission input                                      | SHA256                                                             |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `python-package-native-phases-packet4.json`                        | `fafa1338443415d73924448c50666a69f09679f9e0802cd88b8c176c54fe2d47` |
+| `python-package-native-phases-preparation13-binding1.json`         | `237b6f63f3dc7296d02df6ae3400e1ecd22e26e275b83b916bb6bc2571dd904c` |
+| `python-package-native-phases-runtime13.json`                      | `9ae7aff22c892e1e6194199db389d28700b5550b1017811ed58b201a4b5ebdbc` |
+| `python-package-native-phases-readiness13.py`                      | `1f0ec75622de358079000eba192011f42405303c5be6860e1f6abfa111843e1a` |
+| `python-package-native-phases-readiness13.json`                    | `800f9d171567b5f4c51f983cb39c91f60455cab82547541ba6e3b5b52a238cc8` |
+| `python-package-native-phases-readiness13-execution1-request.json` | `b267e0ab6698f0d0a8703fd9ca7a0980686454314ec491036fc2c2efc8e978a1` |
+| `python-package-native-phases-readiness13-execution1-receipt.json` | `302123cab56faf59c314bbc720e484293af26de1571c886ec4a0caed0f7ac278` |
+| `python-package-readiness13-actual-audit1.md`                      | `f938250f4b9b89e856885bf4ed1571b847bd3da053c87f2ad6621e0ecbe3b4ff` |
+| `python-package-readiness13-actual-audit1-metadata.json`           | `d2603751e52a9b366bf00851ac64d33bab3bbdebcd9f9c2d41fe98a2e380216f` |
+| `python-package-readiness13-actual-audit1-root-verification3.json` | `9a8af724e739b1df0ecff33a9fed2590caf3c4c925cab64872ba029885dda7e4` |
+| `python-package-readiness13-actual-audit1-public-delivery1.json`   | `7923d9c3317c23684b04449fc6a00cc0a14140e48f2e3b9f551413b4c16273d6` |
+| `python-package-readiness13-usage1.json`                           | `791c8b56fc837923a06ce97e8e65757bed7f147ba63f3172c339ff9efe90042c` |
+| `python-package-native-campaign3-owner-authorization1.json`        | `25aec48419399fb02e60fc01bdd245c662646bee2c22e03e2ce04b3b81fe5e62` |
+
+The packet/binding preparation-time unapproved labels remain byte-identical.
+They neither grant nor veto current execution: this independently reviewed,
+protected protocol and the newly recorded owner decision admit the exact packet.
+The frozen binding includes the original prepared/runtime/output/source/tool
+inventories, committed inputs, complete checkout refs/tree/status, compiler
+lineage and exact `bootstrap_argv`; no label mutation changes those identities.
+
+### One invocation and unchanged effects
+
+Invoke the preparation13 binding's exact `bootstrap_argv` once from the carrier,
+wrapped by `/usr/bin/env -i` with only `PATH=/usr/bin:/bin`, `LANG=C.UTF-8`,
+`LC_ALL=C.UTF-8` and `PYTHONDONTWRITEBYTECODE=1`. It selects the pinned Python
+interpreter, `-I -B`, source13 `operator.py observe`, packet4 and the absent
+`python-package-native-campaign3/lifetime-1`. The campaign parent is already a
+real empty nonsymlink directory. Recheck protected direct identities, successful
+readiness/audit carriers, declared inputs and absent lifetime before invocation
+using ordinary reads; no readiness replay is necessary for the unchanged subject.
+A mismatch stops admission without repairing the frozen preparation in place.
+
+Keep the source13 operator, application and native recipe unchanged: credential-free
+frozen native workspace metadata and planning preparation, one frozen both-group
+execution preparation with native editability/default isolation, shared checked
+product wheel/sdist build using `--no-create-gitignore`, strict original output
+and content checks, original-wheel installation/import, and same-tools Git-free,
+offline original-sdist conversion and rebuilt-wheel installation/import. Maintained
+UV/Hatchling/nbgv-python own resolution, metadata and version semantics. There is
+no second resolver, backend roster, custom platform proof or declaration.
+
+Four planning calls, sixteen executor calls reserved before dispatch and three
+success-only inventories give a source-derived estimate of 23 reserved calls;
+actual receipts and uncertain/failed reservations remain authoritative, without
+refund. Retain complete actual request, streams, results, original archives and
+installed-origin/version inventories. Reserve the thirty-second terminal budget,
+retain native Git terminal readback and success-only owned cleanup. Charge
+conservatively from the outer invocation, including bootstrap/runtime copying,
+terminal verification and cleanup, and retain the internal interval separately.
+
+Existing bounds remain: sixty-second native commands, 32 MiB per supervised
+stream, 4 GiB/40,000 observed state entries including checkout and 256 observed
+process-group members. Native public dependency downloads use maintained tool
+interfaces with TLS and disabled keyring; explicit child environment directs
+cache/temp/build/config/LFS/hooks writes into fresh owned state. Prepared .NET,
+NBGV and source inputs remain read-only; the complete Python copy is owned.
+Sampling, deadlines and trusted process supervision are not OS containment,
+strict kernel quotas or exhaustive descendant/network/no-transient-effects proof.
+Auxiliary backend preparation is not claimed to be lock-frozen beyond its native
+contract. Only successful freshly owned state is cleaned; failed state is retained.
+
+### Independent acceptance and remaining reserve
+
+A fresh actual-package auditor, independent of the operator and protocol/preparation
+reviewers, must join actual native metadata and maintained identity, exact plan
+and run request, all four Passed outcomes and complete command receipts,
+original archive names/bytes/hashes/content, tool distribution origins and both
+installed consumer API/origin/version responses. Git-free original-sdist conversion
+must preserve the maintained version without Git/config overrides or metadata
+rewrite; a rebuilt wheel cannot substitute for an original. Verify terminal
+checkout identity/status, actual finite reservations/time/streams/state/process
+observations and completed owned cleanup. Archive presence, source tests,
+readiness and exit zero alone do not establish qualification.
+
+After a failed or uncertain lifetime, stop and obtain independent actual audit and
+separate finding classification before using reserve. Every corrected source,
+helper, tool, runtime, input, checkout or packet requires fresh exact preparation,
+independent engineering and record/research review, protected protocol acceptance
+and separately audited actual readiness. The two later slots are correction buffer,
+not standing permission to replay packet4 or reuse failed state. Those reviewed
+corrections may proceed inside this unchanged finite contract without another
+owner request. Missing necessary capability, broader effects, reduced guarantees
+or exhausted package/readiness limits return to the owner. An uncertain response
+never permits a blind invocation.
+
+Accept only the exact observed Linux package composition. Root pytest preparation,
+paired-impact caller behavior, complete Python CI/cutover, Windows, arbitrary
+backends and Release retain separate requirements and evidence. No registry
+publication, hosted release/proving dispatch, credential acquisition,
+Environment/account/publisher/access change, replay/refund or failed-state cleanup
+is admitted. Original private configuration and historical campaigns remain
+untouched. Recheck native contracts when tool/backend/preparation changes or at
+the next Python integration review; source or local success does not revive a
+historical live-operation grant.

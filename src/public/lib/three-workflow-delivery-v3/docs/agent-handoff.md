@@ -58,12 +58,13 @@ same-tools noneditable conversion. Fresh exact qualification remains pending
 under the accepted package contract. The
 [third-lifetime output adoption failure](./research/python-native-package-qualification.md#third-lifetime-output-adoption-failure)
 records successful native tool preparation, identity and checked product build,
-then failed output adoption. All three package lifetimes are spent; six readiness
-preparations remain separately. The
+then failed output adoption. Historical package lifetimes remain spent. The
+[fresh package reserve](./research/python-native-package-qualification.md#fresh-output-option-package-reserve)
+binds the unchanged, independently audited readiness subject. The
 [native output option correction](./research/python-native-packaging.md#native-output-directory-metadata)
 requests UV's `--no-create-gitignore` on both build paths, preserving strict output
 checks. Controlled coverage does not establish actual corrected output adoption or
-consumers; another package launch needs a new owner grant and accepted exact subject.
+consumers. The approved reserve still requires protected exact package admission.
 Actual original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
 preparation/cutover and Release remain pending. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
