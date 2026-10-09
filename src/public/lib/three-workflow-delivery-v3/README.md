@@ -45,9 +45,13 @@ on the exact Linux subjects; full caller behavior remains pending. The
 [controlled Python package component](../../../private/app/workflow-delivery/README.md#python-package-execution-component)
 implements finite adopted preset expansion, preparation and execution. The
 [final package experiment](docs/research/python-native-package-qualification.md#final-package-failure-and-spent-campaign)
-failed before distribution creation, and all package lifetimes are spent. The
-corrected phase contract has controlled implementation coverage; complete native
-qualification, original wheel and Git-free sdist consumers, caller mapping, root pytest preparation
+failed before distribution creation; that historical campaign is spent. The later
+[editable preparation failure](docs/research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
+leaves native qualification incomplete. Existing controlled tests cover the
+earlier phase implementation; the
+[native tool preparation correction](docs/research/python-native-packaging.md#native-editable-tool-preparation)
+requires implementation and fresh qualification under the package contract.
+Original wheel and Git-free sdist consumers, caller mapping, root pytest preparation
 and cutover, and Release remain pending. The
 [primitive Linux observation](docs/research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. Complete caller qualification and Python

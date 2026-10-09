@@ -111,14 +111,18 @@ lengths and SHA256 identities. Callers retain the original artifact files for
 downstream transfer and consumption.
 Command failure, timeout, cancellation and prerequisite skips remain visible.
 
-Controlled tests cover this component and CLI transfer. The
+Controlled tests cover this component, its existing phase preparation and CLI transfer. The
 [final package experiment](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-package-qualification.md#final-package-failure-and-spent-campaign)
 failed before distribution creation: prebuild noneditable preparation conflicts
-with UV's native workspace requirement. The
-[corrected phase contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-package-execution)
-now has controlled success, conversion failure/cancellation/timeout and original-integrity
-coverage. Complete native qualification remains pending and all historical package
-lifetimes are spent. Existing Python callers,
+with UV's native workspace requirement; that historical campaign is spent. The later
+[editable preparation failure](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
+leaves the existing two-step shared editable preparation unqualified. Controlled
+success, conversion failure/cancellation/timeout and original-integrity coverage
+apply to that earlier implementation. The
+[native tool preparation correction](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-packaging.md#native-editable-tool-preparation)
+still requires implementation and fresh qualification under the
+[package contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-package-execution).
+Existing Python callers,
 root pytest preparation and Release remain active; this component does not
 switch or retire them.
 
