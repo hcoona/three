@@ -51,7 +51,7 @@ internal static class PythonPackageExecution
                 "Python package candidate must be a full commit identity.");
         GitMaterialization materialization = await GitMaterialization.BindAsync(checkout,
             revision, token);
-        await ValidateAsync(plan, request.Members, materialization, token);
+        await ReadChecksAsync(plan, request.Members, materialization, token);
         var results = new Dictionary<CheckKey, CheckResult>();
         var commands = new List<PythonPackageCommand>();
         var distributions = new List<PythonOriginalDistribution>();
@@ -222,7 +222,7 @@ internal static class PythonPackageExecution
             commands.ToArray(), distributions.ToArray(), failures.ToArray());
     }
 
-    private static async Task ValidateAsync(CiPlan plan, PythonMetadataMember[] members,
+    internal static async Task ReadChecksAsync(CiPlan plan, PythonMetadataMember[] members,
         GitMaterialization materialization, CancellationToken token)
     {
         foreach (var group in plan.Checks.GroupBy(item =>

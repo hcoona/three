@@ -111,30 +111,44 @@ lengths and SHA256 identities. Callers retain the original artifact files for
 downstream transfer and consumption.
 Command failure, timeout, cancellation and prerequisite skips remain visible.
 
-Controlled tests cover this component, its existing phase preparation and CLI transfer. The
-[final package experiment](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-package-qualification.md#final-package-failure-and-spent-campaign)
-failed before distribution creation: prebuild noneditable preparation conflicts
-with UV's native workspace requirement; that historical campaign is spent. The later
-[editable preparation failure](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
-records an earlier failed lifetime. The
-[native tool preparation correction](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-packaging.md#native-editable-tool-preparation)
-uses one frozen both-group sync with default isolation and declared editability.
-Controlled tests cover that preparation contract, shared product build, same-tools
-noneditable conversion, preparation failure/cancellation/timeout and original
-integrity. Fresh exact native qualification is still required under the
-[package contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-package-execution). The
-[third-lifetime output adoption failure](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-package-qualification.md#third-lifetime-output-adoption-failure)
-records successful native tool preparation, identity and checked product build,
-then failed output adoption. Historical package lifetimes remain spent. The
-[fresh package reserve](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-package-qualification.md#fresh-output-option-package-reserve)
-binds the unchanged, independently audited readiness subject. The
-[native output option correction](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-packaging.md#native-output-directory-metadata)
-requests UV's `--no-create-gitignore` on both build paths, preserving strict output
-checks. Controlled coverage does not establish actual corrected output adoption or
-consumers. The approved reserve still requires protected exact package admission.
-Existing Python callers,
-root pytest preparation and Release remain active; this component does not
-switch or retire them.
+Controlled scenarios cover phase preparation, failure/cancellation and CLI transfer.
+The [completed corrected Linux package observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-package-qualification.md#completed-corrected-linux-package-observation)
+independently qualifies the exact four-check integration, including original wheel
+and Git-free original-sdist consumers. It retains the audit's separately classified
+filename-discovery method exception. The package campaign is stopped: one lifetime
+spent, both unused package slots expired. Historical failures remain in that evidence
+record; they grant no replay. Existing Python callers, root pytest preparation and
+Release retain separate qualification and cutover requirements.
+
+### Finite Python CI Execution Component
+
+`ci run-python-group <plan.json> <request.json>` receives the original mixed plan
+and native membership, pytest configuration/target bindings and operation context.
+The request contains `native` (checkout, fresh external scratch, UV/interpreter,
+members, configuration, targets, operation, deadline and environment) and
+`packageHelper`. Both supported check partitions are validated against the exact
+candidate before either dispatches. It adds no target roster or dependency resolver.
+For selected work the JSON receiver reuses `uv workspace metadata --frozen` once,
+with a credential-free, offline query environment and an absent owned project
+environment. It checks the complete native name/directory mapping before product
+preparation, then supplies that native answer to both partitions. Opaque IDs stay
+in the receiving native context; no cross-checkout spelling guarantee is assumed.
+
+[`PythonPytestExecution`](CI/PythonPytestExecution.cs) prepares a separate frozen
+UV environment for root plus selected native members, retaining native default
+groups and editability. Each selected target runs through native pytest with the
+bound configuration. Preparation failure leaves all targets unsatisfied; independent
+target failures and cancellation retain complete required results.
+[`PythonGroupExecution`](CI/PythonGroupExecution.cs) keeps separate pytest/package
+scratch, preserves package obligations after pytest failure, and collects both
+partitions against the original plan. Empty partitions perform no product preparation.
+The archive consumer's Git-free scratch boundary is checked before either dispatch.
+
+Controlled Git/command-transfer scenarios cover selection, preparation, partitions,
+results and cancellation. They do not qualify actual root pytest, complete paired
+planning/callers, hosted Python CI, Windows or Release. Existing callers remain until
+that complete consumer group is qualified and switched together under the
+[native Python CI group contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-ci-group).
 
 ### Python Passive Extraction
 
@@ -1142,9 +1156,8 @@ without selecting deleted checks or changing the core's origin/check guards.
 This is a supplied-fact projection, not a second target declaration or native
 collector. Callers must bind complete native graphs and derive actual quality
 bindings from native pytest configuration/adopted checks. The controlled assembly
-below binds supplied targets and actual checks. Complete native collection, quality
-preset expansion, preparation/execution and caller qualification remain pending.
-Existing Python callers remain active. Controlled projection tests execute no
+below binds supplied targets and actual checks. Complete paired caller integration
+and native group qualification remain pending. Existing Python callers remain active. Controlled projection tests execute no
 native Python helper.
 
 ### Controlled Paired Python Fact Assembly

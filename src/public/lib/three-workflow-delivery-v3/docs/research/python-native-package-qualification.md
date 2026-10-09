@@ -1,19 +1,21 @@
-# Native Python Package Qualification Protocol
+# Native Python Package Qualification Protocol and Observation
 
-This record defines the finite local package experiment for the accepted
-[execution contract](../middle-level-design.md#native-python-package-execution).
-It is a protocol, not a package qualification result. The existing Python callers
-remain active until complete qualification and cutover. Historical failed and
-spent campaigns remain unchanged and supply no replay, refund or cleanup authority.
+This record retains the finite local package protocol for the accepted
+[execution contract](../middle-level-design.md#native-python-package-execution)
+and its [completed corrected Linux observation](#completed-corrected-linux-package-observation).
+The exact four-check package integration passed independent actual audit, with its
+separately classified filename-discovery method exception retained. One fresh package
+lifetime was spent and both unused package slots expired; no further launch is authorized.
+Five existing readiness preparations remain separately, with no added allowance.
 
-The [fresh output-option package reserve](#fresh-output-option-package-reserve)
-records the owner-approved three-lifetime buffer and exact first subject. Its
-actual readiness and separate independent audit passed; original-wheel and
-Git-free original-sdist consumers remain unqualified. The native
-[output-option correction](python-native-packaging.md#native-output-directory-metadata)
-preserves strict archive checks. Launch still requires independent review and
-protected delivery of this package protocol. Five existing readiness preparations
-remain separately; no new readiness allowance is granted.
+The campaign/protocol sections below retain their historical admission
+and failure context; they are not current launch permission or current unqualified
+status. The [protected pre-execution protocol](https://github.com/hcoona/three/blob/9992b45b87efb36da524a7fb66b691353ab96aa0/src/public/lib/three-workflow-delivery-v3/docs/research/python-native-package-qualification.md)
+retains the complete original 107,037-byte snapshot and source SHA256
+`ac67837a3756a09b2cbe654d324465fe4dc4ae8dbe74bf6f191d00fcce970da3`.
+Historical failed/spent campaigns remain untouched and supply no replay, refund
+or cleanup authority. Existing Python callers, root pytest and Release retain
+separate qualification and cutover requirements.
 
 ## Question and Scope
 
@@ -1571,3 +1573,60 @@ is admitted. Original private configuration and historical campaigns remain
 untouched. Recheck native contracts when tool/backend/preparation changes or at
 the next Python integration review; source or local success does not revive a
 historical live-operation grant.
+
+## Completed Corrected Linux Package Observation
+
+The protected protocol in [PR #1107](https://github.com/hcoona/three/pull/1107),
+commit `9992b45b87efb36da524a7fb66b691353ab96aa0`, admitted the unchanged
+packet4/preparation13/runtime13/checkout6 subject. The first fresh invocation
+completed on 2026-10-09 against candidate
+`042c14c327d9455e85e8b3c5fead35d23c2b387f`, tree
+`76fa334e7792e7a7dad11a5fdfb15b40d6840f16`, on Linux x86_64/glibc 2.38.
+The [complete independent actual audit](https://github.com/hcoona/three/pull/1107#issuecomment-6076624440)
+joins native metadata/identity, original plan/request, all command receipts,
+original bytes and installed consumers. Its report SHA256 is
+`65e7b847267e60131cec8b5918047561e494a301643d6e789677d18a32d2b56e`.
+
+All four original required checks Passed: distribution set, distribution contents,
+original-wheel install/import and offline Git-free original-sdist
+build/install/import. Native frozen preparation retained declared editability
+through shared checked product creation; the same tools environment was then
+reconciled to noneditable backend/plugin installation for sdist conversion.
+Both builds used `--no-create-gitignore`; exact output adoption succeeded without
+filtering files, rewriting metadata or replacing an original with the rebuilt wheel.
+The maintained version was `0.1.0b166+g042c14c`; both independent clean consumers
+imported the intended installed product with its native version and API.
+
+| Retained original                                                 | Bytes | SHA256                                                             |
+| ----------------------------------------------------------------- | ----: | ------------------------------------------------------------------ |
+| `hcoona_release_smoke_python-0.1.0b166+g042c14c-py3-none-any.whl` | 2,667 | `1e8c1e40ad96bed437e3ebafac6eb9c7a3c5b7cd62d8869ed2dbabc6d6cc3840` |
+| `hcoona_release_smoke_python-0.1.0b166+g042c14c.tar.gz`           | 8,590 | `7c05c5c68d5a91de896b58406f19b583b77d2740fc59b2f47b775a936358ebef` |
+
+The invocation charged 23 reserved recipe calls, including all sixteen executor
+slots before dispatch; fifteen executor receipts actually returned. Its inclusive
+outer duration was 13.506006853 seconds, with internal duration 13.463271426 seconds.
+Terminal candidate/status remained unchanged and successful freshly owned cleanup
+completed after original-byte retention. Observed state was 704,354,962 bytes /
+18,261 entries / 1,096 symlinks, within the accepted ceilings. Trusted sampled
+supervision is not OS containment, strict kernel quotas or exhaustive host/network
+or transient-write proof. Auxiliary backend preparation is not universally lock-frozen.
+
+The actual auditor's initial broad filename/type/size discovery crossed its exact
+scope. The [separate GOV-011 classification and bounded method supplement](https://github.com/hcoona/three/pull/1107#issuecomment-6076626386)
+classifies this as a true positive (10/10), and finds no prohibited historical
+contents opened or relied on in the complete transcript (9/10). Its report SHA256 is
+`a3794f9ae15a1b6d68a98b63e21ea8d16ea612940d6b6578ad2fc64c8b0f3ac1`.
+The original audit/transcript and this explicit method exception are retained;
+the procedure is not relabeled fully compliant. The independent supplement resolves
+the acceptance presentation without a replacement evidence audit or experiment replay.
+
+[Exact package acceptance](https://github.com/hcoona/three/pull/1107#issuecomment-6076634705)
+spent one lifetime and expired both unused package slots at first independently
+accepted complete success. The separate readiness reserve remains five preparations,
+with 12.483163875 of 1,260 cumulative seconds charged; it was not repeated.
+Historical failed campaigns remain spent and untouched.
+
+This observation qualifies only the exact Linux native four-check package integration.
+Root pytest preparation, complete paired callers/Python CI cutover, Windows, arbitrary
+backends and Release remain separate. No registry publication, hosted release/proving
+dispatch, credentials/access change, replay/refund or failed-state cleanup follows.

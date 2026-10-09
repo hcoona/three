@@ -5,15 +5,14 @@
 Use native ecosystem contracts to prepare the existing adopted Python package,
 build its complete wheel/sdist set and consume the original distributions
 without a second dependency declaration or application implementation of UV.
-This is pinned public-source evidence and a narrow design inference. The separate
-[final failed observation](python-native-package-qualification.md#final-package-failure-and-spent-campaign)
-records actual unsuccessful integration. The later
-[editable preparation failure](python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
-also leaves the corrected composition unqualified. The
-[MLD](../middle-level-design.md#native-python-package-execution)
-owns the selected integration; the separate
-[concrete package protocol](python-native-package-qualification.md) and actual
-observation remain prerequisites for qualification.
+The native-interface findings below are pinned public-source evidence and narrow
+design inference. The separate
+[completed corrected Linux observation](python-native-package-qualification.md#completed-corrected-linux-package-observation)
+qualifies the exact four-check integration, retaining the separately classified
+audit-method exception. Historical failures remain in that protocol/evidence record.
+The [MLD](../middle-level-design.md#native-python-package-execution) owns the selected
+integration; actual root pytest, complete paired callers/Python CI and Release retain
+separate qualification requirements.
 
 ## Native UV Responsibility
 
@@ -223,6 +222,9 @@ outputs and retention of completed independent results on later failure. Source 
 controlled coverage do not establish actual corrected output adoption or consumers.
 Historical package lifetimes remain spent. The
 [fresh package reserve](python-native-package-qualification.md#fresh-output-option-package-reserve)
-records the approved buffer and unchanged first subject; native qualification still
-requires protected exact package admission and independent
-actual audit. Existing callers, root pytest and Release remain unchanged.
+records the approved buffer and unchanged first subject. The
+[completed corrected Linux observation](python-native-package-qualification.md#completed-corrected-linux-package-observation)
+now qualifies exact native output adoption and both original consumers, with the
+separately classified audit-method exception retained. One package lifetime was spent
+and both unused slots expired. Existing callers, root pytest and Release retain
+separate qualification requirements.

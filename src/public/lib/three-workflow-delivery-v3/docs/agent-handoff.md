@@ -46,27 +46,16 @@ qualifies native pytest, committed NBGV/quality inputs and producer input mappin
 on the exact retained Linux subjects; full caller behavior remains pending. The
 [controlled Python package component](../../../../private/app/workflow-delivery/README.md#python-package-execution-component)
 implements finite adopted preset expansion, preparation and execution. The
-[final package experiment](./research/python-native-package-qualification.md#final-package-failure-and-spent-campaign)
-failed at native workspace build-requirement checking; all lifetimes of that
-historical campaign are spent. The later
-[editable preparation failure](./research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
-records an earlier failed lifetime. The
-[native tool preparation correction](./research/python-native-packaging.md#native-editable-tool-preparation)
-is implemented with controlled coverage for one frozen both-group sync using
-default isolation and declared editability, retaining shared product build and
-same-tools noneditable conversion. Fresh exact qualification remains pending
-under the accepted package contract. The
-[third-lifetime output adoption failure](./research/python-native-package-qualification.md#third-lifetime-output-adoption-failure)
-records successful native tool preparation, identity and checked product build,
-then failed output adoption. Historical package lifetimes remain spent. The
-[fresh package reserve](./research/python-native-package-qualification.md#fresh-output-option-package-reserve)
-binds the unchanged, independently audited readiness subject. The
-[native output option correction](./research/python-native-packaging.md#native-output-directory-metadata)
-requests UV's `--no-create-gitignore` on both build paths, preserving strict output
-checks. Controlled coverage does not establish actual corrected output adoption or
-consumers. The approved reserve still requires protected exact package admission.
-Actual original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
-preparation/cutover and Release remain pending. The
+[completed corrected Linux package observation](./research/python-native-package-qualification.md#completed-corrected-linux-package-observation)
+independently qualifies its exact four required checks and original wheel/Git-free
+sdist consumers, with the audit's separately classified filename-discovery method
+exception retained. That package campaign is stopped: one lifetime spent and both
+unused package slots expired. The
+[finite Python CI execution component](../../../../private/app/workflow-delivery/README.md#finite-python-ci-execution-component)
+has controlled Git/command-transfer coverage for the original pytest/package plan;
+actual root pytest, complete paired callers/Python CI cutover and Release remain
+separate. Existing callers remain active until their whole consumer group is
+qualified and switched together. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned ordered helper composition; its campaign is stopped and
 both unused diagnostic reserves expired. Complete native caller qualification
