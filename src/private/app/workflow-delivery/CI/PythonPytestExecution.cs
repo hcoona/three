@@ -20,10 +20,21 @@ internal static class PythonPytestExecution
         PythonPytestRunRequest request, CancellationToken token) =>
         RunAsync(plan, request, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<PythonPytestRunResult> RunAsync(CiPlan plan,
+    internal static Task<PythonPytestRunResult> RunAsync(CiPlan plan,
         PythonPytestRunRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
+        => RunAsync(plan, request, execute, false, token);
+
+    // The group has already bound the native membership before dispatching either partition.
+    internal static Task<PythonPytestRunResult> RunBoundAsync(CiPlan plan,
+        PythonPytestRunRequest request, CancellationToken token) =>
+        RunAsync(plan, request, NativeProcess.ExecuteAsync, true, token);
+
+    private static async Task<PythonPytestRunResult> RunAsync(CiPlan plan,
+        PythonPytestRunRequest request,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        bool membershipBound, CancellationToken token)
     {
         string checkout = Absolute(request.Checkout), scratch = Absolute(request.Scratch);
         _ = Absolute(request.Interpreter);
@@ -40,6 +51,8 @@ internal static class PythonPytestExecution
         await GitMaterialization.BindAsync(checkout, revision, token);
         ReadChecks(plan, request, revision);
         if (plan.Checks.Length == 0) return new(plan.Candidate, [], [], []);
+        if (!membershipBound)
+            request = await BindMembershipAsync(request, execute, token);
 
         var commands = new List<PythonPytestCommand>();
         var failures = new List<PythonPytestFailure>();
@@ -122,6 +135,51 @@ internal static class PythonPytestExecution
 
         bool Within(string child, string parent) => child.Equals(parent, paths) ||
             child.StartsWith(parent + Path.DirectorySeparatorChar, paths);
+    }
+
+    internal static async Task<PythonPytestRunRequest> BindMembershipAsync(
+        PythonPytestRunRequest request,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token)
+    {
+        // Query only: no sync, resolution, backend or user environment inheritance.
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (string name in System.Environment.GetEnvironmentVariables().Keys)
+            environment[name] = null;
+        foreach (string name in new[] { "PATH", "SystemRoot", "WINDIR", "PATHEXT" })
+            environment[name] = request.Environment.TryGetValue(name, out string? value)
+                ? value : System.Environment.GetEnvironmentVariable(name);
+        string home = Path.Combine(request.Scratch, "metadata-home");
+        environment["HOME"] = home;
+        environment["USERPROFILE"] = home;
+        environment["XDG_CONFIG_HOME"] = Path.Combine(home, "config");
+        environment["XDG_CACHE_HOME"] = Path.Combine(home, "cache");
+        environment["XDG_DATA_HOME"] = Path.Combine(home, "data");
+        environment["TMPDIR"] = request.Scratch;
+        environment["TEMP"] = request.Scratch;
+        environment["TMP"] = request.Scratch;
+        environment["LANG"] = "C.UTF-8";
+        environment["LC_ALL"] = "C.UTF-8";
+        environment["UV_CACHE_DIR"] = Path.Combine(request.Scratch, "metadata-cache");
+        string projectEnvironment = Path.Combine(request.Scratch, "metadata-project-environment");
+        environment["UV_PROJECT_ENVIRONMENT"] = projectEnvironment;
+        environment["UV_OFFLINE"] = "1";
+        environment["UV_PYTHON_DOWNLOADS"] = "never";
+        environment["UV_NO_PROGRESS"] = "1";
+        environment["PYTHONNOUSERSITE"] = "1";
+        environment["PYTHONSAFEPATH"] = "1";
+        environment["PYTHONDONTWRITEBYTECODE"] = "1";
+        PythonMetadata metadata = await new PythonMetadataReader(execute).ReadAsync(
+            request.Checkout, request.Uv, request.Interpreter, environment, token);
+        token.ThrowIfCancellationRequested();
+        if (Directory.Exists(projectEnvironment) || File.Exists(projectEnvironment) ||
+            metadata.Members.Length != request.Members.Length ||
+            metadata.Members.Any(member => !request.Members.Any(supplied =>
+                supplied.Directory == member.Directory && supplied.Name == member.Name)))
+            throw new InvalidDataException(
+                "Native Python membership transfer differs from candidate.");
+        // Opaque IDs belong to this native answer; their spelling is not a portable identity.
+        return request with { Members = metadata.Members };
     }
 
     internal static void ReadChecks(CiPlan plan, PythonPytestRunRequest request,

@@ -40,6 +40,14 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         CollectionAssert.AreEqual(new[] { selected.Checks[0].Work.Key },
             result.Commands[1].Checks);
         Assert.IsEmpty(result.Failures);
+        NativeCommand query = Assert.ContainsSingle(fixture.Queries);
+        CollectionAssert.AreEqual(new[] { "workspace", "metadata", "--frozen", "--python",
+            fixture.Request.Interpreter }, query.Arguments);
+        Assert.AreEqual("1", query.Environment!["UV_OFFLINE"]);
+        Assert.IsNull(query.Environment.GetValueOrDefault("PYTEST_ADDOPTS"));
+        Assert.AreEqual(Path.Combine(fixture.Scratch, "metadata-project-environment"),
+            query.Environment["UV_PROJECT_ENVIRONMENT"]);
+        Assert.IsFalse(Directory.Exists(query.Environment["UV_PROJECT_ENVIRONMENT"]));
     }
 
     [TestMethod]
@@ -204,6 +212,51 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         Assert.IsEmpty(fixture.Commands);
     }
 
+    [TestMethod]
+    [DataRow("unique-name")]
+    [DataRow("swap")]
+    [DataRow("coordinated")]
+    public async Task CandidateMembershipMismatchStopsBeforeProductPreparation(string defect)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        PythonPytestRunRequest request = fixture.Request;
+        PythonMetadataMember[] members = request.Members.ToArray();
+        if (defect == "unique-name") members[1] = members[1] with { Name = "other-unique" };
+        if (defect == "swap")
+        {
+            members[1] = members[1] with { Name = request.Members[3].Name };
+            members[3] = members[3] with { Name = request.Members[1].Name };
+        }
+        if (defect == "coordinated")
+            request = request with
+            {
+                Members = [members[0], .. members[2..]],
+                Targets = request.Targets with { Targets = [request.Targets.Targets[0],
+                    request.Targets.Targets[1] with { Member = null,
+                        Inputs = ["pkg-a/tests/test_a.py"] }, request.Targets.Targets[2]] },
+            };
+        else request = request with { Members = members };
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(fixture.Plan, context.CancellationToken, request));
+        Assert.ContainsSingle(fixture.Queries);
+        Assert.IsEmpty(fixture.Commands);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+    }
+
+    [TestMethod]
+    public async Task ReorderedMembershipUsesIdsFromReceivingNativeContext()
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        PythonPytestRunRequest request = fixture.Request with
+        { Members = fixture.Request.Members.Reverse().Select(member => member with
+            { Id = "previous-context:" + member.Id }).ToArray() };
+        PythonPytestRunResult result = await fixture.RunAsync(fixture.Plan,
+            context.CancellationToken, request);
+        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+        Assert.ContainsSingle(fixture.Queries);
+        CollectionAssert.AreEquivalent(QualityPackages, Packages(result.Commands[0].Command));
+    }
+
     private static string[] Packages(NativeCommand command) => command.Arguments
         .Zip(command.Arguments.Skip(1)).Where(pair => pair.First == "--package")
         .Select(pair => pair.Second).ToArray();
@@ -216,6 +269,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         internal PythonPytestRunRequest Request { get; } = request;
         internal string Scratch => Request.Scratch;
         internal List<NativeCommand> Commands { get; } = [];
+        internal List<NativeCommand> Queries { get; } = [];
         internal string? Failure { get; set; }
         internal NativeTermination Termination { get; set; } = NativeTermination.Exited;
         internal Action<NativeCommand>? After { get; set; }
@@ -274,6 +328,12 @@ public sealed class PythonPytestExecutionTests(TestContext context)
             CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
+            if (command.Arguments[0] == "workspace")
+            {
+                Queries.Add(command);
+                return Task.FromResult(PythonExecutionMetadata.Result(Repo.Directory,
+                    Request.Members));
+            }
             Commands.Add(command);
             After?.Invoke(command);
             bool fail = command.Arguments[0] == Failure || command.Arguments[^1] == Failure;

@@ -128,6 +128,11 @@ The request contains `native` (checkout, fresh external scratch, UV/interpreter,
 members, configuration, targets, operation, deadline and environment) and
 `packageHelper`. Both supported check partitions are validated against the exact
 candidate before either dispatches. It adds no target roster or dependency resolver.
+For selected work the JSON receiver reuses `uv workspace metadata --frozen` once,
+with a credential-free, offline query environment and an absent owned project
+environment. It checks the complete native name/directory mapping before product
+preparation, then supplies that native answer to both partitions. Opaque IDs stay
+in the receiving native context; no cross-checkout spelling guarantee is assumed.
 
 [`PythonPytestExecution`](CI/PythonPytestExecution.cs) prepares a separate frozen
 UV environment for root plus selected native members, retaining native default

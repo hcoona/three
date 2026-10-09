@@ -1,3 +1,4 @@
+using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.CI;
@@ -11,13 +12,15 @@ internal static class PythonGroupExecution
 {
     internal static Task<PythonGroupRunResult> RunAsync(CiPlan plan,
         PythonGroupRunRequest request, CancellationToken token) => RunAsync(plan, request,
-            PythonPytestExecution.RunAsync, PythonPackageExecution.RunAsync, token);
+            PythonPytestExecution.RunBoundAsync, PythonPackageExecution.RunAsync,
+            NativeProcess.ExecuteAsync, token);
 
     internal static async Task<PythonGroupRunResult> RunAsync(CiPlan plan,
         PythonGroupRunRequest request,
         Func<CiPlan, PythonPytestRunRequest, CancellationToken, Task<PythonPytestRunResult>> pytest,
         Func<CiPlan, PythonPackageRunRequest, CancellationToken, Task<PythonPackageRunResult>>
             packages,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> metadata,
         CancellationToken token)
     {
         ResultCollector.Collect(plan, []);
@@ -64,6 +67,8 @@ internal static class PythonGroupExecution
         PythonPytestExecution.ReadChecks(pytestPlan, native, revision);
         await PythonPackageExecution.ReadChecksAsync(packagePlan, native.Members,
             materialization, token);
+        if (plan.Checks.Length != 0)
+            native = await PythonPytestExecution.BindMembershipAsync(native, metadata, token);
 
         PythonPytestRunResult retained;
         try

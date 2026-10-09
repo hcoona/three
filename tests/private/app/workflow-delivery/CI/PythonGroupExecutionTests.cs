@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 using WorkflowDelivery.Tests.Repository;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
@@ -19,6 +20,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
         Assert.AreEqual(fixture.Plan.Candidate, result.Candidate);
         Assert.HasCount(5, result.Results);
         Assert.HasCount(2, fixture.Partitions);
+        Assert.ContainsSingle(fixture.Queries);
         Assert.HasCount(1, fixture.Partitions[0].Checks);
         Assert.HasCount(4, fixture.Partitions[1].Checks);
         foreach (CiPlan partition in fixture.Partitions)
@@ -172,6 +174,72 @@ public sealed class PythonGroupExecutionTests(TestContext context)
         Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
     }
 
+    [TestMethod]
+    [DataRow("root-name")]
+    [DataRow("package-name")]
+    [DataRow("swap")]
+    public async Task CliMembershipMismatchRejectsBothPartitionsBeforeDispatch(string defect)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var files = new DriverFiles();
+        PythonMetadataMember[] members = fixture.Request.Native.Members.ToArray();
+        if (defect == "root-name") members[0] = members[0] with { Name = "other-root" };
+        if (defect == "package-name") members[1] = members[1] with { Name = "other-product" };
+        if (defect == "swap")
+        {
+            members[0] = members[0] with { Name = fixture.Request.Native.Members[1].Name };
+            members[1] = members[1] with { Name = fixture.Request.Native.Members[0].Name };
+        }
+        string plan = Path.Combine(files.Root, "plan.json"), request = Path.Combine(files.Root,
+            "request.json");
+        await File.WriteAllTextAsync(plan, JsonSerializer.Serialize(fixture.Plan,
+            TransferJson.Default.CiPlan), context.CancellationToken);
+        await File.WriteAllTextAsync(request, JsonSerializer.Serialize(fixture.Request with
+        { Native = fixture.Request.Native with { Members = members } },
+            TransferJson.Default.PythonGroupRunRequest), context.CancellationToken);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        int exit = Program.Run(["ci", "run-python-group", plan, request], output, error,
+            runPythonGroup: (receivedPlan, receivedRequest, token) =>
+                fixture.RunAsync(token, receivedPlan, receivedRequest));
+        Assert.AreEqual(2, exit);
+        Assert.AreEqual("", output.ToString());
+        Assert.Contains("membership transfer differs", error.ToString());
+        Assert.ContainsSingle(fixture.Queries);
+        Assert.IsEmpty(fixture.Partitions);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+    }
+
+    [TestMethod]
+    [DataRow("failed-query")]
+    [DataRow("missing-member")]
+    [DataRow("created-environment")]
+    public async Task UnavailableNativeMembershipStopsBothProductPartitions(string defect)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        fixture.MetadataDefect = defect;
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(context.CancellationToken));
+        Assert.ContainsSingle(fixture.Queries);
+        Assert.IsEmpty(fixture.Partitions);
+        Assert.IsFalse(Directory.Exists(Path.Combine(fixture.Scratch, "pytest")));
+        Assert.IsFalse(Directory.Exists(Path.Combine(fixture.Scratch, "packages")));
+    }
+
+    [TestMethod]
+    public async Task BothPartitionsReceiveTheSingleNativeMembershipContext()
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        PythonGroupRunRequest request = fixture.Request with
+        { Native = fixture.Request.Native with { Members = fixture.Request.Native.Members
+            .Reverse().Select(member => member with { Id = "previous:" + member.Id }).ToArray() } };
+        PythonGroupRunResult result = await fixture.RunAsync(context.CancellationToken,
+            request: request);
+        Assert.IsTrue(result.Outcome.Satisfied);
+        Assert.ContainsSingle(fixture.Queries);
+        Assert.HasCount(2, fixture.Partitions);
+    }
+
     private sealed class DriverFiles : IDisposable
     {
         internal string Root { get; } =
@@ -188,9 +256,11 @@ public sealed class PythonGroupExecutionTests(TestContext context)
         internal string Scratch => Request.Native.Scratch;
         internal List<CiPlan> Partitions { get; } = [];
         internal List<string> Scratches { get; } = [];
+        internal List<NativeCommand> Queries { get; } = [];
         internal CheckStatus PytestStatus { get; set; } = CheckStatus.Passed;
         internal bool DropPackageResult { get; set; }
         internal CancellationTokenSource? Cancel { get; set; }
+        internal string? MetadataDefect { get; set; }
 
         internal static async Task<Fixture> CreateAsync(CancellationToken token)
         {
@@ -246,11 +316,27 @@ public sealed class PythonGroupExecutionTests(TestContext context)
 
         internal Task<PythonGroupRunResult> RunAsync(CancellationToken token, CiPlan? plan = null,
             PythonGroupRunRequest? request = null) => PythonGroupExecution.RunAsync(plan ?? Plan,
-                request ?? Request, RunPytestAsync, RunPackagesAsync, token);
+                request ?? Request, RunPytestAsync, RunPackagesAsync, ReadMetadataAsync, token);
+
+        private Task<NativeCommandResult> ReadMetadataAsync(NativeCommand command,
+            CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            Queries.Add(command);
+            if (MetadataDefect == "failed-query")
+                return Task.FromResult(new NativeCommandResult(NativeTermination.Exited,
+                    1, "", "controlled failure", 0.1, null));
+            if (MetadataDefect == "created-environment")
+                Directory.CreateDirectory(command.Environment!["UV_PROJECT_ENVIRONMENT"]!);
+            return Task.FromResult(PythonExecutionMetadata.Result(Repo.Directory,
+                MetadataDefect == "missing-member" ? Request.Native.Members[..1] :
+                    Request.Native.Members));
+        }
 
         private Task<PythonPytestRunResult> RunPytestAsync(CiPlan plan,
             PythonPytestRunRequest request, CancellationToken token)
         {
+            CollectionAssert.AreEquivalent(Request.Native.Members, request.Members);
             Partitions.Add(plan); Scratches.Add(request.Scratch);
             Cancel?.Cancel(); token.ThrowIfCancellationRequested();
             return Task.FromResult(new PythonPytestRunResult(plan.Candidate,
@@ -260,6 +346,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
         private Task<PythonPackageRunResult> RunPackagesAsync(CiPlan plan,
             PythonPackageRunRequest request, CancellationToken token)
         {
+            CollectionAssert.AreEquivalent(Request.Native.Members, request.Members);
             token.ThrowIfCancellationRequested();
             Partitions.Add(plan); Scratches.Add(request.Scratch);
             CheckResult[] results = plan.Checks.Select(item => new CheckResult(plan.Candidate,
