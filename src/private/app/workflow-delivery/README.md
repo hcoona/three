@@ -27,8 +27,16 @@ targets or suppressing native Python effects. Legacy Python heuristics cannot
 declare unknown scope unaffected. The readback carries the original plan and
 candidate-native membership, configuration, targets and operation for execution.
 
-Controlled Git/command scenarios cover this composition. Query-tool installation,
-Linux supplement compilation, endpoint lifecycle, actual root pytest and atomic
+`ci prepare-python-group <request.json>` prepares the supplied candidate control
+sources with native manifest-selected Rust and locked Cargo compilation, and installs
+each endpoint's frozen, noneditable query-tool groups after native NBGV tool restore.
+Its owned credential-free contexts keep installed helper environments separate from
+absent metadata/activity environments, preserve the prepared NBGV context for later
+queries, and supply the existing group request without selecting or executing products.
+Required native preparation failures and cancellation stop completion.
+
+Controlled Git/command scenarios cover collection and supplied-command preparation.
+Actual Linux tool installation/compilation, endpoint lifecycle, root pytest and atomic
 root/local/smoke caller qualification remain separate pending integration work.
 These internal components do not change existing callers or qualify a native
 campaign, Release or publication.

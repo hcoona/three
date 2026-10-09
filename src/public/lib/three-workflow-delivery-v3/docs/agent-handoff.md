@@ -57,7 +57,8 @@ actual root pytest, complete paired callers/Python CI cutover and Release remain
 separate. The [prepared endpoint collector](../../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
 composes existing readers and paired selection with controlled coverage. Its
 prepared group CLI binds exact scope/endpoints and transfers candidate-native
-execution context; query-tool preparation and complete caller qualification remain
+execution context. Its native query-tool preparation component has controlled
+command coverage; actual Linux preparation and complete caller qualification remain
 pending.
 Existing callers remain active until their whole consumer group is
 qualified and switched together. The

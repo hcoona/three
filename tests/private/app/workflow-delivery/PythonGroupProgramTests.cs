@@ -11,6 +11,90 @@ public sealed class PythonGroupProgramTests
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
+    public void PreparationTransferRetainsOriginalEndpointAndToolContext(bool full)
+    {
+        PythonGroupRequest prepared = Request(full);
+        var request = new PythonGroupPreparationRequest(prepared.Basis.Checkout,
+            prepared.Candidate.Checkout, full, prepared.ScopePath, "/control/python sources",
+            "/state/preparation", new("/tools/uv", "/runtime/python", "/tools/dotnet",
+                "/tools/rustup", "/tools/cargo"), prepared.Candidate.Collection.Operation, 600);
+        string directory = Path.Combine(Path.GetTempPath(), "python preparation transfer " +
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            string path = Path.Combine(directory, "request.json");
+            File.WriteAllText(path, JsonSerializer.Serialize(request,
+                TransferJson.Default.PythonGroupPreparationRequest));
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            int exit = Program.Run(["ci", "prepare-python-group", path], output, error,
+                preparePythonGroup: (received, _) =>
+                {
+                    Assert.AreEqual(request.Basis, received.Basis);
+                    Assert.AreEqual(request.Candidate, received.Candidate);
+                    Assert.AreEqual(full, received.Full);
+                    Assert.AreEqual(request.Tools, received.Tools);
+                    Assert.AreEqual("/control/python sources", received.ControlSources);
+                    Assert.AreEqual(600, received.DeadlineSeconds);
+                    return Task.FromResult(new PythonGroupPreparationResult(prepared, []));
+                });
+            Assert.AreEqual(0, exit, error.ToString());
+            Assert.AreEqual("", error.ToString());
+            PythonGroupPreparationResult result = JsonSerializer.Deserialize(output.ToString(),
+                TransferJson.Default.PythonGroupPreparationResult)!;
+            Assert.AreEqual(prepared.Basis.Checkout, result.Request.Basis.Checkout);
+            Assert.AreEqual(prepared.Candidate.Checkout, result.Request.Candidate.Checkout);
+            Assert.AreEqual(full, result.Request.Full);
+            Assert.AreEqual(prepared.Candidate.Collection.Graph,
+                result.Request.Candidate.Collection.Graph);
+            Assert.IsEmpty(result.Commands);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [TestMethod]
+    [DataRow("null")]
+    [DataRow("malformed")]
+    [DataRow("missing-context")]
+    [DataRow("native-failure")]
+    public void InvalidOrFailedPreparationCannotEmitCompletedRequest(string defect)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "python preparation invalid " +
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            string path = Path.Combine(directory, "request.json");
+            PythonGroupRequest prepared = Request(false);
+            var request = new PythonGroupPreparationRequest(prepared.Basis.Checkout,
+                prepared.Candidate.Checkout, false, prepared.ScopePath, "/control", "/state",
+                new("/tools/uv", "/runtime/python", "/tools/dotnet", "/tools/rustup",
+                    "/tools/cargo"),
+                prepared.Candidate.Collection.Operation, 600);
+            File.WriteAllText(path, defect switch
+            {
+                "null" => "null",
+                "malformed" => "{",
+                "missing-context" => "{}",
+                _ => JsonSerializer.Serialize(request,
+                    TransferJson.Default.PythonGroupPreparationRequest)
+            });
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            int exit = Program.Run(["ci", "prepare-python-group", path], output, error,
+                preparePythonGroup: (_, _) =>
+                    throw new InvalidDataException("Required preparation failed."));
+            Assert.AreEqual(2, exit);
+            Assert.AreEqual("", output.ToString());
+            Assert.IsNotEmpty(error.ToString());
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     public void PreparedGroupTransferRetainsNativeCandidateContext(bool full)
     {
         PythonGroupRequest request = Request(full);
