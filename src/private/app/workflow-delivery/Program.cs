@@ -21,10 +21,23 @@ internal static class Program
         Func<CiPlan, PythonPackageRunRequest, CancellationToken, Task<PythonPackageRunResult>>?
             runPythonPackage = null,
         Func<CiPlan, PythonGroupRunRequest, CancellationToken, Task<PythonGroupRunResult>>?
-            runPythonGroup = null)
+            runPythonGroup = null,
+        Func<PythonGroupRequest, CancellationToken, Task<PythonGroupReadback>>?
+            planPythonGroup = null)
     {
         try
         {
+            if (args is ["ci", "plan-python-group", var pythonGroupPath])
+            {
+                PythonGroupRequest request = JsonSerializer.Deserialize(
+                    File.ReadAllText(pythonGroupPath), TransferJson.Default.PythonGroupRequest)
+                    ?? throw new InvalidDataException("Missing native Python group request.");
+                PythonGroupReadback result = (planPythonGroup ?? PythonGroupReader.ReadAsync)(
+                    request, CancellationToken.None).GetAwaiter().GetResult();
+                output.WriteLine(JsonSerializer.Serialize(result,
+                    TransferJson.Default.PythonGroupReadback));
+                return 0;
+            }
             if (args is ["ci", "run-python-group", var pythonGroupPlanPath,
                 var pythonGroupRequestPath])
             {
@@ -173,6 +186,7 @@ internal static class Program
                     + " | ci plan-node <request.json>"
                     + " | ci plan-node-group <request.json>"
                     + " | ci plan-dotnet-group <request.json>"
+                    + " | ci plan-python-group <request.json>"
                     + " | ci run-dotnet <plan.json> <request.json>"
                     + " | ci run-python-package <plan.json> <request.json>"
                     + " | ci run-python-group <plan.json> <request.json>"
@@ -217,6 +231,8 @@ internal static class Program
 [JsonSerializable(typeof(PythonPackageRunResult))]
 [JsonSerializable(typeof(PythonGroupRunRequest))]
 [JsonSerializable(typeof(PythonGroupRunResult))]
+[JsonSerializable(typeof(PythonGroupRequest))]
+[JsonSerializable(typeof(PythonGroupReadback))]
 [JsonSerializable(typeof(NodePlanRequest))]
 [JsonSerializable(typeof(NodeGroupRequest))]
 [JsonSerializable(typeof(NodeGroupReadback))]

@@ -55,8 +55,10 @@ unused package slots expired. The
 has controlled Git/command-transfer coverage for the original pytest/package plan;
 actual root pytest, complete paired callers/Python CI cutover and Release remain
 separate. The [prepared endpoint collector](../../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
-composes existing readers and paired selection with controlled coverage; query-tool
-preparation and complete caller qualification remain pending.
+composes existing readers and paired selection with controlled coverage. Its
+prepared group CLI binds exact scope/endpoints and transfers candidate-native
+execution context; query-tool preparation and complete caller qualification remain
+pending.
 Existing callers remain active until their whole consumer group is
 qualified and switched together. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)

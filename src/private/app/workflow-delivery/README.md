@@ -19,6 +19,14 @@ quality adoption fail collection. `PythonGroupPlanning` joins both endpoint
 answers and repository input reasons through the existing paired assembler and
 shared impact planner, retaining explicit full mode and explainable empty scope.
 
+`ci plan-python-group <request.json>` binds the existing transferred scope to both
+exact checkouts, requires one actual interpreter and one supplied control helper set,
+and collects each endpoint before selection. Other retained job/record
+responsibilities resolve unrelated repository coordinates without supplying Python
+targets or suppressing native Python effects. Legacy Python heuristics cannot
+declare unknown scope unaffected. The readback carries the original plan and
+candidate-native membership, configuration, targets and operation for execution.
+
 Controlled Git/command scenarios cover this composition. Query-tool installation,
 Linux supplement compilation, endpoint lifecycle, actual root pytest and atomic
 root/local/smoke caller qualification remain separate pending integration work.
