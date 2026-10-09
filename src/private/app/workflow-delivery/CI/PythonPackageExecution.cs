@@ -104,6 +104,7 @@ internal static class PythonPackageExecution
                                 throw new InvalidDataException(
                                     "Native Python version projection differs.");
                             await UvAsync(checkout, ["build", "--package", name,
+                                "--no-create-gitignore",
                                 "--no-build-isolation", "--python", python, "--out-dir", archives,
                                 "--preview-features", "build-dependency-check"]);
                             // Build checks completeness and native output identity.
@@ -155,7 +156,8 @@ internal static class PythonPackageExecution
                                 string rebuilt = Directory.CreateDirectory(Path.Combine(consumer,
                                     "rebuilt")).FullName;
                                 await RunAsync(new(request.Uv, consumer, ["build", original.Path,
-                                    "--wheel", "--no-build-isolation", "--python", python,
+                                    "--wheel", "--no-create-gitignore", "--no-build-isolation",
+                                    "--python", python,
                                     "--out-dir", rebuilt, "--preview-features",
                                     "build-dependency-check", "--offline"], request.DeadlineSeconds,
                                     neutral));

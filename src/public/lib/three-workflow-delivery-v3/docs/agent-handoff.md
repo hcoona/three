@@ -50,15 +50,21 @@ implements finite adopted preset expansion, preparation and execution. The
 failed at native workspace build-requirement checking; all lifetimes of that
 historical campaign are spent. The later
 [editable preparation failure](./research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
-leaves the corrected composition unqualified. The
+records an earlier failed lifetime. The
 [native tool preparation correction](./research/python-native-packaging.md#native-editable-tool-preparation)
 is implemented with controlled coverage for one frozen both-group sync using
 default isolation and declared editability, retaining shared product build and
 same-tools noneditable conversion. Fresh exact qualification remains pending
 under the accepted package contract. The
-[fresh corrected subject](./research/python-native-package-qualification.md#default-isolated-tool-preparation-subject)
-binds the prepared packet and separately gated readiness before launch. Actual
-original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
+[third-lifetime output adoption failure](./research/python-native-package-qualification.md#third-lifetime-output-adoption-failure)
+records successful native tool preparation, identity and checked product build,
+then failed output adoption. All three package lifetimes are spent; six readiness
+preparations remain separately. The
+[native output option correction](./research/python-native-packaging.md#native-output-directory-metadata)
+requests UV's `--no-create-gitignore` on both build paths, preserving strict output
+checks. Controlled coverage does not establish actual corrected output adoption or
+consumers; another package launch needs a new owner grant and accepted exact subject.
+Actual original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
 preparation/cutover and Release remain pending. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned ordered helper composition; its campaign is stopped and

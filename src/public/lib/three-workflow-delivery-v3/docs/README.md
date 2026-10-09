@@ -68,14 +68,19 @@ implements finite adopted preset expansion, preparation and execution. The
 failed at native workspace build-requirement checking; that historical campaign
 is spent. The later
 [editable preparation failure](./research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
-leaves native qualification incomplete. Controlled tests now cover the
+records an earlier failed lifetime. Controlled tests now cover the
 [native tool preparation correction](./research/python-native-packaging.md#native-editable-tool-preparation):
 one frozen both-group sync with default isolation and declared editability,
 retaining shared product build and same-tools noneditable conversion. Fresh exact
 native qualification remains pending under the package contract. The
-[fresh corrected subject](./research/python-native-package-qualification.md#default-isolated-tool-preparation-subject)
-binds the prepared packet and separately gated readiness before launch. Actual
-original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
+[third-lifetime output adoption failure](./research/python-native-package-qualification.md#third-lifetime-output-adoption-failure)
+records successful tool preparation and product build, then failed output adoption.
+All three package lifetimes are spent; six readiness preparations remain separately.
+The [native output option correction](./research/python-native-packaging.md#native-output-directory-metadata)
+requests UV's directory metadata switch on both builds, preserving strict checks.
+Controlled coverage does not qualify corrected native adoption or consumers; a new
+package launch requires a new finite owner grant and accepted exact subject.
+Actual original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
 preparation/cutover and Release remain pending. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. Complete native caller qualification
 and caller mapping remain pending. The enrichment campaign and cleanup are
@@ -247,11 +252,15 @@ supplies the source basis for the MLD's phase-specific frozen native preparation
 and candidate Git-free version reuse. The
 [finite package protocol](./research/python-native-package-qualification.md)
 retains historical subjects and corrected-campaign outcomes. Its
-[editable preparation failure](./research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
-routes the remaining conditional allowance and correction gates. The
-[fresh corrected subject](./research/python-native-package-qualification.md#default-isolated-tool-preparation-subject)
-binds its exact prepared packet and readiness source under that allowance;
-actual package execution remains unqualified. Historical failed successors
+[third-lifetime output adoption failure](./research/python-native-package-qualification.md#third-lifetime-output-adoption-failure)
+records successful native tool preparation and product build, failed output adoption
+and all three spent package lifetimes. The
+[native output option correction](./research/python-native-packaging.md#native-output-directory-metadata)
+uses UV's output metadata switch on both builds while preserving strict output checks;
+controlled coverage does not establish actual output adoption or consumers.
+Six readiness preparations remain, separately from exhausted package authority.
+Further package execution requires a new owner grant and accepted exact subject.
+Historical failed successors
 supply no replay or cleanup authority.
 
 The [Python native planning source assessment](./research/python-native-planning.md)

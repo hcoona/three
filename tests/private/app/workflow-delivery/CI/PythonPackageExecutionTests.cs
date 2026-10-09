@@ -43,6 +43,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             item => item.Output.Kind == "python-sdist").Path,
             gitFree.Arguments);
         Assert.Contains("--offline", gitFree.Arguments);
+        Assert.Contains("--no-create-gitignore", gitFree.Arguments);
         Assert.Contains("build-dependency-check", gitFree.Arguments);
         Assert.IsNull(gitFree.Environment!["GIT_DIR"]);
         Assert.IsFalse(gitFree.Directory.StartsWith(fixture.Repo.Directory,
@@ -84,6 +85,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         NativeCommand sourceBuild = builds.Single(command =>
             !command.Arguments.Contains("--wheel"));
         Assert.Contains("build-dependency-check", sourceBuild.Arguments);
+        Assert.Contains("--no-create-gitignore", sourceBuild.Arguments);
         Assert.Contains("--no-build-isolation", sourceBuild.Arguments);
         string preparedPython = sourceBuild.Arguments[
             Array.IndexOf(sourceBuild.Arguments, "--python") + 1];
@@ -193,6 +195,42 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         {
             Assert.IsEmpty(result.Distributions);
             Assert.IsEmpty(result.Commands.Where(item => item.Command.Arguments[0] != "sync"));
+        }
+    }
+
+    [TestMethod]
+    [DataRow("source-extra-output", PythonPackageChecks.Build)]
+    [DataRow("source-unreported-output", PythonPackageChecks.Build)]
+    [DataRow("sdist-extra-output", PythonPackageChecks.Sdist)]
+    public async Task ExtraBuildOutputFailsRequiredCheckAndStopsItsConsumers(
+        string failure, string failedCheck)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        fixture.Failure = failure;
+        PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
+
+        Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
+            item.Key.Check == failedCheck).Status);
+        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+        Assert.HasCount(4, result.Results);
+        PythonPackageFailure error = Assert.ContainsSingle(result.Failures);
+        Assert.AreEqual(failedCheck, error.Check.Check);
+        Assert.IsEmpty(result.Commands.Where(item => item.Command.Arguments.Contains("consume") &&
+            (failedCheck == PythonPackageChecks.Build || item.Check.Check == failedCheck)));
+        if (failedCheck == PythonPackageChecks.Build)
+        {
+            Assert.IsEmpty(result.Distributions);
+            Assert.IsTrue(result.Results.Where(item => item.Key.Check != failedCheck)
+                .All(item => item.Status == CheckStatus.Skipped));
+        }
+        else
+        {
+            Assert.HasCount(2, result.Distributions);
+            Assert.IsTrue(result.Results.Where(item => item.Key.Check != failedCheck)
+                .All(item => item.Status == CheckStatus.Passed));
+            foreach (PythonOriginalDistribution original in result.Distributions)
+                Assert.AreEqual("original", await File.ReadAllTextAsync(original.Path,
+                    context.CancellationToken));
         }
     }
 
@@ -467,6 +505,15 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             if (build)
             {
                 string destination = arguments[Array.IndexOf(arguments, "--out-dir") + 1];
+                // Represent UV's documented output marker default at both build boundaries.
+                if (!arguments.Contains("--no-create-gitignore"))
+                    await File.WriteAllTextAsync(Path.Combine(destination, ".gitignore"),
+                        "*", token);
+                if ((Failure is "source-extra-output" or "source-unreported-output" &&
+                        !arguments.Contains("--wheel")) ||
+                    (Failure == "sdist-extra-output" && arguments.Contains("--wheel")))
+                    await File.WriteAllTextAsync(Path.Combine(destination, "unexpected.txt"),
+                        "extra", token);
                 if (arguments.Contains("--wheel"))
                     await File.WriteAllTextAsync(Path.Combine(destination, "rebuilt.whl"),
                         "rebuilt", token);
@@ -488,7 +535,10 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             if (arguments.Contains("outputs"))
             {
                 string directory = arguments[3];
-                stdout = JsonSerializer.Serialize(Directory.GetFiles(directory).Select(path => new
+                IEnumerable<string> paths = Directory.GetFiles(directory);
+                if (Failure == "source-unreported-output")
+                    paths = paths.Where(path => Path.GetFileName(path) != "unexpected.txt");
+                stdout = JsonSerializer.Serialize(paths.Select(path => new
                 {
                     kind = path.EndsWith(".whl",
                         StringComparison.Ordinal) ? "python-wheel" : "python-sdist",
