@@ -1519,9 +1519,9 @@ UV/Hatchling/nbgv-python own resolution, metadata and version semantics. There i
 no second resolver, backend roster, custom platform proof or declaration.
 
 Four planning calls, sixteen executor calls reserved before dispatch and three
-success-only inventories give a source-derived estimate of 23 reserved calls;
-actual receipts and uncertain/failed reservations remain authoritative, without
-refund. Retain complete actual request, streams, results, original archives and
+success-only inventories give a source-derived successful-path estimate of 23
+top-level UV/Python recipe calls. Actual reservations and receipts remain
+authoritative; failed or uncertain reservations are not refunded. Retain complete actual request, streams, results, original archives and
 installed-origin/version inventories. Reserve the thirty-second terminal budget,
 retain native Git terminal readback and success-only owned cleanup. Charge
 conservatively from the outer invocation, including bootstrap/runtime copying,
