@@ -7,15 +7,15 @@ and protect this exact protocol and executable packet before the first launch.
 The existing Python callers remain active until complete qualification and cutover.
 The [historical campaign's final failure](#final-package-failure-and-spent-campaign)
 retains its failed/spent lifetimes and does not authorize revival. The
-[corrected campaign's editable preparation failure](#second-lifetime-editable-preparation-failure)
-records its spent subjects and remaining conditional allowance. The
-[native tool preparation correction](python-native-packaging.md#native-editable-tool-preparation)
-has controlled implementation coverage but remains natively unqualified. The
-[fresh corrected subject](#default-isolated-tool-preparation-subject) binds its exact
-prepared packet, implementation and readiness source under that existing allowance.
-Independent subject/protocol review, protected delivery, exact readiness and its
-independent actual audit still precede any launch. Earlier admitted subjects remain
-historical and cannot authorize replay, refund or failed-state cleanup.
+[third corrected-campaign lifetime](#third-lifetime-output-adoption-failure) passed
+native tool preparation, identity and checked product build, then failed output
+adoption. All three package lifetimes are spent; six readiness preparations remain
+separately. The [native output option correction](python-native-packaging.md#native-output-directory-metadata)
+requests UV's directory metadata switch without weakening output checks. Controlled
+coverage does not qualify actual corrected output adoption or consumers. Further
+native package execution requires a new explicit owner grant and accepted exact
+subject/protocol/preparation/readiness with independent actual audit. Earlier admitted
+subjects remain historical and cannot authorize replay, refund or failed-state cleanup.
 
 ## Question and Scope
 
@@ -1265,3 +1265,67 @@ necessary capability, larger effects, reduced guarantees or exhausted allowance
 return to the owner. This exact Linux qualification supplies no root pytest,
 paired caller, Windows native-package, arbitrary-backend, Release or publication
 acceptance. Existing callers remain active pending their complete cutover group.
+
+### Third-Lifetime Output Adoption Failure
+
+The exact default-isolated subject above was protected by
+[PR #1104](https://github.com/hcoona/three/pull/1104), documentation merge
+`9735d06c1f5dc63e802ffe2a0405aaeda9df7d78`, tree
+`9b73ed33bcb7a0738434c947d2670f7281241268`. Package implementation remained
+`bc50312813eb2c83288c468f65812365e6e307fd`; the document merge did not change it.
+Once-only readiness12 passed eight Git reads and owned success cleanup, with
+zero package launches. Its [independent actual audit](https://github.com/hcoona/three/pull/1104#issuecomment-6072961454)
+found no material findings, confidence 9/10; root verification matched 3,064 immediate
+inputs. Readiness source, packet3 and preparation12 binding identities above remain unchanged.
+
+Exact lifetime3 launched once and failed. Outer exit was 1 after
+10.961115435988177 inclusive seconds; internal duration was 10.90403267001966
+seconds. Twenty recipe calls were reserved (four planning, sixteen executor);
+four planning and four executor operations returned. One frozen both-group sync
+with default isolation/editability succeeded, followed by identity
+`0.1.0b164+gbc50312` and the shared checked UV product build. Output inspection then
+failed with `InvalidSdistFilename`. The retained output directory contains a
+one-byte `.gitignore` (`*`) and both original archives:
+
+| Original | Bytes | SHA256                                                             |
+| -------- | ----- | ------------------------------------------------------------------ |
+| Wheel    | 2,667 | `29bb9c7b9217140b9e373b85fea3d130af178836c51cd057199d916b512a9ba3` |
+| Sdist    | 8,587 | `a15f39947080733172c2ae89f2b288c62157415b1f112c81f717302d4bb1e05d` |
+
+| Required result                                | Actual outcome |
+| ---------------------------------------------- | -------------- |
+| Complete wheel/sdist build and output adoption | Failed         |
+| Distribution contents                          | Skipped        |
+| Original-wheel install/import                  | Skipped        |
+| Git-free original-sdist build/install/import   | Skipped        |
+
+Archive presence establishes neither successful adoption nor consumer qualification.
+Terminal HEAD remained the exact implementation commit and complete status was empty.
+Final sampled state was 703,697,880 logical bytes and 18,069 entries; these are
+observed limits, not OS containment or proof of no transient writes. Failed state
+remains retained with cleanup pending.
+
+The [independent actual audit](https://github.com/hcoona/three/pull/1104#issuecomment-6073057562),
+SHA256 `e611788d38f6480f026e19975e0a822b36a2cf29d935e5df82ee5b7d72235b3d`,
+records the actual helper error at confidence 10/10 and the inferred offending
+path/producer at 9/10; root verification matched 166 immediate inputs. The
+[separate classification](https://github.com/hcoona/three/pull/1104#issuecomment-6073153756),
+SHA256 `56f955cfd86a693208ecc5528302542a64f53ce8a5887afd4d1fe5313bbc3c72`,
+confirmed `ARCHIVE-OUTPUT-AUXILIARY-001` as a true positive blocking qualification,
+confidence 9/10; root verification matched 69 immediate inputs. No native-tool
+or backend defect is established. Parsing every entry failed first; the later
+exact two-entry application guard would also reject this directory. The
+[source-supported correction](python-native-packaging.md#native-output-directory-metadata)
+requests `--no-create-gitignore` for both builds and preserves both strict checks.
+Source and controlled tests do not establish actual corrected native output or consumers.
+
+All three corrected-campaign package lifetimes are failed and spent. Conservative
+cumulative outer charge is 19.126845579023344 seconds; forty recipe calls were
+reserved across the campaign. Unused calls/time do not create another lifetime.
+Readiness6, readiness8 and readiness12 consume three of nine preparations; six
+remain under their existing individual 120-second/eight-read and cumulative
+1,260-second ceilings. Conservative readiness charge is 9.232339018 seconds.
+Readiness cannot substitute for exhausted package authority. No replay, refill,
+failed-state cleanup, root pytest/caller/Release cutover or publication follows.
+Another package execution requires a new finite owner grant and accepted exact
+subject/protocol/preparation/readiness with independent actual audit.

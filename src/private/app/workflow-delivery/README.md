@@ -116,15 +116,21 @@ Controlled tests cover this component, its existing phase preparation and CLI tr
 failed before distribution creation: prebuild noneditable preparation conflicts
 with UV's native workspace requirement; that historical campaign is spent. The later
 [editable preparation failure](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
-leaves native package qualification incomplete. The
+records an earlier failed lifetime. The
 [native tool preparation correction](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-packaging.md#native-editable-tool-preparation)
 uses one frozen both-group sync with default isolation and declared editability.
 Controlled tests cover that preparation contract, shared product build, same-tools
 noneditable conversion, preparation failure/cancellation/timeout and original
 integrity. Fresh exact native qualification is still required under the
 [package contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-package-execution). The
-[fresh corrected subject](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-package-qualification.md#default-isolated-tool-preparation-subject)
-binds the prepared packet and separately gated readiness before launch.
+[third-lifetime output adoption failure](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-package-qualification.md#third-lifetime-output-adoption-failure)
+records successful native tool preparation, identity and checked product build,
+then failed output adoption. All three package lifetimes are spent; six readiness
+preparations remain separately. The
+[native output option correction](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-packaging.md#native-output-directory-metadata)
+requests UV's `--no-create-gitignore` on both build paths, preserving strict output
+checks. Controlled coverage does not establish actual corrected output adoption or
+consumers; another package launch needs a new owner grant and accepted exact subject.
 Existing Python callers,
 root pytest preparation and Release remain active; this component does not
 switch or retire them.

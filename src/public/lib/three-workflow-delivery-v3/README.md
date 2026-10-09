@@ -47,13 +47,19 @@ implements finite adopted preset expansion, preparation and execution. The
 [final package experiment](docs/research/python-native-package-qualification.md#final-package-failure-and-spent-campaign)
 failed before distribution creation; that historical campaign is spent. The later
 [editable preparation failure](docs/research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
-leaves native qualification incomplete. Controlled tests now cover the
+records an earlier failed lifetime. Controlled tests now cover the
 [native tool preparation correction](docs/research/python-native-packaging.md#native-editable-tool-preparation):
 one frozen both-group sync with default isolation and declared editability,
 retaining shared product build and same-tools noneditable conversion. Fresh exact
 native qualification remains pending under the package contract. The
-[fresh corrected subject](docs/research/python-native-package-qualification.md#default-isolated-tool-preparation-subject)
-binds the prepared packet and separately gated readiness before launch.
+[third-lifetime output adoption failure](docs/research/python-native-package-qualification.md#third-lifetime-output-adoption-failure)
+records successful native tool preparation, identity and checked product build,
+then failed output adoption. All three package lifetimes are spent; six readiness
+preparations remain separately. The
+[native output option correction](docs/research/python-native-packaging.md#native-output-directory-metadata)
+requests UV's `--no-create-gitignore` on both build paths, preserving strict output
+checks. Controlled coverage does not establish actual corrected output adoption or
+consumers; another package launch needs a new owner grant and accepted exact subject.
 Original wheel and Git-free sdist consumers, caller mapping, root pytest preparation
 and cutover, and Release remain pending. The
 [primitive Linux observation](docs/research/python-native-planning.md#primitive-native-observation)

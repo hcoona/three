@@ -190,3 +190,37 @@ be accepted in the concrete protocol before execution. Completed graph and
 enrichment campaigns remain stopped. Windows remains the owner's feasibility
 assumption. No registry publication, dispatch or credentials/access/Environment
 operation follows from this design evidence.
+
+## Native Output Directory Metadata
+
+Pinned UV `46b84fd0bfec23b72f29e8e2185ba68a65052f48` documents
+[`--no-create-gitignore`](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-cli/src/lib.rs#L3101-L3109).
+Its [output-directory preparation](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/build_frontend.rs#L1362-L1377)
+otherwise creates a `.gitignore` containing `*`. This is native directory metadata,
+not a distribution or an extra product output.
+
+The [third-lifetime actual audit](https://github.com/hcoona/three/pull/1104#issuecomment-6073057562)
+observed successful corrected tool preparation, identity and checked product build,
+then output adoption failed with `InvalidSdistFilename`. Both native archives and
+the output marker remain in failed state. The
+[separate classification](https://github.com/hcoona/three/pull/1104#issuecomment-6073153756)
+confirmed the output-adoption mismatch at confidence 9/10. The exact offending path
+and producer are supported inferences; no per-file creation trace was recorded.
+Parsing every directory entry and requiring exactly two total entries both conflict
+with that retained directory. The second guard was not reached after helper failure.
+
+The faithful invocation correction requests `--no-create-gitignore` on both the
+source-product build and the original-sdist consumer wheel build, using fresh owned
+output directories. Preserve strict enumeration, the complete original wheel/sdist
+set, native filename/metadata agreement, original bytes, shared dependency checking
+and both independent consumers. Do not filter auxiliary files, maintain a sidecar
+roster or delete output metadata after a build. The flag does not remove an existing
+marker and supplies no repair or reuse authority for the failed lifetime.
+
+Controlled validation must cover both build paths with the documented native marker
+default represented by the command substitute, plus rejection of extra or missing
+outputs and retention of completed independent results on later failure. Source and
+controlled coverage do not establish actual corrected output adoption or consumers.
+All three package lifetimes are spent; further native qualification requires new
+owner authorization and accepted exact subject, preparation, readiness and independent
+actual audit. Existing callers, root pytest and Release remain unchanged.
