@@ -11,9 +11,6 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     private static readonly string[] RootPackages = ["native-root"];
     private static readonly string[] QualityPackages = ["native-root", "native-a", "native-b"];
     private static readonly string[] QualityTargets = ["tests/root", "pkg-a/tests", "pkg-b/tests"];
-    private static readonly string[] RootInvocation = ["run", "--no-sync", "python", "-m", "pytest",
-        "-c", "pyproject.toml", "tests/root"];
-
     [TestMethod]
     public async Task RootTargetUsesNativeRootPreparationAndOriginalConfiguration()
     {
@@ -34,6 +31,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         Assert.AreEqual(Path.Combine(fixture.Scratch, "test-environment"),
             preparation.Command.Environment!["UV_PROJECT_ENVIRONMENT"]);
         Assert.IsNull(preparation.Command.Environment["PYTHONPATH"]);
+        Assert.IsNull(preparation.Command.Environment["PYTHONSAFEPATH"]);
         Assert.IsNull(preparation.Command.Environment["PYTEST_ADDOPTS"]);
         Assert.IsNull(preparation.Command.Environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"]);
         NativeCommand invocation = result.Commands[1].Command;
@@ -41,8 +39,11 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         Assert.IsTrue(Path.IsPathFullyQualified(junit));
         Assert.AreEqual(fixture.Scratch, Path.GetDirectoryName(junit));
         Assert.EndsWith(".xml", junit);
-        string[] expectedInvocation = [.. RootInvocation[..^1], "--junitxml=" + junit,
-            RootInvocation[^1]];
+        Assert.IsNull(invocation.Environment!["UV_PROJECT_ENVIRONMENT"]);
+        Assert.IsNull(invocation.Environment["PYTHONSAFEPATH"]);
+        string[] expectedInvocation = ["run", "--no-project", "--python",
+            Path.Combine(fixture.Scratch, "test-environment"), "python", "-m", "pytest",
+            "-c", "pyproject.toml", "--junitxml=" + junit, "tests/root"];
         CollectionAssert.AreEqual(expectedInvocation, invocation.Arguments);
         CollectionAssert.AreEqual(new[] { selected.Checks[0].Work.Key },
             result.Commands[1].Checks);
@@ -51,6 +52,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         CollectionAssert.AreEqual(new[] { "workspace", "metadata", "--frozen", "--python",
             fixture.Request.Interpreter }, query.Arguments);
         Assert.AreEqual("1", query.Environment!["UV_OFFLINE"]);
+        Assert.AreEqual("1", query.Environment["PYTHONSAFEPATH"]);
         Assert.IsNull(query.Environment.GetValueOrDefault("PYTEST_ADDOPTS"));
         Assert.AreEqual(Path.Combine(fixture.Scratch, "metadata-project-environment"),
             query.Environment["UV_PROJECT_ENVIRONMENT"]);
@@ -83,6 +85,14 @@ public sealed class PythonPytestExecutionTests(TestContext context)
             Assert.IsTrue(Path.IsPathFullyQualified(report));
             Assert.AreEqual(fixture.Scratch, Path.GetDirectoryName(report));
             Assert.EndsWith(".xml", report);
+        }
+        foreach (PythonPytestCommand command in result.Commands.Where(item =>
+                     item.Command.Arguments[0] == "run"))
+        {
+            Assert.IsNull(command.Command.Environment!["UV_PROJECT_ENVIRONMENT"]);
+            Assert.IsNull(command.Command.Environment["PYTHONSAFEPATH"]);
+            Assert.Contains(Path.Combine(fixture.Scratch, "test-environment"),
+                command.Command.Arguments);
         }
     }
 
@@ -334,7 +344,9 @@ public sealed class PythonPytestExecutionTests(TestContext context)
                         [CheckOrigin.NativeRetained])).ToArray());
                 return new(repo, plan, new(repo.Directory, scratch, "controlled-uv",
                     Path.Combine(scratch, "python"), members, configuration, targets, operation, 30,
-                    new Dictionary<string, string?> { ["PYTEST_ADDOPTS"] = "--collect-only" }));
+                    new Dictionary<string, string?> { ["PYTEST_ADDOPTS"] = "--collect-only",
+                        ["PYTHONSAFEPATH"] = "1",
+                        ["UV_PROJECT_ENVIRONMENT"] = "query-environment" }));
             }
             catch { repo.Dispose(); Directory.Delete(scratch, true); throw; }
         }

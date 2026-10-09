@@ -948,7 +948,7 @@ jobs:
             ${{ runner.temp }}/python-group/*.stderr
             ${{ runner.temp }}/python-group/query-preparation/preparation-failure.json
             ${{ runner.temp }}/python-group/execution/**/*.json
-            ${{ runner.temp }}/python-group/execution/**/*.xml
+            ${{ runner.temp }}/python-group/execution/pytest/junit-*.xml
           if-no-files-found: ignore
           retention-days: 7
       - name: Reject canceled validation

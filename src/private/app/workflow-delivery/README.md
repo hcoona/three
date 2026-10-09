@@ -216,7 +216,11 @@ in the receiving native context; no cross-checkout spelling guarantee is assumed
 [`PythonPytestExecution`](CI/PythonPytestExecution.cs) prepares a separate frozen
 UV environment for root plus selected native members, retaining native default
 groups and editability. Each selected target runs through native pytest with the
-bound configuration. Preparation failure leaves all targets unsatisfied; independent
+bound configuration, using `uv run --no-project --python <prepared-environment>`.
+The project-environment selector is preparation-only; product execution removes
+it and query-only safe-path settings so nested UV calls own their project
+environments and product imports retain native Python behavior.
+Preparation failure leaves all targets unsatisfied; independent
 target failures and cancellation retain complete required results.
 [`PythonGroupExecution`](CI/PythonGroupExecution.cs) keeps separate pytest/package
 scratch, preserves package obligations after pytest failure, and collects both
