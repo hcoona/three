@@ -5,12 +5,16 @@ This record defines the finite local package experiment for the accepted
 It is a protocol, not a runtime result. Its delivery PR must independently review
 and protect this exact protocol and executable packet before the first launch.
 The existing Python callers remain active until complete qualification and cutover.
-All three package lifetimes are failed and spent. The
-[final package failure](#final-package-failure-and-spent-campaign) records the
-terminal observation and independently classified integration defect. Earlier
-preparation and admission sections describe historical subjects; none admits a
-further launch. The corrected phase recipe below remains prospective and
-requires a distinct exact subject and fresh bounded authorization.
+The [historical campaign's final failure](#final-package-failure-and-spent-campaign)
+retains its failed/spent lifetimes and does not authorize revival. The
+[corrected campaign's editable preparation failure](#second-lifetime-editable-preparation-failure)
+records its spent subjects and remaining conditional allowance. That allowance
+admits no changed exact subject: the
+[native tool preparation correction](python-native-packaging.md#native-editable-tool-preparation)
+remains unimplemented and unqualified. Its existing implementation, exact
+subject/protocol review, protected delivery, readiness and independent
+actual-audit gates still precede any launch. Earlier admitted subjects remain
+historical and cannot authorize replay, refund or failed-state cleanup.
 
 ## Question and Scope
 
