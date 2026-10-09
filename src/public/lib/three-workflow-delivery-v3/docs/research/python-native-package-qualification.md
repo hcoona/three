@@ -11,9 +11,9 @@ retains its failed/spent lifetimes and does not authorize revival. The
 records its spent subjects and remaining conditional allowance. That allowance
 admits no changed exact subject: the
 [native tool preparation correction](python-native-packaging.md#native-editable-tool-preparation)
-remains unimplemented and unqualified. Its existing implementation, exact
-subject/protocol review, protected delivery, readiness and independent
-actual-audit gates still precede any launch. Earlier admitted subjects remain
+remains unimplemented and unqualified. The existing gates for implementation review, exact subject/protocol review,
+protected delivery, readiness and independent actual audit still precede any
+launch. Earlier admitted subjects remain
 historical and cannot authorize replay, refund or failed-state cleanup.
 
 ## Question and Scope
