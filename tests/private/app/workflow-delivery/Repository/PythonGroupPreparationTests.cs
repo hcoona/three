@@ -32,7 +32,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
             item.Command.Executable == fixture.Request.Tools.Cargo)).Command;
         CollectionAssert.AreEqual(CargoArguments, compilation.Arguments);
         Assert.AreEqual(Path.Combine(fixture.Request.ControlSources, "uv"), compilation.Directory);
-        Assert.AreEqual(Path.Combine(fixture.Request.Scratch, "native/output"),
+        Assert.AreEqual(Path.Combine(fixture.Request.Scratch, "native", "output"),
             compilation.Environment!["CARGO_TARGET_DIR"]);
         foreach (PythonGroupEndpoint endpoint in new[] { result.Basis, result.Candidate })
         {
