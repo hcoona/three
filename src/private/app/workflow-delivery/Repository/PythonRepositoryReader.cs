@@ -127,7 +127,8 @@ internal sealed class PythonRepositoryReader
         CancellationToken token)
     {
         NativeCommandResult result = await execute(new(request.Graph.HelperPython, checkout.Root,
-            [request.PackageHelper, "identity", Path.Combine(checkout.Root, member.Directory)],
+            ["-I", request.PackageHelper, "identity",
+                Path.Combine(checkout.Root, member.Directory)],
             30, environment), token);
         token.ThrowIfCancellationRequested();
         if (!result.Succeeded || result.Error is not null)

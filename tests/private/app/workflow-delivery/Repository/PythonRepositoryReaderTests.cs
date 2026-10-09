@@ -33,8 +33,9 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         Assert.IsFalse(inputs.Facts.Packages.Any(package => package.Directory == "src/b"));
         Assert.Contains("src/b", inputs.Facts.Inputs.Single(input =>
             input.Path == "src/b/pyproject.toml").Members);
-        Assert.AreEqual("identity", fixture.Commands[1].Arguments[1]);
-        Assert.AreEqual(fixture.Request.PackageHelper, fixture.Commands[1].Arguments[0]);
+        Assert.AreEqual("-I", fixture.Commands[1].Arguments[0]);
+        Assert.AreEqual(fixture.Request.PackageHelper, fixture.Commands[1].Arguments[1]);
+        Assert.AreEqual("identity", fixture.Commands[1].Arguments[2]);
         CollectionAssert.AreEquivalent(NativeDirectories,
             fixture.Operations.Select(operation => operation.Id).ToArray());
         foreach (PythonGroupOperation operation in fixture.Operations)
