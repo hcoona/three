@@ -55,8 +55,9 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         fixture.Native = fixture.Native with
         {
             Passive = fixture.Native.Passive.Select(input => input.Project.Directory ==
-                Path.Combine(fixture.Root, "src/a") ? input with
-                { Nbgv = new(fixture.Root, Path.Combine(fixture.Root, "src/a/generated.py")) } :
+                Path.Combine(fixture.Root, "src", "a") ? input with
+                { Nbgv = new(fixture.Root,
+                    Path.Combine(fixture.Root, "src", "a", "generated.py")) } :
                 input).ToArray()
         };
         PythonRevisionInputs inputs = await fixture.ReadAsync(context.CancellationToken);
