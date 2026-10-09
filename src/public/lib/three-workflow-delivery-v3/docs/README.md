@@ -47,8 +47,10 @@ has passive extraction, a pinned Rust supplement, ordered configuration
 preflight, metadata adaptation and operation dependency projection with controlled
 unit boundaries. The private app's [bounded native pytest configuration component](../../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
 also has controlled tests; the separate planning-input observation below qualifies
-its exact native query and target/input composition. Complete caller ownership
-and qualification remain pending. The [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
+its exact native query and target/input composition. The
+[native Python caller](../../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
+composes root CI, committed local full and smoke PR retirement; ordinary complete
+caller qualification remains pending. The [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
 has controlled supplied-fact coverage. The
 [controlled paired Python fact assembly](../../../../private/app/workflow-delivery/README.md#controlled-paired-python-fact-assembly)
 binds supplied native targets and actual checks. The
@@ -74,9 +76,9 @@ has controlled Git/command-transfer coverage for the original pytest/package pla
 actual root pytest, complete paired callers/Python CI cutover and Release remain
 separate. The [prepared endpoint collector](../../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
 composes existing native readers and paired selection with controlled coverage;
-actual Linux query-tool preparation and complete caller qualification remain pending.
-Existing callers remain active until their whole consumer group is
-qualified and switched together. The
+its concrete caller materializes exact endpoints and retains one original mixed
+plan. Ordinary PR CI must qualify actual Linux query-tool preparation and the
+root/local/smoke replacement together before merge. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. Complete native caller qualification
 and caller mapping remain pending. The enrichment campaign and cleanup are

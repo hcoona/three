@@ -232,12 +232,8 @@ def test_bootstrap_workflow_closes_and_propagates_selected_destination():
         ).read_text()
     )
     assert normal["concurrency"] == {
-        "group": (
-            "${{ github.event_name == 'pull_request' && "
-            "format('wdv3-python-ci-{0}', github.event.pull_request.number) "
-            "|| format('wdv3-python-project-{0}', inputs.registry) }}"
-        ),
-        "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
+        "group": "${{ format('wdv3-python-project-{0}', inputs.registry) }}",
+        "cancel-in-progress": False,
     }
     for registry in ("testpypi", "pypi"):
         group = workflow["concurrency"]["group"].replace(

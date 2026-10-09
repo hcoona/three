@@ -97,8 +97,7 @@ depends = ["prepare:static-reference-authorities"]
 run = "uv run --exact --frozen --package three-workflow-delivery-v3 pytest src/public/lib/three-workflow-delivery-v3/tests"
 
 [tasks."test:python"]
-description = "Run all Python workspace test roots"
-depends = ["prepare:static-reference-authorities"]
+description = "Run the native Python group in explicit full mode at committed HEAD"
 run = "python eng/scripts/run_python_tests.py"
 
 [tasks."bootstrap:pwsh"]

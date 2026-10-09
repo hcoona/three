@@ -42,10 +42,49 @@ owned local diagnostics and reports an attributed failure without exposing raw
 streams or a completed request.
 
 Controlled Git/command scenarios cover collection and supplied-command preparation.
-Actual Linux tool installation/compilation, endpoint lifecycle, root pytest and atomic
-root/local/smoke caller qualification remain separate pending integration work.
-These internal components do not change existing callers or qualify a native
-campaign, Release or publication.
+The concrete caller below composes these interfaces. Controlled validation does
+not establish its actual Linux installation, compilation or complete hosted
+execution; ordinary PR CI owns that qualification. Historical native campaigns,
+Release and publication remain separate.
+
+## Native Python CI Caller
+
+Root CI's existing Linux Python job receives the exact scope and candidate control
+artifact IDs with native producer/lifetime checks and Actions download integrity.
+`eng/scripts/run_python_ci_group.py materialize` creates fresh Git worktrees at the
+transferred basis/candidate before maintained setup actions select both endpoints'
+NBGV SDKs. The source archive retains the complete candidate `Native/Python` tree;
+the managed control distribution is transferred unchanged.
+
+The `plan` phase composes `ci prepare-python-group` and one
+`ci plan-python-group`. The `execute` phase passes that original mixed plan and
+candidate-native readback to `ci run-python-group`, retaining every result and
+its original outcome. Failed preparation, missing transfer/output and cancellation
+cannot become no-work. Explainable empty selection performs no product or
+auxiliary preparation. Only actually selected retained V3/native helper targets
+prepare their existing native adapters. Owned query, NBGV and product environments
+remain distinct; selected HK/Pkl use explicitly prepared mise tool data.
+
+Windows scope no longer parses Python dependency declarations or pytest targets,
+nor emits Python package/test selection. Its committed path responsibility tells
+other ecosystem groups about Python coordinates; it cannot suppress Linux Python
+analysis. The separate `nuget_reproducibility` output retains the ordinary Windows
+managed recovery check. Azure and other special jobs retain their own consumers.
+
+`mise run test:python` uses the same native group in explicit full mode on Linux.
+It names the committed HEAD and retained external result directory, rejects
+tracked edits and unsupported legacy pytest arguments, and builds the control
+application from a fresh checkout of that exact commit. It tests that committed
+subject, including adopted distribution checks. Use `--directory` to retain a
+chosen external result carrier and `--mise-data-directory` to specify installed
+native mise adapter data. Windows native caller support is not claimed here.
+
+Root CI replaces the smoke workflow's PR entry; that workflow retains only its
+separately gated manual Release path, qualification-failure readback and current
+historical evidence consumers. This caller change does not supply publication,
+dispatch or stopped-campaign authority. Complete native caller qualification
+requires ordinary authorized PR CI; controlled Git/process tests supply boundary
+coverage only.
 
 ## Current Scope
 

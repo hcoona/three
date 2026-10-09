@@ -1,14 +1,12 @@
-"""Select general-CI work from tested inputs and Python consumers."""
+"""Transfer comparisons and other-job responsibility to native CI groups."""
 
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import json
 import os
 import re
 import subprocess
-import tomllib
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -27,7 +25,6 @@ SCOPES = (
     "mise",
     "dotnet",
     "node",
-    "python",
     "azureauth",
     "ruby",
     "scholarly",
@@ -43,8 +40,6 @@ ALL_INPUTS = {
 CONTROL_PROJECT = (
     "tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj"
 )
-PYTHON_PASSIVE_TESTS = "tests/private/app/workflow-delivery/Native/Python"
-PYTHON_PASSIVE_SOURCE = "src/private/app/workflow-delivery/Native/Python"
 PYTHON_INPUTS = {
     "pyproject.toml",
     "uv.lock",
@@ -98,78 +93,6 @@ def git(root: Path, *arguments: str) -> str:
 
 def _under(path: str, directory: str) -> bool:
     return path == directory or path.startswith(directory.rstrip("/") + "/")
-
-
-def _name(requirement: str) -> str:
-    return (
-        re.split(r"[\[ ;<>=!~]", requirement, maxsplit=1)[0]
-        .lower()
-        .replace("_", "-")
-    )
-
-
-def _python_packages(
-    root: Path,
-    files: set[str],
-    members: list[str],
-    base: str,
-    *,
-    revision: str | None = None,
-) -> dict[str, tuple[str, set[str]]]:
-    packages = {}
-    for path in sorted(files):
-        directory = str(PurePosixPath(path).parent)
-        if not path.endswith("/pyproject.toml") or not any(
-            fnmatch.fnmatchcase(directory, member) for member in members
-        ):
-            continue
-        source = root / path
-        content = (
-            git(root, "show", f"{revision}:{path}")
-            if revision is not None
-            else (
-                source.read_text(encoding="utf-8")
-                if source.exists()
-                else git(root, "show", f"{base}:{path}")
-            )
-        )
-        manifest = tomllib.loads(content)
-        project = manifest["project"]
-        dependencies = project.get("dependencies", []) + manifest.get(
-            "build-system", {}
-        ).get("requires", [])
-        for group in project.get("optional-dependencies", {}).values():
-            dependencies += group
-        packages[_name(project["name"])] = (
-            directory,
-            {_name(item) for item in dependencies},
-        )
-    return packages
-
-
-def _python_consumers(
-    path: str, packages: dict[str, tuple[str, set[str]]]
-) -> set[str]:
-    affected = {
-        name
-        for name, (directory, _) in packages.items()
-        if _under(path, directory)
-    }
-    if _under(path, V3 + "/docs") or path == V3 + "/README.md":
-        affected.discard("three-workflow-delivery-v3")
-    while True:
-        consumers = {
-            name
-            for name, (_, dependencies) in packages.items()
-            if dependencies & affected
-        }
-        if consumers <= affected:
-            return {
-                directory
-                for name, (directory, _) in packages.items()
-                if name in affected
-            }
-        affected.update(consumers)
 
 
 def _dotnet_input(path: str, roots: set[str]) -> bool:
@@ -273,59 +196,6 @@ def _work_scopes(path: str, roots: dict[str, set[str]]) -> set[str]:
     return {scope for scope, selected in applicability.items() if selected}
 
 
-def _python_tests(
-    path: str, test_roots: list[str], packages: dict[str, tuple[str, set[str]]]
-) -> set[str]:
-    if path in ALL_INPUTS | PYTHON_INPUTS:
-        return set(test_roots)
-    affected = _python_consumers(path, packages)
-    return {
-        test
-        for test in test_roots
-        if _under(path, test)
-        or (
-            test == PYTHON_PASSIVE_TESTS
-            and (
-                _under(path, PYTHON_PASSIVE_SOURCE)
-                or _under(path, "src/public/lib/nbgv-python")
-            )
-        )
-        or any(_under(test, directory) for directory in affected)
-        or (test.startswith(V3 + "/") and _v3_input(path))
-        or (test.startswith(AZURE + "/") and _azure_input(path))
-        or (
-            test == "tests/eng/test_legacy_release_contract.py"
-            and _legacy_release_input(path)
-        )
-        or (test == "tests/eng/test_typos_config.py" and path == ".typos.toml")
-        or (
-            test == "tests/eng/test_run_node_ci_group.py"
-            and path == "eng/scripts/run_node_ci_group.py"
-        )
-        or (
-            test == "tests/eng/test_run_dotnet_ci_group.py"
-            and path
-            in {
-                "eng/scripts/run_dotnet_ci_group.py",
-                "eng/scripts/run_node_ci_group.py",
-            }
-        )
-        or (
-            test.startswith("src/public/lib/nbgv-python/")
-            and path in DOTNET_INPUTS
-        )
-        or (
-            test.startswith("tests/eng/")
-            and path
-            in {
-                "eng/scripts/ci_scope.py",
-                "eng/scripts/sync_python_version.py",
-                "eng/scripts/workflow_delivery_v3_hk.py",
-            }
-        )
-    }
-
-
 def _legacy_release_input(path: str) -> bool:
     return (
         path.startswith(
@@ -353,20 +223,6 @@ def _legacy_release_input(path: str) -> bool:
     )
 
 
-def _test_roots(config: dict) -> list[str]:
-    test_roots = config["tool"]["pytest"]["ini_options"]["testpaths"]
-    if (
-        not isinstance(test_roots, list)
-        or not test_roots
-        or any(
-            not isinstance(test, str) or not test.strip() for test in test_roots
-        )
-    ):
-        message = "Python testpaths must be a nonempty list of explicit paths"
-        raise ValueError(message)
-    return test_roots
-
-
 def select(
     root: Path,
     paths: tuple[str, ...],
@@ -375,11 +231,7 @@ def select(
     full: bool = False,
     control_inputs: dict | None = None,
 ) -> dict:
-    """Select Python roots and the existing Node/.NET workspace units."""
-    config = tomllib.loads(
-        (root / "pyproject.toml").read_text(encoding="utf-8")
-    )
-    test_roots = _test_roots(config)
+    """Select retained special jobs; native groups own product impact."""
     files = set(
         git(root, "ls-tree", "-r", "--name-only", "-z", "HEAD").split("\0")
     )
@@ -387,46 +239,31 @@ def select(
         files.update(
             git(root, "ls-tree", "-r", "--name-only", "-z", base).split("\0")
         )
-    packages = _python_packages(
-        root, files, config["tool"]["uv"]["workspace"]["members"], base
-    )
     reasons = {scope: set() for scope in SCOPES}
     reasons["validation"].add("source conformance")
-    python_reasons = {test: set() for test in test_roots}
-    work_roots = _work_roots(files)
+    roots = _work_roots(files)
     for path in paths:
-        for scope in _work_scopes(path, work_roots):
-            reasons[scope].add(path)
-        for test in _python_tests(path, test_roots, packages):
-            python_reasons[test].add(path)
+        for job in _work_scopes(path, roots):
+            reasons[job].add(path)
         reasons["dotnet"].update(_resource_reasons(path, control_inputs))
     if full:
-        for why in (*reasons.values(), *python_reasons.values()):
+        for why in reasons.values():
             why.add("explicit full validation")
-    selected = [test for test, why in python_reasons.items() if why]
-    reasons["python"].update(selected)
-    selected_packages = {
-        name: dependencies
-        for name, (directory, dependencies) in packages.items()
-        if (root / directory / "pyproject.toml").is_file()
-        and any(_under(test, directory) for test in selected)
-    }
-    v3 = any(_under(test, V3) for test in selected)
     return {
-        "scopes": {scope: bool(why) for scope, why in reasons.items()},
-        "python_roots": selected,
-        "python_packages": (
-            [config["project"]["name"], *sorted(selected_packages)]
-            if selected
-            else []
+        "scopes": {job: bool(why) for job, why in reasons.items()},
+        "nuget_reproducibility": full
+        or any(
+            path in ALL_INPUTS | PYTHON_INPUTS | DOTNET_INPUTS
+            or _v3_input(path)
+            or (
+                _under(path, V3)
+                and not _under(path, V3 + "/docs")
+                and path != V3 + "/README.md"
+            )
+            or _under(path, "src/public/lib/nbgv-python")
+            for path in paths
         ),
-        "python_v3": v3,
-        "python_dotnet": v3
-        or any("nbgv-python" in deps for deps in selected_packages.values()),
-        "reasons": {scope: sorted(why) for scope, why in reasons.items()},
-        "python_reasons": {
-            test: sorted(why) for test, why in python_reasons.items() if why
-        },
+        "reasons": {job: sorted(why) for job, why in reasons.items()},
     }
 
 
@@ -713,12 +550,10 @@ def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit en
     modes: dict[str, str],
     work_roots: dict[str, set[str]],
     manifests: tuple[str, ...],
-    packages: dict[str, tuple[str, set[str]]],
-    test_roots: list[str],
     bindings: list[dict],
     native: dict,
 ) -> list[dict]:
-    """Reuse retained selector results without claiming complete consumption."""
+    """Describe other-job responsibility without a Python graph or selection."""
     if path not in modes:
         return []
     reasons = []
@@ -778,16 +613,29 @@ def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit en
     ):
         if scope in scopes:
             add(scope, target, "retained-special-job-input", sources)
-    for test in sorted(_python_tests(path, test_roots, packages)):
-        sources = [
-            "pyproject.toml",
-            *[
-                directory + "/pyproject.toml"
-                for directory, _ in packages.values()
-                if _under(test, directory)
-            ],
-        ]
-        add("python", test, "retained-python-test-input", sources)
+    # This only tells another ecosystem that a coordinate has a Python consumer.
+    # Linux ignores Python-only reasons and computes its own native scope.
+    python_manifests = [
+        manifest
+        for manifest in manifests
+        if manifest.endswith("/pyproject.toml")
+        and _under(path, str(PurePosixPath(manifest).parent))
+    ]
+    if python_manifests or (
+        path.endswith(".py")
+        or path in ALL_INPUTS | PYTHON_INPUTS
+        or _under(path, "tests/eng")
+        or _v3_input(path)
+        or _azure_input(path)
+        or _legacy_release_input(path)
+        or path == ".typos.toml"
+    ):
+        add(
+            "python",
+            ".github/workflows/ci.yml#python-tests",
+            "native-python-caller-responsibility",
+            ["pyproject.toml", *python_manifests],
+        )
     if path in native["inputs"]:
         add(
             "dotnet",
@@ -821,32 +669,22 @@ def endpoint_owners(
     endpoints = {}
     for name, revision in (("basis", base), ("candidate", candidate)):
         modes = _entry_modes(root, revision)
-        config = tomllib.loads(
-            _endpoint_text(root, revision, modes, "pyproject.toml")
-        )
-        test_roots = _test_roots(config)
-        members = config["tool"]["uv"]["workspace"]["members"]
-        if (
-            any(not safe_path(item) for item in test_roots)
-            or not isinstance(members, list)
-            or any(
-                not isinstance(item, str) or not safe_path(item, pattern=True)
-                for item in members
-            )
-        ):
-            message = "Malformed endpoint Python workspace/test configuration"
-            raise ValueError(message)
         files = set(modes)
         work_roots = _work_roots(files)
         manifests = tuple(
             sorted(
                 path
                 for path in files
-                if path.endswith((".csproj", ".fsproj", ".vbproj", ".gemspec"))
+                if path.endswith(
+                    (
+                        ".csproj",
+                        ".fsproj",
+                        ".vbproj",
+                        ".gemspec",
+                        "/pyproject.toml",
+                    )
+                )
             )
-        )
-        packages = _python_packages(
-            root, files, members, revision, revision=revision
         )
         bindings = _record_owner_bindings(root, revision, modes)
         rows = [
@@ -859,8 +697,6 @@ def endpoint_owners(
                     modes=modes,
                     work_roots=work_roots,
                     manifests=manifests,
-                    packages=packages,
-                    test_roots=test_roots,
                     bindings=bindings,
                     native=control_inputs[name],
                 ),
@@ -1054,10 +890,11 @@ def main() -> int:
         with Path(output).open("a", encoding="utf-8") as stream:
             for scope, selected in result["scopes"].items():
                 stream.write(f"{scope}={str(selected).lower()}\n")
-            for name in ("python_roots", "python_packages"):
-                stream.write(f"{name}={json.dumps(result[name])}\n")
-            for name in ("python_v3", "python_dotnet"):
-                stream.write(f"{name}={str(result[name]).lower()}\n")
+            stream.write(
+                "nuget_reproducibility="
+                + str(result["nuget_reproducibility"]).lower()
+                + "\n"
+            )
             stream.write(
                 f"base={base}\ncandidate={candidate}\nfull={str(options.full).lower()}\n"
             )

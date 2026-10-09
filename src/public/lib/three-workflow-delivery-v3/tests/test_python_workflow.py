@@ -232,10 +232,7 @@ def test_python_workflow_finalizer_retains_cancellation_and_scalar_contract(
     steps = finalizer["steps"]
     assert _stage(steps, "finalize") < _persist(steps, "outcome")
     assert steps[_stage(steps, "finalize")]["continue-on-error"] is True
-    assert (
-        workflow["concurrency"]["cancel-in-progress"]
-        == "${{ github.event_name == 'pull_request' }}"
-    )
+    assert workflow["concurrency"]["cancel-in-progress"] is False
     assert "inputs.registry" in workflow["concurrency"]["group"]
 
 
@@ -339,12 +336,10 @@ def test_python_workflow_build_failure_can_reach_qualification_with_valid_plan(
     job = workflow["jobs"]["qualify-python"]
     assert set(job["needs"]) == {
         "build-python",
-        "plan-python-ci",
         "plan-python-release",
     }
     assert " ".join(job["if"].split()) == (
-        "always() && (needs.plan-python-ci.result == 'success'"
-        " || needs.plan-python-release.result == 'success')"
+        "always() && needs.plan-python-release.result == 'success'"
     )
     steps = job["steps"]
     artifacts = _stage(steps, "artifacts")
@@ -410,8 +405,6 @@ def test_python_workflow_missing_build_outputs_use_paired_plan_fallback(
         "${{ needs.build-python.outputs.references"
         " && needs.build-python.outputs.artifact-ids"
         f" && needs.build-python.outputs.{output}"
-        " || needs.plan-python-ci.result == 'success'"
-        f" && needs.plan-python-ci.outputs.{output}"
         f" || needs.plan-python-release.outputs.{output} }}}}"
     )
 
@@ -472,10 +465,7 @@ def test_python_workflow_has_no_temporary_recovery_proof_control(workflow):
     assert "recovery-proof" not in inputs
     assert "registry" in inputs
     assert "WDV3_PYTHON_PROOF" not in workflow.get("env", {})
-    assert (
-        workflow["env"]["WDV3_REGISTRY"]
-        == "${{ inputs.registry || 'testpypi' }}"
-    )
+    assert workflow["env"]["WDV3_REGISTRY"] == "${{ inputs.registry }}"
     for job in workflow["jobs"].values():
         assert "WDV3_PYTHON_PROOF" not in job.get("env", {})
         assert all(
@@ -483,3 +473,14 @@ def test_python_workflow_has_no_temporary_recovery_proof_control(workflow):
             for step in job["steps"]
         )
     assert _WORKFLOW.name == "workflow-delivery-v3-python-smoke.yml"
+
+
+def test_python_smoke_retains_only_manual_release(workflow):
+    """Root native CI replaces PR checks without a second planner."""
+    assert set(workflow["on"]) == {"workflow_dispatch"}
+    assert workflow["env"]["WDV3_PURPOSE"] == "live-release"
+    assert "plan-python-ci" not in workflow["jobs"]
+    assert workflow["jobs"]["build-python"]["needs"] == ["plan-python-release"]
+    assert workflow["concurrency"]["cancel-in-progress"] is False
+    assert "prepare-python-publication" in workflow["jobs"]
+    assert "finalize-attempt" in workflow["jobs"]

@@ -250,8 +250,12 @@ answers, retaining the current frozen selected/full preparation behavior. Do not
 install unrelated workspace tools or force input-only members to build. Executors
 receive the original candidate-bound selected work and required results, without
 recomputing impact or changing native target selection. Keep the existing
-`ci_scope.py`, `run_python_tests.py` and smoke PR callers until the replacement
-selection, preparation, execution and transfer group is accepted together.
+legacy selection/preparation consumers until the replacement group is accepted
+together. The [concrete native caller](../../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
+uses `run_python_ci_group.py` for root CI and committed local full; Windows scope
+retains only comparison, other-job responsibility and the independent NuGet
+reproducibility mapping. Smoke PR checks move to the adopted native distribution
+preset while manual Release and current evidence readers remain.
 
 Implement that group inside the existing private app using the
 [native Python CI group contract](./middle-level-design.md#native-python-ci-group).

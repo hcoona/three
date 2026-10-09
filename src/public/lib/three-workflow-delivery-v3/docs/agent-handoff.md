@@ -26,8 +26,9 @@ supplement, ordered configuration preflight, metadata adaptation and operation
 dependency projection have controlled unit boundaries. The private app's
 [bounded native pytest configuration component](../../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
 also has controlled tests; the separate planning-input observation below qualifies
-its exact native query and target/input composition. Complete caller ownership
-and qualification remain pending; the
+its exact native query and target/input composition. The [native Python caller](../../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
+composes root CI, explicit local full and smoke PR retirement; complete ordinary
+caller qualification remains pending; the
 [native Python CI group contract](./middle-level-design.md#native-python-ci-group)
 defines its planning, preparation, execution and transfer boundary. The
 [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
@@ -58,10 +59,10 @@ separate. The [prepared endpoint collector](../../../../private/app/workflow-del
 composes existing readers and paired selection with controlled coverage. Its
 prepared group CLI binds exact scope/endpoints and transfers candidate-native
 execution context. Its native query-tool preparation component has controlled
-command coverage; actual Linux preparation and complete caller qualification remain
-pending.
-Existing callers remain active until their whole consumer group is
-qualified and switched together. The
+command coverage. The concrete caller receives complete native sources/control,
+materializes exact committed endpoints and executes the original mixed plan.
+Ordinary PR CI must qualify actual Linux preparation and the complete
+root/local/smoke replacement together before merge. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned ordered helper composition; its campaign is stopped and
 both unused diagnostic reserves expired. Complete native caller qualification

@@ -67,13 +67,14 @@ def validate_scope_artifact(
         raise ValueError(message)
 
 
-def run(
+def run(  # noqa: PLR0913 - Concrete process capture options.
     root: Path,
     directory: Path,
     label: str,
     *args: str,
     required: bool = True,
     timeout: int = 900,
+    environment: dict[str, str | None] | None = None,
 ) -> str:
     """Retain the actual native outcome; never repair or retry an invocation."""
     outcome: dict[str, Any] = {"arguments": args, "cwd": str(root)}
@@ -84,8 +85,16 @@ def run(
             capture_output=True,
             check=False,
             timeout=timeout,
-            env=os.environ
-            | {"MSBUILDLOGTASKINPUTS": "1", "MSBUILDLOGTASKOUTPUTS": "1"},
+            env=(
+                os.environ
+                | {"MSBUILDLOGTASKINPUTS": "1", "MSBUILDLOGTASKOUTPUTS": "1"}
+            )
+            if environment is None
+            else {
+                name: value
+                for name, value in environment.items()
+                if value is not None
+            },
         )
         stdout, stderr = result.stdout, result.stderr
         outcome.update(exitCode=result.returncode, termination="exited")
