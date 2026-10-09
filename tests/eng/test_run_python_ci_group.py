@@ -163,6 +163,7 @@ def flow(tmp_path, monkeypatch):
                         "HOME": home,
                         "DOTNET_CLI_HOME": home,
                         "PATH": "/native/bin",
+                        "PYTHONSAFEPATH": "1",
                     },
                     "collection": {
                         "graph": {
@@ -317,6 +318,13 @@ def test_original_mixed_plan_and_native_context_reach_executor(
     )
     assert "UNRELATED_RECEIVER_OVERRIDE" not in execution[2]["environment"]
     assert execution[2]["environment"] == native["environment"]
+    assert native["environment"]["PYTHONSAFEPATH"] is None
+    assert (
+        group.node.read_json(flow.directory / "preparation.json")["request"][
+            "candidate"
+        ]["environment"]["PYTHONSAFEPATH"]
+        == "1"
+    )
     assert execution[2]["required"] is False
     assert "plan" not in group.node.read_json(flow.directory / "readback.json")
 
@@ -426,7 +434,9 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
             "trust",
             str(Path(flow.context["candidate"]["directory"]) / "mise.toml"),
         )
-        assert trust[2]["environment"] == native["environment"]
+        assert trust[2]["environment"] == native["environment"] | {
+            "PYTHONSAFEPATH": "1"
+        }
         assert trust[2]["timeout"] == 30
         assert trust[2]["environment"]["HOME"] == str(
             flow.directory / "query-preparation/candidate/home"
@@ -452,6 +462,13 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
     native = group.node.read_json(flow.directory / "execution-request.json")[
         "native"
     ]
+    assert native["environment"]["PYTHONSAFEPATH"] is None
+    assert (
+        group.node.read_json(flow.directory / "preparation.json")["request"][
+            "candidate"
+        ]["environment"]["PYTHONSAFEPATH"]
+        == "1"
+    )
     paths = native["environment"]["PATH"].split(os.pathsep)
     assert "/native/bin" in paths
     assert (str(tmp_path / "powershell") in paths) is (

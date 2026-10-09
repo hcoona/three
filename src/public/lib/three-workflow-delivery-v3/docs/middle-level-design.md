@@ -475,6 +475,12 @@ supply runner matrices and selected lists; it does not create an arbitrary runti
 graph or queue. Native fact collection may use separate runners where ecosystem
 evaluation requires them. These are real transfers, not proof-only phases.
 
+Native tool setup and queries consume each endpoint's committed locks without
+refreshing tracked inputs. Select a tool version compatible with both basis and
+candidate before loading its environment, and use native locked mode for setup
+and inherited queries. A changed tracked lock is a planning failure, not a
+cleanup condition.
+
 Group compatible work around a native execution target. Build and check its
 outputs in the same job when there is no runner, permission or independent-lifetime
 reason to split them. A Python build can produce wheel and sdist together; one

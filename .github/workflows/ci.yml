@@ -12,6 +12,9 @@ on:
 permissions:
   contents: read
 
+env:
+  MISE_LOCKED: '1'
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref || github.run_id }}
   cancel-in-progress: true
@@ -60,6 +63,8 @@ jobs:
       - name: Setup native endpoint tools
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          # Preserve the existing Java vendor semantics at both endpoints.
+          version: '2026.8.10'
           experimental: true
           install: false
       - name: Prepare the complete candidate control application
@@ -183,6 +188,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          version: '2026.8.10'
           experimental: true
           install: false
 
@@ -306,6 +312,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          version: '2026.8.10'
           experimental: true
           install: false
 
@@ -622,6 +629,7 @@ jobs:
       - name: Setup native tools
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          version: '2026.8.10'
           experimental: true
           install: false
       - name: Read native artifact producer and lifetime
@@ -926,6 +934,7 @@ jobs:
         env:
           MISE_DATA_DIR: ${{ runner.temp }}/python-auxiliary-mise
         with:
+          version: '2026.8.10'
           experimental: true
           install_args: aqua:jdx/hk pkl
       - name: Setup selected Ruby adapter
@@ -1105,6 +1114,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          version: '2026.8.10'
           experimental: true
           install: false
       - name: Run scholarly project tests

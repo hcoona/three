@@ -293,6 +293,7 @@ def execute(
                 *arguments,
                 environment=compilation["environment"],
             )
+    environment = environment | {"PYTHONSAFEPATH": None}
     scratch = directory / "execution"
     scratch.mkdir()
     graph = candidate["collection"]["graph"]
