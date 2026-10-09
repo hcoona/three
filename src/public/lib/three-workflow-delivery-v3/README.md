@@ -47,10 +47,11 @@ implements finite adopted preset expansion, preparation and execution. The
 [final package experiment](docs/research/python-native-package-qualification.md#final-package-failure-and-spent-campaign)
 failed before distribution creation; that historical campaign is spent. The later
 [editable preparation failure](docs/research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
-leaves native qualification incomplete. Existing controlled tests cover the
-earlier phase implementation; the
-[native tool preparation correction](docs/research/python-native-packaging.md#native-editable-tool-preparation)
-requires implementation and fresh qualification under the package contract.
+leaves native qualification incomplete. Controlled tests now cover the
+[native tool preparation correction](docs/research/python-native-packaging.md#native-editable-tool-preparation):
+one frozen both-group sync with default isolation and declared editability,
+retaining shared product build and same-tools noneditable conversion. Fresh exact
+native qualification remains pending under the package contract.
 Original wheel and Git-free sdist consumers, caller mapping, root pytest preparation
 and cutover, and Release remain pending. The
 [primitive Linux observation](docs/research/python-native-planning.md#primitive-native-observation)

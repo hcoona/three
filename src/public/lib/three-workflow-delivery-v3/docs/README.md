@@ -68,10 +68,11 @@ implements finite adopted preset expansion, preparation and execution. The
 failed at native workspace build-requirement checking; that historical campaign
 is spent. The later
 [editable preparation failure](./research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
-leaves native qualification incomplete. Existing controlled tests cover the
-earlier phase implementation; the
-[native tool preparation correction](./research/python-native-packaging.md#native-editable-tool-preparation)
-requires implementation and fresh qualification under the package contract. Actual
+leaves native qualification incomplete. Controlled tests now cover the
+[native tool preparation correction](./research/python-native-packaging.md#native-editable-tool-preparation):
+one frozen both-group sync with default isolation and declared editability,
+retaining shared product build and same-tools noneditable conversion. Fresh exact
+native qualification remains pending under the package contract. Actual
 original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
 preparation/cutover and Release remain pending. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. Complete native caller qualification

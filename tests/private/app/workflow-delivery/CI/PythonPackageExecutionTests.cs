@@ -58,27 +58,25 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             command.Arguments.Contains("--no-cache")));
         Assert.HasCount(2, result.Commands.Where(item => item.Command.Arguments.Contains(
             "consume")));
-        NativeCommand[] syncs = result.Commands.Select(item => item.Command)
-            .Where(command => command.Arguments[0] == "sync").ToArray();
-        Assert.Contains("--no-install-workspace", syncs[0].Arguments);
+        PythonPackageCommand sourcePreparation = Assert.ContainsSingle(result.Commands.Where(item =>
+            item.Check.Check == PythonPackageChecks.Build &&
+            item.Command.Arguments[0] == "sync"));
         CollectionAssert.AreEquivalent(ToolGroups,
-            syncs[1].Arguments.Zip(syncs[1].Arguments.Skip(1))
+            sourcePreparation.Command.Arguments.Zip(sourcePreparation.Command.Arguments.Skip(1))
                 .Where(pair => pair.First == "--only-group")
                 .Select(pair => pair.Second).ToArray());
-        Assert.Contains("--frozen", syncs[1].Arguments);
-        Assert.DoesNotContain("--no-editable", syncs[1].Arguments);
-        Assert.Contains("--no-build-isolation", syncs[1].Arguments);
-        PythonPackageCommand sourcePreparation = result.Commands.Single(item =>
-            item.Check.Check == PythonPackageChecks.Build &&
-            item.Command.Arguments[0] == "sync" &&
-            item.Command.Arguments.Contains("workflow-delivery-python"));
+        Assert.Contains("--frozen", sourcePreparation.Command.Arguments);
+        Assert.DoesNotContain("--no-editable", sourcePreparation.Command.Arguments);
+        Assert.DoesNotContain("--no-build-isolation", sourcePreparation.Command.Arguments);
+        Assert.DoesNotContain("--no-install-workspace", sourcePreparation.Command.Arguments);
         PythonPackageCommand conversion = result.Commands.Single(item =>
             item.Check.Check == PythonPackageChecks.Sdist &&
             item.Command.Arguments[0] == "sync");
         Assert.Contains("--no-editable", conversion.Command.Arguments);
+        Assert.Contains("--no-build-isolation", conversion.Command.Arguments);
         CollectionAssert.AreEqual(sourcePreparation.Command.Arguments,
-            conversion.Command.Arguments.Where(argument => argument != "--no-editable")
-                .ToArray());
+            conversion.Command.Arguments.Where(argument => argument != "--no-editable" &&
+                argument != "--no-build-isolation").ToArray());
         Assert.AreEqual(sourcePreparation.Command.Directory, conversion.Command.Directory);
         Assert.AreEqual(fixture.Repo.Directory, conversion.Command.Directory);
         Assert.AreEqual(sourcePreparation.Command.Environment!["UV_PROJECT_ENVIRONMENT"],
@@ -86,6 +84,12 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         NativeCommand sourceBuild = builds.Single(command =>
             !command.Arguments.Contains("--wheel"));
         Assert.Contains("build-dependency-check", sourceBuild.Arguments);
+        Assert.Contains("--no-build-isolation", sourceBuild.Arguments);
+        string preparedPython = sourceBuild.Arguments[
+            Array.IndexOf(sourceBuild.Arguments, "--python") + 1];
+        Assert.AreEqual(Path.Combine(
+            sourcePreparation.Command.Environment!["UV_PROJECT_ENVIRONMENT"]!,
+            OperatingSystem.IsWindows() ? "Scripts/python.exe" : "bin/python"), preparedPython);
         Assert.IsLessThan(Array.FindIndex(result.Commands, item => item.Command == sourceBuild),
             Array.IndexOf(result.Commands, sourcePreparation));
         Assert.AreEqual(sourceBuild.Arguments[Array.IndexOf(sourceBuild.Arguments, "--python") + 1],
@@ -163,6 +167,8 @@ public sealed class PythonPackageExecutionTests(TestContext context)
 
     [TestMethod]
     [DataRow("prepare", "Failed")]
+    [DataRow("prepare", "Cancelled")]
+    [DataRow("prepare", "TimedOut")]
     [DataRow("build", "Failed")]
     [DataRow("build", "Cancelled")]
     [DataRow("build", "TimedOut")]
@@ -182,6 +188,12 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
         Assert.IsFalse(result.Commands.Any(item => item.Command.Arguments.Contains("consume")));
         Assert.HasCount(1, result.Failures);
+        Assert.HasCount(4, result.Results);
+        if (failure == "prepare")
+        {
+            Assert.IsEmpty(result.Distributions);
+            Assert.IsEmpty(result.Commands.Where(item => item.Command.Arguments[0] != "sync"));
+        }
     }
 
     [TestMethod]
