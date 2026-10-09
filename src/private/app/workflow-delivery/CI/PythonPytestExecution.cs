@@ -131,6 +131,10 @@ internal static class PythonPytestExecution
         if (plan.Scope != PythonFactsAssembler.Scope || plan.Candidate != revision.Commit ||
             request.Targets.Revision != plan.Candidate)
             throw new InvalidDataException("Conflicting native pytest candidate or scope.");
+        if (request.Members.Any(member => member is null) ||
+            request.Targets.Targets.Any(target => target is null))
+            throw new InvalidDataException(
+                "Native pytest membership and targets must not contain null entries.");
         if (request.Members.Count(member => member.Directory == ".") != 1 ||
             request.Members.Select(member => member.Name).Distinct(StringComparer.Ordinal).Count()
                 != request.Members.Length ||

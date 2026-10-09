@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Repository;
 using WorkflowDelivery.Tests.Repository;
@@ -136,6 +137,39 @@ public sealed class PythonGroupExecutionTests(TestContext context)
             TransferJson.Default.PythonGroupRunResult)!;
         Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
         Assert.HasCount(5, result.Results);
+    }
+
+    [TestMethod]
+    [DataRow("member", false)]
+    [DataRow("member", true)]
+    [DataRow("target", false)]
+    [DataRow("target", true)]
+    public async Task NullNativeElementsReturnInputErrorBeforeDispatch(string defect, bool empty)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var files = new DriverFiles();
+        CiPlan original = empty ? fixture.Plan with { Checks = [] } : fixture.Plan;
+        string plan = Path.Combine(files.Root, "plan.json"), request = Path.Combine(files.Root,
+            "request.json");
+        await File.WriteAllTextAsync(plan, JsonSerializer.Serialize(original,
+            TransferJson.Default.CiPlan), context.CancellationToken);
+        JsonNode document = JsonNode.Parse(JsonSerializer.Serialize(fixture.Request,
+            TransferJson.Default.PythonGroupRunRequest))!;
+        JsonNode native = document["native"]!;
+        JsonArray elements = (JsonArray)(defect == "member" ? native["members"]! :
+            native["targets"]!["targets"]!);
+        elements[0] = null;
+        await File.WriteAllTextAsync(request, document.ToJsonString(), context.CancellationToken);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        int exit = Program.Run(["ci", "run-python-group", plan, request], output, error,
+            runPythonGroup: (receivedPlan, receivedRequest, token) =>
+                fixture.RunAsync(token, receivedPlan, receivedRequest));
+        Assert.AreEqual(2, exit);
+        Assert.AreEqual("", output.ToString());
+        Assert.IsNotEmpty(error.ToString());
+        Assert.IsEmpty(fixture.Partitions);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
     }
 
     private sealed class DriverFiles : IDisposable
