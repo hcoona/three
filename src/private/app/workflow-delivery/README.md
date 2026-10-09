@@ -68,6 +68,9 @@ does not require that tool. AzureAuth apphosts retain configured native .NET
 runtime roots, and V3 HK consumers retain the configured native HK profile.
 Absent configuration keeps native defaults. Owned query, NBGV and product
 environments remain distinct; selected HK/Pkl use explicitly prepared mise tool data.
+Selected V3 preparation calls native `mise trust` for the candidate configuration
+in that same owned HOME before its native queries. Mise owns the resulting local
+configuration state.
 
 Windows scope no longer parses Python dependency declarations or pytest targets,
 nor emits Python package/test selection. Its committed path responsibility tells

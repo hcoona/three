@@ -391,6 +391,8 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
             monkeypatch.setenv(name, value)
         else:
             monkeypatch.delenv(name, raising=False)
+    for name in ("MISE_STATE_DIR", "XDG_STATE_HOME"):
+        monkeypatch.setenv(name, str(tmp_path / "ambient-state" / name))
     selected = (
         check("python/distribution-set-v1")
         if target is None
@@ -406,6 +408,7 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
         assert labels == [
             "preparation",
             "planning",
+            "mise-trust",
             "static-reference-preparation",
             "execution",
         ]
@@ -417,6 +420,19 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
         assert str(tmp_path / "tools") in native["environment"]["PATH"].split(
             os.pathsep
         )
+        trust = next(row for row in flow.calls if row[0] == "mise-trust")
+        assert trust[1] == (
+            str(tmp_path / "tools/mise"),
+            "trust",
+            str(Path(flow.context["candidate"]["directory"]) / "mise.toml"),
+        )
+        assert trust[2]["environment"] == native["environment"]
+        assert trust[2]["timeout"] == 30
+        assert trust[2]["environment"]["HOME"] == str(
+            flow.directory / "query-preparation/candidate/home"
+        )
+        for name in ("MISE_STATE_DIR", "XDG_STATE_HOME"):
+            assert name not in trust[2]["environment"]
     elif target == group.NATIVE_TESTS:
         assert labels == [
             "preparation",
@@ -553,7 +569,14 @@ def test_receiver_rejects_foreign_artifact_before_materialization(
 
 
 @pytest.mark.parametrize(
-    "kind", ["legacy_v3", "native_helper", "azure_bundle", "legacy_v3_pwsh"]
+    "kind",
+    [
+        "legacy_v3",
+        "native_helper",
+        "azure_bundle",
+        "legacy_v3_pwsh",
+        "legacy_v3_mise",
+    ],
 )
 def test_failed_selected_auxiliary_cannot_dispatch_products(
     flow, tmp_path, monkeypatch, kind
@@ -564,17 +587,21 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         "native_helper": group.NATIVE_TESTS,
         "azure_bundle": group.AZURE_TESTS,
         "legacy_v3_pwsh": group.V3_TESTS,
+        "legacy_v3_mise": group.V3_TESTS,
     }[kind]
     flow.state["checks"] = [check("python/pytest-v1", target)]
     group.plan(flow.root, flow.directory)
     data = tmp_path / "mise"
     data.mkdir()
     native_run = group.node.run
+    failed_phase = {
+        "legacy_v3": "static-reference-preparation",
+        "native_helper": "native-helper-format",
+        "legacy_v3_mise": "mise-trust",
+    }.get(kind)
 
     def run(root, directory, label, *args, **options):
-        if label == "static-reference-preparation" or label.startswith(
-            "native-helper-"
-        ):
+        if label == failed_phase:
             raise subprocess.CalledProcessError(17, args)
         return native_run(root, directory, label, *args, **options)
 
@@ -595,7 +622,10 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         with pytest.raises(subprocess.CalledProcessError) as error:
             group.execute(flow.root, flow.directory, data)
         assert error.value.returncode == 17
-    assert [row[0] for row in flow.calls] == ["preparation", "planning"]
+    expected = ["preparation", "planning"]
+    if kind == "legacy_v3":
+        expected.append("mise-trust")
+    assert [row[0] for row in flow.calls] == expected
     assert not (flow.directory / "result.json").exists()
     assert not (flow.directory / "outcome.json").exists()
 

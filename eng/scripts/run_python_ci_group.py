@@ -225,10 +225,10 @@ def execute(
                 "Selected V3 tests require their prepared mise data directory"
             )
             raise ValueError(message)
-        native_tools = [
-            executable(name)
+        native_tools = {
+            name: executable(name)
             for name in ("node", "pnpm", "hk", "pkl", "ruby", "mise")
-        ]
+        }
         environment["MISE_DATA_DIR"] = str(mise_data)
         environment["MISE_TASK_RUN_AUTO_INSTALL"] = "false"
         environment.update(
@@ -240,9 +240,19 @@ def execute(
         )
         environment["PATH"] = os.pathsep.join(
             dict.fromkeys(
-                [str(Path(path).parent) for path in native_tools]
+                [str(Path(path).parent) for path in native_tools.values()]
                 + environment["PATH"].split(os.pathsep)
             )
+        )
+        node.run(
+            Path(context["candidate"]["directory"]),
+            directory,
+            "mise-trust",
+            native_tools["mise"],
+            "trust",
+            str(Path(context["candidate"]["directory"]) / "mise.toml"),
+            timeout=30,
+            environment=environment,
         )
         node.run(
             Path(context["candidate"]["directory"]),

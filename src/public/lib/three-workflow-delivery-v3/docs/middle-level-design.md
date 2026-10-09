@@ -567,6 +567,8 @@ distribution. Validate their agreement with the receiving exact candidate before
 product dispatch. Native member names come from metadata, and target/member
 coordinates come from the existing native target binding. This request validation
 must not resolve dependencies, choose targets again or introduce a trust record.
+Selected V3 consumers prepare mise's native configuration trust in their owned
+HOME before HK/Pkl queries. Mise owns that local tool state.
 
 The finite executor partitions that plan into native-retained `python/pytest-v1`
 checks and the registered Python distribution preset. Validate both supported
