@@ -26,6 +26,17 @@ def bootstrap(root: Path, directory: Path) -> Path:
     transfer = directory / "transfer"
     shutil.copytree(application.parent, transfer / "control")
     shutil.copyfile(log, transfer / "candidate-control.binlog")
+    node.run(
+        root,
+        directory,
+        "python-control",
+        "git",
+        "archive",
+        "--format=zip",
+        "--output=" + str(transfer / "python-control.zip"),
+        "HEAD",
+        "src/private/app/workflow-delivery/Native/Python",
+    )
     node.write_json(
         directory / "control.json",
         {

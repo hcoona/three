@@ -6,6 +6,7 @@ import importlib
 import json
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -67,6 +68,38 @@ def test_bootstrap_transfers_complete_native_default_output(
         file.write_text(name, encoding="utf-8")
     log = tmp_path / "native.binlog"
     log.write_bytes(b"native operation")
+    source = "src/private/app/workflow-delivery/Native/Python"
+    committed = {
+        source + "/packages.py": b"# Original control bytes\r\n",
+        source + "/uv/Cargo.lock": b"# Original native lock\n",
+    }
+    for name, content in committed.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    hooks = tmp_path / "empty-hooks"
+    hooks.mkdir()
+    group.ci_scope.git(root, "init", "--quiet")
+    group.ci_scope.git(root, "-c", "core.autocrlf=false", "add", "--", source)
+    group.ci_scope.git(
+        root,
+        "-c",
+        "user.name=Tests",
+        "-c",
+        "user.email=tests@example.invalid",
+        "-c",
+        "commit.gpgSign=false",
+        "-c",
+        "core.hooksPath=" + str(hooks),
+        "commit",
+        "--quiet",
+        "-m",
+        "Commit candidate control sources",
+    )
+    (root / source / "packages.py").write_bytes(b"# Dirty working copy\n")
+    untracked = root / source / "uv/target/local-build"
+    untracked.parent.mkdir(parents=True)
+    untracked.write_bytes(b"Untracked native build output")
     monkeypatch.setattr(
         group.node, "build", lambda *_: (log, output / "WorkflowDelivery.dll")
     )
@@ -83,6 +116,37 @@ def test_bootstrap_transfers_complete_native_default_output(
     assert (
         state / "transfer/candidate-control.binlog"
     ).read_bytes() == log.read_bytes()
+    with zipfile.ZipFile(state / "transfer/python-control.zip") as archive:
+        assert {
+            item.filename: archive.read(item)
+            for item in archive.infolist()
+            if not item.is_dir()
+        } == committed
+
+
+def test_failed_python_control_archive_does_not_complete_bootstrap(
+    tmp_path, monkeypatch
+):
+    """Native source-transfer failure cannot return a completed bootstrap."""
+    root = tmp_path / "root"
+    output = root / "output"
+    output.mkdir(parents=True)
+    application = output / "WorkflowDelivery.dll"
+    application.write_bytes(b"Native managed output")
+    log = tmp_path / "candidate.binlog"
+    log.write_bytes(b"Native build log")
+    monkeypatch.setattr(group.node, "build", lambda *_: (log, application))
+    failure = subprocess.CalledProcessError(128, ["git", "archive"])
+
+    def native(*_args, **_kwargs):
+        raise failure
+
+    monkeypatch.setattr(group.node, "run", native)
+    state = tmp_path / "state"
+    with pytest.raises(subprocess.CalledProcessError) as captured:
+        group.bootstrap(root, state)
+    assert captured.value is failure
+    assert not (state / "control.json").exists()
 
 
 @pytest.mark.parametrize("shared_endpoint", [False, True])
