@@ -221,6 +221,8 @@ Controlled validation must cover both build paths with the documented native mar
 default represented by the command substitute, plus rejection of extra or missing
 outputs and retention of completed independent results on later failure. Source and
 controlled coverage do not establish actual corrected output adoption or consumers.
-All three package lifetimes are spent; further native qualification requires new
-owner authorization and accepted exact subject, preparation, readiness and independent
+Historical package lifetimes remain spent. The
+[fresh package reserve](python-native-package-qualification.md#fresh-output-option-package-reserve)
+records the approved buffer and unchanged first subject; native qualification still
+requires protected exact package admission and independent
 actual audit. Existing callers, root pytest and Release remain unchanged.

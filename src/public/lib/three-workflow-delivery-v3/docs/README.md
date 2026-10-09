@@ -75,11 +75,13 @@ retaining shared product build and same-tools noneditable conversion. Fresh exac
 native qualification remains pending under the package contract. The
 [third-lifetime output adoption failure](./research/python-native-package-qualification.md#third-lifetime-output-adoption-failure)
 records successful tool preparation and product build, then failed output adoption.
-All three package lifetimes are spent; six readiness preparations remain separately.
+Historical package lifetimes remain spent. The
+[fresh package reserve](./research/python-native-package-qualification.md#fresh-output-option-package-reserve)
+binds the unchanged, independently audited readiness subject.
 The [native output option correction](./research/python-native-packaging.md#native-output-directory-metadata)
 requests UV's directory metadata switch on both builds, preserving strict checks.
-Controlled coverage does not qualify corrected native adoption or consumers; a new
-package launch requires a new finite owner grant and accepted exact subject.
+Controlled coverage does not qualify corrected native adoption or consumers.
+The approved reserve still requires protected exact package admission.
 Actual original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
 preparation/cutover and Release remain pending. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. Complete native caller qualification
@@ -258,8 +260,9 @@ and all three spent package lifetimes. The
 [native output option correction](./research/python-native-packaging.md#native-output-directory-metadata)
 uses UV's output metadata switch on both builds while preserving strict output checks;
 controlled coverage does not establish actual output adoption or consumers.
-Six readiness preparations remain, separately from exhausted package authority.
-Further package execution requires a new owner grant and accepted exact subject.
+The [fresh package reserve](./research/python-native-package-qualification.md#fresh-output-option-package-reserve)
+records separate actual readiness acceptance and bounded package admission; neither
+readiness nor approval qualifies archive adoption or consumers.
 Historical failed successors
 supply no replay or cleanup authority.
 
