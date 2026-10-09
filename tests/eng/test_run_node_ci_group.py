@@ -513,7 +513,14 @@ def test_control_build_uses_locked_native_runtime_preparation(
     for checkout, carrier, _, args in calls:
         assert checkout == root
         assert carrier == directory
-        assert args[:5] == ("mise", "exec", "--locked", "--", "dotnet")
+        assert args[:6] == (
+            "mise",
+            "exec",
+            "--locked",
+            "dotnet",
+            "--",
+            "dotnet",
+        )
         assert group.CONTROL_PROJECT in args
         assert set(group.BUILD_PROPERTIES) <= set(args)
     restore = calls[0][3]
