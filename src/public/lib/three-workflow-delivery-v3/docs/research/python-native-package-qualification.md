@@ -1351,11 +1351,21 @@ lifetime remains absent.
 The existing work carrier retains the complete preparation requests, streams,
 receipts and exact subjects:
 
-| Readiness subject                                          | SHA256                                                             |
-| ---------------------------------------------------------- | ------------------------------------------------------------------ |
-| `python-package-native-phases-packet4.json`                | `fafa1338443415d73924448c50666a69f09679f9e0802cd88b8c176c54fe2d47` |
-| `python-package-native-phases-preparation13-binding1.json` | `237b6f63f3dc7296d02df6ae3400e1ecd22e26e275b83b916bb6bc2571dd904c` |
-| `python-package-native-phases-readiness13.py`              | `1f0ec75622de358079000eba192011f42405303c5be6860e1f6abfa111843e1a` |
+| Readiness subject                                                | SHA256                                                             |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `python-package-native-phases-packet4.json`                      | `fafa1338443415d73924448c50666a69f09679f9e0802cd88b8c176c54fe2d47` |
+| `python-package-native-phases-preparation13-binding1.json`       | `237b6f63f3dc7296d02df6ae3400e1ecd22e26e275b83b916bb6bc2571dd904c` |
+| `python-package-native-phases-readiness13.py`                    | `1f0ec75622de358079000eba192011f42405303c5be6860e1f6abfa111843e1a` |
+| `python-package-native-phases-runtime13.json`                    | `9ae7aff22c892e1e6194199db389d28700b5550b1017811ed58b201a4b5ebdbc` |
+| `python-package-native-phases-preparation13-outer1-request.json` | `1da2d7f0ced52aadbbc0a891fce4f0af8719af203282bf0e54c6040fb64ab0b0` |
+| `python-package-native-phases-preparation13-outer1-stdout`       | `2579a230c94fbba7cb7b43db2a67c32536834b2dbdbbff264c2fa4548161fd3e` |
+| `python-package-native-phases-preparation13-outer1-stderr`       | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `python-package-native-phases-preparation13-outer1-receipt.json` | `1ccc319377bb8a3cc2185429b87df132a00ec9dcd934fef444952e77eb161814` |
+| `python-package-native-phases-preparation13-completed.json`      | `e60e449512eb0b16d191e009bb7f632d540cb48e78ff2d510275a9f9adaf8aaf` |
+
+The runtime inventory document and post-binding completion captures are protected
+directly here because the preparation binding does not transitively hash them.
+They are input evidence, not an application-maintained policy or new grant.
 
 The packet and binding's unapproved labels concern package execution and retain
 their historical preparation-time meaning. Acceptance of this section admits
@@ -1363,6 +1373,16 @@ only the unchanged readiness subject, not the packet's recorded package bootstra
 The existing reserve may fund one invocation of readiness13 only after independent
 engineering and record/research review and protected delivery of the complete
 subject and this exact protocol.
+
+Invoke the exact readiness13 source once with packet4's pinned Python interpreter,
+`-I -B`, from the carrier. The outer bootstrap receives only
+`PATH=/usr/bin:/bin`, `LANG=C.UTF-8`, `LC_ALL=C.UTF-8` and
+`PYTHONDONTWRITEBYTECODE=1`; native children use the unchanged operator's explicit
+owned environment. Recheck the protected identities and absent report/preparation
+destinations before invocation. The only prospective owned destinations are
+`python-package-native-phases-readiness13.json` and
+`python-package-native-phases-readiness13-preparation`; the absent package lifetime
+is inspected but never created.
 
 Readiness13 rehashes the bound sources, compiled files, tools, runtime inventories
 and lineage before native preparation. Its native Git dispatch is AST-identical
@@ -1381,6 +1401,11 @@ obtain a separate independent actual-output audit. That audit must inspect actua
 bound inputs and observations; source review or an exit-zero preparation receipt
 cannot substitute for it. No preparation success qualifies original wheel/sdist
 consumers, root pytest, paired callers, Windows, arbitrary backends or Release.
+Retain both outer elapsed time and the internal native-preparation interval;
+conservatively charge the outer invocation. The initial file rehash precedes the
+internal timer, so its 120-second native interval is not outer wall-clock
+containment. Preserve the existing observed process/stream/state ceilings and
+their sampling limits rather than claiming kernel containment.
 
 All three package lifetimes remain spent. Readiness success cannot admit a
 package launch: a new explicit finite owner grant, independently reviewed and
