@@ -26,6 +26,10 @@
         <HintPath>$(NerdbankGitVersioningTasksPath)Nerdbank.GitVersioning.dll</HintPath>
         <Private>true</Private>
       </Reference>
+      <Reference Include="Newtonsoft.Json">
+        <HintPath>$(NerdbankGitVersioningTasksPath)Newtonsoft.Json.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
     </ItemGroup>
   </Target>
 </Project>

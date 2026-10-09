@@ -92,9 +92,12 @@ built platform artifacts can run concurrently. Existing supported runner and
 Node matrices remain applicable to selected work.
 
 The `Select affected validation` job retains `ci-scope.json` with the actual
-candidate, comparison, selected roots and reasons. The Python job retains
-JUnit durations as `python-test-results`. These use ordinary CI artifact
-retention; copy decision-relevant observations into the Issue or PR.
+candidate, comparison and other jobs' selected work and responsibility reasons.
+The Linux Python job performs its own native paired selection and retains
+`python-group-results`: preparation and planning context, original plan and
+command/failure captures, plus required execution results, outcomes and JUnit
+durations when those phases run. These use ordinary CI artifact retention;
+copy decision-relevant observations into the Issue or PR.
 
 Normal validation retains the candidate, selection reasons, actual interpreter,
 test result and skip reasons, command/commit elapsed time, CI job/step timing,

@@ -53,9 +53,12 @@ sdist consumers, with the audit's separately classified filename-discovery metho
 exception retained. That package campaign is stopped: one lifetime spent and both
 unused package slots expired. The
 [finite Python CI execution component](../../../../private/app/workflow-delivery/README.md#finite-python-ci-execution-component)
-has controlled Git/command-transfer coverage for the original pytest/package plan;
-actual root pytest, complete paired callers/Python CI cutover and Release remain
-separate. The [prepared endpoint collector](../../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
+has controlled Git/command-transfer coverage for the original pytest/package plan.
+The [native Python CI caller](../../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
+implements root CI and committed local full execution; the smoke PR entry is
+retired. Actual root pytest and the complete Linux caller require ordinary hosted
+qualification before accepted cutover. Release remains separate.
+The [prepared endpoint collector](../../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
 composes existing readers and paired selection with controlled coverage. Its
 prepared group CLI binds exact scope/endpoints and transfers candidate-native
 execution context. Its native query-tool preparation component has controlled
@@ -65,8 +68,8 @@ Ordinary PR CI must qualify actual Linux preparation and the complete
 root/local/smoke replacement together before merge. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned ordered helper composition; its campaign is stopped and
-both unused diagnostic reserves expired. Complete native caller qualification
-and execution/caller mapping remain pending. The separate enrichment campaign
+both unused diagnostic reserves expired. The complete caller mapping is
+implemented; ordinary hosted qualification remains pending. The separate enrichment campaign
 and cleanup are complete; both unused diagnostics stopped. Other ecosystem execution cutover and
 Release remain pending. The
 [private application's entry](../../../../private/app/workflow-delivery/README.md)
@@ -77,8 +80,9 @@ the adopted fixture composition/effects on Linux. Its finite allowance is stoppe
 and the unused reserve expired. Root CI's adopted Node group and selected retained
 Node matrix have ordinary hosted transfer/execution qualification in
 [PR #1042](https://github.com/hcoona/three/pull/1042). The exclusive npm CI shadow
-and bootstrap projection are retired. Other quality presets, Python/Ruby execution
-cutover and Release remain pending. The
+and bootstrap projection are retired. Python caller wiring is implemented with its
+ordinary hosted qualification gate still pending; other quality presets, Ruby
+execution cutover and Release remain pending. The
 [requirements transition](./requirements.md#requirements-and-implementation-transition)
 defines the retained implementation/evidence scope of the old
 [glossary](./architecture-glossary.md),

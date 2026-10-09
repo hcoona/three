@@ -154,8 +154,8 @@ captures are stopped. Metadata adaptation and operation dependency projection
 retain native IDs, dimensions and build-source associations. The separate
 [planning-input observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-planning-enrichment-qualification.md#completed-planning-input-observation)
 qualifies native pytest, committed NBGV/quality inputs and producer input mapping
-on the exact retained Linux subjects. Complete caller mapping and qualification
-remain pending under the
+on the exact retained Linux subjects. The [native Python CI caller](#native-python-ci-caller)
+implements the complete mapping; ordinary hosted qualification remains required under the
 [planning contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-planning-facts).
 
 Native integrations must supply complete ownership and reverse-consumer facts for
@@ -195,8 +195,9 @@ independently qualifies the exact four-check integration, including original whe
 and Git-free original-sdist consumers. It retains the audit's separately classified
 filename-discovery method exception. The package campaign is stopped: one lifetime
 spent, both unused package slots expired. Historical failures remain in that evidence
-record; they grant no replay. Existing Python callers, root pytest preparation and
-Release retain separate qualification and cutover requirements.
+record; they grant no replay. The [native Python CI caller](#native-python-ci-caller)
+implements root pytest and adopted package execution together, with separate
+ordinary hosted qualification. Release retains its own qualification and cutover requirements.
 
 ### Finite Python CI Execution Component
 
@@ -224,8 +225,9 @@ The archive consumer's Git-free scratch boundary is checked before either dispat
 
 Controlled Git/command-transfer scenarios cover selection, preparation, partitions,
 results and cancellation. They do not qualify actual root pytest, complete paired
-planning/callers, hosted Python CI, Windows or Release. Existing callers remain until
-that complete consumer group is qualified and switched together under the
+planning/callers, hosted Python CI, Windows or Release. The
+[native Python CI caller](#native-python-ci-caller) implements the replacement
+routing; the complete consumer group must be qualified together under the
 [native Python CI group contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-ci-group).
 
 ### Python Passive Extraction
@@ -256,8 +258,9 @@ tool preparation, separate from project build environments. The
 substitute the native property/config boundaries; root pytest owns them and
 selects them for helper or maintained-plugin source changes. They do not qualify
 actual PyPA extraction, native lowering, complete ownership/activity/closure or
-runtime effects. Those require the later concrete native protocol and remaining
-planning integration. Python execution, Release and caller cutover are pending.
+runtime effects. The retained native observations qualify their exact subjects;
+the [native Python CI caller](#native-python-ci-caller) implements planning and execution
+with ordinary hosted qualification required. Release remains separate.
 
 `passive.py --configuration-only <directory>...` applies the same physical UV
 table/key guard to supplied project and ancestor contexts. It returns their
@@ -300,8 +303,9 @@ controlled C# command responses do not qualify actual native workspace,
 interpreter, lowering, metadata or effects. The separately retained primitive
 observation qualifies the pinned ordered helper composition on its Linux host.
 The separately accepted current-tool observation qualifies complete native graph
-collection on its exact subjects. Python caller cutover remains pending; there
-is no Python planning command or complete integration claim yet.
+collection on its exact subjects. The [native Python CI caller](#native-python-ci-caller)
+implements the planning command and complete caller mapping; actual ordinary
+hosted qualification is still required before accepted cutover.
 
 `PythonMetadataReader` consumes the pinned preview schema, structured sources,
 opaque resolution IDs and ordinary/group/extra edges. It rejects a different
@@ -476,7 +480,10 @@ or executes the command text, and adds no script declaration.
 
 [`NbgvInputReader`](Repository/NbgvInputReader.cs) consumes an exact `GitRevision`
 and project directory. The existing global NBGV package pin supplies the official
-managed assembly through its imported task path and normal assembly resolution.
+managed assembly and its bundled portable Newtonsoft.Json dependency through
+the same imported task path. Explicit copied references preserve that dependency
+when a Windows-built control distribution runs the Python NBGV reader on Linux;
+this does not qualify SDK-dependent MSBuild paths across operating systems.
 A read-only native context selects committed effective options, including when
 HEAD and working-copy options differ. Native filters and repository case behavior
 select inventory paths; absent or exclusion-only filters use NBGV's implicit
@@ -1234,9 +1241,10 @@ without selecting deleted checks or changing the core's origin/check guards.
 This is a supplied-fact projection, not a second target declaration or native
 collector. Callers must bind complete native graphs and derive actual quality
 bindings from native pytest configuration/adopted checks. The controlled assembly
-below binds supplied targets and actual checks. Complete paired caller integration
-and native group qualification remain pending. Existing Python callers remain active. Controlled projection tests execute no
-native Python helper.
+below binds supplied targets and actual checks. The
+[native Python CI caller](#native-python-ci-caller) implements paired integration;
+ordinary native group qualification remains required. Controlled projection tests
+execute no native Python helper.
 
 ### Controlled Paired Python Fact Assembly
 
