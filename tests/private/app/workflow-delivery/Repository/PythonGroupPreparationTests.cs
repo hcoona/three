@@ -93,15 +93,15 @@ public sealed class PythonGroupPreparationTests(TestContext context)
                     Assert.AreEqual(environment["HOME"], environment["DOTNET_CLI_HOME"]);
                     Assert.IsTrue(Directory.Exists(environment["HOME"]));
                     Assert.IsTrue(Directory.Exists(environment["TMPDIR"]));
-                    Assert.IsTrue(environment.ContainsKey(sentinel));
-                    Assert.IsNull(environment[sentinel]);
+                    Assert.IsFalse(environment.ContainsKey(sentinel));
                     foreach (string key in new[] { "GH_TOKEN", "UV_NO_BUILD_ISOLATION",
                         "UV_NO_SOURCES", "UV_CONFIG_FILE", "PYTHONPATH", "VIRTUAL_ENV" })
-                        Assert.IsNull(environment.GetValueOrDefault(key));
+                        Assert.IsFalse(environment.ContainsKey(key));
                     Assert.Contains(Path.GetDirectoryName(fixture.Request.Tools.Dotnet)!,
                         environment["PATH"]!.Split(Path.PathSeparator));
                     Assert.AreEqual("never", environment["UV_PYTHON_DOWNLOADS"]);
                 }
+                Assert.IsTrue(commands.All(item => !item.Command.InheritEnvironment));
             }
         }
         finally { Environment.SetEnvironmentVariable(sentinel, null); }
@@ -119,8 +119,24 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     public async Task FailedPreparationCannotReturnACompleteRequest(string phase)
     {
         using var fixture = new Fixture(false) { Failure = phase };
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.PrepareAsync(context.CancellationToken));
+        if (phase.StartsWith("missing-", StringComparison.Ordinal))
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+                fixture.PrepareAsync(context.CancellationToken));
+        else
+        {
+            PythonGroupPreparationException failure = await Assert.ThrowsExactlyAsync<
+                PythonGroupPreparationException>(() => fixture.PrepareAsync(
+                    context.CancellationToken));
+            Assert.HasCount(fixture.Commands.Count, failure.Commands);
+            Assert.AreSame(fixture.Commands[^1], failure.Commands[^1].Command);
+            Assert.AreEqual("Controlled failure", failure.Commands[^1].Result.Stderr);
+            Assert.AreEqual(NativeTermination.Exited, failure.Commands[^1].Result.Termination);
+            Assert.AreEqual(1, failure.Commands[^1].Result.ExitCode);
+            Assert.AreEqual(Path.Combine(fixture.Request.Scratch, "preparation-failure.json"),
+                failure.DiagnosticsPath);
+            Assert.Contains(Path.GetFileName(fixture.Commands[^1].Executable), failure.Message);
+            Assert.DoesNotContain("Controlled failure", failure.Message);
+        }
         Assert.IsNotEmpty(fixture.Commands);
         if (phase.StartsWith("candidate-", StringComparison.Ordinal))
             Assert.AreEqual(fixture.Request.Candidate.Directory, fixture.Commands[^1].Directory);

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Tests;
@@ -8,6 +9,64 @@ namespace WorkflowDelivery.Tests;
 [TestClass]
 public sealed class PythonGroupProgramTests
 {
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void FailedPreparationRetainsPrivateDiagnosticsWithoutCompletion(bool existingFile)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "python preparation failure " +
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            PythonGroupRequest prepared = Request(false);
+            var request = new PythonGroupPreparationRequest(prepared.Basis.Checkout,
+                prepared.Candidate.Checkout, false, prepared.ScopePath, "/control", directory,
+                new("/tools/uv", "/runtime/python", "/tools/dotnet", "/tools/rustup",
+                    "/tools/cargo"), prepared.Candidate.Collection.Operation, 600);
+            string path = Path.Combine(directory, "request.json");
+            File.WriteAllText(path, JsonSerializer.Serialize(request,
+                TransferJson.Default.PythonGroupPreparationRequest));
+            NativeCommand command = new("/tools/uv", "/endpoint", ["sync", "--frozen"], 600,
+                new Dictionary<string, string?> { ["HOME"] = "/owned/home" }, false);
+            NativeCommandResult result = new(NativeTermination.Exited, 7,
+                "private native stdout", "private native stderr", 1.25, null);
+            var failure = new PythonGroupPreparationException(directory,
+                [new(command, result)]);
+            if (existingFile) File.WriteAllText(failure.DiagnosticsPath, "existing observation");
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+
+            int exit = Program.Run(["ci", "prepare-python-group", path], output, error,
+                preparePythonGroup: (_, _) => throw failure);
+
+            Assert.AreEqual(2, exit);
+            Assert.AreEqual("", output.ToString());
+            Assert.Contains("uv sync, Exited, exit 7", error.ToString());
+            Assert.DoesNotContain(result.Stdout, error.ToString());
+            Assert.DoesNotContain(result.Stderr, error.ToString());
+            Assert.DoesNotContain("/owned/home", error.ToString());
+            if (existingFile)
+            {
+                Assert.AreEqual("existing observation", File.ReadAllText(failure.DiagnosticsPath));
+                Assert.Contains("could not be retained", error.ToString());
+            }
+            else
+            {
+                Assert.Contains(failure.DiagnosticsPath, error.ToString());
+                PythonPreparationCommand observation = Assert.ContainsSingle(
+                    JsonSerializer.Deserialize(File.ReadAllText(failure.DiagnosticsPath),
+                        TransferJson.Default.PythonPreparationCommandArray)!);
+                Assert.AreEqual(command.Executable, observation.Command.Executable);
+                Assert.AreEqual(command.Directory, observation.Command.Directory);
+                CollectionAssert.AreEqual(command.Arguments, observation.Command.Arguments);
+                Assert.IsFalse(observation.Command.InheritEnvironment);
+                Assert.AreEqual(result, observation.Result);
+            }
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]

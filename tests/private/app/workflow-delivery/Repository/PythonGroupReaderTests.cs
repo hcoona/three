@@ -1,5 +1,7 @@
 using System.Text.Json;
+using System.Text;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
@@ -8,6 +10,72 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class PythonGroupReaderTests(TestContext context)
 {
+    [TestMethod]
+    public async Task TransferredPreparationExcludesNewReceiverEnvironmentAtQueryLaunch()
+    {
+        using var fixture = await Fixture.CreateAsync("src/input/source.py", true,
+            context.CancellationToken);
+        string state = Path.GetDirectoryName(fixture.Request.ScopePath)!;
+        string sources = Directory.CreateDirectory(Path.Combine(state, "control")).FullName;
+        string scratch = Directory.CreateDirectory(Path.Combine(state, "preparation")).FullName;
+        string Tool(string name) => Path.Combine(state, "tools", name);
+        var preparation = new PythonGroupPreparationRequest(fixture.Request.Basis.Checkout,
+            fixture.Request.Candidate.Checkout, true, fixture.Request.ScopePath, sources, scratch,
+            new(Tool("uv"), Tool("python"), Tool("dotnet"), Tool("rustup"), Tool("cargo")),
+            fixture.Request.Candidate.Collection.Operation, 600);
+        string sentinel = "WORKFLOW_RECEIVER_SECRET_" + Guid.NewGuid().ToString("N");
+        Assert.IsNull(Environment.GetEnvironmentVariable(sentinel));
+        PythonGroupPreparationResult prepared = await PythonGroupPreparation.PrepareAsync(
+            preparation, (command, _) =>
+            {
+                string? created = command.Executable == preparation.Tools.Cargo
+                    ? Path.Combine(command.Environment!["CARGO_TARGET_DIR"]!, "debug",
+                        "workflow-python-native-facts" +
+                        (OperatingSystem.IsWindows() ? ".exe" : ""))
+                    : command.Executable == preparation.Tools.Uv
+                        ? Path.Combine(command.Environment!["UV_PROJECT_ENVIRONMENT"]!,
+                            OperatingSystem.IsWindows() ? "Scripts/python.exe" : "bin/python")
+                        : null;
+                if (created is not null)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(created)!);
+                    File.WriteAllText(created, "Controlled preparation output; never executed.");
+                }
+                return Task.FromResult(new NativeCommandResult(NativeTermination.Exited, 0,
+                    "", "", 0, null));
+            }, context.CancellationToken);
+        PythonGroupRequest transferred = JsonSerializer.Deserialize(
+            JsonSerializer.Serialize(prepared.Request, TransferJson.Default.PythonGroupRequest),
+            TransferJson.Default.PythonGroupRequest)!;
+        Assert.IsFalse(transferred.Basis.Environment.ContainsKey(sentinel));
+        Environment.SetEnvironmentVariable(sentinel, "receiver-only-secret");
+        bool launched = false;
+        try
+        {
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+                PythonGroupReader.ReadAsync(transferred, async (command, token) =>
+                {
+                    Assert.IsFalse(command.InheritEnvironment);
+                    string script = "[Console]::Out.Write([Environment]::GetEnvironmentVariable('" +
+                        sentinel + "') + '|' + [Environment]::GetEnvironmentVariable('HOME'))";
+                    NativeCommandResult probe = await NativeProcess.ExecuteAsync(command with
+                    {
+                        Executable = "pwsh",
+                        Arguments = ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                            Convert.ToBase64String(Encoding.Unicode.GetBytes(script))]
+                    }, token);
+                    Assert.IsTrue(probe.Succeeded, probe.Stderr);
+                    Assert.AreEqual("|" + transferred.Basis.Environment["HOME"], probe.Stdout);
+                    launched = true;
+                    // Stop before metadata parsing; this test qualifies the process boundary only.
+                    return new(NativeTermination.Exited, 1, "", "Controlled query stop", 0, null);
+                }, context.CancellationToken));
+            Assert.IsTrue(launched);
+            Assert.AreEqual("receiver-only-secret", Environment.GetEnvironmentVariable(sentinel));
+        }
+        finally { Environment.SetEnvironmentVariable(sentinel, null); }
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]

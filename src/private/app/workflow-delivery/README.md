@@ -33,7 +33,12 @@ each endpoint's frozen, noneditable query-tool groups after native NBGV tool res
 Its owned credential-free contexts keep installed helper environments separate from
 absent metadata/activity environments, preserve the prepared NBGV context for later
 queries, and supply the existing group request without selecting or executing products.
-Required native preparation failures and cancellation stop completion.
+Prepared query launches replace inherited environment settings with the owned
+context at execution, including after a transfer. Required native preparation
+failures and cancellation stop completion. Failed preparation retains original
+command observations through the caller failure channel; the CLI writes them to
+owned local diagnostics and reports an attributed failure without exposing raw
+streams or a completed request.
 
 Controlled Git/command scenarios cover collection and supplied-command preparation.
 Actual Linux tool installation/compilation, endpoint lifecycle, root pytest and atomic

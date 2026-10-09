@@ -211,6 +211,21 @@ internal static class Program
             );
             return 2;
         }
+        catch (PythonGroupPreparationException exception)
+        {
+            error.WriteLine(exception.Message);
+            try
+            {
+                using var diagnostics = new FileStream(exception.DiagnosticsPath,
+                    FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                JsonSerializer.Serialize(diagnostics, exception.Commands,
+                    TransferJson.Default.PythonPreparationCommandArray);
+                error.WriteLine($"Original diagnostics: {exception.DiagnosticsPath}");
+            }
+            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+            { error.WriteLine("Original preparation diagnostics could not be retained."); }
+            return 2;
+        }
         catch (Exception exception) when (exception is IOException or InvalidDataException or
             JsonException or ArgumentException or UnauthorizedAccessException or TimeoutException or
             Nerdbank.GitVersioning.GitException)
@@ -251,6 +266,7 @@ internal static class Program
 [JsonSerializable(typeof(PythonGroupReadback))]
 [JsonSerializable(typeof(PythonGroupPreparationRequest))]
 [JsonSerializable(typeof(PythonGroupPreparationResult))]
+[JsonSerializable(typeof(PythonPreparationCommand[]))]
 [JsonSerializable(typeof(NodePlanRequest))]
 [JsonSerializable(typeof(NodeGroupRequest))]
 [JsonSerializable(typeof(NodeGroupReadback))]

@@ -30,6 +30,7 @@ internal static class NativeProcess
         };
         foreach (string argument in command.Arguments)
             process.StartInfo.ArgumentList.Add(argument);
+        if (!command.InheritEnvironment) process.StartInfo.Environment.Clear();
         if (command.Environment is not null)
             foreach ((string name, string? value) in command.Environment)
             {

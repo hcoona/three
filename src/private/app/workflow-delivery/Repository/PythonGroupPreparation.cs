@@ -11,6 +11,16 @@ internal sealed record PythonPreparationCommand(NativeCommand Command, NativeCom
 internal sealed record PythonGroupPreparationResult(PythonGroupRequest Request,
     PythonPreparationCommand[] Commands);
 
+internal sealed class PythonGroupPreparationException(string scratch,
+    PythonPreparationCommand[] commands) : IOException(
+        $"Python query preparation failed: {Path.GetFileName(commands[^1].Command.Executable)} " +
+        $"{commands[^1].Command.Arguments[0]}, {commands[^1].Result.Termination}, " +
+        $"exit {commands[^1].Result.ExitCode}.")
+{
+    internal string DiagnosticsPath { get; } = Path.Combine(scratch, "preparation-failure.json");
+    internal PythonPreparationCommand[] Commands { get; } = commands;
+}
+
 // Prepare native tools only. The existing group reader selects work and the executor runs it.
 internal static class PythonGroupPreparation
 {
@@ -93,21 +103,17 @@ internal static class PythonGroupPreparation
             token.ThrowIfCancellationRequested();
             var command = new NativeCommand(executable, directory, arguments,
                 request.DeadlineSeconds, new Dictionary<string, string?>(environment,
-                    StringComparer.Ordinal));
+                    StringComparer.Ordinal), InheritEnvironment: false);
             NativeCommandResult result = await execute(command, token);
             commands.Add(new(command, result));
             token.ThrowIfCancellationRequested();
             if (!result.Succeeded || result.Error is not null)
-                throw new InvalidDataException(
-                    $"Python query preparation failed: {result.Termination}, " +
-                    $"exit {result.ExitCode}. {result.Error}");
+                throw new PythonGroupPreparationException(scratch, commands.ToArray());
         }
 
         Dictionary<string, string?> EnvironmentFor(string state)
         {
             var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
-            foreach (string name in System.Environment.GetEnvironmentVariables().Keys)
-                environment[name] = null;
             foreach (string name in new[] { "SystemRoot", "WINDIR", "PATHEXT" })
                 environment[name] = System.Environment.GetEnvironmentVariable(name);
             string home = Path.Combine(state, "home"), temporary = Path.Combine(state, "temporary");
