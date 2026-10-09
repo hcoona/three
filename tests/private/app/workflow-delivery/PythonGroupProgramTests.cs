@@ -3,12 +3,61 @@ using System.Text.Json.Nodes;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
+using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
 namespace WorkflowDelivery.Tests;
 
 [TestClass]
-public sealed class PythonGroupProgramTests
+public sealed class PythonGroupProgramTests(TestContext context)
 {
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task InvalidEndpointPreparationCannotEmitCompletedRequest(bool dirty)
+    {
+        using var repository = await GitFixture.CreateAsync(context.CancellationToken);
+        await repository.SetAsync("input.txt", "original");
+        string revision = await repository.CommitAsync();
+        await repository.GitAsync("checkout", "--force", revision);
+        if (dirty)
+            await File.WriteAllTextAsync(Path.Combine(repository.Directory, "input.txt"),
+                "modified", context.CancellationToken);
+        else
+        {
+            await repository.SetAsync("input.txt", "later");
+            string later = await repository.CommitAsync(revision);
+            await repository.GitAsync("checkout", "--force", later);
+        }
+        string directory = Path.Combine(Path.GetTempPath(), "python endpoint failure " +
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            string source = Directory.CreateDirectory(Path.Combine(directory, "control")).FullName;
+            string scratch = Directory.CreateDirectory(Path.Combine(directory, "scratch")).FullName;
+            string Tool(string name) => Path.Combine(directory, "tools", name);
+            var endpoint = new MaterializedEndpoint(repository.Directory, revision);
+            var request = new PythonGroupPreparationRequest(endpoint, endpoint, true,
+                Path.Combine(directory, "scope.json"), source, scratch,
+                new(Tool("uv"), Tool("python"), Tool("dotnet"), Tool("rustup"), Tool("cargo")),
+                Request(true).Candidate.Collection.Operation, 600);
+            string path = Path.Combine(directory, "request.json");
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(request,
+                TransferJson.Default.PythonGroupPreparationRequest), context.CancellationToken);
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+
+            int exit = Program.Run(["ci", "prepare-python-group", path], output, error);
+
+            Assert.AreEqual(2, exit);
+            Assert.AreEqual("", output.ToString());
+            Assert.Contains(dirty ? "clean tracked checkout" : "HEAD is not the requested revision",
+                error.ToString());
+            Assert.IsEmpty(Directory.EnumerateFileSystemEntries(scratch));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]

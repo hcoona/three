@@ -27,8 +27,9 @@ targets or suppressing native Python effects. Legacy Python heuristics cannot
 declare unknown scope unaffected. The readback carries the original plan and
 candidate-native membership, configuration, targets and operation for execution.
 
-`ci prepare-python-group <request.json>` prepares the supplied candidate control
-sources with native manifest-selected Rust and locked Cargo compilation, and installs
+`ci prepare-python-group <request.json>` binds both supplied checkouts to their requested
+Git revisions before preparation, then prepares the candidate control sources with
+native manifest-selected Rust and locked Cargo compilation, and installs
 each endpoint's frozen, noneditable query-tool groups after native NBGV tool restore.
 Its owned credential-free contexts keep installed helper environments separate from
 absent metadata/activity environments, preserve the prepared NBGV context for later

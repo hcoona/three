@@ -49,6 +49,13 @@ internal static class PythonGroupPreparation
             request.Full && request.Basis.Reference != request.Candidate.Reference)
             throw new InvalidDataException(
                 "Python preparation requires exact endpoints and fresh external state.");
+        foreach (MaterializedEndpoint endpoint in new[] { request.Basis, request.Candidate }
+                     .Distinct())
+        {
+            GitRevision revision = await new GitReader(endpoint.Directory).ReadAsync(
+                endpoint.Reference, token);
+            await GitMaterialization.BindAsync(endpoint.Directory, revision, token);
+        }
         var commands = new List<PythonPreparationCommand>();
         string native = Path.Combine(scratch, "native");
         Directory.CreateDirectory(native);

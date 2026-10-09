@@ -1,5 +1,6 @@
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
+using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
 namespace WorkflowDelivery.Tests.Repository;
 
@@ -14,7 +15,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [DataRow(true)]
     public async Task PreparedEndpointsRetainExactNativeToolAndSourceContexts(bool full)
     {
-        using var fixture = new Fixture(full);
+        using var fixture = await Fixture.CreateAsync(full, context.CancellationToken);
         PythonGroupPreparationResult prepared = await fixture.PrepareAsync(
             context.CancellationToken);
         PythonGroupRequest result = prepared.Request;
@@ -70,7 +71,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [TestMethod]
     public async Task BackendQueriesRetainPreparedNbgvAndCredentialFreeState()
     {
-        using var fixture = new Fixture(false);
+        using var fixture = await Fixture.CreateAsync(false, context.CancellationToken);
         string sentinel = "WORKFLOW_PREPARATION_TEST_SECRET_" + Guid.NewGuid().ToString("N");
         Environment.SetEnvironmentVariable(sentinel, "controlled-secret-value");
         try
@@ -118,7 +119,8 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [DataRow("missing-query")]
     public async Task FailedPreparationCannotReturnACompleteRequest(string phase)
     {
-        using var fixture = new Fixture(false) { Failure = phase };
+        using var fixture = await Fixture.CreateAsync(false, context.CancellationToken);
+        fixture.Failure = phase;
         if (phase.StartsWith("missing-", StringComparison.Ordinal))
             await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
                 fixture.PrepareAsync(context.CancellationToken));
@@ -149,7 +151,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [DataRow(true)]
     public async Task CancelledPreparationCannotContinueOrReturnRequest(bool inFlight)
     {
-        using var fixture = new Fixture(false);
+        using var fixture = await Fixture.CreateAsync(false, context.CancellationToken);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         if (inFlight) fixture.Cancel = cancellation;
@@ -172,7 +174,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [DataRow("deadline")]
     public async Task ReusedOrInvalidOwnedScratchStopsBeforePreparation(string defect)
     {
-        using var fixture = new Fixture(false);
+        using var fixture = await Fixture.CreateAsync(false, context.CancellationToken);
         if (defect == "reused")
             File.WriteAllText(Path.Combine(fixture.Request.Scratch, "old-state"), "old");
         else if (defect == "source-overlap") fixture.Request = fixture.Request with
@@ -189,16 +191,52 @@ public sealed class PythonGroupPreparationTests(TestContext context)
         Assert.IsEmpty(fixture.Commands);
     }
 
+    [TestMethod]
+    [DataRow("basis", "mismatch")]
+    [DataRow("candidate", "mismatch")]
+    [DataRow("basis", "dirty")]
+    [DataRow("candidate", "dirty")]
+    [DataRow("basis", "nonrepository")]
+    [DataRow("candidate", "nonrepository")]
+    public async Task InvalidEndpointStopsBeforeNativePreparation(string side, string defect)
+    {
+        using var fixture = await Fixture.CreateAsync(false, context.CancellationToken);
+        MaterializedEndpoint endpoint = side == "basis"
+            ? fixture.Request.Basis : fixture.Request.Candidate;
+        if (defect == "mismatch")
+        {
+            using var other = await GitFixture.CreateAsync(context.CancellationToken);
+            string foreign = await other.CommitAsync();
+            await NativeProcess.RunAsync("git", endpoint.Directory,
+                ["fetch", other.Directory, foreign], context.CancellationToken);
+            endpoint = endpoint with { Reference = foreign };
+        }
+        else if (defect == "dirty")
+            await File.WriteAllTextAsync(Path.Combine(endpoint.Directory, "input.txt"),
+                "modified", context.CancellationToken);
+        else endpoint = endpoint with { Directory = fixture.Request.ControlSources };
+        fixture.Request = side == "basis" ? fixture.Request with { Basis = endpoint }
+            : fixture.Request with { Candidate = endpoint };
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.PrepareAsync(context.CancellationToken));
+        Assert.IsEmpty(fixture.Commands);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Request.Scratch));
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly string directory = Path.Combine(Path.GetTempPath(),
             "python query preparation " + Guid.NewGuid().ToString("N"));
         internal PythonGroupPreparationRequest Request { get; set; }
         internal List<NativeCommand> Commands { get; } = [];
-        internal string? Failure { get; init; }
+        internal string? Failure { get; set; }
         internal CancellationTokenSource? Cancel { get; set; }
 
-        internal Fixture(bool full)
+        private GitFixture? basisRepository;
+        private GitFixture? candidateRepository;
+
+        private Fixture(bool full)
         {
             string basis = Path.Combine(directory, "basis"), candidate = full ? basis :
                 Path.Combine(directory, "candidate"), sources = Path.Combine(directory, "control");
@@ -220,6 +258,34 @@ public sealed class PythonGroupPreparationTests(TestContext context)
                 new(Tool("uv"), Tool("python"), Tool("dotnet"), Tool("rustup"), Tool("cargo")),
                 new("ubuntu-latest", "python-3.14", new()
                     { ["python"] = "3.14", ["platform"] = "linux" }), 600);
+        }
+
+        internal static async Task<Fixture> CreateAsync(bool full, CancellationToken token)
+        {
+            var fixture = new Fixture(full);
+            try
+            {
+                fixture.basisRepository = await GitFixture.CreateAsync(token);
+                MaterializedEndpoint basis = await EndpointAsync(fixture.basisRepository, "basis");
+                MaterializedEndpoint candidate = basis;
+                if (!full)
+                {
+                    fixture.candidateRepository = await GitFixture.CreateAsync(token);
+                    candidate = await EndpointAsync(fixture.candidateRepository, "candidate");
+                }
+                fixture.Request = fixture.Request with { Basis = basis, Candidate = candidate };
+                return fixture;
+            }
+            catch { fixture.Dispose(); throw; }
+
+            static async Task<MaterializedEndpoint> EndpointAsync(GitFixture repository,
+                string content)
+            {
+                await repository.SetAsync("input.txt", content);
+                string revision = await repository.CommitAsync();
+                await repository.GitAsync("checkout", "--force", revision);
+                return new(repository.Directory, revision);
+            }
         }
 
         internal Task<PythonGroupPreparationResult> PrepareAsync(CancellationToken token) =>
@@ -252,6 +318,11 @@ public sealed class PythonGroupPreparationTests(TestContext context)
             }
         }
 
-        public void Dispose() => Directory.Delete(directory, recursive: true);
+        public void Dispose()
+        {
+            candidateRepository?.Dispose();
+            basisRepository?.Dispose();
+            Directory.Delete(directory, recursive: true);
+        }
     }
 }
