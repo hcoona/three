@@ -87,7 +87,11 @@ def run(  # noqa: PLR0913 - Concrete process capture options.
             timeout=timeout,
             env=(
                 os.environ
-                | {"MSBUILDLOGTASKINPUTS": "1", "MSBUILDLOGTASKOUTPUTS": "1"}
+                | {
+                    "MSBUILDLOGTASKINPUTS": "1",
+                    "MSBUILDLOGTASKOUTPUTS": "1",
+                    "MISE_EXEC_AUTO_INSTALL": "0",
+                }
             )
             if environment is None
             else {
@@ -312,6 +316,9 @@ def execute(root: Path, source: Path, directory: Path) -> dict[str, Any]:
             "mise",
             "install",
             "--locked",
+            "dotnet",
+            "node",
+            "pnpm",
         )
         run(
             endpoints[name],

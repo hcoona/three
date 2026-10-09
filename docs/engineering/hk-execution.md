@@ -40,6 +40,10 @@ static-reference policy. Project unit, scenario and integration tests run in
 CI or through explicit local test commands. Moving a suite to HK's `large`
 profile does not establish this separation.
 
+The source-conformance job excludes Gopass through mise's existing job-local
+disabled-tools setting. Gopass serves the separate MCP tasks, not HK or bootstrap;
+its repository declaration and native verification remain intact.
+
 General CI selects its test/build work from the actual comparison range and
 the checked-out candidate. Selection uses workspace/build manifests and known
 consumed helpers, configuration and test fixtures. It retains deleted paths

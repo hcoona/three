@@ -52,6 +52,7 @@ with Path(os.environ["COMMAND_LOG"]).open("a", encoding="utf-8") as stream:
         "cwd": str(Path.cwd()),
         "profile": os.environ.get("HK_PROFILE"),
         "auto_install": os.environ.get("MISE_TASK_RUN_AUTO_INSTALL"),
+        "disabled_tools": os.environ.get("MISE_DISABLE_TOOLS"),
     }) + "\n")
 failure = json.loads(os.environ.get("FAIL_COMMAND", "[]"))
 if failure and command[:len(failure)] == failure:
@@ -281,6 +282,15 @@ def test_required_general_ci_checks_remain_eligible(
         assert not events[event].get("paths")
         assert not events[event].get("paths-ignore")
     jobs = workflow["jobs"]
+    group = jobs["node-group"]
+    assert group["env"]["MISE_EXEC_AUTO_INSTALL"] == "0"
+    assert set(
+        _action(group, "jdx/mise-action")["with"]["install_args"].split()
+    ) == {"dotnet", "node", "pnpm", "uv", "python"}
+    entry = next(
+        step["run"] for step in group["steps"] if step.get("id") == "execute"
+    )
+    assert "mise exec --locked uv python -- uv run --frozen python" in entry
     contexts = {job["name"]: key for key, job in jobs.items()}
     node = jobs["node-tests"]
     for version in node["strategy"]["matrix"]["node-version"]:
@@ -356,6 +366,9 @@ def test_validation_uses_captured_tools_before_install_and_hk(
         index for index, call in enumerate(calls) if call[:2] == ["hk", "check"]
     )
     assert install < bootstrap < hk
+    for item in _observations(env):
+        if item["command"][0] in {"mise", "hk"}:
+            assert "gopass" in item["disabled_tools"].split(",")
 
 
 @pytest.mark.parametrize("failure", ["capture", "link", "install"])

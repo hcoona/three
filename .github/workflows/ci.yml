@@ -208,7 +208,7 @@ jobs:
     name: Source conformance
     runs-on: ubuntu-latest
     env:
-      MISE_DISABLE_TOOLS: dotnet,go,java,node,powershell,python,ruby,pkl
+      MISE_DISABLE_TOOLS: dotnet,go,java,node,powershell,python,ruby,pkl,gopass
 
     needs: scope
     if: ${{ !cancelled() }}
@@ -604,6 +604,8 @@ jobs:
   node-group:
     name: Select and execute adopted Node checks
     runs-on: ubuntu-latest
+    env:
+      MISE_EXEC_AUTO_INSTALL: '0'
     needs: scope
     if: ${{ !cancelled() }}
     permissions:
@@ -632,7 +634,7 @@ jobs:
         with:
           version: '2026.8.10'
           experimental: true
-          install: false
+          install_args: dotnet node pnpm uv python
       - name: Read native artifact producer and lifetime
         env:
           GH_TOKEN: ${{ github.token }}
@@ -650,7 +652,7 @@ jobs:
           SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
           pnpm_config_verify_deps_before_run: 'false'
         run: |
-          mise exec -- uv run --frozen python eng/scripts/run_node_ci_group.py group \
+          mise exec --locked uv python -- uv run --frozen python eng/scripts/run_node_ci_group.py group \
             --scope-file artifacts/node-scope/ci-scope.json \
             --artifact-metadata "$RUNNER_TEMP/ci-scope-artifact.json" \
             --artifact-id "$SCOPE_ARTIFACT_ID" --run-id "$GITHUB_RUN_ID" \

@@ -267,6 +267,17 @@ def test_group_collects_both_isolated_runtimes_against_original_parent(caller):
         (directory / "candidate", "candidate"),
         (directory / "basis", "basis"),
     ]
+    assert [
+        (checkout, args)
+        for checkout, label, args, _ in calls
+        if label in {"basis-tools", "candidate-tools"}
+    ] == [
+        (
+            directory / name,
+            ("mise", "install", "--locked", "dotnet", "node", "pnpm"),
+        )
+        for name in ("basis", "candidate")
+    ]
     assert [entry[0] for entry in executions] == ["node22", "node24"]
     assert len({entry[1] for entry in executions}) == 2
     assert len({entry[2] for entry in executions}) == 2
@@ -374,6 +385,9 @@ def test_native_command_retains_failure_or_timeout(
     ) == ("partial" if exit_code in (0, 1) else "")
     assert len(calls) == 1
     assert calls[0][1]["timeout"] == expected_budget
+    assert calls[0][1]["env"]["MISE_EXEC_AUTO_INSTALL"] == "0"
+    assert calls[0][1]["env"]["MSBUILDLOGTASKINPUTS"] == "1"
+    assert calls[0][1]["env"]["MSBUILDLOGTASKOUTPUTS"] == "1"
     observation = group.read_json(tmp_path / "native.command.json")
     assert observation == {
         "arguments": ["native"],

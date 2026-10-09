@@ -726,6 +726,14 @@ The collector evaluates both result sets against that original plan, with no
 success substituted for another runtime's missing/failed/canceled/timed-out/
 skipped/conflicting required result.
 
+The Node job prepares the committed dotnet, Node, PNPM, UV and Python tools and
+starts its frozen caller with explicit UV/Python selection. Native automatic
+installation is disabled within this job and the local group's child processes.
+Each endpoint explicitly installs its own locked dotnet, Node and PNPM before
+use; native version, SDK and verification semantics remain unchanged. This
+bounds missing-tool installation, not visibility of other installed tools or
+network effects. Preserve the separate retained Node matrix setup.
+
 Prepare separate exact candidate materializations, native dependency state and
 external scratch for the two runtimes. Node 22 build can stamp its tracked
 manifest without postpack reset; fresh scratch alone does not isolate source.
