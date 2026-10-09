@@ -23,10 +23,25 @@ internal static class Program
         Func<CiPlan, PythonGroupRunRequest, CancellationToken, Task<PythonGroupRunResult>>?
             runPythonGroup = null,
         Func<PythonGroupRequest, CancellationToken, Task<PythonGroupReadback>>?
-            planPythonGroup = null)
+            planPythonGroup = null,
+        Func<PythonGroupPreparationRequest, CancellationToken, Task<PythonGroupPreparationResult>>?
+            preparePythonGroup = null)
     {
         try
         {
+            if (args is ["ci", "prepare-python-group", var preparationPath])
+            {
+                PythonGroupPreparationRequest request = JsonSerializer.Deserialize(
+                    File.ReadAllText(preparationPath),
+                    TransferJson.Default.PythonGroupPreparationRequest)
+                    ?? throw new InvalidDataException("Missing native Python preparation request.");
+                PythonGroupPreparationResult result = (preparePythonGroup ??
+                    PythonGroupPreparation.PrepareAsync)(request, CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                output.WriteLine(JsonSerializer.Serialize(result,
+                    TransferJson.Default.PythonGroupPreparationResult));
+                return 0;
+            }
             if (args is ["ci", "plan-python-group", var pythonGroupPath])
             {
                 PythonGroupRequest request = JsonSerializer.Deserialize(
@@ -187,12 +202,28 @@ internal static class Program
                     + " | ci plan-node-group <request.json>"
                     + " | ci plan-dotnet-group <request.json>"
                     + " | ci plan-python-group <request.json>"
+                    + " | ci prepare-python-group <request.json>"
                     + " | ci run-dotnet <plan.json> <request.json>"
                     + " | ci run-python-package <plan.json> <request.json>"
                     + " | ci run-python-group <plan.json> <request.json>"
                     + " | ci run-node <plan.json> <request.json>"
                     + " | ci result <plan.json> <results.json>"
             );
+            return 2;
+        }
+        catch (PythonGroupPreparationException exception)
+        {
+            error.WriteLine(exception.Message);
+            try
+            {
+                using var diagnostics = new FileStream(exception.DiagnosticsPath,
+                    FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                JsonSerializer.Serialize(diagnostics, exception.Commands,
+                    TransferJson.Default.PythonPreparationCommandArray);
+                error.WriteLine($"Original diagnostics: {exception.DiagnosticsPath}");
+            }
+            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+            { error.WriteLine("Original preparation diagnostics could not be retained."); }
             return 2;
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or
@@ -233,6 +264,9 @@ internal static class Program
 [JsonSerializable(typeof(PythonGroupRunResult))]
 [JsonSerializable(typeof(PythonGroupRequest))]
 [JsonSerializable(typeof(PythonGroupReadback))]
+[JsonSerializable(typeof(PythonGroupPreparationRequest))]
+[JsonSerializable(typeof(PythonGroupPreparationResult))]
+[JsonSerializable(typeof(PythonPreparationCommand[]))]
 [JsonSerializable(typeof(NodePlanRequest))]
 [JsonSerializable(typeof(NodeGroupRequest))]
 [JsonSerializable(typeof(NodeGroupReadback))]

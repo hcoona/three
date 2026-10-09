@@ -1,4 +1,5 @@
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Repository;
 
@@ -14,9 +15,21 @@ internal sealed record PythonGroupReadback(CiPlan Plan, PythonMetadataMember[] M
 internal static class PythonGroupReader
 {
     internal static Task<PythonGroupReadback> ReadAsync(PythonGroupRequest request,
-        CancellationToken token) => ReadAsync(request, (checkout, endpoint, cancellation) =>
-            new PythonRepositoryReader(checkout).ReadAsync(endpoint.Collection,
-                endpoint.Environment, cancellation), token);
+        CancellationToken token) => ReadAsync(request, NativeProcess.ExecuteAsync, token);
+
+    internal static Task<PythonGroupReadback> ReadAsync(PythonGroupRequest request,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token)
+    {
+        return ReadAsync(request, (checkout, endpoint, cancellation) =>
+            new PythonRepositoryReader(checkout,
+                new PythonNativeGraphReader(ExecuteAsync).ReadAsync, ExecuteAsync).ReadAsync(
+                    endpoint.Collection, endpoint.Environment, cancellation), token);
+
+        Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
+            CancellationToken cancellation) => execute(command with
+            { InheritEnvironment = false }, cancellation);
+    }
 
     internal static async Task<PythonGroupReadback> ReadAsync(PythonGroupRequest request,
         Func<GitMaterialization, PythonGroupEndpoint, CancellationToken,

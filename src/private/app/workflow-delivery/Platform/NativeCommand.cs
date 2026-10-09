@@ -5,7 +5,8 @@ internal sealed record NativeCommand(
     string Directory,
     string[] Arguments,
     int DeadlineSeconds,
-    IReadOnlyDictionary<string, string?>? Environment = null
+    IReadOnlyDictionary<string, string?>? Environment = null,
+    bool InheritEnvironment = true
 );
 
 internal enum NativeTermination
