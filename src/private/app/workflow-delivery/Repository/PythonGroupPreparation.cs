@@ -12,10 +12,12 @@ internal sealed record PythonGroupPreparationResult(PythonGroupRequest Request,
     PythonPreparationCommand[] Commands);
 
 internal sealed class PythonGroupPreparationException(string scratch,
-    PythonPreparationCommand[] commands) : IOException(
-        $"Python query preparation failed: {Path.GetFileName(commands[^1].Command.Executable)} " +
-        $"{commands[^1].Command.Arguments[0]}, {commands[^1].Result.Termination}, " +
-        $"exit {commands[^1].Result.ExitCode}.")
+    PythonPreparationCommand[] commands, string? missingOutput = null) : IOException(
+        missingOutput is not null ? $"Python query preparation failed: {missingOutput}." :
+            "Python query preparation failed: " +
+            $"{Path.GetFileName(commands[^1].Command.Executable)} " +
+            $"{commands[^1].Command.Arguments[0]}, {commands[^1].Result.Termination}, " +
+            $"exit {commands[^1].Result.ExitCode}.")
 {
     internal string DiagnosticsPath { get; } = Path.Combine(scratch, "preparation-failure.json");
     internal PythonPreparationCommand[] Commands { get; } = commands;
@@ -70,7 +72,8 @@ internal static class PythonGroupPreparation
         string supplement = Path.Combine(output, "debug", "workflow-python-native-facts" +
             (OperatingSystem.IsWindows() ? ".exe" : ""));
         if (!File.Exists(supplement))
-            throw new InvalidDataException("Native Python preparation omitted its supplement.");
+            throw new PythonGroupPreparationException(scratch, commands.ToArray(),
+                "missing native supplement");
 
         PythonGroupEndpoint basis = await EndpointAsync(request.Basis, "basis");
         PythonGroupEndpoint candidate = await EndpointAsync(request.Candidate, "candidate");
@@ -91,8 +94,8 @@ internal static class PythonGroupPreparation
             string helper = Path.Combine(state, "query-tools", OperatingSystem.IsWindows()
                 ? "Scripts/python.exe" : "bin/python");
             if (!File.Exists(helper))
-                throw new InvalidDataException(
-                    "Python query-tool preparation omitted its interpreter.");
+                throw new PythonGroupPreparationException(scratch, commands.ToArray(),
+                    $"missing {name} helper interpreter");
             environment["UV_PROJECT_ENVIRONMENT"] = Path.Combine(state, "activity-environment");
             string bootstrap = Path.Combine(state, "bootstrap"),
                 activity = Path.Combine(state, "activity");

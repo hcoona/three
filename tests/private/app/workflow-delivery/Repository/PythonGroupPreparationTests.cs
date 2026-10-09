@@ -117,25 +117,33 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [DataRow("candidate-sync")]
     [DataRow("missing-supplement")]
     [DataRow("missing-query")]
+    [DataRow("candidate-missing-query")]
     public async Task FailedPreparationCannotReturnACompleteRequest(string phase)
     {
         using var fixture = await Fixture.CreateAsync(false, context.CancellationToken);
         fixture.Failure = phase;
-        if (phase.StartsWith("missing-", StringComparison.Ordinal))
-            await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-                fixture.PrepareAsync(context.CancellationToken));
+        PythonGroupPreparationException failure = await Assert.ThrowsExactlyAsync<
+            PythonGroupPreparationException>(() => fixture.PrepareAsync(
+                context.CancellationToken));
+        Assert.HasCount(fixture.Commands.Count, failure.Commands);
+        CollectionAssert.AreEqual(fixture.Commands.ToArray(),
+            failure.Commands.Select(item => item.Command).ToArray());
+        Assert.AreEqual(Path.Combine(fixture.Request.Scratch, "preparation-failure.json"),
+            failure.DiagnosticsPath);
+        if (phase.Contains("missing-", StringComparison.Ordinal))
+        {
+            Assert.IsTrue(failure.Commands.All(item => item.Result.Succeeded));
+            Assert.IsTrue(failure.Commands.All(item =>
+                item.Result.Stdout == "Controlled preparation"));
+            Assert.Contains(phase == "missing-supplement" ? "supplement" : "interpreter",
+                failure.Message);
+            Assert.DoesNotContain("Controlled preparation", failure.Message);
+        }
         else
         {
-            PythonGroupPreparationException failure = await Assert.ThrowsExactlyAsync<
-                PythonGroupPreparationException>(() => fixture.PrepareAsync(
-                    context.CancellationToken));
-            Assert.HasCount(fixture.Commands.Count, failure.Commands);
-            Assert.AreSame(fixture.Commands[^1], failure.Commands[^1].Command);
             Assert.AreEqual("Controlled failure", failure.Commands[^1].Result.Stderr);
             Assert.AreEqual(NativeTermination.Exited, failure.Commands[^1].Result.Termination);
             Assert.AreEqual(1, failure.Commands[^1].Result.ExitCode);
-            Assert.AreEqual(Path.Combine(fixture.Request.Scratch, "preparation-failure.json"),
-                failure.DiagnosticsPath);
             Assert.Contains(Path.GetFileName(fixture.Commands[^1].Executable), failure.Message);
             Assert.DoesNotContain("Controlled failure", failure.Message);
         }
@@ -305,7 +313,9 @@ public sealed class PythonGroupPreparationTests(TestContext context)
             if (phase == "rust" && Failure != "missing-supplement")
                 Create(Path.Combine(command.Environment!["CARGO_TARGET_DIR"]!, "debug",
                     "workflow-python-native-facts" + (OperatingSystem.IsWindows() ? ".exe" : "")));
-            if (phase == "sync" && Failure != "missing-query")
+            if (phase == "sync" && Failure != "missing-query" &&
+                !(Failure == "candidate-missing-query" &&
+                    command.Directory == Request.Candidate.Directory))
                 Create(Path.Combine(command.Environment!["UV_PROJECT_ENVIRONMENT"]!,
                     OperatingSystem.IsWindows() ? "Scripts/python.exe" : "bin/python"));
             if (phase == "sync" && Cancel is not null) await Cancel.CancelAsync();

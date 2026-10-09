@@ -59,9 +59,14 @@ public sealed class PythonGroupProgramTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public void FailedPreparationRetainsPrivateDiagnosticsWithoutCompletion(bool existingFile)
+    [DataRow(false, null)]
+    [DataRow(true, null)]
+    [DataRow(false, "missing native supplement")]
+    [DataRow(true, "missing native supplement")]
+    [DataRow(false, "missing candidate helper interpreter")]
+    [DataRow(true, "missing candidate helper interpreter")]
+    public void FailedPreparationRetainsPrivateDiagnosticsWithoutCompletion(bool existingFile,
+        string? missingOutput)
     {
         string directory = Path.Combine(Path.GetTempPath(), "python preparation failure " +
             Guid.NewGuid().ToString("N"));
@@ -76,12 +81,15 @@ public sealed class PythonGroupProgramTests(TestContext context)
             string path = Path.Combine(directory, "request.json");
             File.WriteAllText(path, JsonSerializer.Serialize(request,
                 TransferJson.Default.PythonGroupPreparationRequest));
-            NativeCommand command = new("/tools/uv", "/endpoint", ["sync", "--frozen"], 600,
+            bool supplement = missingOutput == "missing native supplement";
+            NativeCommand command = new(supplement ? "/tools/cargo" : "/tools/uv", "/endpoint",
+                supplement ? ["build", "--locked"] : ["sync", "--frozen"], 600,
                 new Dictionary<string, string?> { ["HOME"] = "/owned/home" }, false);
-            NativeCommandResult result = new(NativeTermination.Exited, 7,
-                "private native stdout", "private native stderr", 1.25, null);
+            NativeCommandResult result = new(NativeTermination.Exited,
+                missingOutput is null ? 7 : 0, "private native stdout", "private native stderr",
+                1.25, null);
             var failure = new PythonGroupPreparationException(directory,
-                [new(command, result)]);
+                [new(command, result)], missingOutput);
             if (existingFile) File.WriteAllText(failure.DiagnosticsPath, "existing observation");
             using var output = new StringWriter();
             using var error = new StringWriter();
@@ -91,7 +99,7 @@ public sealed class PythonGroupProgramTests(TestContext context)
 
             Assert.AreEqual(2, exit);
             Assert.AreEqual("", output.ToString());
-            Assert.Contains("uv sync, Exited, exit 7", error.ToString());
+            Assert.Contains(missingOutput ?? "uv sync, Exited, exit 7", error.ToString());
             Assert.DoesNotContain(result.Stdout, error.ToString());
             Assert.DoesNotContain(result.Stderr, error.ToString());
             Assert.DoesNotContain("/owned/home", error.ToString());
