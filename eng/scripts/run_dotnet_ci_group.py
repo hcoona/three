@@ -64,6 +64,17 @@ def prepare(root: Path, directory: Path, endpoints_path: Path) -> Path:
         if endpoint in visited:
             continue
         visited.add(endpoint)
+        node.run(
+            endpoint,
+            state,
+            name + "-runtime-tools",
+            "mise",
+            "install",
+            "--locked",
+            "dotnet",
+            "node",
+            "pnpm",
+        )
         node.run(endpoint, state, name + "-tools", "dotnet", "tool", "restore")
         node.run(
             endpoint,
@@ -74,16 +85,6 @@ def prepare(root: Path, directory: Path, endpoints_path: Path) -> Path:
             "dirs.proj",
             *PROPERTIES,
             "-binaryLogger:" + str(state / (name + "-restore.binlog")),
-        )
-        node.run(
-            endpoint,
-            state,
-            name + "-node-tools",
-            "mise",
-            "install",
-            "--locked",
-            "node",
-            "pnpm",
         )
     basis = Path(endpoints["basis"]["directory"])
     basis_log = None

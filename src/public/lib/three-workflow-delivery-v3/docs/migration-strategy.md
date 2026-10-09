@@ -520,6 +520,15 @@ preparation/evaluation is unprivileged; the scope job runs no second test suite.
 Confirmed base absence requires successful inventory inspection; the candidate
 owner must remain present. Identical full-mode endpoints may reuse one evaluation.
 
+The existing scope job explicitly prepares locked dotnet, Node and PNPM tools
+before native environment export, with `MISE_EXEC_AUTO_INSTALL=0` scoped to that
+job and inherited by its control commands and native children. Before each
+endpoint's first dotnet operation, explicitly prepare that endpoint's own locked
+dotnet, Node and PNPM declarations. Keep Actions-selected `global.json` SDKs and
+native DOTNET_ROOT semantics; candidate tool preparation cannot stand in for a
+different basis declaration. Missing tools or native verification still fail.
+This bounds implicit installation, not tool visibility or all network effects.
+
 Change the Python selector's logical Git-coordinate operations to `PurePosixPath`;
 retain `Path` for filesystem access. Use strict UTF-8 for Git, JSON and text at
 the process boundary, and an explicit compatible workflow shell rather than
@@ -554,7 +563,7 @@ An unadopted member needs no replacement preset merely to retain its checks.
 #### Endpoint Responsibility and Selection
 
 Extend the existing `ci-scope` JSON with `endpoint_owners`, alongside its existing
-aggregate selections. Each `basis`/`candidate` endpoint carries its exact
+retained other-job selections. Each `basis`/`candidate` endpoint carries its exact
 `revision` and one `paths` row for every changed coordinate. A row contains
 `path`, committed `present`, nullable Git `mode`, and `reasons`; each positive
 reason contains `owner`, concrete `target`, `rule`, and source-file coordinates
@@ -563,11 +572,14 @@ Multiple legitimate owners remain separate reasons. Native Git supplies entry
 presence/mode and committed configuration bytes; missing facts are not absence.
 Only changed coordinates are transferred, not another ownership database.
 
-Refactor the retained selector's project, Python-test, resource and special-job
-associations to produce these endpoint facts. Read each endpoint's own Python
-workspace/test configuration and manifests. Preserve the existing aggregate
-candidate-execution semantics separately, including candidate replacement test
-roots and candidate-present package preparation. A basis-only owner explains a
+Use the retained selector's manifest-path inventory, native resource and
+special-job associations to produce these endpoint facts. Python coordinates
+provide responsibility for other ecosystem consumers without parsing Python
+workspace, dependency or test configuration or selecting Python execution.
+The [Python quality and caller mapping](#python-quality-and-caller-mapping) and
+[native Python CI group](./middle-level-design.md#native-python-ci-group) own both-endpoint native facts,
+the single original mixed plan and candidate execution. Preserve the retained
+other jobs' candidate-execution semantics. A basis-only owner explains a
 removed input; it does not execute a deleted target. Preserve both general .NET
 and AzureAuth owners when applicable and the native control-test resource reasons
 already integrated above.

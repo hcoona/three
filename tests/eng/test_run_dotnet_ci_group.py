@@ -183,7 +183,7 @@ def test_absent_basis_control_still_prepares_both_native_endpoints(
     commands = []
     error = subprocess.CalledProcessError(
         2,
-        ("mise", "install", "--locked", "node", "pnpm"),
+        ("mise", "install", "--locked", "dotnet", "node", "pnpm"),
         output=b"",
         stderr=b"locked URLs unavailable",
     )
@@ -233,7 +233,7 @@ def test_absent_basis_control_still_prepares_both_native_endpoints(
         if args[:2] == ("mise", "install")
     ]
     assert installs == [
-        (endpoint, ("mise", "install", "--locked", "node", "pnpm"))
+        (endpoint, ("mise", "install", "--locked", "dotnet", "node", "pnpm"))
         for endpoint in dict.fromkeys(
             Path(endpoints[name]["directory"])
             for name in ("basis", "candidate")

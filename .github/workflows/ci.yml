@@ -25,6 +25,7 @@ jobs:
     runs-on: windows-latest
     env:
       PYTHONUTF8: '1'
+      MISE_EXEC_AUTO_INSTALL: '0'
     defaults:
       run:
         shell: bash
@@ -66,7 +67,7 @@ jobs:
           # Preserve the existing Java vendor semantics at both endpoints.
           version: '2026.8.10'
           experimental: true
-          install: false
+          install_args: dotnet node pnpm
       - name: Prepare the complete candidate control application
         id: control
         env:

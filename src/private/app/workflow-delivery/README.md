@@ -859,10 +859,13 @@ Both resource sets contribute the .NET owner and path/project/revision reasons;
 missing or conflicting facts fail rather than suppressing checks. The final
 `ci-scope` artifact also carries `endpoint_owners`: each exact basis/candidate
 revision has one row per changed path, with committed presence/mode and separate
-owner/target/rule/source reasons. It reads each endpoint's committed Python
-workspace, manifests and test targets, reuses retained selectors and resource
-facts, and matches current record bindings with the record checker's shared pure
-path matcher. Frozen root-dev preparation supplies the existing locked PyYAML
+owner/target/rule/source reasons. It reads committed endpoint path/mode and
+manifest-path inventory for other-job responsibility, reuses retained selectors
+and native resource facts, and matches current record bindings with the record
+checker's shared pure path matcher. The [native Python CI caller](#native-python-ci-caller)
+owns both endpoints' Python workspace, dependency and pytest facts, selection and
+candidate execution; scope transfers the exact comparison and full-mode context
+without parsing or selecting Python work. Frozen root-dev preparation supplies the existing locked PyYAML
 parser; it does not run the contextual record checker in the scope job.
 
 Responsibility explains retained project/test/record routing; it does not prove
