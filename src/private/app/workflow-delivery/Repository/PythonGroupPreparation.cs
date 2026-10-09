@@ -39,12 +39,6 @@ internal static class PythonGroupPreparation
             request.Full && request.Basis.Reference != request.Candidate.Reference)
             throw new InvalidDataException(
                 "Python preparation requires exact endpoints and fresh external state.");
-        foreach (string source in new[] { "passive.py", "pytest_configuration.py", "packages.py",
-                     "uv/Cargo.toml", "uv/Cargo.lock", "uv/rust-toolchain.toml" })
-            if (!File.Exists(Path.Combine(sources, source)))
-                throw new InvalidDataException(
-                    "The complete candidate Python control sources are missing.");
-
         var commands = new List<PythonPreparationCommand>();
         string native = Path.Combine(scratch, "native");
         Directory.CreateDirectory(native);

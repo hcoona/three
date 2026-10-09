@@ -162,7 +162,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
         else if (defect == "source-overlap") fixture.Request = fixture.Request with
             { Scratch = fixture.Request.Basis.Directory };
         else if (defect == "missing-source")
-            File.Delete(Path.Combine(fixture.Request.ControlSources, "uv/Cargo.lock"));
+            Directory.Delete(fixture.Request.ControlSources, recursive: true);
         else if (defect == "relative-tool") fixture.Request = fixture.Request with
             { Tools = fixture.Request.Tools with { Uv = "uv" } };
         else if (defect == "deadline")
