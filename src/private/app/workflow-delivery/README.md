@@ -136,6 +136,31 @@ Existing Python callers,
 root pytest preparation and Release remain active; this component does not
 switch or retire them.
 
+### Finite Python CI Execution Component
+
+`ci run-python-group <plan.json> <request.json>` receives the original mixed plan
+and native membership, pytest configuration/target bindings and operation context.
+The request contains `native` (checkout, fresh external scratch, UV/interpreter,
+members, configuration, targets, operation, deadline and environment) and
+`packageHelper`. Both supported check partitions are validated against the exact
+candidate before either dispatches. It adds no target roster or dependency resolver.
+
+[`PythonPytestExecution`](CI/PythonPytestExecution.cs) prepares a separate frozen
+UV environment for root plus selected native members, retaining native default
+groups and editability. Each selected target runs through native pytest with the
+bound configuration. Preparation failure leaves all targets unsatisfied; independent
+target failures and cancellation retain complete required results.
+[`PythonGroupExecution`](CI/PythonGroupExecution.cs) keeps separate pytest/package
+scratch, preserves package obligations after pytest failure, and collects both
+partitions against the original plan. Empty partitions perform no product preparation.
+The archive consumer's Git-free scratch boundary is checked before either dispatch.
+
+Controlled Git/command-transfer scenarios cover selection, preparation, partitions,
+results and cancellation. They do not qualify actual root pytest, complete paired
+planning/callers, hosted Python CI, Windows or Release. Existing callers remain until
+that complete consumer group is qualified and switched together under the
+[native Python CI group contract](../../../public/lib/three-workflow-delivery-v3/docs/middle-level-design.md#native-python-ci-group).
+
 ### Python Passive Extraction
 
 [`passive.py`](Native/Python/passive.py) accepts one project-directory argument

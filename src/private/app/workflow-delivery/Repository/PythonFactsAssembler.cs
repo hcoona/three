@@ -37,25 +37,14 @@ internal static class PythonFactsAssembler
     {
         PythonPytestTargetSet targets = PythonPytestTargets.Bind(endpoint.Configuration,
             endpoint.Revision, endpoint.Projects);
-        string[] options = endpoint.Configuration.Options;
-        if (options.Length != 0 &&
-            (options.Length != 1 || options[0] != "--import-mode=importlib"))
-            throw new InvalidDataException("Unsupported supplied native pytest option scope.");
+        CheckSpec[] checks = PythonPytestChecks.Expand(endpoint.Configuration, targets,
+            endpoint.Operation);
         var owners = new List<ProjectFacts>();
         var quality = new List<PythonQualityBinding>();
         var inputs = new List<PythonInputBinding>(endpoint.Inputs);
-        foreach (PythonPytestTarget target in targets.Targets)
+        foreach ((PythonPytestTarget target, CheckSpec check) in targets.Targets.Zip(checks))
         {
             string id = "pytest:" + target.Target;
-            var dimensions = new Dictionary<string, string>(endpoint.Operation.Dimensions,
-                StringComparer.Ordinal);
-            if (!dimensions.TryAdd("testPath", target.Target) ||
-                !dimensions.TryAdd("configuration", targets.ConfigurationFile) ||
-                dimensions.ContainsKey("importMode"))
-                throw new InvalidDataException("Conflicting native pytest operation dimensions.");
-            if (options.Length != 0) dimensions.Add("importMode", "importlib");
-            var check = new CheckSpec(new(id, "python/pytest-v1", endpoint.Operation.Variant),
-                dimensions, endpoint.Operation.Runner, true, []);
             owners.Add(new(id, target.Member ?? ".", [], [], null, null, [check],
                 target.Inputs, CheckOrigin.NativeRetained));
             quality.Add(new(id, target.Member, target.Inputs));
