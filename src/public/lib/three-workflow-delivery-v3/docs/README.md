@@ -72,7 +72,9 @@ leaves native qualification incomplete. Controlled tests now cover the
 [native tool preparation correction](./research/python-native-packaging.md#native-editable-tool-preparation):
 one frozen both-group sync with default isolation and declared editability,
 retaining shared product build and same-tools noneditable conversion. Fresh exact
-native qualification remains pending under the package contract. Actual
+native qualification remains pending under the package contract. The
+[fresh corrected subject](./research/python-native-package-qualification.md#default-isolated-tool-preparation-subject)
+binds the prepared packet and separately gated readiness before launch. Actual
 original wheel and Git-free sdist native consumers remain unqualified; complete caller mapping, root pytest
 preparation/cutover and Release remain pending. The [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. Complete native caller qualification
@@ -246,9 +248,11 @@ and candidate Git-free version reuse. The
 [finite package protocol](./research/python-native-package-qualification.md)
 retains historical subjects and corrected-campaign outcomes. Its
 [editable preparation failure](./research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
-routes the remaining conditional allowance and correction gates. The admitted
-successor remains failed; no changed correction subject is admitted, and actual
-package execution remains unqualified.
+routes the remaining conditional allowance and correction gates. The
+[fresh corrected subject](./research/python-native-package-qualification.md#default-isolated-tool-preparation-subject)
+binds its exact prepared packet and readiness source under that allowance;
+actual package execution remains unqualified. Historical failed successors
+supply no replay or cleanup authority.
 
 The [Python native planning source assessment](./research/python-native-planning.md)
 examines UV metadata and native build-source association candidates for the next

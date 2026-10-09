@@ -51,7 +51,9 @@ leaves native qualification incomplete. Controlled tests now cover the
 [native tool preparation correction](docs/research/python-native-packaging.md#native-editable-tool-preparation):
 one frozen both-group sync with default isolation and declared editability,
 retaining shared product build and same-tools noneditable conversion. Fresh exact
-native qualification remains pending under the package contract.
+native qualification remains pending under the package contract. The
+[fresh corrected subject](docs/research/python-native-package-qualification.md#default-isolated-tool-preparation-subject)
+binds the prepared packet and separately gated readiness before launch.
 Original wheel and Git-free sdist consumers, caller mapping, root pytest preparation
 and cutover, and Release remain pending. The
 [primitive Linux observation](docs/research/python-native-planning.md#primitive-native-observation)

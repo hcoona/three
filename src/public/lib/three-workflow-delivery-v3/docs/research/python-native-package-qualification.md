@@ -8,13 +8,13 @@ The existing Python callers remain active until complete qualification and cutov
 The [historical campaign's final failure](#final-package-failure-and-spent-campaign)
 retains its failed/spent lifetimes and does not authorize revival. The
 [corrected campaign's editable preparation failure](#second-lifetime-editable-preparation-failure)
-records its spent subjects and remaining conditional allowance. That allowance
-admits no changed exact subject: the
+records its spent subjects and remaining conditional allowance. The
 [native tool preparation correction](python-native-packaging.md#native-editable-tool-preparation)
-has controlled implementation coverage but remains natively unqualified. A
-changed exact execution subject is not yet admitted. The existing gates for
-implementation review, exact subject/protocol review, protected delivery,
-readiness and independent actual audit still precede any launch. Earlier admitted subjects remain
+has controlled implementation coverage but remains natively unqualified. The
+[fresh corrected subject](#default-isolated-tool-preparation-subject) binds its exact
+prepared packet, implementation and readiness source under that existing allowance.
+Independent subject/protocol review, protected delivery, exact readiness and its
+independent actual audit still precede any launch. Earlier admitted subjects remain
 historical and cannot authorize replay, refund or failed-state cleanup.
 
 ## Question and Scope
@@ -1188,3 +1188,80 @@ Auxiliary isolated backend resolution is not claimed lock-frozen. Larger effects
 reduced guarantees, unavailable necessary capability or exhausted allowance still
 return to the owner. No root pytest, caller cutover, Windows, Release or
 publication qualification follows from this failed observation.
+
+### Default-Isolated Tool Preparation Subject
+
+The preparation correction is accepted in
+[PR #1103](https://github.com/hcoona/three/pull/1103), implementation commit
+`bc50312813eb2c83288c468f65812365e6e307fd`, tree
+`82d64e8bc5358da9df32cc4a89f1559d3a944123`. Its independent engineering/OCR and
+records/research return reviews found no material findings, confidence 9/10.
+Focused controlled package tests passed 34/34; the complete application suite
+passed 1,736 with one existing Windows-only skip and zero failures. Protected
+Windows CI also passed. These establish implementation and delivery, not native
+backend installation or original-consumer qualification.
+
+Ordinary preparation created fresh checkout5 at that exact protected commit and
+compiled the application and source12 harness once. The retained complete
+binding covers 199 application output files, 203 harness output files, source,
+committed inputs, Git checkout/configuration, read-only tool/runtime closure,
+compilation receipt/binlogs and accepted implementation/source/failure lineage.
+The checkout has 2,488 committed entries and empty complete status. No native
+package call, readiness preparation or final package lifetime was launched by
+that compilation. The earlier failed checkout and owned state remain untouched.
+
+| Exact corrected subject         | SHA256                                                             |
+| ------------------------------- | ------------------------------------------------------------------ |
+| Phase packet3                   | `033d8d2ce63f4fc31c0c54629683501388c22a5074b30e40f2b824639799e132` |
+| Complete preparation12 binding1 | `bb36a1e2555572d8f75b63bb6a6beb90a4f390f5fb8db04d1012a021a39b3ea0` |
+| Exact readiness12 source        | `87f3a32c17cb5825971b8f937dafaa11be12c7ececd6d60ab04ffd9a85fd5444` |
+
+The existing carrier retains these exact files, ordinary preparation streams and
+receipts, full accepted source12 review and unchanged actual source11 controlled
+operator tests. Four source12 transport files are byte-identical to source11;
+only the harness project reference selects fresh checkout5. The exact compiled
+application owns the corrected one-sync recipe. Packet/binding labels saying
+unadmitted record their preparation-time state; they are not a second admission
+authority. This section's protected acceptance admits only those unchanged exact
+subjects under the already approved conditional reserve.
+
+Planning remains four top-level calls. Reserve sixteen executor calls before
+dispatch and retain the conservative twenty-three-call successful-path bound
+including three success-only inventories; the corrected recipe's fifteen
+source-derived executor operations do not refund reservations or increase any
+ceiling. The last package lifetime remains limited to thirty-two reserved calls
+and 600 inclusive seconds within the unchanged 1,800-second campaign. Its exact
+bootstrap argv in binding1 targets only the absent campaign2/lifetime-3, with
+its existing real, nonsymlink parent required before launch.
+
+Readiness12 changes only its own exclusive report/preparation paths and bound
+preparation identity from readiness8. Its eight-read Git dispatch function is
+AST-identical to the reviewed/controlled predecessor. It rehashes the complete
+bound closure, verifies exact checkout bytes and native LFS payloads, unchanged
+Git configuration/index/HEAD/refs/hooks, absent final lifetime and the real
+campaign parent, and completes owned success cleanup. It keeps the existing
+120-second/eight-read individual limits and existing native supervision, state,
+stream, process, terminal-reserve and cleanup semantics. Two of nine preparations
+are spent; seven remain inside the unchanged 1,260-second cumulative ceiling.
+The earlier read-only allowance cannot substitute for native readiness effects.
+
+Independent engineering and records/research review and protected delivery of
+this exact section, binding and readiness source still precede execution. Run
+exact readiness12 once, retain its actual capture and obtain a separate independent
+actual-output audit before the final package launch. A failure stops and retains
+owned state; classify it independently before using any remaining reserve. Every
+started or uncertain invocation remains charged, without replay, refund or failed
+state cleanup. Stop unused reserves after the first independently accepted success.
+
+The native recipe delegates advertised editable auxiliary requirements to one
+frozen both-group sync with UV default isolation and declared editability. Product
+shared build, native dependency checking, version agreement, complete original
+wheel/sdist contents and both independent original consumers remain required.
+Noneditable reconciliation still uses the same shared tools environment before
+Git-free original-sdist consumption. Auxiliary isolated backend resolution remains
+unpromised as lock-frozen. All four actual required results and the existing
+public-only owned effects/isolation boundaries remain unchanged; unavailable
+necessary capability, larger effects, reduced guarantees or exhausted allowance
+return to the owner. This exact Linux qualification supplies no root pytest,
+paired caller, Windows native-package, arbitrary-backend, Release or publication
+acceptance. Existing callers remain active pending their complete cutover group.
