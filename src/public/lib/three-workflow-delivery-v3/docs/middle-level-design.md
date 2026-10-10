@@ -251,6 +251,49 @@ Retain adopted package checks, complete outputs and their own prerequisites. The
 [caller mapping](./migration-strategy.md#python-quality-and-caller-mapping) owns the
 concrete engineering relations that native package tools cannot discover.
 
+### Native Ruby Planning Facts
+
+The Ruby reader consumes unprivileged RubyGems and Bundler answers for each
+materialized endpoint. RubyGems owns evaluated source gem metadata; Bundler owns
+Gemfile/lock equivalence, group/platform selection, source identities and complete
+resolved dependency relations. Workflow does not parse these native declarations
+or resolve package versions. A small Ruby adapter may serialize native public
+answers to the managed process; it is not a second resolver or runtime service.
+
+A source gem, a Bundler environment and an installed dependency have distinct
+identities. Existing repository discovery identifies committed source gemspecs
+and actual bundle consumers. Source gemspec evaluation can be required even when
+its adjacent Gemfile does not load that gemspec. Each answer includes its original
+source location and native package coordinate. A failed or nil gemspec evaluation
+fails collection; it cannot silently remove a repository producer.
+
+Each bundle answer includes its original Gemfile/lock, activated native version
+and operation context, actual evaluated Gemfile inputs, selected direct and
+transitive dependencies, and native source identities. Keep registry dependency
+facts only as needed to recover repository-local relations; installed gems do not
+become repository projects. Consume the locked version through native
+launch/preparation and verify actual activation. A native
+fallback to another library cannot claim the requested lock context. The reader
+must obtain complete native answers for both existing lock-selected versions
+before their callers switch; this is finite supported integration, not a generic
+library compatibility layer.
+
+Join native local Path source identity and active local Git override identity to
+repository producers by their original source paths. Installed cache locations
+and names alone cannot establish these relations. Preserve native transitive
+edges and cross-ecosystem bundle consumers. A bundle-only consumer does not gain
+an invented gemspec or package identity. Missing required local owners, native
+incomplete dependency answers, or an unsupported relevant source shape fail
+collection instead of choosing full mode or maintaining a second input roster.
+
+Input ownership covers committed project inputs, native evaluated Gemfiles and
+locks, concrete project-owned gemspec helpers, and existing tool/NBGV/quality
+inputs. Package file membership describes packaged content, not a test-input
+inventory. Unknown dynamic Ruby IO or external input cannot be proven closed by
+loaded-feature enumeration; such a required shape remains unsupported. Native
+facts from both endpoints join the existing paired impact selection, including
+removed local producers and their previous consumers.
+
 ### Native .NET Project Facts
 
 MSBuild owns .NET discovery, SDK resolution, evaluation, graph identity and
@@ -614,6 +657,35 @@ must qualify the complete caller group before cutover. The existing local full
 runner and smoke PR caller remain until their selected/full preparation and check
 consumers switch together. No local package experiment, historical campaign,
 Release or publication authority follows from this integration contract.
+
+### Native Ruby CI Group
+
+Plan complete adopted Ruby checks from the paired facts and quality declarations.
+Reuse the existing selected-work and original-result contracts. Preserve whole
+project RSpec invocation and its native configuration and external tools; Workflow
+does not choose examples. Request the supported native JSON formatter/output,
+retaining original examples, failure/pending counts and outside-example errors.
+Native command termination and complete result output remain separate facts.
+Missing/truncated output, incomplete examples or a failing native command cannot
+become a successful check. Apply project quality requirements to pending results;
+a universal extra quality policy is not introduced here.
+
+An adopted gem distribution obligation does not require a Gemfile or spec
+folder. Use native gem build, RubyGems metadata/content inspection and the declared
+clean installed require consumer. Preserve original package associations and
+native outputs for result collection. Source version projection remains with
+NBGV and the project's native build integration. No custom complete-commit field,
+provenance admission chain or Release state machine is added to CI.
+
+The caller transfers exact endpoint/plan/control context and executes every
+selected variant against the original plan without replanning. Failed preparation,
+cancellation and absent required results retain failure. Explainable empty
+selection performs no product preparation. Root RSpec and adopted gem consumers
+switch as one complete Ruby group; retire their duplicate automated PR trigger
+only after ordinary hosted transfer/execution/result qualification. Manual
+Release and historical evidence consumers remain with their owning retirement
+groups. This contract does not reopen any completed Ruby campaign or authorize
+publication, dispatch or credential/configuration changes.
 
 ## Builds, Packages and Consumers
 

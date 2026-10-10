@@ -58,8 +58,8 @@ unused package slots expired. The
 has controlled Git/command-transfer coverage for the original pytest/package plan.
 The [native Python CI caller](../../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
 implements root CI and committed local full execution; the smoke PR entry is
-retired. Actual root pytest and the complete Linux caller require ordinary hosted
-qualification before accepted cutover. Release remains separate.
+retired. Actual root pytest and the complete Linux caller have ordinary hosted
+qualification in [PR #1114](https://github.com/hcoona/three/pull/1114). Release remains separate.
 The [prepared endpoint collector](../../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
 composes existing readers and paired selection with controlled coverage. Its
 prepared group CLI binds exact scope/endpoints and transfers candidate-native
@@ -120,6 +120,14 @@ requirements, replacement HLD, middle-level design and implementation plan, then
 before implementation, validation, caller cutover and retirement. Preserve permanent requirement IDs
 and the existing consumers of historical evidence. The Wave's effects boundary
 does not reopen any completed ecosystem campaign or authorize a new publication.
+
+The [native Ruby planning facts](./middle-level-design.md#native-ruby-planning-facts)
+and [CI group contract](./middle-level-design.md#native-ruby-ci-group) define the
+next extraction boundary. The [integration order](./migration-strategy.md#native-ruby-ci-integration)
+keeps source gem, bundle and installed dependency identities separate and
+preserves whole RSpec and adopted gem consumers. Native API composition and actual
+caller qualification remain pending; these contracts introduce no Ruby
+implementation, publication or campaign continuation.
 
 ## Ruby Delivery Entry
 

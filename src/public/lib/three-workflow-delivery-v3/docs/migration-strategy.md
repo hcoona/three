@@ -332,6 +332,67 @@ preparation and Python workflow callers until their complete replacement
 consumers are accepted and can retire atomically. Package implementation alone
 does not qualify paired caller/cutover or migrate Release.
 
+### Native Ruby CI Integration
+
+Accept the [native Ruby planning facts](./middle-level-design.md#native-ruby-planning-facts)
+and [CI group contract](./middle-level-design.md#native-ruby-ci-group) before
+implementing the next reader and caller group. Use the existing private app's
+native command/paired-selection/result interfaces. A small Ruby helper can
+consume activated RubyGems/Bundler APIs through the already required Ruby runtime;
+C# consumes structured answers and does not implement Gemfile/lock syntax,
+version resolution or group/platform selection.
+
+The current source gem consumers are `asciidoctor-latexmath` and the adopted
+Ruby smoke gem; Hexo separately consumes a bundle environment without its own
+gemspec. Latexmath's Gemfile does not load its source gemspec, whose project-owned
+version projection invokes NBGV. Its gemspec file list omits tests. Preserve these
+separate producer/check/input responsibilities; no generated package roster or
+package-file-based RSpec selection is justified. Quality adoption fits the
+existing YAML preset composition rather than a new policy lifecycle.
+
+Public Bundler source exposes native evaluated Gemfile inputs and dependency
+closure, but the two committed locks select different versions and public method
+shapes. Native Path source and active local Git override identity also differ.
+Qualify the exact activated interfaces, frozen input invariance, nested Gemfiles,
+direct/transitive local sources, removed/missing owners and existing cross-group
+consumers before dependent implementation. Do not call private APIs, copy native
+selection logic or replace a missing answer with installed-name/path inference.
+Unbounded relevant dynamic Ruby inputs remain unsupported.
+
+For RSpec, use supported native JSON formatter/output CLI options with the whole
+original project/configuration. The formatter class itself is private; do not
+construct or subclass it, select examples in Workflow, or add a report converter.
+Preserve command termination, original examples, pending/failure and
+outside-example results. Gem build/inspect/clean require obligations remain even
+when the source has no Gemfile/spec directory.
+
+Keep ordinary root Ruby and the shadow PR workflow until one complete native
+group qualifies their combined planning, preparation, execution and original
+result transfer. Move the adopted fixture and retire duplicate automated triggers
+atomically with that caller switch. Preserve manual Release and historical readers
+until their own groups retire. Public source establishes interface candidates,
+not current native qualification; source findings and bounded validation limits
+must be accepted before observations. The Wave permits ordinary isolated software
+validation/tool preparation; it does not reopen any stopped Ruby campaign or
+supply publication, dispatch, authentication or configuration authority.
+
+The native source basis is public and pinned: Bundler
+[2.4.20 Definition](https://github.com/ruby/rubygems/blob/de20c7e7b7d7cc7a9ef088684a2c742d5a651ebf/bundler/lib/bundler/definition.rb)
+and [2.7.2 Definition](https://github.com/ruby/rubygems/blob/b463ced1459e03bf871116fff3a09c5d287806c2/bundler/lib/bundler/definition.rb)
+expose `gemfiles` and requested dependency/resolve answers; their respective
+[2.4 SpecSet](https://github.com/ruby/rubygems/blob/de20c7e7b7d7cc7a9ef088684a2c742d5a651ebf/bundler/lib/bundler/spec_set.rb)
+and [2.7 SpecSet](https://github.com/ruby/rubygems/blob/b463ced1459e03bf871116fff3a09c5d287806c2/bundler/lib/bundler/spec_set.rb)
+implement different public `for` signatures. Bundler 2.7's
+[Path](https://github.com/ruby/rubygems/blob/b463ced1459e03bf871116fff3a09c5d287806c2/bundler/lib/bundler/source/path.rb)
+and [Git](https://github.com/ruby/rubygems/blob/b463ced1459e03bf871116fff3a09c5d287806c2/bundler/lib/bundler/source/git.rb)
+separate original Path locations from active local Git paths. RSpec 3.13.6's
+[JSON formatter feature](https://github.com/rspec/rspec/blob/4d8e9c3699dbc821b4603c3c01b6e81c85e3784c/rspec-core/features/formatters/json_formatter.feature)
+and [option parser](https://github.com/rspec/rspec/blob/4d8e9c3699dbc821b4603c3c01b6e81c85e3784c/rspec-core/lib/rspec/core/option_parser.rb)
+document native `--format`/`--out` use; the
+[formatter implementation](https://github.com/rspec/rspec/blob/4d8e9c3699dbc821b4603c3c01b6e81c85e3784c/rspec-core/lib/rspec/core/formatters/json_formatter.rb)
+marks its class private. These source findings do not demonstrate
+complete current-project graph identity, activated-version or execution behavior.
+
 ### Native .NET CI Group
 
 This group replaces general .NET CI selection and execution using the current

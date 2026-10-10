@@ -78,13 +78,14 @@ unused package slots expired. The
 has controlled Git/command-transfer coverage for the original pytest/package plan.
 The [native Python CI caller](../../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
 implements root CI and committed local full execution; the smoke PR entry is
-retired. Actual root pytest and the complete Linux caller require ordinary hosted
-qualification before accepted cutover. Release remains separate.
+retired. Actual root pytest and the complete Linux caller have ordinary hosted
+qualification in [PR #1114](https://github.com/hcoona/three/pull/1114). Release remains separate.
 The [prepared endpoint collector](../../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
 composes existing native readers and paired selection with controlled coverage;
 its concrete caller materializes exact endpoints and retains one original mixed
-plan. Ordinary PR CI must qualify actual Linux query-tool preparation and the
-root/local/smoke replacement together before merge. The
+plan. Ordinary hosted qualification of Linux query-tool preparation and the
+root/local/smoke replacement is carried by
+[PR #1114](https://github.com/hcoona/three/pull/1114). The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned helper composition. The complete caller mapping is
 implemented; [PR #1114](https://github.com/hcoona/three/pull/1114) carries ordinary hosted qualification. The enrichment campaign and cleanup are
