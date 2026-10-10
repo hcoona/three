@@ -92,6 +92,15 @@ def _required_step(scope: dict[str, Any]) -> None:
     assert scope.get("continue-on-error", False) is False
 
 
+def _python_adapter_condition(step: dict[str, Any]) -> str:
+    if step.get("uses", "").startswith("ruby/setup-ruby@"):
+        return (
+            "steps.plan.outputs.legacy_v3 == 'true' || "
+            "steps.plan.outputs.native_ruby == 'true'"
+        )
+    return "steps.plan.outputs.legacy_v3 == 'true'"
+
+
 def _required_context_step(key: str, step: dict[str, Any]) -> None:
     if key == "validation":
         assert step["if"] in {"always()", "cancelled()"}
@@ -128,7 +137,7 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
         assert step["uses"].startswith("actions/upload-artifact@")
         assert not step.get("continue-on-error", False)
     elif key == "python-tests" and "adapter" in step["name"].lower():
-        assert step["if"] == "steps.plan.outputs.legacy_v3 == 'true'"
+        assert step["if"] == _python_adapter_condition(step)
         assert not step.get("continue-on-error", False)
     elif "Retain" not in step["name"] and step.get("if") != "cancelled()":
         _required_step(step)
@@ -592,8 +601,7 @@ def test_python_check_has_consumed_toolchain_prerequisites(workflow):
     ]
     assert all(steps.index(plan) < steps.index(step) for step in adapters)
     assert all(
-        step["if"] == "steps.plan.outputs.legacy_v3 == 'true'"
-        for step in adapters
+        step["if"] == _python_adapter_condition(step) for step in adapters
     )
     mise = _action(job, "jdx/mise-action")
     assert mise["with"]["experimental"] is True
@@ -1165,7 +1173,7 @@ def test_python_group_requires_native_comparison_not_legacy_flags(
     assert "if" not in plan
     for step in steps:
         if "adapter" in step.get("name", "").lower():
-            assert step["if"] == "steps.plan.outputs.legacy_v3 == 'true'"
+            assert step["if"] == _python_adapter_condition(step)
     receivers = [
         step
         for step in steps
