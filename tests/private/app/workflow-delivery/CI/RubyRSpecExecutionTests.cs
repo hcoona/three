@@ -51,7 +51,7 @@ public sealed class RubyRSpecExecutionTests
                 async (command, token) =>
                 {
                     Assert.AreEqual(request.Ruby, command.Executable);
-                    Assert.AreEqual(Path.Combine(request.Checkout, "src/product"),
+                    Assert.AreEqual(Path.GetFullPath(Path.Combine(request.Checkout, "src/product")),
                         command.Directory);
                     string[] expectedArguments = [request.Bundle, "_2.4.20_", "exec", "rspec",
                         "--format", "json", "--out", command.Arguments[^1]];
