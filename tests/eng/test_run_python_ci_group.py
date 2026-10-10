@@ -341,7 +341,9 @@ def test_no_work_has_no_product_or_auxiliary_preparation(flow):
     assert "selected=false" in flow.output.read_text()
     assert "legacy_v3=false" in flow.output.read_text()
     assert "native_helper=false" in flow.output.read_text()
+    assert "native_ruby=false" in flow.output.read_text()
     assert "pwsh" not in flow.tool_requests
+    assert "ruby" not in flow.tool_requests
 
 
 @pytest.mark.parametrize("defect", ["preparation", "missing-result"])
@@ -371,6 +373,50 @@ def test_substituted_plan_stops_before_product_dispatch(flow, field):
     with pytest.raises(ValueError, match="different binding"):
         group.execute(flow.root, flow.directory)
     assert [row[0] for row in flow.calls] == ["preparation", "planning"]
+
+
+def test_selected_ruby_helper_prepares_isolated_native_fixture_context(
+    flow, tmp_path
+):
+    """Only the adopted target prepares and transfers its real tool contexts."""
+    flow.state["checks"] = [check("python/pytest-v1", group.RUBY_TESTS)]
+    group.plan(flow.root, flow.directory)
+    group.execute(flow.root, flow.directory)
+    labels = [row[0] for row in flow.calls]
+    native = group.node.read_json(flow.directory / "execution-request.json")[
+        "native"
+    ]
+    assert labels == [
+        "preparation",
+        "planning",
+        "ruby-test-tools-2.4.20",
+        "ruby-test-tools-2.7.2",
+        "execution",
+    ]
+    assert "native_ruby=true" in flow.output.read_text()
+    environment = native["environment"]
+    assert environment["WORKFLOW_DELIVERY_TEST_RUBY"] == str(
+        tmp_path / "tools/ruby"
+    )
+    homes = json.loads(environment["WORKFLOW_DELIVERY_TEST_RUBY_GEM_HOMES"])
+    assert homes == {
+        version: str(flow.directory / "ruby-test-tools" / version / "gems")
+        for version in ("2.4.20", "2.7.2")
+    }
+    for label, arguments, options in flow.calls[2:-1]:
+        version = label.removeprefix("ruby-test-tools-")
+        assert arguments[:4] == (
+            str(tmp_path / "tools/ruby"),
+            "-S",
+            "gem",
+            "install",
+        )
+        assert "bundler:" + version in arguments
+        assert ("rspec-core:3.13.6" in arguments) is (version == "2.4.20")
+        assert options["environment"]["GEM_HOME"] == homes[version]
+        assert options["environment"]["GEM_PATH"] == homes[version]
+        assert "GH_TOKEN" not in options["environment"]
+        assert options["timeout"] == 300
 
 
 @pytest.mark.parametrize(
@@ -591,6 +637,9 @@ def test_receiver_rejects_foreign_artifact_before_materialization(
     [
         "legacy_v3",
         "native_helper",
+        "native_ruby",
+        "native_ruby_second",
+        "native_ruby_runtime",
         "azure_bundle",
         "legacy_v3_pwsh",
         "legacy_v3_mise",
@@ -603,6 +652,9 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
     target = {
         "legacy_v3": group.V3_TESTS,
         "native_helper": group.NATIVE_TESTS,
+        "native_ruby": group.RUBY_TESTS,
+        "native_ruby_second": group.RUBY_TESTS,
+        "native_ruby_runtime": group.RUBY_TESTS,
         "azure_bundle": group.AZURE_TESTS,
         "legacy_v3_pwsh": group.V3_TESTS,
         "legacy_v3_mise": group.V3_TESTS,
@@ -615,6 +667,8 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
     failed_phase = {
         "legacy_v3": "static-reference-preparation",
         "native_helper": "native-helper-format",
+        "native_ruby": "ruby-test-tools-2.4.20",
+        "native_ruby_second": "ruby-test-tools-2.7.2",
         "legacy_v3_mise": "mise-trust",
     }.get(kind)
 
@@ -624,17 +678,17 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         return native_run(root, directory, label, *args, **options)
 
     monkeypatch.setattr(group.node, "run", run)
-    if kind in ("azure_bundle", "legacy_v3_pwsh"):
+    if kind in ("azure_bundle", "legacy_v3_pwsh", "native_ruby_runtime"):
         native_executable = group.executable
+        missing_tool = "ruby" if kind == "native_ruby_runtime" else "pwsh"
 
         def executable(name):
-            if name == "pwsh":
-                message = "pwsh"
-                raise FileNotFoundError(message)
+            if name == missing_tool:
+                raise FileNotFoundError(missing_tool)
             return native_executable(name)
 
         monkeypatch.setattr(group, "executable", executable)
-        with pytest.raises(FileNotFoundError, match="pwsh"):
+        with pytest.raises(FileNotFoundError, match=missing_tool):
             group.execute(flow.root, flow.directory, data)
     else:
         with pytest.raises(subprocess.CalledProcessError) as error:
@@ -643,6 +697,8 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
     expected = ["preparation", "planning"]
     if kind == "legacy_v3":
         expected.append("mise-trust")
+    if kind == "native_ruby_second":
+        expected.append("ruby-test-tools-2.4.20")
     assert [row[0] for row in flow.calls] == expected
     assert not (flow.directory / "result.json").exists()
     assert not (flow.directory / "outcome.json").exists()

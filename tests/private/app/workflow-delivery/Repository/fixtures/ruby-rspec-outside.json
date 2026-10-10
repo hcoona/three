@@ -1,0 +1,16 @@
+{
+  "version": "3.13.6",
+  "messages": [
+    "\nAn error occurred while loading ./spec/native_spec.rb.\nFailure/Error: raise \"native outside example error\"\n\nRuntimeError:\n  native outside example error\n# ./spec/native_spec.rb:1:in '<top (required)>'\n",
+    "No examples found."
+  ],
+  "examples": [],
+  "summary": {
+    "duration": 0.000027913,
+    "example_count": 0,
+    "failure_count": 0,
+    "pending_count": 0,
+    "errors_outside_of_examples_count": 1
+  },
+  "summary_line": "0 examples, 0 failures, 1 error occurred outside of examples"
+}

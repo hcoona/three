@@ -1,0 +1,28 @@
+{
+  "version": "3.13.6",
+  "examples": [
+    {
+      "id": "./spec/native_spec.rb[1:1]",
+      "description": "fails",
+      "full_description": "fixture fails",
+      "status": "failed",
+      "file_path": "./spec/native_spec.rb",
+      "line_number": 2,
+      "run_time": 0.005393081,
+      "pending_message": null,
+      "exception": {
+        "class": "RSpec::Expectations::ExpectationNotMetError",
+        "message": "\nexpected: 4\n     got: 3\n\n(compared using ==)\n",
+        "backtrace": ["./spec/native_spec.rb:2:in 'block (2 levels) in <top (required)>'"]
+      }
+    }
+  ],
+  "summary": {
+    "duration": 0.006380724,
+    "example_count": 1,
+    "failure_count": 1,
+    "pending_count": 0,
+    "errors_outside_of_examples_count": 0
+  },
+  "summary_line": "1 example, 1 failure"
+}

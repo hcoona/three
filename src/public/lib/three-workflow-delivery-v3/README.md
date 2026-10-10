@@ -14,7 +14,10 @@ CLI/workflow callers, integration contracts and retirement order;
 the runtime described below has not yet been replaced.
 The [private application](../../../private/app/workflow-delivery/README.md)
 now provides CI selection/results, GitHub event comparison, native Node fact assembly,
-control-test resource inputs and the adopted check executor. Root CI consumes the
+control-test resource inputs and the adopted check executor. Its
+[native Ruby primitives](../../../private/app/workflow-delivery/README.md#native-ruby-primitives)
+provide RubyGems/Bundler fact serialization and public RSpec JSON result handling;
+complete Ruby planning, execution and caller cutover remain pending. Root CI consumes the
 native comparison and resource response before selecting its existing .NET test
 owner. The [bounded Linux observation](docs/research/node-ci-native-execution.md)
 qualifies that fixture's native composition and effects. The adopted Node group

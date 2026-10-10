@@ -941,7 +941,7 @@ jobs:
           experimental: true
           install_args: aqua:jdx/hk pkl
       - name: Setup selected Ruby adapter
-        if: steps.plan.outputs.legacy_v3 == 'true'
+        if: steps.plan.outputs.legacy_v3 == 'true' || steps.plan.outputs.native_ruby == 'true'
         uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
           ruby-version: '4.0.7'

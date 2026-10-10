@@ -8,6 +8,41 @@ remain in their current namespace until the old Python application's last
 consumer retires. This entry describes the implemented interface, not a second
 architecture authority.
 
+## Native Ruby Primitives
+
+[`Native/Ruby/facts.rb`](Native/Ruby/facts.rb) serializes evaluated RubyGems
+source/archive metadata and frozen Bundler dependency answers. The process must
+activate the lock-selected Bundler before the bundle operation; the helper checks
+actual activation against the native locked version. Source evaluation requires
+prepared project inputs. Path and active local Git answers retain native source
+locations; registry and runtime metadata dependencies are not repository owners.
+The helper does not parse Gemfiles/locks or resolve dependencies.
+
+[`RubyRSpecResult`](CI/RubyRSpecResult.cs) consumes complete public CLI JSON,
+retains original examples/messages and counts, and keeps them separate from native
+command termination. Missing/incomplete results, failed commands, failed examples
+and errors outside examples cannot satisfy a required check. Pending examples
+remain available to adopted project quality policy.
+
+The isolated native contract tests are a root pytest target:
+[`test_facts.py`](../../../../tests/private/app/workflow-delivery/Native/Ruby/test_facts.py).
+The Python CI caller prepares the two Bundler environments only when this target
+is selected; its Ruby runner setup and isolated native tool installation precede
+the original selected-plan execution. For explicit local invocation, prepare Ruby
+and both supported locked Bundler libraries, then supply
+`WORKFLOW_DELIVERY_TEST_RUBY` with the Ruby executable and
+`WORKFLOW_DELIVERY_TEST_RUBY_GEM_HOMES` with a JSON mapping from `2.4.20` and
+`2.7.2` to their prepared Gem homes. Invoke this file explicitly with pytest;
+it creates native-locked local fixtures and uses no personal Bundler configuration.
+The RSpec scenarios use the prepared `2.4.20` environment with RSpec `3.13.6`.
+Their original public CLI outputs also supply the managed parser fixtures.
+
+These primitives do not yet implement paired Ruby planning, quality adoption,
+project preparation or workflow execution. Existing root/shadow Ruby callers,
+manual Release and historical evidence readers remain with their migration groups.
+The complete Latexmath suite still requires the existing runner's declared
+conversion tools; fixture success is not full product/caller qualification.
+
 ## Prepared Python Endpoint Collection
 
 `PythonRepositoryReader` composes an exact materialized endpoint's existing native

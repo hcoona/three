@@ -18,6 +18,7 @@ NATIVE_SOURCE = "src/private/app/workflow-delivery/Native/Python"
 SCOPE = "python/native-paired-facts-v1"
 V3_TESTS = "src/public/lib/three-workflow-delivery-v3/tests"
 NATIVE_TESTS = "tests/private/app/workflow-delivery/Native/Python"
+RUBY_TESTS = "tests/private/app/workflow-delivery/Native/Ruby"
 AZURE_TESTS = "src/private/app/azureauth-credprovider/python/tests"
 
 
@@ -147,6 +148,7 @@ def plan(root: Path, directory: Path) -> dict[str, Any]:
         selected=str(bool(readback["plan"]["checks"])).lower(),
         legacy_v3=str(selected["legacy_v3"]).lower(),
         native_helper=str(selected["native_helper"]).lower(),
+        native_ruby=str(selected["native_ruby"]).lower(),
     )
     return readback
 
@@ -175,7 +177,48 @@ def auxiliary(plan_value: dict[str, Any]) -> dict[str, bool]:
             for target in targets
         ),
         "native_helper": NATIVE_TESTS in targets,
+        "native_ruby": RUBY_TESTS in targets,
         "azure_bundle": AZURE_TESTS in targets,
+    }
+
+
+def prepare_ruby_test_tools(root: Path, directory: Path) -> dict[str, str]:
+    """Prepare the finite native Ruby fixture matrix in owned gem homes."""
+    ruby = executable("ruby")
+    homes = {}
+    for version in ("2.4.20", "2.7.2"):
+        home = directory / "ruby-test-tools" / version
+        home.mkdir(parents=True)
+        gems = home / "gems"
+        native_environment = {
+            "HOME": str(home),
+            "PATH": str(Path(ruby).parent) + os.pathsep + os.defpath,
+            "GEM_HOME": str(gems),
+            "GEM_PATH": str(gems),
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+        }
+        packages = ["bundler:" + version]
+        if version == "2.4.20":
+            packages += ["rspec-core:3.13.6", "rspec:3.13.2"]
+        node.run(
+            root,
+            directory,
+            "ruby-test-tools-" + version,
+            ruby,
+            "-S",
+            "gem",
+            "install",
+            *packages,
+            "--no-document",
+            "--minimal-deps",
+            environment=native_environment,
+            timeout=300,
+        )
+        homes[version] = str(gems)
+    return {
+        "WORKFLOW_DELIVERY_TEST_RUBY": ruby,
+        "WORKFLOW_DELIVERY_TEST_RUBY_GEM_HOMES": json.dumps(homes),
     }
 
 
@@ -294,6 +337,8 @@ def execute(
                 *arguments,
                 environment=compilation["environment"],
             )
+    if selected["native_ruby"]:
+        environment.update(prepare_ruby_test_tools(root, directory))
     environment = environment | {"PYTHONSAFEPATH": None}
     scratch = directory / "execution"
     scratch.mkdir()

@@ -46,6 +46,30 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
+    [DataRow("src/private/app/workflow-delivery/Native/Ruby/facts.rb")]
+    [DataRow("tests/private/app/workflow-delivery/Native/Ruby/test_facts.py")]
+    public void RubyHelperInputsSelectOnlyTheirAdoptedPytestTarget(string path)
+    {
+        const string target = "tests/private/app/workflow-delivery/Native/Ruby";
+        PythonFactsEndpoint basis = Facts(Endpoint(
+            [target, "tests/unrelated.py"], [path], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint(
+            [target, "tests/unrelated.py"], [path], "after"));
+        SelectionReason[] reasons = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, reasons);
+        PlannedCheck selected = Assert.ContainsSingle(
+            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+        Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
+        Assert.IsNotEmpty(selected.Reasons);
+        foreach (SelectionReason reason in selected.Reasons)
+        {
+            Assert.AreEqual(path, reason.Path);
+            Assert.AreEqual("pytest:" + target, reason.Project);
+        }
+    }
+
+    [TestMethod]
     public void SharedInputsReachOnlyActualOwners()
     {
         var endpoint = Endpoint(["src/tableless/tests", "tests/standalone.py"],
