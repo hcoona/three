@@ -94,6 +94,15 @@ original report separately, rejects absent or incomplete output and cleans its
 owned result file. Controlled tests cover this recipe; they do not qualify the
 complete product or caller.
 
+[`RubyPackageChecks`](Repository/RubyPackageChecks.cs) expands the existing
+`ruby/hcoona-release-smoke-ruby-v1` recipe from its actual release-unit declaration
+and evaluated native source identity. Its required gem build, content inspection
+and clean installed require checks keep original output associations and explicit
+prerequisites. A Gemfile or spec directory is not a distribution prerequisite.
+This finite recipe currently accepts the adopted dependency-free, platform-neutral
+smoke gem; other product recipes require their own adaptation. Expansion is
+controlled contract behavior, not native package execution or caller adoption.
+
 The isolated native contract tests are a root pytest target:
 [`test_facts.py`](../../../../tests/private/app/workflow-delivery/Native/Ruby/test_facts.py).
 The Python CI caller prepares the two Bundler environments only when this target
