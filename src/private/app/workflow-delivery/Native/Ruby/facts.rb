@@ -71,6 +71,34 @@ def bundle_facts(gemfile)
   }
 end
 
+def bundle_context(gemfile)
+  require "bundler"
+
+  actual_gemfile = Bundler.default_gemfile.expand_path.to_s
+  raise "Native Gemfile differs from the request" unless actual_gemfile == gemfile
+
+  locked = Bundler.locked_gems
+  raise "Missing locked Bundler version" unless locked && locked.bundler_version
+
+  { "gemfile" => actual_gemfile,
+    "lockfile" => Bundler.default_lockfile.expand_path.to_s,
+    "bundler_version" => Bundler::VERSION,
+    "locked_bundler_version" => locked.bundler_version.to_s }
+end
+
+def version_facts(raw)
+  unless raw.is_a?(String) && !raw.empty? && raw == raw.strip && !raw.match?(/\s/)
+    raise "Invalid native version input"
+  end
+
+  # Preserve the existing project projection: RubyGems has no SemVer build metadata.
+  base = raw.split("+", 2).first
+  raise "Missing native version before build metadata" unless base && !base.empty?
+
+  version = Gem::Version.new(base).to_s
+  { "raw" => raw, "version" => version, "literal" => version.dump }
+end
+
 request = JSON.parse(File.read(ARGV.fetch(0)))
 path = File.expand_path(request.fetch("path"))
 result = case request.fetch("operation")
@@ -78,6 +106,10 @@ when "gemspec"
   specification_facts(Gem::Specification.load(path)).merge("gemspec" => path)
 when "bundle"
   bundle_facts(path)
+when "bundle-context"
+  bundle_context(path)
+when "version"
+  version_facts(request.fetch("raw")).merge("gemspec" => path)
 when "archive"
   package = Gem::Package.new(path)
   package.verify

@@ -57,11 +57,13 @@ def command(native, directory, arguments, *, environment=None):
     )
 
 
-def facts(native, operation, path, *, environment=None):
+def facts(native, operation, path, *, environment=None, raw=None):
     """Activate the requested library through RubyGems, then load the helper."""
     _, version, _ = native
     request = path.parent / "facts-request.json"
-    request.write_text(json.dumps({"operation": operation, "path": str(path)}))
+    request.write_text(
+        json.dumps({"operation": operation, "path": str(path), "raw": raw})
+    )
     return command(
         native,
         path.parent,
@@ -138,6 +140,119 @@ def test_source_metadata_is_native_and_not_a_test_inventory(native, tmp_path):
     ]
     assert result["files"] == ["lib/fixture_a.rb"]
     assert result["require_paths"] == ["lib"]
+
+
+def test_lock_context_does_not_evaluate_or_qualify_the_gemfile(
+    native, tmp_path
+):
+    """Read native lock selection before preparing or executing the project."""
+    gem(tmp_path / "source", "fixture_a")
+    gemfile = tmp_path / "Gemfile"
+    gemfile.write_text('gem "fixture_a", path: "source"\n')
+    environment = lock(native, gemfile)
+    locked = gemfile.with_name("Gemfile.lock")
+    before = locked.read_bytes()
+    gemfile.write_text('raise "not a lock-context operation"\n')
+
+    result = answer(
+        facts(native, "bundle-context", gemfile, environment=environment)
+    )
+
+    assert result == {
+        "gemfile": str(gemfile),
+        "lockfile": str(locked),
+        "bundler_version": native[1],
+        "locked_bundler_version": native[1],
+    }
+    assert locked.read_bytes() == before
+    assert (
+        facts(native, "bundle", gemfile, environment=environment).returncode
+        != 0
+    )
+
+
+def test_lock_context_keeps_probe_and_locked_versions_separate(
+    native, tmp_path
+):
+    """The installed probe may report the other supported lock context."""
+    gem(tmp_path / "source", "fixture_a")
+    gemfile = tmp_path / "Gemfile"
+    gemfile.write_text('gem "fixture_a", path: "source"\n')
+    environment = lock(native, gemfile)
+    homes = json.loads(os.environ["WORKFLOW_DELIVERY_TEST_RUBY_GEM_HOMES"])
+    other = next(version for version in VERSIONS if version != native[1])
+    probe = (
+        native[0],
+        other,
+        native[2] | {"GEM_HOME": homes[other], "GEM_PATH": homes[other]},
+    )
+
+    result = answer(
+        facts(probe, "bundle-context", gemfile, environment=environment)
+    )
+
+    assert result["bundler_version"] == other
+    assert result["locked_bundler_version"] == native[1]
+    assert result["gemfile"] == str(gemfile)
+
+
+def test_lock_context_requires_a_real_lock(native, tmp_path):
+    """Absence cannot become a default or an invented Bundler selection."""
+    gemfile = tmp_path / "Gemfile"
+    gemfile.write_text('source "https://rubygems.org"\n')
+
+    result = facts(
+        native,
+        "bundle-context",
+        gemfile,
+        environment={"BUNDLE_GEMFILE": str(gemfile)},
+    )
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert not gemfile.with_name("Gemfile.lock").exists()
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("1.2.3", "1.2.3"), ("0.1.0-beta.12+gabcdef0", "0.1.0.pre.beta.12")],
+)
+def test_native_version_projection_preserves_input_and_ruby_literal(
+    native, tmp_path, raw, expected
+):
+    """RubyGems projects the version; Ruby quotes the source literal."""
+    source = gem(tmp_path / "source", "fixture_a")
+    before = source.read_bytes()
+
+    result = answer(facts(native, "version", source, raw=raw))
+
+    assert result == {
+        "gemspec": str(source),
+        "raw": raw,
+        "version": expected,
+        "literal": json.dumps(expected),
+    }
+    literal = command(
+        native,
+        source.parent,
+        ["-e", "puts eval(ARGV.fetch(0))", result["literal"]],
+    )
+    assert literal.returncode == 0, literal.stderr
+    assert literal.stdout.strip() == expected
+    assert source.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "raw", [None, "", " 1.2.3", "1.2.3\n", "not-a-version", "+gabcdef0"]
+)
+def test_invalid_native_version_cannot_be_projected(native, tmp_path, raw):
+    """Do not replace missing native version facts with a placeholder."""
+    source = gem(tmp_path / "source", "fixture_a")
+
+    result = facts(native, "version", source, raw=raw)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
 
 
 def test_nested_bundle_retains_transitive_original_path_identity(

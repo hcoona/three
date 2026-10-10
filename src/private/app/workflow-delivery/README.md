@@ -18,11 +18,18 @@ prepared project inputs. Path and active local Git answers retain native source
 locations; registry and runtime metadata dependencies are not repository owners.
 The helper does not parse Gemfiles/locks or resolve dependencies.
 
-[`RubyNativeFactsReader`](Repository/RubyNativeFactsReader.cs) consumes its three
-structured answers as separate source-gem, bundle and archive values. It binds
+[`RubyNativeFactsReader`](Repository/RubyNativeFactsReader.cs) consumes the
+structured source-gem, bundle and archive answers as separate values. It binds
 the requested paths and activated/locked Bundler version, preserving native
 Gemfile inputs, dependency requirements, content lists and source locations.
 Original local sources and installed directories remain distinct.
+The separate lock-context answer reads Bundler's public locked metadata without
+executing the Gemfile. Its installed probe version and locked selected version
+remain distinct; it neither establishes frozen equivalence nor supplies resolved
+facts. Complete bundle collection still requires the actual locked library and
+frozen operation. The version answer preserves the supplied NBGV SemVer2, uses
+RubyGems for the existing metadata-stripping projection and Ruby for its source
+literal; missing native versions cannot become placeholders.
 Complete caller ownership, paired planning and product execution retain the
 pending boundary below.
 
@@ -57,6 +64,19 @@ check owners. Root source-gem ownership remains unsupported. These supplied-fact
 components do not establish arbitrary dynamic Ruby IO closure. The concrete
 collector still needs bounded project preparation, supported input-scope
 validation, paired selection and cross-group caller composition.
+
+[`RubySourceCollector`](Repository/RubySourceCollector.cs) queries prepared NBGV
+in each committed source project's original directory and collects evaluated
+source metadata. Its finite integrations are Latexmath's existing native NBGV
+gemspec and the smoke gem's generated native version source. The latter is
+materialized only in the caller-owned disposable checkout before evaluation;
+committed generated version inputs are rejected. Native name/version must match
+the supported integration's projection. This is metadata-query input preparation,
+not selected build/install/check preparation; it adds no provenance witness and
+does not establish arbitrary dynamic Ruby input closure. Controlled command/Git
+scenarios cover the composition, not actual product qualification. Complete
+paired collection, supported input-scope validation and caller ownership remain
+pending.
 
 [`RubyRSpecResult`](CI/RubyRSpecResult.cs) consumes complete public CLI JSON,
 retains original examples/messages and counts, and keeps them separate from native
