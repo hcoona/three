@@ -231,6 +231,7 @@ def execute(
         }
         environment["MISE_DATA_DIR"] = str(mise_data)
         environment["MISE_TASK_RUN_AUTO_INSTALL"] = "false"
+        environment["MISE_EXEC_AUTO_INSTALL"] = "0"
         environment.update(
             {
                 name: os.environ[name]

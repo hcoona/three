@@ -463,15 +463,33 @@ def run_runtimes(
                 variant["exactVersion"]
                 or variant["selector"].removesuffix(".x")
             )
-            run(
-                checkout,
-                directory,
-                key + "-tools",
-                "mise",
-                "--no-config",
-                "install",
-                selector,
-            )
+            if variant["exactVersion"] is None:
+                run(
+                    checkout,
+                    directory,
+                    key + "-tools",
+                    "mise",
+                    "--no-config",
+                    "install",
+                    selector,
+                    environment=os.environ
+                    | {
+                        "MSBUILDLOGTASKINPUTS": "1",
+                        "MSBUILDLOGTASKOUTPUTS": "1",
+                        "MISE_EXEC_AUTO_INSTALL": "0",
+                        "MISE_LOCKED": "0",
+                    },
+                )
+            else:
+                run(
+                    checkout,
+                    directory,
+                    key + "-tools",
+                    "mise",
+                    "install",
+                    "--locked",
+                    "node",
+                )
             run(
                 checkout,
                 directory,

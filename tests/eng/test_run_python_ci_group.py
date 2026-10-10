@@ -401,6 +401,7 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
             monkeypatch.delenv(name, raising=False)
     for name in ("MISE_STATE_DIR", "XDG_STATE_HOME"):
         monkeypatch.setenv(name, str(tmp_path / "ambient-state" / name))
+    monkeypatch.setenv("MISE_EXEC_AUTO_INSTALL", "ambient")
     selected = (
         check("python/distribution-set-v1")
         if target is None
@@ -412,6 +413,9 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
     mise_data.mkdir()
     group.execute(flow.root, flow.directory, mise_data)
     labels = [row[0] for row in flow.calls]
+    native = group.node.read_json(flow.directory / "execution-request.json")[
+        "native"
+    ]
     if target == group.V3_TESTS:
         assert labels == [
             "preparation",
@@ -420,9 +424,6 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
             "static-reference-preparation",
             "execution",
         ]
-        native = group.node.read_json(
-            flow.directory / "execution-request.json"
-        )["native"]
         assert native["environment"]["MISE_DATA_DIR"] == str(mise_data)
         assert native["environment"]["MISE_TASK_RUN_AUTO_INSTALL"] == "false"
         assert str(tmp_path / "tools") in native["environment"]["PATH"].split(
@@ -459,10 +460,10 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
             )
     else:
         assert labels == ["preparation", "planning", "execution"]
-    native = group.node.read_json(flow.directory / "execution-request.json")[
-        "native"
-    ]
     assert native["environment"]["PYTHONSAFEPATH"] is None
+    assert native["environment"].get("MISE_EXEC_AUTO_INSTALL") == (
+        "0" if target == group.V3_TESTS else None
+    )
     assert (
         group.node.read_json(flow.directory / "preparation.json")["request"][
             "candidate"

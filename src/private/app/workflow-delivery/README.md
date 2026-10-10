@@ -68,6 +68,8 @@ does not require that tool. AzureAuth apphosts retain configured native .NET
 runtime roots, and V3 HK consumers retain the configured native HK profile.
 Absent configuration keeps native defaults. Owned query, NBGV and product
 environments remain distinct; selected HK/Pkl use explicitly prepared mise tool data.
+Selected V3 execution disables native mise task and exec automatic installation;
+its child queries consume the prepared adapters without installing unrelated tools.
 Selected V3 preparation calls native `mise trust` for the candidate configuration
 in that same owned HOME before its native queries. Mise owns the resulting local
 configuration state.
@@ -116,7 +118,11 @@ existing .NET job remains the sole general .NET test executor. The static Ubuntu
 Node group joins complete endpoint inputs, prepares the candidate control CLI,
 executes the adopted fixture in separate Node 22/24 checkouts and collects both
 result sets against their original parent plan. The retained Node matrix consumes
-only its selected native members. Other quality presets and Release commands
+only its selected native members. The configured Node 24 variant preserves its
+committed locked installation. The existing moving Node 22 variant uses native
+unconfigured installation with locked mode disabled for that invocation only;
+subsequent execution retains the configured SDK/PNPM locks and bounded native
+automatic-install policy. Other quality presets and Release commands
 remain pending. Ordinary hosted qualification in
 [PR #1042](https://github.com/hcoona/three/pull/1042) covers this group's immutable
 scope transfer, all seven adopted obligations and selected retained members on

@@ -734,6 +734,11 @@ use; native version, SDK and verification semantics remain unchanged. This
 bounds missing-tool installation, not visibility of other installed tools or
 network effects. Preserve the separate retained Node matrix setup.
 
+The configured Node 24 variant installs through its committed locked context.
+The existing moving Node 22 matrix selector has no committed tool lock; only its
+finite native unconfigured installation disables locked mode. Subsequent native
+execution retains the configured SDK/PNPM locks and automatic-install restriction.
+
 Prepare separate exact candidate materializations, native dependency state and
 external scratch for the two runtimes. Node 22 build can stamp its tracked
 manifest without postpack reset; fresh scratch alone does not isolate source.

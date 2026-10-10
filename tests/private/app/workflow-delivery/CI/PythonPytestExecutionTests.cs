@@ -41,6 +41,8 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         Assert.EndsWith(".xml", junit);
         Assert.IsNull(invocation.Environment!["UV_PROJECT_ENVIRONMENT"]);
         Assert.IsNull(invocation.Environment["PYTHONSAFEPATH"]);
+        Assert.AreEqual("false", invocation.Environment["MISE_TASK_RUN_AUTO_INSTALL"]);
+        Assert.AreEqual("0", invocation.Environment["MISE_EXEC_AUTO_INSTALL"]);
         string[] expectedInvocation = ["run", "--no-project", "--python",
             Path.Combine(fixture.Scratch, "test-environment"), "python", "-m", "pytest",
             "-c", "pyproject.toml", "--junitxml=" + junit, "tests/root"];
@@ -91,6 +93,8 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         {
             Assert.IsNull(command.Command.Environment!["UV_PROJECT_ENVIRONMENT"]);
             Assert.IsNull(command.Command.Environment["PYTHONSAFEPATH"]);
+            Assert.AreEqual("false", command.Command.Environment["MISE_TASK_RUN_AUTO_INSTALL"]);
+            Assert.AreEqual("0", command.Command.Environment["MISE_EXEC_AUTO_INSTALL"]);
             Assert.Contains(Path.Combine(fixture.Scratch, "test-environment"),
                 command.Command.Arguments);
         }
@@ -346,6 +350,8 @@ public sealed class PythonPytestExecutionTests(TestContext context)
                     Path.Combine(scratch, "python"), members, configuration, targets, operation, 30,
                     new Dictionary<string, string?> { ["PYTEST_ADDOPTS"] = "--collect-only",
                         ["PYTHONSAFEPATH"] = "1",
+                        ["MISE_TASK_RUN_AUTO_INSTALL"] = "false",
+                        ["MISE_EXEC_AUTO_INSTALL"] = "0",
                         ["UV_PROJECT_ENVIRONMENT"] = "query-environment" }));
             }
             catch { repo.Dispose(); Directory.Delete(scratch, true); throw; }
