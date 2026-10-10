@@ -1,0 +1,23 @@
+{
+  "version": "3.13.6",
+  "examples": [
+    {
+      "id": "./spec/native_spec.rb[1:1]",
+      "description": "passes",
+      "full_description": "fixture passes",
+      "status": "passed",
+      "file_path": "./spec/native_spec.rb",
+      "line_number": 2,
+      "run_time": 0.000323717,
+      "pending_message": null
+    }
+  ],
+  "summary": {
+    "duration": 0.000930546,
+    "example_count": 1,
+    "failure_count": 0,
+    "pending_count": 0,
+    "errors_outside_of_examples_count": 0
+  },
+  "summary_line": "1 example, 0 failures"
+}
