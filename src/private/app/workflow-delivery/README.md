@@ -32,6 +32,14 @@ set the original Gemfile and frozen mode. Native failure and cancellation cannot
 supply successful facts; the typed reader still binds each returned answer.
 This entry does not prepare products, discover projects or resolve dependencies.
 
+[`RubyDependencyProjection`](Repository/RubyDependencyProjection.cs) joins supplied
+native local source/gemspec coordinates to source producers and follows resolved
+runtime edges, including registry intermediates, for transitive impact. Bundle
+consumers retain their native Gemfile/lock inputs and local producers separately;
+a bundle-only consumer does not gain a Ruby package or check. Installed cache
+paths and matching registry names do not establish local ownership. Discovery,
+input-scope binding and paired planning remain pending.
+
 [`RubyRSpecResult`](CI/RubyRSpecResult.cs) consumes complete public CLI JSON,
 retains original examples/messages and counts, and keeps them separate from native
 command termination. Missing/incomplete results, failed commands, failed examples
