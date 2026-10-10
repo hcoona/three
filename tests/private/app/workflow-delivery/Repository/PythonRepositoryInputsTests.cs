@@ -7,6 +7,7 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class PythonRepositoryInputsTests
 {
+    private static readonly string[] PairedRevisions = ["before", "after"];
     private static PythonProjectDependencies Member(string path) => new(path, path, [], []);
 
     private static (GitRevision Revision, PythonProjectDependencies[] Projects,
@@ -48,6 +49,10 @@ public sealed class PythonRepositoryInputsTests
     [TestMethod]
     [DataRow("src/private/app/workflow-delivery/Native/Ruby/facts.rb")]
     [DataRow("tests/private/app/workflow-delivery/Native/Ruby/test_facts.py")]
+    [DataRow("src/public/lib/hcoona-release-smoke-ruby/hcoona-release-smoke-ruby.gemspec")]
+    [DataRow("src/public/lib/hcoona-release-smoke-ruby/lib/hcoona_release_smoke_ruby.rb")]
+    [DataRow("src/public/lib/three-workflow-delivery-v3/" +
+        "src/three_workflow_delivery_v3/_ruby_helper.rb")]
     public void RubyHelperInputsSelectOnlyTheirAdoptedPytestTarget(string path)
     {
         const string target = "tests/private/app/workflow-delivery/Native/Ruby";
@@ -62,6 +67,8 @@ public sealed class PythonRepositoryInputsTests
             ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
         Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
         Assert.IsNotEmpty(selected.Reasons);
+        CollectionAssert.AreEquivalent(PairedRevisions,
+            selected.Reasons.Select(reason => reason.Revision).Distinct().ToArray());
         foreach (SelectionReason reason in selected.Reasons)
         {
             Assert.AreEqual(path, reason.Path);
@@ -155,6 +162,14 @@ public sealed class PythonRepositoryInputsTests
         "src/public/lib/nbgv-python-other/source.py")]
     [DataRow("src/private/app/azureauth-credprovider/tests", "src/other/Directory.Build.props")]
     [DataRow("tests/eng/test_legacy_release_contract.py", "src/product/three.release.yaml")]
+    [DataRow("tests/private/app/workflow-delivery/Native/Ruby",
+        "src/public/lib/hcoona-release-smoke-ruby-other/source.rb")]
+    [DataRow("tests/private/app/workflow-delivery/Native/Ruby",
+        "src/public/lib/three-workflow-delivery-v3/" +
+        "src/three_workflow_delivery_v3/_ruby_helper.rb.backup")]
+    [DataRow("tests/private/app/workflow-delivery/Native/Ruby",
+        "src/public/lib/three-workflow-delivery-v3/" +
+        "src/three_workflow_delivery_v3/_ruby_native.py")]
     public void NeighboringInputsDoNotSelectSpecialTargets(string target, string path)
     {
         var endpoint = Endpoint([target], [path]);
@@ -167,13 +182,21 @@ public sealed class PythonRepositoryInputsTests
     public void AbsentSpecialTargetsAreNotInvented()
     {
         var endpoint = Endpoint(["tests/standalone.py"], [".typos.toml",
-            "src/public/lib/nbgv-python/source.py", "eng/scripts/run_node_ci_group.py"]);
+            "src/public/lib/nbgv-python/source.py", "eng/scripts/run_node_ci_group.py",
+            "src/public/lib/hcoona-release-smoke-ruby/hcoona-release-smoke-ruby.gemspec",
+            "src/public/lib/three-workflow-delivery-v3/" +
+                "src/three_workflow_delivery_v3/_ruby_helper.rb"]);
         PythonInputBinding[] bindings = PythonRepositoryInputs.Map(endpoint.Revision,
             endpoint.Projects, endpoint.Targets, []);
         Assert.AreEqual("pytest:tests/standalone.py", Assert.ContainsSingle(bindings
             .SelectMany(binding => binding.Owners).Distinct(StringComparer.Ordinal)));
         Assert.DoesNotContain(".typos.toml", bindings.Select(binding => binding.Path));
         Assert.DoesNotContain("eng/scripts/run_node_ci_group.py",
+            bindings.Select(binding => binding.Path));
+        Assert.DoesNotContain("src/public/lib/hcoona-release-smoke-ruby/" +
+            "hcoona-release-smoke-ruby.gemspec", bindings.Select(binding => binding.Path));
+        Assert.DoesNotContain("src/public/lib/three-workflow-delivery-v3/" +
+            "src/three_workflow_delivery_v3/_ruby_helper.rb",
             bindings.Select(binding => binding.Path));
     }
 

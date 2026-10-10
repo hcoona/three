@@ -21,6 +21,6 @@ Gem::Specification.new do |spec|
     "lib/hcoona_release_smoke_ruby/version.rb"
   ]
   legacy_provenance = "lib/hcoona_release_smoke_ruby/_workflow_delivery_provenance.json"
-  package_files << legacy_provenance if File.file?(legacy_provenance)
+  package_files << legacy_provenance if File.file?(File.expand_path(legacy_provenance, __dir__))
   spec.files = package_files
 end

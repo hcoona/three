@@ -458,6 +458,48 @@ def test_current_smoke_gemspec_separates_native_and_legacy_package_membership(
     )
 
 
+@pytest.mark.parametrize("has_witness", [False, True])
+def test_smoke_membership_uses_gemspec_directory_not_caller(
+    native, tmp_path, has_witness
+):
+    """Absolute native loading ignores a caller-local witness decoy."""
+    source = tmp_path / "source"
+    shutil.copytree(ROOT / "src/public/lib/hcoona-release-smoke-ruby", source)
+    version = source / "lib/hcoona_release_smoke_ruby/version.rb"
+    version.parent.mkdir(parents=True, exist_ok=True)
+    version.write_text(
+        'module HcoonaReleaseSmokeRuby; VERSION = "1.2.3"; end\n'
+    )
+    relative_witness = (
+        "lib/hcoona_release_smoke_ruby/_workflow_delivery_provenance.json"
+    )
+    other_directory = tmp_path / "unrelated caller"
+    other_directory.mkdir()
+    location = source if has_witness else other_directory
+    witness = location / relative_witness
+    witness.parent.mkdir(parents=True, exist_ok=True)
+    witness.write_text("{}\n")
+    loaded = command(
+        native,
+        other_directory,
+        [
+            "-rjson",
+            "-e",
+            "puts JSON.generate(Gem::Specification.load(ARGV.fetch(0)).files)",
+            str(source / "hcoona-release-smoke-ruby.gemspec"),
+        ],
+    )
+    expected = [
+        "LICENSE",
+        "README.md",
+        "lib/hcoona_release_smoke_ruby.rb",
+        "lib/hcoona_release_smoke_ruby/version.rb",
+    ]
+    if has_witness:
+        expected.append(relative_witness)
+    assert sorted(answer(loaded)) == sorted(expected)
+
+
 @pytest.mark.parametrize("native", ["2.4.20"], indirect=True)
 @pytest.mark.parametrize("scenario", ["passed", "failed", "pending", "outside"])
 def test_public_rspec_json_preserves_examples_and_outside_errors(
