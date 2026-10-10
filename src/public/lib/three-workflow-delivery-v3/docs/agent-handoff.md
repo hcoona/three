@@ -133,8 +133,8 @@ implement RubyGems/Bundler fact serialization and public RSpec JSON result handl
 RSpec check registration and Latexmath's explicit preset adoption are implemented;
 committed entry-point discovery and supplied input mapping are implemented.
 Native lock-context/version query answers, finite source-query input preparation
-and the adopted smoke gem's complete check expansion are implemented; actual
-product preparation and full collection remain distinct.
+the adopted smoke gem's complete check expansion and supplied paired producer-to-owner
+assembly are implemented; actual product preparation and full collection remain distinct.
 Complete native collection, supported input-scope qualification and paired
 planning, adopted gem quality caller composition, selected project preparation, complete
 workflow execution, caller qualification and atomic cutover remain pending. Existing Ruby

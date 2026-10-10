@@ -78,6 +78,18 @@ scenarios cover the composition, not actual product qualification. Complete
 paired collection, supported input-scope validation and caller ownership remain
 pending.
 
+[`RubyFactsAssembler`](Repository/RubyFactsAssembler.cs) joins supplied native
+producer relations across both committed endpoints before projecting actual
+quality owners. Input-only source gems remain dependency intermediaries, including
+cycles and removed producers. Selection reasons retain each initiating path and
+revision; source moves keep their separate coordinates. Nearest nested source
+ownership prevents implicit parent quality adoption. Unknown input scope fails
+in full mode too; a caller-certified empty operation input remains distinct.
+The shared core expands complete selected obligations and collects results.
+Bundle-only consumers remain separate for later actual Node composition. This
+controlled paired assembly neither collects native endpoints nor qualifies the
+complete Ruby caller.
+
 [`RubyRSpecResult`](CI/RubyRSpecResult.cs) consumes complete public CLI JSON,
 retains original examples/messages and counts, and keeps them separate from native
 command termination. Missing/incomplete results, failed commands, failed examples
@@ -116,7 +128,7 @@ it creates native-locked local fixtures and uses no personal Bundler configurati
 The RSpec scenarios use the prepared `2.4.20` environment with RSpec `3.13.6`.
 Their original public CLI outputs also supply the managed parser fixtures.
 
-These components do not yet implement paired Ruby planning, project preparation
+These components do not yet implement complete native paired Ruby planning, project preparation
 or complete workflow execution. Existing root/shadow Ruby callers,
 manual Release and historical evidence readers remain with their migration groups.
 The complete Latexmath suite still requires the existing runner's declared
