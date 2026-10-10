@@ -25,6 +25,13 @@ Gemfile inputs, dependency requirements, content lists and source locations.
 Original local sources and installed directories remain distinct. Repository
 ownership, paired planning and product execution retain the pending boundary below.
 
+[`RubyNativeFactCollector`](Repository/RubyNativeFactCollector.cs) invokes that
+helper through the existing native process interface with caller-prepared tools,
+environment and scratch space. Bundle queries activate the selected Bundler and
+set the original Gemfile and frozen mode. Native failure and cancellation cannot
+supply successful facts; the typed reader still binds each returned answer.
+This entry does not prepare products, discover projects or resolve dependencies.
+
 [`RubyRSpecResult`](CI/RubyRSpecResult.cs) consumes complete public CLI JSON,
 retains original examples/messages and counts, and keeps them separate from native
 command termination. Missing/incomplete results, failed commands, failed examples
