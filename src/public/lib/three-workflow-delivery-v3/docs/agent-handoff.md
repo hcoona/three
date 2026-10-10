@@ -131,8 +131,9 @@ preserves whole RSpec and adopted gem consumers. The private application's
 [native Ruby primitives](../../../../private/app/workflow-delivery/README.md#native-ruby-primitives)
 implement RubyGems/Bundler fact serialization and public RSpec JSON result handling.
 RSpec check registration and Latexmath's explicit preset adoption are implemented;
-discovery, input-scope binding and paired planning, adopted gem quality
-registration/adoption, source-version integration and project preparation, complete
+committed entry-point discovery and supplied input mapping are implemented.
+Complete native collection, supported input-scope qualification and paired
+planning, adopted gem quality registration/adoption, source-version integration and project preparation, complete
 workflow execution, caller qualification and atomic cutover remain pending. Existing Ruby
 callers, manual Release and historical readers remain. These primitives authorize
 no publication or campaign continuation.

@@ -22,8 +22,9 @@ The helper does not parse Gemfiles/locks or resolve dependencies.
 structured answers as separate source-gem, bundle and archive values. It binds
 the requested paths and activated/locked Bundler version, preserving native
 Gemfile inputs, dependency requirements, content lists and source locations.
-Original local sources and installed directories remain distinct. Repository
-ownership, paired planning and product execution retain the pending boundary below.
+Original local sources and installed directories remain distinct.
+Complete caller ownership, paired planning and product execution retain the
+pending boundary below.
 
 [`RubyNativeFactCollector`](Repository/RubyNativeFactCollector.cs) invokes that
 helper through the existing native process interface with caller-prepared tools,
@@ -37,8 +38,25 @@ native local source/gemspec coordinates to source producers and follows resolved
 runtime edges, including registry intermediates, for transitive impact. Bundle
 consumers retain their native Gemfile/lock inputs and local producers separately;
 a bundle-only consumer does not gain a Ruby package or check. Installed cache
-paths and matching registry names do not establish local ownership. Discovery,
-input-scope binding and paired planning remain pending.
+paths and matching registry names do not establish local ownership.
+
+[`RubyRepositoryInventory`](Repository/RubyRepositoryInventory.cs) discovers
+committed source gemspecs and Gemfile or `gems.rb` entry points without
+interpreting their declarations. It requires one native answer for every
+discovered entry point, including a source gemspec not loaded by its adjacent
+bundle. Multiple source gemspecs or competing bundle entry points in one directory
+remain unsupported rather than being selected by Workflow.
+
+[`RubyInputConsumers`](Repository/RubyInputConsumers.cs) binds supplied native
+answers to committed project inputs, native NBGV inputs and effective quality
+declarations. Project input scope includes tests outside package membership and
+uses the nearest nested source owner. Native evaluated Gemfile/lock inputs must
+be committed. Bundle-only consumers retain their original inputs and local
+producers separately for their actual ecosystem caller; they do not become Ruby
+check owners. Root source-gem ownership remains unsupported. These supplied-fact
+components do not establish arbitrary dynamic Ruby IO closure. The concrete
+collector still needs bounded project preparation, supported input-scope
+validation, paired selection and cross-group caller composition.
 
 [`RubyRSpecResult`](CI/RubyRSpecResult.cs) consumes complete public CLI JSON,
 retains original examples/messages and counts, and keeps them separate from native
