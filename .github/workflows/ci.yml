@@ -256,7 +256,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 12.10.0
+          version: 12.10.1
 
       - name: Set up Node.js
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
@@ -719,7 +719,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 12.10.0
+          version: 12.10.1
 
       - name: Set up Node.js
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
@@ -925,7 +925,7 @@ jobs:
         if: steps.plan.outputs.legacy_v3 == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 12.10.0
+          version: 12.10.1
       - name: Setup selected Node adapter
         if: steps.plan.outputs.legacy_v3 == 'true'
         uses: actions/setup-node@v7
