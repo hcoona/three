@@ -46,6 +46,16 @@ command termination. Missing/incomplete results, failed commands, failed example
 and errors outside examples cannot satisfy a required check. Pending examples
 remain available to adopted project quality policy.
 
+[`RubyProjectChecks`](Repository/RubyProjectChecks.cs) expands an explicit
+`ruby/rspec-v1` selection to the required whole-project `ruby/project-rspec-v1`
+check. Latexmath's source-local quality declaration adopts its existing RSpec
+obligation. [`RubyRSpecExecution`](CI/RubyRSpecExecution.cs) uses caller-prepared
+Ruby, locked Bundler, Gemfile and environment to invoke the original entire suite
+with public JSON formatter/output options. It preserves the native command and
+original report separately, rejects absent or incomplete output and cleans its
+owned result file. Controlled tests cover this recipe; they do not qualify the
+complete product or caller.
+
 The isolated native contract tests are a root pytest target:
 [`test_facts.py`](../../../../tests/private/app/workflow-delivery/Native/Ruby/test_facts.py).
 The Python CI caller prepares the two Bundler environments only when this target
@@ -59,8 +69,8 @@ it creates native-locked local fixtures and uses no personal Bundler configurati
 The RSpec scenarios use the prepared `2.4.20` environment with RSpec `3.13.6`.
 Their original public CLI outputs also supply the managed parser fixtures.
 
-These primitives do not yet implement paired Ruby planning, quality adoption,
-project preparation or workflow execution. Existing root/shadow Ruby callers,
+These components do not yet implement paired Ruby planning, project preparation
+or complete workflow execution. Existing root/shadow Ruby callers,
 manual Release and historical evidence readers remain with their migration groups.
 The complete Latexmath suite still requires the existing runner's declared
 conversion tools; fixture success is not full product/caller qualification.
