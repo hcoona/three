@@ -24,9 +24,12 @@ command termination. Missing/incomplete results, failed commands, failed example
 and errors outside examples cannot satisfy a required check. Pending examples
 remain available to adopted project quality policy.
 
-The isolated native contract tests are
+The isolated native contract tests are a root pytest target:
 [`test_facts.py`](../../../../tests/private/app/workflow-delivery/Native/Ruby/test_facts.py).
-Prepare Ruby and both supported locked Bundler libraries, then supply
+The Python CI caller prepares the two Bundler environments only when this target
+is selected; its Ruby runner setup and isolated native tool installation precede
+the original selected-plan execution. For explicit local invocation, prepare Ruby
+and both supported locked Bundler libraries, then supply
 `WORKFLOW_DELIVERY_TEST_RUBY` with the Ruby executable and
 `WORKFLOW_DELIVERY_TEST_RUBY_GEM_HOMES` with a JSON mapping from `2.4.20` and
 `2.7.2` to their prepared Gem homes. Invoke this file explicitly with pytest;

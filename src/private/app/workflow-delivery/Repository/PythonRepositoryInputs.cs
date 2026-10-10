@@ -135,6 +135,8 @@ internal static class PythonRepositoryInputs
     }
 
     private static bool Special(string target, string path) =>
+        (target == "tests/private/app/workflow-delivery/Native/Ruby" &&
+            Under(path, "src/private/app/workflow-delivery/Native/Ruby")) ||
         (target == "tests/private/app/workflow-delivery/Native/Python" &&
             (Under(path, "src/private/app/workflow-delivery/Native/Python") ||
              Under(path, "src/public/lib/nbgv-python"))) ||

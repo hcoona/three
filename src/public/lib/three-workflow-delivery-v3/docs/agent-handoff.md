@@ -127,9 +127,13 @@ The [native Ruby planning facts](./middle-level-design.md#native-ruby-planning-f
 and [CI group contract](./middle-level-design.md#native-ruby-ci-group) define the
 next extraction boundary. The [integration order](./migration-strategy.md#native-ruby-ci-integration)
 keeps source gem, bundle and installed dependency identities separate and
-preserves whole RSpec and adopted gem consumers. Native API composition and actual
-caller qualification remain pending; these contracts introduce no Ruby
-implementation, publication or campaign continuation.
+preserves whole RSpec and adopted gem consumers. The private application's
+[native Ruby primitives](../../../../private/app/workflow-delivery/README.md#native-ruby-primitives)
+implement RubyGems/Bundler fact serialization and public RSpec JSON result handling.
+Paired planning, quality registration/adoption, project preparation, execution,
+complete caller qualification and atomic cutover remain pending. Existing Ruby
+callers, manual Release and historical readers remain. These primitives authorize
+no publication or campaign continuation.
 
 ## Ruby Delivery Entry
 
