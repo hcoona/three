@@ -26,8 +26,13 @@ specifies the initial caller's endpoint responsibility, native control inputs,
 runtime/check ownership and atomic fixture relocation. The
 [native .NET CI group](./migration-strategy.md#native-net-ci-group) defines the
 Windows extraction and caller contract. The
-[native Python planning facts](#native-python-planning-facts) select its next
-extraction boundary; execution and caller mapping remain separate design work.
+[native Python planning facts](#native-python-planning-facts) and
+[CI group contract](#native-python-ci-group) own its implemented extraction,
+execution and caller mapping, with ordinary hosted qualification carried by
+[PR #1114](https://github.com/hcoona/three/pull/1114). The
+[native Ruby planning facts](#native-ruby-planning-facts) and
+[CI group contract](#native-ruby-ci-group) define the next extraction and caller
+boundary; native composition and caller qualification remain pending.
 Each group requires its own native implementation and applicable qualification
 before cutover; source design acceptance does not establish those results.
 

@@ -21,7 +21,7 @@ and complete candidate control distribution, executes selected native and adopte
 NuGet checks, and collects every required result without replanning. Ordinary
 Windows Debug qualification is recorded in
 [PR #1054](https://github.com/hcoona/three/pull/1054). The [native Python planning-fact contract](./middle-level-design.md#native-python-planning-facts)
-selects the next extraction boundary. Passive extraction, the pinned Rust
+defines the implemented Python extraction boundary. Passive extraction, the pinned Rust
 supplement, ordered configuration preflight, metadata adaptation and operation
 dependency projection have controlled unit boundaries. The private app's
 [bounded native pytest configuration component](../../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
@@ -66,8 +66,10 @@ prepared group CLI binds exact scope/endpoints and transfers candidate-native
 execution context. Its native query-tool preparation component has controlled
 command coverage. The concrete caller receives complete native sources/control,
 materializes exact committed endpoints and executes the original mixed plan.
-Ordinary PR CI must qualify actual Linux preparation and the complete
-root/local/smoke replacement together before merge. The
+[PR #1114](https://github.com/hcoona/three/pull/1114) supplied ordinary hosted
+qualification of actual Linux preparation and the complete root/local/smoke
+replacement together. Later caller changes retain their applicable qualification
+gate. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned ordered helper composition; its campaign is stopped and
 both unused diagnostic reserves expired. The complete caller mapping is
