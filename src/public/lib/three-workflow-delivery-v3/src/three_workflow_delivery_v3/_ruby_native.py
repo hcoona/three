@@ -155,10 +155,19 @@ def validate_ruby_profile(value: JsonValue) -> dict[str, JsonValue]:
 
 
 def validate_ruby_specification(
-    value: JsonValue, native: str
+    value: JsonValue, native: str, *, source: bool = False
 ) -> dict[str, JsonValue]:
-    """Require the closed exported smoke specification."""
+    """Keep source metadata distinct from legacy package closure."""
     files: list[JsonValue] = list(RUBY_PACKAGE_FILES)
+    source_files: list[JsonValue] = [
+        path for path in RUBY_PACKAGE_FILES if path != RUBY_WITNESS_PATH
+    ]
+    if (
+        source
+        and isinstance(value, dict)
+        and value.get("files") == source_files
+    ):
+        files = source_files
     expected: dict[str, JsonValue] = {
         "name": RUBY_RELEASE_UNIT,
         "version": native,

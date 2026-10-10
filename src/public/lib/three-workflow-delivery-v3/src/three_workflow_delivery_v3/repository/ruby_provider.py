@@ -183,7 +183,9 @@ class RubyProviderResult:
         validate_ruby_inputs(self.source_input_manifest)
         validate_ruby_profile(parse_canonical_json(self.native_profile))
         validate_ruby_specification(
-            parse_canonical_json(self.specification), self.nbgv.native_version
+            parse_canonical_json(self.specification),
+            self.nbgv.native_version,
+            source=True,
         )
         if (
             self.nbgv.target != self.binding.target

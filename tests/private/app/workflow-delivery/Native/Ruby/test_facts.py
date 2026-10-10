@@ -347,6 +347,159 @@ def test_archive_metadata_and_clean_require_need_no_bundle_or_specs(
     assert consumed.stdout.splitlines() == ["native_fixture", "1.2.3"]
 
 
+def test_current_smoke_gemspec_separates_native_and_legacy_package_membership(
+    native, tmp_path
+):
+    """Native source/build need no witness; old package closure still does."""
+    source = tmp_path / "source"
+    shutil.copytree(ROOT / "src/public/lib/hcoona-release-smoke-ruby", source)
+    version = source / "lib/hcoona_release_smoke_ruby/version.rb"
+    version.parent.mkdir(parents=True, exist_ok=True)
+    version.write_text(
+        'module HcoonaReleaseSmokeRuby; VERSION = "1.2.3"; end\n'
+    )
+    witness = (
+        source
+        / "lib/hcoona_release_smoke_ruby/_workflow_delivery_provenance.json"
+    )
+    assert not witness.exists()
+    gemspec = source / "hcoona-release-smoke-ruby.gemspec"
+    normal = [
+        "LICENSE",
+        "README.md",
+        "lib/hcoona_release_smoke_ruby.rb",
+        "lib/hcoona_release_smoke_ruby/version.rb",
+    ]
+    evaluated = answer(facts(native, "gemspec", gemspec))
+    assert sorted(evaluated["files"]) == normal
+    assert evaluated["name"] == "hcoona-release-smoke-ruby"
+    assert evaluated["version"] == "1.2.3"
+
+    legacy_helper = ROOT / (
+        "src/public/lib/three-workflow-delivery-v3/"
+        "src/three_workflow_delivery_v3/_ruby_helper.rb"
+    )
+    request = tmp_path / "legacy-request.json"
+
+    def legacy(operation, **fields):
+        request.write_text(json.dumps({"operation": operation, **fields}))
+        return command(
+            native,
+            source,
+            [
+                "-e",
+                "STDIN.reopen(ARGV.shift); load ARGV.shift",
+                str(request),
+                str(legacy_helper),
+            ],
+        )
+
+    assert (
+        answer(legacy("specification", gemspec=str(gemspec)))["files"] == normal
+    )
+    legacy_archive = tmp_path / "legacy.gem"
+    refused = legacy("build", gemspec=str(gemspec), output=str(legacy_archive))
+    assert refused.returncode != 0
+    assert "unsupported native specification" in refused.stderr
+    assert not legacy_archive.exists()
+
+    built = command(native, source, ["-S", "gem", "build", str(gemspec)])
+    assert built.returncode == 0, built.stderr
+    archive = source / "hcoona-release-smoke-ruby-1.2.3.gem"
+    inspected = answer(facts(native, "archive", archive))
+    assert sorted(inspected["contents"]) == normal
+    assert not witness.exists()
+    installed = tmp_path / "clean gem home"
+    installed.mkdir()
+    environment = {"GEM_HOME": str(installed), "GEM_PATH": str(installed)}
+    install = command(
+        native,
+        installed,
+        ["-S", "gem", "install", "--local", "--no-document", str(archive)],
+        environment=environment,
+    )
+    assert install.returncode == 0, install.stderr
+    consumed = command(
+        native,
+        installed,
+        [
+            "-e",
+            (
+                'require "hcoona_release_smoke_ruby"; '
+                "puts HcoonaReleaseSmokeRuby.project_id; "
+                "puts HcoonaReleaseSmokeRuby::VERSION; "
+                'puts Gem.loaded_specs["hcoona-release-smoke-ruby"].version'
+            ),
+        ],
+        environment=environment,
+    )
+    assert consumed.returncode == 0, consumed.stderr
+    assert consumed.stdout.splitlines() == [
+        "hcoona-release-smoke-ruby",
+        "1.2.3",
+        "1.2.3",
+    ]
+    # This fixture checks old file membership, not provenance-record semantics.
+    witness.write_text("{}\n")
+    historical_files = sorted([*normal, witness.relative_to(source).as_posix()])
+    assert (
+        answer(legacy("specification", gemspec=str(gemspec)))["files"]
+        == historical_files
+    )
+    assert (
+        answer(
+            legacy("build", gemspec=str(gemspec), output=str(legacy_archive))
+        )["files"]
+        == historical_files
+    )
+    assert (
+        sorted(answer(facts(native, "archive", legacy_archive))["contents"])
+        == historical_files
+    )
+
+
+@pytest.mark.parametrize("has_witness", [False, True])
+def test_smoke_membership_uses_gemspec_directory_not_caller(
+    native, tmp_path, has_witness
+):
+    """Absolute native loading ignores a caller-local witness decoy."""
+    source = tmp_path / "source"
+    shutil.copytree(ROOT / "src/public/lib/hcoona-release-smoke-ruby", source)
+    version = source / "lib/hcoona_release_smoke_ruby/version.rb"
+    version.parent.mkdir(parents=True, exist_ok=True)
+    version.write_text(
+        'module HcoonaReleaseSmokeRuby; VERSION = "1.2.3"; end\n'
+    )
+    relative_witness = (
+        "lib/hcoona_release_smoke_ruby/_workflow_delivery_provenance.json"
+    )
+    other_directory = tmp_path / "unrelated caller"
+    other_directory.mkdir()
+    location = source if has_witness else other_directory
+    witness = location / relative_witness
+    witness.parent.mkdir(parents=True, exist_ok=True)
+    witness.write_text("{}\n")
+    loaded = command(
+        native,
+        other_directory,
+        [
+            "-rjson",
+            "-e",
+            "puts JSON.generate(Gem::Specification.load(ARGV.fetch(0)).files)",
+            str(source / "hcoona-release-smoke-ruby.gemspec"),
+        ],
+    )
+    expected = [
+        "LICENSE",
+        "README.md",
+        "lib/hcoona_release_smoke_ruby.rb",
+        "lib/hcoona_release_smoke_ruby/version.rb",
+    ]
+    if has_witness:
+        expected.append(relative_witness)
+    assert sorted(answer(loaded)) == sorted(expected)
+
+
 @pytest.mark.parametrize("native", ["2.4.20"], indirect=True)
 @pytest.mark.parametrize("scenario", ["passed", "failed", "pending", "outside"])
 def test_public_rspec_json_preserves_examples_and_outside_errors(

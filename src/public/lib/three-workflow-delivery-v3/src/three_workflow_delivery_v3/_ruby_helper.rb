@@ -14,14 +14,16 @@ FILES = [
   "lib/hcoona_release_smoke_ruby/_workflow_delivery_provenance.json",
   "lib/hcoona_release_smoke_ruby/version.rb"
 ].freeze
+SOURCE_FILES = FILES.reject { |path| path.end_with?("/_workflow_delivery_provenance.json") }.freeze
 LIMIT = 2 * 1024 * 1024
 
-def facts(spec, files: spec&.files)
+def facts(spec, files: spec&.files, source: false)
   raise "missing native specification" unless spec
   raise "unsupported native specification" unless spec.name == NAME &&
     spec.platform.to_s == "ruby" && spec.dependencies.empty? &&
     spec.extensions.empty? && spec.executables.empty? && spec.cert_chain.empty? &&
-    spec.require_paths == ["lib"] && files.sort == FILES &&
+    spec.require_paths == ["lib"] &&
+    (files.sort == FILES || (source && files.sort == SOURCE_FILES)) &&
     spec.metadata == { "github_repo" => "https://github.com/hcoona/three" } &&
     spec.required_ruby_version.to_s == ">= 4.0" && spec.licenses == ["MIT"]
 
@@ -66,7 +68,7 @@ when "version"
     raw == raw.strip && !raw.match?(/\s/) && !raw.include?("+") && Gem::Version.correct?(raw)
   { "raw" => raw, "native" => Gem::Version.new(raw).to_s }
 when "specification"
-  facts(Gem::Specification.load(request.fetch("gemspec")))
+  facts(Gem::Specification.load(request.fetch("gemspec")), source: true)
 when "build"
   spec = Gem::Specification.load(request.fetch("gemspec"))
   result = facts(spec)

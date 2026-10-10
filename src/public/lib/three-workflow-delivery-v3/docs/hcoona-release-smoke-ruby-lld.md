@@ -67,6 +67,13 @@ smoke admits a fixed pure-Ruby shape, explicit files and no custom extension or
 target-selected build command. Unknown files, dependencies, dynamic inputs or
 contradictory metadata fail admission rather than being guessed by a parser.
 
+Source evaluation accepts the four normal exported files after native version
+preparation. A retained historical source answer may also name the legacy witness.
+The gemspec includes that generated file only when present. Legacy Build still
+creates it and requires the complete five-file package; archive and installed
+consumer validation retain that closure. The replacement CI uses native package
+facts without importing this legacy witness requirement.
+
 The normalized Model closes one Project Node, Release Unit and gem variant.
 Its source closure includes the gemspec, library, README/license, generated-file
 recipe, NBGV lineage and reviewed native tools. A manifest names generated inputs
