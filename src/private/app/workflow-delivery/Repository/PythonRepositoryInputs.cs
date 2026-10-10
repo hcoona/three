@@ -8,6 +8,7 @@ internal static class PythonRepositoryInputs
     private static readonly string[] Shared = [
         ".github/workflows/ci.yml", "eng/scripts/ci_scope.py",
         "eng/scripts/repository_path_patterns.py", "eng/scripts/prepare_ci_control_inputs.py",
+        "eng/scripts/run_python_ci_group.py",
         "mise.toml", "mise.lock"];
     private static readonly string[] Preparation = [
         "pyproject.toml", "uv.lock", "uv.toml", ".python-version", ".config/uv/uv.toml",
@@ -145,6 +146,8 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_run_node_ci_group.py" &&
             path == "eng/scripts/run_node_ci_group.py") ||
         (target == "tests/eng/test_run_dotnet_ci_group.py" &&
+            path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
+        (target == "tests/eng/test_run_python_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
             path is "eng/scripts/ci_scope.py" or "eng/scripts/sync_python_version.py" or

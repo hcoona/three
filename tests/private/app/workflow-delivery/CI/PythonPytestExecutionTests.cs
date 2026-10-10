@@ -11,9 +11,6 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     private static readonly string[] RootPackages = ["native-root"];
     private static readonly string[] QualityPackages = ["native-root", "native-a", "native-b"];
     private static readonly string[] QualityTargets = ["tests/root", "pkg-a/tests", "pkg-b/tests"];
-    private static readonly string[] RootInvocation = ["run", "--no-sync", "python", "-m", "pytest",
-        "-c", "pyproject.toml", "tests/root"];
-
     [TestMethod]
     public async Task RootTargetUsesNativeRootPreparationAndOriginalConfiguration()
     {
@@ -34,9 +31,22 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         Assert.AreEqual(Path.Combine(fixture.Scratch, "test-environment"),
             preparation.Command.Environment!["UV_PROJECT_ENVIRONMENT"]);
         Assert.IsNull(preparation.Command.Environment["PYTHONPATH"]);
+        Assert.IsNull(preparation.Command.Environment["PYTHONSAFEPATH"]);
         Assert.IsNull(preparation.Command.Environment["PYTEST_ADDOPTS"]);
         Assert.IsNull(preparation.Command.Environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"]);
-        CollectionAssert.AreEqual(RootInvocation, result.Commands[1].Command.Arguments);
+        NativeCommand invocation = result.Commands[1].Command;
+        string junit = JunitOutput(invocation);
+        Assert.IsTrue(Path.IsPathFullyQualified(junit));
+        Assert.AreEqual(fixture.Scratch, Path.GetDirectoryName(junit));
+        Assert.EndsWith(".xml", junit);
+        Assert.IsNull(invocation.Environment!["UV_PROJECT_ENVIRONMENT"]);
+        Assert.IsNull(invocation.Environment["PYTHONSAFEPATH"]);
+        Assert.AreEqual("false", invocation.Environment["MISE_TASK_RUN_AUTO_INSTALL"]);
+        Assert.AreEqual("0", invocation.Environment["MISE_EXEC_AUTO_INSTALL"]);
+        string[] expectedInvocation = ["run", "--no-project", "--python",
+            Path.Combine(fixture.Scratch, "test-environment"), "python", "-m", "pytest",
+            "-c", "pyproject.toml", "--junitxml=" + junit, "tests/root"];
+        CollectionAssert.AreEqual(expectedInvocation, invocation.Arguments);
         CollectionAssert.AreEqual(new[] { selected.Checks[0].Work.Key },
             result.Commands[1].Checks);
         Assert.IsEmpty(result.Failures);
@@ -44,6 +54,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         CollectionAssert.AreEqual(new[] { "workspace", "metadata", "--frozen", "--python",
             fixture.Request.Interpreter }, query.Arguments);
         Assert.AreEqual("1", query.Environment!["UV_OFFLINE"]);
+        Assert.AreEqual("1", query.Environment["PYTHONSAFEPATH"]);
         Assert.IsNull(query.Environment.GetValueOrDefault("PYTEST_ADDOPTS"));
         Assert.AreEqual(Path.Combine(fixture.Scratch, "metadata-project-environment"),
             query.Environment["UV_PROJECT_ENVIRONMENT"]);
@@ -68,6 +79,25 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         CollectionAssert.AreEqual(QualityTargets,
             result.Commands.Where(item => item.Command.Arguments[0] == "run")
                 .Select(item => item.Command.Arguments[^1]).ToArray());
+        string[] reports = result.Commands.Where(item => item.Command.Arguments[0] == "run")
+            .Select(item => JunitOutput(item.Command)).ToArray();
+        Assert.HasCount(QualityTargets.Length, reports.Distinct(StringComparer.Ordinal));
+        foreach (string report in reports)
+        {
+            Assert.IsTrue(Path.IsPathFullyQualified(report));
+            Assert.AreEqual(fixture.Scratch, Path.GetDirectoryName(report));
+            Assert.EndsWith(".xml", report);
+        }
+        foreach (PythonPytestCommand command in result.Commands.Where(item =>
+                     item.Command.Arguments[0] == "run"))
+        {
+            Assert.IsNull(command.Command.Environment!["UV_PROJECT_ENVIRONMENT"]);
+            Assert.IsNull(command.Command.Environment["PYTHONSAFEPATH"]);
+            Assert.AreEqual("false", command.Command.Environment["MISE_TASK_RUN_AUTO_INSTALL"]);
+            Assert.AreEqual("0", command.Command.Environment["MISE_EXEC_AUTO_INSTALL"]);
+            Assert.Contains(Path.Combine(fixture.Scratch, "test-environment"),
+                command.Command.Arguments);
+        }
     }
 
     [TestMethod]
@@ -261,6 +291,13 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         .Zip(command.Arguments.Skip(1)).Where(pair => pair.First == "--package")
         .Select(pair => pair.Second).ToArray();
 
+    private static string JunitOutput(NativeCommand command)
+    {
+        const string prefix = "--junitxml=";
+        return Assert.ContainsSingle(command.Arguments.Where(argument =>
+            argument.StartsWith(prefix, StringComparison.Ordinal)))[prefix.Length..];
+    }
+
     private sealed class Fixture(GitFixture repo, CiPlan plan, PythonPytestRunRequest request)
         : IDisposable
     {
@@ -311,7 +348,11 @@ public sealed class PythonPytestExecutionTests(TestContext context)
                         [CheckOrigin.NativeRetained])).ToArray());
                 return new(repo, plan, new(repo.Directory, scratch, "controlled-uv",
                     Path.Combine(scratch, "python"), members, configuration, targets, operation, 30,
-                    new Dictionary<string, string?> { ["PYTEST_ADDOPTS"] = "--collect-only" }));
+                    new Dictionary<string, string?> { ["PYTEST_ADDOPTS"] = "--collect-only",
+                        ["PYTHONSAFEPATH"] = "1",
+                        ["MISE_TASK_RUN_AUTO_INSTALL"] = "false",
+                        ["MISE_EXEC_AUTO_INSTALL"] = "0",
+                        ["UV_PROJECT_ENVIRONMENT"] = "query-environment" }));
             }
             catch { repo.Dispose(); Directory.Delete(scratch, true); throw; }
         }

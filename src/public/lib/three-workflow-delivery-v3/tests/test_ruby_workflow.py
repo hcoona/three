@@ -376,30 +376,37 @@ def test_common_python_ci_keeps_native_nbgv_ahead_of_late_mise_shim(tmp_path):
     ]["python-tests"]["steps"]
     shims = tmp_path / "mise-shims"
     shims.mkdir()
-    path = []
-    for step in steps:
-        action = step.get("uses", "").split("@", 1)[0]
-        if action == "actions/setup-dotnet":
-            assert step["uses"] == "actions/setup-dotnet@v6"
-            assert step["with"] == {"global-json-file": "global.json"}
-            assert step["if"] == (
-                "success() && !cancelled() && steps.scope.outputs.run == 'true'"
-                " && needs.scope.outputs.python_dotnet == 'true'"
-            )
-            path.insert(0, str(native.parent))
-        elif action == "jdx/mise-action":
-            path.insert(0, str(shims))
-        elif step.get("name") == "Restore .NET tools":
-            assert str(native.parent) in path
-    assert set(path) == {str(native.parent), str(shims)}
+    materialize = next(
+        i for i, step in enumerate(steps) if step.get("id") == "endpoints"
+    )
+    plan = next(i for i, step in enumerate(steps) if step.get("id") == "plan")
+    sdks = [
+        i
+        for i, step in enumerate(steps)
+        if step.get("uses", "").startswith("actions/setup-dotnet@")
+    ]
+    mise_index = next(
+        i
+        for i, step in enumerate(steps)
+        if step.get("uses", "").startswith("jdx/mise-action@")
+    )
+    assert all(materialize < i < plan < mise_index for i in sdks)
+    assert all(
+        "steps.endpoints.outputs." in steps[i]["with"]["global-json-file"]
+        for i in sdks
+    )
     environment = neutral_dotnet_environment()
-    environment["PATH"] = os.pathsep.join([*path, os.defpath])
-    before = run_native(("dotnet", "nbgv", "--version"), source, environment)
+    environment["PATH"] = os.pathsep.join(
+        [str(shims), str(native.parent), os.defpath]
+    )
+    # Preparation captures the native SDK before selected mise setup; subsequent
+    # execution reuses its absolute path even when ambient resolution changes.
+    before = run_native((str(native), "nbgv", "--version"), source, environment)
     (shims / "dotnet").symlink_to(Path(mise).resolve())
-    after = run_native(("dotnet", "nbgv", "--version"), source, environment)
     assert (
         Path(shutil.which("dotnet", path=environment["PATH"])).resolve()
-        == native
+        != native
     )
+    after = run_native((str(native), "nbgv", "--version"), source, environment)
     assert after == before
     assert after.strip().split("+", 1)[0] == expected

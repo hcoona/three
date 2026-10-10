@@ -67,13 +67,14 @@ def validate_scope_artifact(
         raise ValueError(message)
 
 
-def run(
+def run(  # noqa: PLR0913 - Concrete process capture options.
     root: Path,
     directory: Path,
     label: str,
     *args: str,
     required: bool = True,
     timeout: int = 900,
+    environment: dict[str, str | None] | None = None,
 ) -> str:
     """Retain the actual native outcome; never repair or retry an invocation."""
     outcome: dict[str, Any] = {"arguments": args, "cwd": str(root)}
@@ -84,8 +85,20 @@ def run(
             capture_output=True,
             check=False,
             timeout=timeout,
-            env=os.environ
-            | {"MSBUILDLOGTASKINPUTS": "1", "MSBUILDLOGTASKOUTPUTS": "1"},
+            env=(
+                os.environ
+                | {
+                    "MSBUILDLOGTASKINPUTS": "1",
+                    "MSBUILDLOGTASKOUTPUTS": "1",
+                    "MISE_EXEC_AUTO_INSTALL": "0",
+                }
+            )
+            if environment is None
+            else {
+                name: value
+                for name, value in environment.items()
+                if value is not None
+            },
         )
         stdout, stderr = result.stdout, result.stderr
         outcome.update(exitCode=result.returncode, termination="exited")
@@ -203,6 +216,7 @@ def build(root: Path, directory: Path, name: str) -> tuple[Path, Path]:
         "mise",
         "exec",
         "--locked",
+        "dotnet",
         "--",
         "dotnet",
         "restore",
@@ -221,6 +235,7 @@ def build(root: Path, directory: Path, name: str) -> tuple[Path, Path]:
         "mise",
         "exec",
         "--locked",
+        "dotnet",
         "--",
         "dotnet",
         "msbuild",
@@ -238,6 +253,7 @@ def build(root: Path, directory: Path, name: str) -> tuple[Path, Path]:
         "mise",
         "exec",
         "--locked",
+        "dotnet",
         "--",
         "dotnet",
         "msbuild",
@@ -300,6 +316,9 @@ def execute(root: Path, source: Path, directory: Path) -> dict[str, Any]:
             "mise",
             "install",
             "--locked",
+            "dotnet",
+            "node",
+            "pnpm",
         )
         run(
             endpoints[name],
@@ -444,15 +463,33 @@ def run_runtimes(
                 variant["exactVersion"]
                 or variant["selector"].removesuffix(".x")
             )
-            run(
-                checkout,
-                directory,
-                key + "-tools",
-                "mise",
-                "--no-config",
-                "install",
-                selector,
-            )
+            if variant["exactVersion"] is None:
+                run(
+                    checkout,
+                    directory,
+                    key + "-tools",
+                    "mise",
+                    "--no-config",
+                    "install",
+                    selector,
+                    environment=os.environ
+                    | {
+                        "MSBUILDLOGTASKINPUTS": "1",
+                        "MSBUILDLOGTASKOUTPUTS": "1",
+                        "MISE_EXEC_AUTO_INSTALL": "0",
+                        "MISE_LOCKED": "0",
+                    },
+                )
+            else:
+                run(
+                    checkout,
+                    directory,
+                    key + "-tools",
+                    "mise",
+                    "install",
+                    "--locked",
+                    "node",
+                )
             run(
                 checkout,
                 directory,

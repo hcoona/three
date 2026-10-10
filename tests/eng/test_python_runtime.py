@@ -2,7 +2,6 @@
 
 import importlib.util
 import json
-import os
 import shlex
 import sys
 import tomllib
@@ -64,100 +63,154 @@ def test_runner(monkeypatch):
     return module
 
 
-@pytest.mark.parametrize(
-    ("sync_status", "test_status"), [(0, 0), (17, None), (0, 23)]
-)
-def test_full_python_runner_preserves_outer_uv_and_propagates_status(
-    test_runner, monkeypatch, tmp_path, sync_status, test_status
-):
-    """Real selection drives exact sync, full tests and bounded failures."""
-    outer = tmp_path / "outer"
-    shadow = tmp_path / "shadow"
-    name = "uv.exe" if os.name == "nt" else "uv"
-    for directory in (outer, shadow):
-        directory.mkdir()
-        executable = directory / name
-        executable.touch()
-        executable.chmod(0o755)
-    original_path = os.environ["PATH"]
-    monkeypatch.setenv("PATH", os.pathsep.join((str(outer), original_path)))
-    arguments = ["-q", "--junitxml=artifacts/python result.xml"]
-    monkeypatch.setattr(sys, "argv", ["run_python_tests.py", *arguments])
-    calls = []
+@pytest.fixture
+def committed_full_runner(test_runner, monkeypatch, tmp_path):
+    """Use real committed Git source and substitute costly native phases."""
+    root = tmp_path / "source"
+    root.mkdir()
+    (root / "source.py").write_text("original = True\n")
 
-    def command(argv, *, cwd, check):
-        calls.append((argv, cwd, check))
-        if argv[1] == "sync":
-            # Model the external command changing PATH between stages.
-            monkeypatch.setenv(
-                "PATH", os.pathsep.join((str(shadow), original_path))
-            )
-            return SimpleNamespace(returncode=sync_status)
-        return SimpleNamespace(returncode=test_status)
+    def git(*args):
+        return test_runner.ci_scope.git(
+            root,
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "user.name=Full Caller",
+            "-c",
+            "user.email=full@example.invalid",
+            *args,
+        ).strip()
 
-    # Substitute only process execution; real selection and which() still run.
-    monkeypatch.setattr(test_runner, "subprocess", SimpleNamespace(run=command))
-    assert test_runner.main() == (sync_status or test_status)
-    packages = [
-        "hcoona-three-monorepo",
-        "azureauth-credprovider-keyring",
-        "git-commit-heatmap",
-        "llm-text-splitter",
-        "nbgv-python",
-        "three-workflow-delivery-v3",
-    ]
-    uv = str(outer / name)
-    assert calls[0] == (
+    git("init", "-q")
+    git("add", ".")
+    git("commit", "-qm", "Commit full caller input")
+    candidate = git("rev-parse", "HEAD")
+    directory = tmp_path / "results"
+    data = tmp_path / "mise-data"
+    data.mkdir()
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        sys,
+        "argv",
         [
-            uv,
-            "sync",
-            "--frozen",
-            *[part for package in packages for part in ("--package", package)],
+            "run_python_tests.py",
+            "--repository",
+            str(root),
+            "--directory",
+            str(directory),
+            "--mise-data-directory",
+            str(data),
         ],
-        ROOT,
-        False,
     )
-    if sync_status:
-        assert len(calls) == 1
-    else:
-        config = tomllib.loads((ROOT / "pyproject.toml").read_text())
-        roots = config["tool"]["pytest"]["ini_options"]["testpaths"]
-        assert calls[1:] == [
-            (
-                [
-                    uv,
-                    "run",
-                    "--no-sync",
-                    "python",
-                    "-m",
-                    "pytest",
-                    *roots,
-                    *arguments,
-                ],
-                ROOT,
-                False,
-            )
-        ]
-
-
-def test_full_python_runner_missing_uv_fails_before_any_process(
-    test_runner, monkeypatch
-):
-    """No missing-tool fallback may silently bypass exact preparation."""
     calls = []
+    state = {"satisfied": True, "failure": False}
+
+    def materialize(receiving, scope, transfer, owned):
+        value = test_runner.group.node.read_json(scope)
+        calls.append(("materialize", receiving, value, transfer, owned))
+        assert value["base"] == value["candidate"] == candidate
+        assert value["full"] is True
+        assert value["changed_paths"] == []
+        assert value["endpoint_owners"] == {
+            name: {"revision": candidate, "paths": []}
+            for name in ("basis", "candidate")
+        }
+
+    def plan(_root, _directory):
+        calls.append(("plan",))
+        if state["failure"]:
+            message = "Native preparation failed"
+            raise ValueError(message)
+
+    def execute(_root, owned, mise):
+        calls.append(("execute", owned, mise))
+        return {"satisfied": state["satisfied"]}
+
     monkeypatch.setattr(
-        test_runner, "shutil", SimpleNamespace(which=lambda _name: None)
+        test_runner.group.node, "run", lambda *args: calls.append(("git", args))
     )
     monkeypatch.setattr(
-        test_runner,
-        "subprocess",
-        SimpleNamespace(
-            run=lambda *args, **kwargs: calls.append((args, kwargs))
-        ),
+        test_runner.dotnet,
+        "bootstrap",
+        lambda *args: calls.append(("bootstrap", args)),
     )
-    with pytest.raises(FileNotFoundError, match="UV executable is unavailable"):
-        test_runner.main()
-    assert calls == []
+    monkeypatch.setattr(test_runner.group, "materialize", materialize)
+    monkeypatch.setattr(test_runner.group, "plan", plan)
+    monkeypatch.setattr(test_runner.group, "execute", execute)
+    return SimpleNamespace(
+        root=root,
+        candidate=candidate,
+        directory=directory,
+        data=data,
+        state=state,
+        calls=calls,
+        runner=test_runner,
+    )
+
+
+@pytest.mark.parametrize("satisfied", [True, False])
+def test_full_python_runner_uses_committed_native_group(
+    committed_full_runner, satisfied, capsys
+):
+    """Full means the original mixed group at the named committed candidate."""
+    fixture = committed_full_runner
+    fixture.state["satisfied"] = satisfied
+    assert fixture.runner.main() == (0 if satisfied else 1)
+    assert fixture.candidate in capsys.readouterr().out
+    assert [row[0] for row in fixture.calls] == [
+        "git",
+        "bootstrap",
+        "materialize",
+        "plan",
+        "execute",
+    ]
+    assert fixture.calls[-1][1:] == (fixture.directory / "group", fixture.data)
+
+
+def test_full_python_runner_dirty_source_fails_before_preparation(
+    committed_full_runner,
+):
+    """The committed-source claim cannot silently omit tracked edits."""
+    fixture = committed_full_runner
+    (fixture.root / "source.py").write_text("original = False\n")
+    with pytest.raises(SystemExit) as error:
+        fixture.runner.main()
+    assert error.value.code == 2
+    assert fixture.calls == []
+    assert not fixture.directory.exists()
+
+
+def test_full_python_runner_native_failure_cannot_be_success(
+    committed_full_runner,
+):
+    """Failed query installation never becomes an empty or full fallback."""
+    fixture = committed_full_runner
+    fixture.state["failure"] = True
+    with pytest.raises(ValueError, match="Native preparation failed"):
+        fixture.runner.main()
+    assert [row[0] for row in fixture.calls] == [
+        "git",
+        "bootstrap",
+        "materialize",
+        "plan",
+    ]
+
+
+@pytest.mark.parametrize(
+    "option", ["-q", "--junitxml=original.xml", "--from-ref=HEAD"]
+)
+def test_full_python_runner_rejects_unsupported_options(
+    committed_full_runner, monkeypatch, option
+):
+    """Unsupported pytest/selection options cannot silently narrow full."""
+    fixture = committed_full_runner
+    monkeypatch.setattr(sys, "argv", [*sys.argv, option])
+    with pytest.raises(SystemExit) as error:
+        fixture.runner.main()
+    assert error.value.code == 2
+    assert fixture.calls == []
+    assert not fixture.directory.exists()
 
 
 def test_python_tasks_preserve_exact_preparation_and_full_runner():
@@ -177,10 +230,10 @@ def test_python_tasks_preserve_exact_preparation_and_full_runner():
         "pytest",
         "src/public/lib/three-workflow-delivery-v3/tests",
     ]
-    for task in ("test:python", "test:v3"):
-        assert tasks[task]["depends"] == [
-            "prepare:static-reference-authorities"
-        ]
+    assert "depends" not in tasks["test:python"]
+    assert tasks["test:v3"]["depends"] == [
+        "prepare:static-reference-authorities"
+    ]
 
 
 @pytest.mark.parametrize(

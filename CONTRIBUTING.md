@@ -61,8 +61,10 @@ next validation run.
 
 HK checks source/configuration conformance. Run affected project tests
 explicitly before independent implementation review; `mise run test:v3` runs
-Workflow Delivery v3 and `mise run test:python` runs all configured Python
-roots. General CI selects affected work from its actual Git comparison; its
+Workflow Delivery v3 working-tree self-tests. `mise run test:python` runs the
+[native Python group](src/private/app/workflow-delivery/README.md#native-python-ci-caller)
+at committed HEAD in explicit full mode on Linux. General CI selects affected
+work from its actual Git comparison; its
 explicit full mode selects all suites. See the
 [execution contract](docs/engineering/hk-execution.md#ci-execution-contract).
 Record normal commit/command elapsed time and relevant JUnit/CI step durations

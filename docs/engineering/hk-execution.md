@@ -40,6 +40,10 @@ static-reference policy. Project unit, scenario and integration tests run in
 CI or through explicit local test commands. Moving a suite to HK's `large`
 profile does not establish this separation.
 
+The source-conformance job excludes Gopass through mise's existing job-local
+disabled-tools setting. Gopass serves the separate MCP tasks, not HK or bootstrap;
+its repository declaration and native verification remain intact.
+
 General CI selects its test/build work from the actual comparison range and
 the checked-out candidate. Selection uses workspace/build manifests and known
 consumed helpers, configuration and test fixtures. It retains deleted paths
@@ -92,9 +96,12 @@ built platform artifacts can run concurrently. Existing supported runner and
 Node matrices remain applicable to selected work.
 
 The `Select affected validation` job retains `ci-scope.json` with the actual
-candidate, comparison, selected roots and reasons. The Python job retains
-JUnit durations as `python-test-results`. These use ordinary CI artifact
-retention; copy decision-relevant observations into the Issue or PR.
+candidate, comparison and other jobs' selected work and responsibility reasons.
+The Linux Python job performs its own native paired selection and retains
+`python-group-results`: preparation and planning context, original plan and
+command/failure captures, plus required execution results, outcomes and JUnit
+durations when those phases run. These use ordinary CI artifact retention;
+copy decision-relevant observations into the Issue or PR.
 
 Normal validation retains the candidate, selection reasons, actual interpreter,
 test result and skip reasons, command/commit elapsed time, CI job/step timing,

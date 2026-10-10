@@ -250,8 +250,12 @@ answers, retaining the current frozen selected/full preparation behavior. Do not
 install unrelated workspace tools or force input-only members to build. Executors
 receive the original candidate-bound selected work and required results, without
 recomputing impact or changing native target selection. Keep the existing
-`ci_scope.py`, `run_python_tests.py` and smoke PR callers until the replacement
-selection, preparation, execution and transfer group is accepted together.
+legacy selection/preparation consumers until the replacement group is accepted
+together. The [concrete native caller](../../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
+uses `run_python_ci_group.py` for root CI and committed local full; Windows scope
+retains only comparison, other-job responsibility and the independent NuGet
+reproducibility mapping. Smoke PR checks move to the adopted native distribution
+preset while manual Release and current evidence readers remain.
 
 Implement that group inside the existing private app using the
 [native Python CI group contract](./middle-level-design.md#native-python-ci-group).
@@ -338,8 +342,12 @@ eight qualification gates continue to govern changes to this operation.
 
 #### Native Process and Endpoint Facts
 
-Build the candidate private application completely before task use. Its assembly
-supplies one public `ITask` entry loaded through `UsingTask` in an ordinary
+Build the candidate private application completely before task use. Its native
+locked restore, build and output-path query specify `dotnet` as the mise tool
+argument, preserving configured SDK choices while restricting automatic missing-tool
+installation to that control dependency. Other configured tools may remain in
+the native environment; this is not isolation or a zero-network guarantee. Its
+assembly supplies one public `ITask` entry loaded through `UsingTask` in an ordinary
 endpoint-selected `dotnet msbuild` process. Use native `ProjectGraph` with explicit
 entry/global properties. MSBuild owns SDK resolution, task/dependency loading,
 evaluation and reference propagation. Do not introduce MSBuildLocator, a custom
@@ -512,6 +520,15 @@ preparation/evaluation is unprivileged; the scope job runs no second test suite.
 Confirmed base absence requires successful inventory inspection; the candidate
 owner must remain present. Identical full-mode endpoints may reuse one evaluation.
 
+The existing scope job explicitly prepares locked dotnet, Node and PNPM tools
+before native environment export, with `MISE_EXEC_AUTO_INSTALL=0` scoped to that
+job and inherited by its control commands and native children. Before each
+endpoint's first dotnet operation, explicitly prepare that endpoint's own locked
+dotnet, Node and PNPM declarations. Keep Actions-selected `global.json` SDKs and
+native DOTNET_ROOT semantics; candidate tool preparation cannot stand in for a
+different basis declaration. Missing tools or native verification still fail.
+This bounds implicit installation, not tool visibility or all network effects.
+
 Change the Python selector's logical Git-coordinate operations to `PurePosixPath`;
 retain `Path` for filesystem access. Use strict UTF-8 for Git, JSON and text at
 the process boundary, and an explicit compatible workflow shell rather than
@@ -546,7 +563,7 @@ An unadopted member needs no replacement preset merely to retain its checks.
 #### Endpoint Responsibility and Selection
 
 Extend the existing `ci-scope` JSON with `endpoint_owners`, alongside its existing
-aggregate selections. Each `basis`/`candidate` endpoint carries its exact
+retained other-job selections. Each `basis`/`candidate` endpoint carries its exact
 `revision` and one `paths` row for every changed coordinate. A row contains
 `path`, committed `present`, nullable Git `mode`, and `reasons`; each positive
 reason contains `owner`, concrete `target`, `rule`, and source-file coordinates
@@ -555,11 +572,14 @@ Multiple legitimate owners remain separate reasons. Native Git supplies entry
 presence/mode and committed configuration bytes; missing facts are not absence.
 Only changed coordinates are transferred, not another ownership database.
 
-Refactor the retained selector's project, Python-test, resource and special-job
-associations to produce these endpoint facts. Read each endpoint's own Python
-workspace/test configuration and manifests. Preserve the existing aggregate
-candidate-execution semantics separately, including candidate replacement test
-roots and candidate-present package preparation. A basis-only owner explains a
+Use the retained selector's manifest-path inventory, native resource and
+special-job associations to produce these endpoint facts. Python coordinates
+provide responsibility for other ecosystem consumers without parsing Python
+workspace, dependency or test configuration or selecting Python execution.
+The [Python quality and caller mapping](#python-quality-and-caller-mapping) and
+[native Python CI group](./middle-level-design.md#native-python-ci-group) own both-endpoint native facts,
+the single original mixed plan and candidate execution. Preserve the retained
+other jobs' candidate-execution semantics. A basis-only owner explains a
 removed input; it does not execute a deleted target. Preserve both general .NET
 and AzureAuth owners when applicable and the native control-test resource reasons
 already integrated above.
@@ -705,6 +725,19 @@ runtime receives the complete parent plan plus its selected runtime context.
 The collector evaluates both result sets against that original plan, with no
 success substituted for another runtime's missing/failed/canceled/timed-out/
 skipped/conflicting required result.
+
+The Node job prepares the committed dotnet, Node, PNPM, UV and Python tools and
+starts its frozen caller with explicit UV/Python selection. Native automatic
+installation is disabled within this job and the local group's child processes.
+Each endpoint explicitly installs its own locked dotnet, Node and PNPM before
+use; native version, SDK and verification semantics remain unchanged. This
+bounds missing-tool installation, not visibility of other installed tools or
+network effects. Preserve the separate retained Node matrix setup.
+
+The configured Node 24 variant installs through its committed locked context.
+The existing moving Node 22 matrix selector has no committed tool lock; only its
+finite native unconfigured installation disables locked mode. Subsequent native
+execution retains the configured SDK/PNPM locks and automatic-install restriction.
 
 Prepare separate exact candidate materializations, native dependency state and
 external scratch for the two runtimes. Node 22 build can stamp its tracked

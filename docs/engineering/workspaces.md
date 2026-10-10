@@ -34,8 +34,12 @@ uv sync --frozen --package three-workflow-delivery-v3
 mise run test:v3
 ```
 
-`mise run test:python` runs all configured Python test roots. Ordinary commits
-run HK source checks; affected CI owns project tests. The
+`mise run test:python` runs the
+[native Python group](../../src/private/app/workflow-delivery/README.md#native-python-ci-caller)
+in explicit full mode against committed HEAD on Linux, including configured
+pytest targets and adopted distribution checks. `mise run test:v3` remains a
+direct working-tree self-test command. Ordinary commits run HK source checks;
+affected CI owns project tests. The
 [execution contract](hk-execution.md#ci-execution-contract) explains selection,
 required results and timing evidence. Scholarly-publication's standalone
 script runtime remains governed by its own package contract.

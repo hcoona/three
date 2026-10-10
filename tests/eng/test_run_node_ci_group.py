@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -139,6 +140,16 @@ def test_comparison_requires_exact_native_objects(
         group.comparison(tmp_path, payload)
 
 
+def build_controlled(checkout, _carrier, name):
+    """Produce controlled control output and its native log."""
+    target = checkout / "output/WorkflowDelivery.dll"
+    target.parent.mkdir()
+    target.write_bytes(b"prepared controlled application")
+    log = _carrier / (name + ".binlog")
+    log.write_bytes(b"controlled operation")
+    return log, target
+
+
 @pytest.fixture
 def caller(tmp_path, monkeypatch):
     """Caller."""
@@ -185,19 +196,19 @@ def caller(tmp_path, monkeypatch):
         },
     }
     calls, builds, executions = [], [], []
-    state = {"missing": None, "basisOwner": True}
+    state = {"missing": None, "basisOwner": True, "environments": {}}
 
-    def build(checkout, _carrier, name):
+    def build(checkout, carrier, name):
         builds.append((checkout, name))
-        target = checkout / "output/WorkflowDelivery.dll"
-        target.parent.mkdir()
-        target.write_bytes(b"prepared controlled application")
-        log = _carrier / (name + ".binlog")
-        log.write_bytes(b"controlled operation")
-        return log, target
+        return build_controlled(checkout, carrier, name)
 
-    def native(checkout, _carrier, label, *arguments, required=True):
+    def native(
+        checkout, _carrier, label, *arguments, required=True, environment=None
+    ):
         calls.append((checkout, label, arguments, required))
+        state["environments"][label] = environment
+        if state["missing"] == label:
+            raise subprocess.CalledProcessError(1, arguments)
         if label.endswith("-checkout"):
             Path(arguments[-2]).mkdir()
         if label == "planning":
@@ -255,11 +266,23 @@ def caller(tmp_path, monkeypatch):
     )
 
 
-def test_group_collects_both_isolated_runtimes_against_original_parent(caller):
+def test_group_collects_both_isolated_runtimes_against_original_parent(
+    caller, monkeypatch
+):
     """Group collects both isolated runtimes against original parent."""
-    root, received, directory, output, plan, _, calls, builds, executions = (
-        caller
-    )
+    (
+        root,
+        received,
+        directory,
+        output,
+        plan,
+        state,
+        calls,
+        builds,
+        executions,
+    ) = caller
+    monkeypatch.setenv("MISE_LOCKED", "1")
+    monkeypatch.setenv("DOTNET_ROOT", str(directory / "prepared-sdk"))
 
     assert group.execute(root, received, directory) == plan
 
@@ -267,7 +290,39 @@ def test_group_collects_both_isolated_runtimes_against_original_parent(caller):
         (directory / "candidate", "candidate"),
         (directory / "basis", "basis"),
     ]
+    assert [
+        (checkout, args)
+        for checkout, label, args, _ in calls
+        if label in {"basis-tools", "candidate-tools"}
+    ] == [
+        (
+            directory / name,
+            ("mise", "install", "--locked", "dotnet", "node", "pnpm"),
+        )
+        for name in ("basis", "candidate")
+    ]
     assert [entry[0] for entry in executions] == ["node22", "node24"]
+    installs = {
+        label: args
+        for _, label, args, _ in calls
+        if label in {"node22-tools", "node24-tools"}
+    }
+    assert installs == {
+        "node22-tools": ("mise", "--no-config", "install", "node@22"),
+        "node24-tools": ("mise", "install", "--locked", "node"),
+    }
+    alternate = state["environments"]["node22-tools"]
+    assert alternate["MISE_LOCKED"] == "0"
+    assert alternate["MISE_EXEC_AUTO_INSTALL"] == "0"
+    assert alternate["MSBUILDLOGTASKINPUTS"] == "1"
+    assert alternate["MSBUILDLOGTASKOUTPUTS"] == "1"
+    assert alternate["DOTNET_ROOT"] == str(directory / "prepared-sdk")
+    assert os.environ["MISE_LOCKED"] == "1"
+    assert all(
+        value is None
+        for label, value in state["environments"].items()
+        if label != "node22-tools"
+    )
     assert len({entry[1] for entry in executions}) == 2
     assert len({entry[2] for entry in executions}) == 2
     installs = [
@@ -327,7 +382,9 @@ def test_empty_group_still_builds_control_without_product_runtimes(
     )
 
 
-@pytest.mark.parametrize("missing", ["node22", "node24"])
+@pytest.mark.parametrize(
+    "missing", ["node22", "node24", "node22-tools", "node24-tools"]
+)
 def test_failed_runtime_cannot_omit_original_required_results(caller, missing):
     """Failed runtime cannot omit original required results."""
     root, received, directory, output, _, state, _, _, executions = caller
@@ -336,11 +393,20 @@ def test_failed_runtime_cannot_omit_original_required_results(caller, missing):
     with pytest.raises(subprocess.CalledProcessError):
         group.execute(root, received, directory)
 
-    assert [entry[0] for entry in executions] == ["node22", "node24"]
-    assert all(
-        result["key"]["variant"] != missing
-        for result in group.read_json(directory / "results.json")
+    assert [entry[0] for entry in executions] == (
+        []
+        if missing == "node22-tools"
+        else ["node22"]
+        if missing == "node24-tools"
+        else ["node22", "node24"]
     )
+    if missing.endswith("-tools"):
+        assert not (directory / "results.json").exists()
+    else:
+        assert all(
+            result["key"]["variant"] != missing
+            for result in group.read_json(directory / "results.json")
+        )
     assert not output.exists()
     assert not (directory / "outcome.json").exists()
 
@@ -374,6 +440,9 @@ def test_native_command_retains_failure_or_timeout(
     ) == ("partial" if exit_code in (0, 1) else "")
     assert len(calls) == 1
     assert calls[0][1]["timeout"] == expected_budget
+    assert calls[0][1]["env"]["MISE_EXEC_AUTO_INSTALL"] == "0"
+    assert calls[0][1]["env"]["MSBUILDLOGTASKINPUTS"] == "1"
+    assert calls[0][1]["env"]["MSBUILDLOGTASKOUTPUTS"] == "1"
     observation = group.read_json(tmp_path / "native.command.json")
     assert observation == {
         "arguments": ["native"],
@@ -513,7 +582,14 @@ def test_control_build_uses_locked_native_runtime_preparation(
     for checkout, carrier, _, args in calls:
         assert checkout == root
         assert carrier == directory
-        assert args[:5] == ("mise", "exec", "--locked", "--", "dotnet")
+        assert args[:6] == (
+            "mise",
+            "exec",
+            "--locked",
+            "dotnet",
+            "--",
+            "dotnet",
+        )
         assert group.CONTROL_PROJECT in args
         assert set(group.BUILD_PROPERTIES) <= set(args)
     restore = calls[0][3]

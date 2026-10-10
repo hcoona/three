@@ -26,8 +26,10 @@ supplement, ordered configuration preflight, metadata adaptation and operation
 dependency projection have controlled unit boundaries. The private app's
 [bounded native pytest configuration component](../../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
 also has controlled tests; the separate planning-input observation below qualifies
-its exact native query and target/input composition. Complete caller ownership
-and qualification remain pending; the
+its exact native query and target/input composition. The [native Python caller](../../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
+composes root CI, explicit local full and smoke PR retirement;
+[PR #1114](https://github.com/hcoona/three/pull/1114) carries complete ordinary
+caller qualification; the
 [native Python CI group contract](./middle-level-design.md#native-python-ci-group)
 defines its planning, preparation, execution and transfer boundary. The
 [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
@@ -43,7 +45,8 @@ subjects; its campaign and cleanup are complete, and remaining captures stopped.
 bind supplied actual check owners to repository engineering inputs. The separate
 [planning-input observation](./research/python-planning-enrichment-qualification.md#completed-planning-input-observation)
 qualifies native pytest, committed NBGV/quality inputs and producer input mapping
-on the exact retained Linux subjects; full caller behavior remains pending. The
+on the exact retained Linux subjects; complete caller qualification has its separate
+ordinary PR CI gate. The
 [controlled Python package component](../../../../private/app/workflow-delivery/README.md#python-package-execution-component)
 implements finite adopted preset expansion, preparation and execution. The
 [completed corrected Linux package observation](./research/python-native-package-qualification.md#completed-corrected-linux-package-observation)
@@ -52,20 +55,23 @@ sdist consumers, with the audit's separately classified filename-discovery metho
 exception retained. That package campaign is stopped: one lifetime spent and both
 unused package slots expired. The
 [finite Python CI execution component](../../../../private/app/workflow-delivery/README.md#finite-python-ci-execution-component)
-has controlled Git/command-transfer coverage for the original pytest/package plan;
-actual root pytest, complete paired callers/Python CI cutover and Release remain
-separate. The [prepared endpoint collector](../../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
+has controlled Git/command-transfer coverage for the original pytest/package plan.
+The [native Python CI caller](../../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
+implements root CI and committed local full execution; the smoke PR entry is
+retired. Actual root pytest and the complete Linux caller require ordinary hosted
+qualification before accepted cutover. Release remains separate.
+The [prepared endpoint collector](../../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
 composes existing readers and paired selection with controlled coverage. Its
 prepared group CLI binds exact scope/endpoints and transfers candidate-native
 execution context. Its native query-tool preparation component has controlled
-command coverage; actual Linux preparation and complete caller qualification remain
-pending.
-Existing callers remain active until their whole consumer group is
-qualified and switched together. The
+command coverage. The concrete caller receives complete native sources/control,
+materializes exact committed endpoints and executes the original mixed plan.
+Ordinary PR CI must qualify actual Linux preparation and the complete
+root/local/smoke replacement together before merge. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned ordered helper composition; its campaign is stopped and
-both unused diagnostic reserves expired. Complete native caller qualification
-and execution/caller mapping remain pending. The separate enrichment campaign
+both unused diagnostic reserves expired. The complete caller mapping is
+implemented; [PR #1114](https://github.com/hcoona/three/pull/1114) carries ordinary hosted qualification. The separate enrichment campaign
 and cleanup are complete; both unused diagnostics stopped. Other ecosystem execution cutover and
 Release remain pending. The
 [private application's entry](../../../../private/app/workflow-delivery/README.md)
@@ -76,8 +82,9 @@ the adopted fixture composition/effects on Linux. Its finite allowance is stoppe
 and the unused reserve expired. Root CI's adopted Node group and selected retained
 Node matrix have ordinary hosted transfer/execution qualification in
 [PR #1042](https://github.com/hcoona/three/pull/1042). The exclusive npm CI shadow
-and bootstrap projection are retired. Other quality presets, Python/Ruby execution
-cutover and Release remain pending. The
+and bootstrap projection are retired. Python caller wiring is implemented with its
+ordinary hosted qualification carried by [PR #1114](https://github.com/hcoona/three/pull/1114); other quality presets, Ruby
+execution cutover and Release remain pending. The
 [requirements transition](./requirements.md#requirements-and-implementation-transition)
 defines the retained implementation/evidence scope of the old
 [glossary](./architecture-glossary.md),

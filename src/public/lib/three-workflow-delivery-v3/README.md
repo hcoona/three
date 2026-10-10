@@ -25,8 +25,9 @@ Python passive extraction, the pinned native supplement, metadata adaptation and
 dependency projection have controlled component boundaries. The private app also
 provides a [bounded native pytest configuration component](../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
 with controlled tests; the separate planning-input observation below qualifies
-its exact native query and target/input composition. Complete caller ownership
-and qualification remain pending. The
+its exact native query and target/input composition. Complete caller wiring is implemented;
+[PR #1114](https://github.com/hcoona/three/pull/1114) carries ordinary hosted
+qualification. The
 [paired Python producer-to-owner component](../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
 has controlled supplied-fact coverage. The
 [controlled paired Python fact assembly](../../../private/app/workflow-delivery/README.md#controlled-paired-python-fact-assembly)
@@ -41,7 +42,8 @@ The [controlled Python repository input associations](../../../private/app/workf
 bind supplied actual check owners to repository engineering inputs. The separate
 [planning-input observation](docs/research/python-planning-enrichment-qualification.md#completed-planning-input-observation)
 qualifies native pytest, committed NBGV/quality inputs and producer input mapping
-on the exact Linux subjects; full caller behavior remains pending. The
+on the exact Linux subjects; complete caller qualification has its separate
+ordinary PR CI gate. The
 [controlled Python package component](../../../private/app/workflow-delivery/README.md#python-package-execution-component)
 implements finite adopted preset expansion, preparation and execution. The
 [completed corrected Linux package observation](docs/research/python-native-package-qualification.md#completed-corrected-linux-package-observation)
@@ -50,16 +52,20 @@ sdist consumers, with the audit's separately classified filename-discovery metho
 exception retained. That package campaign is stopped: one lifetime spent and both
 unused package slots expired. The
 [finite Python CI execution component](../../../private/app/workflow-delivery/README.md#finite-python-ci-execution-component)
-has controlled Git/command-transfer coverage for the original pytest/package plan;
-actual root pytest, complete paired callers/Python CI cutover and Release remain
-separate. The [prepared endpoint collector](../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
+has controlled Git/command-transfer coverage for the original pytest/package plan.
+The [native Python CI caller](../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
+implements root CI and committed local full execution; the smoke PR entry is
+retired. Actual root pytest and the complete Linux caller require ordinary hosted
+qualification before accepted cutover. Release remains separate.
+The [prepared endpoint collector](../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
 composes existing native readers and paired selection with controlled coverage;
-actual Linux query-tool preparation and complete caller qualification remain pending.
-Existing callers remain active until their whole consumer group is
-qualified and switched together. The
+actual Linux query-tool preparation and complete caller qualification require
+ordinary PR CI before accepted cutover.
+The replacement caller mapping is implemented; its whole consumer group must be
+qualified together. The
 [primitive Linux observation](docs/research/python-native-planning.md#primitive-native-observation)
-qualifies the pinned helper composition. Complete caller qualification and Python
-execution cutover remain pending; completed enrichment and graph campaigns
+qualifies the pinned helper composition. Complete hosted caller qualification
+is carried by [PR #1114](https://github.com/hcoona/three/pull/1114); completed enrichment and graph campaigns
 supply no further execution allowance.
 Other quality presets, ecosystem execution cutover and Release remain pending.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
@@ -114,8 +120,9 @@ and Release continue to use their existing commands and contracts.
 The [Python smoke package](../hcoona-release-smoke-python/README.md) provides the
 wheel/sdist proving payload. The [Python LLD](docs/hcoona-release-smoke-python-lld.md)
 owns its concrete build, qualification and publication contracts.
-The Python workflow runs credential-free CI at the tested PR merge target;
-manual TestPyPI/PyPI entry first requires the destination's protected Governance.
+Root native Python CI checks the tested PR merge target. The Python smoke
+workflow provides manual Release only; its TestPyPI/PyPI entry first requires the
+destination's protected Governance.
 The revised
 [platform-reliance design](docs/hcoona-release-smoke-python-lld.md#python-governance-v2-migration)
 is implemented as strict v2. Normal runtime rejects v1 and hybrid admission.

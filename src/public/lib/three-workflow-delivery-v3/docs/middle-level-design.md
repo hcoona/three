@@ -475,6 +475,12 @@ supply runner matrices and selected lists; it does not create an arbitrary runti
 graph or queue. Native fact collection may use separate runners where ecosystem
 evaluation requires them. These are real transfers, not proof-only phases.
 
+Native tool setup and queries consume each endpoint's committed locks without
+refreshing tracked inputs. Select a tool version compatible with both basis and
+candidate before loading its environment, and use native locked mode for setup
+and inherited queries. A changed tracked lock is a planning failure, not a
+cleanup condition.
+
 Group compatible work around a native execution target. Build and check its
 outputs in the same job when there is no runner, permission or independent-lifetime
 reason to split them. A Python build can produce wheel and sdist together; one
@@ -567,6 +573,8 @@ distribution. Validate their agreement with the receiving exact candidate before
 product dispatch. Native member names come from metadata, and target/member
 coordinates come from the existing native target binding. This request validation
 must not resolve dependencies, choose targets again or introduce a trust record.
+Selected V3 consumers prepare mise's native configuration trust in their owned
+HOME before HK/Pkl queries. Mise owns that local tool state.
 
 The finite executor partitions that plan into native-retained `python/pytest-v1`
 checks and the registered Python distribution preset. Validate both supported
@@ -585,8 +593,13 @@ also require their bound member. Dependency producers do not become automatic
 quality owners. Do not substitute the distribution-tool environment or force
 unrelated input-only members to build.
 
-Execute each original selected target with `uv run --no-sync python -m pytest`
-in that prepared context, retaining the supported native configuration/options.
+Execute each original selected target with
+`uv run --no-project --python <prepared-environment> python -m pytest`, retaining
+the supported native configuration/options. Set `UV_PROJECT_ENVIRONMENT` only
+for preparation and remove it from product execution so nested project-native
+UV calls do not retarget the prepared environment. Product preparation and
+execution retain ordinary Python import behavior; query-only `PYTHONSAFEPATH`
+is removed at that boundary while native query isolation remains unchanged.
 One invocation per target supplies its distinct required outcome while sharing
 preparation. A preparation failure, timeout or cancellation leaves every affected
 required target unsatisfied; it cannot produce an empty successful result. Keep

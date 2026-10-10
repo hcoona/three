@@ -57,14 +57,16 @@ internal static class PythonPytestExecution
         var commands = new List<PythonPytestCommand>();
         var failures = new List<PythonPytestFailure>();
         var results = new List<CheckResult>();
+        string testEnvironment = Path.Combine(scratch, "test-environment");
         var environment = new Dictionary<string, string?>(request.Environment,
             StringComparer.Ordinal)
         {
-            ["UV_PROJECT_ENVIRONMENT"] = Path.Combine(scratch, "test-environment"),
+            ["UV_PROJECT_ENVIRONMENT"] = testEnvironment,
             ["UV_CACHE_DIR"] = Path.Combine(scratch, "uv-cache"),
             ["UV_PYTHON_DOWNLOADS"] = "never",
             ["PYTHONPATH"] = null,
             ["PYTHONHOME"] = null,
+            ["PYTHONSAFEPATH"] = null,
             ["VIRTUAL_ENV"] = null,
             ["PYTEST_ADDOPTS"] = null,
             ["PYTEST_PLUGINS"] = null,
@@ -85,21 +87,27 @@ internal static class PythonPytestExecution
             foreach (CheckKey key in keys) Add(key, preparation);
             return Finish();
         }
+        var executionEnvironment = new Dictionary<string, string?>(environment,
+            StringComparer.Ordinal) { ["UV_PROJECT_ENVIRONMENT"] = null };
+        int ordinal = 0;
         foreach (PlannedCheck item in plan.Checks)
         {
+            string junit = Path.Combine(scratch, $"junit-{ordinal++}.xml");
             if (token.IsCancellationRequested)
                 results.Add(new(plan.Candidate, item.Work.Key, CheckStatus.Cancelled));
             else
-                Add(item.Work.Key, await RunAsync([item.Work.Key], ["run", "--no-sync",
-                    "python", "-m", "pytest", "-c", request.Configuration.ConfigurationFile,
-                    item.Work.Dimensions["testPath"]]));
+                Add(item.Work.Key, await RunAsync([item.Work.Key], ["run", "--no-project",
+                    "--python", testEnvironment, "python", "-m", "pytest", "-c",
+                    request.Configuration.ConfigurationFile, "--junitxml=" + junit,
+                    item.Work.Dimensions["testPath"]], executionEnvironment));
         }
         return Finish();
 
-        async Task<NativeCommandResult> RunAsync(CheckKey[] checks, string[] arguments)
+        async Task<NativeCommandResult> RunAsync(CheckKey[] checks, string[] arguments,
+            IReadOnlyDictionary<string, string?>? commandEnvironment = null)
         {
             var command = new NativeCommand(request.Uv, checkout, arguments,
-                request.DeadlineSeconds, environment);
+                request.DeadlineSeconds, commandEnvironment ?? environment);
             NativeCommandResult result;
             if (token.IsCancellationRequested)
                 result = new(NativeTermination.Cancelled, null, "", "", 0,

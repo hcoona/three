@@ -64,7 +64,7 @@ internal static class DotNetGroupReader
 
     private static NodeRepositoryReader NodeReader(GitMaterialization endpoint) =>
         new(endpoint, (arguments, token) => NativeProcess.RunAsync("mise", endpoint.Root,
-            ["exec", "node", "pnpm", "--", "pnpm", .. arguments], token));
+            ["exec", "--locked", "node", "pnpm", "--", "pnpm", .. arguments], token));
 
     internal static ScopeInputs Join(ScopeInputs scope, GitComparison comparison,
         RepositoryFacts dotnetBasis, RepositoryFacts dotnetCandidate,

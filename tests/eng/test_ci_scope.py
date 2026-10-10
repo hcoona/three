@@ -8,7 +8,6 @@ import os
 import re
 import subprocess
 import sys
-import tomllib
 from importlib import import_module
 from pathlib import Path
 
@@ -29,242 +28,6 @@ try:
     preparation = import_module("prepare_ci_control_inputs")
 finally:
     sys.path.remove(str(SCRIPTS))
-V3_TESTS = scope.V3 + "/tests"
-AZURE_TESTS = scope.AZURE + "/python/tests"
-NBGV_TESTS = "src/public/lib/nbgv-python/tests"
-LEGACY_RELEASE_TESTS = "tests/eng/test_legacy_release_contract.py"
-
-
-@pytest.mark.parametrize(
-    ("path", "jobs", "roots"),
-    [
-        ("docs/README.md", set(), set()),
-        (
-            "src/private/app/workflow-delivery/Native/Python/passive.py",
-            {"python", "dotnet"},
-            {scope.PYTHON_PASSIVE_TESTS},
-        ),
-        (
-            "tests/private/app/workflow-delivery/Native/Python/test_passive.py",
-            {"python", "dotnet"},
-            {scope.PYTHON_PASSIVE_TESTS},
-        ),
-        pytest.param(
-            "tests/eng/test_run_node_ci_group.py",
-            {"python"},
-            {"tests/eng/test_run_node_ci_group.py"},
-            id="node-caller-test",
-        ),
-        pytest.param(
-            "eng/scripts/run_node_ci_group.py",
-            {"python"},
-            {
-                "tests/eng/test_run_node_ci_group.py",
-                "tests/eng/test_run_dotnet_ci_group.py",
-            },
-            id="node-caller-source",
-        ),
-        pytest.param(
-            "eng/scripts/run_dotnet_ci_group.py",
-            {"python"},
-            {"tests/eng/test_run_dotnet_ci_group.py"},
-            id="dotnet-caller-source",
-        ),
-        pytest.param(
-            "tests/eng/test_run_dotnet_ci_group.py",
-            {"python"},
-            {"tests/eng/test_run_dotnet_ci_group.py"},
-            id="dotnet-caller-test",
-        ),
-        ("eng/scripts/hk_file_operands.py", {"python"}, {V3_TESTS}),
-        (scope.V3 + "/docs/requirements.md", set(), set()),
-        ("src/public/lib/CircularList/CircularList.cs", {"dotnet"}, set()),
-        (
-            ".editorconfig",
-            {"dotnet", "azureauth", "python"},
-            {V3_TESTS, AZURE_TESTS, NBGV_TESTS},
-        ),
-        (
-            "src/private/app/.editorconfig",
-            {"dotnet", "azureauth", "python"},
-            {V3_TESTS, AZURE_TESTS},
-        ),
-        (
-            "src/public/lib/CircularList/.editorconfig",
-            {"dotnet"},
-            set(),
-        ),
-        ("docs/.editorconfig", set(), set()),
-        (
-            "src/public/lib/CircularList/Directory.Build.props",
-            {"dotnet"},
-            set(),
-        ),
-        (
-            "src/public/lib/CircularList/workflow-delivery.quality.yml",
-            {"dotnet"},
-            set(),
-        ),
-        (
-            "src/private/app/git-commit-heatmap/README.md",
-            {"python"},
-            {"src/private/app/git-commit-heatmap/tests"},
-        ),
-        (
-            "src/public/lib/nbgv-python/src/nbgv_python/cli.py",
-            {"python", "azureauth"},
-            {NBGV_TESTS, AZURE_TESTS, V3_TESTS, scope.PYTHON_PASSIVE_TESTS},
-        ),
-        (
-            "src/private/app/workflow-delivery-v3-nuget-consumer/Program.cs",
-            {"dotnet", "python"},
-            {V3_TESTS},
-        ),
-        (
-            "tests/private/app/workflow-delivery-v3-nuget-authority/ProgramTests.cs",
-            {"dotnet", "python"},
-            {V3_TESTS},
-        ),
-        ("src/public/lib/hexo-renderer-asciidoc/README.md", {"node"}, set()),
-        ("src/public/lib/asciidoctor-latexmath/README.adoc", {"ruby"}, set()),
-        (
-            scope.SCHOLARLY + "/tests/test_assemble_print.py",
-            {"scholarly"},
-            set(),
-        ),
-        (
-            "eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1",
-            {"azureauth", "python"},
-            {AZURE_TESTS},
-        ),
-        (
-            ".github/workflows/workflow-delivery-v3-ci.yml",
-            {"python"},
-            {V3_TESTS, LEGACY_RELEASE_TESTS},
-        ),
-        (
-            ".github/workflows/unrelated-project.yml",
-            {"python"},
-            {LEGACY_RELEASE_TESTS},
-        ),
-        (
-            "eng/scripts/publish_node_npmjs_idempotent.sh",
-            {"python"},
-            {LEGACY_RELEASE_TESTS},
-        ),
-        (
-            ".typos.toml",
-            {"python"},
-            {"tests/eng/test_typos_config.py"},
-        ),
-    ],
-)
-def test_selects_consumers_without_unrelated_suites(path, jobs, roots):
-    """Different projects and consumed metadata have independent CI owners."""
-    selected = scope.select(ROOT, (path,), base="HEAD")
-    assert {
-        key for key, value in selected["scopes"].items() if value
-    } == jobs | {"validation"}
-    assert set(selected["python_roots"]) == roots
-    assert all(path in why for why in selected["python_reasons"].values())
-
-
-def test_shared_tool_inputs_select_native_consumers_and_full_is_explicit():
-    """Native build inputs reach Python consumers; full includes every suite."""
-    selected = scope.select(ROOT, ("Directory.Packages.props",), base="HEAD")
-    assert {V3_TESTS, AZURE_TESTS} <= set(selected["python_roots"])
-    assert selected["scopes"]["dotnet"]
-    assert selected["scopes"]["azureauth"]
-    full = scope.select(ROOT, (), base="", full=True)
-    assert all(full["scopes"].values())
-    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert (
-        full["python_roots"]
-        == config["tool"]["pytest"]["ini_options"]["testpaths"]
-    )
-    assert set(full["python_packages"]) == {
-        "hcoona-three-monorepo",
-        "azureauth-credprovider-keyring",
-        "git-commit-heatmap",
-        "llm-text-splitter",
-        "nbgv-python",
-        "three-workflow-delivery-v3",
-    }
-    assert full["python_dotnet"] is True
-    assert full["python_v3"] is True
-    empty = scope.select(ROOT, (), base="HEAD")
-    assert not empty["python_roots"]
-    assert not empty["scopes"]["python"]
-    assert empty["python_packages"] == []
-    assert empty["python_dotnet"] is False
-    assert empty["python_v3"] is False
-
-
-def test_full_python_runner_change_selects_every_configured_test_root():
-    """The shared preparation entry is consumed by all configured suites."""
-    selected = scope.select(
-        ROOT, ("eng/scripts/run_python_tests.py",), base="HEAD"
-    )
-    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert (
-        selected["python_roots"]
-        == config["tool"]["pytest"]["ini_options"]["testpaths"]
-    )
-    assert selected["python_dotnet"] is True
-    assert selected["python_v3"] is True
-
-
-@pytest.mark.parametrize(
-    ("paths", "packages", "dotnet", "v3"),
-    [
-        ((".typos.toml",), set(), False, False),
-        (
-            ("src/private/app/git-commit-heatmap/README.md",),
-            {"git-commit-heatmap"},
-            False,
-            False,
-        ),
-        (
-            ("eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1",),
-            {"azureauth-credprovider-keyring"},
-            True,
-            False,
-        ),
-        (
-            (scope.V3 + "/tests/test_example.py",),
-            {"three-workflow-delivery-v3"},
-            True,
-            True,
-        ),
-        (
-            ("src/public/lib/nbgv-python/src/nbgv_python/cli.py",),
-            {
-                "nbgv-python",
-                "azureauth-credprovider-keyring",
-                "three-workflow-delivery-v3",
-            },
-            True,
-            True,
-        ),
-        (
-            (scope.V3 + "/tests/test_example.py", ".typos.toml"),
-            {"three-workflow-delivery-v3"},
-            True,
-            True,
-        ),
-    ],
-)
-def test_python_preparation_follows_selected_consumers(
-    paths, packages, dotnet, v3
-):
-    """Prepare only selected current members and their native tools."""
-    selected = scope.select(ROOT, paths, base="HEAD")
-    assert selected["python_packages"] == [
-        "hcoona-three-monorepo",
-        *sorted(packages),
-    ]
-    assert selected["python_dotnet"] is dotnet
-    assert selected["python_v3"] is v3
 
 
 def _git(root, *arguments):
@@ -389,9 +152,6 @@ def test_git_range_retains_deleted_and_both_rename_paths(comparison):
     assert selected["candidate"] == candidate
     assert selected["base"] == base
     assert selected["scopes"]["node"]
-    assert selected["python_roots"] == ["src/python/tests"]
-    assert selected["python_packages"] == ["sample-root", "sample"]
-    assert "python=true\n" in (root / "outputs").read_text()
 
 
 @pytest.mark.parametrize("failure", ["missing", "invalid", "wrong-candidate"])
@@ -411,45 +171,6 @@ def test_selection_failure_never_emits_successful_applicability(
     full = _select_cli(root, "--full")
     assert full.returncode == 0, full.stderr
     assert all(json.loads(full.stdout)["scopes"].values())
-
-
-@pytest.mark.parametrize(
-    "inventory", ["[]", '"src/python/tests"', '[""]', "[true]"]
-)
-def test_unusable_test_inventory_never_emits_successful_applicability(
-    comparison, inventory
-):
-    """Unsupported discovery configuration cannot become a green empty job."""
-    root, base, _ = comparison
-    config = root / "pyproject.toml"
-    config.write_text(
-        config.read_text().replace('["src/python/tests"]', inventory)
-    )
-    _git(root, "add", ".")
-    _git(root, "commit", "-qm", "Change test inventory")
-    for arguments in (("--from-ref", base), ("--full",)):
-        result = _select_cli(root, *arguments)
-        assert result.returncode != 0
-        assert "nonempty list of explicit paths" in result.stderr
-        assert not (root / "outputs").exists()
-
-
-def test_candidate_test_migration_selects_replacement_root(comparison):
-    """Reviewed test moves use the candidate inventory, not historical paths."""
-    root, base, _ = comparison
-    (root / "src/python/tests").rename(root / "src/python/checks")
-    config = root / "pyproject.toml"
-    config.write_text(
-        config.read_text().replace("src/python/tests", "src/python/checks")
-    )
-    _git(root, "add", ".")
-    _git(root, "commit", "-qm", "Move test owner")
-    result = _select_cli(root, "--from-ref", base)
-    assert result.returncode == 0, result.stderr
-    selected = json.loads(result.stdout)
-    assert selected["python_roots"] == ["src/python/checks"]
-    assert selected["scopes"]["python"]
-    assert not (root / "src/python/tests").exists()
 
 
 @pytest.mark.parametrize(
@@ -492,7 +213,7 @@ def test_resource_input_selects_existing_dotnet_owner_from_both_revisions(
     selected = json.loads(result.stdout)
     assert selected["scopes"]["dotnet"]
     assert selected["scopes"]["node"]
-    assert not selected["scopes"]["python"]
+    assert "python" not in selected["scopes"]
     expected = {
         f"{path} -> {scope.CONTROL_PROJECT} ({revision})"
         for revision, inputs in ((base, before), (candidate, after))
@@ -826,8 +547,8 @@ def test_endpoint_owners_preserve_changed_coordinate_identity(comparison):
     assert removed["reasons"] == [
         {
             "owner": "python",
-            "target": "src/python/tests",
-            "rule": "retained-python-test-input",
+            "target": ".github/workflows/ci.yml#python-tests",
+            "rule": "native-python-caller-responsibility",
             "sources": ["pyproject.toml", "src/python/pyproject.toml"],
         }
     ]
@@ -846,160 +567,6 @@ def test_endpoint_owners_preserve_changed_coordinate_identity(comparison):
     }
     # Retained aggregate execution selects Node; PNPM ownership is pending.
     assert selected["scopes"]["node"] is True
-    assert selected["python_roots"] == ["src/python/tests"]
-
-
-def test_endpoint_owners_keep_basis_python_targets_from_committed_configuration(
-    comparison,
-):
-    """Committed endpoint facts explain surviving candidate execution."""
-    root, base, _ = comparison
-    project = root / "src/python/pyproject.toml"
-    project.unlink()
-    config = root / "pyproject.toml"
-    config.write_text(
-        config.read_text().replace(
-            'testpaths = ["src/python/tests"]',
-            'testpaths = ["tests/replacement"]',
-        )
-    )
-    replacement = root / "tests/replacement/test_current.py"
-    replacement.parent.mkdir(parents=True)
-    replacement.write_text("pass\n")
-    _git(root, "add", "-A")
-    _git(root, "commit", "-qm", "Replace candidate Python test target")
-    candidate = _git(root, "rev-parse", "HEAD")
-    # Dirty manifest contents do not replace committed endpoint facts.
-    config.write_text(
-        config.read_text().replace('"tests/replacement"', '"tests/dirty"')
-    )
-    owners = scope.endpoint_owners(
-        root,
-        ("src/python/deleted.py", "pyproject.toml"),
-        base=base,
-        candidate=candidate,
-        control_inputs=_control_response(base, candidate),
-    )
-    assert (
-        owners["basis"]["paths"][0]["reasons"][0]["target"]
-        == "src/python/tests"
-    )
-    assert owners["candidate"]["paths"][0]["reasons"] == []
-    assert owners["candidate"]["paths"][1]["reasons"] == [
-        {
-            "owner": "python",
-            "target": "tests/replacement",
-            "rule": "retained-python-test-input",
-            "sources": ["pyproject.toml"],
-        }
-    ]
-    _git(root, "checkout", "--", "pyproject.toml")
-    result = _select_cli(root, "--from-ref", base)
-    assert result.returncode == 0, result.stderr
-    selected = json.loads(result.stdout)
-    assert selected["python_roots"] == ["tests/replacement"]
-    assert selected["python_packages"] == ["sample-root"]
-    assert "src/python/tests" not in selected["python_reasons"]
-
-
-@pytest.mark.parametrize("member_pattern", ["*", "?", "[abc]"])
-def test_endpoint_owners_use_committed_member_dependencies(
-    comparison, member_pattern
-):
-    """Surviving consumers use endpoint dependencies, never dirty members."""
-    root, _, _ = comparison
-    paths = tuple(f"src/provider-{name}/input.py" for name in ("a", "b", "c"))
-    test_roots = [
-        "src/python/tests",
-        *(f"src/provider-{name}/tests" for name in ("a", "b", "c")),
-    ]
-    (root / "pyproject.toml").write_text(
-        '[project]\nname = "sample-root"\n'
-        '[tool.uv.workspace]\nmembers = ["src/python", '
-        + json.dumps("src/provider-" + member_pattern)
-        + "]\n"
-        + "[tool.pytest.ini_options]\ntestpaths = "
-        + json.dumps(test_roots)
-        + "\n"
-    )
-    member = root / "src/python/pyproject.toml"
-    member.write_text(
-        '[project]\nname = "sample"\ndependencies = ["provider-a"]\n'
-    )
-    for name, path in zip(("a", "b", "c"), paths, strict=True):
-        directory = (root / path).parent
-        directory.mkdir()
-        (directory / "pyproject.toml").write_text(
-            f'[project]\nname = "provider-{name}"\n'
-        )
-        (directory / "tests").mkdir()
-        (directory / "tests/test_provider.py").write_text("pass\n")
-        (root / path).write_text("original = True\n")
-    _git(root, "add", ".")
-    _git(root, "commit", "-qm", "Add basis Python dependency")
-    base = _git(root, "rev-parse", "HEAD")
-    member.write_text(member.read_text().replace("provider-a", "provider-b"))
-    for path in paths:
-        (root / path).write_text("updated = True\n")
-    _git(root, "add", ".")
-    _git(root, "commit", "-qm", "Change candidate Python dependency")
-    candidate = _git(root, "rev-parse", "HEAD")
-    member.write_text(member.read_text().replace("provider-b", "provider-c"))
-
-    owners = scope.endpoint_owners(
-        root,
-        paths,
-        base=base,
-        candidate=candidate,
-        control_inputs=_control_response(base, candidate),
-    )
-    for endpoint, dependency in (("basis", "a"), ("candidate", "b")):
-        assert owners[endpoint]["revision"] == (
-            base if endpoint == "basis" else candidate
-        )
-        for name, row in zip(
-            ("a", "b", "c"), owners[endpoint]["paths"], strict=True
-        ):
-            targets = [f"src/provider-{name}/tests"]
-            if name == dependency:
-                targets.append("src/python/tests")
-            assert row == {
-                "path": f"src/provider-{name}/input.py",
-                "present": True,
-                "mode": "100644",
-                "reasons": [
-                    {
-                        "owner": "python",
-                        "target": target,
-                        "rule": "retained-python-test-input",
-                        "sources": [
-                            "pyproject.toml",
-                            target.removesuffix("/tests") + "/pyproject.toml",
-                        ],
-                    }
-                    for target in sorted(targets)
-                ],
-            }
-
-    _git(root, "checkout", "--", "src/python/pyproject.toml")
-    result = _select_cli(root, "--from-ref", base)
-    assert result.returncode == 0, result.stderr
-    selected = json.loads(result.stdout)
-    assert selected["python_roots"] == test_roots
-    assert selected["python_packages"] == [
-        "sample-root",
-        "provider-a",
-        "provider-b",
-        "provider-c",
-        "sample",
-    ]
-    assert selected["python_reasons"] == {
-        "src/python/tests": [paths[1], "src/python/pyproject.toml"],
-        **{
-            f"src/provider-{name}/tests": [path]
-            for name, path in zip(("a", "b", "c"), paths, strict=True)
-        },
-    }
 
 
 def test_endpoint_owners_retain_multiple_native_and_project_responsibilities(
@@ -1037,6 +604,7 @@ def test_endpoint_owners_retain_multiple_native_and_project_responsibilities(
     ]["reasons"]
     assert {(item["owner"], item["target"]) for item in azure_reasons} == {
         ("azureauth", scope.AZURE),
+        ("python", ".github/workflows/ci.yml#python-tests"),
     }
     native_reasons = _owner_rows(selected, "candidate")[
         str(resource.relative_to(root))
@@ -1160,8 +728,7 @@ def test_record_control_owners_derive_native_coordinates(record_control):
     assert "eng/unrelated.py" not in reasons
     assert "tests/unrelated.py" not in reasons
     selected = scope.select(root, tuple(scripts.values()), base=revision)
-    assert selected["python_roots"] == []
-    assert not selected["scopes"]["python"]
+    assert "python" not in selected["scopes"]
 
 
 def test_record_control_owners_preserve_both_roles_for_one_script(
@@ -1489,7 +1056,6 @@ def test_endpoint_owners_use_record_bindings_without_guessing_node_membership(
     assert after["src/node/package.json"]["reasons"] == []
     assert selected["scopes"]["validation"] is True
     assert selected["scopes"]["node"] is True
-    assert selected["python_roots"] == []
     assert selected["candidate"] == candidate
 
 
@@ -1624,4 +1190,77 @@ def test_endpoint_owners_keep_nonregular_git_modes_distinct(comparison):
             "reasons": [],
         }
     assert not selected["scopes"]["node"]
-    assert selected["python_roots"] == []
+
+
+@pytest.mark.parametrize(
+    ("path", "jobs"),
+    [
+        ("docs/README.md", set()),
+        ("src/public/lib/CircularList/CircularList.cs", {"dotnet"}),
+        ("src/public/lib/hexo-renderer-asciidoc/README.md", {"node"}),
+        ("src/public/lib/asciidoctor-latexmath/README.adoc", {"ruby"}),
+        (
+            "eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1",
+            {"azureauth"},
+        ),
+        (
+            "src/private/lib/scholarly-publication/tests/test_assemble_print.py",
+            {"scholarly"},
+        ),
+        ("eng/scripts/run_python_ci_group.py", set()),
+    ],
+)
+def test_scope_retains_other_jobs_without_python_selection(path, jobs):
+    """Windows transfers comparison; native Linux selection has no old gate."""
+    selected = scope.select(ROOT, (path,), base="HEAD")
+    assert {
+        key for key, value in selected["scopes"].items() if value
+    } == jobs | {"validation"}
+    assert set(selected) == {"scopes", "nuget_reproducibility", "reasons"}
+    assert "python" not in selected["scopes"]
+
+
+@pytest.mark.parametrize(
+    ("path", "selected"),
+    [
+        ("src/public/lib/nbgv-python/src/nbgv_python/cli.py", True),
+        (
+            "src/public/lib/three-workflow-delivery-v3/tests/adapters/test_dotnet.py",
+            True,
+        ),
+        ("Directory.Packages.props", True),
+        ("src/private/app/git-commit-heatmap/README.md", False),
+        ("docs/README.md", False),
+    ],
+)
+def test_nuget_reproducibility_has_its_own_retained_consumer(path, selected):
+    """Managed recovery validation no longer masquerades as Python execution."""
+    result = scope.select(ROOT, (path,), base="HEAD")
+    assert result["nuget_reproducibility"] is selected
+    assert scope.select(ROOT, (), base="HEAD", full=True)[
+        "nuget_reproducibility"
+    ]
+
+
+def test_scope_does_not_parse_or_select_python_configuration(comparison):
+    """The native Linux query alone interprets Python configuration."""
+    root, base, _ = comparison
+    config = root / "pyproject.toml"
+    config.write_text(
+        "Native query must reject this invalid TOML, not Windows scope"
+    )
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Transfer configuration to its native owner")
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    value = json.loads(result.stdout)
+    assert "python_roots" not in value
+    assert "python_packages" not in value
+    assert "python=" not in (root / "outputs").read_text()
+    assert "pyproject.toml" in value["changed_paths"]
+    assert all(
+        any(reason["owner"] == "python" for reason in row["reasons"])
+        for endpoint in value["endpoint_owners"].values()
+        for row in endpoint["paths"]
+        if row["path"] == "pyproject.toml"
+    )

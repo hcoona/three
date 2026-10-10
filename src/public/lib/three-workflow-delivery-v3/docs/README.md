@@ -39,7 +39,8 @@ complete control distribution to its sole .NET execution/result owner. The [boun
 qualifies the adopted fixture composition on Linux. Root CI owns the adopted Node
 group and selected retained Node matrix, with ordinary hosted transfer and
 execution qualification in [PR #1042](https://github.com/hcoona/three/pull/1042).
-The exclusive npm CI shadow is retired. Other quality presets, Python/Ruby
+The exclusive npm CI shadow is retired. Python caller wiring is implemented, with ordinary hosted qualification carried
+by [PR #1114](https://github.com/hcoona/three/pull/1114). Other quality presets, Ruby
 execution cutover and Release remain pending.
 
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
@@ -47,8 +48,11 @@ has passive extraction, a pinned Rust supplement, ordered configuration
 preflight, metadata adaptation and operation dependency projection with controlled
 unit boundaries. The private app's [bounded native pytest configuration component](../../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
 also has controlled tests; the separate planning-input observation below qualifies
-its exact native query and target/input composition. Complete caller ownership
-and qualification remain pending. The [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
+its exact native query and target/input composition. The
+[native Python caller](../../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
+composes root CI, committed local full and smoke PR retirement;
+[PR #1114](https://github.com/hcoona/three/pull/1114) carries ordinary complete
+caller qualification. The [paired Python producer-to-owner component](../../../../private/app/workflow-delivery/README.md#paired-python-producer-to-owner-component)
 has controlled supplied-fact coverage. The
 [controlled paired Python fact assembly](../../../../private/app/workflow-delivery/README.md#controlled-paired-python-fact-assembly)
 binds supplied native targets and actual checks. The
@@ -61,7 +65,8 @@ subjects; its campaign and cleanup are complete, and remaining captures stopped.
 bind supplied actual check owners to repository engineering inputs. The separate
 [planning-input observation](./research/python-planning-enrichment-qualification.md#completed-planning-input-observation)
 qualifies native pytest, committed NBGV/quality inputs and producer input mapping
-on the exact retained Linux subjects; full caller behavior remains pending. The
+on the exact retained Linux subjects; complete caller qualification has its separate
+ordinary PR CI gate. The
 [controlled Python package component](../../../../private/app/workflow-delivery/README.md#python-package-execution-component)
 implements finite adopted preset expansion, preparation and execution. The
 [completed corrected Linux package observation](./research/python-native-package-qualification.md#completed-corrected-linux-package-observation)
@@ -70,16 +75,19 @@ sdist consumers, with the audit's separately classified filename-discovery metho
 exception retained. That package campaign is stopped: one lifetime spent and both
 unused package slots expired. The
 [finite Python CI execution component](../../../../private/app/workflow-delivery/README.md#finite-python-ci-execution-component)
-has controlled Git/command-transfer coverage for the original pytest/package plan;
-actual root pytest, complete paired callers/Python CI cutover and Release remain
-separate. The [prepared endpoint collector](../../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
+has controlled Git/command-transfer coverage for the original pytest/package plan.
+The [native Python CI caller](../../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
+implements root CI and committed local full execution; the smoke PR entry is
+retired. Actual root pytest and the complete Linux caller require ordinary hosted
+qualification before accepted cutover. Release remains separate.
+The [prepared endpoint collector](../../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
 composes existing native readers and paired selection with controlled coverage;
-actual Linux query-tool preparation and complete caller qualification remain pending.
-Existing callers remain active until their whole consumer group is
-qualified and switched together. The
+its concrete caller materializes exact endpoints and retains one original mixed
+plan. Ordinary PR CI must qualify actual Linux query-tool preparation and the
+root/local/smoke replacement together before merge. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
-qualifies the pinned helper composition. Complete native caller qualification
-and caller mapping remain pending. The enrichment campaign and cleanup are
+qualifies the pinned helper composition. The complete caller mapping is
+implemented; [PR #1114](https://github.com/hcoona/three/pull/1114) carries ordinary hosted qualification. The enrichment campaign and cleanup are
 complete; both unused diagnostics stopped.
 
 The pre-contraction normal-Live baseline was merged across the
@@ -276,8 +284,9 @@ the [native group contract](./migration-strategy.md#native-net-ci-group) and
 The [NBGV native-input assessment](./research/nbgv-native-inputs.md) identifies
 public configuration/filter APIs and bounded Linux application observations for
 official-package delivery and the existing PNPM reader. Root Node/.NET integration
-has separate hosted qualification; Python/Ruby execution cutover and Release
-remain pending.
+has separate hosted qualification. Python caller wiring is implemented with its
+ordinary hosted qualification carried by [PR #1114](https://github.com/hcoona/three/pull/1114); Ruby execution cutover and
+Release remain pending.
 The [Node CI native execution observation](./research/node-ci-native-execution.md)
 retains the completed adopted-fixture Linux composition/effects evidence,
 independent reviews and stopped protocol. It does not establish caller cutover.

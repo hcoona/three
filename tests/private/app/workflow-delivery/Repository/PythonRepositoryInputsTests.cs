@@ -53,7 +53,8 @@ public sealed class PythonRepositoryInputsTests
         PythonInputBinding[] bindings = PythonRepositoryInputs.Map(endpoint.Revision,
             endpoint.Projects, endpoint.Targets, []);
         foreach (string path in new[] { "uv.lock", "mise.toml", "pytest.ini", "uv.toml",
-                     ".github/workflows/ci.yml", "eng/scripts/run_python_tests.py" })
+                     ".github/workflows/ci.yml", "eng/scripts/run_python_tests.py",
+                     "eng/scripts/run_python_ci_group.py" })
             Owners(bindings, path, "pytest:src/tableless/tests", "pytest:tests/standalone.py");
         Assert.DoesNotContain("tests/other.py", bindings.Select(binding => binding.Path));
         Assert.IsNull(endpoint.Targets.Targets.Single(target =>
@@ -68,6 +69,8 @@ public sealed class PythonRepositoryInputsTests
             endpoint.Projects, endpoint.Targets, [Package()]);
         Owners(bindings, "uv.lock", "distribution", "pytest:src/pkg/tests");
         Owners(bindings, "eng/scripts/sync_python_version.py",
+            "distribution", "pytest:src/pkg/tests");
+        Owners(bindings, "eng/scripts/run_python_ci_group.py",
             "distribution", "pytest:src/pkg/tests");
         Owners(bindings, "pytest.ini", "pytest:src/pkg/tests");
         Owners(bindings, "conftest.py", "pytest:src/pkg/tests");
@@ -103,6 +106,8 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_run_node_ci_group.py", "eng/scripts/run_node_ci_group.py")]
     [DataRow("tests/eng/test_run_dotnet_ci_group.py", "eng/scripts/run_node_ci_group.py")]
     [DataRow("tests/eng/test_run_dotnet_ci_group.py", "eng/scripts/run_dotnet_ci_group.py")]
+    [DataRow("tests/eng/test_run_python_ci_group.py", "eng/scripts/run_node_ci_group.py")]
+    [DataRow("tests/eng/test_run_python_ci_group.py", "eng/scripts/run_dotnet_ci_group.py")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/workflow_delivery_v3_hk.py")]
     [DataRow("tests/eng/test_legacy_release_contract.py", "src/product/three.release.yml")]
     [DataRow("tests/eng/test_legacy_release_contract.py", "src/product/three.quality.yml")]

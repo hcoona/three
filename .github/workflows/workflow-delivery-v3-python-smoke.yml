@@ -1,6 +1,5 @@
 name: Workflow Delivery v3 Python smoke
 'on':
-  pull_request: null
   workflow_dispatch:
     inputs:
       registry:
@@ -12,15 +11,14 @@ name: Workflow Delivery v3 Python smoke
           - pypi
 permissions: {}
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('wdv3-python-ci-{0}', github.event.pull_request.number)
-    || format('wdv3-python-project-{0}', inputs.registry) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ format('wdv3-python-project-{0}', inputs.registry) }}
+  cancel-in-progress: false
 defaults:
   run:
     shell: bash
 env:
-  WDV3_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-pr-slice-shadow' || 'live-release' }}
-  WDV3_REGISTRY: ${{ inputs.registry || 'testpypi' }}
+  WDV3_PURPOSE: live-release
+  WDV3_REGISTRY: ${{ inputs.registry }}
 jobs:
   request-python:
     runs-on: ubuntu-24.04
@@ -152,46 +150,6 @@ jobs:
     needs: discover-python
     env:
       WDV3_REFERENCES: ${{ needs.discover-python.outputs.references }}
-  plan-python-ci:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - name: Check out exact target without credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/workflow-delivery-v3-python-setup
-      - name: Download only explicit predecessor artifact IDs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          artifact-ids: ${{ needs.compile-python.outputs.artifact-ids }}
-          path: .wdv3
-          merge-multiple: true
-          skip-decompress: true
-          digest-mismatch: error
-      - name: plan Python ci-plan
-        id: plan
-        run: python -m three_workflow_delivery_v3.python_cli plan --purpose "${WDV3_PURPOSE}" --output .wdv3/ci-plan.json
-      - name: Persist and read back ci-plan
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: ci-plan
-          path: .wdv3/ci-plan.json
-      - name: Expose explicit current-DAG edges
-        id: edges
-        if: always()
-        run: python -m three_workflow_delivery_v3.python_cli export --purpose "${WDV3_PURPOSE}"
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs: compile-python
-    env:
-      WDV3_REFERENCES: ${{ needs.compile-python.outputs.references }}
-    if: github.event_name == 'pull_request'
   plan-python-release:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -247,8 +205,7 @@ jobs:
       - uses: ./.github/actions/workflow-delivery-v3-python-setup
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          artifact-ids: ${{ needs.plan-python-ci.outputs.artifact-ids || needs.plan-python-release.outputs.artifact-ids
-            }}
+          artifact-ids: ${{ needs.plan-python-release.outputs.artifact-ids }}
           path: .wdv3
           merge-multiple: true
           skip-decompress: true
@@ -279,12 +236,10 @@ jobs:
       references: ${{ steps.edges.outputs.references }}
       artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
     needs:
-      - plan-python-ci
       - plan-python-release
     env:
-      WDV3_REFERENCES: ${{ needs.plan-python-ci.outputs.references || needs.plan-python-release.outputs.references
-        }}
-    if: "!cancelled() && (needs.plan-python-ci.result == 'success' || needs.plan-python-release.result == 'success')"
+      WDV3_REFERENCES: ${{ needs.plan-python-release.outputs.references }}
+    if: "!cancelled() && needs.plan-python-release.result == 'success'"
   qualify-python:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -301,7 +256,7 @@ jobs:
       - name: Download only explicit predecessor artifact IDs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          artifact-ids: ${{ needs.build-python.outputs.references && needs.build-python.outputs.artifact-ids && needs.build-python.outputs.artifact-ids || needs.plan-python-ci.result == 'success' && needs.plan-python-ci.outputs.artifact-ids || needs.plan-python-release.outputs.artifact-ids }}
+          artifact-ids: ${{ needs.build-python.outputs.references && needs.build-python.outputs.artifact-ids && needs.build-python.outputs.artifact-ids || needs.plan-python-release.outputs.artifact-ids }}
           path: .wdv3
           merge-multiple: true
           skip-decompress: true
@@ -353,11 +308,10 @@ jobs:
       artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
     needs:
       - build-python
-      - plan-python-ci
       - plan-python-release
-    if: always() && (needs.plan-python-ci.result == 'success' || needs.plan-python-release.result == 'success')
+    if: always() && needs.plan-python-release.result == 'success'
     env:
-      WDV3_REFERENCES: ${{ needs.build-python.outputs.references && needs.build-python.outputs.artifact-ids && needs.build-python.outputs.references || needs.plan-python-ci.result == 'success' && needs.plan-python-ci.outputs.references || needs.plan-python-release.outputs.references }}
+      WDV3_REFERENCES: ${{ needs.build-python.outputs.references && needs.build-python.outputs.artifact-ids && needs.build-python.outputs.references || needs.plan-python-release.outputs.references }}
   prepare-python-publication:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
