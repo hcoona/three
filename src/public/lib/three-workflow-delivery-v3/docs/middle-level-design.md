@@ -675,6 +675,16 @@ Missing/truncated output, incomplete examples or a failing native command cannot
 become a successful check. Apply project quality requirements to pending results;
 a universal extra quality policy is not introduced here.
 
+The registered `ruby/project-rspec-v1` check invokes that whole native RSpec
+recipe and is required by the `ruby/rspec-v1` preset. Explicitly adopt this preset
+in Latexmath's source-local `workflow-delivery.quality.yml` when implementing the
+replacement group, preserving its existing required suite and external tools.
+The check registration, preset and actual selection must exist before replacement
+planning and caller qualification. Structural discovery does not supply a default
+quality selection. The smoke gem retains its separate content/clean-require
+preset; Hexo remains a bundle-only dependency consumer without an invented Ruby
+package or check owner.
+
 An adopted gem distribution obligation does not require a Gemfile or spec
 folder. Use native gem build, RubyGems metadata/content inspection and the declared
 clean installed require consumer. Preserve original package associations and

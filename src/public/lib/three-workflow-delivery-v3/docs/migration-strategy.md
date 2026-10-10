@@ -350,6 +350,15 @@ separate producer/check/input responsibilities; no generated package roster or
 package-file-based RSpec selection is justified. Quality adoption fits the
 existing YAML preset composition rather than a new policy lifecycle.
 
+Implement the required `ruby/project-rspec-v1` check and `ruby/rspec-v1` preset
+with Latexmath's source-local quality selection before replacement planning or
+caller qualification. This explicitly adopts the existing whole-project RSpec
+obligation; it does not strengthen its policy or infer quality from directory
+structure. Retain the smoke gem's separate adopted distribution checks and Hexo's
+bundle-only input responsibility. Register the native recipe and add the actual
+YAML selection with the corresponding implementation, before atomic caller
+cutover; this contract proposal does not switch production callers.
+
 Public Bundler source exposes native evaluated Gemfile inputs and dependency
 closure, but the two committed locks select different versions and public method
 shapes. Native Path source and active local Git override identity also differ.
