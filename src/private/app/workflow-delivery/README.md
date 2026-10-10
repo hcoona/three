@@ -18,6 +18,13 @@ prepared project inputs. Path and active local Git answers retain native source
 locations; registry and runtime metadata dependencies are not repository owners.
 The helper does not parse Gemfiles/locks or resolve dependencies.
 
+[`RubyNativeFactsReader`](Repository/RubyNativeFactsReader.cs) consumes its three
+structured answers as separate source-gem, bundle and archive values. It binds
+the requested paths and activated/locked Bundler version, preserving native
+Gemfile inputs, dependency requirements, content lists and source locations.
+Original local sources and installed directories remain distinct. Repository
+ownership, paired planning and product execution retain the pending boundary below.
+
 [`RubyRSpecResult`](CI/RubyRSpecResult.cs) consumes complete public CLI JSON,
 retains original examples/messages and counts, and keeps them separate from native
 command termination. Missing/incomplete results, failed commands, failed examples
