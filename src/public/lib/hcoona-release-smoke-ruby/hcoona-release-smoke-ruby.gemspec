@@ -14,11 +14,13 @@ Gem::Specification.new do |spec|
   spec.required_ruby_version = ">= 4.0"
   spec.platform = Gem::Platform::RUBY
   spec.require_paths = ["lib"]
-  spec.files = [
+  package_files = [
     "LICENSE",
     "README.md",
     "lib/hcoona_release_smoke_ruby.rb",
-    "lib/hcoona_release_smoke_ruby/_workflow_delivery_provenance.json",
     "lib/hcoona_release_smoke_ruby/version.rb"
   ]
+  legacy_provenance = "lib/hcoona_release_smoke_ruby/_workflow_delivery_provenance.json"
+  package_files << legacy_provenance if File.file?(legacy_provenance)
+  spec.files = package_files
 end

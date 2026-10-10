@@ -12,9 +12,13 @@ HcoonaReleaseSmokeRuby.project_id # => "hcoona-release-smoke-ruby"
 HcoonaReleaseSmokeRuby::VERSION   # Matches the installed gem specification.
 ```
 
-Source packaging requires V3 to materialize the frozen NBGV version and source
-witness in an isolated staging directory before evaluating the gemspec.
+Source packaging requires the owning build integration to materialize the NBGV
+version in an isolated staging directory before evaluating the gemspec.
 Generated files are not committed; a direct unstamped `gem build` fails.
+The gemspec includes the legacy source witness only when it is present. Ordinary
+native packaging can build the four normal files without creating that witness;
+the retained legacy Release builder still creates and requires its five-file
+package. Source metadata and packaged content are distinct native answers.
 Installed consumers need neither Git, NBGV nor .NET. The
 [V3 Ruby contract](../three-workflow-delivery-v3/docs/hcoona-release-smoke-ruby-lld.md)
 owns build, qualification and destination behavior. Source presence does not

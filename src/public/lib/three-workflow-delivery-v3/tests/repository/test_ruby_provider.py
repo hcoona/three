@@ -3,7 +3,11 @@
 from dataclasses import replace
 
 import pytest
-from three_workflow_delivery_v3._ruby_native import RUBY_ROOT, run_ruby
+from three_workflow_delivery_v3._ruby_native import (
+    RUBY_ROOT,
+    run_ruby,
+    validate_ruby_specification,
+)
 from three_workflow_delivery_v3.canonical import (
     canonicalize,
     parse_canonical_json,
@@ -68,6 +72,62 @@ def raw(semver="0.1.0-beta.7"):
         "VersionHeight": 7,
         "PublicRelease": False,
     }
+
+
+@pytest.mark.parametrize("with_witness", [False, True])
+def test_ruby_source_membership_does_not_relax_legacy_package_closure(
+    with_witness,
+):
+    """Source can precede the witness; legacy packages still require it."""
+    files = [
+        "LICENSE",
+        "README.md",
+        "lib/hcoona_release_smoke_ruby.rb",
+        "lib/hcoona_release_smoke_ruby/version.rb",
+    ]
+    if with_witness:
+        files.insert(
+            3,
+            "lib/hcoona_release_smoke_ruby/_workflow_delivery_provenance.json",
+        )
+    value = {
+        "name": "hcoona-release-smoke-ruby",
+        "version": "1.2.3",
+        "platform": "ruby",
+        "files": files,
+        "required-ruby": ">= 4.0",
+    }
+    assert validate_ruby_specification(value, "1.2.3", source=True) == value
+    if with_witness:
+        assert validate_ruby_specification(value, "1.2.3") == value
+    else:
+        with pytest.raises(ValueError, match="bounded smoke contract"):
+            validate_ruby_specification(value, "1.2.3")
+
+
+@pytest.mark.parametrize("defect", ["files", "name", "version", "field"])
+def test_ruby_source_role_retains_exact_required_metadata(defect):
+    """Source role does not admit foreign or incomplete native metadata."""
+    value = {
+        "name": "hcoona-release-smoke-ruby",
+        "version": "1.2.3",
+        "platform": "ruby",
+        "files": [
+            "LICENSE",
+            "README.md",
+            "lib/hcoona_release_smoke_ruby.rb",
+            "lib/hcoona_release_smoke_ruby/version.rb",
+        ],
+        "required-ruby": ">= 4.0",
+    }
+    if defect == "files":
+        value["files"] = ["lib/unrelated.rb"]
+    elif defect == "field":
+        value.pop("required-ruby")
+    else:
+        value[defect] = "foreign"
+    with pytest.raises(ValueError, match="bounded smoke contract"):
+        validate_ruby_specification(value, "1.2.3", source=True)
 
 
 @pytest.mark.parametrize(
@@ -168,6 +228,21 @@ def test_ruby_provider_freezes_exact_full_history_and_native_specification(
     assert ".g" in provider.nbgv.native_version
     assert parse_canonical_json(provider.specification)["platform"] == "ruby"
     assert parse_canonical_json(provider.native_profile)["rubygems"] == "4.0.20"
+
+
+def test_ruby_provider_accepts_source_membership_before_witness(
+    native_provider,
+):
+    """The actual source-result consumer accepts pre-packaging metadata."""
+    provider = native_provider[2]
+    restored = ruby_provider_result_from_document(provider.to_document())
+    assert parse_canonical_json(restored.specification)["files"] == [
+        "LICENSE",
+        "README.md",
+        "lib/hcoona_release_smoke_ruby.rb",
+        "lib/hcoona_release_smoke_ruby/version.rb",
+    ]
+    assert restored.nbgv.native_version == provider.nbgv.native_version
 
 
 def test_ruby_provider_public_main_projection_uses_same_target(native_provider):
