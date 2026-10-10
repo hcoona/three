@@ -21,7 +21,7 @@ and complete candidate control distribution, executes selected native and adopte
 NuGet checks, and collects every required result without replanning. Ordinary
 Windows Debug qualification is recorded in
 [PR #1054](https://github.com/hcoona/three/pull/1054). The [native Python planning-fact contract](./middle-level-design.md#native-python-planning-facts)
-selects the next extraction boundary. Passive extraction, the pinned Rust
+defines the implemented Python extraction boundary. Passive extraction, the pinned Rust
 supplement, ordered configuration preflight, metadata adaptation and operation
 dependency projection have controlled unit boundaries. The private app's
 [bounded native pytest configuration component](../../../../private/app/workflow-delivery/README.md#native-pytest-configuration-component)
@@ -58,16 +58,18 @@ unused package slots expired. The
 has controlled Git/command-transfer coverage for the original pytest/package plan.
 The [native Python CI caller](../../../../private/app/workflow-delivery/README.md#native-python-ci-caller)
 implements root CI and committed local full execution; the smoke PR entry is
-retired. Actual root pytest and the complete Linux caller require ordinary hosted
-qualification before accepted cutover. Release remains separate.
+retired. Actual root pytest and the complete Linux caller have ordinary hosted
+qualification in [PR #1114](https://github.com/hcoona/three/pull/1114). Release remains separate.
 The [prepared endpoint collector](../../../../private/app/workflow-delivery/README.md#prepared-python-endpoint-collection)
 composes existing readers and paired selection with controlled coverage. Its
 prepared group CLI binds exact scope/endpoints and transfers candidate-native
 execution context. Its native query-tool preparation component has controlled
 command coverage. The concrete caller receives complete native sources/control,
 materializes exact committed endpoints and executes the original mixed plan.
-Ordinary PR CI must qualify actual Linux preparation and the complete
-root/local/smoke replacement together before merge. The
+[PR #1114](https://github.com/hcoona/three/pull/1114) supplied ordinary hosted
+qualification of actual Linux preparation and the complete root/local/smoke
+replacement together. Later caller changes retain their applicable qualification
+gate. The
 [primitive Linux observation](./research/python-native-planning.md#primitive-native-observation)
 qualifies the pinned ordered helper composition; its campaign is stopped and
 both unused diagnostic reserves expired. The complete caller mapping is
@@ -120,6 +122,14 @@ requirements, replacement HLD, middle-level design and implementation plan, then
 before implementation, validation, caller cutover and retirement. Preserve permanent requirement IDs
 and the existing consumers of historical evidence. The Wave's effects boundary
 does not reopen any completed ecosystem campaign or authorize a new publication.
+
+The [native Ruby planning facts](./middle-level-design.md#native-ruby-planning-facts)
+and [CI group contract](./middle-level-design.md#native-ruby-ci-group) define the
+next extraction boundary. The [integration order](./migration-strategy.md#native-ruby-ci-integration)
+keeps source gem, bundle and installed dependency identities separate and
+preserves whole RSpec and adopted gem consumers. Native API composition and actual
+caller qualification remain pending; these contracts introduce no Ruby
+implementation, publication or campaign continuation.
 
 ## Ruby Delivery Entry
 
