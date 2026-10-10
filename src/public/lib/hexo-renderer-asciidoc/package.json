@@ -72,15 +72,15 @@
     "@biomejs/biome": "2.5.15",
     "@types/node": "^24.0.0",
     "@typescript/native-preview": "^7.0.0-dev.20260523.1",
-    "@vitest/coverage-v8": "^4.1.7",
+    "@vitest/coverage-v8": "^5.0.0",
     "hexo": "8.1.2",
     "markdownlint-cli2": "0.23.3",
     "nerdbank-gitversioning": "^3.7.91",
     "prettier": "3.9.9",
-    "tsdown": "^0.22.0",
+    "tsdown": "^0.23.0",
     "unrun": "0.3.1",
     "typescript": "^7.0.0",
-    "vitest": "^4.1.7"
+    "vitest": "^5.0.0"
   },
   "exports": {
     ".": {
