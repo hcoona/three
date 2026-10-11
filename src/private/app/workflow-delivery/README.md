@@ -90,6 +90,27 @@ Historical acceptance and other ordinary ecosystem consumers still use their
 retained Python helpers. Source/controlled tests do not establish a new hosted
 Buddy run, live publication or reopened campaign.
 
+## Native NuGet Publisher Component
+
+[`GithubNuGetPublisher`](Destinations/GithubNuGetPublisher.cs) validates the
+qualified original package and invokes the official NuGet
+`PackageUpdateResource.PushAsync` once. NuGet constructs the upload and owns its
+bounded retries; the application adds no multipart encoder or resend loop.
+Only the existing Buddy package and exact GitHub Packages endpoint are supported.
+Dry runs, incomplete required checks and changed original identity or bytes fail
+before transport. Original files must remain exclusively owned and unchanged
+through the native invocation, which opens the validated file itself.
+
+The owned standard HTTP handler disables redirects, ambient credentials, cookies
+and proxies. Basic authentication and the native API key go to the exact upload
+origin. Parent cancellation reaches native sends and response-body operations;
+the component awaits native completion rather than abandoning an active upload.
+The native timeout is 120 seconds. Its typed result preserves command success,
+parent cancellation, sanitized failure type and duration separately from business
+completion. Controlled tests exercise the actual official client through supplied
+transport. This component has no CLI or workflow caller yet and establishes no
+live publication, remote-consumer or platform qualification.
+
 ## Native Ruby Primitives
 
 [`Native/Ruby/facts.rb`](Native/Ruby/facts.rb) serializes evaluated RubyGems
