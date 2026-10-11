@@ -56,7 +56,19 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                     context.CancellationToken);
                 context.AddResultFile(binding);
                 context.WriteLine(await File.ReadAllTextAsync(binding, context.CancellationToken));
-                Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
+                Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(new
+                {
+                    Errors = result.Errors, Revision = revision, SelectedRef = selectedRef,
+                    DryRun = dryRun, Repetition = repetition,
+                    FailedCommands = result.Commands.Where(command => !command.Result.Succeeded)
+                        .Select(command => new
+                        {
+                            command.Check, command.Command.Executable, command.Command.Arguments,
+                            command.Command.DeadlineSeconds, command.Result.Termination,
+                            command.Result.ExitCode, command.Result.DurationSeconds,
+                            command.Result.Error, command.Result.Stdout, command.Result.Stderr,
+                        }),
+                }));
                 ReleaseCompletion.Validate(result.Prepared);
                 Assert.IsTrue(result.Prepared.Checks.All(check => check.Status ==
                     ReleaseCheckStatus.Passed));
