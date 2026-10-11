@@ -9,25 +9,24 @@
   <ItemGroup>
     <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
     <PackageReference Include="YamlDotNet" />
+    <PackageReference Include="NuGet.Protocol" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
     <Reference Include="Microsoft.Build" HintPath="$(MSBuildBinPath)/Microsoft.Build.dll" />
     <Reference Include="Microsoft.Build.Framework" HintPath="$(MSBuildBinPath)/Microsoft.Build.Framework.dll" />
     <Reference Include="Microsoft.Build.Utilities.Core" HintPath="$(MSBuildBinPath)/Microsoft.Build.Utilities.Core.dll" />
-    <Reference Include="NuGet.ProjectModel" HintPath="$(MSBuildBinPath)/NuGet.ProjectModel.dll" />
-    <Reference Include="NuGet.Configuration" HintPath="$(MSBuildBinPath)/NuGet.Configuration.dll" />
-    <Reference Include="NuGet.Commands" HintPath="$(MSBuildBinPath)/NuGet.Commands.dll" />
-    <Reference Include="NuGet.Packaging" HintPath="$(MSBuildBinPath)/NuGet.Packaging.dll" />
-    <Reference Include="NuGet.Versioning" HintPath="$(MSBuildBinPath)/NuGet.Versioning.dll" />
-    <Reference Include="NuGet.Frameworks" HintPath="$(MSBuildBinPath)/NuGet.Frameworks.dll" />
+    <PackageReference Include="NuGet.ProjectModel" />
+    <PackageReference Include="NuGet.Configuration" />
+    <PackageReference Include="NuGet.Commands" />
+    <PackageReference Include="NuGet.Packaging" />
+    <PackageReference Include="NuGet.Versioning" />
+    <PackageReference Include="NuGet.Frameworks" />
   </ItemGroup>
   <Target Name="ReferenceOfficialNbgv" BeforeTargets="ResolveAssemblyReferences">
     <Error Condition="'$(NerdbankGitVersioningTasksPath)' == ''" Text="The official NBGV task path is unavailable." />
     <ItemGroup>
       <Reference Include="Nerdbank.GitVersioning">
         <HintPath>$(NerdbankGitVersioningTasksPath)Nerdbank.GitVersioning.dll</HintPath>
-        <Private>true</Private>
-      </Reference>
-      <Reference Include="Newtonsoft.Json">
-        <HintPath>$(NerdbankGitVersioningTasksPath)Newtonsoft.Json.dll</HintPath>
         <Private>true</Private>
       </Reference>
     </ItemGroup>

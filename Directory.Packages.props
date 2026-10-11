@@ -35,9 +35,14 @@
     <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
     <PackageVersion Include="Nito.Guids" Version="1.1.1" />
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
+    <PackageVersion Include="NuGet.Commands" Version="7.9.0" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
+    <PackageVersion Include="NuGet.Configuration" Version="7.9.0" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
+    <PackageVersion Include="NuGet.Frameworks" Version="7.9.0" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
     <PackageVersion Include="NuGet.Packaging" Version="7.9.0" />
     <PackageVersion Include="NuGet.ProjectModel" Version="7.9.0" />
     <PackageVersion Include="NuGet.Protocol" Version="7.9.0" />
+    <PackageVersion Include="NuGet.Versioning" Version="7.9.0" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
     <PackageVersion Include="RocksDB" Version="11.8.1.5032" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
@@ -46,7 +51,7 @@
     <PackageVersion Include="System.IO.Compression.ZipFile" Version="4.3.0" />
     <PackageVersion Include="System.CommandLine" Version="2.0.12" />
     <PackageVersion Include="System.IO.Hashing" Version="10.0.12" />
-    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" Condition="'$(MSBuildProjectName)' == 'WorkflowDeliveryV3DotnetProvider'" />
+    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" Condition="'$(MSBuildProjectName)' == 'WorkflowDeliveryV3DotnetProvider' or '$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
     <PackageVersion Include="System.Text.Json" Version="10.0.12" />
     <PackageVersion Include="System.Threading.Tasks.Dataflow" Version="10.0.12" />
     <PackageVersion Include="WebMarkupMin.Core" Version="2.22.5" />

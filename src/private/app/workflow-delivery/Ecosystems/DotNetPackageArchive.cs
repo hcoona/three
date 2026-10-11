@@ -7,7 +7,7 @@ using NuGet.Packaging;
 using NuGet.Packaging.Core;
 using NuGet.Versioning;
 
-namespace WorkflowDelivery.CI;
+namespace WorkflowDelivery.Ecosystems;
 
 internal sealed record DotNetOriginalPackage(string Unit, string Build, string Output,
     string Role, string Kind, string Path, long Size, string Sha256);

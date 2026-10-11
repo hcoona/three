@@ -5,9 +5,8 @@ using NuGet.Packaging.Core;
 using NuGet.ProjectModel;
 using NuGet.Versioning;
 using WorkflowDelivery.Platform;
-using WorkflowDelivery.Repository;
 
-namespace WorkflowDelivery.CI;
+namespace WorkflowDelivery.Ecosystems;
 
 // A concrete external consumer of the inspected original package, not a test launcher.
 internal static class DotNetPackageConsumer
@@ -95,9 +94,9 @@ internal static class DotNetPackageConsumer
             ["msbuild", project, "-nologo", "-noAutoResponse", "-target:Build,GetTargetPath",
                 "-getTargetResult:Build,GetTargetPath", "-getResultOutputFile:" + response],
             deadline, environment), token);
-        using JsonDocument document = await DotNetPackageChecks.ResponseAsync(response, token);
-        DotNetPackageChecks.Target(document.RootElement, "Build");
-        JsonElement target = DotNetPackageChecks.Target(document.RootElement, "GetTargetPath");
+        using JsonDocument document = await DotNetPackageResults.ResponseAsync(response, token);
+        DotNetPackageResults.Target(document.RootElement, "Build");
+        JsonElement target = DotNetPackageResults.Target(document.RootElement, "GetTargetPath");
         if (!target.TryGetProperty("Items", out JsonElement items) ||
             items.ValueKind != JsonValueKind.Array || items.GetArrayLength() != 1 ||
             items[0].ValueKind != JsonValueKind.Object ||

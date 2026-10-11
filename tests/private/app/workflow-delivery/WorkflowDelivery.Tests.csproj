@@ -11,10 +11,10 @@
     <Reference Include="Microsoft.Build" HintPath="$(MSBuildBinPath)/Microsoft.Build.dll" />
     <Reference Include="Microsoft.Build.Framework" HintPath="$(MSBuildBinPath)/Microsoft.Build.Framework.dll" />
     <Reference Include="Microsoft.Build.Utilities.Core" HintPath="$(MSBuildBinPath)/Microsoft.Build.Utilities.Core.dll" />
-    <Reference Include="NuGet.ProjectModel" HintPath="$(MSBuildBinPath)/NuGet.ProjectModel.dll" />
-    <Reference Include="NuGet.Packaging" HintPath="$(MSBuildBinPath)/NuGet.Packaging.dll" />
-    <Reference Include="NuGet.Versioning" HintPath="$(MSBuildBinPath)/NuGet.Versioning.dll" />
-    <Reference Include="NuGet.Frameworks" HintPath="$(MSBuildBinPath)/NuGet.Frameworks.dll" />
+    <PackageReference Include="NuGet.ProjectModel" />
+    <PackageReference Include="NuGet.Packaging" />
+    <PackageReference Include="NuGet.Versioning" />
+    <PackageReference Include="NuGet.Frameworks" />
     <EmbeddedResource Include="Repository/fixtures/*.json" />
     <EmbeddedResource Include="fixtures/products/hcoona-release-smoke-npm/version.json"
                       LogicalName="NpmFixtureVersionConfiguration" />
