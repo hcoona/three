@@ -180,18 +180,20 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
                 if (response.Content.Headers.ContentEncoding.Any(value =>
                     !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
                     throw new InvalidDataException("Unsupported response encoding.");
+                string[] locations = response.Headers.NonValidated.TryGetValues("Location",
+                    out var values) ? values.ToArray() : [];
                 if (status is >= 300 and < 400)
                 {
                     if (!archive || hop != 0 || status is not (301 or 302) ||
-                        response.Headers.Location is not { } location)
+                        locations is not [string location] || string.IsNullOrWhiteSpace(location))
                         throw new InvalidDataException("Unsupported redirect.");
-                    current = Storage(location.OriginalString, credential);
+                    current = Storage(location, credential);
                     storageOrigin = current.GetLeftPart(UriPartial.Authority);
                     locationDigest = Convert.ToHexStringLower(SHA256.HashData(
-                        Encoding.UTF8.GetBytes(location.OriginalString)));
+                        Encoding.UTF8.GetBytes(location)));
                     continue;
                 }
-                if (response.Headers.Location is not null)
+                if (locations.Length != 0)
                     throw new InvalidDataException("Unexpected Location response.");
                 int limit = archive ? ArchiveLimit : MetadataLimit;
                 long? length = response.Content.Headers.ContentLength;
@@ -244,15 +246,19 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
                 decoded.Contains(secret, StringComparison.Ordinal)))
             throw new InvalidDataException("Archive storage location reflects a credential.");
         if (!raw.StartsWith("https://", StringComparison.Ordinal) ||
-            raw.Any(c => c is < '!' or > '~' or '\\' or '#') ||
-            !Uri.TryCreate(raw, UriKind.Absolute, out Uri? uri) ||
-            uri.HostNameType != UriHostNameType.Dns || uri.Host == "api.github.com" ||
-            !uri.IsDefaultPort || uri.UserInfo.Length != 0 || uri.Host.Length > 253 ||
-            uri.Host.Split('.').Any(label => label.Length is 0 or > 63 ||
+            raw.Any(c => c is < '!' or > '~' or '\\' or '#'))
+            throw new InvalidDataException("Unsupported archive storage location.");
+        string authority = raw[8..].Split('/', '?')[0].ToLowerInvariant();
+        string[] labels = authority.Split('.');
+        if (authority.Length is 0 or > 253 || authority == "api.github.com" ||
+            labels.Any(label => label.Length is 0 or > 63 ||
                 !char.IsAsciiLetterOrDigit(label[0]) ||
                 !char.IsAsciiLetterOrDigit(label[^1]) ||
-                label.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-')))
-            throw new InvalidDataException("Unsupported archive storage location.");
+                label.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-')) ||
+            labels.All(label => label.All(char.IsAsciiDigit) ||
+                (label.StartsWith("0x", StringComparison.Ordinal) && label.Length > 2 &&
+                    label[2..].All(char.IsAsciiHexDigit))))
+            throw new InvalidDataException("Unsupported archive storage DNS authority.");
         return new(raw, new UriCreationOptions
             { DangerousDisablePathAndQueryCanonicalization = true });
     }

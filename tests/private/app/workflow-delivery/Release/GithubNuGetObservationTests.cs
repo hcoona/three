@@ -146,8 +146,10 @@ public sealed class GithubNuGetObservationTests
     public async Task OneOriginalArchiveRedirectStripsReadCredentials()
     {
         byte[] original = Archive();
+        const string location = "https://objects.githubusercontent.com/a%2fb/../package"
+            + "?signature=a%2fb+%25";
         using var handler = new Handler((_, step) => step == 4
-            ? Redirect("https://objects.githubusercontent.com/package?signature=private")
+            ? Redirect(location)
             : Response(step, original));
         using var client = new HttpClient(handler);
         GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
@@ -157,7 +159,11 @@ public sealed class GithubNuGetObservationTests
         Assert.HasCount(6, handler.Requests);
         Assert.IsNull(handler.Requests[^1].Scheme);
         Assert.AreEqual("https://objects.githubusercontent.com", result.Reads[^1].StorageOrigin);
-        Assert.IsNotNull(result.Reads[^1].LocationSha256);
+        Assert.AreEqual(location, handler.Requests[^1].Uri.OriginalString);
+        Assert.AreEqual(location[location.IndexOf('/', 8)..],
+            handler.Requests[^1].Uri.PathAndQuery);
+        Assert.AreEqual(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(location))),
+            result.Reads[^1].LocationSha256);
         Assert.DoesNotContain("signature", JsonSerializer.Serialize(result));
         Assert.DoesNotContain(Credential, JsonSerializer.Serialize(result));
     }
@@ -210,6 +216,47 @@ public sealed class GithubNuGetObservationTests
         GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
 
+        Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
+        Assert.HasCount(5, handler.Requests);
+    }
+
+    [TestMethod]
+    [DataRow("")]
+    [DataRow(" ")]
+    [DataRow("https://objects.githubusercontent.com/a#fragment")]
+    [DataRow("https://objects.githubusercontent.com\\other/package")]
+    [DataRow("https://objects%2egithubusercontent.com/package")]
+    [DataRow("https://2130706433/package")]
+    [DataRow("https://0x7f.0.0.1/package")]
+    [DataRow("https://objects.githubusercontent.com:/package")]
+    public async Task InvalidRawLocationStopsWithoutStorageRead(string location)
+    {
+        using var handler = new Handler((_, step) => step == 4 ? Redirect(location)
+            : Response(step, Archive()));
+        using var client = new HttpClient(handler);
+        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
+        Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
+        Assert.HasCount(5, handler.Requests);
+    }
+
+    [TestMethod]
+    public async Task MultipleRawLocationsStopWithoutStorageRead()
+    {
+        using var handler = new Handler((_, step) =>
+        {
+            if (step != 4) return Response(step, Archive());
+            var response = new HttpResponseMessage(HttpStatusCode.Found)
+                { Content = new ByteArrayContent([]) };
+            response.Headers.TryAddWithoutValidation("Location",
+                "https://objects.githubusercontent.com/a");
+            response.Headers.TryAddWithoutValidation("Location",
+                "https://objects.githubusercontent.com/b");
+            return response;
+        });
+        using var client = new HttpClient(handler);
+        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(5, handler.Requests);
     }
@@ -454,7 +501,7 @@ public sealed class GithubNuGetObservationTests
     {
         var response = new HttpResponseMessage(HttpStatusCode.Found)
         { Content = new ByteArrayContent([]) };
-        response.Headers.Location = new(location);
+        response.Headers.TryAddWithoutValidation("Location", location);
         return response;
     }
     private static PreparedRelease Prepared(byte[] original) => new(new(new('a', 40),
