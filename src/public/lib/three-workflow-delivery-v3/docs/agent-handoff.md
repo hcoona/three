@@ -401,6 +401,13 @@ session history here.
   [retained source extracts](./validation/native-and-normal-live-evidence.md)
   with their pinned source provenance.
 
+The replacement private application's
+[native NuGet publisher component](../../../../private/app/workflow-delivery/README.md#native-nuget-publisher-component)
+uses one official client invocation with native retries and actual transport
+cancellation. Its controlled qualification is separate from caller cutover,
+remote consumption and live publication; existing domain authorization gates
+remain in force.
+
 ## NuGet Second-Slice Implementation
 
 The NuGet research delivery is complete. The user has selected
