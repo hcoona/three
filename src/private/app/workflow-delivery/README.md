@@ -115,8 +115,11 @@ one preparation and paired plan into complete original-result collection.
 The paired readback retains both native fact endpoints once; Node planning can
 receive their typed contribution through its existing caller. An empty selection
 collects the original empty plan without product preparation. These caller seams
-have controlled and local Git coverage; actual native preparation, product
-qualification and atomic hosted root/shadow cutover remain pending.
+have controlled, local Git and isolated native caller coverage. Root CI now
+also receives the complete candidate control artifact in `ruby-group`, then
+prepares, plans and executes the original Ruby group. Hosted qualification and
+atomic root/shadow cutover remain pending; existing automated Ruby callers are
+retained until that qualification completes.
 
 [`RubyNodeInputConsumers`](Repository/RubyNodeInputConsumers.cs) joins supplied
 Ruby facts to PNPM projects at the same Git endpoint. Native bundle directories

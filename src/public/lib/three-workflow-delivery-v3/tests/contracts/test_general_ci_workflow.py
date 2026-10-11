@@ -850,6 +850,7 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
             "scope",
             "validation",
             "node-group",
+            "ruby-group",
             "dotnet-tests",
             "python-tests",
         }:
@@ -1005,8 +1006,11 @@ def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
                 _cancelable_dotnet_step(step)
             elif name == "python-tests":
                 _required_context_step(name, step)
-            elif name == "node-group":
-                assert step.get("if", "success()") in {"success()", "always()"}
+            elif name in {"node-group", "ruby-group"}:
+                assert step.get("if", "success()").split(" && ")[0] in {
+                    "success()",
+                    "always()",
+                }
                 assert not step.get("continue-on-error", False)
             elif step["if"].startswith("always() &&"):
                 assert step.get("uses", "").startswith(
@@ -1188,3 +1192,73 @@ def test_python_group_requires_native_comparison_not_legacy_flags(
         for step in receivers
     )
     assert job["permissions"] == {"contents": "read", "actions": "read"}
+
+
+@pytest.mark.parametrize(
+    ("selection", "scope", "control", "succeeds"),
+    [
+        ("success", "11", "12", True),
+        ("failure", "11", "12", False),
+        ("success", "", "12", False),
+        ("success", "11", "", False),
+    ],
+)
+def test_native_ruby_scope_and_control_guard(  # noqa: PLR0913, PLR0917 - Guard matrix.
+    workflow, tmp_path, selection, scope, control, succeeds
+):
+    """Lost scope or candidate control stops before native preparation."""
+    job = workflow["jobs"]["ruby-group"]
+    result = run_step(
+        job["steps"][0],
+        cwd=tmp_path,
+        env=os.environ.copy(),
+        bindings={
+            "needs.scope.result": selection,
+            "needs.scope.outputs.artifact_id": scope,
+            "needs.scope.outputs.dotnet_artifact_id": control,
+        },
+        workflow=workflow,
+        job=job,
+    )
+    assert (result.returncode == 0) is succeeds
+
+
+def test_native_ruby_transfers_original_control_and_complete_plan(workflow):
+    """One receiver and plan feed execution; legacy CI awaits qualification."""
+    job = workflow["jobs"]["ruby-group"]
+    assert job["needs"] == "scope"
+    assert job["permissions"] == {"contents": "read", "actions": "read"}
+    assert "environment" not in job
+    runs = [step["run"] for step in job["steps"] if "run" in step]
+    entry = [run for run in runs if "run_ruby_ci_group.py" in run]
+    assert len(entry) == 3  # noqa: PLR2004 - Materialize, plan and execute.
+    assert " materialize " in entry[0]
+    for argument in (
+        "--scope-metadata",
+        "--control-metadata",
+        "--scope-artifact-id",
+        "--control-artifact-id",
+        "--run-id",
+        "--repository-id",
+    ):
+        assert argument in entry[0]
+    assert " plan " in entry[1]
+    assert " execute " in entry[2]
+    assert all('"$RUNNER_TEMP/ruby-group"' in run for run in entry)
+    assert all("continue-on-error" not in step for step in job["steps"])
+    assert "ruby-tests" in workflow["jobs"]
+
+
+def test_native_ruby_retains_failed_outcomes_and_uses_native_runtime(workflow):
+    """Native runtime and failure carriers remain visible."""
+    job = workflow["jobs"]["ruby-group"]
+    ruby = _action(job, "ruby/setup-ruby")
+    assert ruby["with"] == {"ruby-version": "4.0.7"}
+    python = _action(job, "actions/setup-python")
+    assert python["with"] == {"python-version-file": ".python-version"}
+    retained = _action(job, "actions/upload-artifact")
+    assert retained["if"] == "always()"
+    assert retained["with"]["name"] == "ruby-group-results"
+    assert "*.json" in retained["with"]["path"]
+    assert "*.stderr" in retained["with"]["path"]
+    assert job["steps"][-1]["if"] == "cancelled()"

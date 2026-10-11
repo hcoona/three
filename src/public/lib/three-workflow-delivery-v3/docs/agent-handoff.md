@@ -13,6 +13,11 @@ This is an operating handoff, not a second specification. The
 execution, transfer and outcome contracts. The HLD owns terminology and
 implementation order. The [implementation plan](./migration-strategy.md) identifies
 concrete callers, integration contracts and retirement dependencies.
+Root CI also contains the replacement native Ruby group for ordinary hosted
+qualification. It receives the exact scope and complete candidate control
+artifact, prepares native facts once and executes the original paired plan.
+Keep the existing root RSpec and Ruby shadow entry until its complete hosted
+transfer/execution/result qualification permits atomic fixture and caller cutover.
 Root CI owns the adopted Node fixture, selected retained Node matrix and
 [native .NET CI group](./migration-strategy.md#native-net-ci-group). Its existing
 Windows scope job consumes both .NET endpoint graphs, native event comparison and

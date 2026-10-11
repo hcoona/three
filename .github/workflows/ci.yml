@@ -969,6 +969,137 @@ jobs:
           echo 'Validation was canceled before a complete result.' >&2
           exit 1
 
+  ruby-group:
+    name: Plan and execute native Ruby checks
+    runs-on: ubuntu-latest
+    needs: scope
+    if: ${{ !cancelled() }}
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Require successful comparison and exact native artifacts
+        env:
+          SELECTION_RESULT: ${{ needs.scope.result }}
+          SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
+          CONTROL_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
+        run: |
+          test "$SELECTION_RESULT" = success
+          [[ "$SCOPE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$CONTROL_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+      - name: Checkout tested candidate
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Setup Python query interpreter
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+      - name: Read native artifact producers and lifetimes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
+          CONTROL_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$SCOPE_ARTIFACT_ID" > "$RUNNER_TEMP/ruby-scope-artifact.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$CONTROL_ARTIFACT_ID" > "$RUNNER_TEMP/ruby-control-artifact.json"
+      - name: Receive exact scope
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.scope.outputs.artifact_id }}
+          path: ${{ runner.temp }}/ruby-scope
+          merge-multiple: true
+      - name: Receive complete candidate control and native sources
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.scope.outputs.dotnet_artifact_id }}
+          path: ${{ runner.temp }}/ruby-control
+          merge-multiple: true
+      - name: Setup candidate NBGV and control SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Setup native Ruby
+        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+        with:
+          ruby-version: '4.0.7'
+      - name: Materialize exact committed endpoints
+        id: endpoints
+        env:
+          SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
+          CONTROL_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
+        run: |
+          python eng/scripts/run_ruby_ci_group.py materialize \
+            --scope-file "$RUNNER_TEMP/ruby-scope/ci-scope.json" --transfer "$RUNNER_TEMP/ruby-control" \
+            --scope-metadata "$RUNNER_TEMP/ruby-scope-artifact.json" --scope-artifact-id "$SCOPE_ARTIFACT_ID" \
+            --control-metadata "$RUNNER_TEMP/ruby-control-artifact.json" --control-artifact-id "$CONTROL_ARTIFACT_ID" \
+            --run-id "$GITHUB_RUN_ID" --repository-id "$GITHUB_REPOSITORY_ID" --directory "$RUNNER_TEMP/ruby-group"
+      - name: Prepare native query tools and select once
+        id: plan
+        run: python eng/scripts/run_ruby_ci_group.py plan --directory "$RUNNER_TEMP/ruby-group"
+      - name: Install system dependencies
+        if: success() && steps.plan.outputs.selected == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base \
+            texlive-latex-recommended \
+            texlive-fonts-recommended \
+            dvisvgm \
+            pdf2svg \
+            poppler-utils \
+            imagemagick \
+            ghostscript \
+            fd-find
+      - name: Ensure fd is available
+        if: success() && steps.plan.outputs.selected == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if command -v fd >/dev/null 2>&1; then
+            fd --version
+            exit 0
+          fi
+
+          if command -v fdfind >/dev/null 2>&1; then
+            fdfind --version
+            mkdir -p "${HOME}/.local/bin"
+            ln -sf "$(command -v fdfind)" "${HOME}/.local/bin/fd" || true
+            export PATH="${HOME}/.local/bin:${PATH}"
+            fd --version
+            exit 0
+          fi
+
+          echo "fd is not available" >&2
+          exit 1
+
+      - name: Execute and collect every original selected check
+        run: python eng/scripts/run_ruby_ci_group.py execute --directory "$RUNNER_TEMP/ruby-group"
+      - name: Retain native planning, execution and collection outcomes
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ruby-group-results
+          path: |
+            ${{ runner.temp }}/ruby-group/*.json
+            ${{ runner.temp }}/ruby-group/*.stdout
+            ${{ runner.temp }}/ruby-group/*.stderr
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Reject canceled validation
+        if: cancelled()
+        run: |
+          echo 'Ruby group was canceled before a complete result.' >&2
+          exit 1
+
   ruby-tests:
     name: Test (Ruby 3.3)
     runs-on: ubuntu-latest
