@@ -109,6 +109,15 @@ Bundle-only consumers remain separate for later actual Node composition. This
 controlled paired assembly neither collects native endpoints nor qualifies the
 complete Ruby caller.
 
+[`RubyNodeInputConsumers`](Repository/RubyNodeInputConsumers.cs) joins supplied
+Ruby facts to PNPM projects at the same Git endpoint. Native bundle directories
+identify their Node consumers; Bundler's resolved local producers carry source,
+version and quality inputs into existing Node operation inputs. The original
+paired Node planner retains removed-source reasons and PNPM reverse consumers.
+Ruby-owned bundles keep their ecosystem; an unmapped bundle-only consumer fails.
+Controlled planning coverage does not qualify actual caller preparation or native
+products. Caller transfer and atomic root/shadow cutover remain pending.
+
 [`RubyRSpecResult`](CI/RubyRSpecResult.cs) consumes complete public CLI JSON,
 retains original examples/messages and counts, and keeps them separate from native
 command termination. Missing/incomplete results, failed commands, failed examples

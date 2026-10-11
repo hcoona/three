@@ -145,7 +145,10 @@ controlled native-command coverage. Caller-owned native query preparation uses t
 candidate control NBGV pin, separates endpoint installation state and prepares
 source inputs before frozen Bundler evaluation; its coverage is controlled.
 Finite mixed RSpec/gem execution and prepare/plan/run CLI transfer have controlled
-original-plan and result coverage. Actual product/consumer qualification and
+original-plan and result coverage. Supplied same-endpoint Ruby bundle facts can
+join their actual PNPM consumers and feed paired Node impact selection; controlled
+coverage preserves source deletion reasons without adding dependency declarations.
+Actual product/consumer qualification and
 complete hosted workflow transfer, caller
 qualification and atomic cutover remain pending. Existing Ruby
 callers, manual Release and historical readers remain. These primitives authorize
