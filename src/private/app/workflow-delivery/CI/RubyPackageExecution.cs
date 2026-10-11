@@ -61,7 +61,6 @@ internal static class RubyPackageExecution
         var commands = new List<RubyPackageCommand>();
         var gems = new List<RubyOriginalGem>();
         var failures = new List<RubyPackageFailure>();
-        RubySourceGemFacts[] sources = [];
         int ordinal = 0;
         foreach (CheckSpec build in checks.Where(check =>
                      check.Key.Check == RubyPackageChecks.Build))
@@ -84,12 +83,9 @@ internal static class RubyPackageExecution
                     {
                         if (kind == RubyPackageChecks.Build)
                         {
-                            if (sources.Length == 0)
-                                sources = await RubySourceCollector.ReadAsync(checkout,
-                                    request.Facts, request.Nbgv, ExecuteAsync, token);
-                            RubySourceGemFacts source = sources.Single(source =>
-                                Path.GetFullPath(source.Gemspec) == Path.GetFullPath(Path.Combine(
-                                    checkoutRoot, subject.EntryPoint)));
+                            RubySourceGemFacts source = await RubySourceCollector.ReadSourceAsync(
+                                checkout, subject.EntryPoint, request.Facts, request.Nbgv,
+                                ExecuteAsync, token);
                             if (source.Gem.Name != "hcoona-release-smoke-ruby" ||
                                 source.Gem.Version != subject.ExpectedVersion ||
                                 source.Gem.Platform != "ruby")

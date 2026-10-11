@@ -22,6 +22,7 @@ public sealed class RubyPackageExecutionTests(TestContext context)
     {
         await repo.SetAsync(DirectoryName + "/hcoona-release-smoke-ruby.gemspec");
         await repo.SetAsync(DirectoryName + "/lib/hcoona_release_smoke_ruby.rb");
+        await repo.SetAsync("src/unrelated/asciidoctor-latexmath.gemspec");
         string candidate = await repo.CommitAsync();
         await repo.GitAsync("reset", "--hard", candidate);
         string scratch = Path.Combine(Path.GetDirectoryName(repo.Directory)!, "gem-output");
@@ -47,7 +48,12 @@ public sealed class RubyPackageExecutionTests(TestContext context)
         NativeCommand command, string defect, CancellationToken token)
     {
         Assert.IsFalse(command.InheritEnvironment);
-        if (command.Executable == request.Nbgv) return Answer(new { SemVer2 = "1.2.3" });
+        if (command.Executable == request.Nbgv)
+        {
+            Assert.AreEqual(Path.Combine(request.Checkout, DirectoryName), command.Directory);
+            return defect == "source-failed" ? Answer(new { }) with { ExitCode = 4 } :
+                Answer(new { SemVer2 = "1.2.3" });
+        }
         if (command.Arguments[0] == request.Gem)
         {
             if (command.Arguments[1] == "build")
@@ -77,6 +83,9 @@ public sealed class RubyPackageExecutionTests(TestContext context)
             await File.ReadAllTextAsync(command.Arguments[^1], token));
         string path = input.RootElement.GetProperty("path").GetString()!;
         string operation = input.RootElement.GetProperty("operation").GetString()!;
+        if (operation is "version" or "gemspec")
+            Assert.AreEqual(Path.Combine(request.Checkout, DirectoryName,
+                "hcoona-release-smoke-ruby.gemspec"), path);
         if (operation == "version") return Answer(new { gemspec = path, raw = "1.2.3",
             version = "1.2.3", literal = "\"1.2.3\"" });
         var gem = new { name = "hcoona-release-smoke-ruby", version = "1.2.3", platform = "ruby",
@@ -113,6 +122,7 @@ public sealed class RubyPackageExecutionTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow("source-failed")]
     [DataRow("failed-build")]
     [DataRow("missing-output")]
     [DataRow("changed-original")]
