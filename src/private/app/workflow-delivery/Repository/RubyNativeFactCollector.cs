@@ -72,7 +72,8 @@ internal sealed class RubyNativeFactCollector
             token.ThrowIfCancellationRequested();
             if (!result.Succeeded || result.Error is not null)
                 throw new InvalidDataException("Native Ruby fact collection failed: " +
-                    result.Termination + ".");
+                    result.Termination + $", exit {result.ExitCode?.ToString() ?? "unknown"}. " +
+                    $"{result.Error} {result.Stderr}");
             return result.Stdout;
         }
         finally

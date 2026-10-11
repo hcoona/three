@@ -121,8 +121,12 @@ public sealed class RubyNativeFactCollectorTests
             new NativeCommandResult(Enum.Parse<NativeTermination>(termination),
                 termination == "Exited" ? 1 : 0,
                 value.ToJsonString(), "failed", 0, null)));
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             collector.SourceAsync(path, CancellationToken.None));
+        Assert.Contains(termination, error.Message);
+        Assert.Contains(termination == "Exited" ? "exit 1" : "exit 0", error.Message);
+        Assert.Contains("failed", error.Message);
+        Assert.IsEmpty(Directory.GetFiles(root));
     }
 
     [TestMethod]
@@ -133,8 +137,27 @@ public sealed class RubyNativeFactCollectorTests
         value["gemspec"] = path;
         var collector = new RubyNativeFactCollector(Tools(), (_, _) => Task.FromResult(
             Answer(value) with { Error = "incomplete capture" }));
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             collector.SourceAsync(path, CancellationToken.None));
+        Assert.Contains("incomplete capture", error.Message);
+        Assert.Contains("exit 0", error.Message);
+        Assert.IsEmpty(Directory.GetFiles(root));
+    }
+
+    [TestMethod]
+    public async Task FailedNativeStartupKeepsItsAvailableDiagnostics()
+    {
+        string path = Path.Combine(root, "native.gemspec");
+        var collector = new RubyNativeFactCollector(Tools(), (_, _) => Task.FromResult(
+            new NativeCommandResult(NativeTermination.StartFailed, null, "", "native detail",
+                0, "Ruby executable missing")));
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            collector.SourceAsync(path, CancellationToken.None));
+        Assert.Contains("StartFailed", error.Message);
+        Assert.Contains("exit unknown", error.Message);
+        Assert.Contains("Ruby executable missing", error.Message);
+        Assert.Contains("native detail", error.Message);
+        Assert.IsEmpty(Directory.GetFiles(root));
     }
 
     [TestMethod]
