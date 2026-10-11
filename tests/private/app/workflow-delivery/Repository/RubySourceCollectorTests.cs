@@ -56,7 +56,8 @@ public sealed class RubySourceCollectorTests(TestContext context)
                 using JsonDocument request = JsonDocument.Parse(
                     await File.ReadAllTextAsync(command.Arguments[^1], token));
                 string gemspec = Path.Combine(repo.Directory, project, name + ".gemspec");
-                Assert.AreEqual(gemspec, request.RootElement.GetProperty("path").GetString());
+                Assert.AreEqual(Path.GetFullPath(gemspec),
+                    Path.GetFullPath(request.RootElement.GetProperty("path").GetString()!));
                 if (request.RootElement.GetProperty("operation").GetString() == "version")
                     return Answer(new { gemspec, raw = "1.2.3-beta.4+gabcdef0",
                         version = "1.2.3.pre.beta.4", literal = "\"1.2.3.pre.beta.4\"" });

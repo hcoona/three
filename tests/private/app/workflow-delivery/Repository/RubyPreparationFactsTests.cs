@@ -10,7 +10,7 @@ namespace WorkflowDelivery.Tests.Repository;
 public sealed class RubyPreparationFactsTests
 {
     private static readonly string Root = Path.GetFullPath("ruby preparation facts");
-    private static string NativePath(string path) => Path.Combine(Root, path);
+    private static string NativePath(string path) => Path.GetFullPath(Path.Combine(Root, path));
     private static JsonObject Context() => new() {
         ["gemfile"] = NativePath("bundle/Gemfile"),
         ["lockfile"] = NativePath("bundle/Gemfile.lock"),
