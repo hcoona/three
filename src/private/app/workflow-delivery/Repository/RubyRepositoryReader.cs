@@ -11,6 +11,13 @@ internal sealed record RubyRevisionInputs(RubyFactsEndpoint Facts, RubySourceGem
 // The caller prepares dependencies. Native libraries evaluate every original entry point.
 internal static class RubyRepositoryReader
 {
+    // Concrete root-CI operation inputs, separate from native producer membership.
+    internal static readonly string[] CallerSources = [".github/workflows/ci.yml",
+        "eng/scripts/run_ruby_ci_group.py", "eng/scripts/run_node_ci_group.py",
+        "eng/scripts/run_dotnet_ci_group.py", "eng/scripts/ci_scope.py",
+        "eng/scripts/repository_path_patterns.py", "eng/scripts/prepare_ci_control_inputs.py",
+        "mise.toml", "mise.lock"];
+
     internal static Task<RubyRevisionInputs> ReadAsync(GitMaterialization checkout,
         RubyRepositoryRequest request, CancellationToken token) =>
         ReadAsync(checkout, request, NativeProcess.ExecuteAsync, token);
@@ -85,6 +92,14 @@ internal static class RubyRepositoryReader
             string id = "ruby:" + source.Directory;
             owners.Add(new(id, source.Directory, [], [], unit?.Id, selection.Preset, checks));
             if (unit is not null) operationInputs.Add(new(unit.SourcePath, [id]));
+        }
+        string[] consumers = owners.Select(owner => owner.Id).ToArray();
+        foreach (string path in CallerSources)
+        {
+            GitEntry? entry = checkout.Revision.Entries.SingleOrDefault(value =>
+                value.Path == path);
+            if (entry is not null) RubyRepositoryInventory.RequireFile(entry);
+            operationInputs.Add(new(path, consumers));
         }
         token.ThrowIfCancellationRequested();
         return new(new(checkout.Revision, inputs, owners.ToArray(), operationInputs.ToArray()),

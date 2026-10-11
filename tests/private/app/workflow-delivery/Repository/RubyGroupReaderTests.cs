@@ -63,6 +63,33 @@ public sealed class RubyGroupReaderTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow(".github/workflows/ci.yml")]
+    [DataRow("eng/scripts/run_ruby_ci_group.py")]
+    [DataRow("eng/scripts/run_node_ci_group.py")]
+    [DataRow("eng/scripts/run_dotnet_ci_group.py")]
+    [DataRow("eng/scripts/ci_scope.py")]
+    [DataRow("eng/scripts/repository_path_patterns.py")]
+    [DataRow("eng/scripts/prepare_ci_control_inputs.py")]
+    [DataRow("mise.toml")]
+    [DataRow("mise.lock")]
+    public async Task ActualCallerInputsSelectAdoptedChecksAcrossBothEndpoints(string path)
+    {
+        using var fixture = await Fixture.CreateAsync(path, false,
+            context.CancellationToken, "ruby", true);
+        RubyGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
+        PlannedCheck check = Assert.ContainsSingle(result.Plan.Checks);
+        Assert.AreEqual(RubyProjectChecks.RSpec, check.Work.Key.Check);
+        Assert.HasCount(2, check.Reasons);
+        Assert.Contains(new SelectionReason(path, result.Plan.Comparison, "ruby:src/input"),
+            check.Reasons);
+        Assert.Contains(new SelectionReason(path, result.Plan.Candidate, "ruby:src/input"),
+            check.Reasons);
+        foreach (RubyRevisionInputs endpoint in new[] { result.Basis, result.Candidate })
+            Assert.AreEqual("ruby:src/input", Assert.ContainsSingle(endpoint.Facts.OperationInputs
+                .Single(input => input.Path == path).Consumers));
+    }
+
+    [TestMethod]
     public async Task BadScopeStopsBeforeCollection()
     {
         using var fixture = await Fixture.CreateAsync("src/input/spec/one_spec.rb", false,
@@ -128,12 +155,13 @@ public sealed class RubyGroupReaderTests(TestContext context)
         private readonly GitFixture repo = repository;
         internal RubyGroupRequest Request { get; set; } = null!;
         internal bool CrossInput { get; set; }
+        internal bool ActualCollection { get; set; }
         internal string? FailedEndpoint { get; set; }
         internal Action? AfterBasis { get; set; }
         internal List<string> Collected { get; } = [];
 
         internal static async Task<Fixture> CreateAsync(string changed, bool full,
-            CancellationToken token, string? owner = null)
+            CancellationToken token, string? owner = null, bool actualCollection = false)
         {
             var fixture = new Fixture(await GitFixture.CreateAsync(token));
             try
@@ -141,6 +169,14 @@ public sealed class RubyGroupReaderTests(TestContext context)
                 foreach (string path in new[] { "src/input/asciidoctor-latexmath.gemspec",
                              "src/input/spec/one_spec.rb", changed })
                     await fixture.repo.SetAsync(path);
+                fixture.ActualCollection = actualCollection;
+                if (actualCollection)
+                {
+                    await fixture.repo.SetAsync("src/input/version.json", "{\"version\":\"1.2\"}");
+                    await fixture.repo.SetAsync("src/input/workflow-delivery.quality.yml",
+                        "schema: workflow-delivery/v3/quality-selection\necosystems:\n" +
+                        "  ruby:\n    preset: ruby/rspec-v1\n");
+                }
                 string before = await fixture.repo.CommitAsync();
                 await fixture.repo.GitAsync("reset", "--hard", before);
                 string parent = Path.GetDirectoryName(fixture.repo.Directory)!;
@@ -186,6 +222,35 @@ public sealed class RubyGroupReaderTests(TestContext context)
                 if (checkout.Revision.Commit == FailedEndpoint)
                     throw new InvalidDataException("Required native endpoint failed.");
                 Collected.Add(checkout.Revision.Commit);
+                if (ActualCollection)
+                    return RubyRepositoryReader.ReadAsync(checkout,
+                        Request.Candidate.Collection, async (command, cancellationToken) =>
+                        {
+                            object value;
+                            if (command.Executable == Request.Candidate.Collection.Nbgv)
+                                value = new { SemVer2 = "1.2.3+original" };
+                            else
+                            {
+                                using JsonDocument input = JsonDocument.Parse(
+                                    await File.ReadAllTextAsync(command.Arguments[^1],
+                                        cancellationToken));
+                                string gemspec = Path.Combine(checkout.Root,
+                                    "src/input/asciidoctor-latexmath.gemspec");
+                                string? operation = input.RootElement.GetProperty("operation")
+                                    .GetString();
+                                value = operation ==
+                                    "version" ? (object)new { gemspec, raw = "1.2.3+original",
+                                        version = "1.2.3", literal = "\"1.2.3\"" } :
+                                    new { gemspec, name = "asciidoctor-latexmath",
+                                        version = "1.2.3",
+                                        platform = "ruby", require_paths = Array.Empty<string>(),
+                                        files = Array.Empty<string>(),
+                                        runtime_dependencies = Array.Empty<object>() };
+                            }
+                            return new WorkflowDelivery.Platform.NativeCommandResult(
+                                WorkflowDelivery.Platform.NativeTermination.Exited, 0,
+                                JsonSerializer.Serialize(value), "", 0, null);
+                        }, cancellation);
                 var check = new CheckSpec(new("src/input", RubyProjectChecks.RSpec, "default"),
                     [], "ubuntu-latest", true, []);
                 var owner = new ProjectFacts("ruby:src/input", "src/input", [], [], null,
