@@ -150,6 +150,8 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_typos_config.py" && path == ".typos.toml") ||
         (target == "tests/eng/test_run_node_ci_group.py" &&
             path == "eng/scripts/run_node_ci_group.py") ||
+        (target == "tests/eng/test_run_ruby_ci_group.py" &&
+            path == "eng/scripts/run_ruby_ci_group.py") ||
         (target == "tests/eng/test_run_dotnet_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target == "tests/eng/test_run_python_ci_group.py" &&

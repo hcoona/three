@@ -37,6 +37,18 @@ def bootstrap(root: Path, directory: Path) -> Path:
         "HEAD",
         "src/private/app/workflow-delivery/Native/Python",
     )
+    node.run(
+        root,
+        directory,
+        "ruby-control",
+        "git",
+        "show",
+        "HEAD:src/private/app/workflow-delivery/Native/Ruby/facts.rb",
+    )
+    (transfer / "ruby").mkdir()
+    shutil.copyfile(
+        directory / "ruby-control.stdout", transfer / "ruby/facts.rb"
+    )
     node.write_json(
         directory / "control.json",
         {

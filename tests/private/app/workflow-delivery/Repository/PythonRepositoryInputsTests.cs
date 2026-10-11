@@ -135,6 +135,7 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("src/public/lib/nbgv-python/tests", "global.json")]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml")]
     [DataRow("tests/eng/test_run_node_ci_group.py", "eng/scripts/run_node_ci_group.py")]
+    [DataRow("tests/eng/test_run_ruby_ci_group.py", "eng/scripts/run_ruby_ci_group.py")]
     [DataRow("tests/eng/test_run_dotnet_ci_group.py", "eng/scripts/run_node_ci_group.py")]
     [DataRow("tests/eng/test_run_dotnet_ci_group.py", "eng/scripts/run_dotnet_ci_group.py")]
     [DataRow("tests/eng/test_run_python_ci_group.py", "eng/scripts/run_node_ci_group.py")]
@@ -157,6 +158,7 @@ public sealed class PythonRepositoryInputsTests
 
     [TestMethod]
     [DataRow("tests/eng/test_run_node_ci_group.py", "eng/scripts/run_dotnet_ci_group.py")]
+    [DataRow("tests/eng/test_run_ruby_ci_group.py", "eng/scripts/run_ruby_ci_group.py.backup")]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml.backup")]
     [DataRow("tests/private/app/workflow-delivery/Native/Python",
         "src/public/lib/nbgv-python-other/source.py")]
@@ -183,6 +185,7 @@ public sealed class PythonRepositoryInputsTests
     {
         var endpoint = Endpoint(["tests/standalone.py"], [".typos.toml",
             "src/public/lib/nbgv-python/source.py", "eng/scripts/run_node_ci_group.py",
+            "eng/scripts/run_ruby_ci_group.py",
             "src/public/lib/hcoona-release-smoke-ruby/hcoona-release-smoke-ruby.gemspec",
             "src/public/lib/three-workflow-delivery-v3/" +
                 "src/three_workflow_delivery_v3/_ruby_helper.rb"]);
@@ -192,6 +195,8 @@ public sealed class PythonRepositoryInputsTests
             .SelectMany(binding => binding.Owners).Distinct(StringComparer.Ordinal)));
         Assert.DoesNotContain(".typos.toml", bindings.Select(binding => binding.Path));
         Assert.DoesNotContain("eng/scripts/run_node_ci_group.py",
+            bindings.Select(binding => binding.Path));
+        Assert.DoesNotContain("eng/scripts/run_ruby_ci_group.py",
             bindings.Select(binding => binding.Path));
         Assert.DoesNotContain("src/public/lib/hcoona-release-smoke-ruby/" +
             "hcoona-release-smoke-ruby.gemspec", bindings.Select(binding => binding.Path));
@@ -322,6 +327,42 @@ public sealed class PythonRepositoryInputsTests
             Assert.DoesNotContain("pytest:" + target,
                 assembly.Request.Candidate.Projects.Select(project => project.Id));
         }
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void RubyCallerInputSelectsNewCandidateTargetWithOriginalReason(bool inputAtBasis)
+    {
+        const string path = "eng/scripts/run_ruby_ci_group.py";
+        const string target = "tests/eng/test_run_ruby_ci_group.py";
+        PythonFactsEndpoint basis = Facts(Endpoint(["tests/unrelated.py"],
+            inputAtBasis ? [path] : [], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"],
+            inputAtBasis ? [] : [path], "after"));
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        var expected = new SelectionReason(path, inputAtBasis ? "before" : "after",
+            "pytest:" + target);
+        Assert.AreEqual(expected, Assert.ContainsSingle(paired));
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, paired);
+        PlannedCheck selected = Assert.ContainsSingle(
+            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+        Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
+        Assert.AreEqual(expected, Assert.ContainsSingle(selected.Reasons));
+        Assert.DoesNotContain("pytest:" + target,
+            assembly.Request.Basis.Projects.Select(project => project.Id));
+    }
+
+    [TestMethod]
+    public void RubyCallerInputWithoutActualTargetRemainsUnresolved()
+    {
+        const string path = "eng/scripts/run_ruby_ci_group.py";
+        PythonFactsEndpoint endpoint = Facts(Endpoint(["tests/unrelated.py"], [path]));
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(endpoint, endpoint, [path]);
+        Assert.IsEmpty(paired);
+        Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
+            endpoint, endpoint, [path], false, paired));
     }
 
     [TestMethod]

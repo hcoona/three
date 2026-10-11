@@ -93,8 +93,10 @@ dependencies. Bundler's native lock context selects the activated library; the
 full frozen answer remains required. Original source paths, native NBGV inputs,
 quality ancestors and actual adopted gem declarations remain distinct. Sources
 without quality adoption stay input-only producers. Supported adoption expands
-whole-project RSpec or the gem's complete distribution checks. This reader does
-not install dependencies, certify dynamic IO closure or wire paired callers;
+whole-project RSpec or the gem's complete distribution checks. Concrete root CI,
+imported caller and shared tool inputs target those actual quality owners through
+operation-input associations, without changing native producer membership. This
+reader does not install dependencies, certify dynamic IO closure or wire paired callers;
 controlled Git/command scenarios do not qualify native products or transfers.
 
 [`RubyFactsAssembler`](Repository/RubyFactsAssembler.cs) joins supplied native
@@ -108,6 +110,27 @@ The shared core expands complete selected obligations and collects results.
 Bundle-only consumers remain separate for later actual Node composition. This
 controlled paired assembly neither collects native endpoints nor qualifies the
 complete Ruby caller.
+
+[`run_ruby_ci_group.py`](../../../../eng/scripts/run_ruby_ci_group.py) receives
+native scope/control artifacts, materializes both exact endpoints and transfers
+one preparation and paired plan into complete original-result collection.
+The paired readback retains both native fact endpoints once; Node planning can
+receive their typed contribution through its existing caller. An empty selection
+collects the original empty plan without product preparation. These caller seams
+have controlled, local Git and isolated native caller coverage. Root CI now
+also receives the complete candidate control artifact in `ruby-group`, then
+prepares, plans and executes the original Ruby group. Hosted qualification and
+atomic root/shadow cutover remain pending; existing automated Ruby callers are
+retained until that qualification completes.
+
+[`RubyNodeInputConsumers`](Repository/RubyNodeInputConsumers.cs) joins supplied
+Ruby facts to PNPM projects at the same Git endpoint. Native bundle directories
+identify their Node consumers; Bundler's resolved local producers carry source,
+version and quality inputs into existing Node operation inputs. The original
+paired Node planner retains removed-source reasons and PNPM reverse consumers.
+Ruby-owned bundles keep their ecosystem; an unmapped bundle-only consumer fails.
+Controlled planning coverage does not qualify actual caller preparation or native
+products. Caller transfer and atomic root/shadow cutover remain pending.
 
 [`RubyRSpecResult`](CI/RubyRSpecResult.cs) consumes complete public CLI JSON,
 retains original examples/messages and counts, and keeps them separate from native
@@ -124,6 +147,48 @@ with public JSON formatter/output options. It preserves the native command and
 original report separately, rejects absent or incomplete output and cleans its
 owned result file. Controlled tests cover this recipe; they do not qualify the
 complete product or caller.
+
+[`RubyGroupReader`](Repository/RubyGroupReader.cs) binds exact prepared endpoints
+and transferred scope to one native paired selection, retaining the original
+candidate sources, bundles and release units for execution. Other retained jobs
+can establish non-Ruby responsibility; their declarations cannot suppress actual
+Ruby input consumption. Controlled collection/transfer tests do not qualify
+native tool preparation, product execution or the complete hosted caller.
+
+[`RubyGroupPreparation`](Repository/RubyGroupPreparation.cs) prepares the candidate
+control manifest's NBGV tool through native .NET installation and gives both
+committed endpoints separate disposable home, gem, bundle and query state. It
+binds the exact Git/scope inputs before installation, prepares source version
+inputs before frozen Bundler evaluation and returns the existing paired-reader
+request with original native commands. Caller-supplied tool paths and the probe
+version do not become another tool declaration. Controlled command/Git scenarios
+cover this boundary; actual dependencies and hosted caller qualification remain
+pending.
+
+[`RubyPackageExecution`](CI/RubyPackageExecution.cs) implements the adopted gem's
+native build, archive inspection and clean local installed-require checks against
+the original candidate plan. Source version projection remains native; RubyGems
+owns archive semantics and installation. It retains the original gem and actual
+commands/results, rejects missing or substituted outputs and skips consumers
+when prerequisites fail. Its clean consumer has separate GEM_HOME/GEM_PATH and
+no checkout Ruby load path. Controlled execution does not qualify the actual
+product or complete workflow transfer; caller integration remains pending.
+
+The `ci prepare-ruby-group`, `ci plan-ruby-group` and `ci run-ruby-group`
+commands transfer these existing preparation, paired selection and execution
+objects through the strict JSON interface. Execution exit status is collected
+against the original plan and actual results; a supplied success outcome cannot
+hide a missing required result. Controlled CLI transfer does not qualify actual
+native preparation, product execution or root/shadow caller cutover.
+
+[`RubyGroupExecution`](CI/RubyGroupExecution.cs) combines the original selected
+RSpec and gem obligations against exact prepared candidate facts. It binds the
+checkout and validates both finite recipes before execution, invokes whole-project
+RSpec with its original native bundle, and passes the unchanged gem checks to the
+package component. Independent failures remain visible; cancellation retains all
+original required keys. Empty selection performs no product preparation. Native
+RSpec reports and gem commands/outputs remain separate; complete hosted caller
+and actual product qualification remain pending.
 
 [`RubyPackageChecks`](Repository/RubyPackageChecks.cs) expands the existing
 `ruby/hcoona-release-smoke-ruby-v1` recipe from its actual release-unit declaration

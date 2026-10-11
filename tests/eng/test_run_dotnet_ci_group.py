@@ -77,10 +77,17 @@ def test_bootstrap_transfers_complete_native_default_output(
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
+    ruby_source = "src/private/app/workflow-delivery/Native/Ruby/facts.rb"
+    ruby = root / ruby_source
+    ruby.parent.mkdir(parents=True)
+    original_ruby = b"# Original Ruby control bytes\r\n"
+    ruby.write_bytes(original_ruby)
     hooks = tmp_path / "empty-hooks"
     hooks.mkdir()
     group.ci_scope.git(root, "init", "--quiet")
-    group.ci_scope.git(root, "-c", "core.autocrlf=false", "add", "--", source)
+    group.ci_scope.git(
+        root, "-c", "core.autocrlf=false", "add", "--", source, ruby_source
+    )
     group.ci_scope.git(
         root,
         "-c",
@@ -97,6 +104,7 @@ def test_bootstrap_transfers_complete_native_default_output(
         "Commit candidate control sources",
     )
     (root / source / "packages.py").write_bytes(b"# Dirty working copy\n")
+    ruby.write_bytes(b"# Dirty Ruby helper\n")
     untracked = root / source / "uv/target/local-build"
     untracked.parent.mkdir(parents=True)
     untracked.write_bytes(b"Untracked native build output")
@@ -105,6 +113,7 @@ def test_bootstrap_transfers_complete_native_default_output(
     )
     state = tmp_path / "state"
     actual = group.bootstrap(root, state)
+    assert (state / "transfer/ruby/facts.rb").read_bytes() == original_ruby
     assert actual == output / "WorkflowDelivery.dll"
     assert {
         path.relative_to(output) for path in output.rglob("*") if path.is_file()
@@ -147,6 +156,35 @@ def test_failed_python_control_archive_does_not_complete_bootstrap(
         group.bootstrap(root, state)
     assert captured.value is failure
     assert not (state / "control.json").exists()
+
+
+def test_failed_ruby_helper_transfer_cannot_complete_bootstrap(
+    tmp_path, monkeypatch
+):
+    """A missing committed Ruby helper prevents a completed control transfer."""
+    root = tmp_path / "root"
+    output = root / "output"
+    output.mkdir(parents=True)
+    application = output / "WorkflowDelivery.dll"
+    application.write_bytes(b"Native output")
+    log = tmp_path / "native.binlog"
+    log.write_bytes(b"Native log")
+    monkeypatch.setattr(group.node, "build", lambda *_: (log, application))
+    failure = subprocess.CalledProcessError(128, ["git", "show"])
+
+    def native(_root, _directory, label, *_args, **_options):
+        if label == "ruby-control":
+            raise failure
+        assert label == "python-control"
+        return ""
+
+    monkeypatch.setattr(group.node, "run", native)
+    state = tmp_path / "state"
+    with pytest.raises(subprocess.CalledProcessError) as captured:
+        group.bootstrap(root, state)
+    assert captured.value is failure
+    assert not (state / "control.json").exists()
+    assert not (state / "transfer/ruby/facts.rb").exists()
 
 
 @pytest.mark.parametrize("shared_endpoint", [False, True])

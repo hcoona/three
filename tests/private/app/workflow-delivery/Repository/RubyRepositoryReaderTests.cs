@@ -59,7 +59,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         Assert.AreEqual("node/Gemfile", Assert.ContainsSingle(result.Facts.Native.Graph.Bundles)
             .Gemfile);
         Assert.AreEqual("2.4.20", Assert.ContainsSingle(result.Bundles).BundlerVersion);
-        Assert.IsEmpty(result.Facts.OperationInputs);
+        Assert.IsTrue(result.Facts.OperationInputs.All(input => input.Consumers.Length == 0));
     }
 
     [TestMethod]
@@ -71,6 +71,8 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
         string name = adoption == "gem" ? "hcoona-release-smoke-ruby" : "asciidoctor-latexmath";
         string directory = "src/" + name;
+        foreach (string path in RubyRepositoryReader.CallerSources)
+            await repo.SetAsync(path, "original caller input");
         await repo.SetAsync(directory + "/" + name + ".gemspec", "original source");
         await repo.SetAsync(directory + "/version.json", "{\"version\":\"1.2\"}");
         await repo.SetAsync(directory + "/spec/check_spec.rb", "project test input");
@@ -122,6 +124,9 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         Assert.AreEqual(directory, owner.Directory);
         Assert.AreEqual("ruby:" + directory, owner.Id);
         Assert.IsTrue(owner.Checks.All(check => check.Required));
+        foreach (string path in RubyRepositoryReader.CallerSources)
+            Assert.AreEqual(owner.Id, Assert.ContainsSingle(result.Facts.OperationInputs
+                .Single(input => input.Path == path).Consumers));
         if (adoption == "rspec")
         {
             Assert.AreEqual(RubyProjectChecks.RSpec, Assert.ContainsSingle(owner.Checks).Key.Check);
@@ -133,7 +138,8 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
             Assert.AreEqual("native-smoke", owner.ReleaseUnit);
             Assert.IsTrue(owner.Checks.All(check => check.Package!.ExpectedVersion == "1.2.3"));
             Assert.AreEqual(owner.Id, Assert.ContainsSingle(
-                Assert.ContainsSingle(result.Facts.OperationInputs).Consumers));
+                result.Facts.OperationInputs.Single(input => input.Path ==
+                    directory + "/workflow-delivery.release-unit.yml").Consumers));
         }
     }
 

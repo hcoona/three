@@ -13,6 +13,11 @@ This is an operating handoff, not a second specification. The
 execution, transfer and outcome contracts. The HLD owns terminology and
 implementation order. The [implementation plan](./migration-strategy.md) identifies
 concrete callers, integration contracts and retirement dependencies.
+Root CI also contains the replacement native Ruby group for ordinary hosted
+qualification. It receives the exact scope and complete candidate control
+artifact, prepares native facts once and executes the original paired plan.
+Keep the existing root RSpec and Ruby shadow entry until its complete hosted
+transfer/execution/result qualification permits atomic fixture and caller cutover.
 Root CI owns the adopted Node fixture, selected retained Node matrix and
 [native .NET CI group](./migration-strategy.md#native-net-ci-group). Its existing
 Windows scope job consumes both .NET endpoint graphs, native event comparison and
@@ -139,9 +144,19 @@ and adopted checks with caller-prepared dependencies; controlled coverage does n
 qualify native products. Native bundle preparation uses original committed locks
 and frozen installation with caller-owned tools/state; source preparation ordering
 and actual dependency qualification remain caller responsibilities. Supported
-input-scope qualification and paired
-planning, adopted gem quality caller composition, selected project preparation, complete
-workflow execution, caller qualification and atomic cutover remain pending. Existing Ruby
+input-scope qualification and selected project preparation remain pending. The paired
+group reader binds prepared endpoints and transferred scope with controlled coverage. Adopted gem execution has
+controlled native-command coverage. Caller-owned native query preparation uses the
+candidate control NBGV pin, separates endpoint installation state and prepares
+source inputs before frozen Bundler evaluation; its coverage is controlled.
+Finite mixed RSpec/gem execution and prepare/plan/run CLI transfer have controlled
+original-plan and result coverage. Supplied same-endpoint Ruby bundle facts can
+join their actual PNPM consumers and feed paired Node impact selection; controlled
+coverage preserves source deletion reasons without adding dependency declarations.
+Finite caller transfer retains both Ruby fact endpoints once and supplies a typed
+Node contribution without native recollection. Actual product/consumer qualification and
+complete hosted workflow transfer, caller
+qualification and atomic cutover remain pending. Existing Ruby
 callers, manual Release and historical readers remain. These primitives authorize
 no publication or campaign continuation.
 
