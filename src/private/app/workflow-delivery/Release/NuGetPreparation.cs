@@ -162,7 +162,9 @@ internal static class NuGetPreparation
             "dotnet", checkout, ["msbuild", project, "-nologo", "-noAutoResponse",
                 "-target:" + targets, "-getTargetResult:" + targets,
                 "-getProperty:" + string.Join(',', DotNetPackageResults.NativeProperties),
-                "-getResultOutputFile:" + response, .. Dimensions, .. (extra ?? [])], 300,
+                "-getResultOutputFile:" + response, .. Dimensions,
+                "-property:PathMap=" + ProjectCollection.Escape(checkout + "=/_/"),
+                .. (extra ?? [])], 300,
             environment, false);
 
         async Task<Dictionary<string, string>> ProjectionAsync(string check, string target)

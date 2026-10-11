@@ -1545,7 +1545,9 @@ inspect native package and assembly metadata, and restore/build/invoke a fresh
 local consumer. Preparation retains every required phase's outcome, command
 termination and original file size/digest. Its consumer expectations omit physical
 checkout paths. Native NBGV caching and reproducibility remain authoritative;
-preparation injects neither frozen versions nor a witness. Controlled failures
+preparation maps the complete source checkout to a stable native compiler path,
+including generated sources and PDB paths. It injects neither frozen versions nor
+a witness. Controlled failures
 and isolated native preparation tests qualify this component only. No NuGet
 Release CLI, hosted caller, destination observation or publication is supplied.
 
