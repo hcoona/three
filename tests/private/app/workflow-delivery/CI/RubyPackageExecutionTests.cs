@@ -84,8 +84,8 @@ public sealed class RubyPackageExecutionTests(TestContext context)
         string path = input.RootElement.GetProperty("path").GetString()!;
         string operation = input.RootElement.GetProperty("operation").GetString()!;
         if (operation is "version" or "gemspec")
-            Assert.AreEqual(Path.Combine(request.Checkout, DirectoryName,
-                "hcoona-release-smoke-ruby.gemspec"), path);
+            Assert.AreEqual(Path.GetFullPath(Path.Combine(request.Checkout, DirectoryName,
+                "hcoona-release-smoke-ruby.gemspec")), Path.GetFullPath(path));
         if (operation == "version") return Answer(new { gemspec = path, raw = "1.2.3",
             version = "1.2.3", literal = "\"1.2.3\"" });
         var gem = new { name = "hcoona-release-smoke-ruby", version = "1.2.3", platform = "ruby",
