@@ -862,13 +862,24 @@ Attempt, Approval Bundle, Authorization and marker aggregates are unnecessary.
 
 Destination integrations implement concrete operations with the following contract:
 
-| Operation                  | Input                                                           | Output and responsibility                                                                                     |
-| -------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Resolve coordinate         | Selected destination and native package identity                | Physical registry, normalized package/version, expected file identities and supported mode                    |
-| Observe                    | Coordinate and qualified expected files                         | Per-file absent/exact/conflicting/unknown state, required native metadata, visibility and bounded diagnostics |
-| Determine supported writes | Current observation and expected set                            | Whether native creation or exact-subset completion is supported, and the ordered missing files                |
-| Upload once                | One still-needed qualified original and scoped write capability | Actual success/failure/ambiguous command response and available effect facts; no blind resend                 |
-| Verify                     | Expected complete state and applicable completion conditions    | Bounded authoritative observations and required checks, with remaining uncertainty                            |
+| Operation                  | Input                                                           | Output and responsibility                                                                                              |
+| -------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Resolve coordinate         | Selected destination and native package identity                | Physical registry, normalized package/version, expected file identities and supported mode                             |
+| Observe                    | Coordinate and qualified expected files                         | Per-file absent/exact/conflicting/unknown state, required native metadata, visibility and bounded diagnostics          |
+| Determine supported writes | Current observation and expected set                            | Whether native creation or exact-subset completion is supported, and the ordered missing files                         |
+| Invoke native upload once  | One still-needed qualified original and scoped write capability | Native command outcome and available effect facts, including built-in bounded transport retries; no application resend |
+| Verify                     | Expected complete state and applicable completion conditions    | Bounded authoritative observations and required checks, with remaining uncertainty                                     |
+
+“Once” counts application invocations, not HTTP attempts inside a supported native
+publisher. Delegate its built-in bounded transport retries rather than adding a
+custom retry handler or reconstructing the upload protocol. The destination must
+still supply the required active-coordinate non-overwrite semantics. A native
+retry may resend after an internally ambiguous response; the application must
+not claim transport-level exactly-once delivery. When the invocation returns
+failure or ambiguity, or is interrupted, stop subsequent application writes and
+use bounded reads. This does not remove fresh manual same-revision recovery.
+For NuGet, the [native publisher source basis](./research/nuget-native-publisher.md)
+records the accepted integration boundary and the selected client's behavior.
 
 Release owns permission to proceed and business completion. The adapter owns native
 identity, endpoint, response and partial-set semantics. Do not encode npm tags as
@@ -884,18 +895,18 @@ locks or extra probe records.
 
 ### Decision Table
 
-| Observed condition                                         | Write behavior                                                        | Business result                                                     |
-| ---------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Complete exact state and all required checks               | No write or write approval                                            | Satisfied by observed state                                         |
-| Absent required state with supported creation              | Native gate, fresh observation, then only still-needed writes         | Pending until complete required verification                        |
-| Verified exact subset supported by the destination         | Fresh request qualifies the complete set and plans only missing files | Pending until the full set is verified                              |
-| Conflicting bytes or unknown required state                | No mutation                                                           | Unsatisfied or unknown, with the blocking reason                    |
-| Acknowledged upload and complete required verification     | No additional write                                                   | Satisfied; preserve the acknowledged command result                 |
-| Failed/ambiguous upload and complete required verification | Stop mutation; bounded reads only                                     | Satisfied by observed state; preserve the command failure/ambiguity |
-| Failed/ambiguous upload with incomplete/uncertain state    | Stop mutation; bounded reads only                                     | Unsatisfied or unknown; fresh recovery may be possible              |
-| Interrupted publisher or missing result                    | No inferred retry                                                     | Effects may remain unknown unless native facts establish non-start  |
+| Observed condition                                                    | Write behavior                                                        | Business result                                                     |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Complete exact state and all required checks                          | No write or write approval                                            | Satisfied by observed state                                         |
+| Absent required state with supported creation                         | Native gate, fresh observation, then only still-needed writes         | Pending until complete required verification                        |
+| Verified exact subset supported by the destination                    | Fresh request qualifies the complete set and plans only missing files | Pending until the full set is verified                              |
+| Conflicting bytes or unknown required state                           | No mutation                                                           | Unsatisfied or unknown, with the blocking reason                    |
+| Acknowledged upload and complete required verification                | No additional write                                                   | Satisfied; preserve the acknowledged command result                 |
+| Failed/ambiguous native invocation and complete required verification | Stop application mutation; bounded reads only                         | Satisfied by observed state; preserve the command failure/ambiguity |
+| Failed/ambiguous native invocation with incomplete/uncertain state    | Stop application mutation; bounded reads only                         | Unsatisfied or unknown; fresh recovery may be possible              |
+| Interrupted publisher or missing result                               | No inferred retry                                                     | Effects may remain unknown unless native facts establish non-start  |
 
-For Python, ambiguity after wheel upload stops the write sequence even if a later
+For Python, a failed or ambiguous wheel invocation stops the write sequence even if a later
 read confirms the wheel. It does not authorize uploading sdist in that same
 sequence. If the complete intended set is independently verified, the active
 request can be satisfied; otherwise a fresh request can consider supported
