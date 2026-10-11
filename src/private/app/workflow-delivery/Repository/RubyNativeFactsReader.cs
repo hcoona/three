@@ -12,6 +12,10 @@ internal sealed record RubyBundleSpecification(RubyGemFacts Gem, RubyNativeSourc
 internal sealed record RubyBundleFacts(string Gemfile, string Lockfile, string BundlerVersion,
     string[] Gemfiles, string[] DirectDependencies, RubyBundleSpecification[] Specifications);
 internal sealed record RubyArchiveFacts(string Archive, RubyGemFacts Gem, string[] Contents);
+internal sealed record RubyBundleContext(string Gemfile, string Lockfile,
+    string BundlerVersion, string LockedBundlerVersion);
+internal sealed record RubyVersionProjection(string Gemspec, string Raw, string Version,
+    string Literal);
 
 // RubyGems/Bundler own semantics. This reader binds and preserves their structured answers.
 internal static class RubyNativeFactsReader
@@ -23,6 +27,28 @@ internal static class RubyNativeFactsReader
     internal static RubyArchiveFacts ParseArchive(string text, string expectedArchive) =>
         Read<RubyArchiveFacts>(text, value => new(Bind(value, "archive", expectedArchive),
             Gem(value), Strings(value, "contents")));
+
+    internal static RubyBundleContext ParseContext(string text, string expectedGemfile,
+        string expectedBundlerVersion) => Read<RubyBundleContext>(text, value =>
+        {
+            string version = Text(value.GetProperty("bundler_version"));
+            if (version != expectedBundlerVersion)
+                throw new InvalidDataException("Native Bundler probe differs from the request.");
+            return new(Bind(value, "gemfile", expectedGemfile),
+                Absolute(Text(value.GetProperty("lockfile"))), version,
+                Text(value.GetProperty("locked_bundler_version")));
+        });
+
+    internal static RubyVersionProjection ParseVersion(string text, string expectedGemspec,
+        string expectedRaw) => Read<RubyVersionProjection>(text, value =>
+        {
+            string raw = Text(value.GetProperty("raw"));
+            if (raw != expectedRaw)
+                throw new InvalidDataException(
+                    "Native Ruby projection has a different version input.");
+            return new(Bind(value, "gemspec", expectedGemspec), raw,
+                Text(value.GetProperty("version")), Text(value.GetProperty("literal")));
+        });
 
     internal static RubyBundleFacts ParseBundle(string text, string expectedGemfile,
         string expectedBundlerVersion) => Read<RubyBundleFacts>(text, value =>

@@ -35,6 +35,15 @@ internal sealed class RubyNativeFactCollector
         RubyNativeFactsReader.ParseArchive(await QueryAsync("archive", archive, null, token),
             archive);
 
+    internal async Task<RubyBundleContext> ContextAsync(string gemfile, string probeVersion,
+        CancellationToken token) => RubyNativeFactsReader.ParseContext(
+            await QueryAsync("bundle-context", gemfile, probeVersion, token),
+            gemfile, probeVersion);
+
+    internal async Task<RubyVersionProjection> VersionAsync(string gemspec, string raw,
+        CancellationToken token) => RubyNativeFactsReader.ParseVersion(
+            await QueryAsync("version", gemspec, null, token, raw), gemspec, raw);
+
     internal async Task<RubyBundleFacts> BundleAsync(string gemfile, string bundlerVersion,
         CancellationToken token)
     {
@@ -45,15 +54,15 @@ internal sealed class RubyNativeFactCollector
     }
 
     private async Task<string> QueryAsync(string operation, string path, string? bundlerVersion,
-        CancellationToken token)
+        CancellationToken token, string? raw = null)
     {
         token.ThrowIfCancellationRequested();
         Absolute(path);
         string request = Path.Combine(tools.Scratch, "ruby-facts-" + Guid.NewGuid() + ".json");
         try
         {
-            await File.WriteAllTextAsync(request, JsonSerializer.Serialize(new { operation, path }),
-                token);
+            await File.WriteAllTextAsync(request,
+                JsonSerializer.Serialize(new { operation, path, raw }), token);
             var environment = new Dictionary<string, string?>(tools.Environment,
                 StringComparer.Ordinal);
             string[] arguments;

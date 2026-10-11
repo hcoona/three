@@ -18,12 +18,20 @@ prepared project inputs. Path and active local Git answers retain native source
 locations; registry and runtime metadata dependencies are not repository owners.
 The helper does not parse Gemfiles/locks or resolve dependencies.
 
-[`RubyNativeFactsReader`](Repository/RubyNativeFactsReader.cs) consumes its three
-structured answers as separate source-gem, bundle and archive values. It binds
+[`RubyNativeFactsReader`](Repository/RubyNativeFactsReader.cs) consumes the
+structured source-gem, bundle and archive answers as separate values. It binds
 the requested paths and activated/locked Bundler version, preserving native
 Gemfile inputs, dependency requirements, content lists and source locations.
-Original local sources and installed directories remain distinct. Repository
-ownership, paired planning and product execution retain the pending boundary below.
+Original local sources and installed directories remain distinct.
+The separate lock-context answer reads Bundler's public locked metadata without
+executing the Gemfile. Its installed probe version and locked selected version
+remain distinct; it neither establishes frozen equivalence nor supplies resolved
+facts. Complete bundle collection still requires the actual locked library and
+frozen operation. The version answer preserves the supplied NBGV SemVer2, uses
+RubyGems for the existing metadata-stripping projection and Ruby for its source
+literal; missing native versions cannot become placeholders.
+Complete caller ownership, paired planning and product execution retain the
+pending boundary below.
 
 [`RubyNativeFactCollector`](Repository/RubyNativeFactCollector.cs) invokes that
 helper through the existing native process interface with caller-prepared tools,
@@ -37,8 +45,69 @@ native local source/gemspec coordinates to source producers and follows resolved
 runtime edges, including registry intermediates, for transitive impact. Bundle
 consumers retain their native Gemfile/lock inputs and local producers separately;
 a bundle-only consumer does not gain a Ruby package or check. Installed cache
-paths and matching registry names do not establish local ownership. Discovery,
-input-scope binding and paired planning remain pending.
+paths and matching registry names do not establish local ownership.
+
+[`RubyRepositoryInventory`](Repository/RubyRepositoryInventory.cs) discovers
+committed source gemspecs and Gemfile or `gems.rb` entry points without
+interpreting their declarations. It requires one native answer for every
+discovered entry point, including a source gemspec not loaded by its adjacent
+bundle. Multiple source gemspecs or competing bundle entry points in one directory
+remain unsupported rather than being selected by Workflow.
+
+[`RubyInputConsumers`](Repository/RubyInputConsumers.cs) binds supplied native
+answers to committed project inputs, native NBGV inputs and effective quality
+declarations. Project input scope includes tests outside package membership and
+uses the nearest nested source owner. Native evaluated Gemfile/lock inputs must
+be committed. Bundle-only consumers retain their original inputs and local
+producers separately for their actual ecosystem caller; they do not become Ruby
+check owners. Root source-gem ownership remains unsupported. These supplied-fact
+components do not establish arbitrary dynamic Ruby IO closure. The concrete
+collector still needs bounded project preparation, supported input-scope
+validation, paired selection and cross-group caller composition.
+
+[`RubySourceCollector`](Repository/RubySourceCollector.cs) queries prepared NBGV
+in each committed source project's original directory and collects evaluated
+source metadata. Its finite integrations are Latexmath's existing native NBGV
+gemspec and the smoke gem's generated native version source. The latter is
+materialized only in the caller-owned disposable checkout before evaluation;
+committed generated version inputs are rejected. Native name/version must match
+the supported integration's projection. This is metadata-query input preparation,
+not selected build/install/check preparation; it adds no provenance witness and
+does not establish arbitrary dynamic Ruby input closure. Controlled command/Git
+scenarios cover the composition, not actual product qualification. Complete
+paired collection, supported input-scope validation and caller ownership remain
+pending.
+
+[`RubyBundlePreparation`](Repository/RubyBundlePreparation.cs) installs Bundler
+through native gem commands, asks the probe library for each original lock's
+selected version and invokes that Bundler's frozen install. It requires the
+committed native lock and preserves actual preparation commands and failures in
+memory. The caller owns its tools, environment and disposable installation state;
+source metadata preparation must precede a bundle that loads generated source
+inputs. Empty bundle inventory installs nothing. Controlled preparation coverage
+does not qualify actual dependency installation or complete caller composition.
+
+[`RubyRepositoryReader`](Repository/RubyRepositoryReader.cs) composes actual native
+source and bundle collection for a caller-bound endpoint with prepared tools and
+dependencies. Bundler's native lock context selects the activated library; the
+full frozen answer remains required. Original source paths, native NBGV inputs,
+quality ancestors and actual adopted gem declarations remain distinct. Sources
+without quality adoption stay input-only producers. Supported adoption expands
+whole-project RSpec or the gem's complete distribution checks. This reader does
+not install dependencies, certify dynamic IO closure or wire paired callers;
+controlled Git/command scenarios do not qualify native products or transfers.
+
+[`RubyFactsAssembler`](Repository/RubyFactsAssembler.cs) joins supplied native
+producer relations across both committed endpoints before projecting actual
+quality owners. Input-only source gems remain dependency intermediaries, including
+cycles and removed producers. Selection reasons retain each initiating path and
+revision; source moves keep their separate coordinates. Nearest nested source
+ownership prevents implicit parent quality adoption. Unknown input scope fails
+in full mode too; a caller-certified empty operation input remains distinct.
+The shared core expands complete selected obligations and collects results.
+Bundle-only consumers remain separate for later actual Node composition. This
+controlled paired assembly neither collects native endpoints nor qualifies the
+complete Ruby caller.
 
 [`RubyRSpecResult`](CI/RubyRSpecResult.cs) consumes complete public CLI JSON,
 retains original examples/messages and counts, and keeps them separate from native
@@ -56,6 +125,15 @@ original report separately, rejects absent or incomplete output and cleans its
 owned result file. Controlled tests cover this recipe; they do not qualify the
 complete product or caller.
 
+[`RubyPackageChecks`](Repository/RubyPackageChecks.cs) expands the existing
+`ruby/hcoona-release-smoke-ruby-v1` recipe from its actual release-unit declaration
+and evaluated native source identity. Its required gem build, content inspection
+and clean installed require checks keep original output associations and explicit
+prerequisites. A Gemfile or spec directory is not a distribution prerequisite.
+This finite recipe currently accepts the adopted dependency-free, platform-neutral
+smoke gem; other product recipes require their own adaptation. Expansion is
+controlled contract behavior, not native package execution or caller adoption.
+
 The isolated native contract tests are a root pytest target:
 [`test_facts.py`](../../../../tests/private/app/workflow-delivery/Native/Ruby/test_facts.py).
 The Python CI caller prepares the two Bundler environments only when this target
@@ -69,7 +147,7 @@ it creates native-locked local fixtures and uses no personal Bundler configurati
 The RSpec scenarios use the prepared `2.4.20` environment with RSpec `3.13.6`.
 Their original public CLI outputs also supply the managed parser fixtures.
 
-These components do not yet implement paired Ruby planning, project preparation
+These components do not yet implement complete native paired Ruby planning, project preparation
 or complete workflow execution. Existing root/shadow Ruby callers,
 manual Release and historical evidence readers remain with their migration groups.
 The complete Latexmath suite still requires the existing runner's declared

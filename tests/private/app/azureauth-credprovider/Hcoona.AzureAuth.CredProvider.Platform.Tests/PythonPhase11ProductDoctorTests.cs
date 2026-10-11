@@ -176,7 +176,9 @@ public sealed class PythonPhase11ProductDoctorTests
             + Convert.ToBase64String(Encoding.UTF8.GetBytes(productProbeScript))
             + "'))";
         string pythonCommand = OperatingSystem.IsWindows() ? "python" : "python3";
-        ProcessResult result = await new SystemProcessRunner()
+        var milestones = new System.Collections.Concurrent.ConcurrentQueue<
+            SystemProcessRunner.ProcessMilestone>();
+        ProcessResult result = await new SystemProcessRunner(milestones.Enqueue)
             .RunAsync(
                 new ProcessStartSpec(
                     pythonCommand,
@@ -190,6 +192,15 @@ public sealed class PythonPhase11ProductDoctorTests
             $"The {pythonCommand} command is required for this integration test."
         );
 
+        Assert.True(
+            result.Status == ProcessExecutionStatus.NonZeroExit && result.HasExitCode,
+            $"Python harness status={result.Status}; termination={result.TerminationReason}; "
+                + $"hasExitCode={result.HasExitCode}; exit={result.ExitCode}; "
+                + "milestones="
+                + string.Join(", ", milestones.Select(milestone =>
+                    $"{milestone.Name}@{milestone.Elapsed.TotalMilliseconds:F0}ms"))
+                + $"; stdout={result.StandardOutput}; stderr={result.StandardError}"
+        );
         Assert.Equal(33, result.ExitCode);
         Assert.Equal(
             LoadFailureMarker + "\n",
