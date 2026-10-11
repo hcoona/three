@@ -22,6 +22,9 @@ public sealed class RubyGroupReaderTests(TestContext context)
         Assert.AreEqual(fixture.Request.Basis.Checkout.Reference, result.Plan.Comparison);
         Assert.AreEqual(RubyProjectChecks.RSpec, check.Work.Key.Check);
         Assert.AreEqual(result.Plan.Candidate, result.Candidate.Facts.Revision.Commit);
+        Assert.AreEqual(result.Plan.Comparison, result.Basis.Facts.Revision.Commit);
+        CollectionAssert.AreEqual(new[] { fixture.Request.Basis.Checkout.Reference,
+            fixture.Request.Candidate.Checkout.Reference }, fixture.Collected);
         Assert.AreEqual("asciidoctor-latexmath", Assert.ContainsSingle(result.Candidate.Sources)
             .Gem.Name);
         if (!full)

@@ -32,6 +32,34 @@ public sealed class RubyNativeFactCollectorTests
         NativeTermination.Exited, 0, value.ToJsonString(), "", 0, null);
 
     [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task NativeRequestsWorkWithReflectionDisabled()
+    {
+        const string marker = "WORKFLOW_RUBY_JSON_TEST_CHILD";
+        if (Environment.GetEnvironmentVariable(marker) == "1")
+        {
+            Assert.IsFalse(JsonSerializer.IsReflectionEnabledByDefault);
+            await SourceAndArchiveUseNativeAnswersBoundToRequestedPath(false);
+            await SourceAndArchiveUseNativeAnswersBoundToRequestedPath(true);
+            return;
+        }
+        string assembly = typeof(RubyNativeFactCollectorTests).Assembly.Location;
+        JsonNode configuration = JsonNode.Parse(await File.ReadAllTextAsync(
+            Path.ChangeExtension(assembly, ".runtimeconfig.json")))!;
+        configuration["runtimeOptions"]!["configProperties"]![
+            "System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault"] = false;
+        string runtime = Path.Combine(root, "reflection-disabled.runtimeconfig.json");
+        await File.WriteAllTextAsync(runtime, configuration.ToJsonString());
+        NativeCommandResult result = await NativeProcess.ExecuteAsync(new("dotnet", root,
+            ["exec", "--runtimeconfig", runtime, assembly, "--filter",
+                "FullyQualifiedName=WorkflowDelivery.Tests.Repository." +
+                "RubyNativeFactCollectorTests." + nameof(NativeRequestsWorkWithReflectionDisabled),
+                "--minimum-expected-tests", "1"], 45,
+            new Dictionary<string, string?> { [marker] = "1" }), CancellationToken.None);
+        Assert.IsTrue(result.Succeeded, result.Stdout + result.Stderr + result.Error);
+    }
+
+    [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
     public async Task SourceAndArchiveUseNativeAnswersBoundToRequestedPath(bool archive)

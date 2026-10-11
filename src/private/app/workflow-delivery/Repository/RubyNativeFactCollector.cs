@@ -5,6 +5,7 @@ namespace WorkflowDelivery.Repository;
 
 internal sealed record RubyFactTools(string Ruby, string Helper, string Scratch,
     IReadOnlyDictionary<string, string?> Environment, int DeadlineSeconds);
+internal sealed record RubyFactRequest(string Operation, string Path, string? Raw);
 
 // The caller prepares native tools. RubyGems/Bundler evaluate; the typed reader binds answers.
 internal sealed class RubyNativeFactCollector
@@ -62,7 +63,8 @@ internal sealed class RubyNativeFactCollector
         try
         {
             await File.WriteAllTextAsync(request,
-                JsonSerializer.Serialize(new { operation, path, raw }), token);
+                JsonSerializer.Serialize(new RubyFactRequest(operation, path, raw),
+                    TransferJson.Default.RubyFactRequest), token);
             var environment = new Dictionary<string, string?>(tools.Environment,
                 StringComparer.Ordinal);
             string[] arguments;

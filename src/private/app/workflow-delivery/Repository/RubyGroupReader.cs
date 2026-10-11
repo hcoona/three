@@ -7,7 +7,8 @@ internal sealed record RubyGroupEndpoint(MaterializedEndpoint Checkout,
     RubyRepositoryRequest Collection);
 internal sealed record RubyGroupRequest(RubyGroupEndpoint Basis, RubyGroupEndpoint Candidate,
     bool Full, string ScopePath);
-internal sealed record RubyGroupReadback(CiPlan Plan, RubyRevisionInputs Candidate);
+internal sealed record RubyGroupReadback(CiPlan Plan, RubyRevisionInputs Basis,
+    RubyRevisionInputs Candidate);
 
 // Native endpoint collection and one paired selection; the caller owns preparation.
 internal static class RubyGroupReader
@@ -53,7 +54,7 @@ internal static class RubyGroupReader
             throw new InvalidDataException("Ruby collection returned different endpoints.");
         RubyFactAssembly assembly = RubyFactsAssembler.Assemble(beforeFacts, afterFacts,
             comparison.ChangedPaths, request.Full);
-        return new(ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons), after);
+        return new(ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons), before, after);
     }
 
     private static RubyFactsEndpoint WithOtherResponsibilities(RubyFactsEndpoint inputs,

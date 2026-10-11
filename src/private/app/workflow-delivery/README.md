@@ -109,6 +109,15 @@ Bundle-only consumers remain separate for later actual Node composition. This
 controlled paired assembly neither collects native endpoints nor qualifies the
 complete Ruby caller.
 
+[`run_ruby_ci_group.py`](../../../../eng/scripts/run_ruby_ci_group.py) receives
+native scope/control artifacts, materializes both exact endpoints and transfers
+one preparation and paired plan into complete original-result collection.
+The paired readback retains both native fact endpoints once; Node planning can
+receive their typed contribution through its existing caller. An empty selection
+collects the original empty plan without product preparation. These caller seams
+have controlled and local Git coverage; actual native preparation, product
+qualification and atomic hosted root/shadow cutover remain pending.
+
 [`RubyNodeInputConsumers`](Repository/RubyNodeInputConsumers.cs) joins supplied
 Ruby facts to PNPM projects at the same Git endpoint. Native bundle directories
 identify their Node consumers; Bundler's resolved local producers carry source,

@@ -106,6 +106,7 @@ internal static class RubyGroupPreparation
             environment["HOME"] = home;
             environment["USERPROFILE"] = home;
             environment["DOTNET_CLI_HOME"] = home;
+            environment["DOTNET_ROOT"] = Path.GetDirectoryName(request.Tools.Dotnet)!;
             environment["XDG_CONFIG_HOME"] = Path.Combine(home, "config");
             environment["XDG_CACHE_HOME"] = Path.Combine(home, "cache");
             environment["XDG_DATA_HOME"] = Path.Combine(home, "data");

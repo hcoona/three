@@ -275,7 +275,9 @@ def build(root: Path, directory: Path, name: str) -> tuple[Path, Path]:
     return log, path
 
 
-def execute(root: Path, source: Path, directory: Path) -> dict[str, Any]:
+def execute(
+    root: Path, source: Path, directory: Path, ruby_inputs: Path | None = None
+) -> dict[str, Any]:
     """Join native endpoint inputs and run the concrete adopted CI recipe."""
     root, source, directory = (
         root.resolve(),
@@ -356,6 +358,7 @@ def execute(root: Path, source: Path, directory: Path) -> dict[str, Any]:
     joined = directory / "scope-joined.json"
     write_json(joined, join_record_owners(root, scope, endpoints))
     request = directory / "planning-request.json"
+    ruby = None if ruby_inputs is None else read_json(ruby_inputs)
     write_json(
         request,
         {
@@ -371,6 +374,7 @@ def execute(root: Path, source: Path, directory: Path) -> dict[str, Any]:
             "scopePath": str(joined),
             "basisBuildLog": str(basis_log) if basis_log else None,
             "candidateBuildLog": str(candidate_log),
+            "ruby": ruby,
         },
     )
     for name, endpoint in endpoints.items():
@@ -644,6 +648,7 @@ def main() -> None:
     retained.add_argument("--directories", type=json.loads, required=True)
     retained.add_argument("--adopted-directory", required=True)
     adopted.add_argument("--scope-file", type=Path, required=True)
+    adopted.add_argument("--ruby-inputs", type=Path)
     adopted.add_argument("--artifact-metadata", type=Path, required=True)
     adopted.add_argument("--artifact-id", type=int, required=True)
     adopted.add_argument("--run-id", type=int, required=True)
@@ -663,7 +668,9 @@ def main() -> None:
         args.run_id,
         args.repository_id,
     )
-    execute(args.repository_root, args.scope_file, args.directory)
+    execute(
+        args.repository_root, args.scope_file, args.directory, args.ruby_inputs
+    )
 
 
 if __name__ == "__main__":

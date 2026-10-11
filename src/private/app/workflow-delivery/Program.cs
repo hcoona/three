@@ -314,6 +314,7 @@ internal static class Program
 [JsonSerializable(typeof(PythonGroupPreparationResult))]
 [JsonSerializable(typeof(PythonPreparationCommand[]))]
 [JsonSerializable(typeof(RubyGroupPreparationRequest))]
+[JsonSerializable(typeof(RubyFactRequest))]
 [JsonSerializable(typeof(RubyGroupPreparationResult))]
 [JsonSerializable(typeof(RubyGroupRequest))]
 [JsonSerializable(typeof(RubyGroupReadback))]

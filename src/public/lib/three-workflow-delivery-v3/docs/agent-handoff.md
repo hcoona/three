@@ -148,7 +148,8 @@ Finite mixed RSpec/gem execution and prepare/plan/run CLI transfer have controll
 original-plan and result coverage. Supplied same-endpoint Ruby bundle facts can
 join their actual PNPM consumers and feed paired Node impact selection; controlled
 coverage preserves source deletion reasons without adding dependency declarations.
-Actual product/consumer qualification and
+Finite caller transfer retains both Ruby fact endpoints once and supplies a typed
+Node contribution without native recollection. Actual product/consumer qualification and
 complete hosted workflow transfer, caller
 qualification and atomic cutover remain pending. Existing Ruby
 callers, manual Release and historical readers remain. These primitives authorize

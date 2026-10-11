@@ -1,5 +1,6 @@
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Repository;
+using System.Text.Json;
 
 namespace WorkflowDelivery.Tests.Repository;
 
@@ -11,6 +12,29 @@ public sealed class RubyNodeInputConsumersTests
     private const string Unrelated = "node/unrelated";
     private const string Producer = "ruby/native";
     private static readonly string[] Checks = ["node/project-build-v1", "node/project-test-v1"];
+
+    [TestMethod]
+    public async Task PairedCallerContributionSurvivesJsonWithoutLosingBasisConsumption()
+    {
+        (NodeRevisionInputs before, RubyFactsEndpoint rubyBefore) = Endpoint(NodeScenario.Basis);
+        (NodeRevisionInputs after, RubyFactsEndpoint rubyAfter) = Endpoint(NodeScenario.Candidate,
+            removed: true);
+        var request = new NodeGroupRequest(new(Path.GetFullPath("basis"), NodeScenario.Basis),
+            new(Path.GetFullPath("candidate"), NodeScenario.Candidate), false,
+            Path.GetFullPath("scope.json"), null, Path.GetFullPath("candidate.binlog"),
+            new(rubyBefore, rubyAfter));
+        NodeGroupRequest received = JsonSerializer.Deserialize(JsonSerializer.Serialize(request,
+            TransferJson.Default.NodeGroupRequest), TransferJson.Default.NodeGroupRequest)!;
+        (before, after) = NodeGroupReader.WithRubyInputs(before, after, received.Ruby!);
+        const string path = Producer + "/lib.rb";
+        NodeGroupPlan plan = await Plan(before, after, path);
+        Assert.HasCount(2, plan.Adopted.Checks);
+        var reason = new SelectionReason(path, NodeScenario.Basis, Consumer);
+        foreach (PlannedCheck check in plan.Adopted.Checks)
+            Assert.AreEqual(reason, Assert.ContainsSingle(check.Reasons));
+        Assert.AreEqual(reason, Assert.ContainsSingle(
+            Assert.ContainsSingle(plan.Retained).Reasons));
+    }
 
     [TestMethod]
     [DataRow("ruby/native/lib.rb")]

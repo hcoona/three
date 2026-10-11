@@ -220,6 +220,7 @@ def caller(tmp_path, monkeypatch):
                 str(directory / "basis.binlog") if state["basisOwner"] else None
             )
             assert group.read_json(Path(request["scopePath"])) == payload
+            assert request["ruby"] == state.get("ruby")
             return json.dumps(plan)
         if label.endswith("-execution"):
             assert required is False
@@ -263,6 +264,28 @@ def caller(tmp_path, monkeypatch):
         calls,
         builds,
         executions,
+    )
+
+
+def test_group_transfers_original_ruby_endpoints_without_native_recollection(
+    caller,
+):
+    """Node planning receives existing Ruby facts for both exact endpoints."""
+    root, received, directory, _, plan, state, calls, _, _ = caller
+    contribution = {
+        "basis": {"revision": {"commit": BEFORE}, "native": "original"},
+        "candidate": {"revision": {"commit": AFTER}, "native": "original"},
+    }
+    path = directory.parent / "ruby-inputs.json"
+    group.write_json(path, contribution)
+    state["ruby"] = contribution
+    assert group.execute(root, received, directory, path) == plan
+    assert (
+        group.read_json(directory / "planning-request.json")["ruby"]
+        == contribution
+    )
+    assert not any(
+        "ruby" in label or "bundle" in label for _, label, _, _ in calls
     )
 
 

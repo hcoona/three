@@ -58,7 +58,7 @@ public sealed class RubyCliTests
             {
                 Assert.AreEqual(prepared.Candidate.Collection.Nbgv,
                     received.Candidate.Collection.Nbgv);
-                return Task.FromResult(new RubyGroupReadback(Plan(), Inputs()));
+                return Task.FromResult(new RubyGroupReadback(Plan(), Inputs(), Inputs()));
             });
         Assert.AreEqual(0, exit, error.ToString());
         RubyGroupReadback readback = JsonSerializer.Deserialize(output.ToString(),

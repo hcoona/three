@@ -44,6 +44,8 @@ public sealed class RubyGroupPreparationTests(TestContext context)
         Assert.IsFalse(command.InheritEnvironment);
         Assert.StartsWith(request.Scratch, command.Environment!["HOME"]!);
         Assert.AreEqual(command.Environment["HOME"], command.Environment["DOTNET_CLI_HOME"]);
+        Assert.AreEqual(Path.GetDirectoryName(request.Tools.Dotnet),
+            command.Environment["DOTNET_ROOT"]);
         if (command.Executable == request.Tools.Dotnet)
         {
             Assert.Contains("3.10.94", command.Arguments);
