@@ -136,7 +136,10 @@ Native lock-context/version query answers, finite source-query input preparation
 the adopted smoke gem's complete check expansion and supplied paired producer-to-owner
 assembly are implemented. The endpoint reader composes native source/bundle collection
 and adopted checks with caller-prepared dependencies; controlled coverage does not
-qualify native products. Supported input-scope qualification and paired
+qualify native products. Native bundle preparation uses original committed locks
+and frozen installation with caller-owned tools/state; source preparation ordering
+and actual dependency qualification remain caller responsibilities. Supported
+input-scope qualification and paired
 planning, adopted gem quality caller composition, selected project preparation, complete
 workflow execution, caller qualification and atomic cutover remain pending. Existing Ruby
 callers, manual Release and historical readers remain. These primitives authorize

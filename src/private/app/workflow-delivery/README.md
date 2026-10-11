@@ -78,6 +78,15 @@ scenarios cover the composition, not actual product qualification. Complete
 paired collection, supported input-scope validation and caller ownership remain
 pending.
 
+[`RubyBundlePreparation`](Repository/RubyBundlePreparation.cs) installs Bundler
+through native gem commands, asks the probe library for each original lock's
+selected version and invokes that Bundler's frozen install. It requires the
+committed native lock and preserves actual preparation commands and failures in
+memory. The caller owns its tools, environment and disposable installation state;
+source metadata preparation must precede a bundle that loads generated source
+inputs. Empty bundle inventory installs nothing. Controlled preparation coverage
+does not qualify actual dependency installation or complete caller composition.
+
 [`RubyRepositoryReader`](Repository/RubyRepositoryReader.cs) composes actual native
 source and bundle collection for a caller-bound endpoint with prepared tools and
 dependencies. Bundler's native lock context selects the activated library; the
