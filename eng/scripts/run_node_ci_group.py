@@ -649,6 +649,8 @@ def main() -> None:
     retained.add_argument("--adopted-directory", required=True)
     adopted.add_argument("--scope-file", type=Path, required=True)
     adopted.add_argument("--ruby-inputs", type=Path)
+    adopted.add_argument("--ruby-artifact-metadata", type=Path)
+    adopted.add_argument("--ruby-artifact-id", type=int)
     adopted.add_argument("--artifact-metadata", type=Path, required=True)
     adopted.add_argument("--artifact-id", type=int, required=True)
     adopted.add_argument("--run-id", type=int, required=True)
@@ -668,6 +670,25 @@ def main() -> None:
         args.run_id,
         args.repository_id,
     )
+    if (
+        args.ruby_artifact_metadata is not None
+        or args.ruby_artifact_id is not None
+    ):
+        if (
+            args.ruby_inputs is None
+            or args.ruby_artifact_metadata is None
+            or args.ruby_artifact_id is None
+        ):
+            parser.error(
+                "Ruby artifact receipt requires original facts, metadata and ID"
+            )
+        validate_scope_artifact(
+            read_json(args.ruby_artifact_metadata),
+            args.ruby_artifact_id,
+            args.run_id,
+            args.repository_id,
+            name="ruby-node-inputs",
+        )
     execute(
         args.repository_root, args.scope_file, args.directory, args.ruby_inputs
     )

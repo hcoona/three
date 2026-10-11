@@ -1531,7 +1531,10 @@ def test_ruby_catalog_build_binds_one_original_and_two_required_checks() -> (
             (),
         ),
     )
-    product_root = REPO_ROOT / "src/public/lib/hcoona-release-smoke-ruby"
+    product_root = REPO_ROOT / (
+        "tests/private/app/workflow-delivery/fixtures/products/"
+        "hcoona-release-smoke-ruby"
+    )
     descriptor = load_release_unit(
         product_root / "workflow-delivery.release-unit.yml"
     )
@@ -1632,7 +1635,10 @@ def test_first_slice_authoring_accepts_ruby_at_registered_target_path(
 ) -> None:
     """Discover Ruby from immutable authoring while preserving npm selection."""
     repo, _ = _first_slice_target(tmp_path)
-    ruby_path = Path("src/public/lib/hcoona-release-smoke-ruby")
+    ruby_path = Path(
+        "tests/private/app/workflow-delivery/fixtures/products/"
+        "hcoona-release-smoke-ruby"
+    )
     descriptor_path = ruby_path / "workflow-delivery.release-unit.yml"
     ruby_descriptor = (REPO_ROOT / descriptor_path).read_text(encoding="utf-8")
     _write(repo / descriptor_path, ruby_descriptor)
@@ -1692,12 +1698,19 @@ def test_first_slice_authoring_rejects_ruby_sibling_or_identity_substitution(
     repo, _ = _first_slice_target(tmp_path)
     descriptor_path = (
         REPO_ROOT
-        / "src/public/lib/hcoona-release-smoke-ruby"
+        / (
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-ruby"
+        )
         / "workflow-delivery.release-unit.yml"
     )
     document = _yaml_document(descriptor_path.read_text(encoding="utf-8"))
     document["release-unit"] = unit
-    product = repo / "src/public/lib" / directory
+    product = (
+        repo
+        / "tests/private/app/workflow-delivery/fixtures/products"
+        / directory
+    )
     _write_yaml(product / "workflow-delivery.release-unit.yml", document)
     _write(
         product / "hcoona-release-smoke-ruby.gemspec", "# Never evaluated.\n"

@@ -51,14 +51,25 @@ from ..ruby_integration_fixtures import (
             ),
             False,
         ),
-        (("src/public/lib/hcoona-release-smoke-ruby/deleted.rb",), True),
+        (
+            (
+                (
+                    "tests/private/app/workflow-delivery/fixtures/products/"
+                    "hcoona-release-smoke-ruby/deleted.rb"
+                ),
+            ),
+            True,
+        ),
         (("src/public/lib/three-workflow-delivery-v3/src/control.py",), True),
         ((".github/workflows/workflow-delivery-v3-ruby-smoke.yml",), True),
         (("mise.lock",), True),
         (
             (
                 "docs/README.md",
-                "src/public/lib/hcoona-release-smoke-ruby/deleted.rb",
+                (
+                    "tests/private/app/workflow-delivery/fixtures/products/"
+                    "hcoona-release-smoke-ruby/deleted.rb"
+                ),
             ),
             True,
         ),
@@ -82,7 +93,7 @@ def test_ruby_ci_selects_own_inputs_before_repository_fallback(paths, selected):
         "/absolute",
         "a\\b",
         "a/./b",
-        "src/public/lib/hcoona-release-smoke-ruby-other/lib.rb",
+        ("src/public/lib/hcoona-release-smoke-ruby-other/lib.rb"),
     ],
 )
 def test_ruby_ci_unknown_or_malformed_paths_block_even_when_affected(path):

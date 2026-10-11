@@ -17,7 +17,7 @@ now provides CI selection/results, GitHub event comparison, native Node fact ass
 control-test resource inputs and the adopted check executor. Its
 [native Ruby primitives](../../../private/app/workflow-delivery/README.md#native-ruby-primitives)
 provide RubyGems/Bundler fact serialization and public RSpec JSON result handling;
-complete Ruby planning, execution and caller cutover remain pending. Root CI consumes the
+native Ruby planning, execution and original-result collection now run in root CI. Root CI consumes the
 native comparison and resource response before selecting its existing .NET test
 owner. The [bounded Linux observation](docs/research/node-ci-native-execution.md)
 qualifies that fixture's native composition and effects. The adopted Node group
@@ -382,7 +382,7 @@ runtime work and does not renew either spent npm dispatch authorization.
 The [Ruby requirements](./docs/requirements.md#ruby-smoke-slice) and
 [brief LLD](./docs/hcoona-release-smoke-ruby-lld.md) define the selected
 GitHub Packages then RubyGems.org journey. [Migration gates](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#ruby-smoke-delivery)
-separate implementation and actual acceptance. The [Ruby smoke](../hcoona-release-smoke-ruby/README.md)
+separate implementation and actual acceptance. The [Ruby smoke](../../../../tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby/README.md)
 has exact-target native Provider facts, a closed Model, frozen original-gem Build,
 immutable Artifact records and separate CI and Release qualification. Both
 qualification paths require original-package inspection and an isolated native
@@ -395,10 +395,12 @@ replay verifies its safe route and response joins without retaining signed URLs.
 rechecks missing state before its marker, uploads once and admits visibility
 reads only after HTTP 200. Strict replay joins this evidence to the shared
 scalar Attempt Outcome; zero-action completion requires a fresh exact proof.
-The [Ruby CI entry](../../../../.github/workflows/workflow-delivery-v3-ruby-ci.yml)
-connects exact-target discovery, compilation, original-gem Build and independent
-CI content/consumer qualification. Its CLI accepts only CI purposes; immutable
-upload/readback passes explicit current-run artifact references between jobs.
+Root [CI](../../../../.github/workflows/ci.yml) owns native Ruby planning,
+complete selected RSpec/gem checks and original result collection. The former
+Ruby shadow PR workflow is retired. Node planning receives both original Ruby
+fact endpoints from the same run, and selected Hexo checks prepare their native
+locked bundle. Manual Release retains its existing record actions and contracts
+until its own caller transition.
 The GitHub control adapter checks protected Governance, native approval and the
 fixed RubyGems OIDC audience. Separate manual
 [bootstrap](../../../../.github/workflows/workflow-delivery-v3-ruby-bootstrap.yml)

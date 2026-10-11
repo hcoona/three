@@ -467,7 +467,14 @@ def test_current_smoke_gemspec_separates_native_and_legacy_package_membership(
 ):
     """Native source/build need no witness; old package closure still does."""
     source = tmp_path / "source"
-    shutil.copytree(ROOT / "src/public/lib/hcoona-release-smoke-ruby", source)
+    shutil.copytree(
+        ROOT
+        / (
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-ruby"
+        ),
+        source,
+    )
     version = source / "lib/hcoona_release_smoke_ruby/version.rb"
     version.parent.mkdir(parents=True, exist_ok=True)
     version.write_text(
@@ -579,7 +586,14 @@ def test_smoke_membership_uses_gemspec_directory_not_caller(
 ):
     """Absolute native loading ignores a caller-local witness decoy."""
     source = tmp_path / "source"
-    shutil.copytree(ROOT / "src/public/lib/hcoona-release-smoke-ruby", source)
+    shutil.copytree(
+        ROOT
+        / (
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-ruby"
+        ),
+        source,
+    )
     version = source / "lib/hcoona_release_smoke_ruby/version.rb"
     version.parent.mkdir(parents=True, exist_ok=True)
     version.write_text(

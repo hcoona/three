@@ -27,6 +27,93 @@ finally:
 BEFORE, AFTER = "a" * 40, "b" * 40
 
 
+@pytest.mark.parametrize(
+    "receipt",
+    [
+        "local",
+        "exact",
+        "id",
+        "expired",
+        "run",
+        "repository",
+        "missing-id",
+        "missing-metadata",
+        "missing-facts",
+    ],
+)
+def test_ruby_receipt_blocks_substitution_before_product_execution(
+    tmp_path, monkeypatch, receipt
+):
+    """Require the original hosted artifact before product execution."""
+    scope = tmp_path / "scope.json"
+    metadata = tmp_path / "scope-metadata.json"
+    facts = tmp_path / "node-inputs.json"
+    ruby_metadata = tmp_path / "ruby-metadata.json"
+    group.write_json(scope, {"base": BEFORE, "candidate": AFTER})
+    group.write_json(facts, {"basis": BEFORE, "candidate": AFTER})
+    group.write_json(
+        metadata,
+        {
+            "id": 17,
+            "name": "ci-scope",
+            "expired": False,
+            "workflow_run": {"id": 23, "repository_id": 41},
+        },
+    )
+    native = {
+        "id": 19,
+        "name": "ruby-node-inputs",
+        "expired": False,
+        "workflow_run": {"id": 23, "repository_id": 41},
+    }
+    if receipt == "id":
+        native["id"] = 20
+    elif receipt == "expired":
+        native["expired"] = True
+    elif receipt in {"run", "repository"}:
+        native["workflow_run"][
+            "id" if receipt == "run" else "repository_id"
+        ] += 1
+    group.write_json(ruby_metadata, native)
+    args = [
+        "caller",
+        "group",
+        "--repository-root",
+        str(tmp_path),
+        "--directory",
+        str(tmp_path / "execution"),
+        "--scope-file",
+        str(scope),
+        "--artifact-metadata",
+        str(metadata),
+        "--artifact-id",
+        "17",
+        "--run-id",
+        "23",
+        "--repository-id",
+        "41",
+    ]
+    if receipt != "missing-facts":
+        args.extend(("--ruby-inputs", str(facts)))
+    if receipt not in {"local", "missing-metadata"}:
+        args.extend(("--ruby-artifact-metadata", str(ruby_metadata)))
+    if receipt not in {"local", "missing-id"}:
+        args.extend(("--ruby-artifact-id", "19"))
+    monkeypatch.setattr(group.sys, "argv", args)
+    executions = []
+    monkeypatch.setattr(
+        group, "execute", lambda *values: executions.append(values)
+    )
+    if receipt in {"local", "exact"}:
+        group.main()
+        assert executions == [(tmp_path, scope, tmp_path / "execution", facts)]
+    else:
+        with pytest.raises((ValueError, SystemExit)):
+            group.main()
+        assert executions == []
+    assert not (tmp_path / "execution").exists()
+
+
 def test_artifact_uses_exact_native_run_and_repository():
     """Artifact uses exact native run and repository."""
     group.validate_scope_artifact(

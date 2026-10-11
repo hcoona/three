@@ -105,6 +105,24 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
     if key == "validation":
         assert step["if"] in {"always()", "cancelled()"}
         assert not step.get("continue-on-error", False)
+    elif key == "ruby-group" and step["name"] in {
+        "Install system dependencies",
+        "Ensure fd is available",
+    }:
+        assert step["if"] == (
+            "success() && steps.plan.outputs.selected == 'true'"
+        )
+        assert not step.get("continue-on-error", False)
+    elif (
+        key == "node-tests"
+        and step["name"] == "Prepare selected Hexo native bundle"
+    ):
+        assert step["if"] == (
+            "success() && !cancelled() && steps.scope.outputs.run == 'true' && "
+            "contains(fromJSON(needs.node-group.outputs.retained_directories), "
+            "'src/public/lib/hexo-renderer-asciidoc')"
+        )
+        assert not step.get("continue-on-error", False)
     elif (key == "scope" and step["name"] == "Setup basis resource SDK") or (
         key == "python-tests"
         and step["name"] == "Setup candidate NBGV and control SDK"
@@ -333,6 +351,8 @@ def test_required_general_ci_checks_remain_eligible(
             assert job["needs"] == (
                 ["conformance", "scholarly-tests", "nuget-reproducibility"]
                 if key == "validation"
+                else ["scope", "ruby-group"]
+                if key == "node-group"
                 else ["scope", "node-group"]
                 if key == "node-tests"
                 else "scope"
@@ -511,7 +531,7 @@ def test_node_group_requires_received_immutable_scope(
 ):
     """Group always plans and consumes the actual scope upload identity."""
     job = workflow["jobs"]["node-group"]
-    assert job["needs"] == "scope"
+    assert job["needs"] == ["scope", "ruby-group"]
     assert job["if"] == "${{ !cancelled() }}"
     assert "needs.scope.outputs.node" not in json.dumps(job)
     upload = _action(workflow["jobs"]["scope"], "actions/upload-artifact")
@@ -519,7 +539,11 @@ def test_node_group_requires_received_immutable_scope(
     assert workflow["jobs"]["scope"]["outputs"]["artifact_id"] == (
         "${{ steps.retain.outputs.artifact-id }}"
     )
-    download = _action(job, "actions/download-artifact")
+    download = next(
+        step
+        for step in job["steps"]
+        if step.get("with", {}).get("path") == "artifacts/node-scope"
+    )
     assert download["with"]["artifact-ids"] == (
         "${{ needs.scope.outputs.artifact_id }}"
     )
@@ -531,6 +555,8 @@ def test_node_group_requires_received_immutable_scope(
         bindings={
             "needs.scope.result": selection,
             "needs.scope.outputs.artifact_id": artifact,
+            "needs.ruby-group.result": "success",
+            "needs.ruby-group.outputs.node_artifact_id": "1154",
         },
         workflow=workflow,
         job=job,
@@ -543,8 +569,8 @@ def test_node_group_requires_received_immutable_scope(
     token_steps = [
         step for step in job["steps"] if "GH_TOKEN" in step.get("env", {})
     ]
-    assert len(token_steps) == 1
-    assert "gh api" in token_steps[0]["run"]
+    assert len(token_steps) == 2  # noqa: PLR2004 - Two native receipts.
+    assert all("gh api" in step["run"] for step in token_steps)
 
 
 def test_python_check_has_consumed_toolchain_prerequisites(workflow):
@@ -1224,7 +1250,7 @@ def test_native_ruby_scope_and_control_guard(  # noqa: PLR0913, PLR0917 - Guard 
 
 
 def test_native_ruby_transfers_original_control_and_complete_plan(workflow):
-    """One receiver and plan feed execution; legacy CI awaits qualification."""
+    """One receiver and plan feed the sole native Ruby PR owner."""
     job = workflow["jobs"]["ruby-group"]
     assert job["needs"] == "scope"
     assert job["permissions"] == {"contents": "read", "actions": "read"}
@@ -1246,7 +1272,10 @@ def test_native_ruby_transfers_original_control_and_complete_plan(workflow):
     assert " execute " in entry[2]
     assert all('"$RUNNER_TEMP/ruby-group"' in run for run in entry)
     assert all("continue-on-error" not in step for step in job["steps"])
-    assert "ruby-tests" in workflow["jobs"]
+    assert "ruby-tests" not in workflow["jobs"]
+    assert not (
+        REPO_ROOT / ".github/workflows/workflow-delivery-v3-ruby-ci.yml"
+    ).exists()
 
 
 def test_native_ruby_retains_failed_outcomes_and_uses_native_runtime(workflow):
@@ -1256,9 +1285,92 @@ def test_native_ruby_retains_failed_outcomes_and_uses_native_runtime(workflow):
     assert ruby["with"] == {"ruby-version": "4.0.7"}
     python = _action(job, "actions/setup-python")
     assert python["with"] == {"python-version-file": ".python-version"}
-    retained = _action(job, "actions/upload-artifact")
+    retained = next(
+        step
+        for step in job["steps"]
+        if step.get("with", {}).get("name") == "ruby-group-results"
+    )
     assert retained["if"] == "always()"
     assert retained["with"]["name"] == "ruby-group-results"
     assert "*.json" in retained["with"]["path"]
     assert "*.stderr" in retained["with"]["path"]
     assert job["steps"][-1]["if"] == "cancelled()"
+
+
+@pytest.mark.parametrize(
+    ("ruby_result", "artifact", "succeeds"),
+    [
+        ("success", "19", True),
+        ("failure", "19", False),
+        ("skipped", "19", False),
+        ("success", "", False),
+        ("success", "0", False),
+    ],
+)
+def test_node_receives_only_successful_original_ruby_artifact(
+    workflow, tmp_path, ruby_result, artifact, succeeds
+):
+    """Require original Ruby facts before Node product execution."""
+    ruby = workflow["jobs"]["ruby-group"]
+    node = workflow["jobs"]["node-group"]
+    transfer = next(
+        step for step in ruby["steps"] if step.get("id") == "node-facts"
+    )
+    assert transfer.get("if", "success()") == "success()"
+    assert transfer["with"] == {
+        "name": "ruby-node-inputs",
+        "path": "${{ runner.temp }}/ruby-group/node-inputs.json",
+        "if-no-files-found": "error",
+        "retention-days": 7,
+    }
+    assert (
+        ruby["outputs"]["node_artifact_id"]
+        == "${{ steps.node-facts.outputs.artifact-id }}"
+    )
+    receive = next(
+        step
+        for step in node["steps"]
+        if step.get("with", {}).get("path") == "artifacts/node-ruby"
+    )
+    assert (
+        receive["with"]["artifact-ids"]
+        == "${{ needs.ruby-group.outputs.node_artifact_id }}"
+    )
+    assert "name" not in receive["with"]
+    assert "pattern" not in receive["with"]
+    entry = next(
+        step["run"] for step in node["steps"] if step.get("id") == "execute"
+    )
+    assert "--ruby-inputs artifacts/node-ruby/node-inputs.json" in entry
+    assert "--ruby-artifact-id" in entry
+    assert "--ruby-artifact-metadata" in entry
+    assert "run_ruby_ci_group.py" not in json.dumps(node)
+    result = run_step(
+        node["steps"][0],
+        cwd=tmp_path,
+        env={},
+        bindings={
+            "needs.scope.result": "success",
+            "needs.scope.outputs.artifact_id": "17",
+            "needs.ruby-group.result": ruby_result,
+            "needs.ruby-group.outputs.node_artifact_id": artifact,
+        },
+        workflow=workflow,
+        job=node,
+    )
+    assert (result.returncode == 0) is succeeds
+
+
+def test_retained_hexo_prepares_only_its_selected_native_bundle(workflow):
+    """Bundler owns the locked environment for selected Hexo checks."""
+    ruby = _action(workflow["jobs"]["node-tests"], "ruby/setup-ruby")
+    assert "steps.scope.outputs.run == 'true'" in ruby["if"]
+    assert (
+        "contains(fromJSON(needs.node-group.outputs.retained_directories), "
+        "'src/public/lib/hexo-renderer-asciidoc')" in ruby["if"]
+    )
+    assert ruby["with"] == {
+        "ruby-version": "4.0.7",
+        "working-directory": NODE_PACKAGE_DIR,
+        "bundler-cache": True,
+    }

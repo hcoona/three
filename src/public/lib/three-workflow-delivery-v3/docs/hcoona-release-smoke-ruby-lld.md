@@ -23,7 +23,8 @@ The owner delegated the complete journey; this document alone grants no effects.
 ## Smoke Product and Frozen Version
 
 The selected new product is `hcoona-release-smoke-ruby` under
-`src/public/lib/hcoona-release-smoke-ruby`. Its require path is
+`tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby`.
+Its require path is
 `hcoona_release_smoke_ruby`; `HcoonaReleaseSmokeRuby.project_id` returns the
 package name. `HcoonaReleaseSmokeRuby::VERSION` equals installed gem metadata.
 It has no runtime dependencies, executables, native extensions, signing keys or
