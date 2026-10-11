@@ -125,6 +125,13 @@ original report separately, rejects absent or incomplete output and cleans its
 owned result file. Controlled tests cover this recipe; they do not qualify the
 complete product or caller.
 
+[`RubyGroupReader`](Repository/RubyGroupReader.cs) binds exact prepared endpoints
+and transferred scope to one native paired selection, retaining the original
+candidate sources, bundles and release units for execution. Other retained jobs
+can establish non-Ruby responsibility; their declarations cannot suppress actual
+Ruby input consumption. Controlled collection/transfer tests do not qualify
+native tool preparation, product execution or the complete hosted caller.
+
 [`RubyPackageExecution`](CI/RubyPackageExecution.cs) implements the adopted gem's
 native build, archive inspection and clean local installed-require checks against
 the original candidate plan. Source version projection remains native; RubyGems
