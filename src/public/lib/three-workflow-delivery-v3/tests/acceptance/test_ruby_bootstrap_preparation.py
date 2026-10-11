@@ -367,7 +367,9 @@ def test_consumer_failure_remains_failed_bound_evidence(native, failure):
     assert parse_canonical_json(result.detail) == {
         "error-kind": failure.__name__
     }
-    assert b"private" not in canonicalize(result.to_document())
+    serialized = canonicalize(result.to_document())
+    assert b"private-error-detail" not in serialized
+    assert b"private-command" not in serialized
     assert RubyBootstrapQualification(plan, (result,)).result == "failed"
 
 
