@@ -144,7 +144,8 @@ group reader binds prepared endpoints and transferred scope with controlled cove
 controlled native-command coverage. Caller-owned native query preparation uses the
 candidate control NBGV pin, separates endpoint installation state and prepares
 source inputs before frozen Bundler evaluation; its coverage is controlled.
-Actual product/consumer qualification, complete workflow execution, caller
+Finite mixed RSpec/gem execution has controlled original-plan and result coverage.
+Actual product/consumer qualification, complete workflow transfer, caller
 qualification and atomic cutover remain pending. Existing Ruby
 callers, manual Release and historical readers remain. These primitives authorize
 no publication or campaign continuation.

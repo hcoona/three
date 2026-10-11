@@ -151,6 +151,15 @@ when prerequisites fail. Its clean consumer has separate GEM_HOME/GEM_PATH and
 no checkout Ruby load path. Controlled execution does not qualify the actual
 product or complete workflow transfer; caller integration remains pending.
 
+[`RubyGroupExecution`](CI/RubyGroupExecution.cs) combines the original selected
+RSpec and gem obligations against exact prepared candidate facts. It binds the
+checkout and validates both finite recipes before execution, invokes whole-project
+RSpec with its original native bundle, and passes the unchanged gem checks to the
+package component. Independent failures remain visible; cancellation retains all
+original required keys. Empty selection performs no product preparation. Native
+RSpec reports and gem commands/outputs remain separate; complete hosted caller
+and actual product qualification remain pending.
+
 [`RubyPackageChecks`](Repository/RubyPackageChecks.cs) expands the existing
 `ruby/hcoona-release-smoke-ruby-v1` recipe from its actual release-unit declaration
 and evaluated native source identity. Its required gem build, content inspection
