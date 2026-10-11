@@ -289,8 +289,11 @@ capability; live ref restrictions do not block it.
    current destination state and acquire supported short-lived write capability
    when needed. A changed plan cannot enlarge the reviewed request. Exact state
    can remove a now-unnecessary write; conflict/unknown state blocks it. Execute
-   supported operations in order; ambiguity stops further mutation. No separate
-   pre-mutation marker or marker readback is required.
+   supported native publisher invocations in order, once per still-needed file
+   or native operation. Delegate their built-in bounded transport retries;
+   failure, ambiguity or interruption of an invocation stops further
+   application mutation. One invocation does not promise one network write.
+   No separate pre-mutation marker or marker readback is required.
 6. While execution is active, perform bounded required verification. Report
    command outcomes, business completion and uncertainty separately. Package
    consumers run outside the privileged publisher context. Missing required

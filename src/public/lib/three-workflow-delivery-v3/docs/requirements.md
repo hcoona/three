@@ -303,9 +303,16 @@ application must not claim isolation beyond that scope.
   blocks mutation. A supported, explicitly verified exact subset can permit
   missing-file completion in a fresh request; this is not a general promise to
   repair partial releases. Never implement publication by active-version
-  overwrite, delete-and-recreate or blind mutation retries. Stop further mutation
-  after ambiguity; bounded read-only verification may still establish completion
-  under WD-REL-009. Incomplete or uncertain sets remain incomplete or unknown.
+  overwrite, delete-and-recreate or application-driven blind mutation retries.
+  Invoke the supported native publisher once for each still-needed file or
+  native operation. Its built-in, bounded transport retries are part of that
+  invocation and may resend a request after an internally ambiguous response;
+  they are delegated native behavior, not additional application attempts.
+  After the invocation reports failure or ambiguity, or is interrupted, stop
+  further application mutation; bounded read-only verification may still
+  establish completion under WD-REL-009. Do not restart the publisher
+  automatically or claim that one invocation guarantees one network write.
+  Incomplete or uncertain sets remain incomplete or unknown.
 - **WD-OPS-003:** Ordinary live recovery starts a new manual dispatch. GitHub job
   reruns are not a supported live recovery mechanism.
 - **WD-OPS-004:** A recovery dispatch targeting the original release uses its
