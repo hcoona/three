@@ -932,6 +932,124 @@ A fresh original-revision recovery rebuilds; it does not need a permanent ledger
 Keep registry/package serialization over required verification, including remote
 consumer jobs, with native concurrency and without automatic live cancellation.
 
+### Concrete NuGet Buddy Integration
+
+This contract selects the existing declared
+`Hcoona.ReleaseSmoke.GithubPackages` product, one `net10.0` `.nupkg`, no symbols
+or runtime dependencies, and GitHub Packages NuGet Buddy with development dry
+runs. It adds no product, destination or native-operation authorization.
+
+Preparation reads the exact committed release declaration, entry and quality
+selection through the existing Git materialization and declaration readers.
+Resolve the supported `dotnet/nuget-package-v1` build and primary package output;
+unknown quality recipes, variants or required tests remain unavailable. Use the
+normal selected SDK, locked restore, `Release`/`net10.0`/no RID and
+`ContinuousIntegrationBuild`. Native `GetBuildVersion`, Build and
+`Pack,_GetOutputItemsFromPack` use those same dimensions; compare their native
+package and assembly version projections. Native reproducibility configuration
+remains authoritative. Inject neither frozen versions nor a package witness.
+
+Share concrete archive inspection, original size/digest comparison and clean
+local consumption in `Ecosystems`; CI adapts its own plan/results to them.
+Release does not consume `CiPlan` or `CheckSpec`. Complete preparation requires
+native inputs/version, build, pack, contents, local consumer and original-byte
+results, plus any actual applicable declared tests. Retain command termination
+and missing/failed/cancelled results. Transfer native package properties needed
+by the consumer, omitting checkout-specific physical paths.
+
+Use the coherent official packaged NuGet 7.9.0 group: Commands, Protocol,
+Configuration, ProjectModel, Packaging, Versioning and Frameworks. Replace their
+SDK assembly references together; retain the selected SDK's Microsoft.Build
+references separately. Resolve Newtonsoft.Json through the official package
+graph rather than a second NBGV task-directory copy source; retain official NBGV.
+The [publisher source basis](./research/nuget-native-publisher.md#client-distribution-selection)
+explains this selection. Verify resolved package and output assembly identities,
+NBGV binding, native restore and consumer execution before accepting the
+implementation. Source inspection and installed package availability establish
+neither runtime compatibility nor live publication. Keep this client untrimmed
+and JIT; no AOT claim is made.
+
+Observe the selected `https://nuget.pkg.github.com/hcoona/index.json` through an
+owned standard HTTP handler with no automatic redirects, cookies, proxies or
+default credentials. Official `ServiceIndexResourceV3` interprets the service
+index; require unique HTTPS owner-origin PackageBaseAddress and PackagePublish
+endpoints without user information, query or fragment. Native NuGet identity
+comparison owns normalized package/version equality. Require the selected
+GitHub package's NuGet type, normalized name, public visibility and
+`hcoona/three` repository association, then complete native version metadata and
+original archive comparison. API inventory is supporting metadata with bounded
+pagination, not an independent admission authority.
+
+Bound each observation to 90 seconds and 80 HTTP reads, each body-inclusive read
+to 30 seconds, metadata bodies to 2 MiB and the original archive to 25 MiB. Permit
+one actual 301/302 archive redirect under the retained native storage contract:
+public HTTPS DNS destination without user information, fragment or a nondefault
+port, no credentials to storage and no further redirects. Signed URLs stay in
+memory; diagnostic output uses sanitized origin and location digest. Compare
+original size and digest. Exact, absent, conflicting and unknown observations
+use the same predicate before and after publication. Unknown control, identity
+or original bytes block writes; absence permits creation only with established
+native package control.
+
+The publisher constructs supported `HttpSource` and `HttpHandlerResourceV3`
+resources for the selected publish endpoint, using native `NullThrottle`. Invoke
+official `PackageUpdateResource.PushAsync` once for one qualified regular file,
+with no symbols, `allowSnupkg=false`, `skipDuplicate=false`,
+`noServiceEndpoint=true`, a 120-second native timeout and insecure connections
+disabled. Official NuGet owns multipart construction and its default bounded
+retries. Use sanitized typed failures and no credential-bearing native logger.
+The standard handler supplies Basic authentication only to the selected NuGet
+origin; the API-key delegate supplies the same scoped native capability.
+GitHub metadata API reads use Bearer authentication separately. Do not inherit
+credential plugins or prompts, override the testing retry handler, introduce an
+application resend loop or infer finer package isolation than the platform grants.
+
+Link parent cancellation to standard handler sends and body consumption, and
+await native invocation completion after cancellation. Stopping the await does
+not stop writes. Preserve actual timeout/cancellation/failure and uncertainty;
+process termination may interrupt the invocation, after which only bounded reads
+may run. Refresh observation immediately before publication: exact removes the
+write, absent permits it, conflict or unknown stops it. A handled invocation
+failure still permits bounded readback but no further application write.
+
+Separate remote consumption uses a no-write job, exact native VersionRange,
+`net10.0`, `UseAppHost=false`, no inherited Directory.Build/CPM/fallback or extra
+sources, fresh external package/HTTP/plugin/profile/CLI directories and an
+explicit cleared NuGet.Config mapping the selected package to the selected feed.
+Generate the native restore graph and use official RestoreRunner with
+DependencyGraphSpecRequestProvider and a supported source-local HTTP resource
+provider. The owned read handler supplies origin-bound Basic authentication,
+strips credentials at the one archive redirect and bounds downloads. NuGet owns
+dependency interpretation. Check actual LockFile identity, source, configuration,
+package folder and installed original size/digest, then native Build/GetTargetPath
+and the marker API invocation. No witness, started ledger or graph proof record
+is required.
+
+Required completion covers destination control, coordinate, original bytes and
+remote restore/build/invoke. Common result evaluation may report satisfaction
+after a handled upload error only with complete fresh observations and consumer
+results, preserving the command abnormality. Missing or malformed subject, file,
+digest or required result cannot satisfy the request.
+
+Switch the ordinary NuGet Buddy entry and reusable live caller atomically using
+four concrete jobs: prepare, observe, publish and verify/result. Use the existing
+Environment on the actual publisher and native package concurrency through
+verification. Bind transferred control, preparation and original artifacts to
+immutable artifact ID/digest, producer/run and source subject, with 45-day
+retention. Product code runs outside the publication context. Development Buddy
+refs and dry runs are supported; dry runs enter no write gate and make no live
+claim. Retained closed-campaign readers keep their actual historical consumers;
+there is no compatibility alias for old runtime schemas.
+
+Before implementation, accept this contract and its governing native-invocation
+boundary. Validate application journeys, authentication separation, cancellation,
+redirects, transfer/result completeness and official-client binding with controlled
+contract tests and real credential-free local native package/consumer tests.
+Complete affected managed/Python suites, HK, records, independent engineering/OCR
+and record/research reviews, and ordinary Windows CI before caller delivery.
+These checks do not prove new hosted Release/feed behavior or grant publication,
+campaign replay, configuration changes or postmerge tests.
+
 ## Behavior and Evidence Compatibility
 
 Tests move by retained behavior, not by old class or chronology-named file. Paths
