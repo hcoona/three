@@ -40,8 +40,13 @@ qualifies the adopted fixture composition on Linux. Root CI owns the adopted Nod
 group and selected retained Node matrix, with ordinary hosted transfer and
 execution qualification in [PR #1042](https://github.com/hcoona/three/pull/1042).
 The exclusive npm CI shadow is retired. Python caller wiring is implemented, with ordinary hosted qualification carried
-by [PR #1114](https://github.com/hcoona/three/pull/1114). Other quality presets, Ruby
-execution cutover and Release remain pending.
+by [PR #1114](https://github.com/hcoona/three/pull/1114). The atomic Ruby caller,
+fixture and original Ruby-to-Node facts transfer are qualified in
+[PR #1124](https://github.com/hcoona/three/pull/1124). The
+[Official npm dry-run interface](../../../../private/app/workflow-delivery/README.md#official-npm-dry-run)
+implements independent Release preparation, bounded public reads and hypothetical
+results; its simulation-only Python orchestration is retired. Ordinary privileged
+Release caller cutover and other quality presets remain pending.
 
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration

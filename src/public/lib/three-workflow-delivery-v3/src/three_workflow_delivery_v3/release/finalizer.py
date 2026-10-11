@@ -1,4 +1,4 @@
-"""Pure qualification, second-snapshot, and simulation finalization."""
+"""Retained qualification and native publication preparation."""
 
 from __future__ import annotations
 
@@ -6,20 +6,12 @@ from typing import TYPE_CHECKING
 
 from three_workflow_delivery_v3.canonical import canonical_sha256
 from three_workflow_delivery_v3.records.release import (
-    NPMJS_OBSERVATION_CONTRACT_ID,
-    NPMJS_OBSERVER_PRODUCER,
     DestinationOperationProfile,
-    ExternalPackageCoordinate,
-    HypotheticalAction,
     NugetDestinationOperationProfile,
     NugetPublicationAction,
     NugetReleaseArtifact,
     NugetRemoteStateObservation,
     ObligationDisposition,
-    ObservationRequestFacts,
-    ObservationResponseFacts,
-    ObservationValue,
-    ProjectionObservation,
     PublicationAction,
     PublicationObservationReference,
     PublicationSnapshot,
@@ -31,7 +23,6 @@ from three_workflow_delivery_v3.records.release import (
     RemoteStateObservation,
     SimulationBinding,
     SimulationIdentity,
-    SimulationOutcome,
     form_nuget_publication_action,
     form_publication_action,
 )
@@ -262,254 +253,6 @@ def desired_projection_state_digest(
     )
 
 
-def _admit_synthetic_projection_observation(
-    snapshot: QualificationSnapshot,
-    decision: QualificationDecision,
-    artifact: ReleaseArtifact,
-    *,
-    classification: str,
-    owner: str | None = None,
-) -> ProjectionObservation:
-    """Form test-only observations without remote interpretation."""
-    if not isinstance(snapshot.subject, SimulationBinding):
-        message = "Synthetic Projection Observation is Simulation-only"
-        raise TypeError(message)
-    if classification not in {"absent", "exact-satisfied"}:
-        message = "synthetic observation supports only absent or exact state"
-        raise ValueError(message)
-    _validate_decision(snapshot, decision)
-    admitted_artifacts = _validate_artifacts(snapshot, (artifact,))
-    if len(admitted_artifacts) != 1:
-        message = "synthetic observation requires the complete artifact"
-        raise ValueError(message)
-    projection = snapshot.destination_projections[0]
-    desired_digest = desired_projection_state_digest(
-        snapshot,
-        projection.projection_id,
-        artifact,
-    )
-    request_facts = ObservationRequestFacts(
-        qualification_snapshot_digest=snapshot.snapshot_digest,
-        projection_digest=projection.projection_digest,
-        desired_state_digest=desired_digest,
-        method="GET",
-        url=(f"synthetic://workflow-delivery-v3/{projection.projection_id}"),
-        headers=(),
-    )
-    request_digest = request_facts.request_digest
-    if classification == "absent":
-        value = ObservationValue(
-            classification="absent",
-            owner=None,
-            coordinate=None,
-            content_sha512=None,
-            witness_digest=None,
-            routing=(),
-        )
-    else:
-        if owner is None:
-            message = "synthetic exact observation requires an explicit owner"
-            raise ValueError(message)
-        coordinate = projection.coordinate
-        if type(coordinate) is not ExternalPackageCoordinate:
-            message = "Synthetic npm observation requires an npm coordinate"
-            raise TypeError(message)
-        value = ObservationValue(
-            classification="exact-satisfied",
-            owner=owner,
-            coordinate=coordinate,
-            content_sha512=artifact.content.content_sha512,
-            witness_digest=artifact.witness_digest,
-            routing=(),
-        )
-    response_facts = ObservationResponseFacts(
-        stage="synthetic",
-        requested_url=request_facts.url,
-        final_url=request_facts.url,
-        redirects=(),
-        status="synthetic",
-        selected_headers=(),
-        truncated=False,
-        body_sha256=None,
-    )
-    response_digest = canonical_sha256(
-        {
-            "schema": "workflow-delivery/v3/observation-response",
-            "request-digest": request_digest,
-            "facts": response_facts.to_document(),
-            "value": value.to_document(),
-        }
-    )
-    return ProjectionObservation(
-        subject=snapshot.subject.simulation,
-        purpose=snapshot.subject.purpose,
-        target=snapshot.target,
-        producer=NPMJS_OBSERVER_PRODUCER,
-        qualification_snapshot_digest=snapshot.snapshot_digest,
-        projection=projection,
-        desired_state_digest=desired_digest,
-        observation_contract_id=projection.observation_contract_id,
-        request_facts=request_facts,
-        request_digest=request_digest,
-        response_facts=response_facts,
-        response_digest=response_digest,
-        value=value,
-    )
-
-
-def _validate_observation_producer(
-    observation: ProjectionObservation,
-) -> None:
-    if (
-        observation.observation_contract_id == NPMJS_OBSERVATION_CONTRACT_ID
-        and observation.producer != NPMJS_OBSERVER_PRODUCER
-    ):
-        message = "npmjs Projection observation producer mismatch"
-        raise ValueError(message)
-
-
-def validate_projection_observations(  # noqa: C901
-    snapshot: QualificationSnapshot,
-    observations: tuple[ProjectionObservation, ...],
-    artifacts: tuple[ReleaseArtifact, ...],
-) -> tuple[ProjectionObservation, ...]:
-    """Admit Simulation observations against the frozen artifact basis."""
-    if not isinstance(snapshot.subject, SimulationBinding):
-        message = "Projection Observation admission is Simulation-only"
-        raise TypeError(message)
-    if type(observations) is not tuple:
-        message = "Projection observations must be an exact tuple"
-        raise TypeError(message)
-    artifact_by_output = {
-        artifact.output.output_id: artifact for artifact in artifacts
-    }
-    by_projection: dict[str, ProjectionObservation] = {}
-    for observation in observations:
-        if type(observation) is not ProjectionObservation:
-            message = "Projection observation has the wrong runtime type"
-            raise TypeError(message)
-        projection_id = observation.projection.projection_id
-        if projection_id in by_projection:
-            message = "Projection observation set contains duplicates"
-            raise ValueError(message)
-        planned = next(
-            (
-                projection
-                for projection in snapshot.destination_projections
-                if projection.projection_id == projection_id
-            ),
-            None,
-        )
-        if planned is None:
-            message = "Projection observation was not planned"
-            raise ValueError(message)
-        artifact = artifact_by_output.get(planned.output.output_id)
-        if artifact is None:
-            message = "Projection observation lacks its qualified artifact"
-            raise ValueError(message)
-        if (
-            observation.subject != snapshot.subject.simulation
-            or observation.purpose != snapshot.subject.purpose
-            or observation.target != snapshot.target
-            or observation.qualification_snapshot_digest
-            != snapshot.snapshot_digest
-            or observation.projection != planned
-            or observation.desired_state_digest
-            != desired_projection_state_digest(
-                snapshot,
-                projection_id,
-                artifact,
-            )
-        ):
-            message = "Projection observation binding mismatch"
-            raise ValueError(message)
-        _validate_observation_producer(observation)
-        if observation.value.classification == "exact-satisfied" and (
-            observation.value.coordinate != planned.coordinate
-            or observation.value.content_sha512
-            != artifact.content.content_sha512
-            or observation.value.witness_digest != artifact.witness_digest
-        ):
-            message = (
-                "exact Projection observation does not match desired artifact"
-            )
-            raise ValueError(message)
-        by_projection[projection_id] = observation
-    expected_ids = tuple(
-        projection.projection_id
-        for projection in snapshot.destination_projections
-    )
-    if set(by_projection) != set(expected_ids):
-        message = "exactly one Observation is required per projection"
-        raise ValueError(message)
-    return tuple(by_projection[projection_id] for projection_id in expected_ids)
-
-
-def materialize_hypothetical_actions(
-    snapshot: QualificationSnapshot,
-    decision: QualificationDecision,
-    observations: tuple[ProjectionObservation, ...],
-    artifacts: tuple[ReleaseArtifact, ...],
-) -> tuple[HypotheticalAction, ...]:
-    """Materialize absent-only hypothetical actions for a simulation."""
-    if not isinstance(snapshot.subject, SimulationBinding):
-        message = "Hypothetical actions require a Simulation Binding"
-        raise TypeError(message)
-    _validate_decision(snapshot, decision)
-    if decision.terminal_result != "success":
-        message = "Hypothetical actions require successful qualification"
-        raise ValueError(message)
-    admitted_artifacts = _validate_artifacts(snapshot, artifacts)
-    if len(admitted_artifacts) != len(snapshot.outputs):
-        message = "Hypothetical actions require complete artifacts"
-        raise ValueError(message)
-    _validate_decision_artifacts(decision, admitted_artifacts)
-    admitted_observations = validate_projection_observations(
-        snapshot,
-        observations,
-        admitted_artifacts,
-    )
-    artifact_by_output = {
-        artifact.output.output_id: artifact for artifact in admitted_artifacts
-    }
-    action_by_projection = {
-        action.projection_id: action for action in snapshot.potential_actions
-    }
-    actions: list[HypotheticalAction] = []
-    for observation in admitted_observations:
-        classification = observation.value.classification
-        if classification == "exact-satisfied":
-            continue
-        if classification != "absent":
-            message = (
-                "only absent or exact-satisfied observations permit "
-                "hypothetical action materialization"
-            )
-            raise ValueError(message)
-        projection = observation.projection
-        potential = action_by_projection[projection.projection_id]
-        artifact = artifact_by_output[projection.output.output_id]
-        key_digest = canonical_sha256(projection.coordinate.to_document())
-        actions.append(
-            HypotheticalAction(
-                simulation=snapshot.subject.simulation,
-                qualification_snapshot_digest=snapshot.snapshot_digest,
-                qualification_decision_digest=decision.decision_digest,
-                projection_id=projection.projection_id,
-                potential_action=potential,
-                artifact_digest=artifact.artifact_digest,
-                mutable_resource_keys=(
-                    (
-                        "external-package-coordinate:"
-                        f"{key_digest.removeprefix('sha256:')}"
-                    ),
-                ),
-                capability_requirements=potential.capability_requirements,
-            )
-        )
-    return tuple(actions)
-
-
 def materialize_publication_snapshot(  # noqa: C901, PLR0913
     snapshot: QualificationSnapshot,
     decision: QualificationDecision,
@@ -633,91 +376,8 @@ def materialize_publication_snapshot(  # noqa: C901, PLR0913
     )
 
 
-def finalize_simulation(
-    snapshot: QualificationSnapshot,
-    decision: QualificationDecision,
-    *,
-    observations: tuple[ProjectionObservation, ...] = (),
-    artifacts: tuple[ReleaseArtifact, ...] = (),
-) -> SimulationOutcome:
-    """Finalize simulation from admitted observation classifications."""
-    if not isinstance(snapshot.subject, SimulationBinding):
-        message = "Simulation Finalizer requires a Simulation Binding"
-        raise TypeError(message)
-    _validate_decision(snapshot, decision)
-    admitted_artifacts = _validate_artifacts(snapshot, artifacts)
-    complete_artifacts = len(admitted_artifacts) == len(snapshot.outputs)
-    if decision.terminal_result != "success":
-        return SimulationOutcome(
-            binding=snapshot.subject,
-            qualification_snapshot_digest=snapshot.snapshot_digest,
-            qualification_decision_digest=decision.decision_digest,
-            observation_digests=(),
-            hypothetical_actions=(),
-            terminal_result=decision.terminal_result,
-            failure_class=decision.failure_class,
-            next_action=decision.next_action,
-        )
-    if not complete_artifacts:
-        message = "successful simulation qualification lacks artifacts"
-        raise ValueError(message)
-    _validate_decision_artifacts(decision, admitted_artifacts)
-    admitted_observations = validate_projection_observations(
-        snapshot,
-        observations,
-        admitted_artifacts,
-    )
-    classifications = tuple(
-        observation.value.classification
-        for observation in admitted_observations
-    )
-    if all(
-        classification in {"absent", "exact-satisfied"}
-        for classification in classifications
-    ):
-        actions = materialize_hypothetical_actions(
-            snapshot,
-            decision,
-            admitted_observations,
-            admitted_artifacts,
-        )
-        terminal_result = "success"
-        failure_class = "none"
-        next_action = "none"
-    elif "conflicting" in classifications or "partial" in classifications:
-        actions = ()
-        terminal_result = "failure"
-        failure_class = "reconciliation-required"
-        next_action = "reconcile-destination-state"
-    elif "unprovable" in classifications:
-        actions = ()
-        terminal_result = "incomplete"
-        failure_class = "unprovable-observation"
-        next_action = "fix-observation-capability-and-rerun"
-    else:
-        actions = ()
-        terminal_result = "incomplete"
-        failure_class = "unknown-observation"
-        next_action = "rerun-simulation"
-    return SimulationOutcome(
-        binding=snapshot.subject,
-        qualification_snapshot_digest=snapshot.snapshot_digest,
-        qualification_decision_digest=decision.decision_digest,
-        observation_digests=tuple(
-            observation.observation_digest
-            for observation in admitted_observations
-        ),
-        hypothetical_actions=actions,
-        terminal_result=terminal_result,
-        failure_class=failure_class,
-        next_action=next_action,
-    )
-
-
 __all__ = [
     "desired_projection_state_digest",
     "finalize_qualification",
-    "finalize_simulation",
-    "materialize_hypothetical_actions",
     "materialize_publication_snapshot",
 ]

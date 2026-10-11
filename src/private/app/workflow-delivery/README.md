@@ -8,6 +8,39 @@ remain in their current namespace until the old Python application's last
 consumer retires. This entry describes the implemented interface, not a second
 architecture authority.
 
+## Official npm Dry Run
+
+`release prepare-npm <request.json>` independently qualifies one declared npm
+Release Unit from the exact selected checkout, without a CI plan. Its finite
+adopted recipe uses native NBGV, locked mise Node24/PNPM, build/test/pack,
+bounded content inspection and fresh offline installed API consumption. The
+caller prepares frozen script-disabled dependencies and builds the selected
+control before product execution. Preparation returns complete original file
+identities, required checks and actual native command outcomes; failure remains
+nonzero and never exposes a qualified file set.
+
+`release observe-npmjs <preparation.json> <original-directory>` checks the actual
+original files and reads exact public npmjs metadata and tarball bytes. Reads
+use one 60-second operation deadline, at most 20 seconds per request including
+bodies, five redirects, the public HTTPS origin only, identity encoding and
+bounded responses. Complete metadata 404 is absent; transient or incomplete
+reads are unknown; unsupported metadata/origins are unprovable; different
+complete bytes conflict. No authentication, tag projection or remote witness
+parsing participates in this caller.
+
+`release describe-npmjs <preparation.json> <observation.json>` reports whether
+the dry run can describe native creation or already exact state. It never
+reports live completion. The existing Official simulation workflow runs these
+commands without publication capability and retains original files/results for
+45 days. Its source contract and controlled tests establish application behavior;
+they do not establish a new live npmjs publication or hosted dispatch result.
+
+The common Release state component preserves raw upload outcomes separately
+from complete business state. Initially exact state and readback after an
+abnormal upload use the same completion predicate; abnormal uploads stop later
+writes. Ordinary destination callers still use their retained implementations
+until their complete permission, transfer and required-consumer cutover.
+
 ## Native Ruby Primitives
 
 [`Native/Ruby/facts.rb`](Native/Ruby/facts.rb) serializes evaluated RubyGems

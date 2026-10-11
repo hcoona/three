@@ -3,6 +3,8 @@ using System.Text.Json.Serialization;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
+using WorkflowDelivery.Release;
+using WorkflowDelivery.Destinations;
 
 namespace WorkflowDelivery;
 
@@ -34,6 +36,7 @@ internal static class Program
     {
         try
         {
+            if (ReleaseCli.Run(args, output) is { } releaseStatus) return releaseStatus;
             if (args is ["ci", "prepare-ruby-group", var rubyPreparationPath])
             {
                 RubyGroupPreparationRequest request = JsonSerializer.Deserialize(
@@ -239,6 +242,9 @@ internal static class Program
             }
             error.WriteLine(
                 "Usage: workflow-delivery ci plan <request.json>"
+                    + " | release prepare-npm <request.json>"
+                    + " | release observe-npmjs <preparation.json> <original-directory>"
+                    + " | release describe-npmjs <preparation.json> <observation.json>"
                     + " | ci comparison <event-name> <native-event.json> <tested-candidate>"
                     + " | ci control-inputs <request.json>"
                     + " | ci plan-node <request.json>"
@@ -274,7 +280,7 @@ internal static class Program
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or
             JsonException or ArgumentException or UnauthorizedAccessException or TimeoutException or
-            Nerdbank.GitVersioning.GitException)
+            Nerdbank.GitVersioning.GitException or KeyNotFoundException)
         {
             error.WriteLine(exception.Message);
             return 2;
@@ -285,13 +291,19 @@ internal static class Program
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     Converters = new[] { typeof(CheckStatusJsonConverter), typeof(NativeTerminationJsonConverter),
-        typeof(CheckOriginJsonConverter) },
+        typeof(CheckOriginJsonConverter), typeof(ReleaseCheckStatusJsonConverter),
+        typeof(ReleaseFileStateJsonConverter), typeof(ReleaseBusinessStateJsonConverter) },
     WriteIndented = true,
     RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true,
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
 )]
 [JsonSerializable(typeof(PlanRequest))]
+[JsonSerializable(typeof(NpmPreparationRequest))]
+[JsonSerializable(typeof(NpmPreparationResult))]
+[JsonSerializable(typeof(NpmjsObservationResult))]
+[JsonSerializable(typeof(ReleaseDryRun))]
+[JsonSerializable(typeof(ReleaseOutcome))]
 [JsonSerializable(typeof(CiComparison))]
 [JsonSerializable(typeof(ControlTestInputRequest))]
 [JsonSerializable(typeof(ControlTestInputResponse))]
@@ -338,3 +350,12 @@ internal sealed class NativeTerminationJsonConverter()
 
 internal sealed class CheckOriginJsonConverter()
     : JsonStringEnumConverter<CheckOrigin>(allowIntegerValues: false);
+
+internal sealed class ReleaseCheckStatusJsonConverter()
+    : JsonStringEnumConverter<ReleaseCheckStatus>(allowIntegerValues: false);
+
+internal sealed class ReleaseFileStateJsonConverter()
+    : JsonStringEnumConverter<ReleaseFileState>(allowIntegerValues: false);
+
+internal sealed class ReleaseBusinessStateJsonConverter()
+    : JsonStringEnumConverter<ReleaseBusinessState>(allowIntegerValues: false);

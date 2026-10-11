@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+using WorkflowDelivery.Ecosystems;
 using System.Text;
 using System.Text.Json;
 using WorkflowDelivery.Platform;
@@ -27,7 +27,6 @@ internal sealed record NodeRunResult(
 internal static class NodeExecution
 {
     private const string Preset = "node/hcoona-release-smoke-npm-v1";
-    private const string PackageName = "@hcoona/hcoona-release-smoke-npm";
     private const string Build = "node/project-build-v1";
     private const string Test = "node/project-test-v1";
     private const string Pack = "node/npm-artifact-v1";
@@ -98,17 +97,12 @@ internal static class NodeExecution
             await CompleteAsync(check, async () =>
             {
                 Directory.CreateDirectory(directory);
-                CheckStatus status = await CommandAsync(check, new("pnpm", checkout,
-                    ["--dir", Path.Combine(checkout, package.Directory), "pack", "--out", archive],
-                    300));
+                CheckStatus status = await CommandAsync(check,
+                    NpmPackageOperations.Pack(checkout, package.Directory, archive));
                 if (status != CheckStatus.Passed)
                     return status;
-                NodePackageArchive.RequireRegularFile(archive);
-                using var file = File.OpenRead(archive);
-                long size = file.Length;
-                if (size is <= 0 or > NodePackageArchive.CompressedLimit)
-                    throw new InvalidDataException("Native npm output exceeds its size bound.");
-                string digest = Convert.ToHexStringLower(await SHA256.HashDataAsync(file, token));
+                (long size, string digest) = await NpmPackageOperations.OriginalAsync(archive,
+                    NodePackageArchive.CompressedLimit, token);
                 PackageOutput output = package.Outputs.Single();
                 outputs.Add(new(package.Unit, package.Build, output.Id, output.Role, output.Kind,
                     archive, size, digest));
@@ -125,40 +119,18 @@ internal static class NodeExecution
                 string archive = Path.Combine(directory, "package.tgz");
                 string metadata = Path.Combine(directory, check.Key.Check == Contents
                     ? "contents-metadata" : "consumer-metadata");
-                Directory.CreateDirectory(metadata);
-                await NodePackageArchive.ReadAsync(archive, metadata, token);
-                string metadataAuth = Path.Combine(metadata, "auth.npmrc");
-                await File.WriteAllTextAsync(metadataAuth, "", token);
-                NativeCommandResult value = await ObserveAsync(check, new("pnpm", metadata,
-                    ["--dir", metadata, "--ignore-workspace", "--npmrc-auth-file", metadataAuth,
-                        "pkg", "get", "--json", "name", "version",
-                        "type", "main", "dependencies", "optionalDependencies", "peerDependencies",
-                        "peerDependenciesMeta", "bundledDependencies", "bundleDependencies",
-                        "devDependencies", "scripts", "engines.runtime", "gypfile"], 30));
+                NativeCommandResult value = await ObserveAsync(check,
+                    await NpmPackageOperations.MetadataAsync(archive, metadata, token));
                 if (!value.Succeeded)
                     return Status(value);
-                ValidateMetadata(value.Stdout, check.Package!.ExpectedVersion);
+                AdoptedNpmPackage.ValidateMetadata(value.Stdout, check.Package!.ExpectedVersion);
                 if (check.Key.Check == Contents)
                     return CheckStatus.Passed;
-                string consumer = Path.Combine(directory, "consumer");
-                string store = Path.Combine(directory, "store");
-                string state = Path.Combine(directory, "state");
-                string config = Path.Combine(directory, "config");
-                foreach (string path in new[] { consumer, store, state, config })
-                    Directory.CreateDirectory(path);
-                string auth = Path.Combine(config, "auth.npmrc");
-                await File.WriteAllTextAsync(auth, "", token);
-                CheckStatus installed = await CommandAsync(check, new("pnpm", consumer,
-                    ["--dir", consumer, "--ignore-workspace", "--store-dir", store,
-                        "--state-dir", state, "--npmrc-auth-file", auth, "install", archive,
-                        "--offline", "--ignore-scripts"], 300));
+                CheckStatus installed = await CommandAsync(check,
+                    await NpmPackageOperations.InstallAsync(archive, directory, token));
                 if (installed != CheckStatus.Passed)
                     return installed;
-                const string assertion = "import { strict as assert } from 'node:assert';"
-                    + "import { smokeMessage } from '@hcoona/hcoona-release-smoke-npm';"
-                    + "assert.equal(smokeMessage(), 'hcoona-release-smoke-npm');";
-                return await CommandAsync(check, new("node", consumer,
-                    ["--input-type=module", "--eval", assertion], 30));
+                return await CommandAsync(check, NpmPackageOperations.Import(directory));
             });
         }
         return new(plan.Candidate, selected.Checks.Select(item => results[item.Work.Key]).ToArray(),
@@ -279,8 +251,11 @@ internal static class NodeExecution
                     throw new InvalidDataException(
                         "Incomplete or conflicting Node package checks.");
         }
-        return plan with { Checks = plan.Checks.Where(item =>
-            item.Work.Key.Variant == runtime).ToArray() };
+        return plan with
+        {
+            Checks = plan.Checks.Where(item =>
+            item.Work.Key.Variant == runtime).ToArray()
+        };
     }
 
     private static bool IsVersion(string value) =>
@@ -297,54 +272,6 @@ internal static class NodeExecution
         if (!result.Succeeded || !IsVersion(value))
             throw new InvalidDataException("Unavailable native runtime version: " + tool);
         return value;
-    }
-
-    private static void ValidateMetadata(string text, string version)
-    {
-        using JsonDocument document = JsonDocument.Parse(text);
-        JsonElement metadata = document.RootElement;
-        if (metadata.ValueKind != JsonValueKind.Object ||
-            metadata.EnumerateObject().Select(field => field.Name).Distinct(StringComparer.Ordinal)
-                .Count() != metadata.EnumerateObject().Count())
-            throw new InvalidDataException("Native packed metadata must be an unambiguous object.");
-        Require("name", PackageName);
-        Require("version", version);
-        Require("type", "module");
-        Require("main", "./dist/index.js");
-        foreach (string field in new[] { "dependencies", "optionalDependencies", "peerDependencies",
-            "peerDependenciesMeta" })
-            if (metadata.TryGetProperty(field, out JsonElement value) &&
-                (value.ValueKind != JsonValueKind.Object || value.EnumerateObject().Any()))
-                throw new InvalidDataException(
-                    "Unsupported installed npm dependency shape: " + field);
-        foreach (string field in new[] { "bundledDependencies", "bundleDependencies" })
-            if (metadata.TryGetProperty(field, out JsonElement value) &&
-                value.ValueKind != JsonValueKind.False &&
-                (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() != 0))
-                throw new InvalidDataException("Unsupported bundled npm dependency shape.");
-        if (metadata.TryGetProperty("devDependencies", out JsonElement development) &&
-            development.ValueKind != JsonValueKind.Object)
-            throw new InvalidDataException("Unsupported npm development dependency metadata.");
-        if (metadata.TryGetProperty("engines.runtime", out _) ||
-            (metadata.TryGetProperty("gypfile", out JsonElement gypfile) &&
-                gypfile.ValueKind != JsonValueKind.False))
-            throw new InvalidDataException("Unsupported npm runtime/native-build metadata.");
-        if (metadata.TryGetProperty("scripts", out JsonElement scripts))
-        {
-            if (scripts.ValueKind != JsonValueKind.Object)
-                throw new InvalidDataException("Unsupported packed npm script metadata.");
-            foreach (string script in new[] { "preinstall", "install", "postinstall" })
-                if (scripts.TryGetProperty(script, out _))
-                    throw new InvalidDataException(
-                        "Unsupported installed npm lifecycle: " + script);
-        }
-
-        void Require(string field, string expected)
-        {
-            if (!metadata.TryGetProperty(field, out JsonElement value) ||
-                value.ValueKind != JsonValueKind.String || value.GetString() != expected)
-                throw new InvalidDataException("Unexpected native packed npm " + field + ".");
-        }
     }
 
     private static string Absolute(string path)

@@ -1,3 +1,4 @@
+using WorkflowDelivery.Ecosystems;
 using System.Formats.Tar;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;

@@ -1,7 +1,7 @@
 using System.Formats.Tar;
 using System.IO.Compression;
 
-namespace WorkflowDelivery.CI;
+namespace WorkflowDelivery.Ecosystems;
 
 // Inspect required members without extracting archive-controlled paths. Native PNPM
 // remains responsible for installing the original archive and package-format semantics.

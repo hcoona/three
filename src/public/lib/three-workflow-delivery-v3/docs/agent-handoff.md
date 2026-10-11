@@ -13,8 +13,15 @@ This is an operating handoff, not a second specification. The
 execution, transfer and outcome contracts. The HLD owns terminology and
 implementation order. The [implementation plan](./migration-strategy.md) identifies
 concrete callers, integration contracts and retirement dependencies.
+The [Official npm dry-run interface](../../../../private/app/workflow-delivery/README.md#official-npm-dry-run)
+implements complete preparation independent of CI, original-file validation,
+bounded public npmjs observation and hypothetical result evaluation. The existing
+simulation workflow uses the selected source/control revision without a write
+gate. Its Python-only simulation entrypoints and HTTP/transport modules are
+retired; shared native Buddy behavior remains with its actual live consumers.
+Controlled tests do not establish a manual dispatch or new live acceptance.
 Root CI owns the native Ruby group, qualified in ordinary
-[PR #1123](https://github.com/hcoona/three/pull/1123) CI. It receives the exact scope
+[PR #1124](https://github.com/hcoona/three/pull/1124) CI. It receives the exact scope
 and complete candidate control artifact, prepares native facts once and executes
 the original paired plan. The duplicate root RSpec job and Ruby shadow PR entry
 are retired with the fixture relocation. Node receives both original Ruby fact

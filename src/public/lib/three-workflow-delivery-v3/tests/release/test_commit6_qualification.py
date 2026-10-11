@@ -45,10 +45,7 @@ from three_workflow_delivery_v3.records.release_transport import (
     release_record_from_document,
 )
 from three_workflow_delivery_v3.release.finalizer import (
-    _admit_synthetic_projection_observation,
     finalize_qualification,
-    finalize_simulation,
-    materialize_hypothetical_actions,
     materialize_publication_snapshot,
 )
 from three_workflow_delivery_v3.release.qualification import (
@@ -367,85 +364,6 @@ def test_cross_purpose_and_prior_attempt_evidence_are_rejected(
     live_evidence = replace(evidence, subject=live_attempt, run_attempt=None)
     with pytest.raises(ValueError, match="current Snapshot"):
         admit_evidence_for_snapshot(scenario.snapshot, live_evidence)
-
-
-def test_synthetic_absent_and_exact_observations_plan_actions_only(
-    qualified_simulation,
-) -> None:
-    scenario = qualified_simulation
-    absent = _admit_synthetic_projection_observation(
-        scenario.snapshot,
-        scenario.decision,
-        scenario.artifact,
-        classification="absent",
-    )
-    assert absent.producer == "observe-npmjs"
-    absent_actions = materialize_hypothetical_actions(
-        scenario.snapshot,
-        scenario.decision,
-        (absent,),
-        (scenario.artifact,),
-    )
-    assert len(absent_actions) == 1
-    assert (
-        absent_actions[0]
-        .mutable_resource_keys[0]
-        .startswith("external-package-coordinate:")
-    )
-    assert absent_actions[0].capability_requirements == (
-        "npmjs/trusted-publishing-oidc-v1",
-    )
-
-    exact = _admit_synthetic_projection_observation(
-        scenario.snapshot,
-        scenario.decision,
-        scenario.artifact,
-        classification="exact-satisfied",
-        owner="hcoona",
-    )
-    exact_actions = materialize_hypothetical_actions(
-        scenario.snapshot,
-        scenario.decision,
-        (exact,),
-        (scenario.artifact,),
-    )
-    assert exact_actions == ()
-
-    substituted_value = replace(
-        exact.value,
-        content_sha512="sha512:" + ("c" * 128),
-    )
-    substituted_exact = replace(
-        exact,
-        value=substituted_value,
-        response_digest=canonical_sha256(
-            {
-                "schema": "workflow-delivery/v3/observation-response",
-                "request-digest": exact.request_digest,
-                "facts": exact.response_facts.to_document(),
-                "value": substituted_value.to_document(),
-            }
-        ),
-    )
-    with pytest.raises(ValueError, match="does not match desired artifact"):
-        materialize_hypothetical_actions(
-            scenario.snapshot,
-            scenario.decision,
-            (substituted_exact,),
-            (scenario.artifact,),
-        )
-
-
-def test_successful_simulation_requires_observation_for_each_projection(
-    qualified_simulation,
-) -> None:
-    scenario = qualified_simulation
-    with pytest.raises(ValueError, match="exactly one Observation"):
-        finalize_simulation(
-            scenario.snapshot,
-            scenario.decision,
-            artifacts=(scenario.artifact,),
-        )
 
 
 def _live_publication_context(scenario):
@@ -889,32 +807,6 @@ def test_publication_action_rejects_substituted_concrete_bindings(
             ),
             projection=projection,
             artifact=artifact,
-        )
-
-
-def test_failed_decision_cannot_materialize_hypothetical_actions(
-    qualified_simulation,
-) -> None:
-    scenario = qualified_simulation
-    failed = replace(
-        scenario.decision,
-        terminal_result="failure",
-        failure_class="quality-failure",
-        next_action="fix-quality-failure-and-rerun",
-    )
-    observation = _admit_synthetic_projection_observation(
-        scenario.snapshot,
-        scenario.decision,
-        scenario.artifact,
-        classification="absent",
-    )
-
-    with pytest.raises(ValueError, match="successful qualification"):
-        materialize_hypothetical_actions(
-            scenario.snapshot,
-            failed,
-            (observation,),
-            (scenario.artifact,),
         )
 
 

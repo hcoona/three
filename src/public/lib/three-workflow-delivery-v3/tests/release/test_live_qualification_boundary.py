@@ -37,11 +37,11 @@ from three_workflow_delivery_v3.records.release_transport import (
     ReleaseAdmissionBindings,
     release_record_from_document,
 )
+from three_workflow_delivery_v3.release.adapter_context import (
+    release_adapter_context_from_bytes,
+)
 from three_workflow_delivery_v3.release.planner import (
     plan_live_qualification,
-)
-from three_workflow_delivery_v3.release.simulation import (
-    release_adapter_context_from_bytes,
 )
 from three_workflow_delivery_v3.release.workflow import (
     node_build_request,
