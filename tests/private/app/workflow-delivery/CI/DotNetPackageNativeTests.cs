@@ -5,6 +5,7 @@ using System.Xml.Linq;
 using NuGet.Packaging;
 using NuGet.ProjectModel;
 using NuGet.Versioning;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;

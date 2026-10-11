@@ -1057,6 +1057,12 @@ fixed required phases are native Pack/output items, NuGet/.NET content inspectio
 and a fresh local native restore/build/marker consumer. Results retain each
 prerequisite and the complete original archive's unit/build/output, path, size
 and SHA-256. NuGet owns identities, version ranges, assets and installed paths.
+The concrete archive inspector, local consumer and MSBuild result projection
+live in `Ecosystems`; they consume no CI plan or check specification. CI retains
+its orchestration and quality selection. The control and tests use the coherent
+official NuGet 7.9.0 package group, with package-resolved Newtonsoft.Json and
+ProtectedData; Microsoft.Build and official NBGV remain SDK/native references.
+This shared foundation does not implement or qualify NuGet Release publication.
 The per-command environment option isolates consumer caches/configuration/home
 without changing the application's ambient environment.
 

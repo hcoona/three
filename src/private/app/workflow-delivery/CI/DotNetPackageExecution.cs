@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Xml;
 using Microsoft.Build.Evaluation;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
@@ -76,10 +77,10 @@ internal static class DotNetPackageExecution
                             await RunAsync(DotNetPackageChecks.Query(node, checkout, response,
                                 "Pack,_GetOutputItemsFromPack", "Pack,_GetOutputItemsFromPack",
                                 request.DeadlineSeconds, DotNetChecks.Properties(storage)), token);
-                            using JsonDocument document = await DotNetPackageChecks.ResponseAsync(
+                            using JsonDocument document = await DotNetPackageResults.ResponseAsync(
                                 response, token);
-                            DotNetPackageChecks.Target(document.RootElement, "Pack");
-                            post = DotNetPackageChecks.Properties(document.RootElement);
+                            DotNetPackageResults.Target(document.RootElement, "Pack");
+                            post = DotNetPackageResults.Properties(document.RootElement);
                             DotNetPackageChecks.Validate(node, post);
                             if (Projections.Any(name => post[name] != expected[name]))
                                 throw new InvalidDataException(
@@ -174,7 +175,7 @@ internal static class DotNetPackageExecution
     internal static DotNetOriginalPackage Archive(PackageTarget subject, JsonElement root,
         string destination, Dictionary<string, string> expected)
     {
-        JsonElement receipt = DotNetPackageChecks.Target(root, "_GetOutputItemsFromPack");
+        JsonElement receipt = DotNetPackageResults.Target(root, "_GetOutputItemsFromPack");
         if (!receipt.TryGetProperty("Items", out JsonElement items) ||
             items.ValueKind != JsonValueKind.Array)
             throw new InvalidDataException("Missing native package output items.");
