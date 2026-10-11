@@ -136,6 +136,27 @@ public sealed class NuGetPreparationTests(TestContext context)
         Assert.IsEmpty(result.Prepared.Files);
     }
 
+    [TestMethod]
+    public async Task EveryNativeCommandUsesSelectedVersionContextAndOwnedVariableOutput()
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.IsNotEmpty(result.Commands);
+        foreach (ReleaseCommand command in result.Commands)
+        {
+            Assert.IsFalse(command.Command.InheritEnvironment);
+            Assert.AreEqual("true", command.Command.Environment!["GITHUB_ACTIONS"]);
+            Assert.AreEqual(result.Prepared.Subject.SelectedRef,
+                command.Command.Environment["GITHUB_REF"]);
+            Assert.AreEqual(result.Prepared.Subject.Revision,
+                command.Command.Environment["GITHUB_SHA"]);
+            string output = command.Command.Environment["GITHUB_ENV"]!;
+            Assert.IsTrue(File.Exists(output));
+            Assert.IsFalse(output.StartsWith(fixture.Repo.Directory,
+                StringComparison.Ordinal));
+        }
+    }
+
     private sealed class Fixture(GitFixture repo, string revision) : IDisposable
     {
         internal GitFixture Repo { get; } = repo;

@@ -1536,6 +1536,9 @@ GitHub Packages product for Buddy and development dry runs without a CI plan.
 It reads exact committed release and quality declarations, uses the selected
 SDK and locked Release restore, then compares native GetBuildVersion, Build and
 Pack version projections. Restore lets the native project declare its frameworks;
+Native cloud/ref inputs are bound to the selected source commit and ref rather
+than inherited from the caller. NBGV retains native public-release evaluation;
+its variable output stays in preparation-owned scratch.
 subsequent queries and operations use the single supported `net10.0`/no-RID
 variant. Multiple variants, unknown quality recipes and unavailable required tests
 cannot become a smaller successful release.

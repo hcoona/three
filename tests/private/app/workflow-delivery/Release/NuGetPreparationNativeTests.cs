@@ -11,9 +11,11 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
 {
     [TestMethod]
     [Timeout(600000, CooperativeCancellation = true)]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task NativeReleasePreparationUsesOriginalPackageAndCleanConsumer(bool dryRun)
+    [DataRow(false, "refs/heads/development")]
+    [DataRow(true, "refs/heads/development")]
+    [DataRow(false, "refs/heads/main")]
+    public async Task NativeReleasePreparationUsesOriginalPackageAndCleanConsumer(bool dryRun,
+        string selectedRef)
     {
         string source = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(source, "global.json")) ||
@@ -40,7 +42,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                 string scratch = Directory.CreateDirectory(Path.Combine(root, "preparation-" +
                     repetition)).FullName;
                 const string product = "src/public/lib/hcoona-release-smoke-github-packages";
-                var subject = new ReleaseSubject(revision, "refs/heads/development",
+                var subject = new ReleaseSubject(revision, selectedRef,
                     "hcoona-release-smoke-github-packages", product +
                         "/workflow-delivery.release-unit.yml",
                     "buddy", "github-packages-nuget", dryRun);
@@ -68,6 +70,11 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                 Assert.AreEqual(file.Sha256, DotNetPackageArchive.Digest(archive));
                 Assert.AreEqual("Hcoona.ReleaseSmoke.GithubPackages", file.Name);
                 Assert.AreEqual(subject, result.Prepared.Subject);
+                Assert.AreEqual(selectedRef == "refs/heads/main",
+                    !file.Version.Contains(".g", StringComparison.Ordinal));
+                Assert.IsTrue(result.Commands.All(command =>
+                    command.Command.Environment!["GITHUB_REF"] == selectedRef &&
+                    command.Command.Environment["GITHUB_SHA"] == revision));
                 Assert.IsFalse(result.Native.ContainsKey("MSBuildProjectFullPath"));
                 Assert.IsFalse(result.Native.Values.Any(value => value.Contains(checkout,
                     StringComparison.Ordinal)));

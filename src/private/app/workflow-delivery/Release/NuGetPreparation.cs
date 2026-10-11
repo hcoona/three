@@ -53,7 +53,7 @@ internal static class NuGetPreparation
         string project = "";
         DotNetOriginalPackage? original = null;
         string originals = Directory.CreateDirectory(Path.Combine(scratch, "original")).FullName;
-        Dictionary<string, string?> environment = EnvironmentFor(scratch);
+        Dictionary<string, string?> environment = EnvironmentFor(scratch, request.Subject);
 
         await CheckAsync("native-input", async () =>
         {
@@ -226,14 +226,22 @@ internal static class NuGetPreparation
         }
     }
 
-    private static Dictionary<string, string?> EnvironmentFor(string scratch)
+    private static Dictionary<string, string?> EnvironmentFor(string scratch,
+        ReleaseSubject subject)
     {
         var values = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (string name in new[] { "PATH", "SystemRoot", "WINDIR", "PATHEXT", "DOTNET_ROOT",
-            "DOTNET_ROOT_X64", "NUGET_PACKAGES", "GITHUB_ACTIONS", "GITHUB_REF", "GITHUB_SHA",
-            "GITHUB_RUN_ID", "GITHUB_RUN_NUMBER", "GITHUB_REPOSITORY", "SOURCE_DATE_EPOCH",
+            "DOTNET_ROOT_X64", "NUGET_PACKAGES", "SOURCE_DATE_EPOCH",
             "DOTNET_CLI_TELEMETRY_OPTOUT", "DOTNET_SKIP_FIRST_TIME_EXPERIENCE" })
             if (Environment.GetEnvironmentVariable(name) is { } value) values.Add(name, value);
+        // Native NBGV evaluates the requested ref, independently of the caller's ref.
+        values["GITHUB_ACTIONS"] = "true";
+        values["GITHUB_REF"] = subject.SelectedRef;
+        values["GITHUB_SHA"] = subject.Revision;
+        // NBGV's native GitHub provider also emits variables; keep those local.
+        string environmentFile = Path.Combine(scratch, "nbgv-environment");
+        File.WriteAllText(environmentFile, "");
+        values["GITHUB_ENV"] = environmentFile;
         string home = Directory.CreateDirectory(Path.Combine(scratch, "profile")).FullName;
         foreach (string name in new[] { "HOME", "USERPROFILE", "DOTNET_CLI_HOME" }) values[name] =
             home;
