@@ -66,9 +66,12 @@ internal static class NpmPreparation
         GitRevision revision = await new GitReader(checkout).ReadAsync(request.Subject.Revision,
             token);
         GitMaterialization bound = await GitMaterialization.BindAsync(checkout, revision, token);
-        if (revision.Commit != request.Subject.Revision || request.Subject.Channel != "official" ||
-            request.Subject.Destination != "npmjs" || !request.Subject.DryRun)
-            throw new InvalidDataException("The first npm integration supports Official dry run.");
+        bool official = request.Subject.Channel == "official" &&
+            request.Subject.Destination == "npmjs" && request.Subject.DryRun;
+        bool buddy = request.Subject.Channel == "buddy" &&
+            request.Subject.Destination == "github-packages-npm";
+        if (revision.Commit != request.Subject.Revision || !(official || buddy))
+            throw new InvalidDataException("Unsupported selected npm destination and mode.");
         ReleaseUnitDeclaration unit = ReleaseUnitDeclarationReader.Read(
             await bound.ReadOptionalTextAsync(request.Subject.Declaration, token)
                 ?? throw new InvalidDataException("Missing selected release declaration."),

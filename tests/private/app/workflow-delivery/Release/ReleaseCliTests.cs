@@ -11,6 +11,44 @@ namespace WorkflowDelivery.Tests.Release;
 public sealed class ReleaseCliTests
 {
     [TestMethod]
+    [DataRow(true, 0)]
+    [DataRow(false, 1)]
+    public void ActualGithubCompletionRequiresRemoteConsumerEvenWithExactOriginals(
+        bool consumerPassed, int expectedExit)
+    {
+        using var files = new Files();
+        PreparedRelease prepared = files.Prepared with
+        { Subject = files.Prepared.Subject with
+            { Channel = "buddy", Destination = "github-packages-npm", DryRun = false } };
+        ReleaseFile file = prepared.Files[0];
+        string preparation = files.Write("buddy-prepared.json", JsonSerializer.Serialize(
+            new NpmPreparationResult(prepared, [], []), TransferJson.Default.NpmPreparationResult));
+        var observed = new GithubNpmObservationResult(new(prepared.Subject,
+            [new(file.Output, file.Name, file.Version, ReleaseFileState.Exact,
+                file.Size, file.Sha256)],
+            ["visibility"], [new("visibility", ReleaseCheckStatus.Passed)]), []);
+        string observation = files.Write("buddy-observed.json", JsonSerializer.Serialize(observed,
+            TransferJson.Default.GithubNpmObservationResult));
+        string consumer = files.Write("buddy-consumed.json", JsonSerializer.Serialize(
+            new GithubNpmConsumerResult(prepared.Subject, new("native-registry-consumer",
+                consumerPassed ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed), [], []),
+            TransferJson.Default.GithubNpmConsumerResult));
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        Assert.AreEqual(expectedExit, Program.Run(["release", "complete-github-npm", preparation,
+            observation, consumer, "-"], output, error), error.ToString());
+
+        ReleaseOutcome result = JsonSerializer.Deserialize(output.ToString(),
+            TransferJson.Default.ReleaseOutcome)!;
+        Assert.AreEqual(prepared.Subject, result.Subject);
+        Assert.AreEqual(consumerPassed ? ReleaseBusinessState.Satisfied
+                : ReleaseBusinessState.Unsatisfied,
+            result.State);
+        Assert.IsEmpty(result.Uploads);
+    }
+
+    [TestMethod]
     [DataRow("Exact", 0, 0)]
     [DataRow("Absent", 0, 1)]
     [DataRow("Conflict", 1, 0)]

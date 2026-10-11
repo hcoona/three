@@ -45,8 +45,12 @@ fixture and original Ruby-to-Node facts transfer are qualified in
 [PR #1124](https://github.com/hcoona/three/pull/1124). The
 [Official npm dry-run interface](../../../../private/app/workflow-delivery/README.md#official-npm-dry-run)
 implements independent Release preparation, bounded public reads and hypothetical
-results; its simulation-only Python orchestration is retired. Ordinary privileged
-Release caller cutover and other quality presets remain pending.
+results; its simulation-only Python orchestration is retired.
+The [npm Buddy interface](../../../../private/app/workflow-delivery/README.md#npm-buddy-release)
+replaces the ordinary npm caller with complete preparation, native package
+observation, Environment on its actual publisher and separate required scoped
+native consumption. Controlled/source validation does not establish a new hosted
+Live run. Other Release callers and quality presets remain pending.
 
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration

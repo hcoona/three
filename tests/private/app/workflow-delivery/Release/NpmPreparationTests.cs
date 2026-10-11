@@ -12,6 +12,26 @@ namespace WorkflowDelivery.Tests.Release;
 public sealed class NpmPreparationTests(TestContext context)
 {
     [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task BuddyDevelopmentRevisionUsesSameCompleteNativePreparation(
+        bool dryRun)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        fixture.Request = fixture.Request with { Subject = fixture.Request.Subject with
+            { Channel = "buddy", Destination = "github-packages-npm", DryRun = dryRun } };
+
+        NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+
+        Assert.IsEmpty(result.Errors);
+        Assert.ContainsSingle(result.Prepared.Files);
+        Assert.AreEqual(fixture.Request.Subject, result.Prepared.Subject);
+        Assert.HasCount(7, result.Prepared.Checks);
+        Assert.IsTrue(result.Prepared.Checks.All(check =>
+            check.Status == ReleaseCheckStatus.Passed));
+    }
+
+    [TestMethod]
     public async Task SelectedPreparationQualifiesOriginalWithoutCiPlan()
     {
         using var fixture = await Fixture.CreateAsync(context.CancellationToken);
@@ -170,7 +190,7 @@ public sealed class NpmPreparationTests(TestContext context)
     private sealed class Fixture(GitFixture repository, NpmPreparationRequest request)
         : IDisposable
     {
-        internal NpmPreparationRequest Request { get; } = request;
+        internal NpmPreparationRequest Request { get; set; } = request;
         internal string Scratch => Request.Scratch;
         internal string? Fail { get; set; }
         internal string ExpectedVersion { get; set; } = "1.2.3";

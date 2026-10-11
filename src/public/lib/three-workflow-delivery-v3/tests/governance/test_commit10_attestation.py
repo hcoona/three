@@ -40,9 +40,6 @@ from three_workflow_delivery_v3.repository.descriptors import (
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 ACTUAL_ATTESTATION = REPO_ROOT / GOVERNANCE_PATH
-NORMAL_BUDDY = (
-    REPO_ROOT / ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
-)
 LIVE_STATIC_REFERENCE_IMPLEMENTATIONS = (
     "@npmcli/package-json@8.0.0",
     "@pnpm/deps.path@1101.0.1",
@@ -150,7 +147,7 @@ def test_actual_attestation_accepts_only_hcoona_admin_and_exact_access() -> (
     )
 
 
-def test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate(
+def test_disabled_attestation_blocks_retained_eligibility_domain(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     content = canonicalize(
@@ -209,7 +206,6 @@ def test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate(
         repository_root=REPO_ROOT,
         now=attestation.inspected_at + timedelta(seconds=1),
     )
-    caller = NORMAL_BUDDY.read_text(encoding="utf-8")
 
     assert decision.result is EligibilityResult.BLOCKED
     assert decision.diagnostics == ("governance-live-disabled",)
@@ -219,10 +215,6 @@ def test_disabled_attestation_decision_cannot_cross_the_pre_attempt_gate(
         "read",
     )
     assert client.calls[-1][-1] == ""
-    assert (
-        "needs.evaluate-live-eligibility.outputs.live-result == 'admitted'"
-        in caller
-    )
     assert decision.result.value == "blocked"
     assert decision.result.value != "admitted"
 
