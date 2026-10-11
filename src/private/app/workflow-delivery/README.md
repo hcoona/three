@@ -125,6 +125,15 @@ original report separately, rejects absent or incomplete output and cleans its
 owned result file. Controlled tests cover this recipe; they do not qualify the
 complete product or caller.
 
+[`RubyPackageExecution`](CI/RubyPackageExecution.cs) implements the adopted gem's
+native build, archive inspection and clean local installed-require checks against
+the original candidate plan. Source version projection remains native; RubyGems
+owns archive semantics and installation. It retains the original gem and actual
+commands/results, rejects missing or substituted outputs and skips consumers
+when prerequisites fail. Its clean consumer has separate GEM_HOME/GEM_PATH and
+no checkout Ruby load path. Controlled execution does not qualify the actual
+product or complete workflow transfer; caller integration remains pending.
+
 [`RubyPackageChecks`](Repository/RubyPackageChecks.cs) expands the existing
 `ruby/hcoona-release-smoke-ruby-v1` recipe from its actual release-unit declaration
 and evaluated native source identity. Its required gem build, content inspection

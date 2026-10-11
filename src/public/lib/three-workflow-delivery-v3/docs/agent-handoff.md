@@ -140,7 +140,8 @@ qualify native products. Native bundle preparation uses original committed locks
 and frozen installation with caller-owned tools/state; source preparation ordering
 and actual dependency qualification remain caller responsibilities. Supported
 input-scope qualification and paired
-planning, adopted gem quality caller composition, selected project preparation, complete
+planning and selected project preparation remain pending. Adopted gem execution has
+controlled native-command coverage; actual product/consumer qualification, complete
 workflow execution, caller qualification and atomic cutover remain pending. Existing Ruby
 callers, manual Release and historical readers remain. These primitives authorize
 no publication or campaign continuation.
