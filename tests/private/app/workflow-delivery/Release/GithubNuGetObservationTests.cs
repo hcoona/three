@@ -122,6 +122,40 @@ public sealed class GithubNuGetObservationTests
     }
 
     [TestMethod]
+    [DataRow("raw")]
+    [DataRow("encoded")]
+    [DataRow("basic")]
+    [DataRow("encoded-basic")]
+    [DataRow("host")]
+    public async Task ReflectedCredentialStopsBeforeStorageSendOrDiagnosticOrigin(string form)
+    {
+        string basic = Convert.ToBase64String(Encoding.UTF8.GetBytes("hcoona:" + Credential));
+        string value = form switch
+        {
+            "encoded" => "%63" + Credential[1..],
+            "basic" => basic,
+            "encoded-basic" => "%" + ((int)basic[0]).ToString("X2") + basic[1..],
+            _ => Credential,
+        };
+        string location = form == "host" ? "https://" + value + ".example.com/package"
+            : "https://objects.githubusercontent.com/package?credential=" + value;
+        using var handler = new Handler((_, step) => step == 4 ? Redirect(location)
+            : Response(step, Archive()));
+        using var client = new HttpClient(handler);
+        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
+
+        Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
+        Assert.HasCount(5, handler.Requests);
+        Assert.IsTrue(result.Reads.All(read => read.StorageOrigin is null));
+        Assert.IsTrue(result.Reads.All(read => read.LocationSha256 is null));
+        string diagnostics = JsonSerializer.Serialize(result);
+        Assert.DoesNotContain(Credential, diagnostics);
+        Assert.DoesNotContain(basic, diagnostics);
+        Assert.DoesNotContain(location, diagnostics);
+    }
+
+    [TestMethod]
     [DataRow("http://objects.githubusercontent.com/package")]
     [DataRow("https://127.0.0.1/package")]
     [DataRow("https://objects.githubusercontent.com:444/package")]

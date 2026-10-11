@@ -183,7 +183,7 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
                     if (!archive || hop != 0 || status is not (301 or 302) ||
                         response.Headers.Location is not { } location)
                         throw new InvalidDataException("Unsupported redirect.");
-                    current = Storage(location.OriginalString);
+                    current = Storage(location.OriginalString, credential);
                     storageOrigin = current.GetLeftPart(UriPartial.Authority);
                     locationDigest = Convert.ToHexStringLower(SHA256.HashData(
                         Encoding.UTF8.GetBytes(location.OriginalString)));
@@ -233,8 +233,14 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
             throw new InvalidDataException("Unsupported native origin.");
     }
 
-    private static Uri Storage(string raw)
+    private static Uri Storage(string raw, string credential)
     {
+        string decoded = Uri.UnescapeDataString(raw);
+        string basic = Convert.ToBase64String(Encoding.UTF8.GetBytes("hcoona:" + credential));
+        if (new[] { credential, basic }.Any(secret =>
+                raw.Contains(secret, StringComparison.Ordinal) ||
+                decoded.Contains(secret, StringComparison.Ordinal)))
+            throw new InvalidDataException("Archive storage location reflects a credential.");
         if (!raw.StartsWith("https://", StringComparison.Ordinal) ||
             raw.Any(c => c is < '!' or > '~' or '\\' or '#') ||
             !Uri.TryCreate(raw, UriKind.Absolute, out Uri? uri) ||
