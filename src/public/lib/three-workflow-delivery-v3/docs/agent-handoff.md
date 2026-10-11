@@ -132,10 +132,11 @@ preserves whole RSpec and adopted gem consumers. The private application's
 implement RubyGems/Bundler fact serialization and public RSpec JSON result handling.
 RSpec check registration and Latexmath's explicit preset adoption are implemented;
 committed entry-point discovery and supplied input mapping are implemented.
-Native lock-context/version query answers, finite source-query input preparation
+Native lock-context/version query answers, finite source-query input preparation,
 the adopted smoke gem's complete check expansion and supplied paired producer-to-owner
-assembly are implemented; actual product preparation and full collection remain distinct.
-Complete native collection, supported input-scope qualification and paired
+assembly are implemented. The endpoint reader composes native source/bundle collection
+and adopted checks with caller-prepared dependencies; controlled coverage does not
+qualify native products. Supported input-scope qualification and paired
 planning, adopted gem quality caller composition, selected project preparation, complete
 workflow execution, caller qualification and atomic cutover remain pending. Existing Ruby
 callers, manual Release and historical readers remain. These primitives authorize

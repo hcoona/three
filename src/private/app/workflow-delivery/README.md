@@ -78,6 +78,16 @@ scenarios cover the composition, not actual product qualification. Complete
 paired collection, supported input-scope validation and caller ownership remain
 pending.
 
+[`RubyRepositoryReader`](Repository/RubyRepositoryReader.cs) composes actual native
+source and bundle collection for a caller-bound endpoint with prepared tools and
+dependencies. Bundler's native lock context selects the activated library; the
+full frozen answer remains required. Original source paths, native NBGV inputs,
+quality ancestors and actual adopted gem declarations remain distinct. Sources
+without quality adoption stay input-only producers. Supported adoption expands
+whole-project RSpec or the gem's complete distribution checks. This reader does
+not install dependencies, certify dynamic IO closure or wire paired callers;
+controlled Git/command scenarios do not qualify native products or transfers.
+
 [`RubyFactsAssembler`](Repository/RubyFactsAssembler.cs) joins supplied native
 producer relations across both committed endpoints before projecting actual
 quality owners. Input-only source gems remain dependency intermediaries, including
