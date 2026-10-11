@@ -25,11 +25,36 @@ Gemfile inputs, dependency requirements, content lists and source locations.
 Original local sources and installed directories remain distinct. Repository
 ownership, paired planning and product execution retain the pending boundary below.
 
+[`RubyNativeFactCollector`](Repository/RubyNativeFactCollector.cs) invokes that
+helper through the existing native process interface with caller-prepared tools,
+environment and scratch space. Bundle queries activate the selected Bundler and
+set the original Gemfile and frozen mode. Native failure and cancellation cannot
+supply successful facts; the typed reader still binds each returned answer.
+This entry does not prepare products, discover projects or resolve dependencies.
+
+[`RubyDependencyProjection`](Repository/RubyDependencyProjection.cs) joins supplied
+native local source/gemspec coordinates to source producers and follows resolved
+runtime edges, including registry intermediates, for transitive impact. Bundle
+consumers retain their native Gemfile/lock inputs and local producers separately;
+a bundle-only consumer does not gain a Ruby package or check. Installed cache
+paths and matching registry names do not establish local ownership. Discovery,
+input-scope binding and paired planning remain pending.
+
 [`RubyRSpecResult`](CI/RubyRSpecResult.cs) consumes complete public CLI JSON,
 retains original examples/messages and counts, and keeps them separate from native
 command termination. Missing/incomplete results, failed commands, failed examples
 and errors outside examples cannot satisfy a required check. Pending examples
 remain available to adopted project quality policy.
+
+[`RubyProjectChecks`](Repository/RubyProjectChecks.cs) expands an explicit
+`ruby/rspec-v1` selection to the required whole-project `ruby/project-rspec-v1`
+check. Latexmath's source-local quality declaration adopts its existing RSpec
+obligation. [`RubyRSpecExecution`](CI/RubyRSpecExecution.cs) uses caller-prepared
+Ruby, locked Bundler, Gemfile and environment to invoke the original entire suite
+with public JSON formatter/output options. It preserves the native command and
+original report separately, rejects absent or incomplete output and cleans its
+owned result file. Controlled tests cover this recipe; they do not qualify the
+complete product or caller.
 
 The isolated native contract tests are a root pytest target:
 [`test_facts.py`](../../../../tests/private/app/workflow-delivery/Native/Ruby/test_facts.py).
@@ -44,8 +69,8 @@ it creates native-locked local fixtures and uses no personal Bundler configurati
 The RSpec scenarios use the prepared `2.4.20` environment with RSpec `3.13.6`.
 Their original public CLI outputs also supply the managed parser fixtures.
 
-These primitives do not yet implement paired Ruby planning, quality adoption,
-project preparation or workflow execution. Existing root/shadow Ruby callers,
+These components do not yet implement paired Ruby planning, project preparation
+or complete workflow execution. Existing root/shadow Ruby callers,
 manual Release and historical evidence readers remain with their migration groups.
 The complete Latexmath suite still requires the existing runner's declared
 conversion tools; fixture success is not full product/caller qualification.
