@@ -1529,6 +1529,26 @@ required result. A native cancellation that prevents collection is not a success
 The eventual workflow must preserve that native conclusion; this command cannot
 observe jobs that its caller did not report.
 
+### NuGet Release Preparation Component
+
+[`NuGetPreparation`](Release/NuGetPreparation.cs) prepares the existing declared
+GitHub Packages product for Buddy and development dry runs without a CI plan.
+It reads exact committed release and quality declarations, uses the selected
+SDK and locked Release restore, then compares native GetBuildVersion, Build and
+Pack version projections. Restore lets the native project declare its frameworks;
+subsequent queries and operations use the single supported `net10.0`/no-RID
+variant. Multiple variants, unknown quality recipes and unavailable required tests
+cannot become a smaller successful release.
+
+The shared `Ecosystems` operations receive the complete original Pack output,
+inspect native package and assembly metadata, and restore/build/invoke a fresh
+local consumer. Preparation retains every required phase's outcome, command
+termination and original file size/digest. Its consumer expectations omit physical
+checkout paths. Native NBGV caching and reproducibility remain authoritative;
+preparation injects neither frozen versions nor a witness. Controlled failures
+and isolated native preparation tests qualify this component only. No NuGet
+Release CLI, hosted caller, destination observation or publication is supplied.
+
 ### Release Unit Declaration Component
 
 [`ReleaseUnitDeclarationReader`](Repository/ReleaseUnitDeclarationReader.cs) parses

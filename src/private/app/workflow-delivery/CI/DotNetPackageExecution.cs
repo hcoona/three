@@ -175,43 +175,9 @@ internal static class DotNetPackageExecution
     internal static DotNetOriginalPackage Archive(PackageTarget subject, JsonElement root,
         string destination, Dictionary<string, string> expected)
     {
-        JsonElement receipt = DotNetPackageResults.Target(root, "_GetOutputItemsFromPack");
-        if (!receipt.TryGetProperty("Items", out JsonElement items) ||
-            items.ValueKind != JsonValueKind.Array)
-            throw new InvalidDataException("Missing native package output items.");
-        var archives = new HashSet<string>(OperatingSystem.IsWindows() ?
-            StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-        foreach (JsonElement item in items.EnumerateArray())
-        {
-            if (item.ValueKind != JsonValueKind.Object ||
-                !item.TryGetProperty("FullPath", out JsonElement fullPath) ||
-                fullPath.ValueKind != JsonValueKind.String ||
-                !Path.IsPathFullyQualified(fullPath.GetString()!))
-                throw new InvalidDataException("Invalid native package output coordinate.");
-            string path = Path.GetFullPath(fullPath.GetString()!);
-            string extension = Path.GetExtension(path);
-            if (extension.Equals(".nuspec", StringComparison.OrdinalIgnoreCase)) continue;
-            if (!extension.Equals(".nupkg", StringComparison.OrdinalIgnoreCase) ||
-                !Within(path, destination) || !archives.Add(path))
-                throw new InvalidDataException("Undeclared or ambiguous native package output.");
-            DotNetPackageConsumer.RequireFile(path);
-        }
-        var actual = new HashSet<string>(archives.Comparer);
-        foreach (string path in Directory.EnumerateFileSystemEntries(destination))
-        {
-            DotNetPackageConsumer.RequireFile(path);
-            if (Path.GetExtension(path).Equals(".nupkg", StringComparison.OrdinalIgnoreCase) ||
-                Path.GetExtension(path).Equals(".snupkg", StringComparison.OrdinalIgnoreCase))
-                actual.Add(Path.GetFullPath(path));
-        }
-        if (archives.Count != 1 || !actual.SetEquals(archives))
-            throw new InvalidDataException(
-                "The complete original native archive set is missing or undeclared.");
-        string archive = archives.Single();
-        DotNetPackageArchive.RequireIdentity(DotNetPackageArchive.Identity(archive), expected);
         PackageOutput output = subject.Outputs.Single();
-        return new(subject.Unit, subject.Build, output.Id, output.Role, output.Kind, archive,
-            new FileInfo(archive).Length, DotNetPackageArchive.Digest(archive));
+        return DotNetPackageResults.Archive(subject.Unit, subject.Build, output.Id,
+            output.Role, output.Kind, root, destination, expected);
     }
 
     private sealed class NativePackageFailure(CheckStatus status, string message) :
