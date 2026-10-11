@@ -48,6 +48,47 @@ public sealed class GithubNuGetObservationTests
     }
 
     [TestMethod]
+    public async Task DifferingMalformedArchiveIsConflictWithObservedBytes()
+    {
+        byte[] original = Archive();
+        byte[] remote = Encoding.UTF8.GetBytes("not a NuGet archive");
+        using var handler = new Handler((_, step) => Response(step, remote));
+        using var client = new HttpClient(handler);
+        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+            .ObserveAsync(Prepared(original), Credential, CancellationToken.None);
+
+        ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
+        Assert.AreEqual(ReleaseFileState.Conflict, file.State);
+        Assert.AreEqual(remote.LongLength, file.Size);
+        Assert.AreEqual(Convert.ToHexStringLower(SHA256.HashData(remote)), file.Sha256);
+        Assert.HasCount(5, handler.Requests);
+    }
+
+    [TestMethod]
+    [DataRow("identity", "Exact")]
+    [DataRow("Identity", "Exact")]
+    [DataRow("iDeNtItY", "Exact")]
+    [DataRow("gzip", "Unknown")]
+    public async Task ContentEncodingUsesSupportedTokenSemantics(string encoding,
+        string expected)
+    {
+        byte[] original = Archive();
+        using var handler = new Handler((_, step) =>
+        {
+            HttpResponseMessage response = Response(step, original);
+            response.Content.Headers.ContentEncoding.Add(encoding);
+            return response;
+        });
+        using var client = new HttpClient(handler);
+        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+            .ObserveAsync(Prepared(original), Credential, CancellationToken.None);
+
+        Assert.AreEqual(Enum.Parse<ReleaseFileState>(expected),
+            Assert.ContainsSingle(result.Observation.Files).State);
+        Assert.HasCount(expected == "Exact" ? 5 : 1, handler.Requests);
+    }
+
+    [TestMethod]
     public async Task CompleteNativeAbsenceRequiresEstablishedPackageControl()
     {
         using var handler = new Handler((_, step) => step switch

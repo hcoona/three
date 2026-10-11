@@ -113,13 +113,14 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
                 Uri.EscapeDataString(packageId + "." + version + ".nupkg");
             (status, body) = await ReadAsync("original-archive", new(archiveUrl), archive: true);
             RequireOk(status);
+            string digest = Convert.ToHexStringLower(SHA256.HashData(body));
+            if (body.LongLength != file.Size || digest != file.Sha256)
+                return Result(ReleaseFileState.Conflict, body.LongLength, digest);
             using var stream = new MemoryStream(body, writable: false);
             using var archive = new PackageArchiveReader(stream);
             if (!PackageIdentityComparer.Default.Equals(archive.GetIdentity(), identity))
                 return Result(ReleaseFileState.Conflict);
-            string digest = Convert.ToHexStringLower(SHA256.HashData(body));
-            return Result(body.LongLength == file.Size && digest == file.Sha256
-                ? ReleaseFileState.Exact : ReleaseFileState.Conflict, body.LongLength, digest);
+            return Result(ReleaseFileState.Exact, body.LongLength, digest);
         }
         catch (OperationCanceledException)
         {
@@ -176,7 +177,8 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
                 int status = (int)response.StatusCode;
                 reads.Add(new(stage, status, "Received response headers.", storageOrigin,
                     locationDigest));
-                if (response.Content.Headers.ContentEncoding.Any(value => value != "identity"))
+                if (response.Content.Headers.ContentEncoding.Any(value =>
+                    !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
                     throw new InvalidDataException("Unsupported response encoding.");
                 if (status is >= 300 and < 400)
                 {
