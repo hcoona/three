@@ -35,18 +35,21 @@ internal sealed class NuGetConsumerReadHandler(string credential, HttpMessageHan
             int status = (int)response.StatusCode;
             if (status is >= 300 and < 400)
             {
-                if (!archive || status is not (301 or 302) || response.Headers.Location is not
-                        { } location)
+                string[] locations = response.Headers.NonValidated.TryGetValues("Location",
+                    out var values) ? values.ToArray() : [];
+                if (!archive || status is not (301 or 302) ||
+                    locations is not [string location] || string.IsNullOrWhiteSpace(location))
                     throw new InvalidDataException("Unsupported native consumer redirect.");
-                Uri storage = Storage(location.OriginalString);
+                Uri storage = Storage(location);
                 response.Dispose();
                 using var redirected = new HttpRequestMessage(HttpMethod.Get, storage);
                 redirected.Headers.AcceptEncoding.ParseAdd("identity");
                 response = await SendBoundedAsync(redirected, timeout.Token);
-                if ((int)response.StatusCode is >= 300 and < 400)
-                    throw new InvalidDataException("Repeated native consumer redirect.");
+                if (response.StatusCode != HttpStatusCode.OK)
+                    throw new InvalidDataException("Native consumer storage did not return 200.");
             }
-            if (response.Headers.Location is not null || response.Content.Headers.ContentEncoding
+            if (response.Headers.NonValidated.Contains("Location") ||
+                response.Content.Headers.ContentEncoding
                     .Any(value => !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidDataException("Unsupported native consumer response.");
             long? length = response.Content.Headers.ContentLength;
@@ -100,14 +103,18 @@ internal sealed class NuGetConsumerReadHandler(string credential, HttpMessageHan
         if (new[] { credential, basic }.Any(secret => raw.Contains(secret,
                 StringComparison.Ordinal) || decoded.Contains(secret, StringComparison.Ordinal)) ||
             !raw.StartsWith("https://", StringComparison.Ordinal) ||
-            raw.Any(c => c is < '!' or > '~' or '\\' or '#') ||
-            !Uri.TryCreate(raw, UriKind.Absolute, out Uri? uri) ||
-            uri.HostNameType != UriHostNameType.Dns || uri.Host == "api.github.com" ||
-            !uri.IsDefaultPort || uri.UserInfo.Length != 0 || uri.Host.Length > 253 ||
-            uri.Host.Split('.').Any(label => label.Length is 0 or > 63 ||
-                !char.IsAsciiLetterOrDigit(label[0]) || !char.IsAsciiLetterOrDigit(label[^1]) ||
-                label.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-')))
+            raw.Any(c => c is < '!' or > '~' or '\\' or '#'))
             throw new InvalidDataException("Unsupported native consumer storage location.");
+        string authority = raw[8..].Split('/', '?')[0].ToLowerInvariant();
+        string[] labels = authority.Split('.');
+        if (authority.Length is 0 or > 253 || authority == "api.github.com" ||
+            labels.Any(label => label.Length is 0 or > 63 ||
+                !char.IsAsciiLetterOrDigit(label[0]) || !char.IsAsciiLetterOrDigit(label[^1]) ||
+                label.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-')) ||
+            labels.All(label => label.All(char.IsAsciiDigit) ||
+                (label.StartsWith("0x", StringComparison.Ordinal) && label.Length > 2 &&
+                    label[2..].All(char.IsAsciiHexDigit))))
+            throw new InvalidDataException("Unsupported native consumer storage DNS authority.");
         return new(raw, new UriCreationOptions
             { DangerousDisablePathAndQueryCanonicalization = true });
     }

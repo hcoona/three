@@ -13,13 +13,14 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
 {
     [TestMethod]
     [Timeout(180000, CooperativeCancellation = true)]
-    [DataRow(false, false, false, false)]
-    [DataRow(true, false, false, false)]
-    [DataRow(false, true, false, false)]
-    [DataRow(false, false, true, false)]
-    [DataRow(false, false, false, true)]
+    [DataRow(false, false, false, false, 200)]
+    [DataRow(true, false, false, false, 200)]
+    [DataRow(true, false, false, false, 201)]
+    [DataRow(false, true, false, false, 200)]
+    [DataRow(false, false, true, false, 200)]
+    [DataRow(false, false, false, true, 200)]
     public async Task NativeRemoteRestoreBuildAndMarkerUseSelectedOriginal(bool redirect,
-        bool conflict, bool cancel, bool wrongSource)
+        bool conflict, bool cancel, bool wrongSource, int storageStatus)
     {
         string root = Directory.CreateTempSubdirectory("nuget-remote-native-").FullName;
         try
@@ -36,7 +37,7 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
             var stopped = new TaskCompletionSource(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             var transport = new Feed(conflict ? [.. bytes, 0] : bytes, redirect,
-                cancel ? entered : null, stopped);
+                cancel ? entered : null, stopped, storageStatus);
             string scratch = Directory.CreateDirectory(Path.Combine(root, "remote")).FullName;
             var seen = new List<NativeCommand>();
             var native = new Dictionary<string, string>
@@ -84,6 +85,14 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
                 await Assert.ThrowsAsync<OperationCanceledException>(() => operation);
                 Assert.IsTrue(stopped.Task.IsCompletedSuccessfully);
                 Assert.HasCount(2, seen);
+                return;
+            }
+            if (storageStatus != 200)
+            {
+                await Assert.ThrowsExactlyAsync<InvalidDataException>(() => operation);
+                Assert.HasCount(2, seen);
+                Assert.IsFalse(seen.Any(command => command.Arguments.Contains(
+                    "-target:Build,GetTargetPath")));
                 return;
             }
             if (conflict)
@@ -194,7 +203,7 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
     }
 
     private sealed class Feed(byte[] package, bool redirect, TaskCompletionSource? entered,
-        TaskCompletionSource stopped) : HttpMessageHandler
+        TaskCompletionSource stopped, int storageStatus) : HttpMessageHandler
     {
         internal List<(HttpMethod Method, Uri Uri, string? Authorization)> Requests { get; } = [];
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
@@ -212,7 +221,8 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
             System.Console.WriteLine("Controlled native read " + uri.AbsolutePath);
             HttpResponseMessage response;
             if (uri.Host == "storage.example.test")
-                response = new(HttpStatusCode.OK) { Content = new ByteArrayContent(package) };
+                response = new((HttpStatusCode)storageStatus)
+                    { Content = new ByteArrayContent(package) };
             else if (uri.AbsolutePath == "/hcoona/index.json")
                 response = Json("""
                     {"version":"3.0.0","resources":[
@@ -223,8 +233,8 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
             {
                 response = new(redirect ? HttpStatusCode.Found : HttpStatusCode.OK)
                     { Content = new ByteArrayContent(redirect ? [] : package) };
-                if (redirect) response.Headers.Location =
-                    new("https://storage.example.test/original.nupkg?signature=controlled");
+                if (redirect) response.Headers.TryAddWithoutValidation("Location",
+                    "https://storage.example.test/original.nupkg?signature=controlled");
             }
             else if (uri.AbsolutePath.EndsWith("/index.json", StringComparison.Ordinal))
                 response = Json("{\"versions\":[\"1.0.0\"]}");

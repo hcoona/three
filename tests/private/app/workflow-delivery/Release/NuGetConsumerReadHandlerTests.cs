@@ -13,6 +13,13 @@ public sealed class NuGetConsumerReadHandlerTests(TestContext context)
     [TestMethod]
     [DataRow("https://storage.example.test/p?token=controlled-sensitive-read-value")]
     [DataRow("https://storage.example.test/p?token=%63ontrolled-sensitive-read-value")]
+    [DataRow("")]
+    [DataRow(" ")]
+    [DataRow("https://storage.example.test\\other/p")]
+    [DataRow("https://storage%2eexample.test/p")]
+    [DataRow("https://2130706433/p")]
+    [DataRow("https://0x7f.0.0.1/p")]
+    [DataRow("https://storage.example.test:/p")]
     [DataRow("http://storage.example.test/p")]
     [DataRow("https://storage.example.test:444/p")]
     [DataRow("https://user@storage.example.test/p")]
@@ -25,7 +32,93 @@ public sealed class NuGetConsumerReadHandlerTests(TestContext context)
             sends++;
             var response = new HttpResponseMessage(HttpStatusCode.Found)
                 { Content = new ByteArrayContent([]) };
-            response.Headers.Location = new Uri(location);
+            response.Headers.TryAddWithoutValidation("Location", location);
+            return Task.FromResult(response);
+        }), context.CancellationToken);
+        using var client = new HttpClient(handler);
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => client.GetAsync(Archive,
+            context.CancellationToken));
+        Assert.AreEqual(1, sends);
+    }
+
+    [TestMethod]
+    [DataRow(200)]
+    [DataRow(201)]
+    [DataRow(302)]
+    public async Task SignedRawRedirectPreservesRequestAndRequiresStorage200(int status)
+    {
+        const string location = "https://storage.example.test/a%2fb/../p?signature=a%2fb+%25";
+        int sends = 0;
+        using var handler = new NuGetConsumerReadHandler(Credential, new Controlled((request, _) =>
+        {
+            sends++;
+            if (sends == 1)
+            {
+                var redirect = new HttpResponseMessage(HttpStatusCode.Found)
+                    { Content = new ByteArrayContent([]) };
+                redirect.Headers.TryAddWithoutValidation("Location", location);
+                return Task.FromResult(redirect);
+            }
+            Assert.IsNull(request.Headers.Authorization);
+            Assert.AreEqual(location, request.RequestUri!.OriginalString);
+            Assert.AreEqual(location[location.IndexOf('/', 8)..], request.RequestUri.PathAndQuery);
+            return Task.FromResult(new HttpResponseMessage((HttpStatusCode)status)
+                { Content = new ByteArrayContent([1, 2, 3]) });
+        }), context.CancellationToken);
+        using var client = new HttpClient(handler);
+        if (status == 200)
+        {
+            using HttpResponseMessage result = await client.GetAsync(Archive,
+                context.CancellationToken);
+            CollectionAssert.AreEqual(new byte[] { 1, 2, 3 },
+                await result.Content.ReadAsByteArrayAsync(context.CancellationToken));
+        }
+        else await Assert.ThrowsExactlyAsync<InvalidDataException>(() => client.GetAsync(Archive,
+            context.CancellationToken));
+        Assert.AreEqual(2, sends);
+    }
+
+    [TestMethod]
+    public async Task MultipleRawLocationsStopBeforeStorageSend()
+    {
+        int sends = 0;
+        using var handler = new NuGetConsumerReadHandler(Credential, new Controlled((_, _) =>
+        {
+            sends++;
+            var response = new HttpResponseMessage(HttpStatusCode.Found)
+                { Content = new ByteArrayContent([]) };
+            response.Headers.TryAddWithoutValidation("Location", "https://storage.example.test/a");
+            response.Headers.TryAddWithoutValidation("Location", "https://storage.example.test/b");
+            return Task.FromResult(response);
+        }), context.CancellationToken);
+        using var client = new HttpClient(handler);
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => client.GetAsync(Archive,
+            context.CancellationToken));
+        Assert.AreEqual(1, sends);
+    }
+
+    [TestMethod]
+    [DataRow("missing")]
+    [DataRow("basic")]
+    [DataRow("encoded-basic")]
+    [DataRow("unexpected-final")]
+    public async Task RawLocationPresenceAndBasicReflectionStopBeforeAnotherSend(string form)
+    {
+        int sends = 0;
+        string basic = Convert.ToBase64String(Encoding.UTF8.GetBytes("hcoona:" + Credential));
+        using var handler = new NuGetConsumerReadHandler(Credential, new Controlled((_, _) =>
+        {
+            sends++;
+            var response = new HttpResponseMessage(form == "unexpected-final"
+                ? HttpStatusCode.OK : HttpStatusCode.Found)
+                { Content = new ByteArrayContent([]) };
+            if (form != "missing")
+            {
+                string value = form == "encoded-basic"
+                    ? "%" + ((int)basic[0]).ToString("X2") + basic[1..] : basic;
+                response.Headers.TryAddWithoutValidation("Location",
+                    "https://storage.example.test/p?capability=" + value);
+            }
             return Task.FromResult(response);
         }), context.CancellationToken);
         using var client = new HttpClient(handler);
