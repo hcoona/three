@@ -639,10 +639,10 @@ bindings:
     format: markdown
   - id: ruby-smoke-interface
     family: project-interfaces
-    namespace: src/public/lib/hcoona-release-smoke-ruby
+    namespace: src/private/app/workflow-delivery
     state: current
     carrier: repository-file
-    path: src/public/lib/hcoona-release-smoke-ruby/README.md
+    path: tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby/README.md
     format: markdown
   - id: shared-engineering
     family: shared-engineering

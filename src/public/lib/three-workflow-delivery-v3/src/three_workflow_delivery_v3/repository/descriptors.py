@@ -823,7 +823,10 @@ def _validate_slice_descriptor_inventory(
         "hcoona-release-smoke-python": (
             "src/public/lib/hcoona-release-smoke-python"
         ),
-        "hcoona-release-smoke-ruby": "src/public/lib/hcoona-release-smoke-ruby",
+        "hcoona-release-smoke-ruby": (
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-ruby"
+        ),
     }
     registered_paths = {
         f"{root}/{RELEASE_UNIT_BASENAME}": unit

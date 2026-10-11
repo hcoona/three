@@ -20,6 +20,6 @@ native packaging can build the four normal files without creating that witness;
 the retained legacy Release builder still creates and requires its five-file
 package. Source metadata and packaged content are distinct native answers.
 Installed consumers need neither Git, NBGV nor .NET. The
-[V3 Ruby contract](../three-workflow-delivery-v3/docs/hcoona-release-smoke-ruby-lld.md)
+[V3 Ruby contract](../../../../../../src/public/lib/three-workflow-delivery-v3/docs/hcoona-release-smoke-ruby-lld.md)
 owns build, qualification and destination behavior. Source presence does not
 claim registry availability or completed publication.

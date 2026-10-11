@@ -66,7 +66,10 @@ def test_python_ci_ruby_paths_preserve_shared_control_precedence(
 ):
     """Ruby-only changes are unrelated; shared V3 still selects Python."""
     paths = tuple(
-        f"src/public/lib/hcoona-release-smoke-ruby/{name}"
+        (
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            f"hcoona-release-smoke-ruby/{name}"
+        )
         for name in (
             ".gitignore",
             "LICENSE",
@@ -258,10 +261,10 @@ def test_python_ci_serialized_records_reject_foreign_or_open_shapes(
         ("src/public/lib/new-project/source.py",),
         ("uv.lock", "unrelated/readme.md"),
         ("unrelated/readme.md", "uv.lock"),
-        ("src/public/lib/hcoona-release-smoke-ruby-other/lib/smoke.rb",),
+        (("src/public/lib/hcoona-release-smoke-ruby-other/lib/smoke.rb"),),
         (
             "uv.lock",
-            "src/public/lib/hcoona-release-smoke-ruby-other/lib/smoke.rb",
+            ("src/public/lib/hcoona-release-smoke-ruby-other/lib/smoke.rb"),
         ),
     ],
 )

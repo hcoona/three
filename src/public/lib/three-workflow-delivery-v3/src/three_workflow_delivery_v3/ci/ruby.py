@@ -58,7 +58,10 @@ def ruby_ci_affected(
             raise ValueError(message)
     sources = dict(model.provider.source_input_manifest)
     prefixes = (
-        "src/public/lib/hcoona-release-smoke-ruby/",
+        (
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-ruby/"
+        ),
         "src/public/lib/three-workflow-delivery-v3/",
         ".github/actions/workflow-delivery-v3",
         ".github/workflows/workflow-delivery-v3",

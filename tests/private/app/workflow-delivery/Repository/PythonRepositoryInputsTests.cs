@@ -49,8 +49,10 @@ public sealed class PythonRepositoryInputsTests
     [TestMethod]
     [DataRow("src/private/app/workflow-delivery/Native/Ruby/facts.rb")]
     [DataRow("tests/private/app/workflow-delivery/Native/Ruby/test_facts.py")]
-    [DataRow("src/public/lib/hcoona-release-smoke-ruby/hcoona-release-smoke-ruby.gemspec")]
-    [DataRow("src/public/lib/hcoona-release-smoke-ruby/lib/hcoona_release_smoke_ruby.rb")]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
+                "hcoona-release-smoke-ruby/hcoona-release-smoke-ruby.gemspec")]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
+                "hcoona-release-smoke-ruby/lib/hcoona_release_smoke_ruby.rb")]
     [DataRow("src/public/lib/three-workflow-delivery-v3/" +
         "src/three_workflow_delivery_v3/_ruby_helper.rb")]
     public void RubyHelperInputsSelectOnlyTheirAdoptedPytestTarget(string path)
@@ -165,7 +167,8 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("src/private/app/azureauth-credprovider/tests", "src/other/Directory.Build.props")]
     [DataRow("tests/eng/test_legacy_release_contract.py", "src/product/three.release.yaml")]
     [DataRow("tests/private/app/workflow-delivery/Native/Ruby",
-        "src/public/lib/hcoona-release-smoke-ruby-other/source.rb")]
+        "tests/private/app/workflow-delivery/fixtures/products/" +
+                "hcoona-release-smoke-ruby-other/source.rb")]
     [DataRow("tests/private/app/workflow-delivery/Native/Ruby",
         "src/public/lib/three-workflow-delivery-v3/" +
         "src/three_workflow_delivery_v3/_ruby_helper.rb.backup")]
@@ -186,7 +189,8 @@ public sealed class PythonRepositoryInputsTests
         var endpoint = Endpoint(["tests/standalone.py"], [".typos.toml",
             "src/public/lib/nbgv-python/source.py", "eng/scripts/run_node_ci_group.py",
             "eng/scripts/run_ruby_ci_group.py",
-            "src/public/lib/hcoona-release-smoke-ruby/hcoona-release-smoke-ruby.gemspec",
+            "tests/private/app/workflow-delivery/fixtures/products/" +
+                "hcoona-release-smoke-ruby/hcoona-release-smoke-ruby.gemspec",
             "src/public/lib/three-workflow-delivery-v3/" +
                 "src/three_workflow_delivery_v3/_ruby_helper.rb"]);
         PythonInputBinding[] bindings = PythonRepositoryInputs.Map(endpoint.Revision,
@@ -198,7 +202,8 @@ public sealed class PythonRepositoryInputsTests
             bindings.Select(binding => binding.Path));
         Assert.DoesNotContain("eng/scripts/run_ruby_ci_group.py",
             bindings.Select(binding => binding.Path));
-        Assert.DoesNotContain("src/public/lib/hcoona-release-smoke-ruby/" +
+        Assert.DoesNotContain("tests/private/app/workflow-delivery/fixtures/products/" +
+                "hcoona-release-smoke-ruby/" +
             "hcoona-release-smoke-ruby.gemspec", bindings.Select(binding => binding.Path));
         Assert.DoesNotContain("src/public/lib/three-workflow-delivery-v3/" +
             "src/three_workflow_delivery_v3/_ruby_helper.rb",

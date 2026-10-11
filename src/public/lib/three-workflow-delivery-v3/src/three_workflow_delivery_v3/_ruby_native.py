@@ -16,7 +16,9 @@ from three_workflow_delivery_v3.canonical import (
 
 RUBY_RELEASE_UNIT = "hcoona-release-smoke-ruby"
 RUBY_IMPORT = "hcoona_release_smoke_ruby"
-RUBY_ROOT = f"src/public/lib/{RUBY_RELEASE_UNIT}"
+RUBY_ROOT = (
+    f"tests/private/app/workflow-delivery/fixtures/products/{RUBY_RELEASE_UNIT}"
+)
 RUBY_MANIFEST = f"{RUBY_RELEASE_UNIT}.gemspec"
 RUBY_BUILD_DEFINITION = "ruby/gem-v1"
 RUBY_SOURCE_FILES = (

@@ -119,9 +119,10 @@ receive their typed contribution through its existing caller. An empty selection
 collects the original empty plan without product preparation. These caller seams
 have controlled, local Git and isolated native caller coverage. Root CI now
 also receives the complete candidate control artifact in `ruby-group`, then
-prepares, plans and executes the original Ruby group. Hosted qualification and
-atomic root/shadow cutover remain pending; existing automated Ruby callers are
-retained until that qualification completes.
+prepares, plans and executes the original Ruby group. Ordinary [PR #1123](https://github.com/hcoona/three/pull/1123) CI qualified
+the complete group. Root Ruby and shadow PR duplicates are retired with the
+adopted fixture relocation. Node receives the original paired fact artifact
+from the same run; selected Hexo jobs use native locked Bundler preparation.
 
 [`RubyNodeInputConsumers`](Repository/RubyNodeInputConsumers.cs) joins supplied
 Ruby facts to PNPM projects at the same Git endpoint. Native bundle directories
@@ -130,7 +131,7 @@ version and quality inputs into existing Node operation inputs. The original
 paired Node planner retains removed-source reasons and PNPM reverse consumers.
 Ruby-owned bundles keep their ecosystem; an unmapped bundle-only consumer fails.
 Controlled planning coverage does not qualify actual caller preparation or native
-products. Caller transfer and atomic root/shadow cutover remain pending.
+products. Root CI transfers the same-run original fact artifact to Node.
 
 [`RubyRSpecResult`](CI/RubyRSpecResult.cs) consumes complete public CLI JSON,
 retains original examples/messages and counts, and keeps them separate from native

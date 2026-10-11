@@ -137,7 +137,8 @@ internal static class PythonRepositoryInputs
     private static bool Special(string target, string path) =>
         (target == "tests/private/app/workflow-delivery/Native/Ruby" &&
             (Under(path, "src/private/app/workflow-delivery/Native/Ruby") ||
-             Under(path, "src/public/lib/hcoona-release-smoke-ruby") ||
+             Under(path, "tests/private/app/workflow-delivery/fixtures/products/" +
+                "hcoona-release-smoke-ruby") ||
              path == "src/public/lib/three-workflow-delivery-v3/" +
                  "src/three_workflow_delivery_v3/_ruby_helper.rb")) ||
         (target == "tests/private/app/workflow-delivery/Native/Python" &&

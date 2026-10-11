@@ -171,7 +171,10 @@ def test_ruby_compiler_uses_exact_committed_source_and_epoch(tmp_path):
 def test_ruby_compiler_rejects_inexact_target_inputs(tmp_path, change):
     """Well-shaped technical discovery cannot substitute target bytes/time."""
     source = contents()
-    optional = "src/public/lib/hcoona-release-smoke-ruby/additional.txt"
+    optional = (
+        "tests/private/app/workflow-delivery/fixtures/products/"
+        "hcoona-release-smoke-ruby/additional.txt"
+    )
     source[optional] = b"tracked additional source"
     root, target = committed_source(tmp_path / "source", source)
     supplied = dict(source)

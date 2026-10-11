@@ -39,7 +39,10 @@ def test_ruby_freshness_selector_preserves_exact_provider_candidate_boundary(
         path for path, _ in native_provider[2].source_input_manifest
     )
     introduced = (
-        "src/public/lib/hcoona-release-smoke-ruby/lib/new.rb",
+        (
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-ruby/lib/new.rb"
+        ),
         "src/public/lib/three-workflow-delivery-v3/src/new_module.py",
         ".github/actions/workflow-delivery-v3-ruby-new/action.yml",
         ".github/workflows/workflow-delivery-v3-ruby-new.yml",

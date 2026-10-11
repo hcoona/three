@@ -286,8 +286,9 @@ The [NBGV native-input assessment](./research/nbgv-native-inputs.md) identifies
 public configuration/filter APIs and bounded Linux application observations for
 official-package delivery and the existing PNPM reader. Root Node/.NET integration
 has separate hosted qualification. Python caller wiring is implemented with its
-ordinary hosted qualification carried by [PR #1114](https://github.com/hcoona/three/pull/1114); Ruby execution cutover and
-Release remain pending.
+ordinary hosted qualification carried by [PR #1114](https://github.com/hcoona/three/pull/1114); Ruby group qualification is carried by
+[PR #1123](https://github.com/hcoona/three/pull/1123). Root CI owns Ruby execution
+and transfers its original facts to Node; Release replacement remains pending.
 The [Node CI native execution observation](./research/node-ci-native-execution.md)
 retains the completed adopted-fixture Linux composition/effects evidence,
 independent reviews and stopped protocol. It does not establish caller cutover.

@@ -154,10 +154,11 @@ original-plan and result coverage. Supplied same-endpoint Ruby bundle facts can
 join their actual PNPM consumers and feed paired Node impact selection; controlled
 coverage preserves source deletion reasons without adding dependency declarations.
 Finite caller transfer retains both Ruby fact endpoints once and supplies a typed
-Node contribution without native recollection. Actual product/consumer qualification and
-complete hosted workflow transfer, caller
-qualification and atomic cutover remain pending. Existing Ruby
-callers, manual Release and historical readers remain. These primitives authorize
+Node contribution without native recollection. Ordinary [PR #1123](https://github.com/hcoona/three/pull/1123) CI qualified the
+complete native Ruby group and original transfer. Root CI now owns Ruby PR
+checks; the fixture moved into Workflow tests and duplicate automated Ruby
+callers are retired. Node receives both original Ruby fact endpoints from the
+same run. Manual Release and historical readers remain. These primitives authorize
 no publication or campaign continuation.
 
 ## Ruby Delivery Entry

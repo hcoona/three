@@ -375,10 +375,11 @@ Preserve command termination, original examples, pending/failure and
 outside-example results. Gem build/inspect/clean require obligations remain even
 when the source has no Gemfile/spec directory.
 
-Keep ordinary root Ruby and the shadow PR workflow until one complete native
-group qualifies their combined planning, preparation, execution and original
-result transfer. Move the adopted fixture and retire duplicate automated triggers
-atomically with that caller switch. Preserve manual Release and historical readers
+The complete native Ruby group qualified combined planning, preparation,
+execution and original result transfer in ordinary [PR #1123](https://github.com/hcoona/three/pull/1123) CI.
+Root `ruby-group` now owns PR checks; the duplicate root job and shadow PR
+workflow are retired with the fixture relocation. Node receives the original
+paired Ruby facts from the same successful native group. Preserve manual Release and historical readers
 until their own groups retire. Public source establishes interface candidates,
 not current native qualification; source findings and bounded validation limits
 must be accepted before observations. The Wave permits ordinary isolated software
