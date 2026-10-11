@@ -38,8 +38,57 @@ they do not establish a new live npmjs publication or hosted dispatch result.
 The common Release state component preserves raw upload outcomes separately
 from complete business state. Initially exact state and readback after an
 abnormal upload use the same completion predicate; abnormal uploads stop later
-writes. Ordinary destination callers still use their retained implementations
-until their complete permission, transfer and required-consumer cutover.
+writes. Other destination callers retain their implementations until their
+complete permission, transfer and required-consumer cutover.
+
+## npm Buddy Release
+
+The npm Buddy workflow uses one selected same-repository source/control revision,
+including development branches. Preparation resolves the existing adopted product
+with native NBGV and locked PNPM, builds/tests/packs its complete original tarball
+and performs clean local consumption independently of CI. Prepared control is
+uploaded before product execution, separately from original files and results.
+The receiving jobs consume immutable artifact IDs and validate the selected
+producer and request. Required artifacts request 45-day retention.
+
+`release observe-github-npm <preparation.json> <originals-directory>` verifies
+the existing public GitHub package's native owner/repository association, exact
+version metadata and original bytes. Only complete authoritative version absence
+can permit creation; an absent package container cannot. Reads have a 60-second
+operation limit, 20-second complete-response limit, five redirects, 1 MB metadata
+and 25 MB tarball bounds. Credentials go only to GitHub API/registry origins and
+are stripped across storage redirects. Results omit signed URLs and credentials.
+
+`release publish-github-npm <preparation.json> <originals-directory>
+<fresh-runtime> <toolchain-bin>` reobserves after native Environment approval on
+the actual publisher job. It removes unnecessary writes, then invokes the existing
+qualified Node 24.19.0/npm 11.17.0 standard publish once with lifecycle scripts and
+fetch retries disabled. Its 120-second native outcome remains separate from
+business completion. No witness, approval mirror, Governance expiry or durable
+mutation marker is used. Product evaluation/consumption has no write capability.
+
+`release consume-github-npm <preparation.json> <observation.json>
+<originals-directory> <fresh-runtime> <toolchain-bin>` performs a required native
+scoped exact-version npm install and adopted API import in a separate read-only
+job. Fresh configuration/cache excludes ambient npm state. It consumes npm's
+generated lockfile result and original SRI rather than implementing resolution.
+Its selected tarball URL is compared by digest to avoid retaining signed URLs;
+original byte identity remains SHA256/size. Installation and import have
+300-second and 30-second limits. Native metadata/originals are read again afterward.
+
+`release complete-github-npm <preparation.json> <observation.json>
+<consumer.json> <publication.json|->` requires complete native state and remote
+consumption on both initially exact and postupload paths. A handled abnormal
+upload can satisfy only through complete observation/checks, preserving its actual
+failure. Missing results cannot prove non-start. Native workflow concurrency
+covers the fixed physical package through verification without canceling active
+publication. `release describe-github-npm` reports dry-run hypothetical writes
+without live completion or a write gate.
+
+The ordinary entry and former reusable live workflow are replaced together.
+Historical acceptance and other ordinary ecosystem consumers still use their
+retained Python helpers. Source/controlled tests do not establish a new hosted
+Buddy run, live publication or reopened campaign.
 
 ## Native Ruby Primitives
 

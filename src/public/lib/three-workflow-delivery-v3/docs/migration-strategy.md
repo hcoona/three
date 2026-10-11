@@ -90,7 +90,7 @@ Retirement of a campaign caller never grants another operation.
 | `workflow-delivery-v3-python-smoke.yml`                                                              | Separate its PR CI and manual Release responsibilities; switch PR work with the Python CI group, then Release preparation/publication as a complete later group              |
 | `workflow-delivery-v3-ruby-ci.yml`                                                                   | Switch Ruby CI with its native facts/build/consumer group; retire duplicate PR triggers                                                                                      |
 | `workflow-delivery-v3-official-simulate.yml`                                                         | Implemented common selected-revision npm preparation/public reads/dry-run result; simulation record stages retired; no npmjs live-publication caller added                   |
-| `workflow-delivery-v3-buddy-smoke.yml`, `workflow-delivery-v3-live-attempt.yml`                      | Replace npm Buddy entry and reusable live implementation together, after common Release preparation and destination/result contracts                                         |
+| `workflow-delivery-v3-buddy-smoke.yml`, former `workflow-delivery-v3-live-attempt.yml`               | npm Buddy entry replaced; former reusable caller retired with native GitHub observation, gated single publish and separate required native consumer                          |
 | `workflow-delivery-v3-nuget-buddy-smoke.yml`, `workflow-delivery-v3-nuget-live-attempt.yml`          | Replace NuGet entry and reusable live implementation with the consolidated native provider/consumer; preserve actual Windows and unprivileged-consumer boundaries            |
 | `workflow-delivery-v3-ruby-smoke.yml`                                                                | Replace ordinary Ruby Release flow without carrying over operation claims, ledger phases or configuration continuation                                                       |
 | `workflow-delivery-v3-native-npm-acceptance.yml`, `workflow-delivery-v3-native-nuget-acceptance.yml` | Retire closed native campaign dispatch surfaces; retain original source/run references in evidence                                                                           |
@@ -902,6 +902,14 @@ cannot be removed by classifying it as redundant without establishing which
 property the remaining checks cover. Historical audits keep their original tests.
 The table distinguishes the current mechanisms and required properties; it does
 not assert new platform guarantees or itself enable any remote operation.
+
+The [npm Buddy integration](../../../../private/app/workflow-delivery/README.md#npm-buddy-release)
+implements the first ordinary Release cutover: complete selected preparation,
+native package-control/exact original-byte reads, Environment on the actual
+publisher, one standard native upload, separate scoped native install/import
+and complete common result. Its source-only validation does not qualify a new
+hosted Live invocation. Historical acceptance readers retain the old native
+helpers until their actual evidence consumers move; they do not authorize replay.
 
 Use the existing bounded native read mechanisms as extraction inputs, not the old
 Governance expiry/profile digests. Each integration closes endpoint/redirect and

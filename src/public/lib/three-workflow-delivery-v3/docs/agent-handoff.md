@@ -20,6 +20,13 @@ simulation workflow uses the selected source/control revision without a write
 gate. Its Python-only simulation entrypoints and HTTP/transport modules are
 retired; shared native Buddy behavior remains with its actual live consumers.
 Controlled tests do not establish a manual dispatch or new live acceptance.
+The [npm Buddy interface](../../../../private/app/workflow-delivery/README.md#npm-buddy-release)
+replaces the ordinary npm entry and reusable live caller with complete selected
+preparation, native GitHub observation, approval on the actual publisher and a
+separate required scoped native consumer. It uses common Release completion;
+the former approval/Governance/marker record chain is no longer an ordinary
+caller. Historical acceptance helpers and other ecosystem callers remain with
+their actual consumers. No new live dispatch or publication is implied.
 Root CI owns the native Ruby group, qualified in ordinary
 [PR #1124](https://github.com/hcoona/three/pull/1124) CI. It receives the exact scope
 and complete candidate control artifact, prepares native facts once and executes
