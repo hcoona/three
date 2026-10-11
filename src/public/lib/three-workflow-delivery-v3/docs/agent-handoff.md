@@ -141,8 +141,11 @@ and frozen installation with caller-owned tools/state; source preparation orderi
 and actual dependency qualification remain caller responsibilities. Supported
 input-scope qualification and selected project preparation remain pending. The paired
 group reader binds prepared endpoints and transferred scope with controlled coverage. Adopted gem execution has
-controlled native-command coverage; actual product/consumer qualification, complete
-workflow execution, caller qualification and atomic cutover remain pending. Existing Ruby
+controlled native-command coverage. Caller-owned native query preparation uses the
+candidate control NBGV pin, separates endpoint installation state and prepares
+source inputs before frozen Bundler evaluation; its coverage is controlled.
+Actual product/consumer qualification, complete workflow execution, caller
+qualification and atomic cutover remain pending. Existing Ruby
 callers, manual Release and historical readers remain. These primitives authorize
 no publication or campaign continuation.
 

@@ -132,6 +132,16 @@ can establish non-Ruby responsibility; their declarations cannot suppress actual
 Ruby input consumption. Controlled collection/transfer tests do not qualify
 native tool preparation, product execution or the complete hosted caller.
 
+[`RubyGroupPreparation`](Repository/RubyGroupPreparation.cs) prepares the candidate
+control manifest's NBGV tool through native .NET installation and gives both
+committed endpoints separate disposable home, gem, bundle and query state. It
+binds the exact Git/scope inputs before installation, prepares source version
+inputs before frozen Bundler evaluation and returns the existing paired-reader
+request with original native commands. Caller-supplied tool paths and the probe
+version do not become another tool declaration. Controlled command/Git scenarios
+cover this boundary; actual dependencies and hosted caller qualification remain
+pending.
+
 [`RubyPackageExecution`](CI/RubyPackageExecution.cs) implements the adopted gem's
 native build, archive inspection and clean local installed-require checks against
 the original candidate plan. Source version projection remains native; RubyGems
