@@ -145,6 +145,7 @@ public sealed class NuGetPreparationTests(TestContext context)
         foreach (ReleaseCommand command in result.Commands)
         {
             Assert.IsFalse(command.Command.InheritEnvironment);
+            Assert.IsFalse(command.Command.Environment!.ContainsKey("SOURCE_DATE_EPOCH"));
             Assert.AreEqual("true", command.Command.Environment!["GITHUB_ACTIONS"]);
             Assert.AreEqual(result.Prepared.Subject.SelectedRef,
                 command.Command.Environment["GITHUB_REF"]);

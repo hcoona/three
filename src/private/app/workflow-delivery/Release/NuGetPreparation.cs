@@ -231,7 +231,7 @@ internal static class NuGetPreparation
     {
         var values = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (string name in new[] { "PATH", "SystemRoot", "WINDIR", "PATHEXT", "DOTNET_ROOT",
-            "DOTNET_ROOT_X64", "NUGET_PACKAGES", "SOURCE_DATE_EPOCH",
+            "DOTNET_ROOT_X64", "NUGET_PACKAGES",
             "DOTNET_CLI_TELEMETRY_OPTOUT", "DOTNET_SKIP_FIRST_TIME_EXPERIENCE" })
             if (Environment.GetEnvironmentVariable(name) is { } value) values.Add(name, value);
         // Native NBGV evaluates the requested ref, independently of the caller's ref.
