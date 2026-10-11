@@ -47,6 +47,30 @@ documentation][env-doc], consulted on 2026-10-11, do not expose a retry-off opti
 for this operation. The [removed enhanced-retry switch][removed] changed backoff
 behavior; it did not select zero retries.
 
+## Client Distribution Selection
+
+The selected SDK 10.0.401's NuGet.Protocol and NuGet.Commands assemblies report
+informational version
+`7.9.0-rc.42413+e34a38d2ae1fc26406a317517196e55c68ff83ab`, which differs from the
+packaged 7.9.0 source pin above. Read-only file inspection on 2026-10-11
+established that identity difference. Exact public source-file retrievals returned
+404 and the public commit lookup returned 422; those failed acquisitions do not
+establish SDK incompatibility or a matching source basis.
+
+Select the coherent official packaged 7.9.0 NuGet group instead of assuming
+equivalence with the SDK copy. Its NuGet.Packaging `net8.0` dependency group
+requires Newtonsoft.Json 13.0.3 or later. Package metadata establishes dependency
+shape, not integration compatibility. The
+[concrete integration contract](../migration-strategy.md#concrete-nuget-buddy-integration)
+requires resolved assembly identities, NBGV/SDK binding and ordinary native
+restore/consumer validation. It retains SDK Microsoft.Build references and the
+official NBGV assembly while removing competing JSON copy sources. No native
+experiment, private-source access or additional publication is inferred.
+
+The delivery work carrier retains original SDK identity/digest inspection,
+failed public source/commit acquisitions and official package metadata. These
+are local source and file observations, not registry-publication evidence.
+
 ## Integration Consequences and Evidence Limits
 
 Invoke the official publisher for one exact qualified `.nupkg`, with no symbol
