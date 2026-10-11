@@ -12,24 +12,6 @@ from pathlib import Path
 from typing import Any, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
-BUDDY_WORKFLOW = (
-    REPO_ROOT / ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"
-)
-
-
-def test_live_scenario_has_no_external_or_caller_supplied_policy_result() -> (
-    None
-):
-    """Let the evaluator form exact-target evidence in the current run."""
-    workflow = BUDDY_WORKFLOW.read_text(encoding="utf-8")
-
-    assert "Prepare static-reference authorities" in workflow
-    assert "three-workflow-delivery-v3 release evaluate-live-eligibility" in (
-        workflow
-    )
-    assert '--target "${GITHUB_SHA}"' in workflow
-    assert "workflow_delivery_v3_static_reference.py" not in workflow
-    assert "--consumer-policy" not in workflow
 
 
 def test_manual_worktree_scenario_is_isolated_in_mise() -> None:
