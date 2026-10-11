@@ -151,6 +151,13 @@ when prerequisites fail. Its clean consumer has separate GEM_HOME/GEM_PATH and
 no checkout Ruby load path. Controlled execution does not qualify the actual
 product or complete workflow transfer; caller integration remains pending.
 
+The `ci prepare-ruby-group`, `ci plan-ruby-group` and `ci run-ruby-group`
+commands transfer these existing preparation, paired selection and execution
+objects through the strict JSON interface. Execution exit status is collected
+against the original plan and actual results; a supplied success outcome cannot
+hide a missing required result. Controlled CLI transfer does not qualify actual
+native preparation, product execution or root/shadow caller cutover.
+
 [`RubyGroupExecution`](CI/RubyGroupExecution.cs) combines the original selected
 RSpec and gem obligations against exact prepared candidate facts. It binds the
 checkout and validates both finite recipes before execution, invokes whole-project

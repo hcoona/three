@@ -25,10 +25,53 @@ internal static class Program
         Func<PythonGroupRequest, CancellationToken, Task<PythonGroupReadback>>?
             planPythonGroup = null,
         Func<PythonGroupPreparationRequest, CancellationToken, Task<PythonGroupPreparationResult>>?
-            preparePythonGroup = null)
+            preparePythonGroup = null,
+        Func<RubyGroupPreparationRequest, CancellationToken, Task<RubyGroupPreparationResult>>?
+            prepareRubyGroup = null,
+        Func<RubyGroupRequest, CancellationToken, Task<RubyGroupReadback>>? planRubyGroup = null,
+        Func<CiPlan, RubyGroupRunRequest, CancellationToken, Task<RubyGroupRun>>?
+            runRubyGroup = null)
     {
         try
         {
+            if (args is ["ci", "prepare-ruby-group", var rubyPreparationPath])
+            {
+                RubyGroupPreparationRequest request = JsonSerializer.Deserialize(
+                    File.ReadAllText(rubyPreparationPath),
+                    TransferJson.Default.RubyGroupPreparationRequest)
+                    ?? throw new InvalidDataException("Missing native Ruby preparation request.");
+                RubyGroupPreparationResult result = (prepareRubyGroup ??
+                    RubyGroupPreparation.PrepareAsync)(request, CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                output.WriteLine(JsonSerializer.Serialize(result,
+                    TransferJson.Default.RubyGroupPreparationResult));
+                return 0;
+            }
+            if (args is ["ci", "plan-ruby-group", var rubyGroupPath])
+            {
+                RubyGroupRequest request = JsonSerializer.Deserialize(
+                    File.ReadAllText(rubyGroupPath), TransferJson.Default.RubyGroupRequest)
+                    ?? throw new InvalidDataException("Missing native Ruby group request.");
+                RubyGroupReadback result = (planRubyGroup ?? RubyGroupReader.ReadAsync)(request,
+                    CancellationToken.None).GetAwaiter().GetResult();
+                output.WriteLine(JsonSerializer.Serialize(result,
+                    TransferJson.Default.RubyGroupReadback));
+                return 0;
+            }
+            if (args is ["ci", "run-ruby-group", var rubyPlanPath, var rubyRequestPath])
+            {
+                CiPlan plan = JsonSerializer.Deserialize(File.ReadAllText(rubyPlanPath),
+                    TransferJson.Default.CiPlan)
+                    ?? throw new InvalidDataException("Missing native Ruby group plan.");
+                RubyGroupRunRequest request = JsonSerializer.Deserialize(
+                    File.ReadAllText(rubyRequestPath), TransferJson.Default.RubyGroupRunRequest)
+                    ?? throw new InvalidDataException("Missing native Ruby execution request.");
+                RubyGroupRun result = (runRubyGroup ?? RubyGroupExecution.RunAsync)(plan, request,
+                    CancellationToken.None).GetAwaiter().GetResult();
+                output.WriteLine(JsonSerializer.Serialize(result,
+                    TransferJson.Default.RubyGroupRun));
+                return ResultCollector.Collect(plan, result.Results).Satisfied ? 0 : 1;
+            }
             if (args is ["ci", "prepare-python-group", var preparationPath])
             {
                 PythonGroupPreparationRequest request = JsonSerializer.Deserialize(
@@ -203,6 +246,9 @@ internal static class Program
                     + " | ci plan-dotnet-group <request.json>"
                     + " | ci plan-python-group <request.json>"
                     + " | ci prepare-python-group <request.json>"
+                    + " | ci prepare-ruby-group <request.json>"
+                    + " | ci plan-ruby-group <request.json>"
+                    + " | ci run-ruby-group <plan.json> <request.json>"
                     + " | ci run-dotnet <plan.json> <request.json>"
                     + " | ci run-python-package <plan.json> <request.json>"
                     + " | ci run-python-group <plan.json> <request.json>"
@@ -267,6 +313,12 @@ internal static class Program
 [JsonSerializable(typeof(PythonGroupPreparationRequest))]
 [JsonSerializable(typeof(PythonGroupPreparationResult))]
 [JsonSerializable(typeof(PythonPreparationCommand[]))]
+[JsonSerializable(typeof(RubyGroupPreparationRequest))]
+[JsonSerializable(typeof(RubyGroupPreparationResult))]
+[JsonSerializable(typeof(RubyGroupRequest))]
+[JsonSerializable(typeof(RubyGroupReadback))]
+[JsonSerializable(typeof(RubyGroupRunRequest))]
+[JsonSerializable(typeof(RubyGroupRun))]
 [JsonSerializable(typeof(NodePlanRequest))]
 [JsonSerializable(typeof(NodeGroupRequest))]
 [JsonSerializable(typeof(NodeGroupReadback))]
