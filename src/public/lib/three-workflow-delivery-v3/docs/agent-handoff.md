@@ -27,6 +27,12 @@ separate required scoped native consumer. It uses common Release completion;
 the former approval/Governance/marker record chain is no longer an ordinary
 caller. Historical acceptance helpers and other ecosystem callers remain with
 their actual consumers. No new live dispatch or publication is implied.
+The private application's [NuGet destination observation component](../../../../private/app/workflow-delivery/README.md#nuget-destination-observation)
+implements bounded service-index, package metadata and original archive reads
+using official NuGet interpretation. Controlled tests establish credential
+separation, finite reads and unknown/conflict handling; they do not qualify live
+feed behavior. Publisher, remote consumer and ordinary NuGet caller cutover
+remain separate work under the accepted concrete integration contract.
 Root CI owns the native Ruby group, qualified in ordinary
 [PR #1124](https://github.com/hcoona/three/pull/1124) CI. It receives the exact scope
 and complete candidate control artifact, prepares native facts once and executes

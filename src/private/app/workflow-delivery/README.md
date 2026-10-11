@@ -1101,6 +1101,27 @@ These tests cover their concrete fixture composition. The CLI below composes ret
 native checks and the adopted NuGet recipe. The root caller below supplies the
 separate whole-group and ordinary Windows artifact/result qualification.
 
+### NuGet Destination Observation
+
+[`GithubNuGetObservation`](Destinations/GithubNuGetObservation.cs) consumes a
+qualified single-package Buddy request. Official NuGet interprets the service
+index, normalized versions and archive identity. The application restricts the
+selected owner endpoints, requires public package/repository association,
+collects bounded supporting GitHub metadata and native version inventory, and
+compares the original archive size and SHA-256. Unavailable, incomplete or
+conflicting facts cannot authorize creation.
+
+An observation permits at most 80 HTTP reads in 90 seconds. Each body-inclusive
+read has 30 seconds; metadata is limited to 2 MiB and archives to 25 MiB. The
+owned client disables automatic redirects, cookies, proxy and default
+credentials. NuGet reads use origin-bound Basic authentication; GitHub metadata
+uses Bearer authentication. Only the original archive can follow one supported
+HTTPS storage redirect, without credentials. Signed locations remain in memory;
+diagnostics retain only the storage origin and location digest. Cancellation and
+missing responses retain unknown state. Controlled handler scenarios qualify
+this component's behavior, not live feed responses or publication. Release CLI,
+publisher and required remote consumption remain separate integration work.
+
 ### Native .NET Group Interface
 
 [`DotNetGroupReader`](Repository/DotNetGroupReader.cs) reads both exact .NET endpoints,
