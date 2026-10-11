@@ -1,5 +1,9 @@
 """Release-owned identity, planning, qualification, and eligibility APIs."""
 
+from three_workflow_delivery_v3.release.adapter_context import (
+    ReleaseAdapterContext,
+    release_adapter_context_from_bytes,
+)
 from three_workflow_delivery_v3.release.attempt_finalizer import (
     FinalizationInputs,
     finalize_attempt_outcome,
@@ -43,10 +47,7 @@ from three_workflow_delivery_v3.release.eligibility import (
 from three_workflow_delivery_v3.release.finalizer import (
     desired_projection_state_digest,
     finalize_qualification,
-    finalize_simulation,
-    materialize_hypothetical_actions,
     materialize_publication_snapshot,
-    validate_projection_observations,
 )
 from three_workflow_delivery_v3.release.governance_git import (
     GovernanceGitRead,
@@ -82,15 +83,6 @@ from three_workflow_delivery_v3.release.qualification import (
     form_uploaded_release_artifact,
     qualify_release_artifact_contents,
     qualify_release_install_import,
-)
-from three_workflow_delivery_v3.release.simulation import (
-    HypotheticalActionsReport,
-    ReleaseAdapterContext,
-    SimulationObservationSet,
-    hypothetical_actions_report_from_bytes,
-    release_adapter_context_from_bytes,
-    render_simulation_summary,
-    simulation_observation_set_from_bytes,
 )
 from three_workflow_delivery_v3.release.static_reference_model import (
     STATIC_REFERENCE_POLICY_ID,
@@ -144,7 +136,6 @@ __all__ = [  # noqa: RUF022
     "FinalizationInputs",
     "parse_publication_terminal_reference",
     "finalize_qualification",
-    "finalize_simulation",
     "form_approval_bundle",
     "form_publication_authorization",
     "form_incomplete_evidence",
@@ -159,8 +150,6 @@ __all__ = [  # noqa: RUF022
     "GovernanceRejectionError",
     "GovernanceSourceClient",
     "governance_observation_provenance",
-    "hypothetical_actions_report_from_bytes",
-    "HypotheticalActionsReport",
     "IsolatedGovernanceGitReader",
     "LIVE_ELIGIBILITY_DECISION_SCHEMA",
     "LIVE_ELIGIBILITY_PRODUCER",
@@ -168,7 +157,6 @@ __all__ = [  # noqa: RUF022
     "LiveEligibilityContext",
     "LiveEligibilityDecision",
     "LiveEligibilityGovernanceBinding",
-    "materialize_hypothetical_actions",
     "materialize_publication_snapshot",
     "mechanical_build_document",
     "mechanical_build_from_bytes",
@@ -190,12 +178,9 @@ __all__ = [  # noqa: RUF022
     "release_adapter_context_from_bytes",
     "release_policy_digest",
     "ReleaseAdapterContext",
-    "render_simulation_summary",
     "require_fresh_governance_identity",
     "runtime_request",
-    "simulation_observation_set_from_bytes",
     "scan_bounded_static_references",
-    "SimulationObservationSet",
     "STATIC_REFERENCE_POLICY_DIGEST",
     "STATIC_REFERENCE_POLICY_ID",
     "STATIC_REFERENCE_RESULT_SCHEMA",
@@ -203,7 +188,6 @@ __all__ = [  # noqa: RUF022
     "StaticReferenceFinding",
     "static_reference_policy_document",
     "validate_bounded_static_reference_result",
-    "validate_projection_observations",
     "WriterInventoryEntry",
     "validate_approval_bundle_closure",
 ]

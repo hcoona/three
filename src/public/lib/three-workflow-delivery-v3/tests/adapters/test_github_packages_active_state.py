@@ -30,8 +30,8 @@ from three_workflow_delivery_v3.adapters.github_packages import (
 from three_workflow_delivery_v3.canonical import canonical_sha256, canonicalize
 
 _SPEC = importlib.util.spec_from_file_location(
-    "wdv3_npmjs_active_readback_fixtures",
-    Path(__file__).with_name("test_npmjs.py"),
+    "wdv3_npm_active_readback_fixtures",
+    Path(__file__).with_name("npm_tarball_fixture.py"),
 )
 assert _SPEC is not None
 assert _SPEC.loader is not None

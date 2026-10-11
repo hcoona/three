@@ -14,7 +14,6 @@ from .workflow_shell import executable, run_step
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 LIVE = ".github/workflows/workflow-delivery-v3-live-attempt.yml"
-SIMULATION = ".github/workflows/workflow-delivery-v3-official-simulate.yml"
 
 LIVE_PLAN = {
     "qualification_snapshot": ".wdv3/input/live qualification.json",
@@ -25,16 +24,6 @@ LIVE_PLAN = {
     "adapter_context_digest": "sha256:" + "03" * 32,
     "adapter_context_artifact_id": 7102,
     "adapter_context_artifact_digest": "sha256:" + "04" * 32,
-}
-SIMULATION_PLAN = {
-    "qualification_snapshot": ".wdv3/input/simulation qualification.json",
-    "qualification_snapshot_digest": "sha256:" + "05" * 32,
-    "qualification_snapshot_artifact_id": 7201,
-    "qualification_snapshot_artifact_digest": "sha256:" + "06" * 32,
-    "adapter_context": ".wdv3/input/simulation adapter.json",
-    "adapter_context_digest": "sha256:" + "07" * 32,
-    "adapter_context_artifact_id": 7202,
-    "adapter_context_artifact_digest": "sha256:" + "08" * 32,
 }
 BUILD_SNAPSHOT = {
     "qualification_snapshot": ".wdv3/input/build qualification.json",
@@ -142,81 +131,6 @@ BUILD_ARTIFACT = {
             },
             id="live-incomplete-install",
         ),
-        pytest.param(
-            SIMULATION,
-            "project-test",
-            "Run project-test mechanics",
-            "release-simulation",
-            "c" * 40,
-            2,
-            {
-                **SIMULATION_PLAN,
-                "release_command": "run-project-test",
-                "output": ".wdv3/project-test-evidence.json",
-                "repo_root": ".",
-            },
-            id="simulation-project-test",
-        ),
-        pytest.param(
-            SIMULATION,
-            "npm-artifact-qualification",
-            "Run artifact-contents mechanics",
-            "release-simulation",
-            "c" * 40,
-            2,
-            {
-                **BUILD_ARTIFACT,
-                "release_command": "run-artifact-contents",
-                "output": ".wdv3/artifact-contents-evidence.json",
-            },
-            id="simulation-artifact-contents",
-        ),
-        pytest.param(
-            SIMULATION,
-            "npm-artifact-qualification",
-            "Form incomplete artifact-contents Evidence",
-            "release-simulation",
-            "c" * 40,
-            2,
-            {
-                **BUILD_SNAPSHOT,
-                "release_command": "form-incomplete-evidence",
-                "obligation_id": "release:quality:npm-artifact-contents",
-                "output_role": "artifact-contents-evidence",
-                "output": ".wdv3/artifact-contents-evidence.json",
-            },
-            id="simulation-incomplete-contents",
-        ),
-        pytest.param(
-            SIMULATION,
-            "npm-artifact-qualification",
-            "Run install-import mechanics",
-            "release-simulation",
-            "c" * 40,
-            2,
-            {
-                **BUILD_ARTIFACT,
-                "release_command": "run-install-import",
-                "output": ".wdv3/install-import-evidence.json",
-            },
-            id="simulation-install-import",
-        ),
-        pytest.param(
-            SIMULATION,
-            "npm-artifact-qualification",
-            "Form incomplete install-import Evidence",
-            "release-simulation",
-            "c" * 40,
-            2,
-            {
-                **BUILD_SNAPSHOT,
-                "release_command": "form-incomplete-evidence",
-                "obligation_id": "release:quality:npm-install-import",
-                "output_role": "install-import-evidence",
-                "output": ".wdv3/install-import-evidence.json",
-            },
-            id="simulation-incomplete-install",
-        ),
     ],
 )
 def test_qualification_workflow_invocation_reaches_current_parser(  # noqa: PLR0913
@@ -278,28 +192,6 @@ if command[:2] == ["release", "run-project-test"]:
             "needs.plan-qualification.outputs.adapter-context-artifact-digest"
         ): "sha256:" + "04" * 32,
         (
-            "needs.plan-simulation.outputs.qualification-snapshot-artifact-name"
-        ): "simulation qualification.json",
-        (
-            "needs.plan-simulation.outputs.qualification-snapshot-digest"
-        ): "sha256:" + "05" * 32,
-        (
-            "needs.plan-simulation.outputs.qualification-snapshot-artifact-id"
-        ): "7201",
-        (
-            "needs.plan-simulation.outputs."
-            "qualification-snapshot-artifact-digest"
-        ): "sha256:" + "06" * 32,
-        (
-            "needs.plan-simulation.outputs.adapter-context-artifact-name"
-        ): "simulation adapter.json",
-        ("needs.plan-simulation.outputs.adapter-context-digest"): "sha256:"
-        + "07" * 32,
-        ("needs.plan-simulation.outputs.adapter-context-artifact-id"): "7202",
-        (
-            "needs.plan-simulation.outputs.adapter-context-artifact-digest"
-        ): "sha256:" + "08" * 32,
-        (
             "needs.build-tarball.outputs.qualification-snapshot-artifact-name"
         ): "build qualification.json",
         ("needs.build-tarball.outputs.qualification-snapshot-digest"): "sha256:"
@@ -339,7 +231,7 @@ if command[:2] == ["release", "run-project-test"]:
             "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
             "GITHUB_RUN_ID": "9031",
             "GITHUB_RUN_ATTEMPT": str(attempt),
-            "GITHUB_SHA": "b" * 40 if workflow_path == LIVE else "c" * 40,
+            "GITHUB_SHA": "b" * 40,
             "GITHUB_OUTPUT": str(github_output),
             "COMMAND_LOG": str(command_log),
         },

@@ -24,7 +24,6 @@ from three_workflow_delivery_v3.adapters.github_packages import (
 from three_workflow_delivery_v3.records.governance import (
     admit_governance_acceptance_evidence,
 )
-from three_workflow_delivery_v3.adapters.npmjs import observe_npmjs_projection
 from three_workflow_delivery_v3.canonical import (
     canonical_sha256,
     canonicalize,
@@ -42,9 +41,7 @@ from three_workflow_delivery_v3.records.artifacts import (
     ArtifactTransportIdentity,
 )
 from three_workflow_delivery_v3.records.release import (
-    HYPOTHETICAL_ACTIONS_REPORT_PRODUCER,
     MUTATION_MAY_HAVE_STARTED_SCHEMA,
-    NPMJS_OBSERVER_PRODUCER,
     PUBLICATION_RESULT_SCHEMA,
     ApprovalBundle,
     AttemptOutcome,
@@ -81,24 +78,19 @@ from three_workflow_delivery_v3.release import (
     admit_live_eligibility_decision,
     derive_buddy_execution_identity,
     derive_release_attempt_binding,
-    derive_simulation_binding,
     execute_project_test,
     execute_release_build,
     finalize_attempt_outcome,
     finalize_qualification,
-    finalize_simulation,
     form_approval_bundle,
     form_publication_authorization,
     form_incomplete_evidence,
     form_uploaded_release_artifact,
-    materialize_hypothetical_actions,
     materialize_publication_snapshot,
     normalize_buddy_live_intent,
-    normalize_official_simulation_intent,
     parse_governance_attestation,
     parse_publication_terminal_reference,
     plan_live_qualification,
-    plan_official_simulation_qualification,
     qualify_release_artifact_contents,
     qualify_release_install_import,
     require_fresh_governance_identity,
@@ -122,14 +114,9 @@ from three_workflow_delivery_v3.release.publication import (
 from three_workflow_delivery_v3.adapters.npm_process import (
     IsolatedNpmProcessRunner,
 )
-from three_workflow_delivery_v3.release.simulation import (
-    HypotheticalActionsReport,
+from three_workflow_delivery_v3.release.adapter_context import (
     ReleaseAdapterContext,
-    SimulationObservationSet,
-    hypothetical_actions_report_from_bytes,
     release_adapter_context_from_bytes,
-    render_simulation_summary,
-    simulation_observation_set_from_bytes,
 )
 from three_workflow_delivery_v3.release.workflow import (
     artifact_expectation,
@@ -658,25 +645,6 @@ def _load_release_record(  # noqa: PLR0913
     return admitted
 
 
-def _release_model_context(
-    intent: ReleaseIntent,
-    *,
-    run_attempt: int,
-) -> CompilationContext:
-    return CompilationContext(
-        request_id=intent.request_id,
-        purpose="release-simulation",
-        workflow_run_id=intent.workflow_run_id,
-        run_attempt=run_attempt,
-        target=intent.target,
-        producer="compile-simulation-model",
-        control=f"workflow-delivery-v3:{intent.target}",
-        catalog_digest=catalog_digest(),
-        channel="official",
-        release_unit=intent.release_unit,
-    )
-
-
 def _live_model_context(intent: ReleaseIntent) -> CompilationContext:
     return CompilationContext(
         request_id=intent.request_id,
@@ -720,25 +688,6 @@ def _load_live_intent(
     return cast("ReleaseIntent", record)
 
 
-def _load_release_model(
-    arguments: argparse.Namespace,
-    intent: ReleaseIntent,
-) -> AdmittedRepositoryModelSnapshot:
-    content = _verify_uploaded_payload(
-        arguments.repository_model,
-        artifact_id=arguments.repository_model_artifact_id,
-        artifact_digest=arguments.repository_model_artifact_digest,
-    )
-    return admit_repository_model_snapshot(
-        content,
-        expected_context=_release_model_context(
-            intent,
-            run_attempt=_platform_run_attempt(arguments),
-        ),
-        expected_digest=arguments.repository_model_digest,
-    )
-
-
 def _load_live_model(
     arguments: argparse.Namespace,
     intent: ReleaseIntent,
@@ -767,20 +716,6 @@ def _load_attempt_binding(
         bindings=_release_bindings(arguments, purpose="live-release"),
     )
     return cast("ReleaseAttemptBinding", record)
-
-
-def _load_simulation_binding(
-    arguments: argparse.Namespace,
-) -> SimulationBinding:
-    record = _load_release_record(
-        arguments.simulation_binding,
-        record_type=SimulationBinding,
-        expected_digest=arguments.simulation_binding_digest,
-        artifact_id=arguments.simulation_binding_artifact_id,
-        artifact_digest=arguments.simulation_binding_artifact_digest,
-        bindings=_release_bindings(arguments),
-    )
-    return cast("SimulationBinding", record)
 
 
 def _load_qualification_snapshot(
@@ -904,25 +839,6 @@ def _load_live_qualification_decision(
     return cast("QualificationDecision", record)
 
 
-def _release_normalize_request_command(arguments: argparse.Namespace) -> int:
-    _platform_run_attempt(arguments)
-    intent = normalize_official_simulation_intent(
-        repository=arguments.repository,
-        selected_ref=arguments.selected_ref,
-        target=arguments.target,
-        actor=arguments.actor,
-        workflow_run_id=arguments.workflow_run_id,
-    )
-    _write_output(arguments.output, intent.to_document())
-    _record_outputs(
-        arguments.github_output,
-        role="intent",
-        digest=intent.intent_digest,
-        extra=(("request-id", intent.request_id),),
-    )
-    return 0
-
-
 def _release_admit_intent_command(arguments: argparse.Namespace) -> int:
     _load_release_intent(
         arguments,
@@ -931,107 +847,12 @@ def _release_admit_intent_command(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def _release_compile_model_command(arguments: argparse.Namespace) -> int:
-    intent = _load_release_intent(arguments)
-    repo_root = Path(arguments.repo_root).resolve()
-    context = _release_model_context(
-        intent,
-        run_attempt=_platform_run_attempt(arguments),
-    )
-    manifest = first_slice_provider_manifest(
-        context,
-        provider_producer="discover-node",
-    )
-    _verify_uploaded_payload(
-        arguments.provider_result,
-        artifact_id=arguments.provider_artifact_id,
-        artifact_digest=arguments.provider_artifact_digest,
-    )
-    result = _load_node_provider_result(
-        arguments.provider_result,
-        expected_binding=provider_binding(manifest, "node-first-slice"),
-        expected_manifest_digest=manifest.manifest_digest,
-    )
-    request_transport_digest = _normalized_digest(
-        arguments.intent_artifact_digest
-    )
-    provider_transport_digest = _normalized_digest(
-        arguments.provider_artifact_digest
-    )
-    bundle = create_node_provider_fact_bundle(
-        result,
-        manifest_digest=manifest.manifest_digest,
-        manifest_entry_id=manifest.requests[0].entry_id,
-        request_artifact_id=arguments.intent_artifact_id,
-        request_artifact_digest=request_transport_digest,
-        transport_id=arguments.provider_artifact_id,
-        transport_digest=provider_transport_digest,
-    )
-    admitted = admit_node_provider_fact_bundle(
-        bundle,
-        context=context,
-        manifest=manifest,
-        admission=FactBundleAdmissionContext(
-            request_artifact_id=arguments.intent_artifact_id,
-            request_artifact_digest=request_transport_digest,
-            transport_id=arguments.provider_artifact_id,
-            transport_digest=provider_transport_digest,
-            bundle_digest=bundle.bundle_digest,
-        ),
-    )
-    snapshot = compile_repository_model(
-        repo_root,
-        context,
-        manifest,
-        [admitted],
-    )
-    canonical_bytes = canonicalize(snapshot.to_document())
-    admitted_model = admit_repository_model_snapshot(
-        canonical_bytes,
-        expected_context=context,
-        expected_digest=snapshot.snapshot_digest,
-    )
-    Path(arguments.output).parent.mkdir(parents=True, exist_ok=True)
-    Path(arguments.output).write_bytes(admitted_model.canonical_bytes)
-    _record_outputs(
-        arguments.github_output,
-        role="repository-model",
-        digest=admitted_model.canonical_digest,
-    )
-    return 0
-
-
-def _release_create_identity_command(arguments: argparse.Namespace) -> int:
-    intent = _load_release_intent(arguments)
-    model = _load_release_model(arguments, intent)
-    binding = derive_simulation_binding(intent, model)
-    _write_output(arguments.output, binding.to_document())
-    _record_outputs(
-        arguments.github_output,
-        role="simulation-binding",
-        digest=binding.binding_digest,
-        extra=(("simulation-id", binding.simulation.identity),),
-    )
-    return 0
-
-
 def _release_plan_qualification_command(arguments: argparse.Namespace) -> int:
-    if hasattr(arguments, "attempt_binding"):
-        intent = _load_live_intent(arguments)
-        model = _load_live_model(arguments, intent)
-        binding = _load_attempt_binding(arguments)
-        snapshot = plan_live_qualification(intent, binding, model)
-        purpose = "live-release"
-    else:
-        intent = _load_release_intent(arguments)
-        model = _load_release_model(arguments, intent)
-        simulation_binding = _load_simulation_binding(arguments)
-        snapshot = plan_official_simulation_qualification(
-            intent,
-            simulation_binding,
-            model,
-        )
-        purpose = "release-simulation"
+    intent = _load_live_intent(arguments)
+    model = _load_live_model(arguments, intent)
+    binding = _load_attempt_binding(arguments)
+    snapshot = plan_live_qualification(intent, binding, model)
+    purpose = "live-release"
     source_date_epoch = int(
         _command_stdout(
             ("git", "show", "-s", "--format=%ct", snapshot.target),
@@ -1351,175 +1172,6 @@ def _release_finalize_qualification_command(
         ),
     )
     return 0
-
-
-def _release_observe_npmjs_command(
-    arguments: argparse.Namespace,
-) -> int:
-    snapshot = _load_qualification_snapshot(arguments)
-    decision = _load_qualification_decision(arguments)
-    if not isinstance(snapshot.subject, SimulationBinding):
-        raise TypeError("npmjs observation requires simulation Snapshot")
-    observations: tuple[ProjectionObservation, ...] = ()
-    if decision.terminal_result == "success":
-        context = _load_release_adapter_context(arguments, snapshot)
-        artifact = _load_release_artifact_record(arguments)
-        expectation = artifact_expectation(snapshot, context, artifact)
-        observations = (
-            observe_npmjs_projection(
-                snapshot,
-                decision,
-                artifact,
-                expectation,
-            ),
-        )
-    bundle = SimulationObservationSet(
-        simulation=snapshot.subject.simulation,
-        purpose=snapshot.subject.purpose,
-        target=snapshot.target,
-        producer=NPMJS_OBSERVER_PRODUCER,
-        workflow_run_id=snapshot.subject.simulation.workflow_run_id,
-        run_attempt=snapshot.subject.simulation.run_attempt,
-        qualification_snapshot_digest=snapshot.snapshot_digest,
-        qualification_decision_digest=decision.decision_digest,
-        observations=observations,
-    )
-    _write_output(arguments.output, bundle.to_document())
-    _record_outputs(
-        arguments.github_output,
-        role="observation-set",
-        digest=bundle.set_digest,
-    )
-    return 0
-
-
-def _load_observation_set(
-    arguments: argparse.Namespace,
-    snapshot: QualificationSnapshot,
-    decision: QualificationDecision,
-) -> SimulationObservationSet:
-    content = _verify_uploaded_payload(
-        arguments.observation_set,
-        artifact_id=arguments.observation_set_artifact_id,
-        artifact_digest=arguments.observation_set_artifact_digest,
-    )
-    return simulation_observation_set_from_bytes(
-        content,
-        snapshot=snapshot,
-        decision=decision,
-        expected_digest=arguments.observation_set_digest,
-    )
-
-
-def _release_materialize_actions_command(
-    arguments: argparse.Namespace,
-) -> int:
-    snapshot = _load_qualification_snapshot(arguments)
-    decision = _load_qualification_decision(arguments)
-    observations = _load_observation_set(
-        arguments,
-        snapshot,
-        decision,
-    )
-    if not isinstance(snapshot.subject, SimulationBinding):
-        raise TypeError("Hypothetical actions require simulation Snapshot")
-    actions: tuple[HypotheticalAction, ...] = ()
-    if decision.terminal_result == "success" and observations.observations:
-        classifications = {
-            observation.value.classification
-            for observation in observations.observations
-        }
-        if classifications <= {"absent", "exact-satisfied"}:
-            artifact = _load_release_artifact_record(arguments)
-            actions = materialize_hypothetical_actions(
-                snapshot,
-                decision,
-                observations.observations,
-                (artifact,),
-            )
-    report = HypotheticalActionsReport(
-        simulation=snapshot.subject.simulation,
-        purpose=snapshot.subject.purpose,
-        target=snapshot.target,
-        producer=HYPOTHETICAL_ACTIONS_REPORT_PRODUCER,
-        workflow_run_id=snapshot.subject.simulation.workflow_run_id,
-        run_attempt=snapshot.subject.simulation.run_attempt,
-        qualification_snapshot_digest=snapshot.snapshot_digest,
-        qualification_decision_digest=decision.decision_digest,
-        observation_set_digest=observations.set_digest,
-        observation_digests=observations.observation_digests,
-        actions=actions,
-        publication_snapshot_emitted=False,
-    )
-    _write_output(arguments.output, report.to_document())
-    _record_outputs(
-        arguments.github_output,
-        role="hypothetical-actions-report",
-        digest=report.report_digest,
-    )
-    return 0
-
-
-def _release_finalize_simulation_command(
-    arguments: argparse.Namespace,
-) -> int:
-    snapshot = _load_qualification_snapshot(arguments)
-    decision = _load_qualification_decision(arguments)
-    observations = _load_observation_set(
-        arguments,
-        snapshot,
-        decision,
-    )
-    actions_content = _verify_uploaded_payload(
-        arguments.actions_report,
-        artifact_id=arguments.actions_report_artifact_id,
-        artifact_digest=arguments.actions_report_artifact_digest,
-    )
-    actions_report = hypothetical_actions_report_from_bytes(
-        actions_content,
-        snapshot=snapshot,
-        decision=decision,
-        observations=observations,
-        expected_digest=arguments.actions_report_digest,
-    )
-    artifacts: tuple[ReleaseArtifact, ...] = ()
-    if arguments.release_artifact is not None:
-        artifacts = (_load_release_artifact_record(arguments),)
-    outcome = finalize_simulation(
-        snapshot,
-        decision,
-        observations=observations.observations,
-        artifacts=artifacts,
-    )
-    if actions_report.actions != outcome.hypothetical_actions:
-        raise ValueError("Hypothetical actions report substitution mismatch")
-    _write_output(arguments.output, outcome.to_document())
-    summary = render_simulation_summary(
-        snapshot,
-        decision,
-        outcome.to_document(),
-    )
-    summary_path = Path(arguments.summary_output)
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(summary, encoding="utf-8", newline="\n")
-    if arguments.github_step_summary is not None:
-        with Path(arguments.github_step_summary).open(
-            "a",
-            encoding="utf-8",
-            newline="\n",
-        ) as github_summary:
-            github_summary.write(summary)
-    _record_outputs(
-        arguments.github_output,
-        role="simulation-outcome",
-        digest=outcome.outcome_digest,
-        extra=(
-            ("terminal-result", outcome.terminal_result),
-            ("failure-class", outcome.failure_class),
-            ("next-action", outcome.next_action),
-        ),
-    )
-    return 0 if outcome.terminal_result == "success" else 1
 
 
 def _require_nuget_initial_attempt(arguments: argparse.Namespace) -> None:
@@ -4613,15 +4265,6 @@ def _add_live_observation_authority_arguments(
     parser.add_argument("--live-eligibility-payload-digest", required=True)
 
 
-def _add_observation_set_arguments(
-    parser: argparse.ArgumentParser,
-) -> None:
-    _add_uploaded_record_arguments(
-        parser,
-        name="observation_set",
-    )
-
-
 def _add_optional_evidence_arguments(
     parser: argparse.ArgumentParser,
     *,
@@ -5050,17 +4693,6 @@ def _parser_for_program(prog: str) -> argparse.ArgumentParser:  # noqa: PLR0915
     attestation.add_argument("--document", required=True)
     attestation.set_defaults(handler=_validate_attestation_command)
 
-    normalize_request = release_commands.add_parser(
-        "normalize-simulation-request"
-    )
-    normalize_request.add_argument("--repository", required=True)
-    normalize_request.add_argument("--selected-ref", required=True)
-    normalize_request.add_argument("--actor", required=True)
-    _add_current_release_arguments(normalize_request)
-    normalize_request.add_argument("--output", required=True)
-    normalize_request.add_argument("--github-output")
-    normalize_request.set_defaults(handler=_release_normalize_request_command)
-
     admit_intent = release_commands.add_parser("admit-intent")
     admit_intent.add_argument(
         "--purpose",
@@ -5070,55 +4702,6 @@ def _parser_for_program(prog: str) -> argparse.ArgumentParser:  # noqa: PLR0915
     _add_current_release_arguments(admit_intent)
     _add_uploaded_record_arguments(admit_intent, name="intent")
     admit_intent.set_defaults(handler=_release_admit_intent_command)
-
-    compile_model = release_commands.add_parser("compile-simulation-model")
-    compile_model.add_argument("--repo-root", default=".")
-    _add_current_release_arguments(compile_model)
-    _add_uploaded_record_arguments(compile_model, name="intent")
-    compile_model.add_argument("--provider-result", required=True)
-    compile_model.add_argument(
-        "--provider-artifact-id",
-        required=True,
-        type=int,
-    )
-    compile_model.add_argument(
-        "--provider-artifact-digest",
-        required=True,
-    )
-    compile_model.add_argument("--output", required=True)
-    compile_model.add_argument("--github-output")
-    compile_model.set_defaults(handler=_release_compile_model_command)
-
-    create_identity = release_commands.add_parser("create-simulation-identity")
-    _add_current_release_arguments(create_identity)
-    _add_uploaded_record_arguments(create_identity, name="intent")
-    _add_uploaded_record_arguments(
-        create_identity,
-        name="repository_model",
-    )
-    create_identity.add_argument("--output", required=True)
-    create_identity.add_argument("--github-output")
-    create_identity.set_defaults(handler=_release_create_identity_command)
-
-    plan_qualification = release_commands.add_parser("plan-qualification")
-    plan_qualification.add_argument("--repo-root", default=".")
-    _add_current_release_arguments(plan_qualification)
-    _add_uploaded_record_arguments(plan_qualification, name="intent")
-    _add_uploaded_record_arguments(
-        plan_qualification,
-        name="repository_model",
-    )
-    _add_uploaded_record_arguments(
-        plan_qualification,
-        name="simulation_binding",
-    )
-    plan_qualification.add_argument("--output", required=True)
-    plan_qualification.add_argument(
-        "--adapter-context-output",
-        required=True,
-    )
-    plan_qualification.add_argument("--github-output")
-    plan_qualification.set_defaults(handler=_release_plan_qualification_command)
 
     run_build = release_commands.add_parser("run-build")
     run_build.add_argument("--repo-root", default=".")
@@ -5242,54 +4825,6 @@ def _parser_for_program(prog: str) -> argparse.ArgumentParser:  # noqa: PLR0915
     finalize_qualification.add_argument("--github-output")
     finalize_qualification.set_defaults(
         handler=_release_finalize_qualification_command
-    )
-
-    observe_npmjs = release_commands.add_parser("observe-npmjs")
-    _add_current_release_arguments(observe_npmjs)
-    _add_snapshot_arguments(observe_npmjs)
-    _add_decision_arguments(observe_npmjs)
-    _add_adapter_context_arguments(observe_npmjs)
-    _add_release_artifact_arguments(observe_npmjs, required=False)
-    observe_npmjs.add_argument("--output", required=True)
-    observe_npmjs.add_argument("--github-output")
-    observe_npmjs.set_defaults(handler=_release_observe_npmjs_command)
-
-    materialize_actions = release_commands.add_parser(
-        "materialize-hypothetical-actions"
-    )
-    _add_current_release_arguments(materialize_actions)
-    _add_snapshot_arguments(materialize_actions)
-    _add_decision_arguments(materialize_actions)
-    _add_observation_set_arguments(materialize_actions)
-    _add_release_artifact_arguments(
-        materialize_actions,
-        required=False,
-    )
-    materialize_actions.add_argument("--output", required=True)
-    materialize_actions.add_argument("--github-output")
-    materialize_actions.set_defaults(
-        handler=_release_materialize_actions_command
-    )
-
-    finalize_simulation = release_commands.add_parser("finalize-simulation")
-    _add_current_release_arguments(finalize_simulation)
-    _add_snapshot_arguments(finalize_simulation)
-    _add_decision_arguments(finalize_simulation)
-    _add_observation_set_arguments(finalize_simulation)
-    _add_uploaded_record_arguments(
-        finalize_simulation,
-        name="actions_report",
-    )
-    _add_release_artifact_arguments(
-        finalize_simulation,
-        required=False,
-    )
-    finalize_simulation.add_argument("--output", required=True)
-    finalize_simulation.add_argument("--summary-output", required=True)
-    finalize_simulation.add_argument("--github-step-summary")
-    finalize_simulation.add_argument("--github-output")
-    finalize_simulation.set_defaults(
-        handler=_release_finalize_simulation_command
     )
 
     _add_nuget_release_commands(release_commands)

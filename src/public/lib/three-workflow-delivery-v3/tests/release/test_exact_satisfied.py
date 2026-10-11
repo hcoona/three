@@ -20,6 +20,7 @@ from three_workflow_delivery_v3.records.release import (
 )
 from three_workflow_delivery_v3.release import exact_satisfied
 
+from ..adapters.npm_tarball_fixture import _make_tarball
 from ..adapters.test_github_packages_active_state import (
     CONTROL_URL,
     PACKAGE_URL,
@@ -27,7 +28,6 @@ from ..adapters.test_github_packages_active_state import (
     _control,
     _response,
 )
-from ..adapters.test_npmjs import _make_tarball
 from .observation_fixtures import (
     active_transport,
     current_arguments,

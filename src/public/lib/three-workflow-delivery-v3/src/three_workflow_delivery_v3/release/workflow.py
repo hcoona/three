@@ -25,11 +25,11 @@ from three_workflow_delivery_v3.records.release import (
     SimulationBinding,
     SimulationIdentity,
 )
+from three_workflow_delivery_v3.release.adapter_context import (
+    ReleaseAdapterContext,
+)
 from three_workflow_delivery_v3.release.qualification import (
     MechanicalBuildResult,
-)
-from three_workflow_delivery_v3.release.simulation import (
-    ReleaseAdapterContext,
 )
 from three_workflow_delivery_v3.repository.node_provider import NbgvFacts
 

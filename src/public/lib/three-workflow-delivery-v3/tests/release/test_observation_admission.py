@@ -54,7 +54,7 @@ from three_workflow_delivery_v3.release.workflow import (
     form_release_adapter_context,
 )
 
-from ..adapters.test_npmjs import _make_tarball
+from ..adapters.npm_tarball_fixture import _make_tarball
 from . import test_eligibility as eligibility_fixtures
 
 if TYPE_CHECKING:
@@ -68,7 +68,7 @@ if TYPE_CHECKING:
         ReleaseIntent,
         ReleaseRecord,
     )
-    from three_workflow_delivery_v3.release.simulation import (
+    from three_workflow_delivery_v3.release.adapter_context import (
         ReleaseAdapterContext,
     )
     from three_workflow_delivery_v3.repository.compiler import (

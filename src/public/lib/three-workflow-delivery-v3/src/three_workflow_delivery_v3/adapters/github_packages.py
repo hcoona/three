@@ -18,7 +18,7 @@ from three_workflow_delivery_v3.adapters.node import (
     _read_tarball,
     _validate_artifact_expectation,
 )
-from three_workflow_delivery_v3.adapters.npmjs import (
+from three_workflow_delivery_v3.adapters.remote_npm_artifact import (
     DEFAULT_EXPANDED_TARBALL_LIMIT_BYTES,
     _remote_tarball_observation,
 )
