@@ -156,6 +156,15 @@ def test_nuget_development_refs_and_dry_reruns(
 
 def test_nuget_control_is_transferred_before_product_execution(workflows):
     names = [step["name"] for step in workflows[1]["jobs"]["prepare"]["steps"]]
+    checkout = _step(
+        workflows[1], "Check out exact selected source and control"
+    )
+    assert checkout["with"]["ref"] == "${{ github.sha }}"
+    assert checkout["with"]["persist-credentials"] is False
+    assert "if" not in checkout
+    assert names.index("Validate selected Buddy request") < names.index(
+        "Check out exact selected source and control"
+    )
     assert (
         names.index("Build complete control before product execution")
         < names.index("Retain actual control results")
