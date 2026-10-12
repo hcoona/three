@@ -1,989 +1,432 @@
-name: Workflow Delivery v3 Ruby normal
+name: Workflow Delivery v3 Ruby Release
 'on':
   workflow_dispatch:
     inputs:
       destination:
-        description: Exact independently admitted registry
-        required: true
+        description: Selected Ruby destination
         type: choice
-        options:
-        - github-packages
-        - rubygems
-      operation:
-        description: Reviewed canonical request, admission, reservation, review and inspection
         required: true
-        type: string
+        options:
+          - github-packages
+          - rubygems
+      dry-run:
+        description: Qualify and describe without publication
+        type: boolean
+        default: true
 permissions: {}
 concurrency:
-  group: wdv3-ruby-hcoona-release-smoke-ruby-${{ inputs.destination }}
+  group:
+    ${{ format('workflow-delivery-{0}-hcoona-release-smoke-ruby', inputs.destination == 'github-packages' && 'rubygems.pkg.github.com-hcoona'
+    || 'rubygems.org') }}
   cancel-in-progress: false
 defaults:
   run:
     shell: bash
 env:
-  ACTIONS_ARTIFACT_UPLOAD_CONCURRENCY: '1'
-  ACTIONS_ARTIFACT_UPLOAD_TIMEOUT_MS: '60000'
+  DESTINATION: ${{ inputs.destination }}
+  DRY_RUN: ${{ inputs.dry-run }}
 jobs:
-  request-ruby-operation:
+  prepare:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     permissions:
       contents: read
-    env:
-      WDV3_REFERENCES: ${{ '{}' }}
-      WDV3_OPERATION_INPUT: ${{ inputs.operation }}
-      WDV3_SELECTED_DESTINATION: ${{ inputs.destination }}
     steps:
-    - name: Check out exact native target without credentials
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      timeout-minutes: 10
-      with:
-        ref: ${{ github.sha }}
-        fetch-depth: 0
-        persist-credentials: false
-        submodules: false
-        lfs: false
-    - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
-      timeout-minutes: 10
-      with:
-        native: 'false'
-    - name: Request
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli request --output .wdv3/operation.json
-      timeout-minutes: 10
-      id: request
-    - name: Persist and read back operation
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: operation
-        path: .wdv3/operation.json
-    - name: Persist and read back provider-request
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: provider-request
-        path: .wdv3/provider-request.json
-    - name: Export
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli export
-      timeout-minutes: 10
-      id: edges
-      if: always()
+      - name: Check out exact source without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare selected runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
+        with:
+          version: 2026.8.10
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected native tools
+        run: |
+          set -Eeuo pipefail
+          mise install --yes dotnet@10.0.401 ruby@4.0.7
+          {
+            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which ruby@4.0.7)"
+            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec ruby@4.0.7 -- which gem)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+          } >> "$GITHUB_ENV"
+          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+        working-directory: ${{ runner.temp }}
+      - name: Build complete control before product execution
+        run: |-
+          set -Eeuo pipefail
+          mise exec --locked dotnet -- dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj -p:RestoreLockedMode=true -o "$RUNNER_TEMP/control"
+          cp src/private/app/workflow-delivery/Native/Ruby/{facts.rb,source.rb,consumer.rb,release_caller.rb} "$RUNNER_TEMP/control/"
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" request
+      - name: Retain actual control results
+        id: control
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ruby-control-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/control
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+      - name: Qualify complete selected native original
+        run: |-
+          set -Eeuo pipefail
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-ruby "$RUNNER_TEMP/prepared/request.json" > "$RUNNER_TEMP/prepared/preparation.json"
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" originals
+      - name: Retain actual prepared results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ruby-prepared-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/prepared
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
     outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-      destination: ${{ steps.request.outputs.destination }}
-      environment: ${{ steps.request.outputs.environment }}
-    if: github.event_name == 'workflow_dispatch' && github.repository == 'hcoona/three' && github.ref == 'refs/heads/main'
-      && github.actor == 'hcoona' && github.actor_id == '712433' && github.run_attempt == 1
-  discover-ruby:
+      control-id: ${{ steps.control.outputs.artifact-id }}
+      preparation-id: ${{ steps.retain.outputs.artifact-id }}
+  observe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     permissions:
       contents: read
-    env:
-      WDV3_REFERENCES: ${{ needs.request-ruby-operation.outputs.references && needs.request-ruby-operation.outputs.artifact-ids
-        && needs.request-ruby-operation.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.request-ruby-operation.outputs.references && needs.request-ruby-operation.outputs.artifact-ids
-        && needs.request-ruby-operation.outputs.artifact-ids || '' }}
-    steps:
-    - name: Check out exact native target without credentials
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      timeout-minutes: 10
-      with:
-        ref: ${{ github.sha }}
-        fetch-depth: 0
-        persist-credentials: false
-        submodules: false
-        lfs: false
-    - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
-      timeout-minutes: 10
-      with:
-        native: 'true'
-    - name: Require exact incoming artifact IDs
-      run: test -n "${WDV3_ARTIFACT_IDS}"
-      timeout-minutes: 1
-    - name: Download exact current-DAG IDs
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-      timeout-minutes: 10
-      if: env.WDV3_ARTIFACT_IDS != ''
-      with:
-        artifact-ids: ${{ env.WDV3_ARTIFACT_IDS }}
-        path: .wdv3
-        merge-multiple: true
-        skip-decompress: true
-        digest-mismatch: error
-    - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
-      timeout-minutes: 10
-      with:
-        dotnet-version: 10.0.401
-    - name: Restore pinned NBGV
-      run: dotnet tool restore
-      timeout-minutes: 10
-    - name: Provider
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli provider --output .wdv3/provider.json
-      timeout-minutes: 10
-    - name: Persist and read back provider
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: provider
-        path: .wdv3/provider.json
-    - name: Export
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli export
-      timeout-minutes: 10
-      id: edges
-      if: always()
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs: request-ruby-operation
-  plan-ruby-release:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      WDV3_REFERENCES: ${{ needs.discover-ruby.outputs.references && needs.discover-ruby.outputs.artifact-ids &&
-        needs.discover-ruby.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.discover-ruby.outputs.references && needs.discover-ruby.outputs.artifact-ids
-        && needs.discover-ruby.outputs.artifact-ids || '' }}
-    steps:
-    - name: Check out exact native target without credentials
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      timeout-minutes: 10
-      with:
-        ref: ${{ github.sha }}
-        fetch-depth: 0
-        persist-credentials: false
-        submodules: false
-        lfs: false
-    - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
-      timeout-minutes: 10
-      with:
-        native: 'true'
-    - name: Require exact incoming artifact IDs
-      run: test -n "${WDV3_ARTIFACT_IDS}"
-      timeout-minutes: 1
-    - name: Download exact current-DAG IDs
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-      timeout-minutes: 10
-      if: env.WDV3_ARTIFACT_IDS != ''
-      with:
-        artifact-ids: ${{ env.WDV3_ARTIFACT_IDS }}
-        path: .wdv3
-        merge-multiple: true
-        skip-decompress: true
-        digest-mismatch: error
-    - name: Compile
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli compile --output .wdv3/model.json
-      timeout-minutes: 10
-    - name: Persist and read back model
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: model
-        path: .wdv3/model.json
-    - name: Plan
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli plan --output .wdv3/plan.json
-      timeout-minutes: 10
-    - name: Persist and read back plan
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: plan
-        path: .wdv3/plan.json
-    - name: Export
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli export
-      timeout-minutes: 10
-      id: edges
-      if: always()
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs: discover-ruby
-  build-ruby:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      WDV3_REFERENCES: ${{ needs.plan-ruby-release.outputs.references && needs.plan-ruby-release.outputs.artifact-ids
-        && needs.plan-ruby-release.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.plan-ruby-release.outputs.references && needs.plan-ruby-release.outputs.artifact-ids
-        && needs.plan-ruby-release.outputs.artifact-ids || '' }}
-    steps:
-    - name: Check out exact native target without credentials
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      timeout-minutes: 10
-      with:
-        ref: ${{ github.sha }}
-        fetch-depth: 0
-        persist-credentials: false
-        submodules: false
-        lfs: false
-    - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
-      timeout-minutes: 10
-      with:
-        native: 'true'
-    - name: Require exact incoming artifact IDs
-      run: test -n "${WDV3_ARTIFACT_IDS}"
-      timeout-minutes: 1
-    - name: Download exact current-DAG IDs
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-      timeout-minutes: 10
-      if: env.WDV3_ARTIFACT_IDS != ''
-      with:
-        artifact-ids: ${{ env.WDV3_ARTIFACT_IDS }}
-        path: .wdv3
-        merge-multiple: true
-        skip-decompress: true
-        digest-mismatch: error
-    - name: Build
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli build
-      timeout-minutes: 10
-      id: build
-    - name: Persist and read back gem
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: gem
-        path: ${{ steps.build.outputs.gem-path }}
-    - name: Export
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli export
-      timeout-minutes: 10
-      id: edges
-      if: always()
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs: plan-ruby-release
-  qualify-ruby-release:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      WDV3_REFERENCES: ${{ needs.build-ruby.outputs.references && needs.build-ruby.outputs.artifact-ids && needs.build-ruby.outputs.references
-        || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.build-ruby.outputs.references && needs.build-ruby.outputs.artifact-ids && needs.build-ruby.outputs.artifact-ids
-        || '' }}
-    steps:
-    - name: Check out exact native target without credentials
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      timeout-minutes: 10
-      with:
-        ref: ${{ github.sha }}
-        fetch-depth: 0
-        persist-credentials: false
-        submodules: false
-        lfs: false
-    - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
-      timeout-minutes: 10
-      with:
-        native: 'true'
-    - name: Require exact incoming artifact IDs
-      run: test -n "${WDV3_ARTIFACT_IDS}"
-      timeout-minutes: 1
-    - name: Download exact current-DAG IDs
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-      timeout-minutes: 10
-      if: env.WDV3_ARTIFACT_IDS != ''
-      with:
-        artifact-ids: ${{ env.WDV3_ARTIFACT_IDS }}
-        path: .wdv3
-        merge-multiple: true
-        skip-decompress: true
-        digest-mismatch: error
-    - name: Artifacts
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli artifacts --output .wdv3/artifacts.json
-      timeout-minutes: 10
-    - name: Persist and read back artifacts
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: artifacts
-        path: .wdv3/artifacts.json
-    - name: Quality
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli quality --output .wdv3/quality.json
-      timeout-minutes: 10
-    - name: Persist and read back quality
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: quality
-        path: .wdv3/quality.json
-    - name: Export
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli export
-      timeout-minutes: 10
-      id: edges
-      if: always()
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs: build-ruby
-  finalize-ruby-qualification:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      WDV3_REFERENCES: ${{ needs.qualify-ruby-release.outputs.references && needs.qualify-ruby-release.outputs.artifact-ids
-        && needs.qualify-ruby-release.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.qualify-ruby-release.outputs.references && needs.qualify-ruby-release.outputs.artifact-ids
-        && needs.qualify-ruby-release.outputs.artifact-ids || '' }}
-    steps:
-    - name: Check out exact native target without credentials
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      timeout-minutes: 10
-      with:
-        ref: ${{ github.sha }}
-        fetch-depth: 0
-        persist-credentials: false
-        submodules: false
-        lfs: false
-    - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
-      timeout-minutes: 10
-      with:
-        native: 'true'
-    - name: Require exact incoming artifact IDs
-      run: test -n "${WDV3_ARTIFACT_IDS}"
-      timeout-minutes: 1
-    - name: Download exact current-DAG IDs
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-      timeout-minutes: 10
-      if: env.WDV3_ARTIFACT_IDS != ''
-      with:
-        artifact-ids: ${{ env.WDV3_ARTIFACT_IDS }}
-        path: .wdv3
-        merge-multiple: true
-        skip-decompress: true
-        digest-mismatch: error
-    - name: Qualification
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli qualification --output .wdv3/qualification.json
-      timeout-minutes: 10
-      id: qualification
-    - name: Persist and read back qualification
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: qualification
-        path: .wdv3/qualification.json
-    - name: Require passed current original qualification
-      run: test "${QUALIFICATION_RESULT}" = passed
-      env:
-        QUALIFICATION_RESULT: ${{ steps.qualification.outputs.qualification-result }}
-      timeout-minutes: 1
-    - name: Export
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli export
-      timeout-minutes: 10
-      id: edges
-      if: always()
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-      qualification-result: ${{ steps.qualification.outputs.qualification-result }}
-    needs: qualify-ruby-release
-  prepare-ruby-publication:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions: &id001
-      contents: read
-      actions: read
-      deployments: read
       packages: read
-    env:
-      WDV3_REFERENCES: ${{ needs.finalize-ruby-qualification.outputs.references && needs.finalize-ruby-qualification.outputs.artifact-ids
-        && needs.finalize-ruby-qualification.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.finalize-ruby-qualification.outputs.references && needs.finalize-ruby-qualification.outputs.artifact-ids
-        && needs.finalize-ruby-qualification.outputs.artifact-ids || '' }}
-      GITHUB_TOKEN: ${{ github.token }}
     steps:
-    - name: Check out exact native target without credentials
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      timeout-minutes: 10
-      with:
-        ref: ${{ github.sha }}
-        fetch-depth: 0
-        persist-credentials: false
-        submodules: false
-        lfs: false
-    - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
-      timeout-minutes: 10
-      with:
-        native: 'true'
-    - name: Require exact incoming artifact IDs
-      run: test -n "${WDV3_ARTIFACT_IDS}"
-      timeout-minutes: 1
-    - name: Download exact current-DAG IDs
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-      timeout-minutes: 10
-      if: env.WDV3_ARTIFACT_IDS != ''
-      with:
-        artifact-ids: ${{ env.WDV3_ARTIFACT_IDS }}
-        path: .wdv3
-        merge-multiple: true
-        skip-decompress: true
-        digest-mismatch: error
-    - name: Initialize
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli initialize
-      timeout-minutes: 10
-    - name: Claim   phase eligibility
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli claim --phase eligibility --output .wdv3/phase-eligibility.json
-      timeout-minutes: 10
-    - name: Persist and read back phase-eligibility
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: phase-eligibility
-        path: .wdv3/phase-eligibility.json
-    - name: Observe
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli observe --output .wdv3/observation.json
-      timeout-minutes: 10
-    - name: Persist and read back observation
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: observation
-        path: .wdv3/observation.json
-    - name: Publication
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli publication --output .wdv3/publication.json
-      timeout-minutes: 10
-      id: publication
-    - name: Persist and read back publication
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: publication
-        path: .wdv3/publication.json
-    - name: Summary
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli summary --output .wdv3/approval-summary.txt
-      timeout-minutes: 10
-      if: steps.publication.outputs.action-required == 'true'
-    - name: Persist and read back summary
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: summary
-        path: .wdv3/approval-summary.txt
-      if: steps.publication.outputs.action-required == 'true'
-    - name: Bundle
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli bundle --output .wdv3/approval-bundle.json
-      timeout-minutes: 10
-      if: steps.publication.outputs.action-required == 'true'
-    - name: Persist and read back bundle
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: bundle
-        path: .wdv3/approval-bundle.json
-      if: steps.publication.outputs.action-required == 'true'
-    - name: Audit
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli audit --output .wdv3/audit-prepare.json
-      timeout-minutes: 10
-      id: audit
-      if: always()
-    - name: Persist and read back audit-prepare
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: audit-prepare
-        path: .wdv3/audit-prepare.json
-      if: always() && steps.audit.outcome == 'success'
-    - name: Export
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli export
-      timeout-minutes: 10
-      id: edges
-      if: always()
+      - name: Download control by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.control-id }}
+          path: ${{ runner.temp }}/control
+          digest-mismatch: error
+      - name: Download prepared by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
+          path: ${{ runner.temp }}/prepared
+          digest-mismatch: error
+      - name: Prepare selected runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
+        with:
+          version: 2026.8.10
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected native tools
+        run: |
+          set -Eeuo pipefail
+          mise install --yes dotnet@10.0.401 ruby@4.0.7
+          {
+            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which ruby@4.0.7)"
+            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec ruby@4.0.7 -- which gem)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+          } >> "$GITHUB_ENV"
+          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+        working-directory: ${{ runner.temp }}
+      - name: Validate actual transferred request and producer
+        run: |-
+          set -Eeuo pipefail
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" validate control prepared
+      - name: Observe selected native destination and qualified original
+        run: |-
+          set -Eeuo pipefail
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" phase observation
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" source-config initial-observation-scratch
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/observation/observation.json"
+      - name: Expose required write and describe dry run
+        run: |-
+          set -Eeuo pipefail
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" state
+          if [ "$DRY_RUN" = true ]; then
+            mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/observation/dry-run.json"
+            cat "$RUNNER_TEMP/observation/dry-run.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
+        id: state
+      - name: Retain actual observation results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ruby-observation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/observation
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    needs: prepare
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
     outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-      action-required: ${{ steps.publication.outputs.action-required }}
-    needs:
-    - request-ruby-operation
-    - finalize-ruby-qualification
+      write-needed: ${{ steps.state.outputs.write-needed }}
+      observation-id: ${{ steps.retain.outputs.artifact-id }}
   publish-ruby-github-packages:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
-      actions: read
-      deployments: read
       packages: write
-    env:
-      WDV3_REFERENCES: ${{ needs.prepare-ruby-publication.outputs.references && needs.prepare-ruby-publication.outputs.artifact-ids
-        && needs.prepare-ruby-publication.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.prepare-ruby-publication.outputs.references && needs.prepare-ruby-publication.outputs.artifact-ids
-        && needs.prepare-ruby-publication.outputs.artifact-ids || '' }}
-      GITHUB_TOKEN: ${{ github.token }}
-      WDV3_ENVIRONMENT_SENTINEL: ${{ vars.WDV3_APPROVAL_ENVIRONMENT_MARKER }}
     steps:
-    - name: Check out exact native target without credentials
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      timeout-minutes: 10
-      with:
-        ref: ${{ github.sha }}
-        fetch-depth: 0
-        persist-credentials: false
-        submodules: false
-        lfs: false
-    - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
-      timeout-minutes: 10
-      with:
-        native: 'true'
-    - name: Require exact incoming artifact IDs
-      run: test -n "${WDV3_ARTIFACT_IDS}"
-      timeout-minutes: 1
-    - name: Download exact current-DAG IDs
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-      timeout-minutes: 10
-      if: env.WDV3_ARTIFACT_IDS != ''
-      with:
-        artifact-ids: ${{ env.WDV3_ARTIFACT_IDS }}
-        path: .wdv3
-        merge-multiple: true
-        skip-decompress: true
-        digest-mismatch: error
-    - name: Initialize
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli initialize
-      timeout-minutes: 10
-    - name: Authorize
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli authorize --output .wdv3/authorization.json
-      timeout-minutes: 10
-    - name: Persist and read back authorization
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: authorization
-        path: .wdv3/authorization.json
-    - name: Claim   phase pre marker
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli claim --phase pre-marker --output .wdv3/phase-pre-marker.json
-      timeout-minutes: 10
-    - name: Persist and read back phase-pre-marker
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: phase-pre-marker
-        path: .wdv3/phase-pre-marker.json
-    - name: Marker
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli marker --output .wdv3/mutation-marker.json
-      timeout-minutes: 10
-    - name: Persist and read back fresh-governance
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: fresh-governance
-        path: .wdv3/fresh-governance.json
-    - name: Persist and read back marker
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: marker
-        path: .wdv3/mutation-marker.json
-    - name: Claim   phase execute
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli claim --phase execute --output .wdv3/phase-execute.json
-      timeout-minutes: 10
-    - name: Persist and read back phase-execute
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: phase-execute
-        path: .wdv3/phase-execute.json
-    - name: Execute
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli execute --output .wdv3/result.json
-      timeout-minutes: 10
-      id: execute
-    - name: Persist and read back result
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: result
-        path: .wdv3/result.json
-    - name: Require verified original publication
-      run: test "${PUBLICATION_RESULT}" = published
-      env:
-        PUBLICATION_RESULT: ${{ steps.execute.outputs.publication-result }}
-      timeout-minutes: 1
-    - name: Audit
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli audit --output .wdv3/audit-publisher.json
-      timeout-minutes: 10
-      id: audit
-      if: always()
-    - name: Persist and read back audit-publisher
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: audit-publisher
-        path: .wdv3/audit-publisher.json
-      if: always() && steps.audit.outcome == 'success'
-    - name: Export
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli export
-      timeout-minutes: 10
-      id: edges
-      if: always()
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-      publication-step-outcome: ${{ steps.execute.outcome }}
-      terminal-reference: ${{ steps.edges.outputs.terminal-reference }}
+      - name: Download control by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.control-id }}
+          path: ${{ runner.temp }}/control
+          digest-mismatch: error
+      - name: Download prepared by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
+          path: ${{ runner.temp }}/prepared
+          digest-mismatch: error
+      - name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - name: Prepare selected runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
+        with:
+          version: 2026.8.10
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected native tools
+        run: |
+          set -Eeuo pipefail
+          mise install --yes dotnet@10.0.401 ruby@4.0.7
+          {
+            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which ruby@4.0.7)"
+            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec ruby@4.0.7 -- which gem)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+          } >> "$GITHUB_ENV"
+          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+        working-directory: ${{ runner.temp }}
+      - name: Validate actual transferred request and producer
+        run: |-
+          set -Eeuo pipefail
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" validate control prepared observation
+      - name: Refresh state and invoke native RubyGems once
+        run: |-
+          set -Eeuo pipefail
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" phase publication
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" source-config publication-observation-scratch
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" publisher-config publisher-scratch
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/source-tools.json" "$RUNNER_TEMP/publisher-tools.json" > "$RUNNER_TEMP/publication/publication.json"
+      - name: Retain actual publication results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ruby-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publication
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
     needs:
-    - request-ruby-operation
-    - prepare-ruby-publication
-    if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
-      == 'true' && needs.request-ruby-operation.outputs.destination == 'github-packages'
+      - prepare
+      - observe
+    if: inputs.dry-run == false && needs.observe.outputs.write-needed == 'true' && inputs.destination == 'github-packages'
     environment:
-      name: ${{ needs.request-ruby-operation.outputs.environment }}
+      name: workflow-delivery-v3-ruby-github-packages
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+    outputs:
+      publication-id: ${{ steps.retain.outputs.artifact-id }}
   publish-ruby-rubygems:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
-      actions: read
-      deployments: read
       id-token: write
-    env:
-      WDV3_REFERENCES: ${{ needs.prepare-ruby-publication.outputs.references && needs.prepare-ruby-publication.outputs.artifact-ids
-        && needs.prepare-ruby-publication.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.prepare-ruby-publication.outputs.references && needs.prepare-ruby-publication.outputs.artifact-ids
-        && needs.prepare-ruby-publication.outputs.artifact-ids || '' }}
-      GITHUB_TOKEN: ${{ github.token }}
-      WDV3_ENVIRONMENT_SENTINEL: ${{ vars.WDV3_APPROVAL_ENVIRONMENT_MARKER }}
     steps:
-    - name: Check out exact native target without credentials
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      timeout-minutes: 10
-      with:
-        ref: ${{ github.sha }}
-        fetch-depth: 0
-        persist-credentials: false
-        submodules: false
-        lfs: false
-    - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
-      timeout-minutes: 10
-      with:
-        native: 'true'
-    - name: Require exact incoming artifact IDs
-      run: test -n "${WDV3_ARTIFACT_IDS}"
-      timeout-minutes: 1
-    - name: Download exact current-DAG IDs
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-      timeout-minutes: 10
-      if: env.WDV3_ARTIFACT_IDS != ''
-      with:
-        artifact-ids: ${{ env.WDV3_ARTIFACT_IDS }}
-        path: .wdv3
-        merge-multiple: true
-        skip-decompress: true
-        digest-mismatch: error
-    - name: Initialize
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli initialize
-      timeout-minutes: 10
-    - name: Authorize
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli authorize --output .wdv3/authorization.json
-      timeout-minutes: 10
-    - name: Persist and read back authorization
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: authorization
-        path: .wdv3/authorization.json
-    - name: Claim   phase pre marker
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli claim --phase pre-marker --output .wdv3/phase-pre-marker.json
-      timeout-minutes: 10
-    - name: Persist and read back phase-pre-marker
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: phase-pre-marker
-        path: .wdv3/phase-pre-marker.json
-    - name: Marker
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli marker --output .wdv3/mutation-marker.json
-      timeout-minutes: 10
-    - name: Persist and read back fresh-governance
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: fresh-governance
-        path: .wdv3/fresh-governance.json
-    - name: Persist and read back marker
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: marker
-        path: .wdv3/mutation-marker.json
-    - name: Claim   phase execute
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli claim --phase execute --output .wdv3/phase-execute.json
-      timeout-minutes: 10
-    - name: Persist and read back phase-execute
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: phase-execute
-        path: .wdv3/phase-execute.json
-    - name: Execute
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli execute --output .wdv3/result.json
-      timeout-minutes: 10
-      id: execute
-    - name: Persist and read back result
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: result
-        path: .wdv3/result.json
-    - name: Require verified original publication
-      run: test "${PUBLICATION_RESULT}" = published
-      env:
-        PUBLICATION_RESULT: ${{ steps.execute.outputs.publication-result }}
-      timeout-minutes: 1
-    - name: Audit
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli audit --output .wdv3/audit-publisher.json
-      timeout-minutes: 10
-      id: audit
-      if: always()
-    - name: Persist and read back audit-publisher
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: audit-publisher
-        path: .wdv3/audit-publisher.json
-      if: always() && steps.audit.outcome == 'success'
-    - name: Export
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli export
-      timeout-minutes: 10
-      id: edges
-      if: always()
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-      publication-step-outcome: ${{ steps.execute.outcome }}
-      terminal-reference: ${{ steps.edges.outputs.terminal-reference }}
+      - name: Download control by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.control-id }}
+          path: ${{ runner.temp }}/control
+          digest-mismatch: error
+      - name: Download prepared by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
+          path: ${{ runner.temp }}/prepared
+          digest-mismatch: error
+      - name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - name: Prepare selected runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
+        with:
+          version: 2026.8.10
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected native tools
+        run: |
+          set -Eeuo pipefail
+          mise install --yes dotnet@10.0.401 ruby@4.0.7
+          {
+            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which ruby@4.0.7)"
+            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec ruby@4.0.7 -- which gem)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+          } >> "$GITHUB_ENV"
+          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+        working-directory: ${{ runner.temp }}
+      - name: Validate actual transferred request and producer
+        run: |-
+          set -Eeuo pipefail
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" validate control prepared observation
+      - name: Prepare owned unretained credential Action state
+        run: |-
+          set -Eeuo pipefail
+          mkdir "$RUNNER_TEMP/ruby-credential-home"
+      - name: Acquire native RubyGems trusted-publisher credential
+        uses: rubygems/configure-rubygems-credentials@8674aee7f9f9055a8b771794d6f1e66b5fad36a9
+        env:
+          HOME: ${{ runner.temp }}/ruby-credential-home
+        with:
+          gem-server: https://rubygems.org
+          audience: rubygems.org
+          trusted-publisher: true
+      - name: Refresh state and invoke native RubyGems once
+        run: |-
+          set -Eeuo pipefail
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" phase publication
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" source-config publication-observation-scratch
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" publisher-config publisher-scratch
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/source-tools.json" "$RUNNER_TEMP/publisher-tools.json" > "$RUNNER_TEMP/publication/publication.json"
+      - name: Retain actual publication results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ruby-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publication
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+      - name: Clean only owned credential Action state
+        run: |-
+          set -Eeuo pipefail
+          if [ -d "$RUNNER_TEMP/ruby-credential-home" ]; then
+            rm -rf -- "$RUNNER_TEMP/ruby-credential-home"
+          fi
+        if: always()
     needs:
-    - request-ruby-operation
-    - prepare-ruby-publication
-    if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
-      == 'true' && needs.request-ruby-operation.outputs.destination == 'rubygems'
+      - prepare
+      - observe
+    if: inputs.dry-run == false && needs.observe.outputs.write-needed == 'true' && inputs.destination == 'rubygems'
     environment:
-      name: ${{ needs.request-ruby-operation.outputs.environment }}
-  finalize-attempt:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions: *id001
+      name: workflow-delivery-v3-ruby-rubygems
     env:
-      WDV3_REFERENCES: ${{ needs.publish-ruby-rubygems.outputs.references && needs.publish-ruby-rubygems.outputs.artifact-ids
-        && needs.publish-ruby-rubygems.outputs.references || needs.publish-ruby-github-packages.outputs.references
-        && needs.publish-ruby-github-packages.outputs.artifact-ids && needs.publish-ruby-github-packages.outputs.references
-        || needs.prepare-ruby-publication.outputs.references && needs.prepare-ruby-publication.outputs.artifact-ids
-        && needs.prepare-ruby-publication.outputs.references || needs.finalize-ruby-qualification.outputs.references
-        && needs.finalize-ruby-qualification.outputs.artifact-ids && needs.finalize-ruby-qualification.outputs.references
-        || needs.qualify-ruby-release.outputs.references && needs.qualify-ruby-release.outputs.artifact-ids && needs.qualify-ruby-release.outputs.references
-        || needs.build-ruby.outputs.references && needs.build-ruby.outputs.artifact-ids && needs.build-ruby.outputs.references
-        || needs.plan-ruby-release.outputs.references && needs.plan-ruby-release.outputs.artifact-ids && needs.plan-ruby-release.outputs.references
-        || needs.discover-ruby.outputs.references && needs.discover-ruby.outputs.artifact-ids && needs.discover-ruby.outputs.references
-        || needs.request-ruby-operation.outputs.references && needs.request-ruby-operation.outputs.artifact-ids
-        && needs.request-ruby-operation.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.publish-ruby-rubygems.outputs.references && needs.publish-ruby-rubygems.outputs.artifact-ids
-        && needs.publish-ruby-rubygems.outputs.artifact-ids || needs.publish-ruby-github-packages.outputs.references
-        && needs.publish-ruby-github-packages.outputs.artifact-ids && needs.publish-ruby-github-packages.outputs.artifact-ids
-        || needs.prepare-ruby-publication.outputs.references && needs.prepare-ruby-publication.outputs.artifact-ids
-        && needs.prepare-ruby-publication.outputs.artifact-ids || needs.finalize-ruby-qualification.outputs.references
-        && needs.finalize-ruby-qualification.outputs.artifact-ids && needs.finalize-ruby-qualification.outputs.artifact-ids
-        || needs.qualify-ruby-release.outputs.references && needs.qualify-ruby-release.outputs.artifact-ids && needs.qualify-ruby-release.outputs.artifact-ids
-        || needs.build-ruby.outputs.references && needs.build-ruby.outputs.artifact-ids && needs.build-ruby.outputs.artifact-ids
-        || needs.plan-ruby-release.outputs.references && needs.plan-ruby-release.outputs.artifact-ids && needs.plan-ruby-release.outputs.artifact-ids
-        || needs.discover-ruby.outputs.references && needs.discover-ruby.outputs.artifact-ids && needs.discover-ruby.outputs.artifact-ids
-        || needs.request-ruby-operation.outputs.references && needs.request-ruby-operation.outputs.artifact-ids
-        && needs.request-ruby-operation.outputs.artifact-ids || '' }}
       GITHUB_TOKEN: ${{ github.token }}
-      WDV3_NEEDS: ${{ toJSON(needs) }}
-    steps:
-    - name: Check out exact native target without credentials
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      timeout-minutes: 10
-      with:
-        ref: ${{ github.sha }}
-        fetch-depth: 0
-        persist-credentials: false
-        submodules: false
-        lfs: false
-    - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
-      timeout-minutes: 10
-      with:
-        native: 'true'
-    - name: Download exact current-DAG IDs
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-      timeout-minutes: 10
-      if: env.WDV3_ARTIFACT_IDS != ''
-      with:
-        artifact-ids: ${{ env.WDV3_ARTIFACT_IDS }}
-        path: .wdv3
-        merge-multiple: true
-        skip-decompress: true
-        digest-mismatch: error
-    - name: Initialize
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli initialize
-      timeout-minutes: 10
-    - name: Claim   phase zero action
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli claim --phase zero-action --output .wdv3/phase-zero-action.json
-      timeout-minutes: 10
-      if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
-        == 'false'
-    - name: Persist and read back phase-zero-action
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: phase-zero-action
-        path: .wdv3/phase-zero-action.json
-      if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
-        == 'false'
-    - name: Zero proof
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli zero-proof --output .wdv3/exact-proof.json
-      timeout-minutes: 10
-      if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
-        == 'false'
-    - name: Persist and read back zero-governance
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: zero-governance
-        path: .wdv3/zero-governance.json
-      if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
-        == 'false'
-    - name: Persist and read back exact-proof
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: exact-proof
-        path: .wdv3/exact-proof.json
-      if: needs.prepare-ruby-publication.result == 'success' && needs.prepare-ruby-publication.outputs.action-required
-        == 'false'
-    - name: Finalize
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli finalize --output .wdv3/terminal.json
-      timeout-minutes: 10
-      id: finalize
-      if: always()
-    - name: Persist and read back outcome
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: outcome
-        path: .wdv3/outcome.json
-      if: always() && steps.finalize.outputs.outcome-created == 'true'
-    - name: Persist and read back terminal
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: terminal
-        path: .wdv3/terminal.json
-      if: always() && steps.finalize.outcome == 'success'
-    - name: Audit
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli audit --output .wdv3/audit-finalize.json
-      timeout-minutes: 10
-      id: audit
-      if: always()
-    - name: Persist and read back audit-finalize
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: audit-finalize
-        path: .wdv3/audit-finalize.json
-      if: always() && steps.audit.outcome == 'success'
-    - name: Export
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli export
-      timeout-minutes: 10
-      id: edges
-      if: always()
     outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-      terminal-result: ${{ steps.finalize.outputs.terminal-result }}
+      publication-id: ${{ steps.retain.outputs.artifact-id }}
+  verify-result:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Download control by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.control-id }}
+          path: ${{ runner.temp }}/control
+          digest-mismatch: error
+      - name: Download prepared by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
+          path: ${{ runner.temp }}/prepared
+          digest-mismatch: error
+      - name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - name: Prepare selected runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
+        with:
+          version: 2026.8.10
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected native tools
+        run: |
+          set -Eeuo pipefail
+          mise install --yes dotnet@10.0.401 ruby@4.0.7
+          {
+            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which ruby@4.0.7)"
+            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec ruby@4.0.7 -- which gem)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+          } >> "$GITHUB_ENV"
+          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+        working-directory: ${{ runner.temp }}
+      - name: Validate actual transferred request and producer
+        run: |-
+          set -Eeuo pipefail
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" validate control prepared observation
+      - name: Download publication by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids:
+            ${{ needs.publish-ruby-github-packages.outputs.publication-id || needs.publish-ruby-rubygems.outputs.publication-id
+            }}
+          path: ${{ runner.temp }}/publication
+          digest-mismatch: error
+        if:
+          needs.publish-ruby-github-packages.outputs.publication-id != '' || needs.publish-ruby-rubygems.outputs.publication-id
+          != ''
+      - name: Validate available publication producer
+        run: |-
+          set -Eeuo pipefail
+          if [ -d "$RUNNER_TEMP/publication" ]; then
+            "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" validate publication
+          fi
+      - name: Consume fresh selected remote original and complete final native state
+        run: |-
+          set -Eeuo pipefail
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" phase verification
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" consumer-config remote-consumer-scratch
+          status=0
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release consume-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/consumer-tools.json" > "$RUNNER_TEMP/verification/consumer.json" || status=$?
+          if [ "$status" -gt 1 ]; then exit "$status"; fi
+          "$RUBY_EXECUTABLE" --disable-gems "$RUNNER_TEMP/control/release_caller.rb" source-config final-observation-scratch
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/verification/final.json" || true
+          publication=-
+          if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$RUNNER_TEMP/verification/consumer.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
+      - name: Show actual available business result
+        run: |-
+          set -Eeuo pipefail
+          if [ -s "$RUNNER_TEMP/verification/outcome.json" ]; then
+            cat "$RUNNER_TEMP/verification/outcome.json" >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '%s\n' 'Required Ruby completion result is unavailable.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+        if: always()
+      - name: Retain actual verification results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ruby-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verification
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
     needs:
-    - request-ruby-operation
-    - discover-ruby
-    - plan-ruby-release
-    - build-ruby
-    - qualify-ruby-release
-    - finalize-ruby-qualification
-    - prepare-ruby-publication
-    - publish-ruby-github-packages
-    - publish-ruby-rubygems
-    if: always()
-  verify-ruby-operation:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions: *id001
+      - prepare
+      - observe
+      - publish-ruby-github-packages
+      - publish-ruby-rubygems
     env:
-      WDV3_REFERENCES: ${{ needs.finalize-attempt.outputs.references && needs.finalize-attempt.outputs.artifact-ids
-        && needs.finalize-attempt.outputs.references || '{}' }}
-      WDV3_ARTIFACT_IDS: ${{ needs.finalize-attempt.outputs.references && needs.finalize-attempt.outputs.artifact-ids
-        && needs.finalize-attempt.outputs.artifact-ids || '' }}
       GITHUB_TOKEN: ${{ github.token }}
-    steps:
-    - name: Check out exact native target without credentials
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      timeout-minutes: 10
-      with:
-        ref: ${{ github.sha }}
-        fetch-depth: 0
-        persist-credentials: false
-        submodules: false
-        lfs: false
-    - uses: ./.github/actions/workflow-delivery-v3-ruby-setup
-      timeout-minutes: 10
-      with:
-        native: 'true'
-    - name: Require exact incoming artifact IDs
-      run: test -n "${WDV3_ARTIFACT_IDS}"
-      timeout-minutes: 1
-    - name: Download exact current-DAG IDs
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-      timeout-minutes: 10
-      if: env.WDV3_ARTIFACT_IDS != ''
-      with:
-        artifact-ids: ${{ env.WDV3_ARTIFACT_IDS }}
-        path: .wdv3
-        merge-multiple: true
-        skip-decompress: true
-        digest-mismatch: error
-    - name: Initialize
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli initialize
-      timeout-minutes: 10
-    - name: Claim   phase remote consumer
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli claim --phase remote-consumer --output .wdv3/phase-remote-consumer.json
-      timeout-minutes: 10
-    - name: Persist and read back phase-remote-consumer
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: phase-remote-consumer
-        path: .wdv3/phase-remote-consumer.json
-    - name: Remote
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli remote --output .wdv3/remote-consumer.json
-      timeout-minutes: 10
-    - name: Persist and read back remote-consumer
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: remote-consumer
-        path: .wdv3/remote-consumer.json
-    - name: Audit
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli audit --output .wdv3/audit-remote.json
-      timeout-minutes: 10
-      id: audit
-      if: always()
-    - name: Persist and read back audit-remote
-      uses: ./.github/actions/workflow-delivery-v3-ruby-operation-record
-      timeout-minutes: 10
-      with:
-        role: audit-remote
-        path: .wdv3/audit-remote.json
-      if: always() && steps.audit.outcome == 'success'
-    - name: Export
-      run: python -m three_workflow_delivery_v3.ruby_operation_cli export
-      timeout-minutes: 10
-      id: edges
-      if: always()
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs: finalize-attempt
-    if: always() && needs.finalize-attempt.result == 'success' && contains(fromJSON('["bootstrap-published","published","exact-satisfied"]'),
-      needs.finalize-attempt.outputs.terminal-result)
+    if:
+      always() && !cancelled() && inputs.dry-run == false && needs.prepare.result == 'success' && needs.observe.result ==
+      'success'

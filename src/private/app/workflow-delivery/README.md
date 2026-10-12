@@ -1921,3 +1921,44 @@ controlled qualification, ordinary final-source Linux CI and actual deployed
 feed qualification remain distinct; this component grants no publication or
 campaign operation. The [concrete Ruby contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-ruby-release-integration)
 retains the ordinary caller's separate delivery gate.
+
+### Ordinary Ruby Release
+
+`release prepare-ruby`, `observe-ruby`, `describe-ruby`, `publish-ruby`,
+`consume-ruby` and `complete-ruby` compose the adopted complete native gem under
+the [concrete Ruby contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-ruby-release-integration).
+Preparation qualifies the original independently of CI selection. Observation
+and the separate remote consumer use the maintained RubyGems Source APIs;
+archive inspection and installation remain native RubyGems operations.
+
+The ordinary workflow prepares complete same-revision control before product
+execution and transfers its actual producer, preparation and original by
+immutable artifact IDs. Buddy accepts branch refs; Official selects main, while
+dry runs can validate development refs. Dry and initially exact requests omit
+the write gate. Only the selected publisher job receives its existing native
+Environment and write capability; the two publisher job identities remain
+destination-specific. Official credential acquisition uses the pinned native
+trusted-publisher Action with explicit server and audience. Its temporary native
+credential file lives in owned, unretained state, cleaned after that job.
+
+The publisher refreshes state immediately before one native `gem push`. Exact
+state omits mutation; conflict or unknown state stops it. No application resend,
+mutation marker or approval mirror is added. Separate no-write verification
+fetches a fresh selected-source original, ends the read-credential process,
+qualifies bytes before installation and requires the clean installed API/origin
+check. Completion preserves the actual command outcome beside fresh business
+state. A missing required publication result retains unknown effects.
+
+The Ruby stdlib `Native/Ruby/release_caller.rb` only forms concrete JSON inputs
+and validates actual job transfers. It implements no package resolver, registry
+client or version projection. Ordinary and bootstrap entries share one physical
+registry/package concurrency key, without ref, run or mode partition, through
+final verification. Actual business transfers retain the existing 45-day
+artifact lifetime; credential state is excluded.
+
+The implementation requires complete final-subject local qualification,
+independent engineering/OCR and record/research review, ordinary Linux PR CI and
+independent hosted evidence reconciliation before delivery. These gates do not
+establish current publisher configuration, a live feed or a new publication.
+Historical bootstrap readers and completed campaigns retain their separate
+limits; no release dispatch or spent slot is reopened.

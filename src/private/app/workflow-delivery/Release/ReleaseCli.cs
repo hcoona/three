@@ -12,6 +12,7 @@ internal static class ReleaseCli
         Func<PreparedRelease, CancellationToken, Task<NpmjsObservationResult>>? observe = null)
     {
         if (NuGetReleaseCli.Run(args, output) is { } nugetStatus) return nugetStatus;
+        if (RubyReleaseCli.Run(args, output) is { } rubyStatus) return rubyStatus;
         if (args is ["release", "prepare-npm", var requestPath])
         {
             NpmPreparationResult result = (prepare ?? NpmPreparation.PrepareAsync)(

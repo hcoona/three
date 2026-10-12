@@ -412,17 +412,24 @@ Root [CI](../../../../.github/workflows/ci.yml) owns native Ruby planning,
 complete selected RSpec/gem checks and original result collection. The former
 Ruby shadow PR workflow is retired. Node planning receives both original Ruby
 fact endpoints from the same run, and selected Hexo checks prepare their native
-locked bundle. Manual Release retains its existing record actions and contracts
-until its own caller transition.
-The GitHub control adapter checks protected Governance, native approval and the
-fixed RubyGems OIDC audience. Separate manual
+locked bundle. The private
+[ordinary Ruby Release interface](../../../private/app/workflow-delivery/README.md#ordinary-ruby-release)
+replaces the ordinary entry with complete preparation, native observation,
+conditional native publication and separate required remote consumption under
+its accepted concrete contract. Final-source local validation, independent
+source review, ordinary Linux PR CI and hosted reconciliation remain required
+before delivery; implementation supplies no current feed/authentication or new
+publication qualification.
+
+The remaining Provider/Model/Artifact, Governance, approval, marker and terminal
+replay descriptions in this section serve retained bootstrap and historical
+source/evidence readers. The retained
 [bootstrap](../../../../.github/workflows/workflow-delivery-v3-ruby-bootstrap.yml)
-and [normal publication](../../../../.github/workflows/workflow-delivery-v3-ruby-smoke.yml)
-workflows connect fresh Provider/Build/qualification, exact immutable artifact
-readbacks, destination-specific publisher permissions and strict terminal replay.
-Their shared operation CLI keeps first-project authority separate from normal
-Governance and skips the privileged job for exact-satisfied publication.
-An unprivileged final job verifies the remote original and a clean consumer.
+keeps its existing closed campaign contract. The replacement
+[ordinary entry](../../../../.github/workflows/workflow-delivery-v3-ruby-smoke.yml)
+uses native authorization and original gem operations, without that application
+record chain. Both entries share the physical registry/package concurrency key;
+this alignment changes no bootstrap job, permission, Environment or spent slot.
 The [Ruby normal Live evidence](docs/validation/ruby-normal-live-evidence.md)
 records independently accepted GitHub Packages and RubyGems.org publication,
 exact original-byte/witness readback, clean remote consumers and durable

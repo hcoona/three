@@ -8,6 +8,15 @@
 > [replacement HLD](./high-level-design.md). This record remains only for its
 > existing implementation and evidence consumers; it does not constrain the replacement.
 
+The replacement ordinary entry uses the private
+[Ruby Release interface](../../../../private/app/workflow-delivery/README.md#ordinary-ruby-release)
+under the accepted
+[concrete integration contract](./migration-strategy.md#concrete-ruby-release-integration).
+The Provider, approval, Governance, marker and terminal replay descriptions below
+serve retained bootstrap and historical evidence consumers. They do not govern
+the replacement ordinary entry or reopen a completed campaign. Its final-source
+qualification and protected delivery remain separate from historical Live evidence.
+
 ## Status and Ownership
 
 This is the Ruby slice design authority under [Issue #954][issue]. The

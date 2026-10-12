@@ -225,15 +225,19 @@ qualification is separate from ordinary final-source caller CI and deployed
 feed behavior. Existing campaign/publication limits remain unchanged.
 
 The [concrete Release contract](./migration-strategy.md#concrete-ruby-release-integration)
-and [native assessment](./research/ruby-native-publisher.md) define the next
-implementation boundary. They establish neither caller implementation nor
-current feed/authentication qualification. The private application's
+and [native assessment](./research/ruby-native-publisher.md) define the native
+implementation boundary. They establish no current feed/authentication
+qualification. The private application's
 [Ruby Release preparation component](../../../../private/app/workflow-delivery/README.md#ruby-release-preparation-component)
 implements complete native gem qualification independently of CI. Local
 component validation supplies no deployed feed, authentication, publication or
-ordinary caller qualification. Observation, publication, remote consumption and
-caller cutover retain their separate gates and the existing campaign boundaries
-below.
+ordinary caller qualification. The
+[ordinary Ruby Release interface](../../../../private/app/workflow-delivery/README.md#ordinary-ruby-release)
+implements preparation, native observation, conditional native publication and
+separate remote verification in the private application. Its final-subject
+local validation, independent source review, ordinary Linux PR CI and hosted
+evidence reconciliation remain required before caller delivery. This current
+implementation route does not change the existing campaign boundaries below.
 
 The [Ruby normal Live evidence](./validation/ruby-normal-live-evidence.md)
 records independently accepted GitHub Packages and RubyGems.org publication,

@@ -181,6 +181,14 @@ pinned RubyGems publisher, credential, observation and consumer interfaces for
 the contraction. It is source evidence, not a concrete caller contract or new
 live qualification.
 
+The private application's
+[ordinary Ruby Release interface](../../../../private/app/workflow-delivery/README.md#ordinary-ruby-release)
+composes complete native preparation, selected-source observation, one gated
+native publisher and separate required remote consumption. Complete local and
+independent source qualification, ordinary final-subject Linux CI and hosted
+reconciliation remain required before delivery; implementation supplies no new
+live feed, publisher configuration or publication authorization.
+
 The owner selected the complete Ruby journey under [Issue #954](https://github.com/hcoona/three/issues/954).
 [`WD-RUBY-*`](./requirements.md#ruby-smoke-slice), the [HLD extension](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md#ruby-smoke-extension)
 and [Ruby LLD](./hcoona-release-smoke-ruby-lld.md) define the minimal integration.
