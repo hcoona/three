@@ -545,8 +545,9 @@ committed release declaration and selected check contract before native effects.
 tool preparation, native identity/build, original distribution inspection and both
 clean consumers inside the existing application. It consumes no CI plan, check
 or Release outcome. CI retains committed obligation validation and adapts each
-reached native command and result to its original four-check plan. Release
-caller integration remains pending under the
+reached native command and result to its original four-check plan. The
+[ordinary Python Release caller](#ordinary-python-release) integrates these
+components under the
 [concrete contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
 
 UV prepares the existing frozen root groups with native workspace editability
@@ -1828,7 +1829,10 @@ observed exact.
 Controlled HTTP/native-process tests and local maintained-packaging/isolated CLI
 tests establish these component boundaries. Ordinary final-source CI is still
 required before delivery; these tests do not establish deployed index behavior,
-publication, remote consumer or ordinary Release caller qualification. Remote index consumers and caller cutover remain separate work; native publisher
+publication, remote consumer or ordinary Release caller qualification. The
+[native remote consumer](#native-python-remote-consumer-component) and
+[ordinary Python Release caller](#ordinary-python-release) describe their
+implemented integration and remaining qualification; native publisher
 qualification is described below.
 
 ### Native Python publisher component
