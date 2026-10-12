@@ -48,6 +48,9 @@ internal sealed class NuGetConsumerReadHandler(string credential, HttpMessageHan
                 if (response.StatusCode != HttpStatusCode.OK)
                     throw new InvalidDataException("Native consumer storage did not return 200.");
             }
+            else if (archive && status != 200)
+                throw new InvalidDataException(
+                    "Native consumer direct archive did not return 200.");
             if (response.Headers.NonValidated.Contains("Location") ||
                 response.Content.Headers.ContentEncoding
                     .Any(value => !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))

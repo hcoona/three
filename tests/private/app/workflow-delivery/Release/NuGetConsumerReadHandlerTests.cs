@@ -9,6 +9,45 @@ public sealed class NuGetConsumerReadHandlerTests(TestContext context)
 {
     private const string Archive = "https://nuget.pkg.github.com/hcoona/flat/p/1.0.0/p.1.0.0.nupkg";
     private const string Credential = "controlled-sensitive-read-value";
+    private static readonly byte[] Original = [1, 2, 3];
+
+    [TestMethod]
+    [DataRow(200)]
+    [DataRow(201)]
+    [DataRow(206)]
+    public async Task DirectArchiveRequires200BeforeBodyConsumption(int status)
+    {
+        int sends = 0;
+        using var body = new Tracked(Original);
+        using var handler = new NuGetConsumerReadHandler(Credential, new Controlled((request, _) =>
+        {
+            sends++;
+            Assert.AreEqual(Archive, request.RequestUri!.AbsoluteUri);
+            Assert.AreEqual("Basic", request.Headers.Authorization!.Scheme);
+            return Task.FromResult(new HttpResponseMessage((HttpStatusCode)status)
+                { Content = new StreamContent(body) });
+        }), context.CancellationToken);
+        using var client = new HttpClient(handler);
+        if (status == 200)
+        {
+            using HttpResponseMessage result = await client.GetAsync(Archive,
+                context.CancellationToken);
+            Assert.AreEqual(HttpStatusCode.OK, result.StatusCode);
+            CollectionAssert.AreEqual(Original,
+                await result.Content.ReadAsByteArrayAsync(context.CancellationToken));
+            Assert.IsGreaterThan(0, body.Reads);
+        }
+        else
+        {
+            InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+                () => client.GetAsync(Archive, context.CancellationToken));
+            Assert.Contains("direct archive did not return 200", failure.Message);
+            Assert.AreEqual(0, body.Reads);
+        }
+        Assert.AreEqual(1, sends);
+        Assert.AreEqual(1, handler.Reads);
+        Assert.IsTrue(body.Disposed);
+    }
 
     [TestMethod]
     [DataRow("https://storage.example.test/p?token=controlled-sensitive-read-value")]
@@ -155,6 +194,23 @@ public sealed class NuGetConsumerReadHandlerTests(TestContext context)
         using var client = new HttpClient(handler);
         await Assert.ThrowsExactlyAsync<IOException>(() => client.GetAsync(
             DotNetRemoteConsumer.ServiceIndex, context.CancellationToken));
+    }
+
+    private sealed class Tracked(byte[] bytes) : MemoryStream(bytes)
+    {
+        internal int Reads { get; private set; }
+        internal bool Disposed { get; private set; }
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer,
+            CancellationToken token = default)
+        {
+            Reads++;
+            return base.ReadAsync(buffer, token);
+        }
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
+        }
     }
 
     private sealed class Controlled(Func<HttpRequestMessage, CancellationToken,
