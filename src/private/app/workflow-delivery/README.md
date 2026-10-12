@@ -547,7 +547,7 @@ tool preparation, native identity/build, original distribution inspection and bo
 clean consumers inside the existing application. It consumes no CI plan, check
 or Release outcome. CI retains committed obligation validation and adapts each
 reached native command and result to its original four-check plan. Release
-preparation and caller integration remain pending under the
+caller integration remains pending under the
 [concrete contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
 
 UV prepares the existing frozen root groups with native workspace editability
@@ -737,8 +737,11 @@ the controlled composition only. The separately accepted
 [current-tool observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#completed-ordinary-and-no-dev-observation)
 qualifies actual native collection on its exact subjects. The separate planning-input
 observation qualifies committed version/quality input binding on those subjects.
-Package preset expansion, preparation/execution and caller cutover remain pending;
-completed graph, enrichment and primitive campaigns supply no execution allowance.
+Adopted package expansion and preparation/execution are implemented through the
+[package execution component](#python-package-execution-component); the
+[native Python CI caller](#native-python-ci-caller) composes ordinary CI.
+Release remains separate. Completed graph, enrichment and primitive campaigns
+supply no execution allowance.
 
 ### Controlled Python Input Consumer Mapping
 
