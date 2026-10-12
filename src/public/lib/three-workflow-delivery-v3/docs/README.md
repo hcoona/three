@@ -237,13 +237,13 @@ and fresh destination consumption are [independently verified](./validation/nuge
 Admission implements
 the `WD-NUGET-006` dependency with the exact accepted six-field generation;
 no separate GitHub concurrent-atomicity statement is required. The
-[credential-free Windows profile observer](../README.md) supplies tooling for
-a separately reviewed observation after complete preflight resource admission.
+[credential-free Windows profile observer](../README.md) retains its historical
+source and evidence consumers; its hosted campaign entry is retired.
 The [fixture and operator contract](./hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
 defines native-tooling preparation. The handoff defines concrete operation and
 delivery discipline.
 The offline paired-fixture component implements local construction and
-inspection. Its separate Windows preparation entry binds the current request,
+inspection. Its retired Windows preparation entry bound the original request,
 trusted helper, admitted native/source facts and original dependencies through
 immutable transport. A bounded Windows preparation run has passed independent
 artifact-body and lineage audit. Its [retained evidence](https://github.com/hcoona/three/issues/676)
@@ -252,15 +252,19 @@ source and current run. The [capture evidence component](../README.md)
 connects bounded reads and retained complete or partial observations. The local
 read operator adds an executable preflight, immutable-input comparisons, POSIX
 process supervision and fixed cumulative capture allowances. The separate
-[one-probe Windows entry](../README.md) binds the current run to the original
-fixture/helper inputs, inspects without publication authority and retains a
+[retired one-probe Windows entry](../README.md) bound the original run to the original
+fixture/helper inputs, inspected without publication authority and retained a
 durable marker plus HTTP or partial-failure evidence from its one-shot publisher.
 Exact native requests and independent helper/runtime admission remain required.
 The [destination consumer component](../README.md) adds bounded native restore
 and exact installed-byte checks before credential-free build and marker
 invocation. Its local controlled evidence supplies no native admission.
-The fixed-suite operator implements the full three-probe sequence and six
-capture/delta integration. Its actual destination consumption and native
+The retained fixed-suite operator implements the historical three-probe sequence
+and six capture/delta integration. Its remote dispatch route is unavailable after
+retirement of the campaign workflow definitions; the [handoff](./agent-handoff.md)
+and [project entry](../README.md) route current callers
+and preserve the original sources and spent bounds. Its actual destination
+consumption and native
 acceptance passed independent audit. The separate [normal-Live evidence](./validation/nuget-normal-live-evidence.md)
 closes publication and consumption of the actual Live package. Local command availability
 and expected HTTP status do not admit native provenance or publication.

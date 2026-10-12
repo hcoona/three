@@ -311,41 +311,28 @@ def test_suite_request_rejects_previous_consumer_redirect_contract(
     assert not prepared.suite.events
 
 
-def test_suite_cli_uses_only_the_supplied_request_and_token(
-    prepared, monkeypatch, tmp_path
+@pytest.mark.parametrize(
+    "arguments",
+    [[], ["--request", "missing.json", "--token-env", "FORBIDDEN_TOKEN"]],
+)
+def test_suite_cli_rejects_retirement_before_inputs_or_effects(
+    arguments, monkeypatch, tmp_path, capsys
 ):
-    request = tmp_path / "request.json"
-    request.write_bytes(canonicalize(prepared.request.to_document()))
-    runner = Mock()
-    factory = Mock(return_value=runner)
+    read = Mock(side_effect=AssertionError("input must not be read"))
+    factory = Mock(side_effect=AssertionError("operator must not be created"))
+    token = Mock(side_effect=AssertionError("token must not be read"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(operator, "_read", read)
     monkeypatch.setattr(operator, "NuGetSuiteOperator", factory)
-    monkeypatch.setenv("WDV3_CONTROLLED_TOKEN", "controlled-cli-value")
-    arguments = [
-        "--request",
-        str(request),
-        "--audit-directory",
-        str(prepared.audit),
-        "--token-env",
-        "WDV3_CONTROLLED_TOKEN",
-    ]
-    for name in prepared.inputs.__dataclass_fields__:
-        arguments.extend(
-            ["--" + name.replace("_", "-"), str(getattr(prepared.inputs, name))]
-        )
-    assert operator.main(arguments) == 0
-    factory.assert_called_once()
-    supplied, *remaining = factory.call_args.args
-    assert supplied.to_document() == prepared.request.to_document()
-    assert remaining == [
-        prepared.inputs,
-        prepared.audit,
-        "controlled-cli-value",
-    ]
-    runner.execute.assert_called_once_with()
-    runner.execute.side_effect = ValueError(
-        "controlled confidential diagnostic"
-    )
+    monkeypatch.setattr(operator.os.environ, "get", token)
     assert operator.main(arguments) == 1
+    read.assert_not_called()
+    factory.assert_not_called()
+    token.assert_not_called()
+    assert not list(tmp_path.iterdir())
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == "The NuGet suite campaign entry is retired.\n"
 
 
 @pytest.mark.parametrize(

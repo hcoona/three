@@ -550,13 +550,11 @@ disables remote vulnerability auditing; ordinary Release keeps its configuration
 Available diagnostics and already retained outputs survive failure without a
 success manifest. Local SDK scenarios establish this mechanism,
 not actual Windows preparation, destination behavior or service-owned atomic
-guarantees. The separate `workflow-delivery-v3-nuget-fixtures.yml` entry connects
-the protected current request, immutable helper/native setup inputs and offline
-pair transport on Windows. It rejects reruns and closes native Provider/Model
-admission under `destination-acceptance`. Setup acquires original dependencies
-through native locked restore before the offline pair boundary. Failed preparation
-retains diagnostics without completed output. Inspect Git and protected delivery
-before relying on remote availability. A bounded Windows preparation run has
+guarantees. The retired `workflow-delivery-v3-nuget-fixtures.yml` entry
+connected the protected request, immutable helper/native setup inputs and offline
+pair transport on Windows. Its historical definition is linked from the
+[project entry](../README.md).
+A bounded Windows preparation run has
 passed independent artifact-body and lineage audit: the original A/B packages
 have native-equivalent identities and different bytes, and A's clean local
 consumer passed. The [preparation evidence](https://github.com/hcoona/three/issues/676)
@@ -571,9 +569,9 @@ independent helper admission and actual local runtime compatibility remain
 required. A failed collector cannot resume or replenish its budget. Its local
 runtime is not the Windows publication profile. Close the exact reviewed native
 request and required access facts before collection; the entry's presence does
-not supply them. The separate one-probe Windows entry binds a prospective spec
-to its actual protected current run, inspects the original immutable pair with
-the admitted prebuilt helper in an unprivileged job, and transports the selected
+not supply them. The retired one-probe Windows entry bound a prospective spec
+to its actual protected original run, inspected the original immutable pair with
+the admitted prebuilt helper in an unprivileged job, and transported the selected
 unchanged package to the publisher. The publisher checks the current profile,
 persists its invocation marker and calls the one-shot adapter once without
 target or helper execution. Retained HTTP/partial-failure evidence is not a
@@ -586,7 +584,7 @@ host is separate from the original fixture/reader helper and receives the read
 credential only for restore. Callers still own original/tooling provenance,
 current read authority and a concrete finite generation. Controlled local
 evidence is not actual destination consumption or Windows acceptance.
-The [fixed-suite operator](../README.md) connects the three probes, all six
+The retained [fixed-suite operator](../README.md) connected the three probes, all six
 captures and creation's clean consumer. It requires current protected tooling,
 exact dispatch run details, bounded original-byte HTTP collection and unchanged
 state through both duplicates. Failed positions cannot resume or trigger a
@@ -596,15 +594,20 @@ Controlled integration tests establish application behavior only. The accepted
 Native R4 audit below and separate [normal-Live audit](./validation/nuget-normal-live-evidence.md)
 establish their respective actual collection and publication outcomes. Adapter
 changes require admission of the current Windows profile. The
-[credential-free profile observer](../README.md) and dedicated Windows entry
-collect that existing profile from separately audited complete preflight
+[credential-free profile observer](../README.md) and retired Windows entry
+collected that profile from separately audited complete preflight
 resources, without helper, SDK or package access. Shared discovery validation
 accepts the advertised exact owner-root publish address while retaining origin,
 owner, query and traversal checks. The observer requires its own bounded
 reviewed dispatch; neither a partial preflight nor a self-consistent digest
 establishes resource provenance or permission to run it.
-Close the concrete native request and actual access/profile prerequisites
-before dispatch; source availability supplies no missing gate.
+The fixture, one-probe and profile workflow definitions are retired from the
+current tree. Their original sources and evidence remain linked from the project
+entry. The suite's remote dispatch route is unavailable; retained mixed helper
+modules and tests serve historical readers rather than a replacement campaign.
+The ordinary [NuGet Buddy caller](../../../../private/app/workflow-delivery/README.md#nuget-buddy-release)
+remains separate. All original native/preparation/normal-Live evidence and spent
+bounds below remain unchanged; removal grants no new execution or access.
 The [audited first NuGet create-response finding](./research/nuget-smoke-evidence.md#2026-09-14-query--correct-the-nuget-push-response-contract)
 identified HTTP 200 outside the original 201-only profile. The corrected closed
 profile selects 200/201/202 consistently across adapter, probe, original-evidence

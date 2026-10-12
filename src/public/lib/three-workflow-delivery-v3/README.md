@@ -180,9 +180,9 @@ The offline [NuGet fixture component](src/three_workflow_delivery_v3/acceptance/
 prepares original A/B archives from one frozen compilation, inspects their
 native identity and payload relationship, and requires A's clean local
 consumer. It retains inputs, original bytes and diagnostics. Its local SDK
-checks do not establish Windows or destination evidence. The separate
-[preparation entry](../../../../.github/workflows/workflow-delivery-v3-nuget-fixtures.yml)
-connects protected request, trusted helper and native setup transport to the
+checks do not establish Windows or destination evidence. The retired
+[preparation entry](https://github.com/hcoona/three/blob/b361a52908d44bbb5c2c961aee0dbdacb6cfa72e/.github/workflows/workflow-delivery-v3-nuget-fixtures.yml)
+connected protected request, trusted helper and native setup transport to the
 offline pair on Windows. Its acceptance-only command module is
 `three_workflow_delivery_v3.acceptance.nuget_preparation`; `request`, `setup`
 and `prepare` retain exact current inputs and completed or partial evidence.
@@ -228,9 +228,10 @@ the required access audit, native acceptance, Windows profile or publication
 authority. The accepted generation's complete evidence is linked above;
 future operations still require their own concrete requests.
 
-The [one-probe component](src/three_workflow_delivery_v3/acceptance/nuget_probe.py)
-and separate [Windows acceptance entry](../../../../.github/workflows/workflow-delivery-v3-native-nuget-acceptance.yml)
-consume an independently admitted original fixture pair and complete helper.
+The retained [one-probe component](src/three_workflow_delivery_v3/acceptance/nuget_probe.py)
+and retired [Windows acceptance entry](https://github.com/hcoona/three/blob/b361a52908d44bbb5c2c961aee0dbdacb6cfa72e/.github/workflows/workflow-delivery-v3-native-nuget-acceptance.yml)
+consumed an independently admitted original fixture pair and complete helper.
+The following entry and publisher behavior describes that historical source.
 `python -m three_workflow_delivery_v3.acceptance.nuget_probe --help` exposes
 prospective-spec binding, unprivileged inspection and one publication stage.
 The canonical spec uses `workflow-delivery/v3/nuget-probe-spec` and the request
@@ -254,10 +255,11 @@ they do not verify its provenance or supply authorization. Close the concrete
 native request and actual access/profile prerequisites before dispatch.
 The admitted generation and ready Governance do not authorize another probe.
 
-The [profile observer](src/three_workflow_delivery_v3/acceptance/nuget_profile.py)
-and separate [Windows entry](../../../../.github/workflows/workflow-delivery-v3-nuget-profile.yml)
-measure the existing publication profile without a package credential, helper
-or SDK invocation. `python -m three_workflow_delivery_v3.acceptance.nuget_profile --help`
+The retained [profile observer](src/three_workflow_delivery_v3/acceptance/nuget_profile.py)
+and retired [Windows entry](https://github.com/hcoona/three/blob/b361a52908d44bbb5c2c961aee0dbdacb6cfa72e/.github/workflows/workflow-delivery-v3-nuget-profile.yml)
+measured the publication profile without a package credential, helper
+or SDK invocation. The following description serves its historical consumers.
+`python -m three_workflow_delivery_v3.acceptance.nuget_profile --help`
 describes its canonical input and retained output. Its small inline request
 binds protected tooling and the exact resource projection from a complete,
 independently audited preflight. Resource hashes alone do not establish that
@@ -291,8 +293,8 @@ current read authority and the finite native generation; supplied hashes do not
 establish provenance. Controlled local tests establish native SDK and component
 behavior, not actual destination consumption, Windows profile or acceptance.
 
-The [fixed-suite operator](src/three_workflow_delivery_v3/acceptance/nuget_suite_operator.py)
-connects those components in the accepted order: create A, verify the creation
+The retained [fixed-suite operator](src/three_workflow_delivery_v3/acceptance/nuget_suite_operator.py)
+connected those components in the accepted order: create A, verify the creation
 delta, consume A, reject identical A, then reject equivalent different-byte B.
 It retains all six captures and compares official native coordinates and GitHub
 object identities, including unchanged neighboring versions. Original probe
@@ -300,44 +302,19 @@ uploads bind the exact current run, prepared input, invocation marker, response
 and result. A duplicate rejection preserves its conservative mutation flag;
 it is not a successful publication.
 
-`python -m three_workflow_delivery_v3.acceptance.nuget_suite_operator --help`
-describes the operator-local entry. Its canonical `NuGetSuiteRequest` binds the
-static plan, separate preflight request, finite GitHub limits and the digest of
-the independently reviewed admission carrier. That carrier must close the
-concrete execution request, current protection/access facts, original fixture
-and helper provenance, current Windows profile, and prebuilt consumer runtime.
-Neither a request file nor its audit hash supplies missing authorization.
-The entry reads only the selected existing token environment variable. It
-does not look up credentials, build a runtime or modify access.
-
-Dispatch requests return the exact run ID. The collector rechecks current main,
-workflow and actor, polls only that attempt-one run, and requires a complete
-single artifact page. Direct HTTPS calls preserve original operation and artifact
-response bodies. The authenticated actor response retains only a typed, explicitly
-derived `id`/`login` projection; bodies carrying `Location` are omitted. Both
-exceptions retain original byte counts and hashes. Dispatch permits no redirects
-or retries. Each original artifact download may
-follow one redirect to the exact independently admitted storage origin without
-forwarding the GitHub credential. The temporary signed URL is not retained.
-Request and response-body budgets include redirects and overflow detection;
-each call has a supervised deadline. Native captures and the consumer retain
-their separate bounds inside the fixed generation deadline.
-
-The private audit retains original uploads, prior evidence, safe partial
-responses and the actual consumer tree. Any failure spends the lifetime and
-stops subsequent mutation. An observation timeout does not establish that a
-queued remote run cannot still publish. A completed suite observation is only
-candidate sequential evidence: independent native audit, admission of the
-accepted NuGet integration contract, protected activation and a separate
-normal-Live publication remain required. Adapter changes invalidate the prior
-source identity, so the current Windows profile must be admitted before native
-execution. NuGet admission binds the exact six-field native generation,
-including its integration-contract revision and evidence digest. Its production
-registry contains the independently audited generation linked above; no
-separate atomic-assurance registry is used.
+The three campaign workflow definitions are retired from the current tree.
+The suite's remote dispatch route is unavailable because its collector requires
+the retired acceptance workflow. Retained components and tests serve original
+source/evidence readers; they are not an alternative executable campaign.
+Git preserves the definitions linked above. The
+[accepted native evidence](docs/research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
+retains exact Native R4 source, profile producer, original artifacts, failures
+and spent lifetimes. Removal grants no replacement dispatch or publication.
+Ordinary requests use the private [NuGet Buddy interface](../../../private/app/workflow-delivery/README.md#nuget-buddy-release).
 
 The remaining NuGet command descriptions serve retained historical source and
-evidence readers, including the fixture, profile and acceptance entries above.
+evidence readers, including the retired fixture, profile and acceptance sources
+above.
 They do not describe the replacement ordinary caller or reopen any stopped
 campaign. The [handoff](docs/agent-handoff.md) retains operation limits.
 

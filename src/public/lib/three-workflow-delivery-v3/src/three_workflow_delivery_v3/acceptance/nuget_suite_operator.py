@@ -1,4 +1,4 @@
-"""Execute a separately admitted NuGet suite once from a pinned clean checkout.
+"""Retain historical NuGet suite components with a retired executable entry.
 
 The request and retained admission carrier do not authorize themselves. Before
 invocation, the operator must close the native request, access, source, fixture,
@@ -8,9 +8,9 @@ This entry performs no credential lookup, host build or Live activation.
 
 from __future__ import annotations
 
-import argparse
 import os
 import re
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -408,52 +408,10 @@ class NuGetSuiteOperator:
         return self.directory / "suite-observation.json"
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Execute the pre-admitted request using an existing token variable."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    for name in (
-        "request",
-        "checkout",
-        "preflight-evidence",
-        "fixture-archive",
-        "fixture-audit",
-        "helper-archive",
-        "helper-audit",
-        "restore-host",
-        "admission",
-        "audit-directory",
-    ):
-        parser.add_argument("--" + name, type=Path, required=True)
-    parser.add_argument("--token-env", required=True)
-    arguments = parser.parse_args(argv)
-    try:
-        request = read_suite_request(
-            _read(
-                arguments.request.parent,
-                arguments.request.name,
-                _MANIFEST_LIMIT,
-            )
-        )
-        inputs = NuGetSuiteInputs(
-            arguments.checkout,
-            arguments.preflight_evidence,
-            arguments.fixture_archive,
-            arguments.fixture_audit,
-            arguments.helper_archive,
-            arguments.helper_audit,
-            arguments.restore_host,
-            arguments.admission,
-        )
-        operator = NuGetSuiteOperator(
-            request,
-            inputs,
-            arguments.audit_directory,
-            os.environ.get(arguments.token_env, ""),
-        )
-        operator.execute()
-    except Exception:  # noqa: BLE001 - no sensitive diagnostics at the CLI boundary
-        return 1
-    return 0
+def main(_argv: Sequence[str] | None = None) -> int:
+    """Reject the retired campaign before reading inputs or creating state."""
+    sys.stderr.write("The NuGet suite campaign entry is retired.\n")
+    return 1
 
 
 if __name__ == "__main__":
