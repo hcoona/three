@@ -8,6 +8,8 @@ namespace WorkflowDelivery.Tests.Repository;
 public sealed class PythonRepositoryInputsTests
 {
     private static readonly string[] PairedRevisions = ["before", "after"];
+    private static readonly (bool Before, bool After)[] QualityPresence =
+        [(true, true), (true, false), (false, true)];
     private static PythonProjectDependencies Member(string path) => new(path, path, [], []);
 
     private static (GitRevision Revision, PythonProjectDependencies[] Projects,
@@ -75,6 +77,57 @@ public sealed class PythonRepositoryInputsTests
         {
             Assert.AreEqual(path, reason.Path);
             Assert.AreEqual("pytest:" + target, reason.Project);
+        }
+    }
+
+    [TestMethod]
+    [DataRow("workflow-delivery.quality.yml", true)]
+    [DataRow("src/workflow-delivery.quality.yml", true)]
+    [DataRow("src/public/workflow-delivery.quality.yml", true)]
+    [DataRow("src/public/lib/workflow-delivery.quality.yml", true)]
+    [DataRow("src/public/lib/hcoona-release-smoke-python/workflow-delivery.quality.yml", true)]
+    [DataRow("src/public/lib/asciidoctor-latexmath/workflow-delivery.quality.yml", false)]
+    [DataRow("src/public/lib/hcoona-release-smoke-python-other/workflow-delivery.quality.yml",
+        false)]
+    [DataRow("src/private/app/workflow-delivery/workflow-delivery.quality.yml", false)]
+    [DataRow("src/public/lib/nbgv-python/workflow-delivery.quality.yml", false)]
+    public void QualityChangesSelectOnlyNativePreparationConsumers(string path, bool consumed)
+    {
+        const string target = "tests/eng/test_python_release_preparation_gate.py";
+        foreach ((bool before, bool after) in QualityPresence)
+        {
+            PythonFactsEndpoint basis = Facts(Endpoint(
+                [target, "tests/unrelated.py"], before ? [path] : [], "before"));
+            PythonFactsEndpoint candidate = Facts(Endpoint(
+                [target, "tests/unrelated.py"], after ? [path] : [], "after"));
+            if (!consumed)
+            {
+                // The existing scope selector establishes non-Python responsibility.
+                // PythonGroupReader passes those coordinates with no Python owner.
+                if (before) basis = basis with { Inputs = [.. basis.Inputs, new(path, [], [])] };
+                if (after) candidate = candidate with
+                { Inputs = [.. candidate.Inputs, new(path, [], [])] };
+            }
+            SelectionReason[] reasons = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+            PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+                [path], false, reasons);
+            CiPlan plan = ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+            if (!consumed)
+            {
+                Assert.DoesNotContain("pytest:" + target,
+                    plan.Checks.Select(item => item.Work.Key.Target));
+                Assert.IsEmpty(reasons.Where(reason => reason.Project == "pytest:" + target));
+                continue;
+            }
+            PlannedCheck selected = Assert.ContainsSingle(plan.Checks);
+            Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
+            Assert.IsNotEmpty(selected.Reasons);
+            string[] expected = [.. before ? new[] { "before" } : [],
+                .. after ? new[] { "after" } : []];
+            CollectionAssert.AreEquivalent(expected,
+                selected.Reasons.Select(reason => reason.Revision).Distinct().ToArray());
+            Assert.IsTrue(selected.Reasons.All(reason =>
+                reason.Path == path && reason.Project == "pytest:" + target));
         }
     }
 
