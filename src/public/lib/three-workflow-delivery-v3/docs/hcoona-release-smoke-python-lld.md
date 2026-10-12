@@ -248,8 +248,11 @@ no change.
 
 ## Hosted Integration
 
-`python -m three_workflow_delivery_v3.python_cli` exposes the bounded stages.
-The workflow separates request, Provider, compiler, CI/Release Plan, Build,
+The ordinary Python CLI and its hosted record pipeline are retired. The
+[replacement Python Release interface](../../../../private/app/workflow-delivery/README.md#ordinary-python-release)
+owns the current caller. The following describes the former pipeline for its
+historical evidence consumers; Git retains its removed CLI and workflow.
+The former workflow separated request, Provider, compiler, CI/Release Plan, Build,
 Qualification, publication preparation, publisher and Finalizer jobs. Python CI
 conservatively selects the entire slice at the trusted tested-merge SHA; it
 makes no affected-path optimization claim. CI and Release retain separate

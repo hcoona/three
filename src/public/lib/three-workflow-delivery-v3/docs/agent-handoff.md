@@ -72,6 +72,13 @@ implements selected-index UV resolution and original-hash enforcement with
 isolated native installed metadata/API checks. Controlled scenarios establish
 component boundaries only; deployed destination and ordinary caller qualification
 remain separate. Completed campaigns stay closed.
+The [ordinary Python Release interface](../../../../private/app/workflow-delivery/README.md#ordinary-python-release)
+composes complete preparation, public observation, conditional native publication
+and separate required format consumers/result in the current CLI and four-job
+caller. Controlled/local checks do not establish deployed index/OIDC behavior;
+final-source ordinary Linux CI and independent reconciliation qualify delivery.
+Completed campaigns remain closed.
+
 Root CI owns the native Ruby group, qualified in ordinary
 [PR #1124](https://github.com/hcoona/three/pull/1124) CI. It receives the exact scope
 and complete candidate control artifact, prepares native facts once and executes
