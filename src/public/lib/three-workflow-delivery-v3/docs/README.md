@@ -59,6 +59,11 @@ defines the next preparation, native publisher, remote consumer and ordinary
 caller boundary. Its [publisher source assessment](./research/python-native-publisher.md)
 distinguishes native OIDC/retry and output handling from runtime qualification.
 Neither record authorizes a new publication or reopens a completed campaign.
+The private application's [Python preparation component](../../../../private/app/workflow-delivery/README.md#python-release-preparation-component)
+implements complete original wheel/sdist qualification with controlled and local
+native Linux coverage. Hosted caller and live behavior remain unqualified;
+destination observation, publication, remote consumption and caller cutover are
+still pending.
 
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration

@@ -501,6 +501,32 @@ unsupported relevant shapes in `errors`. An empty error array is a producer's
 result, not an admission certificate or proof that a reader is implemented.
 The scope label must agree across revisions; it is not a coverage inference.
 
+### Python Release Preparation Component
+
+[`PythonPreparation`](Release/PythonPreparation.cs) qualifies the selected complete
+wheel/sdist declaration independently of CI impact selection. It reads committed
+release and quality inputs, queries locked native MISE tool selection, restores
+the committed NBGV tool and uses shared frozen UV/backend preparation. The caller
+supplies MISE's existing installation directory as an execution resource; it is
+not another tool-version declaration. Product builds and consumers use fresh
+external state with no publication credentials.
+
+Hatchling, `nbgv-python` and maintained packaging supply version, public-release,
+commit, dependency and interpreter facts. Live Buddy accepts branch refs for
+TestPyPI; live Official requires `refs/heads/main`, PyPI and the native public
+projection. Dry run can qualify another ref and retains its native version.
+The selected project's branch-wide NBGV public-version mode shapes versions for
+CI and Release; it does not authorize Official publication.
+
+Preparation requires build, contents, original wheel consumption, Git-free
+original sdist consumption and unchanged originals. It retains actual reached
+command outcomes and complete failed/cancelled/timed-out/skipped checks. Files
+carry portable native coordinates, declared output identities, sizes and digests.
+Controlled scenarios and a native Linux local fixture exercise this component;
+they do not establish feed, OIDC, publication or hosted caller behavior. Native
+publisher, destination observation, remote consumption and ordinary caller cutover
+remain pending under the [accepted contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
+
 ### Python Package Execution Component
 
 `ci run-python-package <plan.json> <request.json>` executes the selected adopted

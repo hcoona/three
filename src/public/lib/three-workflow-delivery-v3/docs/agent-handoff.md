@@ -49,7 +49,13 @@ tests and ordinary CI establish no new dispatch, live-feed or publication author
 The [concrete Python Release contract](./migration-strategy.md#concrete-python-release-integration)
 routes the next preparation, native UV publication, remote consumption and
 ordinary caller work. Its [publisher assessment](./research/python-native-publisher.md)
-is source evidence; no new Python implementation or live qualification is claimed.
+is source evidence. The private application's
+[Python Release preparation component](../../../../private/app/workflow-delivery/README.md#python-release-preparation-component)
+implements complete original wheel/sdist qualification independently of CI,
+including native branch versioning and Git-free sdist consumption. Controlled
+tests and a local native Linux fixture do not establish hosted caller or live
+qualification. Destination observation, native publisher, remote consumption
+and ordinary caller cutover remain pending; completed campaigns stay closed.
 Root CI owns the native Ruby group, qualified in ordinary
 [PR #1124](https://github.com/hcoona/three/pull/1124) CI. It receives the exact scope
 and complete candidate control artifact, prepares native facts once and executes

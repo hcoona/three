@@ -19,6 +19,6 @@
   ],
   "gitCommitIdShortFixedLength": 7,
   "gitCommitIdShortAutoMinimum": 7,
-  "publicReleaseRefSpec": ["^refs/heads/main$"],
+  "publicReleaseRefSpec": ["^refs/heads/"],
   "inherit": false
 }
