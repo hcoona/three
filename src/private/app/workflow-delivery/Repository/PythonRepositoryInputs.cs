@@ -5,7 +5,8 @@ namespace WorkflowDelivery.Repository;
 // Repository engineering inputs select actual supplied checks, never a native target roster.
 internal static class PythonRepositoryInputs
 {
-    private const string PythonPreparationProduct = "src/public/lib/hcoona-release-smoke-python";
+    private const string PythonPreparationProduct = "tests/private/app/workflow-delivery/" +
+        "fixtures/products/hcoona-release-smoke-python";
     private const string RubyPreparationProduct =
         "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby";
     private static readonly string[] Shared = [
@@ -22,16 +23,6 @@ internal static class PythonRepositoryInputs
         ".editorconfig", "global.json", "NuGet.Config", "nuget.config",
         ".config/dotnet-tools.json", "version.json", "Directory.Build.props",
         "Directory.Build.targets", "Directory.Packages.props", "dirs.proj"];
-    private static readonly string[] Node = [
-        "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc",
-        "version.json", ".config/dotnet-tools.json", "global.json"];
-    private static readonly string[] V3Roots = [
-        "src/private/app/workflow-delivery-v3-dotnet-provider",
-        "src/private/app/workflow-delivery-v3-nuget-authority",
-        "src/private/app/workflow-delivery-v3-nuget-consumer",
-        "tests/private/app/workflow-delivery-v3-nuget-authority",
-        "tests/private/app/workflow-delivery-v3-nuget-consumer",
-        "src/public/lib/hcoona-release-smoke-github-packages"];
     private static readonly string[] AzureRoots = [
         "src/private/app/azureauth-credprovider", "tests/private/app/azureauth-credprovider"];
     private static readonly string[] PythonPreparationRoots = [
@@ -122,8 +113,6 @@ internal static class PythonRepositoryInputs
             foreach (string path in Dotnet)
                 if (target.Target.StartsWith("src/public/lib/nbgv-python/",
                         StringComparison.Ordinal) ||
-                    target.Target.StartsWith("src/public/lib/three-workflow-delivery-v3/",
-                        StringComparison.Ordinal) ||
                     target.Target.StartsWith(AzureRoots[0] + "/", StringComparison.Ordinal))
                     Add(path, owner);
             foreach (string path in paths)
@@ -149,16 +138,14 @@ internal static class PythonRepositoryInputs
         (target == "tests/private/app/workflow-delivery/Native/Ruby" &&
             (Under(path, "src/private/app/workflow-delivery/Native/Ruby") ||
              Under(path, "tests/private/app/workflow-delivery/fixtures/products/" +
-                "hcoona-release-smoke-ruby") ||
-             path == "src/public/lib/three-workflow-delivery-v3/" +
-                 "src/three_workflow_delivery_v3/_ruby_helper.rb")) ||
+                "hcoona-release-smoke-ruby"))) ||
         (target == "tests/private/app/workflow-delivery/Native/Python" &&
             (Under(path, "src/private/app/workflow-delivery/Native/Python") ||
              Under(path, "src/public/lib/nbgv-python"))) ||
-        (target.StartsWith("src/public/lib/three-workflow-delivery-v3/",
-            StringComparison.Ordinal) && V3(path)) ||
         (target.StartsWith(AzureRoots[0] + "/", StringComparison.Ordinal) && Azure(path)) ||
         (target == "tests/eng/test_legacy_release_contract.py" && Legacy(path)) ||
+        (target == "tests/eng/test_general_ci_workflow.py" &&
+            path == "tests/eng/ci_workflow_shell.py") ||
         (target == "tests/eng/test_typos_config.py" && path == ".typos.toml") ||
         (target == "tests/eng/test_run_node_ci_group.py" &&
             path == "eng/scripts/run_node_ci_group.py") ||
@@ -207,19 +194,6 @@ internal static class PythonRepositoryInputs
     private static bool Azure(string path) => DotnetInput(path, AzureRoots) ||
         Under(path, "eng/scripts/azureauth-credprovider") ||
         Under(path, "src/public/lib/nbgv-python");
-
-    private static bool V3(string path) => DotnetInput(path, V3Roots) ||
-        Node.Contains(path, StringComparer.Ordinal) ||
-        path is "hk.pkl" or ".gitignore" or ".gitattributes" or ".github/CODEOWNERS" or
-            "eng/scripts/hk_exec.py" or "eng/scripts/hk_file_operands.py" or
-            "eng/scripts/hk_actionlint.py" or "eng/scripts/hk_pkl_eval.py" ||
-        path.StartsWith(".github/workflows/workflow-delivery-v3-", StringComparison.Ordinal) ||
-        path.StartsWith(".github/actions/workflow-delivery-v3", StringComparison.Ordinal) ||
-        Under(path, ".github/workflow-delivery") || Under(path, "eng/workflow-delivery/v3") ||
-        path.StartsWith("eng/scripts/workflow_delivery_v3_", StringComparison.Ordinal) ||
-        Under(path, "src/private/lib/hk") ||
-        path.StartsWith("tests/private/app/workflow-delivery-v3-", StringComparison.Ordinal) ||
-        path.StartsWith("src/public/lib/hcoona-release-smoke-", StringComparison.Ordinal);
 
     private static bool DotnetInput(string path, string[] roots)
     {

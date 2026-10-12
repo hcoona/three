@@ -1232,19 +1232,19 @@ def test_scope_retains_other_jobs_without_python_selection(path, jobs):
             True,
         ),
         (
-            "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs",
+            "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/Smoke.cs",
             True,
         ),
         (
             (
-                "src/public/lib/hcoona-release-smoke-github-packages/"
+                "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/"
                 "packages.lock.json"
             ),
             True,
         ),
         (
             (
-                "src/public/lib/hcoona-release-smoke-github-packages/"
+                "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/"
                 "workflow-delivery.release-unit.yml"
             ),
             True,
@@ -1262,8 +1262,8 @@ def test_scope_retains_other_jobs_without_python_selection(path, jobs):
         ("stylecop.json", True),
         (".gitattributes", True),
         ("src/.gitattributes", True),
-        ("src/public/.gitattributes", True),
-        ("src/public/lib/.gitattributes", True),
+        ("src/public/.gitattributes", False),
+        ("src/public/lib/.gitattributes", False),
         ("src/private/app/.gitattributes", True),
         ("tests/.gitattributes", True),
         ("eng/scripts/ci_scope.py", True),
@@ -1277,7 +1277,7 @@ def test_scope_retains_other_jobs_without_python_selection(path, jobs):
         ("uv.lock", False),
         (
             (
-                "src/public/lib/hcoona-release-smoke-python/src/"
+                "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/src/"
                 "hcoona_release_smoke_python/__init__.py"
             ),
             False,
@@ -1307,11 +1307,14 @@ def test_nuget_reproducibility_preserves_added_moved_and_deleted_inputs(
     """Each actual endpoint transition retains the native validation owner."""
     root, _, before = comparison
     original = (
-        root / "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs"
+        root
+        / "tests/private/app/workflow-delivery/fixtures/products"
+        / "hcoona-release-smoke-github-packages/Smoke.cs"
     )
     moved = (
         root
-        / "tests/private/app/workflow-delivery/fixtures/products/nuget/Smoke.cs"
+        / "tests/private/app/workflow-delivery/fixtures/products"
+        / "hcoona-release-smoke-github-packages/nested/Smoke.cs"
     )
     original.parent.mkdir(parents=True)
     original.write_text("public static class Smoke {}\n")

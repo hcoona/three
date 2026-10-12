@@ -506,7 +506,9 @@ public sealed class GithubNuGetObservationTests
     }
     private static PreparedRelease Prepared(byte[] original) => new(new(new('a', 40),
         "refs/heads/development", "hcoona-release-smoke-github-packages",
-        "src/public/lib/hcoona-release-smoke-github-packages/workflow-delivery.release-unit.yml",
+        "tests/private/app/workflow-delivery/" +
+            "fixtures/products/hcoona-release-smoke-github-packages/" +
+            "workflow-delivery.release-unit.yml",
         "buddy", "github-packages-nuget", false), [new("build", "package", "nuget-package",
         GithubNuGetObservation.Package, "1.0.0", "original/package.nupkg", original.Length,
         Convert.ToHexStringLower(SHA256.HashData(original)))], ["contents"],

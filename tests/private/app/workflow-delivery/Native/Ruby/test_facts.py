@@ -462,10 +462,10 @@ def test_archive_metadata_and_clean_require_need_no_bundle_or_specs(
     assert consumed.stdout.splitlines() == ["native_fixture", "1.2.3"]
 
 
-def test_current_smoke_gemspec_separates_native_and_legacy_package_membership(
+def test_current_smoke_gemspec_builds_and_consumes_without_witness(
     native, tmp_path
 ):
-    """Native source/build need no witness; old package closure still does."""
+    """Native gemspec, archive and clean consumption agree without a witness."""
     source = tmp_path / "source"
     shutil.copytree(
         ROOT
@@ -496,34 +496,6 @@ def test_current_smoke_gemspec_separates_native_and_legacy_package_membership(
     assert sorted(evaluated["files"]) == normal
     assert evaluated["name"] == "hcoona-release-smoke-ruby"
     assert evaluated["version"] == "1.2.3"
-
-    legacy_helper = ROOT / (
-        "src/public/lib/three-workflow-delivery-v3/"
-        "src/three_workflow_delivery_v3/_ruby_helper.rb"
-    )
-    request = tmp_path / "legacy-request.json"
-
-    def legacy(operation, **fields):
-        request.write_text(json.dumps({"operation": operation, **fields}))
-        return command(
-            native,
-            source,
-            [
-                "-e",
-                "STDIN.reopen(ARGV.shift); load ARGV.shift",
-                str(request),
-                str(legacy_helper),
-            ],
-        )
-
-    assert (
-        answer(legacy("specification", gemspec=str(gemspec)))["files"] == normal
-    )
-    legacy_archive = tmp_path / "legacy.gem"
-    refused = legacy("build", gemspec=str(gemspec), output=str(legacy_archive))
-    assert refused.returncode != 0
-    assert "unsupported native specification" in refused.stderr
-    assert not legacy_archive.exists()
 
     built = command(native, source, ["-S", "gem", "build", str(gemspec)])
     assert built.returncode == 0, built.stderr
@@ -561,23 +533,6 @@ def test_current_smoke_gemspec_separates_native_and_legacy_package_membership(
         "1.2.3",
         "1.2.3",
     ]
-    # This fixture checks old file membership, not provenance-record semantics.
-    witness.write_text("{}\n")
-    historical_files = sorted([*normal, witness.relative_to(source).as_posix()])
-    assert (
-        answer(legacy("specification", gemspec=str(gemspec)))["files"]
-        == historical_files
-    )
-    assert (
-        answer(
-            legacy("build", gemspec=str(gemspec), output=str(legacy_archive))
-        )["files"]
-        == historical_files
-    )
-    assert (
-        sorted(answer(facts(native, "archive", legacy_archive))["contents"])
-        == historical_files
-    )
 
 
 @pytest.mark.parametrize("has_witness", [False, True])

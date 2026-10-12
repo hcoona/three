@@ -17,7 +17,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 ROOT = Path(__file__).resolve().parents[2]
-V3 = "src/public/lib/three-workflow-delivery-v3"
 AZURE = "src/private/app/azureauth-credprovider"
 SCHOLARLY = "src/private/lib/scholarly-publication"
 SCOPES = (
@@ -43,7 +42,7 @@ CONTROL_PROJECT = (
 NUGET_SCENARIO_ROOTS = {
     "src/private/app/workflow-delivery",
     str(PurePosixPath(CONTROL_PROJECT).parent),
-    "src/public/lib/hcoona-release-smoke-github-packages",
+    "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages",
 }
 PYTHON_INPUTS = {
     "pyproject.toml",
@@ -78,10 +77,6 @@ NODE_INPUTS = {
     ".config/dotnet-tools.json",
     "global.json",
 }
-V3_NATIVE = tuple(
-    f"src/private/app/workflow-delivery-v3-{name}/"
-    for name in ("dotnet-provider", "nuget-authority", "nuget-consumer")
-)
 
 
 def git(root: Path, *arguments: str) -> str:
@@ -120,6 +115,14 @@ def _dotnet_input(path: str, roots: set[str]) -> bool:
     )
 
 
+def _nuget_scenario_input(path: str) -> bool:
+    products = "tests/private/app/workflow-delivery/fixtures/products"
+    nuget = products + "/hcoona-release-smoke-github-packages"
+    if _under(path, products) and not _under(path, nuget):
+        return False
+    return _dotnet_input(path, NUGET_SCENARIO_ROOTS)
+
+
 def _azure_input(path: str) -> bool:
     return (
         _dotnet_input(path, {AZURE, "tests/private/app/azureauth-credprovider"})
@@ -131,44 +134,6 @@ def _azure_input(path: str) -> bool:
             )
         )
         or path in PYTHON_INPUTS
-    )
-
-
-def _v3_input(path: str) -> bool:
-    return (
-        _dotnet_input(
-            path,
-            {
-                *V3_NATIVE,
-                "tests/private/app/workflow-delivery-v3-nuget-authority",
-                "tests/private/app/workflow-delivery-v3-nuget-consumer",
-                "src/public/lib/hcoona-release-smoke-github-packages",
-            },
-        )
-        or path in NODE_INPUTS
-        or path
-        in {
-            "hk.pkl",
-            ".gitignore",
-            ".gitattributes",
-            ".github/CODEOWNERS",
-            "eng/scripts/hk_exec.py",
-            "eng/scripts/hk_file_operands.py",
-            "eng/scripts/hk_actionlint.py",
-            "eng/scripts/hk_pkl_eval.py",
-        }
-        or path.startswith(
-            (
-                ".github/workflows/workflow-delivery-v3-",
-                ".github/actions/workflow-delivery-v3",
-                ".github/workflow-delivery/",
-                "eng/workflow-delivery/v3/",
-                "eng/scripts/workflow_delivery_v3_",
-                "src/private/lib/hk/",
-                "tests/private/app/workflow-delivery-v3-",
-                "src/public/lib/hcoona-release-smoke-",
-            )
-        )
     )
 
 
@@ -262,7 +227,7 @@ def select(
         or any(
             path in ALL_INPUTS
             or path == "stylecop.json"
-            or _dotnet_input(path, NUGET_SCENARIO_ROOTS)
+            or _nuget_scenario_input(path)
             or bool(_resource_reasons(path, control_inputs))
             for path in paths
         ),
@@ -628,7 +593,23 @@ def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit en
         path.endswith(".py")
         or path in ALL_INPUTS | PYTHON_INPUTS
         or _under(path, "tests/eng")
-        or _v3_input(path)
+        or _under(path, "src/private/app/workflow-delivery")
+        or (
+            _under(path, "tests/private/app/workflow-delivery")
+            and not _under(
+                path, "tests/private/app/workflow-delivery/fixtures/products"
+            )
+        )
+        or _under(
+            path,
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-ruby",
+        )
+        or path
+        in {
+            ".github/workflows/workflow-delivery-v3-python-smoke.yml",
+            ".github/workflows/workflow-delivery-v3-ruby-smoke.yml",
+        }
         or _azure_input(path)
         or _legacy_release_input(path)
         or path == ".typos.toml"

@@ -21,7 +21,7 @@ dev = [
 workflow-delivery-python = ["build==1.6.1", "nbgv-python"]
 
 [tool.uv.workspace]
-# The current Python workspace is rooted under src/; legacy OnePython paths are retired.
+# Python projects live under src/; internal delivery products live under tests/.
 members = [
   "src/lab/azure-document-intelligence-lab",
   "src/private/app/factorio-cycle-calculator",
@@ -34,15 +34,13 @@ members = [
   "src/private/app/transcribe",
   "src/private/app/azureauth-credprovider/python",
   "src/public/app/markdown-hybrid-search-mcp",
-  "src/public/lib/hcoona-release-smoke-python",
+  "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python",
   "src/public/lib/nbgv-python",
-  "src/public/lib/three-workflow-delivery-v3",
   "src/sample/nbgv-hatch-demo",
 ]
 
 [tool.uv.sources]
 nbgv-python = { workspace = true }
-three-workflow-delivery-v3 = { workspace = true }
 
 [tool.pyrefly]
 # Keep type-check coverage aligned with the root uv workspace membership.
@@ -57,9 +55,8 @@ project-includes = [
   "src/private/app/transcribe/**/*.py",
   "src/private/app/azureauth-credprovider/python",
   "src/public/app/markdown-hybrid-search-mcp/src/**/*.py",
-  "src/public/lib/hcoona-release-smoke-python/**/*.py",
+  "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/**/*.py",
   "src/public/lib/nbgv-python/**/*.py",
-  "src/public/lib/three-workflow-delivery-v3/**/*.py",
   "src/sample/nbgv-hatch-demo/**/*.py",
 ]
 project-excludes = ['.venv/**', 'dist/**']
@@ -211,6 +208,7 @@ testpaths = [
   "tests/eng/test_ruby_release_preparation_gate.py",
   "tests/eng/test_ruby_release_caller.py",
   "tests/eng/test_run_python_ci_group.py",
+  "tests/eng/test_general_ci_workflow.py",
   "tests/eng/test_run_ruby_ci_group.py",
   "tests/eng/test_python_runtime.py",
   "tests/eng/test_legacy_release_contract.py",
@@ -219,5 +217,4 @@ testpaths = [
   "src/private/app/git-commit-heatmap/tests",
   "src/private/app/llm-text-splitter/tests",
   "src/public/lib/nbgv-python/tests",
-  "src/public/lib/three-workflow-delivery-v3/tests",
 ]

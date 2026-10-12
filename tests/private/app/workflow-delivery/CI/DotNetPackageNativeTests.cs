@@ -408,7 +408,8 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         private static readonly string[] GraphRestoreProperties = ["-property:Configuration=Debug",
             "-property:ContinuousIntegrationBuild=true"];
         private int run;
-        internal const string Project = "src/public/lib/hcoona-release-smoke-github-packages/" +
+        internal const string Project = "tests/private/app/workflow-delivery/" +
+            "fixtures/products/hcoona-release-smoke-github-packages/" +
             "hcoona-release-smoke-github-packages.csproj";
 
         internal static async Task<ProductFixture> CreateAsync(CancellationToken token,
@@ -481,7 +482,8 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                     checkout, ["restore", Project, "--locked-mode", .. (discoverGraph
                         ? GraphRestoreProperties : [])], 60), token);
                 DotNetNativeFixture.RequireSuccess(preparation, "Exact product locked preparation");
-                string declaration = "src/public/lib/hcoona-release-smoke-github-packages/" +
+                string declaration = "tests/private/app/workflow-delivery/" +
+                    "fixtures/products/hcoona-release-smoke-github-packages/" +
                     "workflow-delivery.release-unit.yml";
                 ReleaseUnitDeclaration unit = ReleaseUnitDeclarationReader.Read(
                     await File.ReadAllTextAsync(Path.Combine(checkout, declaration),

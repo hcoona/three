@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/Nerdbank.GitVersioning/main/src/NerdBank.GitVersioning/version.schema.json",
+  "version": "0.1.0-beta.{height}",
+  "pathFilters": [
+    ".",
+    ":/mise.toml",
+    ":/mise.lock",
+    ":/.config/dotnet-tools.json",
+    ":/global.json",
+    ":/src/public/lib/nbgv-python",
+    ":/pyproject.toml",
+    ":/uv.lock",
+    ":/src/private/app/workflow-delivery/Native/Python"
+  ],
+  "gitCommitIdShortFixedLength": 7,
+  "gitCommitIdShortAutoMinimum": 7,
+  "publicReleaseRefSpec": ["^refs/heads/"],
+  "inherit": false
+}

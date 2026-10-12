@@ -31,7 +31,8 @@ internal sealed class DotNetRepositoryTargets
             "WebHdfs.Extensions.FileProviders.UnitTest.csproj",
             "PreBuild"),
         ("dirs.proj", "RestoreWindowsOnlyProjectsOnNonWindows"),
-        ("src/public/lib/hcoona-release-smoke-github-packages/" +
+        ("tests/private/app/workflow-delivery/" +
+            "fixtures/products/hcoona-release-smoke-github-packages/" +
             "hcoona-release-smoke-github-packages.csproj",
             "ValidateWorkflowDeliveryFrozenInputs"),
     ];

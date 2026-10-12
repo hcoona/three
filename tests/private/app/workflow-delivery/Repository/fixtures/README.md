@@ -40,7 +40,7 @@ queried closures from the retained PNPM `12.8.1` observations in
 Only the absolute workspace prefix becomes `__WORKSPACE__`; the test substitutes
 its platform's temporary root. The packet preserves original command outputs,
 inputs, environment, source and executable identities. The
-[research record](../../../../../../src/public/lib/three-workflow-delivery-v3/docs/research/pnpm-native-planning.md#directory-coordinate-adaptation-candidate)
+[research record](../../../../../../src/private/app/workflow-delivery/docs/research/pnpm-native-planning.md#directory-coordinate-adaptation-candidate)
 owns their conclusions and limitations.
 
 `PnpmRecordedOutputTests` reuses the full listing as membership input and extracts

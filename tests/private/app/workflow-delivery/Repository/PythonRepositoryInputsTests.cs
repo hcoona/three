@@ -179,31 +179,6 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
-    [DataRow(".github/workflows/workflow-delivery-v3-ruby-smoke.yml")]
-    [DataRow(".github/workflows/workflow-delivery-v3-ruby-bootstrap.yml")]
-    public void RubyReleaseWorkflowInputsSelectPublicRouteOnly(string path)
-    {
-        const string publicTarget = "src/public/lib/three-workflow-delivery-v3/tests";
-        string[] targets = ["tests/eng/test_ruby_release_caller.py",
-            "tests/eng/test_ruby_release_preparation_gate.py",
-            "tests/private/app/workflow-delivery/Native/Ruby", publicTarget,
-            "tests/unrelated.py"];
-        PythonFactsEndpoint basis = Facts(Endpoint(targets, [path], "before"));
-        PythonFactsEndpoint candidate = Facts(Endpoint(targets, [path], "after"));
-        Owners(basis.Inputs, path, "pytest:" + publicTarget);
-        Owners(candidate.Inputs, path, "pytest:" + publicTarget);
-        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
-        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
-            [path], false, paired);
-        PlannedCheck selected = Assert.ContainsSingle(
-            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
-        Assert.AreEqual("pytest:" + publicTarget, selected.Work.Key.Target);
-        CollectionAssert.AreEquivalent(PairedRevisions.Select(revision =>
-            new SelectionReason(path, revision, "pytest:" + publicTarget)).ToArray(),
-            selected.Reasons);
-    }
-
-    [TestMethod]
     [DataRow(true, true, true)]
     [DataRow(true, true, false)]
     [DataRow(true, false, true)]
@@ -283,8 +258,6 @@ public sealed class PythonRepositoryInputsTests
                 "hcoona-release-smoke-ruby/hcoona-release-smoke-ruby.gemspec")]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
                 "hcoona-release-smoke-ruby/lib/hcoona_release_smoke_ruby.rb")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/" +
-        "src/three_workflow_delivery_v3/_ruby_helper.rb")]
     public void RubyHelperInputsSelectOnlyTheirAdoptedPytestTarget(string path)
     {
         const string target = "tests/private/app/workflow-delivery/Native/Ruby";
@@ -310,15 +283,24 @@ public sealed class PythonRepositoryInputsTests
 
     [TestMethod]
     [DataRow("workflow-delivery.quality.yml", true)]
-    [DataRow("src/workflow-delivery.quality.yml", true)]
-    [DataRow("src/public/workflow-delivery.quality.yml", true)]
-    [DataRow("src/public/lib/workflow-delivery.quality.yml", true)]
-    [DataRow("src/public/lib/hcoona-release-smoke-python/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/app/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/app/workflow-delivery/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/app/workflow-delivery/" +
+        "fixtures/products/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/app/workflow-delivery/" +
+        "fixtures/products/hcoona-release-smoke-python/workflow-delivery.quality.yml", true)]
     [DataRow("src/public/lib/asciidoctor-latexmath/workflow-delivery.quality.yml", false)]
-    [DataRow("src/public/lib/hcoona-release-smoke-python-other/workflow-delivery.quality.yml",
+    [DataRow("tests/private/app/workflow-delivery/" +
+        "fixtures/products/hcoona-release-smoke-python-other/workflow-delivery.quality.yml",
         false)]
     [DataRow("src/private/app/workflow-delivery/workflow-delivery.quality.yml", false)]
     [DataRow("src/public/lib/nbgv-python/workflow-delivery.quality.yml", false)]
+    [DataRow("src/workflow-delivery.quality.yml", false)]
+    [DataRow("src/public/workflow-delivery.quality.yml", false)]
+    [DataRow("src/public/lib/workflow-delivery.quality.yml", false)]
     public void QualityChangesSelectOnlyNativePreparationConsumers(string path, bool consumed)
     {
         const string target = "tests/eng/test_python_release_preparation_gate.py";
@@ -417,7 +399,8 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/private/app/workflow-delivery/workflow-delivery.quality.yml", true)]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
         "hcoona-release-smoke-ruby/workflow-delivery.quality.yml", true)]
-    [DataRow("src/public/lib/hcoona-release-smoke-python/workflow-delivery.quality.yml", false)]
+    [DataRow("tests/private/app/workflow-delivery/" +
+        "fixtures/products/hcoona-release-smoke-python/workflow-delivery.quality.yml", false)]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
         "hcoona-release-smoke-ruby-other/workflow-delivery.quality.yml", false)]
     [DataRow("eng/scripts/check_ruby_release_preparation.py.backup", false)]
@@ -480,17 +463,6 @@ public sealed class PythonRepositoryInputsTests
         "src/private/app/workflow-delivery/Native/Python/native/main.rs")]
     [DataRow("tests/private/app/workflow-delivery/Native/Python",
         "src/public/lib/nbgv-python/src/nbgv_python/config.py")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/tests",
-        ".github/workflows/workflow-delivery-v3-python-smoke.yml")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/tests",
-        ".github/actions/workflow-delivery-v3-node/action.yml")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/tests",
-        "src/private/lib/hk/steps/Check.pkl")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/tests",
-        "src/private/app/workflow-delivery-v3-nuget-authority/Program.cs")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/tests",
-        "src/private/app/Directory.Build.props")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/tests", "pnpm-lock.yaml")]
     [DataRow("src/private/app/azureauth-credprovider/tests",
         "tests/private/app/azureauth-credprovider/Interop.cs")]
     [DataRow("src/private/app/azureauth-credprovider/tests",
@@ -500,6 +472,7 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("src/private/app/azureauth-credprovider/tests",
         "src/private/Directory.Packages.props")]
     [DataRow("src/public/lib/nbgv-python/tests", "global.json")]
+    [DataRow("tests/eng/test_general_ci_workflow.py", "tests/eng/ci_workflow_shell.py")]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml")]
     [DataRow("tests/eng/test_run_node_ci_group.py", "eng/scripts/run_node_ci_group.py")]
     [DataRow("tests/eng/test_run_ruby_ci_group.py", "eng/scripts/run_ruby_ci_group.py")]
@@ -515,7 +488,8 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_python_release_preparation_gate.py",
         "tests/private/app/workflow-delivery/Release/PythonPreparationNativeTests.cs")]
     [DataRow("tests/eng/test_python_release_preparation_gate.py",
-        "src/public/lib/hcoona-release-smoke-python/version.json")]
+        "tests/private/app/workflow-delivery/" +
+            "fixtures/products/hcoona-release-smoke-python/version.json")]
     [DataRow("tests/eng/test_python_release_preparation_gate.py",
         "src/public/lib/nbgv-python/src/nbgv_python/plugin.py")]
     [DataRow("tests/eng/test_python_release_preparation_gate.py",

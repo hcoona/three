@@ -1,0 +1,509 @@
+# NuGet Second-Slice Research Handoff
+
+This retained baseline serves original historical evidence interpretation.
+Current application behavior follows [requirements](requirements.md),
+[HLD](high-level-design.md), [MLD](middle-level-design.md) and
+[concrete integration contracts](migration-strategy.md). Former admission,
+source-witness and campaign instructions are not current runtime requirements
+or execution authorization. Recover actual original producers through
+[historical readers](validation/historical-readers.md), rather than treating a
+last-source navigation link as a producer binding.
+
+> **Implementation baseline:** This record describes the pre-contraction
+> implementation. Its authority for existing code and retained evidence, and the
+> requirements-first order for replacement work, are defined by the
+> [requirements transition](requirements.md#requirements-and-implementation-transition).
+> New architecture, terminology and cutover direction are owned by the
+> [replacement HLD](high-level-design.md). This record remains only for its
+> existing implementation and evidence consumers; it does not constrain the replacement.
+
+## Status and Authorization
+
+The current reproducible-build advancement is [Issue #948](https://github.com/hcoona/three/issues/948),
+selected by the accepted [Delivery Wave](../../../../../docs/delivery-wave.md).
+Its feasibility experiment and independent evidence review are complete;
+production integration and build-only acceptance follow the
+[LLD mechanism and gates](hcoona-release-smoke-github-packages-lld.md#reproducible-original-archive).
+This work preserves the completed go-live evidence and grants no new native
+operation or publication. The earlier go-live scope below is historical.
+
+This is an operating handoff. The research delivery and interactive
+requirements confirmation are complete. The canonical confirmed product,
+trust, and acceptance requirements are `WD-NUGET-*` in
+[Requirements](requirements.md#nuget-second-slice). The design extends the
+HLD, five MLDs, and brief LLD in that order. PR #669 completed protected
+design delivery. Do not repeat the completed research or design delivery.
+
+The user selected `Hcoona.ReleaseSmoke.GithubPackages` and confirmed that its
+existing container is operator-controlled, dedicated to smoke use, and has no
+production dependency or existing consumers requiring compatibility. This is
+an operator statement of intended use, not an exhaustive consumer or access
+audit. Product shape, channel scope, destination-specific trust, and acceptance
+criteria are confirmed in `WD-NUGET-*`. After design delivery, the user
+delegated implementation through verified C# smoke go-live without further
+intermediate confirmation. That subsequent grant covers the ordered disabled
+implementation, bounded native acceptance, activation, and current-run
+publication work in the confirmed scope. It does not adopt historical policy
+or waive technical admission, protected delivery, independent review and
+audit, current-run Approval, or ambiguity stop conditions.
+
+Check the accepted [Delivery Wave](../../../../../docs/delivery-wave.md)
+before continuing. [Issue #676](https://github.com/hcoona/three/issues/676)
+coordinates the NuGet delivery units and their evidence under that grant;
+domain-specific external-effect bounds remain separate.
+
+Close and record exact native fixtures, coordinates, operation budgets,
+profile/tooling identities, evidence paths, and stop conditions before any
+native execution. Do not change package access, credentials, or Environments,
+operate on unrelated packages, perform administrative repair, or retry an
+ambiguous mutation. `WD-NUGET-006` adopts GitHub version uniqueness and
+duplicate non-replacement as an explicit service dependency, without a
+separate service-owned concurrent-atomicity statement. This changes the
+acceptance basis, not the strength of prior source evidence. The activation
+source admits the exact independently audited Native R4 generation with ready
+Governance and Live enabled. Protected activation and the separately qualified
+normal-Live publication are complete. The [normal-Live evidence](validation/nuget-normal-live-evidence.md)
+joins actual Windows publication, current-run authority, fresh destination bytes
+and clean consumption. This completes the selected smoke go-live objective;
+all consumed operations remain spent. Broad authorization alone is not platform evidence.
+
+The npm Normal Live objective remains complete. Its two dispatch
+authorizations are spent, and its native acceptance, first failure, successful
+publication, and unresolved original-D recovery retain the boundaries in the
+[main handoff](agent-handoff.md). A second ecosystem cannot reuse that
+authorization, Approval, native evidence, or `WD-SLICE-*` exception.
+
+## Fresh-Context Start
+
+Use a verified checkout of `hcoona/three`, not an absolute path copied from an
+old session. Read root `AGENTS.md`, any gitignored `AGENTS.local.md`, the
+[repository record policy](../../../../../docs/governance/record-system.md),
+[project index](README.md), and
+[main v3 handoff](agent-handoff.md) before changing documentation.
+
+Inspect current branch, `HEAD`, remote `main`, merge base, tracked and untracked
+changes, and relevant PR state. Preserve unrelated work. The research baseline
+is `d87b83b8a63652455c4cb72d4ca4b2ecde2650ee`; it is an evidence revision, not an
+instruction to reset a newer checkout. Check whether this handoff is already
+merged before repeating any documentary delivery.
+
+Keep these facts in the working context:
+
+- Requirements, protected design, the disabled native foundation, and Release
+  artifact/qualification integration are delivered. Disabled destination
+  integration now connects distinct NuGet eligibility, supported active readback,
+  original-archive publication, and shared current-Attempt terminal authority.
+  PR #680 completed protected destination-runtime delivery. The native control
+  CLI now imports immutable Provider facts, compiles the Model without target
+  reevaluation, and binds/adopts Eligibility and the current Attempt under the
+  selected freshness phase. PR #684 completed protected control-entry delivery.
+  Native Build/Qualification commands now connect matched planning, frozen
+  Build, original-package upload binding, independent contents/consumer Evidence,
+  and the shared Finalizer. PR #685 completed protected Build/Qualification
+  entry delivery. Native observation and approval commands now connect supported
+  reads, zero-or-one action materialization, a native reviewer summary, and
+  current-Attempt Approval/Authorization. PR #687 completed protected
+  observation/approval entry delivery. PR #688 completed protected native
+  publication/terminal entry delivery. The separate disabled Windows workflows
+  are present on protected `main` and connect the native commands. The
+  [LLD fixture and operator contract](hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
+  governs acceptance tooling. The offline `acceptance.nuget_fixture` component
+  builds and inspects original A/B archives from the same compiled inputs,
+  retains diagnostics, and requires A's clean local consumer. Its local SDK
+  evidence does not establish Windows or destination behavior. The historical
+  Windows preparation entry connected the protected current request, immutable
+  helper/native setup inputs and offline pair transport. Its acceptance-purpose
+  Provider/Model admission closes source/toolchain facts before packing;
+  failed preparation retains partial diagnostics without completed output.
+  Inspect current Git/PR state before claiming remote availability. A bounded
+  Windows preparation run has passed independent artifact-body and lineage
+  audit, including the original A/B pair and A's clean local consumer. The
+  [preparation evidence](https://github.com/hcoona/three/issues/676) retains exact
+  source/run and artifact bindings. Its single dispatch allowance is spent;
+  no rerun or replacement follows from the evidence. The
+  [capture evidence component](../README.md) connects the existing reader to
+  finite per-capture allowances and complete or partial retained responses.
+  The local read operator adds a separate executable preflight, exact immutable
+  input comparisons, POSIX process supervision and fixed cumulative capture
+  allowances. It preserves original helper producer/run identities; independent
+  provenance admission and actual local runtime compatibility remain required.
+  The historical one-probe Windows entry bound its current run to the original
+  immutable fixture/helper lineage, inspects without publication authority and
+  passes unchanged package bytes to a build-free one-shot publisher. It retains
+  a durable invocation marker and safe HTTP or partial-failure evidence. Neither
+  its spec nor a successful expected-status observation authenticates a native
+  generation or authorizes execution. Local tests establish component and shell
+  contracts only. The separate destination consumer component adds a fresh SDK
+  graph, bounded native restore, exact installed bytes and credential-free
+  build/marker invocation. It uses a distinct prebuilt restore host and POSIX
+  supervision; callers still own original/tooling provenance and current read
+  authority. Its controlled local tests are not actual destination consumption
+  or Windows acceptance. The [native consumer redirect correction](research/nuget-smoke-evidence.md#2026-09-15-query--native-consumer-package-redirect)
+  applies the existing package-only one-hop policy to restore, keeps automatic
+  redirects disabled, and binds the successor v2 request/result/HTTP transcript.
+  The coordinator rejects old or inconsistent evidence before build. R3's
+  create/after-create exact bytes passed audit, but consumer package 302 stopped
+  that generation below its request/byte limits. Its missing consumer/duplicate
+  stages cannot be backfilled; all prior spent lifetimes stay unchanged. New
+  consumer host provenance and a fresh bounded request remain separate gates.
+  The historical fixed-suite operator connected the three probes,
+  all six captures and the clean consumer, retaining original run/upload bytes
+  and stopping subsequent mutation on failure. It binds separate finite native
+  and GitHub budgets and the prior independent admission carrier; those supplied
+  records do not authorize themselves. These preparation, one-probe and suite
+  campaign entries are retired; their workflow definitions are retained only in
+  the [pinned historical source links](../README.md).
+  The suite CLI rejects execution before reading inputs or creating state.
+  Ordinary current requests use the private
+  [NuGet Buddy interface](../README.md#nuget-buddy-release).
+  Retirement preserves original evidence and spent limits; it does not remove
+  the ordinary manual/reusable NuGet workflows. The [accepted Native R4 and Governance evidence](research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
+  now bind the exact production generation and ready Governance with Live enabled.
+  The separate [normal-Live evidence](validation/nuget-normal-live-evidence.md)
+  closes real publication, its current-run gates and fresh destination consumption.
+  Local reader evidence cannot
+  establish the Windows publication profile.
+- Both remembered .NET smoke projects existed, were intentionally removed,
+  and still have associated public GitHub NuGet package containers.
+- The selected GitHub Packages marker project has independent v3 authoring;
+  no historical control-plane assets or the other .NET project are restored.
+- The native workflow pair is distinct from the completed npm work. The
+  `workflow-delivery-v3-dotnet-provider` helper is distinct from the retained
+  NuGet static-reference authority; neither helper is a publisher.
+- Scope and trust are confirmed. The LLD identifies local and platform
+  capability gates; concrete native acceptance and publication requests must
+  be closed before execution under the subsequent delegation.
+- Preserve the waterfall, validation-before-OCR, independent adjudication,
+  contraction, and protected-delivery gates below.
+
+Load deeper context by decision, in v3 authority order:
+
+| Decision                                      | Read next                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product boundary and trust                    | [Requirements](requirements.md): `WD-NFR-003`, `WD-AUTH-*`, `WD-SEC-*`, and the explicit scope of `WD-SLICE-*`; [Governance MLD](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/governance-integration-mld.md)                                                                                                                                                                                                                                                          |
+| Provider, native version, and Build ownership | [HLD](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md#shared-foundation); [Repository Model MLD](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/repository-model-release-unit-mld.md); [Shared Foundation MLD](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/shared-foundation-mld.md) |
+| Qualification and consumer acceptance         | [CI Qualification MLD](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/ci-qualification-mld.md)                                                                                                                                                                                                                                                                                                                                                                          |
+| Observation, action, and terminal evidence    | [Release Delivery MLD](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/release-delivery-mld.md)                                                                                                                                                                                                                                                                                                                                                                          |
+| Historical mechanism reuse                    | [Migration policy](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md), then only the permitted historical mechanism                                                                                                                                                                                                                                                                                                                                  |
+
+Use the [glossary](architecture-glossary.md) for terminology. The npm LLD is
+evidence of the first slice, not a NuGet specification. Do not preload its
+operator commands, all prior run artifacts, or unrelated historical evidence to
+answer the next requirements question. The protected documents and referenced
+Git objects must suffice; old session folders, agent IDs, and local memory are
+not prerequisites for continuing this research.
+
+## The Remembered Projects
+
+The research baseline had `src/public/lib/hcoona-release-smoke-npm`, but neither
+of the following .NET projects. Both were added in
+`ac1659d92e2d80b2a6687af657193abf75ee322d` and deliberately removed in
+`50e4463a8d355e28ad23d3fca944182fd04efe0d`. The removal commit explicitly
+removed obsolete smoke fixtures and inherited pre-v3 control-plane assets
+while restoring the clean merge scope.
+
+The last pre-removal revision is
+`21de27b796b376c6e086e7c63664cf23f94cbc89`:
+
+| Historical project                                                                                                                                                        | Native package ID                    | Small reusable product behavior                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------- |
+| [hcoona-release-smoke-github-packages](https://github.com/hcoona/three/tree/21de27b796b376c6e086e7c63664cf23f94cbc89/src/public/lib/hcoona-release-smoke-github-packages) | `Hcoona.ReleaseSmoke.GithubPackages` | `HcoonaReleaseSmokeGithubPackages.Smoke.ProjectId` returns its project identifier |
+| [hcoona-release-smoke-nuget](https://github.com/hcoona/three/tree/21de27b796b376c6e086e7c63664cf23f94cbc89/src/public/lib/hcoona-release-smoke-nuget)                     | `Hcoona.ReleaseSmoke.Nuget`          | `HcoonaReleaseSmokeNuget.Smoke.ProjectId` returns its project identifier          |
+
+Each directory had six files: a README, `Smoke.cs`, SDK-style project,
+`packages.lock.json`, `version.json`, and `three.release.yml`. Both projects
+targeted `net8.0`, enabled nullable annotations and XML documentation, and
+exposed a stable marker rather than general-purpose library functionality.
+
+The names do not establish a working registry path. At introduction, the
+NuGet-named descriptor selected nuget.org for Official; the GitHub
+Packages-named descriptor selected GitHub Packages for Official. Commit
+`800b128b2693796b9dff2b401fd42cdcf3f2d422` also added GitHub Packages to the
+latter's Buddy profile. After
+`7a55d760c17e8fa79897fcb8aaa4e1f30b40b5c5`, both final pre-removal descriptors
+selected only `github-release/public` for both profiles. They declared a
+`.nupkg` and a `.snupkg`, rather than the confirmed single-artifact scope.
+
+Those `three.release/v1alpha1` descriptors are historical inventory, not v3
+authoring. Do not restore them, their old locks, workflows, or control plane
+wholesale. Historical test references include the acceptance matrix and
+workflow-control tests; this inventory does not establish a reusable clean
+consumer scenario or a v3 acceptance verdict.
+
+A portable read-only inspection is:
+
+```text
+git show 21de27b796b376c6e086e7c63664cf23f94cbc89:src/public/lib/hcoona-release-smoke-github-packages/hcoona-release-smoke-github-packages.csproj
+git show 21de27b796b376c6e086e7c63664cf23f94cbc89:src/public/lib/hcoona-release-smoke-github-packages/three.release.yml
+git log --all -- src/public/lib/hcoona-release-smoke-github-packages src/public/lib/hcoona-release-smoke-nuget
+```
+
+If the objects are unavailable in a shallow checkout, establish the relevant
+ancestry before concluding the project never existed. Do not restore files as
+a way of inspecting history.
+
+### Retained Package Containers
+
+Authenticated, paginated GET-only inventory on 2026-09-09 returned these public
+NuGet containers associated with `hcoona/three`:
+
+| Package                                                                                                                         | Container ID | Active versions observed                             |
+| ------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------------------------------------- |
+| [Hcoona.ReleaseSmoke.GithubPackages](https://github.com/users/hcoona/packages/nuget/package/Hcoona.ReleaseSmoke.GithubPackages) | `12024661`   | `1.0.0-beta.253.gc1837dc`, `1.0.0-beta.254.g9fa9b96` |
+| [Hcoona.ReleaseSmoke.Nuget](https://github.com/users/hcoona/packages/nuget/package/Hcoona.ReleaseSmoke.Nuget)                   | `12026442`   | `1.0.0-beta.254.g9fa9b96`                            |
+
+This establishes retained service objects, not current write authority,
+disposability, absence of consumers, exact package bytes, or publication
+semantics. No `.nupkg` was downloaded, built, executed, or published for this
+inventory. Exact version IDs and observation chronology belong in the
+[research evidence](research/nuget-smoke-evidence.md#2026-09-09-query--research-the-nuget-second-slice-handoff).
+Reinspect accessible state before a future decision; do not encode these
+counts or old coordinates as invariants or reuse them for probes.
+
+## Current Repository Constraints
+
+The following are source-inspection findings at the research baseline, not
+evaluated MSBuild or successful build results:
+
+| Surface                                                         | Finding and consequence                                                                                                                                                                                                                                                                           |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `global.json`                                                   | SDK `10.0.401` is pinned with roll-forward disabled; the test runner is Microsoft.Testing.Platform. Historical `net8.0` is not automatically the new target decision.                                                                                                                             |
+| `Directory.Build.props`                                         | The current framework property is `net10.0`; CPM, NBGV, SourceLink, deterministic builds, and locked CI restore are shared. `IncludeSymbols=true` and `SymbolPackageFormat=snupkg` conflict with blindly assuming one package output.                                                             |
+| `src/Directory.Build.props`, `src/public/Directory.Build.props` | Public libraries are packable. The initial root-default `GitVersionBaseDirectory` is overridden for public projects by the nearest `version.json` above the project directory; inspect the complete import chain, not only the initial default.                                                   |
+| Root and project `version.json`                                 | Root path filters omit the removed smoke projects, but a project-local file selects its own base through the public-project override. The historical files used `inherit=false`. Do not add root filters merely because the names are missing; validate the chosen lineage and native projection. |
+| `src/public/lib/Directory.Build.props`                          | Public-library analyzer and AOT-compatibility defaults are inherited. Do not copy a historical lock or suppress new diagnostics without understanding current evaluation.                                                                                                                         |
+| `dirs.proj`                                                     | Traversal discovers projects under `src/` and `tests/`; even restoring a small project changes repository build scope. General C# CI uses Windows per `AGENTS.md`.                                                                                                                                |
+
+For any later implementation, use official MSBuild/NuGet/NBGV mechanisms to
+evaluate native facts rather than interpreting `.csproj` XML as the final
+model. Do not recompute a different version while building: the Provider owns
+target-bound canonical and native NBGV facts; Build applies the frozen native
+projection. Required complete Git history and neutral exact-target evaluation
+must not be replaced by the dispatch ref.
+
+### Disabled Mechanisms and Remaining Integration
+
+Python paths below are relative to
+`src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/`.
+
+| Surface                                                                                                | Reuse boundary                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared canonicalization, artifact/provenance primitives, Qualification and Release authority semantics | Reuse their contracts; do not invent a second Approval/Outcome protocol for NuGet. This does not imply all current representations are ecosystem-neutral.                                                                                                        |
+| `repository/dotnet_provider.py`, `repository/compiler.py`                                              | The disabled unit adds explicit native .NET Provider/Bundle and Repository Model admission beside the existing Node case. The NuGet planner consumes the matched admitted Model and Provider Bundle to retain frozen source-input identity.                      |
+| `repository/descriptors.py` and `eng/workflow-delivery/v3/policies/`                                   | Independent NuGet authoring selects one package, two quality obligations, Buddy only, and its own Governance source. A descriptor alone cannot enable publication.                                                                                               |
+| `adapters/dotnet.py`, `adapters/nuget_github_packages.py`                                              | Native frozen pack/content/consumer mechanisms and one-shot HTTP observation/publication mechanisms are present. They do not supply current-run Release authority or native acceptance.                                                                          |
+| `release/nuget_planner.py`, `release/nuget_qualification.py`                                           | Disabled Release integration binds protected-main Buddy context, frozen Provider inputs, native package identity, and two independent quality obligations. Local mechanics with modeled transport do not prove Actions execution or native destination behavior. |
+| `release/nuget_governance.py`                                                                          | Disabled NuGet governance and operator platform collection preserve separate native admission. Raw platform facts do not grant authority or establish service guarantees.                                                                                        |
+| `adapters/node.py`, `adapters/github_packages.py`, `adapters/npm_runtime.py`                           | Existing package construction, destination state, and command profiles are npm implementations despite the generic-sounding GitHub Packages filename.                                                                                                            |
+| `release/nuget_eligibility.py`, `release/nuget_observation.py`, `release/nuget_publication.py`         | Distinct protected-main native eligibility, no-tag active-state classification, and original-archive one-shot execution share existing authority/freshness meanings. The initial collector projection is not a new review verdict or runtime grant.              |
+| `records/release.py`, `release/attempt_finalizer.py`, `release/exact_satisfied.py`                     | Explicit native profile/action/readback cases reuse Approval, Authorization, fresh zero-action proof, marker/Result and current-DAG Outcome. Existing npm wire and command-profile cases remain distinct.                                                        |
+| `src/private/app/workflow-delivery-v3-nuget-authority/Program.cs`                                      | This existing C# helper admits `nuget-lock` and `nuget-packages-config` static-reference facts. It does not evaluate a Release Unit, freeze NBGV, build a package, publish, or observe a NuGet destination.                                                      |
+
+The HLD, MLD extensions, and NuGet LLD identify the representation and adapter
+changes required by the concrete second case. `WD-NFR-003` expects ecosystem additions
+without changing cross-system authority semantics; it does not authorize a
+universal plugin framework or speculative Environment Profiles.
+
+The `release nuget` Build/Qualification entries reuse those owners. Canonical
+mechanical metadata binds the frozen Snapshot, Build request, native witness,
+source/toolchain facts, and original archive bytes across the Build/upload
+boundary. Content identity remains distinct from transport identity. The
+two quality commands produce independent Evidence; the shared Finalizer
+retains incomplete and failed outcomes. These command contracts supply no
+Windows Actions or native destination evidence and enable no workflow.
+
+The native observation/approval entries reuse supported readback and shared
+materialization, Bundle closure, and Governance freshness contracts. A native
+summary presents the actual package identity, archive contents and hashes,
+target witness, Qualification, and exact action. Zero action produces no summary
+or Approval. Authorization replays the admitted publication basis before fresh
+Governance and the existing sentinel check. This orchestration grants no
+native operation or publication. PR #687 completed its protected delivery.
+
+The native publication/terminal entries reuse the existing fresh zero-action
+proof, original-archive preparation, one-shot executor, and shared current-DAG
+Finalizer. Complete current authority and uploaded marker admission precede
+execution; supported service-index discovery supplies the real resource profile.
+The publisher executes no target code and never reclassifies conflict or response
+loss as success based on diagnostic readback. Native finalization requires the
+matching three Qualification Evidence records and terminal lineage. Shared
+`release admit-publication-terminal` and `release resolve-publication-terminal`
+already admit and resolve native marker/Result transport. Local modeled scenarios
+do not establish actual destination behavior or enable workflow execution.
+PR #688 completed protected delivery of these entries.
+
+The disabled native manual caller and reusable Attempt use the actual native
+workflow identity, Windows jobs, and current immutable artifact IDs/digests.
+The trusted helper's complete runtime is built without publication authority
+and transported to native readers and the build-free publisher. Blocked
+Eligibility uploads its Decision before failing. Original package bytes and
+the three Qualification Evidence records flow into the existing authority
+owners. The action path requires current Approval and persisted-marker
+admission; the zero-action path requires fresh exact proof. Failed or missing
+publication evidence retains conservative current-DAG semantics. Workflow
+contracts and controlled PowerShell tests are local implementation evidence,
+not Windows Actions, native acceptance, or service-guarantee evidence.
+
+## Verified Platform Findings and Remaining Gates
+
+Independent official-source research on 2026-09-09 established the following
+documentation baseline. It performed no registry experiment. Distinguish
+documented client behavior from a GitHub service guarantee and from native
+acceptance evidence:
+
+| Topic                    | Confirmed documentation and limit                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authentication           | [GitHub's NuGet guide](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-nuget-registry) supports Actions `GITHUB_TOKEN` for packages associated with the workflow repository. A local operator's PAT authentication uses PAT classic. That is not permission to put a PAT into runtime or adopt nuget.org trusted publishing.                                                                                                                           |
+| Access                   | [GitHub package access](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility) distinguishes repository linkage, permission inheritance, visibility, and Manage Actions access. A linked public container alone proves neither current writer access nor package-isolated token reach.                                                                                                                                                     |
+| Native identity          | [NuGet versioning](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning) documents normalization, including removal of build metadata from normalized identity. Use official NuGet identity/version comparison; do not distinguish packages only by metadata that NuGet ignores or rewrite display casing merely to construct protocol paths.                                                                                                                                        |
+| Native version authority | [NBGV's VersionOracle](https://github.com/dotnet/Nerdbank.GitVersioning/blob/main/src/NerdBank.GitVersioning/VersionOracle.cs) exposes `NuGetPackageVersion`. [MSBuild evaluation](https://learn.microsoft.com/en-us/visualstudio/msbuild/evaluate-items-and-properties) distinguishes evaluated properties from post-target values; NBGV-computed properties require the appropriate native target path. Match current upstream findings to the pinned repository toolchain before implementation. |
+| Pack metadata            | [NuGet pack targets](https://learn.microsoft.com/en-us/nuget/reference/msbuild-targets) define `PackageId`, `PackageVersion`, `RepositoryUrl`, and optional `RepositoryCommit`. Optional source metadata is not registry-enforced provenance and is not automatically the v3 artifact witness.                                                                                                                                                                                                      |
+| Push result              | [dotnet nuget push](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-nuget-push) publishes an existing package. `--no-symbols` concerns publication, not whether pack created a symbol artifact. `--skip-duplicate` converts an HTTP 409 to a warning; it proves neither equality nor exact-satisfied state. No command profile is approved here.                                                                                                                                         |
+| Readback                 | The GitHub guide publishes `https://nuget.pkg.github.com/NAMESPACE/index.json`. [PackageBaseAddress](https://learn.microsoft.com/en-us/nuget/api/package-base-address-resource) defines discovered resource endpoints for version enumeration and actual `.nupkg` download. Confirm the selected feed's supported resources; do not invent endpoint paths or substitute metadata for actual artifact observation.                                                                                   |
+| Non-overwrite            | The [generic NuGet publication protocol](https://learn.microsoft.com/en-us/nuget/api/package-publish-resource) distinguishes nuget.org duplicate rejection from feeds that may replace packages. The reviewed GitHub guide does not establish an active-version non-overwrite or upload-byte-preservation contract. The current dependency and evidence basis follows `WD-NUGET-006`; this source limit is not evidence of GitHub overwrite.                                                        |
+| Administrative lifecycle | [GitHub deletion/restoration](https://docs.github.com/en/packages/learn-github-packages/deleting-and-restoring-a-package) differs from nuget.org unlisting; the generic NuGet delete operation is server-dependent. Do not transfer npm tombstone conclusions, tag-race scenarios, or administrative authorization.                                                                                                                                                                                 |
+
+The current design relies on the explicit GitHub uniqueness/non-replacement
+dependency in `WD-NUGET-006` and bounded native evidence for creation, active
+duplicates, actual bytes, provenance, and clean consumption. The
+[subsequent evidence decision](research/nuget-smoke-evidence.md#2026-09-14-query--adopt-the-nuget-uniqueness-dependency)
+preserves these source limits while removing the separate GitHub atomicity
+statement prerequisite. Do not substitute metadata-only or semantic-only
+success for exact content and witness. Native-equivalent collision behavior,
+evaluated toolchain/pack inputs, and current package grants still need evidence.
+Owner acceptance of the dependency does not establish native facts.
+
+Missing or conflicting required evidence blocks the corresponding path. Any
+later native acceptance must have its own approved contract, disposable scope,
+bounded operations, stop conditions, retained evidence, and independent audit.
+No runtime history service, administrator compensation, unbounded retry, or
+success-shaped fallback supplies that evidence.
+
+## Confirmed Requirements
+
+The user accepted the complete packet. The normative requirements are
+[WD-NUGET-001 through WD-NUGET-008](requirements.md#nuget-second-slice);
+this summary routes the next agent to that authority.
+
+| Confirmed concern        | Requirement and next evidence boundary                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product and scope        | `WD-NUGET-001`: the selected marker library, `net10.0`, Windows, one `.nupkg`, no separate `.snupkg`, GitHub Packages Buddy only.                                                                                                                                                                                                                                         |
+| Native facts and version | `WD-NUGET-002`: official evaluation at the exact target, complete history, and a frozen native NBGV NuGet projection. Native evaluation, frozen Build and actual Windows normal-Live execution are independently audited in the [Live evidence](validation/nuget-normal-live-evidence.md).                                                                                |
+| Trust and authority      | `WD-NUGET-003` and `WD-NUGET-004`: reviewed protected-main control, isolated target evaluation/build, build-free publication, self-approval by the sole trusted writer, and explicitly accepted repository-token reach. The [Live evidence](validation/nuget-normal-live-evidence.md) joins actual current-run platform readback; future operations require fresh checks. |
+| Qualification            | `WD-NUGET-005`: distinct package-content and clean exact-version restore/build/marker evidence for the Release-owned artifact.                                                                                                                                                                                                                                            |
+| Destination acceptance   | `WD-NUGET-006`: independently establish the required active creation, duplicate, actual-byte, witness, and observation behavior for the NuGet profile.                                                                                                                                                                                                                    |
+| Completion               | `WD-NUGET-007`: local/package evidence, an audited native suite, and one audited real publication with its own current-run authority and actual destination bytes.                                                                                                                                                                                                        |
+| Execution boundaries     | `WD-NUGET-008`: ordered design, subsequent implementation authorization, and separate concrete native and real-publication authorization.                                                                                                                                                                                                                                 |
+
+The subsequent implementation is authorized as described above. A descriptor
+alone cannot enable NuGet: native acceptance tooling and evidence, and
+protected activation remain necessary after disabled workflow integration.
+The [HLD extension](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md#nuget-second-slice-extension)
+assigns ownership. Local tests or historical package versions cannot supply
+missing native or real-publication evidence. The confirmed requirements alone
+are not authorization; the subsequent explicit delegation supplies execution
+authority within those boundaries.
+
+The [NuGet LLD](hcoona-release-smoke-github-packages-lld.md) follows the five
+MLD extensions. It selects a project-local frozen NBGV Build mode and a
+one-shot standard-protocol HTTP publisher, with explicit local and native
+admission gates. Review and protected-delivery evidence belong in Git and the
+PR. The [retained source evidence](research/nuget-smoke-evidence.md) preserves
+operator confirmation and source-supported design with their original limits.
+A passing three-invocation sequential suite qualifies the concrete profile
+under the accepted uniqueness dependency; it does not establish arbitrary
+concurrent behavior. The revised evidence basis requires no separate GitHub
+atomicity statement and does not impose serialized-only publication or choose
+a server-side winner. The control retains all six native-generation fields,
+including integration-contract revision and evidence digest, without a
+separate atomic-assurance registry. The exact independently audited generation
+is admitted with ready Governance and Live enabled. The separately qualified
+[normal-Live publication and fresh consumption](validation/nuget-normal-live-evidence.md)
+are independently verified.
+The [profile observer](../README.md) reuses actual Windows profile collection
+and shared resource validation; a complete independently audited preflight
+and a separately reviewed bounded dispatch must precede its execution.
+
+## Workflow and Discipline
+
+These gates remain binding after the research is handed off:
+
+1. **Requirements before design.** Preserve the confirmed `WD-NUGET-*`
+   scope and threat/cost decision. Any new scope or risk change requires
+   confirmation before the affected HLD, MLD, and brief LLD reconciliation,
+   in that order. Existing general v3 approval does not approve a new
+   slice-specific exception. Protected design delivery and subsequent
+   implementation authorization are complete; preserve their scope.
+2. **Bounded work ownership.** Follow the
+   [repository contribution guide](../../../../../CONTRIBUTING.md) and
+   [record policy](../../../../../docs/governance/record-system.md) for work
+   carriers, coordination, and Git procedure; check the accepted
+   [Delivery Wave](../../../../../docs/delivery-wave.md) for repository work
+   grants. Domain-specific scope and external-operation authorization remain
+   separate. Report work beyond an assigned boundary instead of expanding it.
+3. **Proportional design and tests.** Trust appropriate platform abstractions
+   and official ecosystem parsers. Justify abstractions with actual scenarios,
+   preserve valid public/internal contract states, and fail closed for
+   unsupported extremes rather than endlessly hardening them. Prefer business
+   scenario tests; reserve strict unit/contract tests for core algorithms,
+   schemas, identity, authority, and failure behavior.
+4. **Byte reuse by construction.** Adapters preserve identical logical build
+   bytes by construction; verify that invariant during acceptance, not by
+   routine build-versus-unpacked-artifact comparison. Required artifact
+   integrity and provenance checks remain distinct obligations.
+5. **Validation before OCR.** After future implementation, run affected
+   project tests, root HK, and commit hooks before multi-agent review.
+   Documentation-only delivery uses its applicable documentation/HK gates,
+   links/reference checks, and retained-source byte verification, not an unrelated
+   product build or full test campaign. Use `mise exec -- hk ...` for the
+   configured toolchain and profiles.
+6. **Independent review and contraction.** Use the
+   `open-code-review-delegate` skill: preview, resolve rules, and review the
+   complete Git path manifest and diff, including Markdown or new files
+   omitted by a tool filter. Use multiple reviewers; each finding is one
+   independently resolvable issue. A separate adjudicator decides TP/FP;
+   fix confirmed findings and return to original reviewers until clean.
+   Insert contraction after every two review iterations, and again after all
+   changes/reviews and before creating the PR. Remove unnecessary scope,
+   duplicated authority, over-modeling, and brittle tests; do not use
+   contraction to omit required behavior.
+7. **Protected delivery.** Open the PR only after the related commit group,
+   validation, review, and contraction are complete. Use a ready PR when it
+   should merge; draft is for stacked work not yet mergeable. Run hooks with
+   commits under repository contribution rules, satisfy protected
+   checks and review threads, merge the exact reviewed head without bypass,
+   and verify the reviewed and merged trees. Do not label a review
+   recommendation as formal approval or claim a pending merge is complete.
+8. **Durable, concise handoff.** Follow repository writing guidance. Update
+   the handoff, v3 README, and affected concern records when status changes.
+   Keep current conclusions concise, retain their decision-relevant source
+   evidence with provenance, and leave chronology in Git and work carriers.
+
+Do not broaden credentials, destinations, channels, services, or requirements
+without user confirmation. On ambiguous external outcomes, stop mutation and
+investigate read-only; a retry or administrative repair is a new operation,
+not implied permission to finish the original task.
+
+## Handoff Acceptance
+
+The handoff is usable only if a new subagent, given the checkout and this entry
+path without the preceding conversation or research summary, can:
+
+- distinguish completed npm work, protected NuGet implementation, accepted
+  native admission and ready Governance, completed actual normal-Live proving,
+  and the fresh gates required for any future operation;
+- find both historical projects, their intentional removal, retained
+  containers, and the difference between old descriptors and current v3;
+- identify the native Release Provider and its evidence boundary without
+  treating the static-reference helper as that Provider;
+- reconstruct the authority order, waterfall, testing, OCR, independent
+  adjudication, two-iteration/final/pre-PR contraction, and delivery gates;
+- separate confirmed facts, recommendations, missing decisions, and
+  future native evidence, using repository/public references rather than
+  private session state.
+
+The probe must demonstrate these tasks with references, not merely say that
+the document is clear. Record actual gaps and closure in the delivery work carrier;
+if a correction materially changes takeover instructions, probe the corrected
+entry again from fresh context. Do not treat the probe as a substitute for
+OCR or protected-delivery gates.

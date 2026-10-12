@@ -1,4 +1,4 @@
-"""One mise runtime authority for local, CI and installed package consumers."""
+"""One mise runtime authority for local and CI consumers."""
 
 import importlib.util
 import json
@@ -33,16 +33,11 @@ def test_runtime_projection_checks_drift_without_rewriting(tmp_path, uv):
     )
     assert runtime.synchronize(tmp_path, write=True) == "3.14.3"
     assert (tmp_path / ".python-version").read_text() == "3.14.3\n"
-    package = tmp_path / runtime.PACKAGE_RUNTIME
-    assert 'PYTHON_VERSION = "3.14.3"' in package.read_text()
-    assert f'UV_VERSION = "{uv}"' in package.read_text()
-    assert tomllib.loads((tmp_path / runtime.UV_CONFIG).read_text()) == {
-        "required-version": f"=={uv}"
-    }
-    package.write_text('PYTHON_VERSION = "3.13.12"\n')
+    version_file = tmp_path / ".python-version"
+    version_file.write_text("3.13.12\n")
     with pytest.raises(ValueError, match="sync:python-version"):
         runtime.synchronize(tmp_path)
-    assert package.read_text() == 'PYTHON_VERSION = "3.13.12"\n'
+    assert version_file.read_text() == "3.13.12\n"
     runtime.synchronize(tmp_path, write=True)
     assert runtime.synchronize(tmp_path) == "3.14.3"
     (tmp_path / "mise.toml").write_text('[tools]\npython = "3.15"\n')
@@ -220,20 +215,7 @@ def test_python_tasks_preserve_exact_preparation_and_full_runner():
         "python",
         "eng/scripts/run_python_tests.py",
     ]
-    assert shlex.split(tasks["test:v3"]["run"]) == [
-        "uv",
-        "run",
-        "--exact",
-        "--frozen",
-        "--package",
-        "three-workflow-delivery-v3",
-        "pytest",
-        "src/public/lib/three-workflow-delivery-v3/tests",
-    ]
     assert "depends" not in tasks["test:python"]
-    assert tasks["test:v3"]["depends"] == [
-        "prepare:static-reference-authorities"
-    ]
 
 
 @pytest.mark.parametrize(
@@ -259,11 +241,10 @@ def test_uv_projection_rejects_invalid_lock_before_writes(tmp_path, uv_entries):
         runtime.synchronize(tmp_path, write=True)
     assert version_file.read_text() == "previous\n"
     assert not (tmp_path / runtime.UV_CONFIG).exists()
-    assert not (tmp_path / runtime.PACKAGE_RUNTIME).exists()
 
 
 def test_uv_workflow_and_renovate_consumers_use_mise_projection():
-    """Updates flow from mise to setup-uv and packaged runtime together."""
+    """Updates flow from mise to actual setup-uv consumers."""
     runtime.synchronize(ROOT)
     config_path = runtime.UV_CONFIG.as_posix()
     workflow_paths = [
@@ -284,20 +265,6 @@ def test_uv_workflow_and_renovate_consumers_use_mise_projection():
                 # including the existing nested tooling checkout in NuGet jobs.
                 assert step["with"]["version-file"] == config_path
                 assert "version" not in step["with"]
-    action = yaml.safe_load(
-        (
-            ROOT
-            / ".github/actions/workflow-delivery-v3-python-setup/action.yml"
-        ).read_text()
-    )
-    setup = next(
-        step
-        for step in action["runs"]["steps"]
-        if step.get("uses", "").startswith("astral-sh/setup-uv@")
-    )
-    assert setup["with"]["version-file"] == config_path
-    assert "version" not in setup["with"]
-    assert "python-version" not in setup["with"]
     rules = json.loads((ROOT / "renovate.json").read_text())["packageRules"]
     uv_rule = next(rule for rule in rules if rule.get("groupName") == "Mise uv")
     maintenance = next(
@@ -312,6 +279,4 @@ def test_uv_workflow_and_renovate_consumers_use_mise_projection():
             "uv run --no-project python "
             "eng/scripts/sync_python_version.py --write" in tasks["commands"]
         )
-        assert {config_path, runtime.PACKAGE_RUNTIME.as_posix()} <= set(
-            tasks["fileFilters"]
-        )
+        assert {config_path, ".python-version"} <= set(tasks["fileFilters"])

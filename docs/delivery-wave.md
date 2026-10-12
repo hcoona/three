@@ -16,10 +16,10 @@ ends a grant. Git and the proposing PR retain the reason and history.
   [#986](https://github.com/hcoona/three/issues/986). The grant covers the whole
   contraction, not only requirements revision.
 - **Accepted inputs:** the owner's requirements-first contraction decisions,
-  the [V3 requirements](../src/public/lib/three-workflow-delivery-v3/docs/requirements.md),
+  the [V3 requirements](../src/private/app/workflow-delivery/docs/requirements.md),
   the [engineering principles](engineering/engineering-principles.md), and the
   completed ecosystem evidence and operation limits routed by the
-  [V3 handoff](../src/public/lib/three-workflow-delivery-v3/docs/agent-handoff.md).
+  [V3 handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md).
 - **Advancement and outcome:** reconcile requirements, HLD, terminology and
   necessary contracts; implement the resulting smaller internal tool and
   workflow integrations; validate the retained CI, dry-run, publication-state

@@ -55,11 +55,8 @@ families:
     consumers:
       - Contributors and agents before executing work or accepting a prerequisite-dependent change
       - Repository owner and reviewers when adding, changing, deleting, or replacing authorized advancements
-    creation_trigger: Current work must be explicitly selected without allowing an Issue, Milestone, branch, or pull
-      request to authorize itself.
-    failure_mode:
-      Work begins without a current bounded grant, or progress and historical status become a second authorization
-      ledger.
+    creation_trigger: Current work must be explicitly selected without allowing an Issue, Milestone, branch, or pull request to authorize itself.
+    failure_mode: Work begins without a current bounded grant, or progress and historical status become a second authorization ledger.
     review_point: Every pull request that adds, changes, deletes, or replaces a Delivery Wave entry
   - id: record-family-catalog
     concern: Active and scheduled record-family routing
@@ -216,44 +213,14 @@ families:
     creation_trigger: The named consumers need the retained concern at its review or use point.
     failure_mode: Readers infer scope from package topology or cannot locate domain authority.
     review_point: Changes to this interface or its owning project records
-  - id: three-workflow-delivery-v3-nuget-helper-interface
-    concern: Routing from the NuGet authority helper to its v3 engineering owner
-    producer: Project maintainers
-    maintainer: Repository owner
-    consumers:
-      - Helper maintainers locating the owning v3 authority and applicable admission and authorization boundaries
-    creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: The helper becomes a competing project or implies authorized NuGet release implementation.
-    review_point: Changes to this interface or its owning project records
-  - id: three-workflow-delivery-v3-dotnet-helper-interface
-    concern: Native .NET helper usage and routing to its v3 engineering owner
-    producer: Project maintainers
-    maintainer: Repository owner
-    consumers:
-      - Helper maintainers invoking the prebuilt native reader and locating Provider, frozen Build and admission contracts
-    creation_trigger: The native helper needs a callable interface and an owning domain authority.
-    failure_mode: Readers confuse package inspection with publishing or treat local mechanism evidence as native admission.
-    review_point: Changes to this helper interface or its owning project records
-  - id: three-workflow-delivery-v3-nuget-consumer-interface
-    concern: Native NuGet restore-host usage and routing to its v3 engineering owner
-    producer: Project maintainers
-    maintainer: Repository owner
-    consumers:
-      - Restore-host maintainers and callers locating the prebuilt entry, tooling admission and bounded read contract
-    creation_trigger: The native restore companion needs a callable interface and an owning domain authority.
-    failure_mode: Callers lose the tooling and credential boundaries or mistake local restore evidence for native
-      authorization.
-    review_point: Changes to this companion interface or its owning consumer and admission contracts
   - id: hcoona-release-smoke-github-packages-interface
     concern: Independent NuGet smoke-library purpose and marker API
     producer: Project maintainers
     maintainer: Repository owner
     consumers:
-      - Smoke-library users and v3 reviewers confirming the marker behavior and absence of production compatibility
-        obligations
+      - Smoke-library users and v3 reviewers confirming the marker behavior and absence of production compatibility obligations
     creation_trigger: The selected smoke library needs its own minimal product interface.
-    failure_mode: Package topology substitutes for a stated product purpose or creates an implied production support
-      commitment.
+    failure_mode: Package topology substitutes for a stated product purpose or creates an implied production support commitment.
     review_point: Changes to the smoke-library purpose or API
   - id: hcoona-release-smoke-npm-package-interface
     concern: Independent smoke-package purpose and frozen package-reader interface
@@ -263,8 +230,7 @@ families:
       - Package readers and v3 reviewers confirming the separate smoke-product purpose
       - Existing frozen npm artifact qualification consuming the packaged README bytes
     creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: Documentation routing changes alter the frozen package artifact or mix proving authority into its
-      product purpose.
+    failure_mode: Documentation routing changes alter the frozen package artifact or mix proving authority into its product purpose.
     review_point: Changes to this interface or its owning project records
   - id: python-smoke-interface
     concern: Python smoke-package purpose and installed marker API
@@ -312,8 +278,7 @@ families:
     consumers:
       - Project implementers and independent domain reviewers following the local portal and retained authorities
     creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: Current product constraints, evidence, stable identifiers or source limitations become orphaned
-      or mixed with another project.
+    failure_mode: Current product constraints, evidence, stable identifiers or source limitations become orphaned or mixed with another project.
     review_point: Changes to the retained concern or its consumers
   - id: azureauth-python-interface
     concern: Python package-reader interface within the shared AzureAuth product
@@ -368,8 +333,7 @@ families:
       - Renderer implementers and reviewers
       - Existing governance audit and coverage tests reading spec.md and tasks.md
     creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: Stable FR/task references or consumed audit inputs disappear, or historical evidence grants new
-      work.
+    failure_mode: Stable FR/task references or consumed audit inputs disappear, or historical evidence grants new work.
     review_point: Changes to the retained concern or its consumers
   - id: hexo-example-interface
     concern: Runnable renderer example instructions
@@ -546,12 +510,12 @@ bindings:
     purpose: Project-local concern records and portal for nbgv-python
   - id: three-workflow-delivery-v3-records
     family: project-record-portals
-    namespace: src/public/lib/three-workflow-delivery-v3
+    namespace: src/private/app/workflow-delivery
     state: current
     carrier: repository-files
-    path: src/public/lib/three-workflow-delivery-v3/docs/**/*.md
+    path: src/private/app/workflow-delivery/docs/**/*.md
     format: markdown
-    purpose: Project-local concern records and portal for three-workflow-delivery-v3
+    purpose: Project-local Workflow Delivery requirements, design and retained evidence
   - id: nbgv-python-package-interface
     family: nbgv-python-package-interface
     namespace: src/public/lib/nbgv-python
@@ -573,69 +537,34 @@ bindings:
     carrier: repository-file
     path: src/sample/nbgv-hatch-demo/README.md
     format: markdown
-  - id: three-workflow-delivery-v3-interface
-    family: three-workflow-delivery-v3-interface
-    namespace: src/public/lib/three-workflow-delivery-v3
-    state: current
-    carrier: repository-file
-    path: src/public/lib/three-workflow-delivery-v3/README.md
-    format: markdown
   - id: workflow-delivery-private-interface
     family: three-workflow-delivery-v3-interface
-    namespace: src/public/lib/three-workflow-delivery-v3
+    namespace: src/private/app/workflow-delivery
     state: current
     carrier: repository-file
     path: src/private/app/workflow-delivery/README.md
     format: markdown
-    purpose: Replacement private CLI interface; project authorities remain in the V3 namespace until Python retirement
-  - id: three-workflow-delivery-v3-nuget-helper-interface
-    family: three-workflow-delivery-v3-nuget-helper-interface
-    namespace: src/public/lib/three-workflow-delivery-v3
-    state: current
-    carrier: repository-file
-    path: src/private/app/workflow-delivery-v3-nuget-authority/README.md
-    format: markdown
-  - id: three-workflow-delivery-v3-nuget-authority-test-interface
-    family: project-interfaces
-    namespace: src/public/lib/three-workflow-delivery-v3
-    state: current
-    carrier: repository-file
-    path: tests/private/app/workflow-delivery-v3-nuget-authority/README.md
-    format: markdown
-  - id: three-workflow-delivery-v3-dotnet-helper-interface
-    family: three-workflow-delivery-v3-dotnet-helper-interface
-    namespace: src/public/lib/three-workflow-delivery-v3
-    state: current
-    carrier: repository-file
-    path: src/private/app/workflow-delivery-v3-dotnet-provider/README.md
-    format: markdown
-  - id: three-workflow-delivery-v3-nuget-consumer-interface
-    family: three-workflow-delivery-v3-nuget-consumer-interface
-    namespace: src/public/lib/three-workflow-delivery-v3
-    state: current
-    carrier: repository-file
-    path: src/private/app/workflow-delivery-v3-nuget-consumer/README.md
-    format: markdown
+    purpose: Internal Workflow Delivery application interface and canonical project routing
   - id: hcoona-release-smoke-github-packages-interface
     family: hcoona-release-smoke-github-packages-interface
-    namespace: src/public/lib/hcoona-release-smoke-github-packages
+    namespace: src/private/app/workflow-delivery
     state: current
     carrier: repository-file
-    path: src/public/lib/hcoona-release-smoke-github-packages/README.md
+    path: tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/README.md
     format: markdown
   - id: hcoona-release-smoke-npm-package-interface
     family: hcoona-release-smoke-npm-package-interface
-    namespace: src/public/lib/three-workflow-delivery-v3
+    namespace: src/private/app/workflow-delivery
     state: current
     carrier: repository-file
     path: tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/README.md
     format: markdown
   - id: python-smoke-interface
     family: python-smoke-interface
-    namespace: src/public/lib/hcoona-release-smoke-python
+    namespace: src/private/app/workflow-delivery
     state: current
     carrier: repository-file
-    path: src/public/lib/hcoona-release-smoke-python/README.md
+    path: tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/README.md
     format: markdown
   - id: ruby-smoke-interface
     family: project-interfaces
@@ -653,7 +582,7 @@ bindings:
     format: markdown
   - id: legacy-workflow-retirement-interface
     family: legacy-workflow-retirement-interface
-    namespace: src/public/lib/three-workflow-delivery-v3
+    namespace: src/private/app/workflow-delivery
     state: current
     carrier: repository-file
     path: .github/workflows/REFACTOR_PLAN.md

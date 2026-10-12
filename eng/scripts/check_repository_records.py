@@ -488,9 +488,8 @@ def classify(path: str) -> str:  # noqa: C901, PLR0911, PLR0912 - Ordered indepe
         for p in parts
     ):
         return "domain-owned-contract-evidence"
-    if path.startswith("eng/workflow-delivery/v3/policies/") or (
-        path.startswith("src/private/lib/scholarly-publication/")
-        and any(p in {"evals", "tests"} for p in parts)
+    if path.startswith("src/private/lib/scholarly-publication/") and any(
+        p in {"evals", "tests"} for p in parts
     ):
         return "domain-owned-contract-evidence"
     name = PurePosixPath(path).name
@@ -505,7 +504,6 @@ def classify(path: str) -> str:  # noqa: C901, PLR0911, PLR0912 - Ordered indepe
                 ".github/workflows",
                 ".github/actions",
                 ".github/codeql",
-                ".github/workflow-delivery",
             )
         )
         or path in {".github/lsp.json", ".github/mcp.json"}

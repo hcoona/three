@@ -75,7 +75,7 @@ jobs:
           $request = @{
             subject = @{
               revision = $env:SELECTED_REVISION; selectedRef = $env:SELECTED_REF
-              unit = 'hcoona-release-smoke-github-packages'; declaration = 'src/public/lib/hcoona-release-smoke-github-packages/workflow-delivery.release-unit.yml'
+              unit = 'hcoona-release-smoke-github-packages'; declaration = 'tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/workflow-delivery.release-unit.yml'
               channel = 'buddy'; destination = 'github-packages-nuget'; dryRun = $env:DRY_RUN -eq 'true'
             }
             checkout = $env:GITHUB_WORKSPACE; scratch = "$env:RUNNER_TEMP/scratch"
@@ -138,7 +138,7 @@ jobs:
           $subject = $prepared.prepared.subject
           if ($subject.revision -cne $env:SELECTED_REVISION -or $subject.selectedRef -cne $env:SELECTED_REF -or
               $subject.unit -cne $producer.unit -or $subject.dryRun -cne $producer.dryRun -or
-              $subject.declaration -cne 'src/public/lib/hcoona-release-smoke-github-packages/workflow-delivery.release-unit.yml' -or $subject.channel -cne 'buddy' -or
+              $subject.declaration -cne 'tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/workflow-delivery.release-unit.yml' -or $subject.channel -cne 'buddy' -or
               $subject.destination -cne 'github-packages-nuget') { throw 'Preparation subject mismatch' }
       - name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
@@ -228,7 +228,7 @@ jobs:
           $subject = $prepared.prepared.subject
           if ($subject.revision -cne $env:SELECTED_REVISION -or $subject.selectedRef -cne $env:SELECTED_REF -or
               $subject.unit -cne $producer.unit -or $subject.dryRun -cne $producer.dryRun -or
-              $subject.declaration -cne 'src/public/lib/hcoona-release-smoke-github-packages/workflow-delivery.release-unit.yml' -or $subject.channel -cne 'buddy' -or
+              $subject.declaration -cne 'tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/workflow-delivery.release-unit.yml' -or $subject.channel -cne 'buddy' -or
               $subject.destination -cne 'github-packages-nuget') { throw 'Preparation subject mismatch' }
       - name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
@@ -305,7 +305,7 @@ jobs:
           $subject = $prepared.prepared.subject
           if ($subject.revision -cne $env:SELECTED_REVISION -or $subject.selectedRef -cne $env:SELECTED_REF -or
               $subject.unit -cne $producer.unit -or $subject.dryRun -cne $producer.dryRun -or
-              $subject.declaration -cne 'src/public/lib/hcoona-release-smoke-github-packages/workflow-delivery.release-unit.yml' -or $subject.channel -cne 'buddy' -or
+              $subject.declaration -cne 'tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/workflow-delivery.release-unit.yml' -or $subject.channel -cne 'buddy' -or
               $subject.destination -cne 'github-packages-nuget') { throw 'Preparation subject mismatch' }
       - name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca

@@ -18,8 +18,8 @@ configuration owns step selection, exclusions, and execution points.
 Root HK excludes generated APM interfaces and several specialized surfaces
 from general linters. Workflow YAML has its own actionlint step; general
 Markdown checks exclude `.github` paths. A skipped check is not a validation
-result for the excluded files. v3 static-reference feedback and its
-CI-selected product suite have distinct responsibilities; a successful
+result for the excluded files. Source conformance and
+CI-selected product checks have distinct responsibilities; a successful
 lint run does not establish publication authority or destination acceptance.
 
 The pre-commit hook uses Git stash and index checking. Preserve its existing
@@ -30,13 +30,14 @@ must report which files and execution mode they actually covered.
 ## CI Execution Contract
 
 [Issue #817](https://github.com/hcoona/three/issues/817) separates source
-checks from project tests. The v3
-[migration contract](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#ci-execution-ownership-cutover)
-owns its runtime and native-admission boundary.
+checks from project tests. Workflow Delivery's current
+[integration contract](../../src/private/app/workflow-delivery/docs/migration-strategy.md#python-planning-integration-and-later-caller-cutover)
+and [native Python group design](../../src/private/app/workflow-delivery/docs/middle-level-design.md#native-python-ci-group)
+own its execution boundaries.
 
 HK checks source/configuration conformance, including file checks, lock and
-generated-file consistency, deployed-source parity and the existing bounded
-static-reference policy. Project unit, scenario and integration tests run in
+generated-file consistency and deployed-source parity. Project unit, scenario
+and integration tests run in
 CI or through explicit local test commands. Moving a suite to HK's `large`
 profile does not establish this separation.
 
@@ -57,17 +58,18 @@ dependency consumers. Its job syncs the owning current workspace packages and
 root development tools using uv's frozen package selection, including each
 selected member's default development groups. Tests then use that prepared
 environment without another sync. Engineering tests declare their own root
-dependencies. Only selected V3 tests prepare Node, HK, Pkl and static-reference
-authorities; V3 and selected NBGV consumers also prepare .NET tools. Keep the
-static-reference preparation's isolated Python environment separate from the
-test environment. New test consumers must declare any additional native needs
+dependencies. The native Python caller prepares only the adapters required by
+its selected targets, including the Rust helper, isolated Ruby fixture tools
+and native Release preparation. Selected NBGV consumers also use .NET tools.
+Keep native preparation and execution bound to the original selected plan and
+its prepared environment. New test consumers must declare any additional native needs
 in the selector and workflow.
 
 Node and .NET may retain their existing workspace build
 units where dependency selection is conservative; that is workspace-level,
 not exact per-project execution. AzureAuth platform artifacts and Ruby or
 scholarly-publication suites have their own affected inputs. A changed .NET
-product does not by itself require AzureAuth artifacts or v3 self-tests.
+product does not by itself require AzureAuth artifacts or unrelated Python tests.
 
 The selector runs without repository package restore or full validation.
 Each existing required GitHub context remains present and fails if selection
@@ -128,7 +130,7 @@ set `HK_SKIP_MISSING_FILES=1`; their wrappers then omit absent operands.
 Deletion-only lists return successfully without invoking a tool's implicit
 full scan. Directory-to-file replacements count as absent old paths; permission
 errors and other filesystem failures remain errors. Unconditional checks,
-static-reference preparation/scanning and lock validation retain their own
+tool preparation and lock validation retain their own
 inputs and do not inherit this opt-in. HK still owns source conformance;
 product tests remain in their explicit local commands and selected CI jobs.
 
