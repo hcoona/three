@@ -283,8 +283,10 @@ The concrete build, native archive inspection and clean local installation now
 live in [`RubyPackageOperations`](Ecosystems/RubyPackageOperations.cs). The shared
 operations use native fact/tool values and an original archive identity, with no
 CI plan, check or Release completion object. CI retains candidate/check validation,
-prerequisites and actual command/result recording. Release preparation and caller
-cutover remain separate pending work under the accepted
+prerequisites and actual command/result recording. The implemented
+[Ruby Release preparation component](#ruby-release-preparation-component) and
+[ordinary Ruby Release caller](#ordinary-ruby-release) retain their separate
+qualification and delivery gates under the accepted
 [concrete Ruby contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-ruby-release-integration).
 
 The `ci prepare-ruby-group`, `ci plan-ruby-group` and `ci run-ruby-group`
