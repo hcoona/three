@@ -40,6 +40,8 @@ internal static class PythonRepositoryInputs
 
     private static readonly string[] RubyPreparationRoots = [
         "src/private/app/workflow-delivery", "tests/private/app/workflow-delivery"];
+    private static readonly string[] RubyCallerRoots = [
+        "src/private/app/workflow-delivery"];
 
     internal static PythonInputBinding[] Map(GitRevision revision,
         PythonProjectDependencies[] projects, PythonPytestTargetSet targets,
@@ -171,6 +173,8 @@ internal static class PythonRepositoryInputs
                 ".github/workflows/workflow-delivery-v3-python-smoke.yml") ||
         (target == "tests/eng/test_ruby_release_preparation_gate.py" &&
             RubyPreparationInput(path)) ||
+        (target == "tests/eng/test_ruby_release_caller.py" &&
+            DotnetInput(path, RubyCallerRoots)) ||
         (target == "tests/eng/test_run_python_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&

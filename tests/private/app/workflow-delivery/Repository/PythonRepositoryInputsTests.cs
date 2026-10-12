@@ -75,6 +75,208 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
+    [DataRow("src/private/app/workflow-delivery/Native/Ruby/release_caller.rb")]
+    [DataRow("src/private/app/workflow-delivery/Program.cs")]
+    [DataRow("src/private/app/workflow-delivery/Release/RubyReleaseCli.cs")]
+    [DataRow("src/private/app/workflow-delivery/Ecosystems/RubyRemoteConsumer.cs")]
+    [DataRow("src/private/app/workflow-delivery/WorkflowDelivery.csproj")]
+    [DataRow("src/private/app/workflow-delivery/packages.lock.json")]
+    [DataRow("global.json")]
+    [DataRow("Directory.Build.props")]
+    [DataRow("Directory.Packages.props")]
+    [DataRow("src/Directory.Build.props")]
+    [DataRow("src/private/app/Directory.Build.props")]
+    [DataRow(".config/dotnet-tools.json")]
+    [DataRow("version.json")]
+    [DataRow("nuget.config")]
+    [DataRow(".editorconfig")]
+    public void RubyReleaseCallerInputsSelectDeclaredTargetWithPairedReasons(string path)
+    {
+        const string target = "tests/eng/test_ruby_release_caller.py";
+        // This declared target executes the Ruby helper and builds the control application,
+        // whose Program.cs contains the actual TransferJson serializer context.
+        PythonFactsEndpoint basis = Facts(Endpoint(
+            [target, "tests/unrelated.py"], [path], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint(
+            [target, "tests/unrelated.py"], [path], "after"));
+        SelectionReason[] expected = PairedRevisions.Select(revision =>
+            new SelectionReason(path, revision, "pytest:" + target)).ToArray();
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        CollectionAssert.AreEquivalent(expected, paired);
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, paired);
+        CiPlan plan = ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+        Assert.AreEqual("before", plan.Comparison);
+        Assert.AreEqual("after", plan.Candidate);
+        PlannedCheck selected = Assert.ContainsSingle(plan.Checks);
+        Assert.AreEqual(new CheckKey("pytest:" + target, "python/pytest-v1", "default"),
+            selected.Work.Key);
+        Assert.IsTrue(selected.Work.Required);
+        CollectionAssert.AreEquivalent(expected, selected.Reasons);
+        Assert.IsEmpty(assembly.Request.Basis.UnaffectedPaths);
+        Assert.IsEmpty(assembly.Request.Candidate.UnaffectedPaths);
+    }
+
+    [TestMethod]
+    [DataRow("src/private/app/workflow-delivery/Native/Ruby/release_caller.rb", true)]
+    [DataRow("src/private/app/workflow-delivery/Program.cs", false)]
+    public void RubyReleaseCallerInputsPreserveNativeAndPreparationOwners(
+        string path, bool nativeHelper)
+    {
+        const string caller = "tests/eng/test_ruby_release_caller.py";
+        const string preparation = "tests/eng/test_ruby_release_preparation_gate.py";
+        const string native = "tests/private/app/workflow-delivery/Native/Ruby";
+        string[] targets = [caller, preparation, native, "tests/unrelated.py"];
+        PythonFactsEndpoint basis = Facts(Endpoint(targets, [path], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint(targets, [path], "after"));
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, paired);
+        CiPlan plan = ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+        string[] expected = ["pytest:" + caller, "pytest:" + preparation,
+            .. nativeHelper ? new[] { "pytest:" + native } : []];
+        CollectionAssert.AreEquivalent(expected,
+            plan.Checks.Select(check => check.Work.Key.Target).ToArray());
+        Assert.HasCount(expected.Length, plan.Checks);
+        foreach (PlannedCheck selected in plan.Checks)
+        {
+            Assert.IsTrue(selected.Work.Required);
+            CollectionAssert.AreEquivalent(PairedRevisions.Select(revision =>
+                new SelectionReason(path, revision, selected.Work.Key.Target)).ToArray(),
+                selected.Reasons);
+        }
+    }
+
+    [TestMethod]
+    [DataRow("src/private/app/azureauth-credprovider/Program.cs")]
+    [DataRow("tests/private/app/workflow-delivery/Release/RubyReleaseTests.cs")]
+    [DataRow("tests/Directory.Build.props")]
+    [DataRow("src/private/app/workflow-delivery-other/Program.cs")]
+    [DataRow("src/private/app/workflow-delivery-other/Directory.Build.props")]
+    [DataRow("src/private/app/workflow-delivery-other/version.json")]
+    [DataRow("src/private/application/Directory.Build.props")]
+    [DataRow("src/public/Directory.Build.props")]
+    public void RubyReleaseCallerExcludesKnownUnrelatedInputs(string path)
+    {
+        const string target = "tests/eng/test_ruby_release_caller.py";
+        PythonFactsEndpoint basis = Facts(Endpoint(
+            [target, "tests/unrelated.py"], [path], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint(
+            [target, "tests/unrelated.py"], [path], "after"));
+        Assert.DoesNotContain(path, basis.Inputs.Select(binding => binding.Path));
+        Assert.DoesNotContain(path, candidate.Inputs.Select(binding => binding.Path));
+        // The existing upstream scope seam supplies known non-Python coordinates;
+        // lack of a repository association alone cannot certify an exclusion.
+        basis = basis with { Inputs = [.. basis.Inputs, new(path, [], [])] };
+        candidate = candidate with { Inputs = [.. candidate.Inputs, new(path, [], [])] };
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        Assert.IsEmpty(paired);
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, paired);
+        Assert.AreEqual(path, Assert.ContainsSingle(assembly.Request.Basis.UnaffectedPaths));
+        Assert.AreEqual(path, Assert.ContainsSingle(assembly.Request.Candidate.UnaffectedPaths));
+        Assert.IsEmpty(ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+    }
+
+    [TestMethod]
+    [DataRow(".github/workflows/workflow-delivery-v3-ruby-smoke.yml")]
+    [DataRow(".github/workflows/workflow-delivery-v3-ruby-bootstrap.yml")]
+    public void RubyReleaseWorkflowInputsSelectPublicRouteOnly(string path)
+    {
+        const string publicTarget = "src/public/lib/three-workflow-delivery-v3/tests";
+        string[] targets = ["tests/eng/test_ruby_release_caller.py",
+            "tests/eng/test_ruby_release_preparation_gate.py",
+            "tests/private/app/workflow-delivery/Native/Ruby", publicTarget,
+            "tests/unrelated.py"];
+        PythonFactsEndpoint basis = Facts(Endpoint(targets, [path], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint(targets, [path], "after"));
+        Owners(basis.Inputs, path, "pytest:" + publicTarget);
+        Owners(candidate.Inputs, path, "pytest:" + publicTarget);
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, paired);
+        PlannedCheck selected = Assert.ContainsSingle(
+            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+        Assert.AreEqual("pytest:" + publicTarget, selected.Work.Key.Target);
+        CollectionAssert.AreEquivalent(PairedRevisions.Select(revision =>
+            new SelectionReason(path, revision, "pytest:" + publicTarget)).ToArray(),
+            selected.Reasons);
+    }
+
+    [TestMethod]
+    [DataRow(true, true, true)]
+    [DataRow(true, true, false)]
+    [DataRow(true, false, true)]
+    [DataRow(false, true, true)]
+    [DataRow(false, true, false)]
+    [DataRow(false, false, true)]
+    public void RubyReleaseCallerPairedInputsSelectSurvivingDeclaredTarget(
+        bool targetAtBasis, bool inputAtBasis, bool inputAtCandidate)
+    {
+        const string target = "tests/eng/test_ruby_release_caller.py";
+        foreach (string path in new[] {
+            "src/private/app/workflow-delivery/Native/Ruby/release_caller.rb",
+            "src/private/app/workflow-delivery/Program.cs",
+            "src/private/app/workflow-delivery/packages.lock.json" })
+        {
+            PythonFactsEndpoint basis = Facts(Endpoint(targetAtBasis ?
+                [target, "tests/unrelated.py"] : ["tests/unrelated.py"],
+                inputAtBasis ? [path] : [], "before"));
+            PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"],
+                inputAtCandidate ? [path] : [], "after"));
+            SelectionReason[] expected = PairedRevisions.Where(revision =>
+                revision == "before" ? inputAtBasis : inputAtCandidate)
+                .Select(revision => new SelectionReason(path, revision, "pytest:" + target))
+                .ToArray();
+            SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+            CollectionAssert.AreEquivalent(expected, paired);
+            PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+                [path], false, paired);
+            Assert.AreEqual(targetAtBasis, assembly.Request.Basis.Projects.Any(project =>
+                project.Id == "pytest:" + target));
+            Assert.Contains("pytest:" + target,
+                assembly.Request.Candidate.Projects.Select(project => project.Id));
+            Assert.IsEmpty(assembly.Request.Basis.UnaffectedPaths);
+            Assert.IsEmpty(assembly.Request.Candidate.UnaffectedPaths);
+            CiPlan plan = ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+            Assert.AreEqual("before", plan.Comparison);
+            Assert.AreEqual("after", plan.Candidate);
+            PlannedCheck selected = Assert.ContainsSingle(plan.Checks);
+            Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
+            CollectionAssert.AreEquivalent(expected, selected.Reasons);
+        }
+    }
+
+    [TestMethod]
+    [DataRow("src/private/app/workflow-delivery/Native/Ruby/release_caller.rb")]
+    [DataRow("src/private/app/workflow-delivery/Program.cs")]
+    [DataRow("src/private/app/workflow-delivery/packages.lock.json")]
+    public void RubyReleaseCallerWithoutDeclaredTargetPreservesScopeFailure(string path)
+    {
+        const string owner = "pytest:tests/eng/test_ruby_release_caller.py";
+        PythonFactsEndpoint basis = Facts(Endpoint(["tests/unrelated.py"], [path], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint(["tests/unrelated.py"], [path], "after"));
+        Assert.DoesNotContain(owner, basis.Inputs.SelectMany(binding => binding.Owners));
+        Assert.DoesNotContain(owner, candidate.Inputs.SelectMany(binding => binding.Owners));
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        Assert.IsEmpty(paired);
+        foreach (bool full in PairedInputPresence)
+            Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
+                basis, candidate, [path], full, paired));
+
+        // When upstream analysis explicitly establishes a nonconsumer, planning may
+        // exclude it, but still cannot manufacture the absent runnable target.
+        basis = basis with { Inputs = [.. basis.Inputs, new(path, [], [])] };
+        candidate = candidate with { Inputs = [.. candidate.Inputs, new(path, [], [])] };
+        PythonFactAssembly known = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, paired);
+        Assert.DoesNotContain(owner, known.Request.Basis.Projects.Select(project => project.Id));
+        Assert.DoesNotContain(owner,
+            known.Request.Candidate.Projects.Select(project => project.Id));
+        Assert.IsEmpty(ImpactPlanner.Plan(known.Request, known.PairedReasons).Checks);
+    }
+
+    [TestMethod]
     [DataRow("src/private/app/workflow-delivery/Native/Ruby/facts.rb")]
     [DataRow("tests/private/app/workflow-delivery/Native/Ruby/test_facts.py")]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
