@@ -58,15 +58,20 @@ qualification. The private application's
 [Python public index observer](../../../../private/app/workflow-delivery/README.md#python-public-index-observation-component)
 implements bounded anonymous selected-index/original reads with maintained
 packaging interpretation. Controlled scenarios and local native helper tests
-establish component boundaries, without deployed index qualification. Remote consumption and ordinary caller cutover remain pending;
-completed campaigns stay closed.
+establish component boundaries, without deployed index qualification.
 
 The private application's
 [native Python publisher component](../../../../private/app/workflow-delivery/README.md#native-python-publisher-component)
 implements the bounded UV invocation and credential-aware output boundary.
 Controlled tests and a local native EOF check establish no deployed OIDC,
-publication or complete caller qualification. The other components and ordinary
-integration retain their separate gates; completed campaigns stay closed.
+publication or complete caller qualification.
+
+The private application's
+[native Python remote consumer](../../../../private/app/workflow-delivery/README.md#native-python-remote-consumer-component)
+implements selected-index UV resolution and original-hash enforcement with
+isolated native installed metadata/API checks. Controlled scenarios establish
+component boundaries only; deployed destination and ordinary caller qualification
+remain separate. Completed campaigns stay closed.
 Root CI owns the native Ruby group, qualified in ordinary
 [PR #1124](https://github.com/hcoona/three/pull/1124) CI. It receives the exact scope
 and complete candidate control artifact, prepares native facts once and executes

@@ -530,8 +530,7 @@ That target invokes the native scenario using committed Python/UV tools and its
 selected MISE resource, rejects zero/skipped results, and retains original TRX,
 preparation and distribution attachments through the Python job. It is a
 component qualification route; ordinary caller qualification remains separate.
-Remote consumption and ordinary caller cutover
-remain pending under the [accepted contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
+Ordinary Release caller integration requires its separate qualification under the [accepted contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
 
 ### Python Package Execution Component
 
@@ -1862,6 +1861,36 @@ component boundaries. They do not invoke UV publication, acquire credentials or
 establish deployed OIDC/index/publisher behavior. Remote consumers and ordinary
 caller integration retain their separate qualification
 under the [concrete Python contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
+
+### Native Python remote consumer component
+
+`PythonRemoteConsumer` consumes one selected format from a completely qualified
+original wheel/sdist pair in a separate caller-owned no-write job. Native UV
+resolves the exact version from only the selected TestPyPI or PyPI index and
+enforces the original archive SHA-256. Wheel and sdist require their respective
+native format flags; no local-original path, alternate index or populated cache
+can supply remote acknowledgement.
+
+Wheel uses a fresh external venv. Sdist reuses `PythonPackageOperations`' frozen
+root tool preparation and noneditable backend/plugin conversion, then builds and
+installs in Git-free external state. Tool preparation has no publication
+capability. The isolated native helper requires the product to be absent before
+installation and checks installed metadata, import origin and the registered API
+afterward. Native UV owns dependency/build checks, download, archive hash
+validation and installation; this component maintains no backend roster,
+resolver, downloader or target witness.
+
+Commands inherit no environment and receive only prepared native tool paths and
+owned state. The component enforces a ten-minute whole-phase deadline and bounded
+native commands, stops after any unsuccessful or cancelled operation, and retains
+actual reached termination/exit/duration beside the required consumer outcome.
+Arbitrary native diagnostics are omitted; installation change JSON is not archive
+provenance. Failure or missing helper facts cannot qualify consumption.
+
+Controlled command/fact scenarios qualify these boundaries; they do not execute
+live index consumption or establish deployed destination behavior. Ordinary caller
+cutover and live qualification retain their separate gates under the
+[concrete Python integration](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
 
 ### Ruby Release preparation component
 

@@ -75,6 +75,35 @@ versions across commits remain possible and conflicting originals remain
 conflicts. The concrete contract selects the ref set; later component/native
 qualification must establish the actual projection and original consumers.
 
+## Remote Native Consumption Boundary
+
+The same pinned UV revision provides native exact-version/archive-hash consumption.
+[`HashCheckingArgs`][consumer-cli] requires pinned hashed requirements;
+[`pip::install`][consumer-install] creates the trusted hash strategy and passes it
+through native resolution and installation. [`HashStrategy`][consumer-hash]
+requires a matching trusted archive digest.
+[`Preparer`][consumer-preparer] rejects a selected archive that does not satisfy
+that policy. [`SourceDistributionBuilder`][consumer-sdist] validates the original
+sdist digest before running its build.
+
+Use one generated exact-version/SHA-256 requirement, one selected index, the
+required wheel/sdist format flag, no config, no inherited index/source/credential
+inputs, no populated product cache and an initially absent product. Successful
+native installation under those inputs acknowledges native hash enforcement;
+the existing isolated helper then checks installed metadata, origin and API.
+The sdist's noneditable tools still use the same frozen native recipe. This is
+source-backed integration inference, not a new index or install observation.
+
+UV's experimental installation JSON reports name, version and change action;
+it does not carry original archive hashes or provenance. Do not turn that JSON
+into another durable trust record. Preserve actual command outcomes and required
+selection/hash inputs instead. Missing or failed native acknowledgement blocks
+consumption; a local-original installation cannot establish remote routing.
+The [concrete contract](../migration-strategy.md#concrete-python-release-integration)
+retains component/caller qualification and separate live authorization. Recheck
+these affected native contracts when the selected UV changes; dependency and
+implementation review is the fallback event.
+
 ## Credential and Output Boundary
 
 Application dry run uses qualification, public observation and hypothetical
@@ -146,3 +175,8 @@ changed path rather than expanding the application into another publisher.
 [version-oracle]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/NerdBank.GitVersioning/VersionOracle.cs#L106
 [warehouse-metadata]: https://github.com/pypi/warehouse/blob/f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6/warehouse/forklift/metadata.py#L176
 [warehouse-upload]: https://github.com/pypi/warehouse/blob/f43a0f79dbaf40e4888110ad5b1d5e0ad87121b6/warehouse/forklift/legacy.py#L624
+[consumer-cli]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-cli/src/lib.rs#L6792
+[consumer-install]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-pip-commands/src/install.rs
+[consumer-hash]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-types/src/hash.rs
+[consumer-preparer]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-installer/src/preparer.rs#L174
+[consumer-sdist]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-distribution/src/source/mod.rs#L665

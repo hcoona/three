@@ -158,6 +158,45 @@ def test_public_index_rejects_unavailable_or_unsupported_native_facts(
         )
 
 
+def test_remote_consumer_requires_native_product_absence(monkeypatch):
+    """An empty native venv cannot be substituted by an installed product."""
+    monkeypatch.setattr(packages.sys, "prefix", "/owned/venv")
+    monkeypatch.setattr(packages.sys, "base_prefix", "/native/python")
+    missing = Mock(side_effect=packages.importlib.metadata.PackageNotFoundError)
+    monkeypatch.setattr(packages.importlib.metadata, "distribution", missing)
+    assert packages.consumer_absent(NAME, packages.QUALITY) == {
+        "name": NAME,
+        "absent": True,
+    }
+    missing.assert_called_once_with(NAME)
+    monkeypatch.setattr(
+        packages.importlib.metadata, "distribution", lambda _: object()
+    )
+    with pytest.raises(ValueError, match="already installed"):
+        packages.consumer_absent(NAME, packages.QUALITY)
+
+
+@pytest.mark.parametrize("defect", ["base", "name", "quality"])
+def test_remote_consumer_rejects_unsupported_native_environment(
+    monkeypatch, defect
+):
+    """Only the adopted product in an actual venv can be a remote consumer."""
+    monkeypatch.setattr(packages.sys, "prefix", "/owned/venv")
+    monkeypatch.setattr(packages.sys, "base_prefix", "/native/python")
+    name, quality = NAME, packages.QUALITY
+    if defect == "base":
+        monkeypatch.setattr(packages.sys, "base_prefix", "/owned/venv")
+    elif defect == "name":
+        name = "other"
+    else:
+        quality = "other"
+    native = Mock()
+    monkeypatch.setattr(packages.importlib.metadata, "distribution", native)
+    with pytest.raises(ValueError, match="Unsupported remote consumer"):
+        packages.consumer_absent(name, quality)
+    native.assert_not_called()
+
+
 def wheel(directory, *, metadata=METADATA, payload=True, extra=None):
     """Wheel."""
     path = directory / (STEM + "-py3-none-any.whl")

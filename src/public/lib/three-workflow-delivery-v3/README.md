@@ -77,8 +77,7 @@ Release/feed behavior or new live acceptance. Other quality presets and remainin
 Release integrations are pending.
 The private application's [Python preparation component](../../../private/app/workflow-delivery/README.md#python-release-preparation-component)
 qualifies the complete original wheel/sdist pair independently of CI, with
-controlled and local native Linux coverage. Publication, remote consumption and
-ordinary Release caller cutover remain pending; this component does not establish
+controlled and local native Linux coverage. This component does not establish
 hosted Release or live qualification.
 The private application's [Python public index observer](../../../private/app/workflow-delivery/README.md#python-public-index-observation-component)
 compares the qualified original wheel/sdist pair with the selected public index.
@@ -90,6 +89,12 @@ The private application's [native Python publisher component](../../../private/a
 implements the bounded UV invocation and credential-aware output boundary.
 Controlled/local checks do not establish live publication or complete caller
 qualification.
+
+The private application's [native Python remote consumer](../../../private/app/workflow-delivery/README.md#native-python-remote-consumer-component)
+uses selected-index UV installation with the qualified original hash and isolated
+installed metadata/API checks. Controlled scenarios qualify component boundaries;
+live destination and ordinary Release caller qualification remain separate.
+
 The private application's [Ruby Release preparation component](../../../private/app/workflow-delivery/README.md#ruby-release-preparation-component)
 implements complete declared gem qualification independently of CI. Its local
 validation establishes no live feed, authentication, publication or ordinary
