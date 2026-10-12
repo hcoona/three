@@ -75,6 +75,10 @@ independently of CI. The [NuGet Buddy interface](../../../private/app/workflow-d
 composes the ordinary caller; component qualification does not establish hosted
 Release/feed behavior or new live acceptance. Other quality presets and remaining
 Release integrations are pending.
+The private application's [native Python publisher component](../../../private/app/workflow-delivery/README.md#native-python-publisher-component)
+implements the bounded UV invocation and credential-aware output boundary.
+Controlled/local checks do not establish live publication or complete caller
+qualification.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
 that the existing runtime already satisfies the contraction requirements.

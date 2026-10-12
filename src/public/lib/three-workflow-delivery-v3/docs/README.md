@@ -59,6 +59,10 @@ defines the next preparation, native publisher, remote consumer and ordinary
 caller boundary. Its [publisher source assessment](./research/python-native-publisher.md)
 distinguishes native OIDC/retry and output handling from runtime qualification.
 Neither record authorizes a new publication or reopens a completed campaign.
+The private application's [native Python publisher component](../../../../private/app/workflow-delivery/README.md#native-python-publisher-component)
+has controlled UV command/output coverage and a local native EOF check. These
+qualify component boundaries only; deployed publisher and ordinary caller
+qualification remain separate.
 
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration

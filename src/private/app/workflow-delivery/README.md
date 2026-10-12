@@ -1765,3 +1765,34 @@ commands use cleared explicit environments without the read capability. Source-l
 cache settings do not replace that process/job boundary. The ordinary NuGet caller
 above supplies the separate receiving job; this component's controlled qualification
 does not establish live-feed behavior or publication authorization.
+
+### Native Python publisher component
+
+`PythonNativePublisher` invokes the selected native UV once for one qualified
+original from the complete wheel/sdist pair. It accepts the existing TestPyPI
+Buddy or PyPI Official coordinates; live Official requires the selected main ref,
+while Buddy accepts branch refs. Dry run never enters this component. The caller
+owns fresh complete observation, missing-file order, intermediate readback and
+separate remote verification; this component creates no retry or recovery loop.
+
+UV owns multipart, OIDC, token exchange and supported native retries/redirects.
+The invocation selects an explicit upload URL, mandatory trusted publishing,
+disabled keyring, no config or attestations and one literal original path. It
+checks the transferred original pair, uses caller-prepared UV with fresh external
+home/config/cache/temp directories, inherits no environment, receives only the
+required native GitHub context and uses a 180-second process deadline. The shared
+native executor closes stdin before awaiting the process; an input closure failure
+retains its actual failure and possible effects.
+
+Only complete native `add-mask` controls reach the caller's runner stderr writer.
+All native diagnostic text remains transient and is omitted from persisted
+results, including partial/error output. Results preserve actual termination,
+exit and duration, an explicit diagnostic limitation and any masking-forwarding
+failure. A masking failure does not invent a different native outcome; native
+success alone does not establish business completion or attribute insertion.
+
+Controlled command/output tests and a local native EOF test qualify these
+component boundaries. They do not invoke UV publication, acquire credentials or
+establish deployed OIDC/index/publisher behavior. Preparation, observation, remote
+consumers and ordinary caller integration retain their separate qualification
+under the [concrete Python contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).

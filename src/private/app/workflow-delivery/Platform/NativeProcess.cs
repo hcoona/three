@@ -25,6 +25,7 @@ internal static class NativeProcess
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                RedirectStandardInput = command.CloseStandardInput,
                 CreateNoWindow = true,
             },
         };
@@ -58,8 +59,15 @@ internal static class NativeProcess
             CaptureAsync(error, stderr, timeout.Token), process.WaitForExitAsync(timeout.Token)];
         NativeTermination termination = NativeTermination.Exited;
         string? failure = null;
+        bool closingInput = false;
         try
         {
+            if (command.CloseStandardInput)
+            {
+                closingInput = true;
+                process.StandardInput.Close();
+                closingInput = false;
+            }
             var pending = new List<Task>(tasks);
             while (pending.Count != 0)
             {
@@ -75,10 +83,12 @@ internal static class NativeProcess
             failure = termination == NativeTermination.Cancelled ? "Command cancelled."
                 : $"Native command exceeded its {command.DeadlineSeconds}-second deadline.";
         }
-        catch (Exception exception) when (exception is IOException or DecoderFallbackException)
+        catch (Exception exception) when (exception is IOException or DecoderFallbackException ||
+            closingInput && exception is InvalidOperationException)
         {
-            termination = NativeTermination.InvalidOutput;
-            failure = exception.Message;
+            termination = closingInput ? NativeTermination.InputFailed
+                : NativeTermination.InvalidOutput;
+            failure = closingInput ? "Native standard input could not close." : exception.Message;
         }
         finally
         {

@@ -12,6 +12,22 @@ public sealed class NativeProcessTests
     public TestContext TestContext { get; set; } = null!;
 
     [TestMethod]
+    public async Task ExecuteClosesStandardInputBeforeAwaitingNativeExit()
+    {
+        const string script = "[Console]::Out.Write([Console]::In.ReadToEnd().Length); exit 0";
+        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        NativeCommandResult result = await NativeProcess.ExecuteAsync(new("pwsh",
+            Path.GetTempPath(), ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                encoded], 30, CloseStandardInput: true), TestContext.CancellationToken);
+
+        Assert.AreEqual(NativeTermination.Exited, result.Termination);
+        Assert.AreEqual(0, result.ExitCode);
+        Assert.AreEqual("0", result.Stdout);
+        Assert.IsEmpty(result.Stderr);
+        Assert.IsNull(result.Error);
+    }
+
+    [TestMethod]
     public async Task ExecuteAppliesPerCommandEnvironmentWithoutAmbientMutation()
     {
         string marker = "WORKFLOW_PROCESS_PROBE_" + Guid.NewGuid().ToString("N");
