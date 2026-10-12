@@ -50,7 +50,9 @@ The [npm Buddy interface](../../../../private/app/workflow-delivery/README.md#np
 replaces the ordinary npm caller with complete preparation, native package
 observation, Environment on its actual publisher and separate required scoped
 native consumption. Controlled/source validation does not establish a new hosted
-Live run. Other Release callers and quality presets remain pending.
+Live run. The [NuGet Buddy interface](../../../../private/app/workflow-delivery/README.md#nuget-buddy-release)
+also composes its ordinary caller; caller delivery requires the separate ordinary
+Windows CI gate. Remaining Release integrations and quality presets remain pending.
 
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration

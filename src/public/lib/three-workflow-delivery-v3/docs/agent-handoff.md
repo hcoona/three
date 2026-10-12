@@ -994,6 +994,8 @@ applicable documentation and repository gates but keeps the same validate-before
 The internal application's `DotNetRemoteConsumer` implements native graph generation,
 official source-local restore and installed-original comparison before build/marker
 execution under the accepted Concrete NuGet Buddy Integration contract. It requires
-a separate no-write caller with owned fresh directories. Controlled local validation
-does not establish live-feed behavior; CLI/workflow caller cutover and its existing
-ordinary Windows CI gate remain separate. Completed native/live campaigns stay closed.
+a separate no-write caller with owned fresh directories. The
+[NuGet Buddy interface](../../../../private/app/workflow-delivery/README.md#nuget-buddy-release)
+composes the ordinary CLI/workflow caller. Caller delivery requires its separate
+ordinary Windows CI gate; controlled local validation does not establish live-feed
+behavior. Completed native/live campaigns stay closed.
