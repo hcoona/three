@@ -1391,6 +1391,7 @@ def test_nuget_reproducibility_selects_native_windows_evidence():
     assert execute["shell"] == "pwsh"
     assert scope.CONTROL_PROJECT in execute["run"]
     assert "--filter 'TestCategory=NuGetNativeScenarios'" in execute["run"]
+    assert "--minimum-expected-tests 7" in execute["run"]
     assert "--report-trx" in execute["run"]
     assert (
         '--results-directory "$env:WDV3_NUGET_REPRO_EVIDENCE"' in execute["run"]
@@ -1398,7 +1399,7 @@ def test_nuget_reproducibility_selects_native_windows_evidence():
     assert "native-scenarios.binlog" in execute["run"]
     assert "$LASTEXITCODE -ne 0" in execute["run"]
     assert "$reports.Count -ne 1" in execute["run"]
-    for counter in ("passed", "failed", "notExecuted", "total"):
+    for counter in ("passed", "failed", "notExecuted", "total", "executed"):
         assert "$counts." + counter in execute["run"]
     assert not any(
         step.get("uses", "").startswith(

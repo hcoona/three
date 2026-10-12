@@ -1676,7 +1676,7 @@ control resources, including the product's root analyzer configuration and
 applicable Git attributes for source materialization. Old Python-package/helper
 inputs do not select this job.
 The caller restores pinned product dependencies before the tests and requires
-one TRX with every selected case executed and passed. Actual results,
+one TRX with all seven required cases discovered, executed and passed. Actual results,
 attachments, original packages and binlogs retain the existing
 `nuget-reproducibility-windows` artifact, `artifacts/nuget-reproducibility`
 directory and 30-day lifetime, including failures. Local Linux qualification

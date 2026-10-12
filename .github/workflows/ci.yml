@@ -846,6 +846,7 @@ jobs:
         run: |
           dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj `
             -p:RestoreLockedMode=true --filter 'TestCategory=NuGetNativeScenarios' `
+            --minimum-expected-tests 7 `
             --report-trx --results-directory "$env:WDV3_NUGET_REPRO_EVIDENCE" `
             "-bl:$env:WDV3_NUGET_REPRO_EVIDENCE/native-scenarios.binlog"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -853,9 +854,10 @@ jobs:
           if ($reports.Count -ne 1) { throw 'Expected one native scenario TRX report.' }
           [xml]$report = Get-Content -Raw $reports[0].FullName
           $counts = $report.TestRun.ResultSummary.Counters
-          if ([int]$counts.passed -le 0 -or [int]$counts.failed -ne 0 -or
-              [int]$counts.notExecuted -ne 0 -or [int]$counts.total -ne [int]$counts.passed) {
-            throw 'Selected native scenarios must all execute and pass.'
+          if ([int]$counts.total -ne 7 -or [int]$counts.executed -ne 7 -or
+              [int]$counts.passed -ne 7 -or [int]$counts.failed -ne 0 -or
+              [int]$counts.notExecuted -ne 0) {
+            throw 'The seven native scenarios must all execute and pass.'
           }
       - name: Retain original archives and native evidence
         if: always() && steps.scope.outputs.run == 'true'
