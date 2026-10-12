@@ -9,12 +9,52 @@ internal sealed class NuGetConsumerReadHandler(string credential, HttpMessageHan
     CancellationToken parent) : DelegatingHandler(transport)
 {
     private int reads;
+    private readonly object admission = new();
+    private readonly CancellationTokenSource stop = new();
+    private readonly TaskCompletionSource drained = new(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+    private int active;
+    private bool closed;
     internal int Reads => reads;
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
         CancellationToken cancellation)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(parent, cancellation);
+        lock (admission)
+        {
+            ObjectDisposedException.ThrowIf(closed, this);
+            active++;
+        }
+        try { return await ReadAsync(request, cancellation); }
+        finally
+        {
+            lock (admission)
+                if (--active == 0 && closed) drained.TrySetResult();
+        }
+    }
+
+    internal async Task CompleteAsync()
+    {
+        lock (admission)
+        {
+            closed = true;
+            if (active == 0) drained.TrySetResult();
+        }
+        try { await stop.CancelAsync(); }
+        finally { await drained.Task; }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) stop.Dispose();
+        base.Dispose(disposing);
+    }
+
+    private async Task<HttpResponseMessage> ReadAsync(HttpRequestMessage request,
+        CancellationToken cancellation)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(parent, cancellation,
+            stop.Token);
         timeout.CancelAfter(TimeSpan.FromSeconds(30));
         Uri initial = request.RequestUri ?? throw new InvalidDataException("Missing NuGet URI.");
         if (request.Method != HttpMethod.Get || !initial.IsAbsoluteUri ||

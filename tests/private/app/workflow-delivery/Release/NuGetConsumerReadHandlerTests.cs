@@ -12,6 +12,51 @@ public sealed class NuGetConsumerReadHandlerTests(TestContext context)
     private static readonly byte[] Original = [1, 2, 3];
 
     [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task CompletionCancelsAndJoinsReadsBeforeResourceDisposal()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var unwinding = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var handler = new NuGetConsumerReadHandler(Credential, new Controlled(async
+            (_, token) =>
+        {
+            entered.TrySetResult();
+            try { await Task.Delay(Timeout.Infinite, token); }
+            finally
+            {
+                unwinding.TrySetResult();
+                await release.Task.WaitAsync(context.CancellationToken);
+                stopped.TrySetResult();
+            }
+            return new(HttpStatusCode.OK);
+        }), context.CancellationToken);
+        using var client = new HttpClient(handler);
+        Task<HttpResponseMessage> read = client.GetAsync(Archive, context.CancellationToken);
+        Task? completion = null;
+        try
+        {
+            await entered.Task.WaitAsync(context.CancellationToken);
+            completion = handler.CompleteAsync();
+            await unwinding.Task.WaitAsync(context.CancellationToken);
+            Assert.IsFalse(completion.IsCompleted);
+            Assert.IsFalse(stopped.Task.IsCompleted);
+            await Assert.ThrowsExactlyAsync<ObjectDisposedException>(() => client.GetAsync(
+                Archive, context.CancellationToken));
+            Assert.AreEqual(1, handler.Reads);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await Assert.ThrowsAsync<OperationCanceledException>(() => read);
+            if (completion is not null) await completion.WaitAsync(context.CancellationToken);
+        }
+        Assert.IsTrue(stopped.Task.IsCompletedSuccessfully);
+    }
+
+    [TestMethod]
     [DataRow(200)]
     [DataRow(201)]
     [DataRow(206)]

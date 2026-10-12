@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using System.Xml.Linq;
 using Microsoft.Build.Evaluation;
@@ -137,9 +138,24 @@ internal static class DotNetRemoteConsumer
         arguments.PreLoadedRequestProviders.Add(new DependencyGraphSpecRequestProvider(
             new RestoreCommandProvidersCache(), graph,
             Settings.LoadSpecificSettings(consumer, "NuGet.Config")));
-        // Native restore and commit finish before any resources or directories are released.
-        IReadOnlyList<RestoreSummary> summaries = await RestoreRunner.RunAsync(arguments,
-            restoreLifetime.Token);
+        IReadOnlyList<RestoreSummary> summaries = [];
+        Exception? restoreFailure = null;
+        try
+        {
+            summaries = await RestoreRunner.RunAsync(arguments, restoreLifetime.Token);
+        }
+        catch (Exception failure)
+        {
+            restoreFailure = failure;
+        }
+        // Native cancellation can return before initiated HTTP reads finish unwinding.
+        try { await handler.CompleteAsync(); }
+        catch (Exception cleanupFailure) when (restoreFailure is not null)
+        {
+            throw new AggregateException("Native restore and owned read cleanup failed.",
+                restoreFailure, cleanupFailure);
+        }
+        if (restoreFailure is not null) ExceptionDispatchInfo.Throw(restoreFailure);
         restoreLifetime.Token.ThrowIfCancellationRequested();
         if (summaries.Count != 1 || !summaries[0].Success)
             throw new InvalidDataException("Selected remote native restore did not succeed.");
