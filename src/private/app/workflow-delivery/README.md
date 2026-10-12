@@ -90,6 +90,27 @@ Historical acceptance and other ordinary ecosystem consumers still use their
 retained Python helpers. Source/controlled tests do not establish a new hosted
 Buddy run, live publication or reopened campaign.
 
+## Native NuGet Publisher Component
+
+[`GithubNuGetPublisher`](Destinations/GithubNuGetPublisher.cs) validates the
+qualified original package and invokes the official NuGet
+`PackageUpdateResource.PushAsync` once. NuGet constructs the upload and owns its
+bounded retries; the application adds no multipart encoder or resend loop.
+Only the existing Buddy package and exact GitHub Packages endpoint are supported.
+Dry runs, incomplete required checks and changed original identity or bytes fail
+before transport. Original files must remain exclusively owned and unchanged
+through the native invocation, which opens the validated file itself.
+
+The owned standard HTTP handler disables redirects, ambient credentials, cookies
+and proxies. Basic authentication and the native API key go to the exact upload
+origin. Parent cancellation reaches native sends and response-body operations;
+the component awaits native completion rather than abandoning an active upload.
+The native timeout is 120 seconds. Its typed result preserves command success,
+parent cancellation, sanitized failure type and duration separately from business
+completion. Controlled tests exercise the actual official client through supplied
+transport. This component has no CLI or workflow caller yet and establishes no
+live publication, remote-consumer or platform qualification.
+
 ## Native Ruby Primitives
 
 [`Native/Ruby/facts.rb`](Native/Ruby/facts.rb) serializes evaluated RubyGems
@@ -1100,6 +1121,27 @@ outputs, intentional skips, no-tests policies and active cancellation/deadlines.
 These tests cover their concrete fixture composition. The CLI below composes retained
 native checks and the adopted NuGet recipe. The root caller below supplies the
 separate whole-group and ordinary Windows artifact/result qualification.
+
+### NuGet Destination Observation
+
+[`GithubNuGetObservation`](Destinations/GithubNuGetObservation.cs) consumes a
+qualified single-package Buddy request. Official NuGet interprets the service
+index, normalized versions and archive identity. The application restricts the
+selected owner endpoints, requires public package/repository association,
+collects bounded supporting GitHub metadata and native version inventory, and
+compares the original archive size and SHA-256. Unavailable, incomplete or
+conflicting facts cannot authorize creation.
+
+An observation permits at most 80 HTTP reads in 90 seconds. Each body-inclusive
+read has 30 seconds; metadata is limited to 2 MiB and archives to 25 MiB. The
+owned client disables automatic redirects, cookies, proxy and default
+credentials. NuGet reads use origin-bound Basic authentication; GitHub metadata
+uses Bearer authentication. Only the original archive can follow one supported
+HTTPS storage redirect, without credentials. Signed locations remain in memory;
+diagnostics retain only the storage origin and location digest. Cancellation and
+missing responses retain unknown state. Controlled handler scenarios qualify
+this component's behavior, not live feed responses or publication. Release CLI,
+publisher and required remote consumption remain separate integration work.
 
 ### Native .NET Group Interface
 

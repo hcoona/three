@@ -97,6 +97,13 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                     null &&
                     !command.Command.Environment.ContainsKey("GITHUB_TOKEN") &&
                     !command.Command.Environment.ContainsKey("GH_TOKEN")));
+                if (OperatingSystem.IsWindows())
+                    foreach (string name in new[] { "ProgramFiles", "ProgramFiles(x86)" })
+                    {
+                        if (Environment.GetEnvironmentVariable(name) is { } expected)
+                            foreach (ReleaseCommand command in result.Commands)
+                                Assert.AreEqual(expected, command.Command.Environment![name], name);
+                    }
                 foreach (ReleaseCommand command in result.Commands.Where(command =>
                     command.Check is "build" or "pack" ||
                         command.Command.Arguments.Contains("-target:GetBuildVersion")))

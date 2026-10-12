@@ -32,6 +32,12 @@ implements the accepted concrete Buddy preparation contract independently of CI,
 using native NBGV/Build/Pack and shared original-package inspection and local
 consumption. Its isolated local qualification does not establish a NuGet Release
 caller, destination observation, publication or new live acceptance.
+The private application's [NuGet destination observation component](../../../../private/app/workflow-delivery/README.md#nuget-destination-observation)
+implements bounded service-index, package metadata and original archive reads
+using official NuGet interpretation. Controlled tests establish credential
+separation, finite reads and unknown/conflict handling; they do not qualify live
+feed behavior. Publisher, remote consumer and ordinary NuGet caller cutover
+remain separate work under the accepted concrete integration contract.
 Root CI owns the native Ruby group, qualified in ordinary
 [PR #1124](https://github.com/hcoona/three/pull/1124) CI. It receives the exact scope
 and complete candidate control artifact, prepares native facts once and executes
@@ -405,6 +411,13 @@ session history here.
   remain unchanged. Exact evidence is preserved in the
   [retained source extracts](./validation/native-and-normal-live-evidence.md)
   with their pinned source provenance.
+
+The replacement private application's
+[native NuGet publisher component](../../../../private/app/workflow-delivery/README.md#native-nuget-publisher-component)
+uses one official client invocation with native retries and actual transport
+cancellation. Its controlled qualification is separate from caller cutover,
+remote consumption and live publication; existing domain authorization gates
+remain in force.
 
 ## NuGet Second-Slice Implementation
 
