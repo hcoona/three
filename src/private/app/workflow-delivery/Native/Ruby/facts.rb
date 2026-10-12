@@ -4,6 +4,9 @@
 require "json"
 require "rubygems"
 require "rubygems/package"
+require "rubygems/config_file"
+
+Gem.configuration = Gem::ConfigFile.new(["--norc"])
 
 def specification_facts(spec)
   raise "Missing native gem specification" unless spec
@@ -14,6 +17,8 @@ def specification_facts(spec)
     "platform" => spec.platform.to_s,
     "require_paths" => spec.require_paths,
     "files" => spec.files,
+    "extensions" => spec.extensions,
+    "metadata" => spec.metadata,
     "runtime_dependencies" => spec.runtime_dependencies.map do |dependency|
       { "name" => dependency.name, "requirement" => dependency.requirement.to_s }
     end

@@ -303,6 +303,8 @@ internal static class Program
 [JsonSerializable(typeof(NpmPreparationResult))]
 [JsonSerializable(typeof(NuGetPreparationRequest))]
 [JsonSerializable(typeof(NuGetPreparationResult))]
+[JsonSerializable(typeof(RubyPreparationRequest))]
+[JsonSerializable(typeof(RubyPreparationResult))]
 [JsonSerializable(typeof(GithubNuGetObservationResult))]
 [JsonSerializable(typeof(GithubNuGetPublicationResult))]
 [JsonSerializable(typeof(GithubNuGetConsumerResult))]

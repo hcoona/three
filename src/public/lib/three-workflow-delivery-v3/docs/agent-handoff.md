@@ -221,9 +221,13 @@ no publication or campaign continuation.
 The [concrete Release contract](./migration-strategy.md#concrete-ruby-release-integration)
 and [native assessment](./research/ruby-native-publisher.md) define the next
 implementation boundary. They establish neither caller implementation nor
-current feed/authentication qualification. Accept the contract before
-implementation or caller cutover; retain
-the existing campaign boundaries below.
+current feed/authentication qualification. The private application's
+[Ruby Release preparation component](../../../../private/app/workflow-delivery/README.md#ruby-release-preparation-component)
+implements complete native gem qualification independently of CI. Local
+component validation supplies no deployed feed, authentication, publication or
+ordinary caller qualification. Observation, publication, remote consumption and
+caller cutover retain their separate gates and the existing campaign boundaries
+below.
 
 The [Ruby normal Live evidence](./validation/ruby-normal-live-evidence.md)
 records independently accepted GitHub Packages and RubyGems.org publication,

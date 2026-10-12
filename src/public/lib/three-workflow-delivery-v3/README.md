@@ -90,6 +90,10 @@ The private application's [native Python publisher component](../../../private/a
 implements the bounded UV invocation and credential-aware output boundary.
 Controlled/local checks do not establish live publication or complete caller
 qualification.
+The private application's [Ruby Release preparation component](../../../private/app/workflow-delivery/README.md#ruby-release-preparation-component)
+implements complete declared gem qualification independently of CI. Its local
+validation establishes no live feed, authentication, publication or ordinary
+caller qualification; the concrete Ruby integration retains those boundaries.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
 that the existing runtime already satisfies the contraction requirements.

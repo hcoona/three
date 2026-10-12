@@ -6,6 +6,8 @@ namespace WorkflowDelivery.Repository;
 internal static class PythonRepositoryInputs
 {
     private const string PythonPreparationProduct = "src/public/lib/hcoona-release-smoke-python";
+    private const string RubyPreparationProduct =
+        "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby";
     private static readonly string[] Shared = [
         ".github/workflows/ci.yml", "eng/scripts/ci_scope.py",
         "eng/scripts/repository_path_patterns.py", "eng/scripts/prepare_ci_control_inputs.py",
@@ -35,6 +37,9 @@ internal static class PythonRepositoryInputs
     private static readonly string[] PythonPreparationRoots = [
         "src/private/app/workflow-delivery", "tests/private/app/workflow-delivery",
         PythonPreparationProduct, "src/public/lib/nbgv-python"];
+
+    private static readonly string[] RubyPreparationRoots = [
+        "src/private/app/workflow-delivery", "tests/private/app/workflow-delivery"];
 
     internal static PythonInputBinding[] Map(GitRevision revision,
         PythonProjectDependencies[] projects, PythonPytestTargetSet targets,
@@ -161,6 +166,8 @@ internal static class PythonRepositoryInputs
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target == "tests/eng/test_python_release_preparation_gate.py" &&
             PythonPreparationInput(path)) ||
+        (target == "tests/eng/test_ruby_release_preparation_gate.py" &&
+            RubyPreparationInput(path)) ||
         (target == "tests/eng/test_run_python_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
@@ -175,6 +182,18 @@ internal static class PythonRepositoryInputs
             return Under(PythonPreparationProduct, path[..path.LastIndexOf('/')]);
         return DotnetInput(path, PythonPreparationRoots) ||
             path is "eng/scripts/check_python_release_preparation.py" or
+                "eng/scripts/run_node_ci_group.py";
+    }
+
+    private static bool RubyPreparationInput(string path)
+    {
+        const string quality = "workflow-delivery.quality.yml";
+        if (path == quality) return true;
+        if (path.EndsWith("/" + quality, StringComparison.Ordinal))
+            return Under(RubyPreparationProduct, path[..path.LastIndexOf('/')]);
+        return DotnetInput(path, RubyPreparationRoots) ||
+            path is "eng/scripts/check_ruby_release_preparation.py" or
+                "eng/scripts/check_python_release_preparation.py" or
                 "eng/scripts/run_node_ci_group.py";
     }
 

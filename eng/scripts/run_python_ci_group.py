@@ -21,6 +21,7 @@ NATIVE_TESTS = "tests/private/app/workflow-delivery/Native/Python"
 RUBY_TESTS = "tests/private/app/workflow-delivery/Native/Ruby"
 AZURE_TESTS = "src/private/app/azureauth-credprovider/python/tests"
 PREPARATION_TESTS = "tests/eng/test_python_release_preparation_gate.py"
+RUBY_PREPARATION_TESTS = "tests/eng/test_ruby_release_preparation_gate.py"
 
 
 def executable(name: str) -> str:
@@ -151,6 +152,9 @@ def plan(root: Path, directory: Path) -> dict[str, Any]:
         native_helper=str(selected["native_helper"]).lower(),
         native_ruby=str(selected["native_ruby"]).lower(),
         native_preparation=str(selected["native_preparation"]).lower(),
+        native_ruby_preparation=str(
+            selected["native_ruby_preparation"]
+        ).lower(),
     )
     return readback
 
@@ -182,6 +186,7 @@ def auxiliary(plan_value: dict[str, Any]) -> dict[str, bool]:
         "native_ruby": RUBY_TESTS in targets,
         "azure_bundle": AZURE_TESTS in targets,
         "native_preparation": PREPARATION_TESTS in targets,
+        "native_ruby_preparation": RUBY_PREPARATION_TESTS in targets,
     }
 
 
@@ -292,7 +297,7 @@ def execute(
                 ]
             )
         )
-    if selected["azure_bundle"]:
+    if selected["azure_bundle"] or selected["native_ruby_preparation"]:
         environment.update(
             {
                 name: os.environ[name]
@@ -304,13 +309,28 @@ def execute(
                 if name in os.environ
             }
         )
-    if selected["legacy_v3"] or selected["native_preparation"]:
+    if (
+        selected["legacy_v3"]
+        or selected["native_preparation"]
+        or selected["native_ruby_preparation"]
+    ):
         prepare_mise_test_tools(
             Path(context["candidate"]["directory"]),
             directory,
             environment,
             mise_data,
             legacy=selected["legacy_v3"],
+        )
+        prepared_dotnet = node.read_json(
+            directory / "preparation-request.json"
+        )["tools"]["dotnet"]
+        environment["PATH"] = os.pathsep.join(
+            dict.fromkeys(
+                [
+                    str(Path(prepared_dotnet).parent),
+                    *environment["PATH"].split(os.pathsep),
+                ]
+            )
         )
     if selected["legacy_v3"]:
         node.run(

@@ -77,6 +77,12 @@ has controlled UV command/output coverage and a local native EOF check. These
 qualify component boundaries only; deployed publisher and ordinary caller
 qualification remain separate.
 
+The private application's [Ruby Release preparation component](../../../../private/app/workflow-delivery/README.md#ruby-release-preparation-component)
+implements the complete adopted gem preparation boundary independently of CI.
+Local component validation establishes no current feed, authentication,
+publication or ordinary caller qualification. The concrete Ruby Release
+integration and stopped campaign boundaries remain separate.
+
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration
 preflight, metadata adaptation and operation dependency projection with controlled

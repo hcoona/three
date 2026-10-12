@@ -7,14 +7,21 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class RubyNativeFactsReaderTests
 {
-    private static string NativePath(string path) => Path.GetFullPath(
-        Path.Combine("native-ruby-fixtures", path.Replace('/', Path.DirectorySeparatorChar)));
+    private static string NativePath(string path) =>
+        Path.GetFullPath(
+            Path.Combine("native-ruby-fixtures", path.Replace('/', Path.DirectorySeparatorChar))
+        );
 
-    private static JsonObject Gem() => JsonNode.Parse("""
-        {"name":"native-gem","version":"1.2.3","platform":"ruby",
-         "require_paths":["lib"],"files":["lib/native.rb"],
-         "runtime_dependencies":[{"name":"dependency","requirement":">= 1.0, < 2.0"}]}
-        """)!.AsObject();
+    private static JsonObject Gem() =>
+        JsonNode
+            .Parse(
+                """
+                {"name":"native-gem","version":"1.2.3","platform":"ruby",
+                 "require_paths":["lib"],"files":["lib/native.rb"],
+                 "runtime_dependencies":[{"name":"dependency","requirement":">= 1.0, < 2.0"}]}
+                """
+            )!
+            .AsObject();
 
     private static JsonObject Bundle(string kind = "rubygems")
     {
@@ -38,31 +45,41 @@ public sealed class RubyNativeFactsReaderTests
             ["lockfile"] = NativePath("bundle/gems.locked"),
             ["bundler_version"] = "2.7.2",
             ["locked_bundler_version"] = "2.7.2",
-            ["gemfiles"] = new JsonArray(NativePath("bundle/gems.rb"),
-                NativePath("bundle/nested.rb")),
+            ["gemfiles"] = new JsonArray(
+                NativePath("bundle/gems.rb"),
+                NativePath("bundle/nested.rb")
+            ),
             ["direct_dependencies"] = new JsonArray("native-gem"),
-            ["specifications"] = new JsonArray(specification)
+            ["specifications"] = new JsonArray(specification),
         };
     }
 
-    private static RubyBundleFacts Parse(JsonObject bundle) => RubyNativeFactsReader.ParseBundle(
-        bundle.ToJsonString(), NativePath("bundle/gems.rb"), "2.7.2");
+    private static RubyBundleFacts Parse(JsonObject bundle) =>
+        RubyNativeFactsReader.ParseBundle(
+            bundle.ToJsonString(),
+            NativePath("bundle/gems.rb"),
+            "2.7.2"
+        );
 
     [TestMethod]
     public void SourceFactsPreserveNativeMetadataWithoutInventingTestInputs()
     {
         JsonObject value = Gem();
         value["gemspec"] = NativePath("source/native.gemspec");
-        RubySourceGemFacts result = RubyNativeFactsReader.ParseSource(value.ToJsonString(),
-            NativePath("source/native.gemspec"));
+        RubySourceGemFacts result = RubyNativeFactsReader.ParseSource(
+            value.ToJsonString(),
+            NativePath("source/native.gemspec")
+        );
         Assert.AreEqual(NativePath("source/native.gemspec"), result.Gemspec);
         Assert.AreEqual("native-gem", result.Gem.Name);
         Assert.AreEqual("1.2.3", result.Gem.Version);
         Assert.AreEqual("ruby", result.Gem.Platform);
         Assert.AreEqual("lib", Assert.ContainsSingle(result.Gem.RequirePaths));
         Assert.AreEqual("lib/native.rb", Assert.ContainsSingle(result.Gem.Files));
-        Assert.AreEqual(new RubyDependency("dependency", ">= 1.0, < 2.0"),
-            Assert.ContainsSingle(result.Gem.RuntimeDependencies));
+        Assert.AreEqual(
+            new RubyDependency("dependency", ">= 1.0, < 2.0"),
+            Assert.ContainsSingle(result.Gem.RuntimeDependencies)
+        );
     }
 
     [TestMethod]
@@ -75,13 +92,17 @@ public sealed class RubyNativeFactsReaderTests
         Assert.AreEqual(kind, specification.Source.Kind);
         Assert.AreEqual(NativePath("original/source"), specification.Source.Path);
         Assert.AreEqual(NativePath("original/source/native.gemspec"), specification.Source.Gemspec);
-        Assert.AreEqual(NativePath("installed/cache/native-gem-1.2.3"),
-            specification.Source.Directory);
+        Assert.AreEqual(
+            NativePath("installed/cache/native-gem-1.2.3"),
+            specification.Source.Directory
+        );
         Assert.AreNotEqual(specification.Source.Path, specification.Source.Directory);
         Assert.AreEqual(NativePath("bundle/gems.locked"), result.Lockfile);
         Assert.AreEqual("2.7.2", result.BundlerVersion);
-        CollectionAssert.AreEqual(new[] { NativePath("bundle/gems.rb"),
-            NativePath("bundle/nested.rb") }, result.Gemfiles);
+        CollectionAssert.AreEqual(
+            new[] { NativePath("bundle/gems.rb"), NativePath("bundle/nested.rb") },
+            result.Gemfiles
+        );
         Assert.AreEqual("native-gem", Assert.ContainsSingle(result.DirectDependencies));
         Assert.AreEqual(">= 1.0, < 2.0", specification.Gem.RuntimeDependencies[0].Requirement);
     }
@@ -97,8 +118,10 @@ public sealed class RubyNativeFactsReaderTests
         Assert.IsNull(source.Path);
         Assert.IsNull(source.Gemspec);
         Assert.IsNull(source.Directory);
-        Assert.AreEqual(kind == "git" ? "git@example.invalid:repository/native.git" : null,
-            source.Uri);
+        Assert.AreEqual(
+            kind == "git" ? "git@example.invalid:repository/native.git" : null,
+            source.Uri
+        );
         Assert.AreEqual(kind == "git" ? "native-git-revision" : null, source.Revision);
     }
 
@@ -115,8 +138,10 @@ public sealed class RubyNativeFactsReaderTests
         gem["gemspec"] = NativePath("source/native.gemspec");
         gem["files"] = new JsonArray();
         gem["runtime_dependencies"] = new JsonArray();
-        RubySourceGemFacts source = RubyNativeFactsReader.ParseSource(gem.ToJsonString(),
-            NativePath("source/native.gemspec"));
+        RubySourceGemFacts source = RubyNativeFactsReader.ParseSource(
+            gem.ToJsonString(),
+            NativePath("source/native.gemspec")
+        );
         Assert.IsEmpty(source.Gem.Files);
         Assert.IsEmpty(source.Gem.RuntimeDependencies);
     }
@@ -127,14 +152,70 @@ public sealed class RubyNativeFactsReaderTests
         JsonObject value = Gem();
         value["archive"] = NativePath("outputs/native.gem");
         value["contents"] = new JsonArray("lib/", "lib/native.rb");
-        RubyArchiveFacts result = RubyNativeFactsReader.ParseArchive(value.ToJsonString(),
-            NativePath("outputs/native.gem"));
+        RubyArchiveFacts result = RubyNativeFactsReader.ParseArchive(
+            value.ToJsonString(),
+            NativePath("outputs/native.gem")
+        );
         Assert.AreEqual(NativePath("outputs/native.gem"), result.Archive);
         Assert.AreEqual("native-gem", result.Gem.Name);
         Assert.HasCount(2, result.Contents);
         Assert.AreEqual("lib/", result.Contents[0]);
         Assert.AreEqual("lib/native.rb", result.Contents[1]);
         Assert.AreEqual("lib/native.rb", Assert.ContainsSingle(result.Gem.Files));
+    }
+
+    [TestMethod]
+    public void ArchiveFactsPreserveOptionalPublicExtensionsAndRepositoryMetadata()
+    {
+        JsonObject value = Gem();
+        value["archive"] = NativePath("outputs/native.gem");
+        value["contents"] = new JsonArray("lib/native.rb");
+        value["extensions"] = new JsonArray("ext/extconf.rb");
+        value["metadata"] = new JsonObject
+        {
+            ["github_repo"] = "https://github.com/hcoona/three",
+            ["other"] = "native metadata",
+        };
+        RubyArchiveFacts result = RubyNativeFactsReader.ParseArchive(
+            value.ToJsonString(),
+            NativePath("outputs/native.gem")
+        );
+        Assert.IsNotNull(result.Extensions);
+        Assert.AreEqual("ext/extconf.rb", Assert.ContainsSingle(result.Extensions));
+        Assert.AreEqual("https://github.com/hcoona/three", result.Repository);
+        value.Remove("extensions");
+        value.Remove("metadata");
+        RubyArchiveFacts historical = RubyNativeFactsReader.ParseArchive(
+            value.ToJsonString(),
+            NativePath("outputs/native.gem")
+        );
+        Assert.IsNull(historical.Extensions);
+        Assert.IsNull(historical.Repository);
+        Assert.AreEqual(result.Gem.Name, historical.Gem.Name);
+        CollectionAssert.AreEqual(result.Contents, historical.Contents);
+    }
+
+    [TestMethod]
+    [DataRow("extensions")]
+    [DataRow("metadata")]
+    [DataRow("github_repo")]
+    public void MalformedOptionalArchiveFieldsCannotInventReleaseFacts(string field)
+    {
+        JsonObject value = Gem();
+        value["archive"] = NativePath("outputs/native.gem");
+        value["contents"] = new JsonArray("lib/native.rb");
+        if (field == "extensions")
+            value[field] = "not an array";
+        else if (field == "metadata")
+            value[field] = "not an object";
+        else
+            value["metadata"] = new JsonObject { [field] = 42 };
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            RubyNativeFactsReader.ParseArchive(
+                value.ToJsonString(),
+                NativePath("outputs/native.gem")
+            )
+        );
     }
 
     [TestMethod]
@@ -145,8 +226,10 @@ public sealed class RubyNativeFactsReaderTests
     public void SubstitutedBundleContextCannotSupplyFacts(string field)
     {
         JsonObject value = Bundle();
-        value[field] = field == "gemfiles" ? new JsonArray(NativePath("foreign/gems.rb")) :
-            JsonValue.Create(field == "gemfile" ? NativePath("foreign/gems.rb") : "2.4.20");
+        value[field] =
+            field == "gemfiles"
+                ? new JsonArray(NativePath("foreign/gems.rb"))
+                : JsonValue.Create(field == "gemfile" ? NativePath("foreign/gems.rb") : "2.4.20");
         Assert.ThrowsExactly<InvalidDataException>(() => Parse(value));
     }
 
@@ -159,15 +242,23 @@ public sealed class RubyNativeFactsReaderTests
         if (operation == "source")
         {
             value["gemspec"] = NativePath("foreign/native.gemspec");
-            Assert.ThrowsExactly<InvalidDataException>(() => RubyNativeFactsReader.ParseSource(
-                value.ToJsonString(), NativePath("source/native.gemspec")));
+            Assert.ThrowsExactly<InvalidDataException>(() =>
+                RubyNativeFactsReader.ParseSource(
+                    value.ToJsonString(),
+                    NativePath("source/native.gemspec")
+                )
+            );
         }
         else
         {
             value["archive"] = NativePath("foreign/native.gem");
             value["contents"] = new JsonArray("lib/native.rb");
-            Assert.ThrowsExactly<InvalidDataException>(() => RubyNativeFactsReader.ParseArchive(
-                value.ToJsonString(), NativePath("outputs/native.gem")));
+            Assert.ThrowsExactly<InvalidDataException>(() =>
+                RubyNativeFactsReader.ParseArchive(
+                    value.ToJsonString(),
+                    NativePath("outputs/native.gem")
+                )
+            );
         }
     }
 
@@ -184,14 +275,25 @@ public sealed class RubyNativeFactsReaderTests
         JsonObject specification = value["specifications"]![0]!.AsObject();
         switch (scenario)
         {
-            case "missing-specifications": value.Remove("specifications"); break;
-            case "missing-dependencies": specification.Remove("runtime_dependencies"); break;
-            case "wrong-array-type": value["direct_dependencies"] = 3; break;
-            case "unknown-source": specification["source"]!["kind"] = "unknown"; break;
-            case "relative-local-source": specification["source"]!["path"] = "relative"; break;
+            case "missing-specifications":
+                value.Remove("specifications");
+                break;
+            case "missing-dependencies":
+                specification.Remove("runtime_dependencies");
+                break;
+            case "wrong-array-type":
+                value["direct_dependencies"] = 3;
+                break;
+            case "unknown-source":
+                specification["source"]!["kind"] = "unknown";
+                break;
+            case "relative-local-source":
+                specification["source"]!["path"] = "relative";
+                break;
         }
         string text = scenario == "truncated" ? "{" : value.ToJsonString();
-        Assert.ThrowsExactly<InvalidDataException>(() => RubyNativeFactsReader.ParseBundle(
-            text, NativePath("bundle/gems.rb"), "2.7.2"));
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            RubyNativeFactsReader.ParseBundle(text, NativePath("bundle/gems.rb"), "2.7.2")
+        );
     }
 }

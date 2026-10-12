@@ -7,6 +7,7 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class PythonRepositoryInputsTests
 {
+    private static readonly bool[] PairedInputPresence = [true, false];
     private static readonly string[] PairedRevisions = ["before", "after"];
     private static readonly (bool Before, bool After)[] QualityPresence =
         [(true, true), (true, false), (false, true)];
@@ -128,6 +129,90 @@ public sealed class PythonRepositoryInputsTests
                 selected.Reasons.Select(reason => reason.Revision).Distinct().ToArray());
             Assert.IsTrue(selected.Reasons.All(reason =>
                 reason.Path == path && reason.Project == "pytest:" + target));
+        }
+    }
+
+    [TestMethod]
+    [DataRow("src/private/app/workflow-delivery/Release/RubyPreparation.cs")]
+    [DataRow("src/private/app/workflow-delivery/Ecosystems/RubyPackageOperations.cs")]
+    [DataRow("src/private/app/workflow-delivery/Native/Ruby/facts.rb")]
+    [DataRow("tests/private/app/workflow-delivery/Release/RubyPreparationNativeTests.cs")]
+    [DataRow("tests/private/app/workflow-delivery/CI/RubyPackageExecutionTests.cs")]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
+        "hcoona-release-smoke-ruby/hcoona-release-smoke-ruby.gemspec")]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
+        "hcoona-release-smoke-ruby/workflow-delivery.release-unit.yml")]
+    [DataRow("eng/scripts/check_ruby_release_preparation.py")]
+    [DataRow("eng/scripts/check_python_release_preparation.py")]
+    [DataRow("eng/scripts/run_node_ci_group.py")]
+    [DataRow("global.json")]
+    [DataRow("Directory.Packages.props")]
+    [DataRow("src/private/Directory.Build.props")]
+    [DataRow("tests/Directory.Build.props")]
+    public void RubyPreparationInputsSelectActualCandidateTarget(string path)
+    {
+        const string target = "tests/eng/test_ruby_release_preparation_gate.py";
+        foreach (bool inputAtBasis in PairedInputPresence)
+        {
+            PythonFactsEndpoint basis = Facts(Endpoint(["tests/unrelated.py"],
+                inputAtBasis ? [path] : [], "before"));
+            PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"],
+                inputAtBasis ? [] : [path], "after"));
+            SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+            var expected = new SelectionReason(path, inputAtBasis ? "before" : "after",
+                "pytest:" + target);
+            Assert.AreEqual(expected, Assert.ContainsSingle(paired));
+            PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+                [path], false, paired);
+            PlannedCheck selected = Assert.ContainsSingle(
+                ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+            Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
+            Assert.AreEqual(expected, Assert.ContainsSingle(selected.Reasons));
+            Assert.DoesNotContain("pytest:" + target,
+                assembly.Request.Basis.Projects.Select(project => project.Id));
+        }
+    }
+
+    [TestMethod]
+    [DataRow("eng/scripts/check_ruby_release_preparation.py")]
+    [DataRow("src/private/app/workflow-delivery/Release/RubyPreparation.cs")]
+    public void RubyPreparationInputsWithoutDeclaredTargetCreateNoOwner(string path)
+    {
+        PythonFactsEndpoint endpoint = Facts(Endpoint(["tests/unrelated.py"], [path]));
+        Assert.IsEmpty(PythonRepositoryInputs.Pair(endpoint, endpoint, [path]));
+        Assert.DoesNotContain("pytest:tests/eng/test_ruby_release_preparation_gate.py",
+            endpoint.Inputs.SelectMany(binding => binding.Owners));
+    }
+
+    [TestMethod]
+    [DataRow("workflow-delivery.quality.yml", true)]
+    [DataRow("tests/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/app/workflow-delivery/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
+        "hcoona-release-smoke-ruby/workflow-delivery.quality.yml", true)]
+    [DataRow("src/public/lib/hcoona-release-smoke-python/workflow-delivery.quality.yml", false)]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
+        "hcoona-release-smoke-ruby-other/workflow-delivery.quality.yml", false)]
+    [DataRow("eng/scripts/check_ruby_release_preparation.py.backup", false)]
+    public void RubyQualityChangesSelectOnlyNativePreparationConsumers(string path, bool consumed)
+    {
+        const string target = "tests/eng/test_ruby_release_preparation_gate.py";
+        foreach ((bool before, bool after) in QualityPresence)
+        {
+            PythonFactsEndpoint basis = Facts(Endpoint([target, "tests/unrelated.py"],
+                before ? [path] : [], "before"));
+            PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"],
+                after ? [path] : [], "after"));
+            SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+            if (!consumed) { Assert.IsEmpty(paired); continue; }
+            PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+                [path], false, paired);
+            PlannedCheck selected = Assert.ContainsSingle(
+                ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+            Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
+            CollectionAssert.AreEquivalent(PairedRevisions
+                .Where(revision => revision == "before" ? before : after).ToArray(),
+                selected.Reasons.Select(reason => reason.Revision).Distinct().ToArray());
         }
     }
 

@@ -1862,3 +1862,33 @@ component boundaries. They do not invoke UV publication, acquire credentials or
 establish deployed OIDC/index/publisher behavior. Remote consumers and ordinary
 caller integration retain their separate qualification
 under the [concrete Python contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
+
+### Ruby Release preparation component
+
+`RubyPreparation.PrepareAsync` qualifies the adopted complete gem directly from
+the selected committed release declaration and quality selection. It does not
+consume a CI plan. The caller supplies prepared native Ruby, Gem and .NET paths;
+the component installs the committed NBGV tool pin into owned state and preserves
+the selected native source/ref context. Buddy accepts repository branches,
+Official requires the selected main ref and native public-release projection,
+and dry run does not impose live ref eligibility.
+
+Shared `RubyPackageOperations` delegates build, archive interpretation and local
+installation to RubyGems. Release requires the native name, version, Ruby
+platform, dependency-free and extension-free shape, declared four-file contents,
+require path and GitHub repository metadata. An injected historical witness is
+not part of the new Release archive. The native installed specification, API and
+import origin are checked in fresh external credential-free state before the
+original gem's size and digest are bound to preparation.
+
+The result carries each required check, every reached native command outcome,
+portable native identity and the complete original gem. Failure, cancellation,
+timeout or a missing required fact stops dependent checks. Owned home,
+configuration, gem/spec/cache and temporary state exclude inherited credentials,
+Ruby import settings and `SOURCE_DATE_EPOCH`; native RubyGems retains its fixed
+default timestamp behavior. Native `--norc`/`ConfigFile` ignores user/system
+configuration values without claiming those files are never read.
+
+Preparation performs no feed observation, authentication or publication. Remote
+consumption and ordinary caller integration retain their separate gates under
+the [concrete Ruby contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-ruby-release-integration).

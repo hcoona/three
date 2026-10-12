@@ -11,7 +11,11 @@ internal sealed record RubyNativeSource(string Kind, string? Path = null,
 internal sealed record RubyBundleSpecification(RubyGemFacts Gem, RubyNativeSource Source);
 internal sealed record RubyBundleFacts(string Gemfile, string Lockfile, string BundlerVersion,
     string[] Gemfiles, string[] DirectDependencies, RubyBundleSpecification[] Specifications);
-internal sealed record RubyArchiveFacts(string Archive, RubyGemFacts Gem, string[] Contents);
+internal sealed record RubyArchiveFacts(string Archive, RubyGemFacts Gem, string[] Contents)
+{
+    internal string[]? Extensions { get; init; }
+    internal string? Repository { get; init; }
+}
 internal sealed record RubyBundleContext(string Gemfile, string Lockfile,
     string BundlerVersion, string LockedBundlerVersion);
 internal sealed record RubyVersionProjection(string Gemspec, string Raw, string Version,
@@ -26,7 +30,14 @@ internal static class RubyNativeFactsReader
 
     internal static RubyArchiveFacts ParseArchive(string text, string expectedArchive) =>
         Read<RubyArchiveFacts>(text, value => new(Bind(value, "archive", expectedArchive),
-            Gem(value), Strings(value, "contents")));
+            Gem(value), Strings(value, "contents"))
+        {
+            Extensions = value.TryGetProperty("extensions", out _) ?
+                Strings(value, "extensions") : null,
+            Repository = value.TryGetProperty("metadata", out JsonElement metadata) &&
+                metadata.TryGetProperty("github_repo", out JsonElement repository) ?
+                    Text(repository) : null,
+        });
 
     internal static RubyBundleContext ParseContext(string text, string expectedGemfile,
         string expectedBundlerVersion) => Read<RubyBundleContext>(text, value =>

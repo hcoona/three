@@ -207,6 +207,7 @@ testpaths = [
   "tests/eng/test_run_node_ci_group.py",
   "tests/eng/test_run_dotnet_ci_group.py",
   "tests/eng/test_python_release_preparation_gate.py",
+  "tests/eng/test_ruby_release_preparation_gate.py",
   "tests/eng/test_run_python_ci_group.py",
   "tests/eng/test_run_ruby_ci_group.py",
   "tests/eng/test_python_runtime.py",
