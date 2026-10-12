@@ -150,6 +150,9 @@ operating guidance, not a second normative specification.
 
 ## Ruby Smoke Design
 
+The [concrete Release contract](./migration-strategy.md#concrete-ruby-release-integration)
+selects the shared native gem operations, source routing, publisher profiles,
+credential-free remote installation and caller qualification boundary.
 The [native Release assessment](./research/ruby-native-publisher.md) records
 pinned RubyGems publisher, credential, observation and consumer interfaces for
 the contraction. It is source evidence, not a concrete caller contract or new

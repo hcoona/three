@@ -1198,6 +1198,146 @@ the final component/caller subject before delivery. These checks do not prove
 current OIDC configuration, live registry behavior or a new publication and do
 not reopen the stopped Python package or publication campaigns.
 
+### Concrete Ruby Release Integration
+
+This contract selects the existing `hcoona-release-smoke-ruby` unit under
+`tests/private/app/workflow-delivery/fixtures/products`, its declared single gem
+and adopted quality selection. GitHub Packages at
+`https://rubygems.pkg.github.com/hcoona` is Buddy; `https://rubygems.org` is
+Official. The [native assessment](./research/ruby-native-publisher.md) supplies
+the source basis. This adds no product, destination, publication authority or
+native experiment and reopens no completed campaign.
+
+Read the exact committed declaration, native gemspec and quality selection
+through existing repository readers. Support the declared dependency-free
+`ruby`-platform gem with no extensions. Another dependency/build/quality shape
+needs a concrete adapter, rather than a generic resolver or task framework.
+Buddy accepts repository branch refs; this Official caller selects
+`refs/heads/main`, with any further eligibility enforced by the native
+Environment. Dry run does not require live ref eligibility. Keep one faithful
+source/control revision and selected native ref context; missing history or
+unsupported native facts block the request. Use the existing NBGV `SemVer2` and
+maintained RubyGems version projection, without an application suffix stripper,
+publication-only version override or injected commit witness.
+
+Extract concrete build, native archive inspection and original local consumption
+from `CI/RubyPackageExecution` into `Ecosystems` inside the existing private
+application. CI keeps its plan/check adaptation; Release does not consume
+`CiPlan` or `CheckSpec`. Share the selected Ruby/RubyGems/NBGV tools, closed
+environment and native builder. Exclude inherited `SOURCE_DATE_EPOCH` for this
+fixture and use RubyGems' fixed native default; do not introduce a timestamp or
+archive engine. Native default timestamps do not promise byte identity across
+different tools, compression, file modes or source inputs.
+
+Qualification requires native name/version/platform, declared contents, no
+runtime dependencies/extensions, GitHub repository metadata, complete original
+size/digest, original local installation and a clean installed API/origin check,
+plus any adopted required tests. Retain actual reached command termination and
+failed/missing/cancelled checks. Portable native identity and original bytes bind
+the request; checkout paths and a version string alone do not. A fresh recovery
+rebuilds and qualifies its own original at the same revision. A conflicting
+same-version original remains a conflict.
+
+Observation uses a small adapter over public RubyGems APIs. Configure only the
+selected `Gem::Source` in memory through `SourceList`/`Gem.sources=`. Call native
+`Source.load_specs(:released)` and `Source.load_specs(:prerelease)` separately
+and require both to succeed; do not use convenience results that silently omit
+failed prerelease reads. Match native name/requirement/platform, fetch the native
+specification and download the original through that selected native Source.
+Require consistent native identity, owned fresh cache/download paths and actual
+original size/digest. Missing tuples after successful complete reads can be
+absent; transport/authentication/index/spec failures or contradictory facts are
+unknown. An exact original can be reused; different bytes forbid publication.
+
+Each observation uses a fresh external process/home/spec cache, a 90-second
+whole-process deadline, at most 64 selected tuples, a 256-KiB JSON answer and an
+8-MiB selected original. These are application process/result/original limits;
+RubyGems owns full inventory transfers, decompression and native request retries.
+Do not claim an underlying HTTP/inflated-index byte ceiling or replace native
+fetching to simulate one. Allow bounded read-only visibility polling only within
+the phase deadline. Retain sanitized business observations, not a replayable
+transport trust ledger.
+
+GitHub read credentials belong only to the read adapter's environment and
+in-memory owner Source URI. Use no global authorization header, credentials in
+arguments or persisted native source configuration. Native RubyGems owns its
+finite HTTPS continuation: an ordinary signed storage Location without the
+source URI's user information receives no original Basic credentials. Preserve
+the assessment's stated redirect shape and limits; add no custom one-hop
+downloader or arbitrary-origin guarantee. RubyGems.org observation is public.
+
+Only an actual publisher receives the existing destination Environment and
+write capability. Buddy uses repository `GITHUB_TOKEN` with `packages: write`,
+passed to the native command as `GEM_HOST_API_KEY` with the documented Bearer
+composition. Official uses the maintained pinned credential Action's
+trusted-publisher path with `id-token: write`, explicit RubyGems.org server and
+audience, no account credential, static key or role fallback. That Action owns
+OIDC, native masking and token exchange, including its mode-0600 native
+credential-file write. Give it fresh owned job home/state; exclude that state
+from retained artifacts and clean only owned state. Do not claim automatic key
+revocation or recreate platform authorization/MFA/scope management.
+
+Refresh observation immediately before mutation. If state became exact, omit
+the write; conflict or unknown state stops it. Invoke maintained `gem push` once
+for the explicit qualified original and selected host, under a 180-second
+whole-process deadline, closed stdin/non-TTY, native `--norc`, fresh working
+home/cache and an allowlisted environment. RubyGems owns package interpretation,
+upload, supported retry and native response handling. Do not patch private
+sign-in, OTP or scope methods. Native generic auxiliary requests remain subject
+to the documented selected token/platform profile; no account mutation is
+authorized. No application resend, compensation or rerun recovery follows a
+failure or interruption. Complete fresh observation and required consumers may
+still satisfy the request; preserve the actual command abnormality and unknown
+effects without attributing unique insertion.
+
+Suppress unsafe publisher/read diagnostics before persistence, including
+credential-bearing URIs and partial failure/cancellation output. Preserve actual
+exit, termination, duration and uncertainty. Native runner masking does not
+sanitize result files. Read adapters serialize only portable sanitized native
+answers; missing/invalid/oversized output stays unknown. Configure native
+`ConfigFile(['--norc'])` when calling public Ruby APIs: it ignores user/system
+configuration values while retaining native platform defaults, rather than
+claiming those files are never read. Own `HOME`, gem/spec/cache/temp roots and
+exclude inherited proxy, Gem/Bundler credentials, `RUBYOPT` and `RUBYLIB`.
+Load only prepared maintained tools; product code is absent from the publisher.
+
+Required remote consumption runs in a separate no-write job on both initial
+exact state and new publication. Native selected-source inventory/spec/download
+must produce a fresh remote original; a prebuilt local-original install is not
+remote routing proof. End the read-credential process, validate the actual
+remote original digest/identity/contents and dependency/extension constraints,
+then install that fetched original in a credential-free child using public
+`Gem::Installer.at` with fresh `install_dir`, `only_install_dir: true`,
+`force: false`, `ignore_dependencies: false` and no development dependencies.
+Keep native dependency/runtime/platform validation. Compare native installed
+name/version/platform and cached original digest, then require the selected API
+and import origin in a clean credential-free child outside the checkout.
+Post-install version/digest checks alone cannot justify installing unqualified
+remote code with a read token. This sequence delegates source routing,
+downloading, archive semantics and installation to RubyGems; it implements no
+second resolver. Missing routing, original or consumer results block completion.
+
+Switch the ordinary Ruby entry and actual caller together after component
+qualification. Use prepare, observe, gated publish and separate verify/result
+jobs on the supported Linux runner. Transfer complete same-revision control
+before product execution and bind immutable preparation/original transfers to
+source/ref, unit/channel/destination/mode and actual producer/run. Use the
+existing 45-day retention and physical registry/package native concurrency
+through verification. Dry run performs qualification/read/hypothetical work
+with no publication credential acquisition or `gem push`. Exact/dry-run paths
+enter no write gate. The common result separates attempted effects, actual
+command outcomes, observed state and required business satisfaction.
+
+Before implementation or caller cutover, accept this contract with independent
+engineering/OCR and record/research review. Controlled credential-free component
+tests and ordinary Linux CI must qualify native command/configuration/output
+boundaries, original build/inspection/consumption, hash-before-install routing,
+failure-after-effect, cancellation, missing transfers and complete results on
+the final subject. Run complete affected suites and repository HK/hooks/record
+checks. These checks do not establish current token/publisher configuration or
+a new live feed/publication. Historical readers and spent campaigns remain
+intact; no runtime schema compatibility alias is added.
+
 ## Behavior and Evidence Compatibility
 
 Tests move by retained behavior, not by old class or chronology-named file. Paths

@@ -104,6 +104,35 @@ exit code, duration and effect uncertainty. Runner masking alone does not
 sanitize result artifacts. Close configuration, home/cache ownership, stdin,
 process deadlines and output bounds in the concrete contract before cutover.
 
+## Native Timestamp and Installation Order
+
+The same pinned [RubyGems source][rubygems], line 150, defines
+`DEFAULT_SOURCE_DATE_EPOCH` as the fixed value `315619200`.
+`source_date_epoch_string` uses the explicit environment value or that constant.
+The [Package][package] builder selects this native epoch and uses it for gzip;
+[TarWriter][tar-writer] uses it for default entry timestamps. Native
+[Specification][specification] derives its default date from the same epoch.
+The current fixture sets no explicit date. A nearby source comment about a
+current-run value does not turn this revision's fixed default into the wall clock.
+Exclude inherited overrides and use the native behavior; do not add an
+application timestamp engine. These are source findings, not byte-identity
+proof across runtimes, compression, file modes or arbitrary gemspec inputs.
+
+Public [Installer][installer-file] `at(path, options)` builds the maintained
+package/installer and performs native checks, extraction, extension/hook
+handling and installed cache/spec registration. For the selected dependency-free
+fixture, native Source inventory/spec/download can first establish remote
+routing. Verify the actual downloaded original before a credential-free child
+installs that fetched gem with native validation intact. This is distinct from
+substituting the prebuilt expected original. Post-install checks cannot establish
+that unqualified remote code was safe to install with a read token.
+
+Public [ConfigFile][config-file] `initialize` reads configuration files before
+its `--norc` merge check. That option ignores their configured values and retains
+native platform defaults; it is not a guarantee those files are never read.
+The [concrete contract](../migration-strategy.md#concrete-ruby-release-integration)
+selects owned state and native API composition within those limits.
+
 ## Recheck and Remaining Qualification
 
 The original source responses, retrieval requests, hashes and independent source
@@ -133,3 +162,9 @@ into a generic credential, resolver or trust service.
 [spec-fetcher]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/spec_fetcher.rb
 [request]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/request.rb
 [fetcher]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/remote_fetcher.rb
+[rubygems]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems.rb
+[package]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/package.rb
+[tar-writer]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/package/tar_writer.rb
+[specification]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/specification.rb
+[installer-file]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/installer.rb
+[config-file]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/config_file.rb

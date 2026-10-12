@@ -201,10 +201,11 @@ no publication or campaign continuation.
 
 ## Ruby Delivery Entry
 
-The [native Release assessment](./research/ruby-native-publisher.md) provides
-the source basis for the next concrete Ruby contract. It establishes neither
-caller implementation nor current feed/authentication qualification. Select and
-accept the concrete contract before implementation or caller cutover; retain
+The [concrete Release contract](./migration-strategy.md#concrete-ruby-release-integration)
+and [native assessment](./research/ruby-native-publisher.md) define the next
+implementation boundary. They establish neither caller implementation nor
+current feed/authentication qualification. Accept the contract before
+implementation or caller cutover; retain
 the existing campaign boundaries below.
 
 The [Ruby normal Live evidence](./validation/ruby-normal-live-evidence.md)
