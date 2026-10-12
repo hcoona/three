@@ -502,6 +502,14 @@ The request supplies caller-bound native members, the prepared checkout, fresh
 external scratch and native tool/helper coordinates. The executor validates the
 committed release declaration and selected check contract before native effects.
 
+[`PythonPackageOperations`](Ecosystems/PythonPackageOperations.cs) supplies frozen
+tool preparation, native identity/build, original distribution inspection and both
+clean consumers inside the existing application. It consumes no CI plan, check
+or Release outcome. CI retains committed obligation validation and adapts each
+reached native command and result to its original four-check plan. Release
+preparation and caller integration remain pending under the
+[concrete contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
+
 UV prepares the existing frozen root groups with native workspace editability
 through creation of both originals and owns PEP 517 dispatch with native
 build-dependency checking. Before Git-free sdist consumption, one frozen sync
