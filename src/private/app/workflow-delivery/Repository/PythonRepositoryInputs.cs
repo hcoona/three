@@ -155,6 +155,9 @@ internal static class PythonRepositoryInputs
             path == "eng/scripts/run_ruby_ci_group.py") ||
         (target == "tests/eng/test_run_dotnet_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
+        (target == "tests/eng/test_python_release_preparation_gate.py" &&
+            path is "eng/scripts/check_python_release_preparation.py" or
+                "eng/scripts/run_node_ci_group.py" or "hk.pkl") ||
         (target == "tests/eng/test_run_python_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&

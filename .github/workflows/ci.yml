@@ -352,6 +352,15 @@ jobs:
               -- hk check --check --no-stage --no-progress --no-fail-fast
           fi
 
+      - name: Retain selected native Python preparation qualification
+        if: always() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-release-preparation
+          path: artifacts/python-release-preparation/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Reject canceled validation
         if: cancelled()
         shell: bash

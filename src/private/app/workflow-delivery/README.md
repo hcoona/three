@@ -523,8 +523,13 @@ original sdist consumption and unchanged originals. It retains actual reached
 command outcomes and complete failed/cancelled/timed-out/skipped checks. Files
 carry portable native coordinates, declared output identities, sizes and digests.
 Controlled scenarios and a native Linux local fixture exercise this component;
-they do not establish feed, OIDC, publication or hosted caller behavior. Native
-publisher, destination observation, remote consumption and ordinary caller cutover
+they do not establish feed, OIDC, publication or hosted caller behavior.
+The finite `python-release-preparation-native` HK check selects related inputs
+in ordinary Linux Source conformance. It uses the existing locked Python/UV
+declarations and native test, rejects zero/skipped results, and retains original
+TRX, preparation and distribution attachments. It is a component qualification
+route; ordinary caller qualification remains separate.
+Native publisher, destination observation, remote consumption and ordinary caller cutover
 remain pending under the [accepted contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
 
 ### Python Package Execution Component

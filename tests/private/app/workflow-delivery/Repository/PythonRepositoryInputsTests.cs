@@ -140,6 +140,11 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_run_ruby_ci_group.py", "eng/scripts/run_ruby_ci_group.py")]
     [DataRow("tests/eng/test_run_dotnet_ci_group.py", "eng/scripts/run_node_ci_group.py")]
     [DataRow("tests/eng/test_run_dotnet_ci_group.py", "eng/scripts/run_dotnet_ci_group.py")]
+    [DataRow("tests/eng/test_python_release_preparation_gate.py",
+        "eng/scripts/check_python_release_preparation.py")]
+    [DataRow("tests/eng/test_python_release_preparation_gate.py",
+        "eng/scripts/run_node_ci_group.py")]
+    [DataRow("tests/eng/test_python_release_preparation_gate.py", "hk.pkl")]
     [DataRow("tests/eng/test_run_python_ci_group.py", "eng/scripts/run_node_ci_group.py")]
     [DataRow("tests/eng/test_run_python_ci_group.py", "eng/scripts/run_dotnet_ci_group.py")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/workflow_delivery_v3_hk.py")]
@@ -160,6 +165,8 @@ public sealed class PythonRepositoryInputsTests
 
     [TestMethod]
     [DataRow("tests/eng/test_run_node_ci_group.py", "eng/scripts/run_dotnet_ci_group.py")]
+    [DataRow("tests/eng/test_python_release_preparation_gate.py",
+        "eng/scripts/check_python_release_preparation.py.backup")]
     [DataRow("tests/eng/test_run_ruby_ci_group.py", "eng/scripts/run_ruby_ci_group.py.backup")]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml.backup")]
     [DataRow("tests/private/app/workflow-delivery/Native/Python",
