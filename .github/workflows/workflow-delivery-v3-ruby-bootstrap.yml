@@ -15,7 +15,7 @@ name: Workflow Delivery v3 Ruby bootstrap
         type: string
 permissions: {}
 concurrency:
-  group: wdv3-ruby-hcoona-release-smoke-ruby-${{ inputs.destination }}
+  group: ${{ format('workflow-delivery-{0}-hcoona-release-smoke-ruby', inputs.destination == 'github-packages' && 'rubygems.pkg.github.com-hcoona' || 'rubygems.org') }}
   cancel-in-progress: false
 defaults:
   run:

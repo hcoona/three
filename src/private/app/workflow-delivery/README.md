@@ -283,8 +283,10 @@ The concrete build, native archive inspection and clean local installation now
 live in [`RubyPackageOperations`](Ecosystems/RubyPackageOperations.cs). The shared
 operations use native fact/tool values and an original archive identity, with no
 CI plan, check or Release completion object. CI retains candidate/check validation,
-prerequisites and actual command/result recording. Release preparation and caller
-cutover remain separate pending work under the accepted
+prerequisites and actual command/result recording. The implemented
+[Ruby Release preparation component](#ruby-release-preparation-component) and
+[ordinary Ruby Release caller](#ordinary-ruby-release) retain their separate
+qualification and delivery gates under the accepted
 [concrete Ruby contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-ruby-release-integration).
 
 The `ci prepare-ruby-group`, `ci plan-ruby-group` and `ci run-ruby-group`
@@ -1982,3 +1984,103 @@ Command failure is data for separate completion, never an invented upload succes
 Local controlled scenarios do not establish hosted caller qualification, deployed
 index/OIDC behavior or publication authority. The ordinary final-source Linux CI
 gate and independent evidence reconciliation remain required before delivery.
+
+### Ruby Release preparation component
+
+`RubyPreparation.PrepareAsync` qualifies the adopted complete gem directly from
+the selected committed release declaration and quality selection. It does not
+consume a CI plan. The caller supplies prepared native Ruby, Gem and .NET paths;
+the component installs the committed NBGV tool pin into owned state and preserves
+the selected native source/ref context. Buddy accepts repository branches,
+Official requires the selected main ref and native public-release projection,
+and dry run does not impose live ref eligibility.
+
+Shared `RubyPackageOperations` delegates build, archive interpretation and local
+installation to RubyGems. Release requires the native name, version, Ruby
+platform, dependency-free and extension-free shape, declared four-file contents,
+require path and GitHub repository metadata. An injected historical witness is
+not part of the new Release archive. The native installed specification, API and
+import origin are checked in fresh external credential-free state before the
+original gem's size and digest are bound to preparation.
+
+The result carries each required check, every reached native command outcome,
+portable native identity and the complete original gem. Failure, cancellation,
+timeout or a missing required fact stops dependent checks. Owned home,
+configuration, gem/spec/cache and temporary state exclude inherited credentials,
+Ruby import settings and `SOURCE_DATE_EPOCH`; native RubyGems retains its fixed
+default timestamp behavior. Native `--norc`/`ConfigFile` ignores user/system
+configuration values without claiming those files are never read.
+
+Preparation performs no feed observation, authentication or publication. Remote
+consumption and ordinary caller integration retain their separate gates under
+the [concrete Ruby contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-ruby-release-integration).
+
+### Native Ruby remote consumer component
+
+`RubyRemoteConsumer.RunAsync` requires complete qualified preparation and a
+fresh selected-source original. The shared `RubySourceReader` delegates source
+inventory, specification and original download to public RubyGems APIs. Only
+that external read process receives Buddy read credentials; Official reads are
+public. The read result retains sanitized process facts and portable original
+identity, never its credential-bearing environment.
+
+After the read process ends, the component checks the actual remote digest and
+uses shared `RubyPackageOperations.InspectReleaseAsync` to qualify its native
+identity, contents, repository metadata and dependency/extension-free shape.
+No local-original fallback or read credential enters archive inspection,
+installation or product execution. The credential-free native helper uses
+public `Gem::Installer.at` with an owned install directory, native dependency
+validation and no force/ignore-dependency override. A separate clean child
+checks the installed specification, cached original digest, API and import
+origin outside the checkout.
+
+The result carries its required remote consumer check, reached sanitized command
+outcomes and failure limits. Missing/conflicting/unknown originals, failed native
+inspection or installation, wrong API/origin, cancellation and timeouts block
+completion. A five-minute phase lifetime bounds the existing 90-second source
+read and each 90-second native inspection/install/consume process. Local and
+controlled qualification, ordinary final-source Linux CI and actual deployed
+feed qualification remain distinct; this component grants no publication or
+campaign operation. The [concrete Ruby contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-ruby-release-integration)
+retains the ordinary caller's separate delivery gate.
+
+### Ordinary Ruby Release
+
+`release prepare-ruby`, `observe-ruby`, `describe-ruby`, `publish-ruby`,
+`consume-ruby` and `complete-ruby` compose the adopted complete native gem under
+the [concrete Ruby contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-ruby-release-integration).
+Preparation qualifies the original independently of CI selection. Observation
+and the separate remote consumer use the maintained RubyGems Source APIs;
+archive inspection and installation remain native RubyGems operations.
+
+The ordinary workflow prepares complete same-revision control before product
+execution and transfers its actual producer, preparation and original by
+immutable artifact IDs. Buddy accepts branch refs; Official selects main, while
+dry runs can validate development refs. Dry and initially exact requests omit
+the write gate. Only the selected publisher job receives its existing native
+Environment and write capability; the two publisher job identities remain
+destination-specific. Official credential acquisition uses the pinned native
+trusted-publisher Action with explicit server and audience. Its temporary native
+credential file lives in owned, unretained state, cleaned after that job.
+
+The publisher refreshes state immediately before one native `gem push`. Exact
+state omits mutation; conflict or unknown state stops it. No application resend,
+mutation marker or approval mirror is added. Separate no-write verification
+fetches a fresh selected-source original, ends the read-credential process,
+qualifies bytes before installation and requires the clean installed API/origin
+check. Completion preserves the actual command outcome beside fresh business
+state. A missing required publication result retains unknown effects.
+
+The Ruby stdlib `Native/Ruby/release_caller.rb` only forms concrete JSON inputs
+and validates actual job transfers. It implements no package resolver, registry
+client or version projection. Ordinary and bootstrap entries share one physical
+registry/package concurrency key, without ref, run or mode partition, through
+final verification. Actual business transfers retain the existing 45-day
+artifact lifetime; credential state is excluded.
+
+The implementation requires complete final-subject local qualification,
+independent engineering/OCR and record/research review, ordinary Linux PR CI and
+independent hosted evidence reconciliation before delivery. These gates do not
+establish current publisher configuration, a live feed or a new publication.
+Historical bootstrap readers and completed campaigns retain their separate
+limits; no release dispatch or spent slot is reopened.

@@ -15,7 +15,12 @@ PROJECT = "tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj"
 NAMESPACE = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
 
 
-def require_native_pass(report: Path) -> None:
+def require_native_pass(
+    report: Path,
+    *,
+    test_names: tuple[str, ...] = (METHOD,),
+    ecosystem: str = "Python",
+) -> None:
     """A successful process with zero tests or a skipped test cannot qualify."""
     document = ET.parse(report).getroot()  # noqa: S314 - Owned native test output.
     counters = document.find("t:ResultSummary/t:Counters", NAMESPACE)
@@ -23,13 +28,17 @@ def require_native_pass(report: Path) -> None:
     if (
         counters is None
         or any(
-            counters.get(key) != "1" for key in ("total", "executed", "passed")
+            counters.get(key) != str(len(test_names))
+            for key in ("total", "executed", "passed")
         )
-        or len(results) != 1
-        or results[0].get("testName") != METHOD
-        or results[0].get("outcome") != "Passed"
+        or len(results) != len(test_names)
+        or sorted(result.get("testName", "") for result in results)
+        != sorted(test_names)
+        or any(result.get("outcome") != "Passed" for result in results)
     ):
-        message = "The required native Python preparation test did not pass"
+        message = (
+            f"The required native {ecosystem} preparation test did not pass"
+        )
         raise ValueError(message)
 
 

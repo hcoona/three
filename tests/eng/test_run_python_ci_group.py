@@ -680,6 +680,8 @@ def test_selected_preparation_uses_owned_mise_without_legacy_adapters(
         "legacy_v3_mise",
         "native_preparation_mise",
         "native_preparation_resource",
+        "native_ruby_preparation_mise",
+        "native_ruby_preparation_resource",
     ],
 )
 def test_failed_selected_auxiliary_cannot_dispatch_products(
@@ -697,6 +699,8 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         "legacy_v3_mise": group.V3_TESTS,
         "native_preparation_mise": group.PREPARATION_TESTS,
         "native_preparation_resource": group.PREPARATION_TESTS,
+        "native_ruby_preparation_mise": group.RUBY_PREPARATION_TESTS,
+        "native_ruby_preparation_resource": group.RUBY_PREPARATION_TESTS,
     }[kind]
     flow.state["checks"] = [check("python/pytest-v1", target)]
     group.plan(flow.root, flow.directory)
@@ -710,6 +714,7 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         "native_ruby_second": "ruby-test-tools-2.7.2",
         "legacy_v3_mise": "mise-trust",
         "native_preparation_mise": "mise-trust",
+        "native_ruby_preparation_mise": "mise-trust",
     }.get(kind)
 
     def run(root, directory, label, *args, **options):
@@ -718,7 +723,10 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         return native_run(root, directory, label, *args, **options)
 
     monkeypatch.setattr(group.node, "run", run)
-    if kind == "native_preparation_resource":
+    if kind in (
+        "native_preparation_resource",
+        "native_ruby_preparation_resource",
+    ):
         with pytest.raises(ValueError, match="prepared mise data directory"):
             group.execute(flow.root, flow.directory)
     elif kind in ("azure_bundle", "legacy_v3_pwsh", "native_ruby_runtime"):
@@ -770,3 +778,69 @@ def test_execution_retains_prepared_sdk_after_late_path_change(
         execution[2]["environment"]["HOME"]
         == (execution[2]["environment"]["DOTNET_CLI_HOME"])
     )
+
+
+@pytest.mark.parametrize("satisfied", [True, False])
+def test_ruby_only_preparation_receives_tools_without_extra_adapters_or_replan(
+    flow, tmp_path, monkeypatch, satisfied
+):
+    """Ruby-only tests receive prepared tools and the original plan."""
+    monkeypatch.setenv("DOTNET_ROOT", str(tmp_path / "runtime"))
+    monkeypatch.setenv("HK_PROFILE", "ambient")
+    selected = check("python/pytest-v1", group.RUBY_PREPARATION_TESTS)
+    flow.state.update(checks=[selected], satisfied=satisfied)
+    readback = group.plan(flow.root, flow.directory)
+    data = tmp_path / "mise"
+    data.mkdir()
+    captured = group.node.read_json(flow.directory / "preparation-request.json")
+    query_tool_count = len(flow.tool_requests)
+    outcome = group.execute(flow.root, flow.directory, data)
+    native = group.node.read_json(flow.directory / "execution-request.json")[
+        "native"
+    ]
+    environment = native["environment"]
+    assert outcome["satisfied"] is satisfied
+    assert flow.tool_requests[query_tool_count:] == ["mise"]
+    assert [row[0] for row in flow.calls] == [
+        "preparation",
+        "planning",
+        "mise-trust",
+        "execution",
+    ]
+    assert environment["MISE_DATA_DIR"] == str(data)
+    assert environment["MISE_EXEC_AUTO_INSTALL"] == "0"
+    assert environment["DOTNET_ROOT"] == str(tmp_path / "runtime")
+    assert str(Path(captured["tools"]["dotnet"]).parent) in (
+        environment["PATH"].split(os.pathsep)
+    )
+    assert "HK_PROFILE" not in environment
+    assert "WORKFLOW_DELIVERY_TEST_RUBY_GEM_HOMES" not in environment
+    assert "native_ruby_preparation=true" in flow.output.read_text()
+    assert "native_preparation=false" in flow.output.read_text()
+    assert "legacy_v3=false" in flow.output.read_text()
+    assert native["checkout"] == flow.context["candidate"]["directory"]
+    execution = flow.calls[-1]
+    assert execution[2]["environment"] == environment
+    assert group.node.read_json(Path(execution[1][-2])) == readback["plan"]
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        group.RUBY_PREPARATION_TESTS + ".backup",
+        "tests/eng",
+        "tests/eng/test_other.py",
+    ],
+)
+def test_ruby_preparation_tools_require_exact_selected_target(flow, target):
+    """Only the exact target creates a qualification duty."""
+    flow.state["checks"] = [check("python/pytest-v1", target)]
+    group.plan(flow.root, flow.directory)
+    group.execute(flow.root, flow.directory)
+    assert "native_ruby_preparation=false" in flow.output.read_text()
+    assert "mise" not in flow.tool_requests
+    assert [row[0] for row in flow.calls] == [
+        "preparation",
+        "planning",
+        "execution",
+    ]
