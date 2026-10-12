@@ -49,8 +49,7 @@ internal sealed class PythonPackageOperations(PythonPackageTools tools, string r
         CancellationToken token)
     {
         Directory.CreateDirectory(archives);
-        await execute(Uv(tools.Checkout, ["sync", "--frozen", "--only-group", "dev",
-            "--only-group", "workflow-delivery-python", "--python", tools.Interpreter]), token);
+        await PrepareToolsAsync(execute, token);
         NativeCommandResult result = await execute(Helper(python, tools.Checkout,
             ["identity", Path.Combine(tools.Checkout, directory)]), token);
         using JsonDocument identity = JsonDocument.Parse(result.Stdout);
@@ -93,6 +92,21 @@ internal sealed class PythonPackageOperations(PythonPackageTools tools, string r
             tools.Checkout, ["version-facts", Path.Combine(tools.Checkout, directory)]), token))
                 .Stdout);
 
+    internal string ToolInterpreter => python;
+
+    internal Task<NativeCommandResult> PrepareToolsAsync(
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token) => execute(Uv(tools.Checkout,
+            ["sync", "--frozen", "--only-group", "dev", "--only-group",
+                "workflow-delivery-python", "--python", tools.Interpreter]), token);
+
+    internal Task<NativeCommandResult> PrepareNoneditableToolsAsync(
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token) => execute(Uv(tools.Checkout,
+            ["sync", "--frozen", "--only-group", "dev", "--only-group",
+                "workflow-delivery-python", "--no-build-isolation", "--no-editable",
+                "--python", tools.Interpreter]), token);
+
     internal async Task ContentsAsync(PythonDistribution[] originals, string name, string version,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
@@ -119,9 +133,7 @@ internal sealed class PythonPackageOperations(PythonPackageTools tools, string r
         string install = original.Path;
         if (kind == "python-sdist")
         {
-            await execute(Uv(tools.Checkout, ["sync", "--frozen", "--only-group", "dev",
-                "--only-group", "workflow-delivery-python", "--no-build-isolation",
-                "--no-editable", "--python", tools.Interpreter]), token);
+            await PrepareNoneditableToolsAsync(execute, token);
             foreach (PythonDistribution retained in originals) RequireOriginal(retained);
             var neutral = new Dictionary<string, string?>(environment, StringComparer.Ordinal);
             foreach (System.Collections.DictionaryEntry variable in
