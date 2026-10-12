@@ -492,7 +492,7 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
                 repo.Directory,
                 ["restore", "Control.csproj", "--configfile", configFile], 30),
                 context.CancellationToken);
-            Assert.IsTrue(initialized.Succeeded, initialized.Stdout + initialized.Stderr);
+            Assert.IsTrue(initialized.Succeeded, initialized.ToString());
             await repo.SetAsync("packages.lock.json", await File.ReadAllTextAsync(
                 System.IO.Path.Combine(repo.Directory, "packages.lock.json"),
                     context.CancellationToken));
@@ -504,7 +504,7 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
                 ["restore", "Control.csproj", "--locked-mode", "--configfile", configFile,
                     "-p:ContinuousIntegrationBuild=true", "-bl:" + binlog + ".restore.binlog"], 30),
                 context.CancellationToken);
-            Assert.IsTrue(restored.Succeeded, restored.Stdout + restored.Stderr);
+            Assert.IsTrue(restored.Succeeded, restored.ToString());
             string ci = scenario == "different-operation" ? "false" : "true";
             NativeCommandResult built = await NativeProcess.ExecuteAsync(new("dotnet",
                 repo.Directory,
@@ -513,7 +513,7 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
                     "-p:ContinuousIntegrationBuild=" + ci, "-p:RestoreLockedMode=" + ci,
                     "-p:MSBuildLogVerboseTaskParameters=true", "-bl:" + binlog], 30),
                 context.CancellationToken);
-            Assert.IsTrue(built.Succeeded, built.Stdout + built.Stderr);
+            Assert.IsTrue(built.Succeeded, built.ToString());
             GitRevision revision = await new GitReader(repo.Directory).ReadAsync("HEAD",
                 context.CancellationToken);
             GitMaterialization checkout = await GitMaterialization.BindAsync(repo.Directory,
