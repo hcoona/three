@@ -1571,6 +1571,31 @@ required result. A native cancellation that prevents collection is not a success
 The eventual workflow must preserve that native conclusion; this command cannot
 observe jobs that its caller did not report.
 
+### NuGet Release Preparation Component
+
+[`NuGetPreparation`](Release/NuGetPreparation.cs) prepares the existing declared
+GitHub Packages product for Buddy and development dry runs without a CI plan.
+It reads exact committed release and quality declarations, uses the selected
+SDK and locked Release restore, then compares native GetBuildVersion, Build and
+Pack version projections. Restore lets the native project declare its frameworks;
+native cloud/ref inputs are bound to the selected source commit and ref rather
+than inherited from the caller. NBGV retains native public-release evaluation;
+its variable output stays in preparation-owned scratch.
+Subsequent queries and operations use the single supported `net10.0`/no-RID
+variant. Multiple variants, unknown quality recipes and unavailable required tests
+cannot become a smaller successful release.
+
+The shared `Ecosystems` operations receive the complete original Pack output,
+inspect native package and assembly metadata, and restore/build/invoke a fresh
+local consumer. Preparation retains every required phase's outcome, command
+termination and original file size/digest. Its consumer expectations omit physical
+checkout paths. Native NBGV caching and reproducibility remain authoritative;
+preparation maps the complete source checkout to a stable native compiler path,
+including generated sources and PDB paths. It injects neither frozen versions nor
+a witness. Controlled failures
+and isolated native preparation tests qualify this component only. No NuGet
+Release CLI, hosted caller, destination observation or publication is supplied.
+
 ### Release Unit Declaration Component
 
 [`ReleaseUnitDeclarationReader`](Repository/ReleaseUnitDeclarationReader.cs) parses
@@ -1653,3 +1678,18 @@ repository's PowerShell tool; PNPM replay tests execute no native PNPM query.
 These tests do not qualify complete native fact collectors. Each
 native integration still needs the migration plan's concrete coverage and caller
 validation before switching a workflow.
+
+### NuGet remote consumer component
+
+`DotNetRemoteConsumer` generates a native restore graph for an external exact-version
+`net10.0` consumer and invokes official NuGet `RestoreRunner`. An owned source-local
+HTTP resource supplies read credentials only to the selected origin, with bounded
+body reads and one credential-free archive redirect. Native NuGet owns resolution,
+retries and extraction; the application compares actual LockFile inputs and installed
+original bytes before native Build/GetTargetPath and marker invocation.
+
+The caller must execute this component in a separate no-write process/job with fresh
+external package, HTTP, plugin, profile, CLI and temporary directories. Product child
+commands use cleared explicit environments without the read capability. Source-local
+cache settings do not replace that process/job boundary. No workflow cutover, live-feed
+qualification or publication authorization is claimed by this component.

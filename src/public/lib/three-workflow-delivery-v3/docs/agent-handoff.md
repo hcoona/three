@@ -27,12 +27,19 @@ separate required scoped native consumer. It uses common Release completion;
 the former approval/Governance/marker record chain is no longer an ordinary
 caller. Historical acceptance helpers and other ecosystem callers remain with
 their actual consumers. No new live dispatch or publication is implied.
+The private application's [NuGet Release preparation component](../../../../private/app/workflow-delivery/README.md#nuget-release-preparation-component)
+implements the accepted concrete Buddy preparation contract independently of CI,
+using native NBGV/Build/Pack and shared original-package inspection and local
+consumption. Its isolated local qualification does not establish a NuGet Release
+caller, destination observation, publication or new live acceptance.
 The private application's [NuGet destination observation component](../../../../private/app/workflow-delivery/README.md#nuget-destination-observation)
 implements bounded service-index, package metadata and original archive reads
 using official NuGet interpretation. Controlled tests establish credential
 separation, finite reads and unknown/conflict handling; they do not qualify live
-feed behavior. Publisher, remote consumer and ordinary NuGet caller cutover
-remain separate work under the accepted concrete integration contract.
+feed behavior. The [native publisher](../../../../private/app/workflow-delivery/README.md#native-nuget-publisher-component)
+and [remote consumer](../../../../private/app/workflow-delivery/README.md#nuget-remote-consumer-component)
+have implemented component boundaries; their ordinary NuGet caller integration
+and cutover remain separate under the accepted concrete integration contract.
 Root CI owns the native Ruby group, qualified in ordinary
 [PR #1124](https://github.com/hcoona/three/pull/1124) CI. It receives the exact scope
 and complete candidate control artifact, prepares native facts once and executes
@@ -975,3 +982,12 @@ applicable documentation and repository gates but keeps the same validate-before
 - Update the handoff, v3 README, and affected concern records when phase or
   slice status changes; keep run chronology in the delivery work carrier.
 - Keep claims truthful, relevant, clear, and no more detailed than necessary.
+
+### NuGet remote consumer implementation transition
+
+The internal application's `DotNetRemoteConsumer` implements native graph generation,
+official source-local restore and installed-original comparison before build/marker
+execution under the accepted Concrete NuGet Buddy Integration contract. It requires
+a separate no-write caller with owned fresh directories. Controlled local validation
+does not establish live-feed behavior; CLI/workflow caller cutover and its existing
+ordinary Windows CI gate remain separate. Completed native/live campaigns stay closed.

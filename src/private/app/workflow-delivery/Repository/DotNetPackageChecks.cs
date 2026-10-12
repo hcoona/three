@@ -1,6 +1,4 @@
 using System.Text.Json;
-using NuGet.Packaging.Core;
-using NuGet.Versioning;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
@@ -18,17 +16,7 @@ internal static class DotNetPackageChecks
     internal const string Pack = "dotnet/nuget-artifact-v1";
     internal const string Contents = "dotnet/nuget-artifact-contents-v1";
     internal const string Consumer = "dotnet/nuget-restore-build-invoke-v1";
-    internal static readonly string[] NativeProperties =
-    [
-        "MSBuildProjectFullPath", "TargetFramework", "RuntimeIdentifier", "NETCoreSdkVersion",
-        "IsPackable", "AssemblyName", "DocumentationFile", "GenerateDocumentationFile",
-        "PackageReadmeFile", "IncludeSymbols", "IncludeSource", "PublishRepositoryUrl",
-        "RepositoryUrl", "RepositoryType", "RepositoryCommit", "PackageId", "NuGetPackageVersion",
-        "PackageVersion", "AssemblyVersion", "AssemblyFileVersion", "AssemblyInformationalVersion",
-    ];
-    private static readonly string[] RequiredText = ["AssemblyName", "DocumentationFile",
-        "PackageReadmeFile", "NETCoreSdkVersion", "PackageId", "AssemblyFileVersion",
-        "AssemblyInformationalVersion"];
+    internal static readonly string[] NativeProperties = DotNetPackageResults.NativeProperties;
 
     internal static DotNetPackageContext Resolve(ProjectFacts project, DotNetSelection selection)
     {
@@ -162,41 +150,11 @@ internal static class DotNetPackageChecks
         return (node, values);
     }
 
-    internal static void Validate(DotNetGraphNode node, Dictionary<string, string> values)
-    {
-        if (!values.TryGetValue("MSBuildProjectFullPath", out string? project) ||
-            string.IsNullOrWhiteSpace(project) || !Path.IsPathFullyQualified(project) ||
-            !Path.GetFullPath(project).Equals(
-                Path.GetFullPath(node.Identity.Project),
-                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
-                    StringComparison.Ordinal))
-            throw new InvalidDataException("Different native package project identity.");
-        var expectations = new Dictionary<string, string>(values, StringComparer.Ordinal);
-        expectations.Remove("MSBuildProjectFullPath");
-        ValidateExpectations(node, expectations);
-    }
+    internal static void Validate(DotNetGraphNode node, Dictionary<string, string> values) =>
+        DotNetPackageResults.Validate(node.Identity.Project, node.Dimension.TargetFramework,
+            node.Dimension.RuntimeIdentifier, values);
 
     private static void ValidateExpectations(DotNetGraphNode node,
-        Dictionary<string, string> values)
-    {
-        if (values.Count != NativeProperties.Length - 1 ||
-            NativeProperties.Where(name => name != "MSBuildProjectFullPath")
-                .Any(name => !values.ContainsKey(name)) ||
-            values.Any(pair => pair.Value is null) ||
-            values["TargetFramework"] != node.Dimension.TargetFramework ||
-            values["RuntimeIdentifier"] != node.Dimension.RuntimeIdentifier ||
-            !values["IsPackable"].Equals("true", StringComparison.OrdinalIgnoreCase) ||
-            values["IncludeSymbols"].Equals("true", StringComparison.OrdinalIgnoreCase) ||
-            values["IncludeSource"].Equals("true", StringComparison.OrdinalIgnoreCase) ||
-            !values["GenerateDocumentationFile"].Equals("true",
-                StringComparison.OrdinalIgnoreCase) ||
-            RequiredText.Any(name => string.IsNullOrWhiteSpace(values[name])) ||
-            !Version.TryParse(values["AssemblyVersion"], out _) ||
-            !NuGetVersion.TryParse(values["NuGetPackageVersion"], out NuGetVersion? version) ||
-            !NuGetVersion.TryParse(values["PackageVersion"], out NuGetVersion? packed) ||
-            !PackageIdentityComparer.Default.Equals(new(values["PackageId"], version),
-                new(values["PackageId"], packed)))
-            throw new InvalidDataException(
-                "Unresolved or inconsistent native package projections.");
-    }
+        Dictionary<string, string> values) => DotNetPackageResults.ValidateExpectations(
+            node.Dimension.TargetFramework, node.Dimension.RuntimeIdentifier, values);
 }

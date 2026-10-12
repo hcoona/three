@@ -69,7 +69,11 @@ still require their applicable complete qualification. The
 qualifies the pinned helper composition. Complete hosted caller qualification
 is carried by [PR #1114](https://github.com/hcoona/three/pull/1114); completed enrichment and graph campaigns
 supply no further execution allowance.
-Other quality presets, ecosystem execution cutover and Release remain pending.
+The private application's [NuGet Release preparation component](../../../private/app/workflow-delivery/README.md#nuget-release-preparation-component)
+implements complete native preparation for Buddy and development dry runs
+independently of CI. This component does not establish ordinary NuGet caller
+cutover, publication or new live acceptance. Other quality presets and remaining
+Release integrations are pending.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
 that the existing runtime already satisfies the contraction requirements.
@@ -255,6 +259,13 @@ audit or authorize dispatch. The observer shares discovery's URL validation,
 including the exact owner-root publish address, and retains the complete
 actual Windows profile for independent review. It neither admits a native
 generation nor enables Live; source availability grants no observation run.
+
+The private application's [NuGet remote consumer component](../../../private/app/workflow-delivery/README.md#nuget-remote-consumer-component)
+implements official native restore, original-byte comparison, build and marker
+invocation with a separate no-write caller boundary. Its controlled validation
+does not establish ordinary CLI/workflow cutover or new live-feed acceptance.
+The legacy coordinator and restore host below retain their existing consumers
+until the corresponding cutover and retirement.
 
 The [destination consumer component](src/three_workflow_delivery_v3/acceptance/nuget_consumer.py)
 creates a fresh, fixed consumer and SDK graph, then calls the prebuilt
