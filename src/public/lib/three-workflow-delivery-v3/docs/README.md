@@ -61,9 +61,7 @@ distinguishes native OIDC/retry and output handling from runtime qualification.
 Neither record authorizes a new publication or reopens a completed campaign.
 The private application's [Python preparation component](../../../../private/app/workflow-delivery/README.md#python-release-preparation-component)
 implements complete original wheel/sdist qualification with controlled and local
-native Linux coverage. Hosted caller and live behavior remain unqualified;
-publication, remote consumption and caller cutover are
-still pending.
+native Linux coverage. Hosted caller and live behavior remain unqualified.
 
 The private application's
 [Python public index observation component](../../../../private/app/workflow-delivery/README.md#python-public-index-observation-component)
@@ -76,6 +74,10 @@ The private application's [native Python publisher component](../../../../privat
 has controlled UV command/output coverage and a local native EOF check. These
 qualify component boundaries only; deployed publisher and ordinary caller
 qualification remain separate.
+
+The private application's [native Python remote consumer](../../../../private/app/workflow-delivery/README.md#native-python-remote-consumer-component)
+has controlled selected-index/format/hash and installed-consumption coverage.
+These qualify component boundaries, not deployed index or ordinary caller behavior.
 
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration
