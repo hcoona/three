@@ -1765,3 +1765,34 @@ commands use cleared explicit environments without the read capability. Source-l
 cache settings do not replace that process/job boundary. The ordinary NuGet caller
 above supplies the separate receiving job; this component's controlled qualification
 does not establish live-feed behavior or publication authorization.
+
+### Python public index observation component
+
+`PythonIndexObservation` consumes a completely qualified original wheel/sdist pair
+and caller-prepared `PythonIndexTools` (maintained interpreter, committed helper
+and owned empty scratch). It reads the selected public TestPyPI or PyPI Simple
+Index without credentials. The helper's `index-facts` operation uses maintained
+`packaging` for canonical names, version equality, filenames and file metadata;
+C# does not implement a Python version or dependency engine.
+
+The component distinguishes complete exact state, absent originals, exact subsets,
+conflicting metadata/bytes and unavailable facts. It accepts originals only on
+the selected HTTPS storage host, does not follow redirects, and compares actual
+size/digest with the qualified originals. One observation performs at most one
+index and two original reads, below the contract's nine-read ceiling, within the
+90-second phase and body-inclusive 30-second request limits. Index and archive
+bodies remain bounded by the
+[concrete integration contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
+
+Native facts run in an isolated Python process with no inherited environment or
+user-site/import path. Temporary index input is removed after use. Returned
+diagnostics contain bounded stage/status and sanitized termination information;
+they do not retain arbitrary URLs, index bodies or raw native diagnostics. A
+failed/cancelled/timed-out phase cannot permit writes even if earlier files were
+observed exact.
+
+Controlled HTTP/native-process tests and local maintained-packaging/isolated CLI
+tests establish these component boundaries. Ordinary final-source CI is still
+required before delivery; these tests do not establish deployed index behavior,
+publication, remote consumer or ordinary Release caller qualification. The native
+publisher, remote index consumers and caller cutover remain separate work.

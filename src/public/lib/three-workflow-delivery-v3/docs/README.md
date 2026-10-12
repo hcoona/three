@@ -60,6 +60,13 @@ caller boundary. Its [publisher source assessment](./research/python-native-publ
 distinguishes native OIDC/retry and output handling from runtime qualification.
 Neither record authorizes a new publication or reopens a completed campaign.
 
+The private application's
+[Python public index observation component](../../../../private/app/workflow-delivery/README.md#python-public-index-observation-component)
+has controlled complete-pair, exact-subset, original-byte and bounded public-read
+coverage, with maintained-packaging and isolated helper tests. These establish
+component boundaries; deployed index and ordinary Release caller qualification
+remain separate.
+
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration
 preflight, metadata adaptation and operation dependency projection with controlled

@@ -22,6 +22,7 @@ MAX_ARCHIVE = 128 * 1024 * 1024
 MAX_CONTENTS = 256 * 1024 * 1024
 MAX_METADATA = 1024 * 1024
 MAX_MEMBERS = 20000
+MAX_INDEX_FILES = 4096
 QUALITY = "python/hcoona-release-smoke-python-v1"
 
 
@@ -265,6 +266,61 @@ def consume(name: str, version: str, quality: str) -> dict:
     }
 
 
+def index_facts(path: Path, name: str, version: str) -> dict:
+    """Interpret Simple Index coordinates through maintained packaging."""
+    from packaging.specifiers import SpecifierSet  # noqa: PLC0415
+    from packaging.utils import (  # noqa: PLC0415
+        canonicalize_name,
+        parse_sdist_filename,
+        parse_wheel_filename,
+    )
+    from packaging.version import Version  # noqa: PLC0415
+
+    index = json.loads(path.read_bytes())
+    api = Version(index["meta"]["api-version"])
+    if (
+        api.major != 1
+        or api.is_prerelease
+        or not isinstance(index["files"], list)
+    ):
+        message = "Unsupported Simple Index metadata"
+        raise ValueError(message)
+    expected_name = canonicalize_name(name)
+    matches_name = canonicalize_name(index["name"]) == expected_name
+    expected_version = Version(version)
+    selected = []
+    if len(index["files"]) > MAX_INDEX_FILES:
+        message = "Simple Index inventory exceeds its bound"
+        raise ValueError(message)
+    for entry in index["files"]:
+        filename = entry["filename"]
+        identity = (
+            parse_wheel_filename(filename)
+            if filename.endswith(".whl")
+            else parse_sdist_filename(filename)
+        )
+        matches_name = matches_name and identity[0] == expected_name
+        if identity[1] != expected_version:
+            continue
+        yanked = entry.get("yanked", False)
+        if not isinstance(yanked, (bool, str)):
+            message = "Unsupported native file visibility"
+            raise TypeError(message)
+        requires_python = entry.get("requires-python")
+        if requires_python is not None:
+            SpecifierSet(requires_python)
+        selected.append(
+            {
+                "filename": filename,
+                "url": entry["url"],
+                "sha256": entry["hashes"]["sha256"],
+                "yanked": yanked is not False,
+                "size": entry.get("size"),
+            }
+        )
+    return {"matches_name": matches_name, "files": selected}
+
+
 def _dispatch() -> dict | list:
     match sys.argv[1:]:
         case ["identity", project]:
@@ -275,6 +331,8 @@ def _dispatch() -> dict | list:
             return inspect_archive(Path(path), name, version, quality)
         case ["consume", name, version, quality]:
             return consume(name, version, quality)
+        case ["index-facts", path, name, version]:
+            return index_facts(Path(path), name, version)
         case _:
             message = "Invalid package helper request"
             raise ValueError(message)
