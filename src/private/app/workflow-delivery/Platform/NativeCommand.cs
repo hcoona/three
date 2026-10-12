@@ -6,7 +6,8 @@ internal sealed record NativeCommand(
     string[] Arguments,
     int DeadlineSeconds,
     IReadOnlyDictionary<string, string?>? Environment = null,
-    bool InheritEnvironment = true
+    bool InheritEnvironment = true,
+    bool CloseStandardInput = false
 );
 
 internal enum NativeTermination
@@ -17,6 +18,7 @@ internal enum NativeTermination
     TimedOut,
     InvalidOutput,
     CleanupFailed,
+    InputFailed,
 }
 
 internal sealed record NativeCommandResult(
