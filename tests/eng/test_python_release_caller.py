@@ -335,10 +335,10 @@ def test_phase_and_tool_configs_generate_fresh_owned_inputs_without_uv(native):
 @pytest.mark.parametrize(
     ("states", "needed"),
     [
-        (["exact", "exact"], False),
-        (["absent", "exact"], True),
-        (["exact", "absent"], True),
-        (["absent", "absent"], True),
+        (["Exact", "Exact"], False),
+        (["Absent", "Exact"], True),
+        (["Exact", "Absent"], True),
+        (["Absent", "Absent"], True),
     ],
 )
 def test_state_reports_only_actual_missing_originals(native, states, needed):

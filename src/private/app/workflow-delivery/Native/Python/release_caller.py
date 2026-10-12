@@ -181,7 +181,7 @@ def _state(root: Path) -> None:
     if observation["subject"] != subject():
         message = "Observation subject mismatch"
         raise ValueError(message)
-    needed = any(item["state"] == "absent" for item in observation["files"])
+    needed = any(item["state"] == "Absent" for item in observation["files"])
     with Path(os.environ["GITHUB_OUTPUT"]).open(
         "a", encoding="utf-8"
     ) as output:
