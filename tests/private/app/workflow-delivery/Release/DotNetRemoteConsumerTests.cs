@@ -11,6 +11,9 @@ namespace WorkflowDelivery.Tests.Release;
 [TestClass]
 public sealed class DotNetRemoteConsumerTests(TestContext context)
 {
+    private static readonly string[] WindowsInstallationInputs = ["ProgramFiles",
+        "ProgramFiles(x86)"];
+
     [TestMethod]
     [Timeout(180000, CooperativeCancellation = true)]
     [DataRow(false, false, false, false, 200)]
@@ -57,8 +60,20 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
                     Assert.IsFalse(command.Environment.Values.Any(value =>
                         value?.Contains("controlled-read-capability", StringComparison.Ordinal)
                             == true));
+                    if (OperatingSystem.IsWindows())
+                        foreach (string name in WindowsInstallationInputs)
+                        {
+                            if (Environment.GetEnvironmentVariable(name) is { } expected)
+                                Assert.AreEqual(expected, command.Environment[name], name);
+                        }
                     NativeCommandResult actual = await NativeProcess.ExecuteAsync(command, token);
                     context.WriteLine(actual.Stdout + actual.Stderr);
+                    Assert.IsTrue(actual.Succeeded, JsonSerializer.Serialize(new
+                    {
+                        command.Executable, command.Arguments, command.DeadlineSeconds,
+                        actual.Termination, actual.ExitCode, actual.DurationSeconds,
+                        actual.Error, actual.Stdout, actual.Stderr,
+                    }));
                     if (wrongSource && command.Arguments.Contains(
                         "-target:GenerateRestoreGraphFile"))
                     {
@@ -80,7 +95,13 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
             }
             if (cancel)
             {
-                await entered.Task.WaitAsync(context.CancellationToken);
+                Task reached = await Task.WhenAny(entered.Task, operation)
+                    .WaitAsync(context.CancellationToken);
+                if (reached == operation)
+                {
+                    await operation;
+                    Assert.Fail("Native consumer completed before transport entry.");
+                }
                 await parent.CancelAsync();
                 await Assert.ThrowsAsync<OperationCanceledException>(() => operation);
                 Assert.IsTrue(stopped.Task.IsCompletedSuccessfully);

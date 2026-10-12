@@ -244,7 +244,8 @@ internal static class DotNetRemoteConsumer
         string http, string temp)
     {
         var values = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (string name in new[] { "PATH", "SystemRoot", "WINDIR", "PATHEXT", "DOTNET_ROOT",
+        foreach (string name in new[] { "PATH", "SystemRoot", "WINDIR", "PATHEXT", "ProgramFiles",
+            "ProgramFiles(x86)", "DOTNET_ROOT",
             "DOTNET_ROOT_X64" })
             if (Environment.GetEnvironmentVariable(name) is { } value) values[name] = value;
         string profile = Directory.CreateDirectory(Path.Combine(root, "profile")).FullName;
