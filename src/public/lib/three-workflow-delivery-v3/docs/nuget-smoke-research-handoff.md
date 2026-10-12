@@ -101,8 +101,8 @@ Keep these facts in the working context:
   governs acceptance tooling. The offline `acceptance.nuget_fixture` component
   builds and inspects original A/B archives from the same compiled inputs,
   retains diagnostics, and requires A's clean local consumer. Its local SDK
-  evidence does not establish Windows or destination behavior. The separate
-  Windows preparation entry connects the protected current request, immutable
+  evidence does not establish Windows or destination behavior. The historical
+  Windows preparation entry connected the protected current request, immutable
   helper/native setup inputs and offline pair transport. Its acceptance-purpose
   Provider/Model admission closes source/toolchain facts before packing;
   failed preparation retains partial diagnostics without completed output.
@@ -118,7 +118,7 @@ Keep these facts in the working context:
   input comparisons, POSIX process supervision and fixed cumulative capture
   allowances. It preserves original helper producer/run identities; independent
   provenance admission and actual local runtime compatibility remain required.
-  The separate one-probe Windows entry now binds its current run to the original
+  The historical one-probe Windows entry bound its current run to the original
   immutable fixture/helper lineage, inspects without publication authority and
   passes unchanged package bytes to a build-free one-shot publisher. It retains
   a durable invocation marker and safe HTTP or partial-failure evidence. Neither
@@ -137,11 +137,18 @@ Keep these facts in the working context:
   that generation below its request/byte limits. Its missing consumer/duplicate
   stages cannot be backfilled; all prior spent lifetimes stay unchanged. New
   consumer host provenance and a fresh bounded request remain separate gates.
-  The fixed-suite operator now connects the three probes,
+  The historical fixed-suite operator connected the three probes,
   all six captures and the clean consumer, retaining original run/upload bytes
   and stopping subsequent mutation on failure. It binds separate finite native
   and GitHub budgets and the prior independent admission carrier; those supplied
-  records do not authorize themselves. The [accepted Native R4 and Governance evidence](./research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
+  records do not authorize themselves. These preparation, one-probe and suite
+  campaign entries are retired; their workflow definitions are retained only in
+  the [pinned historical source links](../README.md).
+  The suite CLI rejects execution before reading inputs or creating state.
+  Ordinary current requests use the private
+  [NuGet Buddy interface](../../../../private/app/workflow-delivery/README.md#nuget-buddy-release).
+  Retirement preserves original evidence and spent limits; it does not remove
+  the ordinary manual/reusable NuGet workflows. The [accepted Native R4 and Governance evidence](./research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
   now bind the exact production generation and ready Governance with Live enabled.
   The separate [normal-Live evidence](./validation/nuget-normal-live-evidence.md)
   closes real publication, its current-run gates and fresh destination consumption.
