@@ -86,6 +86,12 @@ caller. Controlled/local checks do not establish deployed index/OIDC behavior;
 final-source ordinary Linux CI and independent reconciliation qualify delivery.
 Completed campaigns remain closed.
 
+The private application's [Ruby Release preparation component](../../../../private/app/workflow-delivery/README.md#ruby-release-preparation-component)
+implements the complete adopted gem preparation boundary independently of CI.
+Local component validation establishes no current feed, authentication,
+publication or ordinary caller qualification. The concrete Ruby Release
+integration and stopped campaign boundaries remain separate.
+
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration
 preflight, metadata adaptation and operation dependency projection with controlled
@@ -183,6 +189,14 @@ The [native Release assessment](./research/ruby-native-publisher.md) records
 pinned RubyGems publisher, credential, observation and consumer interfaces for
 the contraction. It is source evidence, not a concrete caller contract or new
 live qualification.
+
+The private application's
+[ordinary Ruby Release interface](../../../../private/app/workflow-delivery/README.md#ordinary-ruby-release)
+composes complete native preparation, selected-source observation, one gated
+native publisher and separate required remote consumption. Complete local and
+independent source qualification, ordinary final-subject Linux CI and hosted
+reconciliation remain required before delivery; implementation supplies no new
+live feed, publisher configuration or publication authorization.
 
 The owner selected the complete Ruby journey under [Issue #954](https://github.com/hcoona/three/issues/954).
 [`WD-RUBY-*`](./requirements.md#ruby-smoke-slice), the [HLD extension](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md#ruby-smoke-extension)
@@ -477,3 +491,9 @@ does not repair that bootstrap version or revive its request.
 The [Delivery Wave](../../../../../docs/delivery-wave.md) owns current work
 authorization, and the [handoff](./agent-handoff.md#starting-a-new-session)
 routes the accepted operation, configuration and remaining evidence gates.
+
+The private application's [native Ruby remote consumer](../../../../private/app/workflow-delivery/README.md#native-ruby-remote-consumer-component)
+uses selected native source routing, hash-before-install archive qualification
+and separate credential-free installed API/origin consumption. Component and
+ordinary caller delivery retain separate final-source qualification; neither
+establishes new live feed/publication behavior or reopens spent campaigns.

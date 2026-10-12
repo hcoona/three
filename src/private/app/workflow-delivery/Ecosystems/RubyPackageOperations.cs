@@ -22,8 +22,9 @@ internal sealed class RubyPackageOperations(RubyFactTools tools, string gem, str
             throw new InvalidDataException("Native gem source identity differs.");
         string archive = Path.Combine(state, "original.gem");
         await RunAsync(new(tools.Ruby, Path.Combine(checkout.Root, directory),
-            [gem, "build", Path.Combine(checkout.Root, entryPoint), "--output", archive],
-            tools.DeadlineSeconds, tools.Environment, InheritEnvironment: false), execute, token);
+            [gem, "build", "--norc", Path.Combine(checkout.Root, entryPoint), "--output", archive],
+            tools.DeadlineSeconds, tools.Environment, InheritEnvironment: false,
+            CloseStandardInput: true), execute, token);
         if (!File.Exists(archive))
             throw new InvalidDataException("Native gem build omitted its output.");
         var original = new RubyGemArchive(archive, new FileInfo(archive).Length,
@@ -54,6 +55,34 @@ internal sealed class RubyPackageOperations(RubyFactTools tools, string gem, str
 
     internal async Task ConsumeAsync(RubyGemArchive original, string version,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token) => await ConsumeAsync(original, version, false, execute, token);
+
+    internal async Task<RubyArchiveFacts> InspectReleaseAsync(RubyGemArchive original,
+        string version, Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token)
+    {
+        RequireOriginal(original);
+        RubyArchiveFacts facts = await new RubyNativeFactCollector(tools, execute)
+            .ArchiveAsync(original.Path, token);
+        string[] expected = ["LICENSE", "README.md", "lib/hcoona_release_smoke_ruby.rb",
+            "lib/hcoona_release_smoke_ruby/version.rb"];
+        if (facts.Gem.Name != "hcoona-release-smoke-ruby" || facts.Gem.Version != version ||
+            facts.Gem.Platform != "ruby" || facts.Gem.RuntimeDependencies.Length != 0 ||
+            facts.Extensions is not [] || facts.Repository != "https://github.com/hcoona/three" ||
+            !facts.Gem.RequirePaths.SequenceEqual(["lib"]) ||
+            !facts.Contents.Order(StringComparer.Ordinal).SequenceEqual(expected.Order(
+                StringComparer.Ordinal)))
+            throw new InvalidDataException("Unsupported native Ruby Release archive.");
+        RequireOriginal(original);
+        return facts;
+    }
+
+    internal Task ConsumeReleaseAsync(RubyGemArchive original, string version,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token) => ConsumeAsync(original, version, true, execute, token);
+
+    private async Task ConsumeAsync(RubyGemArchive original, string version, bool qualified,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
         RequireOriginal(original);
@@ -67,14 +96,30 @@ internal sealed class RubyPackageOperations(RubyFactTools tools, string gem, str
             ["RUBYOPT"] = null,
         };
         await RunAsync(new(tools.Ruby, consumer,
-            [gem, "install", original.Path, "--local", "--no-document"],
-            tools.DeadlineSeconds, environment, InheritEnvironment: false), execute, token);
+            [gem, "install", "--norc", original.Path, "--local", "--no-document"],
+            tools.DeadlineSeconds, environment, InheritEnvironment: false,
+            CloseStandardInput: true), execute, token);
         await RunAsync(new(tools.Ruby, consumer,
             ["-e", "require 'hcoona_release_smoke_ruby'; " +
                 "abort 'wrong installed identity' unless " +
                 "HcoonaReleaseSmokeRuby.project_id == 'hcoona-release-smoke-ruby' " +
-                "&& HcoonaReleaseSmokeRuby::VERSION == ARGV.fetch(0)", version],
-            tools.DeadlineSeconds, environment, InheritEnvironment: false), execute, token);
+                "&& HcoonaReleaseSmokeRuby::VERSION == ARGV.fetch(0); " +
+                (qualified ? "spec = Gem.loaded_specs.fetch('hcoona-release-smoke-ruby'); " +
+                    "abort 'wrong installed specification' unless " +
+                    "spec.name == 'hcoona-release-smoke-ruby' && " +
+                    "spec.version.to_s == ARGV.fetch(0) && spec.platform.to_s == 'ruby'; " +
+                    "root = File.realpath(ARGV.fetch(1)) + File::SEPARATOR; " +
+                    "abort 'installed specification leaves owned state' unless " +
+                    "File.realpath(spec.full_gem_path).start_with?(root); " +
+                    "loaded = $LOADED_FEATURES.select { |path| " +
+                    "path.end_with?('/hcoona_release_smoke_ruby.rb') || " +
+                    "path.end_with?('/hcoona_release_smoke_ruby/version.rb') }; " +
+                    "abort 'wrong installed import origin' unless loaded.length == 2 && " +
+                    "loaded.all? { |path| File.realpath(path).start_with?(" +
+                    "File.realpath(spec.full_gem_path) + File::SEPARATOR) }" : ""),
+                version, environment["GEM_HOME"]!],
+            tools.DeadlineSeconds, environment, InheritEnvironment: false,
+            CloseStandardInput: true), execute, token);
         RequireOriginal(original);
     }
 

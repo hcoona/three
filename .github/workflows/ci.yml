@@ -959,14 +959,17 @@ jobs:
         with:
           node-version: '24.21.0'
       - name: Setup selected MISE adapters
-        if: steps.plan.outputs.legacy_v3 == 'true' || steps.plan.outputs.native_preparation == 'true'
+        if: steps.plan.outputs.legacy_v3 == 'true' || steps.plan.outputs.native_preparation == 'true' || steps.plan.outputs.native_ruby_preparation == 'true'
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         env:
           MISE_DATA_DIR: ${{ runner.temp }}/python-auxiliary-mise
         with:
           version: '2026.8.10'
           experimental: true
-          install_args: ${{ steps.plan.outputs.legacy_v3 == 'true' && 'aqua:jdx/hk pkl' || 'python uv' }}
+          install_args: >-
+            ${{ steps.plan.outputs.legacy_v3 == 'true' && 'aqua:jdx/hk pkl' || '' }}
+            ${{ steps.plan.outputs.native_preparation == 'true' && 'python uv' || '' }}
+            ${{ steps.plan.outputs.native_ruby_preparation == 'true' && 'ruby dotnet' || '' }}
       - name: Setup selected Ruby adapter
         if: steps.plan.outputs.legacy_v3 == 'true' || steps.plan.outputs.native_ruby == 'true'
         uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
@@ -996,6 +999,17 @@ jobs:
         with:
           name: python-release-preparation
           path: ${{ steps.endpoints.outputs.candidate_directory }}/artifacts/python-release-preparation/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Retain selected native Ruby preparation qualification
+        if: always() && steps.plan.outputs.native_ruby_preparation == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ruby-release-preparation
+          path: |
+            ${{ steps.endpoints.outputs.candidate_directory }}/artifacts/ruby-release-preparation/
+            ${{ steps.endpoints.outputs.candidate_directory }}/tests/private/app/workflow-delivery/bin/**/ruby-release-preparation-tests1-native/
           if-no-files-found: error
           retention-days: 7
 

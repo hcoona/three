@@ -18,70 +18,7 @@ from three_workflow_delivery_v3.repository.dotnet_provider import (
 from .ruby_fixtures import repository
 
 _ROOT = Path(__file__).resolve().parents[5]
-_RECORD = _ROOT / ".github/actions/workflow-delivery-v3-ruby-record/action.yml"
 _SETUP = _ROOT / ".github/actions/workflow-delivery-v3-ruby-setup/action.yml"
-
-
-def _stage(steps, command):
-    matches = [
-        i
-        for i, step in enumerate(steps)
-        if f"ruby_cli {command} " in step.get("run", "")
-    ]
-    assert len(matches) == 1
-    return matches[0]
-
-
-def test_ruby_record_action_binds_only_exact_immutable_upload_readback():
-    """No overwrite, broad artifact search or binding before readback."""
-    action = yaml.safe_load(_RECORD.read_text())
-    steps = action["runs"]["steps"]
-    upload = next(
-        i
-        for i, step in enumerate(steps)
-        if step.get("uses", "").startswith("actions/upload-artifact@")
-    )
-    download = next(
-        i
-        for i, step in enumerate(steps)
-        if step.get("uses", "").startswith("actions/download-artifact@")
-    )
-    bind = _stage(steps, "bind")
-    assert upload < download < bind
-    for step in steps:
-        assert "if" not in step
-        assert not step.get("continue-on-error", False)
-    uploaded = steps[upload]["with"]
-    assert uploaded["archive"] is False
-    assert uploaded["overwrite"] is False
-    assert uploaded["if-no-files-found"] == "error"
-    assert uploaded["path"] == "${{ inputs.path }}"
-    downloaded = steps[download]["with"]
-    assert (
-        downloaded["artifact-ids"] == "${{ steps.upload.outputs.artifact-id }}"
-    )
-    assert downloaded["path"] == ".wdv3/readback"
-    assert downloaded["skip-decompress"] is True
-    assert downloaded["digest-mismatch"] == "error"
-    assert "name" not in downloaded
-    assert "pattern" not in downloaded
-    assert '--payload ".wdv3/readback/' in steps[bind]["run"]
-    assert steps[bind]["env"] == {
-        "RECORD_ROLE": "${{ inputs.role }}",
-        "RECORD_PATH": "${{ inputs.path }}",
-        "RECORD_ID": "${{ steps.upload.outputs.artifact-id }}",
-        "RECORD_DIGEST": "${{ steps.upload.outputs.artifact-digest }}",
-        "RECORD_URL": "${{ steps.upload.outputs.artifact-url }}",
-    }
-    assert (
-        steps[-1]["env"]["NEXT_REFERENCES"]
-        == "${{ steps.bind.outputs.references }}"
-    )
-    assert '"${GITHUB_ENV}"' in steps[-1]["run"]
-    assert (
-        action["outputs"]["references"]["value"]
-        == "${{ steps.bind.outputs.references }}"
-    )
 
 
 def test_ruby_setup_locks_control_dependencies_without_project_install():

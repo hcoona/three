@@ -96,7 +96,8 @@ def _python_adapter_condition(step: dict[str, Any]) -> str:
     if step.get("uses", "").startswith("jdx/mise-action@"):
         return (
             "steps.plan.outputs.legacy_v3 == 'true' || "
-            "steps.plan.outputs.native_preparation == 'true'"
+            "steps.plan.outputs.native_preparation == 'true' || "
+            "steps.plan.outputs.native_ruby_preparation == 'true'"
         )
     if step.get("uses", "").startswith("ruby/setup-ruby@"):
         return (
@@ -115,6 +116,22 @@ def _python_retention_step(step: dict[str, Any]) -> None:
             "${{ steps.endpoints.outputs.candidate_directory }}"
             "/artifacts/python-release-preparation/"
         )
+        assert step["with"]["if-no-files-found"] == "error"
+    elif step["with"]["name"] == "ruby-release-preparation":
+        assert step["if"] == (
+            "always() && steps.plan.outputs.native_ruby_preparation == 'true'"
+        )
+        assert step["with"]["path"].splitlines() == [
+            (
+                "${{ steps.endpoints.outputs.candidate_directory }}"
+                "/artifacts/ruby-release-preparation/"
+            ),
+            (
+                "${{ steps.endpoints.outputs.candidate_directory }}"
+                "/tests/private/app/workflow-delivery/bin/**/"
+                "ruby-release-preparation-tests1-native/"
+            ),
+        ]
         assert step["with"]["if-no-files-found"] == "error"
     else:
         assert step["if"] == "always()"
@@ -677,7 +694,11 @@ def test_python_check_has_consumed_toolchain_prerequisites(workflow):
     assert mise["with"]["experimental"] is True
     assert mise["with"]["install_args"] == (
         "${{ steps.plan.outputs.legacy_v3 == 'true' && "
-        "'aqua:jdx/hk pkl' || 'python uv' }}"
+        "'aqua:jdx/hk pkl' || '' }} "
+        "${{ steps.plan.outputs.native_preparation == 'true' && "
+        "'python uv' || '' }} "
+        "${{ steps.plan.outputs.native_ruby_preparation == 'true' && "
+        "'ruby dotnet' || '' }}"
     )
     assert (
         mise["env"]["MISE_DATA_DIR"]
