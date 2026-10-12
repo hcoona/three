@@ -49,6 +49,31 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
+    [DataRow("src/private/app/workflow-delivery/Native/Python/release_caller.py")]
+    [DataRow(".github/workflows/workflow-delivery-v3-python-smoke.yml")]
+    public void PythonReleaseCallerInputsSelectTheirDeclaredPytestTarget(string path)
+    {
+        const string target = "tests/eng/test_python_release_caller.py";
+        PythonFactsEndpoint basis = Facts(Endpoint(
+            [target, "tests/unrelated.py"], [path], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint(
+            [target, "tests/unrelated.py"], [path], "after"));
+        SelectionReason[] reasons = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, reasons);
+        PlannedCheck selected = Assert.ContainsSingle(
+            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+        Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
+        CollectionAssert.AreEquivalent(PairedRevisions,
+            selected.Reasons.Select(reason => reason.Revision).Distinct().ToArray());
+        foreach (SelectionReason reason in selected.Reasons)
+        {
+            Assert.AreEqual(path, reason.Path);
+            Assert.AreEqual("pytest:" + target, reason.Project);
+        }
+    }
+
+    [TestMethod]
     [DataRow("src/private/app/workflow-delivery/Native/Ruby/facts.rb")]
     [DataRow("tests/private/app/workflow-delivery/Native/Ruby/test_facts.py")]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +

@@ -1891,3 +1891,60 @@ Controlled command/fact scenarios qualify these boundaries; they do not execute
 live index consumption or establish deployed destination behavior. Ordinary caller
 cutover and live qualification retain their separate gates under the
 [concrete Python integration](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
+
+### Ordinary Python Release
+
+The ordinary Python CLI and `workflow-delivery-v3-python-smoke.yml` compose the
+accepted preparation, public observer, native UV publisher and remote consumers.
+The workflow selects TestPyPI Buddy or PyPI Official, defaults to dry run and
+uses four Linux jobs: complete preparation, public observation, conditional
+publication and separate required verification/result. This replaces the
+former ordinary Python CLI and per-stage record action. Historical campaign
+readers and their native setup retain their actual consumers.
+
+Build complete source/control and export the frozen root `dev` tool recipe before
+product execution. The native export omits workspace/local projects and retains
+registry hashes; receiving jobs install wheels through UV into fresh isolated
+tool environments. There is no second dependency roster or transferred venv.
+Control, preparation/originals, observation, publication and final verification
+cross only actual job boundaries, using immutable artifact IDs, platform digest
+validation, actual producer/source/ref/mode binding and 45-day retention.
+
+Dry run qualifies the pair and describes supported missing writes. An initially
+exact live pair requires both remote consumers but no publisher. Only the
+actual publisher receives the existing destination Environment and OIDC write
+capability; it executes transferred control and tools without product builds.
+Native workflow concurrency serializes the selected physical registry/package
+through required verification. These settings do not establish current native
+Environment or trusted-publisher registration eligibility.
+
+The publisher refreshes the complete state and can only remove initially
+reviewed missing writes. Wheel precedes sdist. Acknowledged native success and
+exact intermediate readback are required before another write; abnormality,
+mask-forwarding failure, cancellation or unsafe state stops later writes.
+Separate no-write verification runs after handled publication failures and
+requires both exact-bound format consumers plus complete public readback.
+Business satisfaction preserves every returned invocation's actual outcome;
+missing publication data after initial absence leaves effects unknown.
+
+The same typed CLI is available to local callers:
+
+```text
+release prepare-python <request.json>
+release prepare-python-index-tools <tool-request.json>
+release observe-python <preparation.json> <original-directory> <index-tools.json>
+release describe-python <preparation.json> <observation.json>
+release publish-python <preparation.json> <original-directory> <initial-observation.json> <index-tools.json> <publisher-tools.json>
+release consume-python <preparation.json> <original-directory> <python-wheel|python-sdist> <package-tools.json>
+release complete-python <preparation.json> <initial-observation.json> <final-observation.json> \
+  <wheel-consumer.json|-> <sdist-consumer.json|-> <publication.json|->
+```
+
+Inputs use the source-generated typed contracts; duplicate/unknown fields and
+missing required values are rejected. Original directories and native tool paths
+are absolute; all components retain their own fresh external-state requirements.
+CLI stdout carries JSON results, while publisher masking controls use stderr.
+Command failure is data for separate completion, never an invented upload success.
+Local controlled scenarios do not establish hosted caller qualification, deployed
+index/OIDC behavior or publication authority. The ordinary final-source Linux CI
+gate and independent evidence reconciliation remain required before delivery.

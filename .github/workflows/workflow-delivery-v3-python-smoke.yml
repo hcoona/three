@@ -1,543 +1,314 @@
-name: Workflow Delivery v3 Python smoke
+name: Workflow Delivery v3 Python Release
 'on':
   workflow_dispatch:
     inputs:
       registry:
-        description: Separately authorized destination with protected ready admission.
+        description: Selected Python destination
         type: choice
         required: true
         options:
           - testpypi
           - pypi
+      dry-run:
+        description: Qualify and describe without publication
+        type: boolean
+        default: true
 permissions: {}
 concurrency:
-  group: ${{ format('wdv3-python-project-{0}', inputs.registry) }}
+  group: ${{ format('workflow-delivery-{0}-hcoona-release-smoke-python', inputs.registry == 'testpypi' && 'test.pypi.org' || 'pypi.org') }}
   cancel-in-progress: false
 defaults:
   run:
     shell: bash
 env:
-  WDV3_PURPOSE: live-release
-  WDV3_REGISTRY: ${{ inputs.registry }}
+  DESTINATION: ${{ inputs.registry }}
+  DRY_RUN: ${{ inputs.dry-run }}
 jobs:
-  request-python:
+  prepare:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     permissions:
       contents: read
-      actions: read
     steps:
-      - name: Check out exact target without credentials
+      - name: Check out exact source without credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/workflow-delivery-v3-python-setup
-      - name: request Python request
-        id: request
-        run:
-          python -m three_workflow_delivery_v3.python_cli request --purpose "${WDV3_PURPOSE}" --output .wdv3/request.json
-          --registry "${WDV3_REGISTRY}"
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-      - name: Persist and read back request
-        uses: ./.github/actions/workflow-delivery-v3-python-record
+      - name: Prepare runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
-          role: request
-          path: .wdv3/request.json
-      - name: Persist and read back intent
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: intent
-          path: .wdv3/intent.json
-        if: github.event_name == 'workflow_dispatch'
-      - name: Persist and read back governance
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: governance
-          path: .wdv3/governance.json
-        if: github.event_name == 'workflow_dispatch'
-      - name: Expose explicit current-DAG edges
-        id: edges
+          version: 2026.8.10
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected runtimes
+        run: |
+          set -Eeuo pipefail
+          mise install --yes dotnet@10.0.401 python@3.14.3 uv@0.12.24
+          printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)" >> "$GITHUB_ENV"
+          printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)" >> "$GITHUB_ENV"
+          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+        working-directory: ${{ runner.temp }}
+      - name: Build complete control and frozen tool recipe before product execution
+        run: |
+          set -Eeuo pipefail
+          mise exec --locked dotnet -- dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj -p:RestoreLockedMode=true -o "$RUNNER_TEMP/control"
+          cp src/private/app/workflow-delivery/Native/Python/{packages.py,release_caller.py} "$RUNNER_TEMP/control/"
+          "$UV_EXECUTABLE" --no-config export --frozen --only-group dev --no-emit-workspace --no-emit-local --no-annotate --no-header --format requirements.txt > "$RUNNER_TEMP/control/index-requirements.txt"
+          export MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" request
+      - name: Retain actual control results
+        id: control
         if: always()
-        run: python -m three_workflow_delivery_v3.python_cli export --purpose "${WDV3_PURPOSE}"
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: python-control-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/control
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+      - name: Qualify complete selected original pair
+        run: |
+          set -Eeuo pipefail
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python "$RUNNER_TEMP/prepared/request.json" > "$RUNNER_TEMP/prepared/preparation.json"
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" originals
+      - name: Retain actual prepared results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: python-prepared-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/prepared
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
     outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    env:
-      WDV3_REFERENCES: '{}'
-  discover-python:
+      control-id: ${{ steps.control.outputs.artifact-id }}
+      preparation-id: ${{ steps.retain.outputs.artifact-id }}
+  observe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
-      - name: Check out exact target without credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - &id001
+        name: Download control by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/workflow-delivery-v3-python-setup
-      - name: Download only explicit predecessor artifact IDs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          artifact-ids: ${{ needs.request-python.outputs.artifact-ids }}
-          path: .wdv3
-          merge-multiple: true
-          skip-decompress: true
+          artifact-ids: ${{ needs.prepare.outputs.control-id }}
+          path: ${{ runner.temp }}/control
           digest-mismatch: error
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+      - &id002
+        name: Download prepared by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          dotnet-version: 10.0.401
-      - name: Restore pinned NBGV
-        run: dotnet tool restore
-      - name: provider Python provider
-        id: provider
-        run: python -m three_workflow_delivery_v3.python_cli provider --purpose "${WDV3_PURPOSE}" --output .wdv3/provider.json
-      - name: Persist and read back provider
-        uses: ./.github/actions/workflow-delivery-v3-python-record
+          artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
+          path: ${{ runner.temp }}/prepared
+          digest-mismatch: error
+      - name: Prepare runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
-          role: provider
-          path: .wdv3/provider.json
-      - name: Expose explicit current-DAG edges
-        id: edges
+          version: 2026.8.10
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected runtimes
+        run: |
+          set -Eeuo pipefail
+          mise install --yes dotnet@10.0.401 python@3.14.3 uv@0.12.24
+          printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)" >> "$GITHUB_ENV"
+          printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)" >> "$GITHUB_ENV"
+          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+        working-directory: ${{ runner.temp }}
+      - name: Validate actual transferred request and producer
+        run: |
+          set -Eeuo pipefail
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" validate control prepared
+      - name: Prepare locked registry-only index tools
+        run: |
+          set -Eeuo pipefail
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" tool-request
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
+      - name: Observe public destination and qualified originals
+        run: |
+          set -Eeuo pipefail
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" phase observation
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" index-config initial-observation-scratch
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/index-tools.json" > "$RUNNER_TEMP/observation/observation.json"
+      - name: Expose required writes and describe dry run
+        run: |
+          set -Eeuo pipefail
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" state
+          if [ "$DRY_RUN" = true ]; then
+            mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/observation/dry-run.json"
+            cat "$RUNNER_TEMP/observation/dry-run.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
+        id: state
+      - name: Retain actual observation results
+        id: retain
         if: always()
-        run: python -m three_workflow_delivery_v3.python_cli export --purpose "${WDV3_PURPOSE}"
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: python-observation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/observation
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    needs: prepare
     outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs: request-python
-    env:
-      WDV3_REFERENCES: ${{ needs.request-python.outputs.references }}
-  compile-python:
+      write-needed: ${{ steps.state.outputs.write-needed }}
+      observation-id: ${{ steps.retain.outputs.artifact-id }}
+  publish:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
-    steps:
-      - name: Check out exact target without credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/workflow-delivery-v3-python-setup
-      - name: Download only explicit predecessor artifact IDs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          artifact-ids: ${{ needs.discover-python.outputs.artifact-ids }}
-          path: .wdv3
-          merge-multiple: true
-          skip-decompress: true
-          digest-mismatch: error
-      - name: compile Python model
-        id: compile
-        run: python -m three_workflow_delivery_v3.python_cli compile --purpose "${WDV3_PURPOSE}" --output .wdv3/model.json
-      - name: Persist and read back model
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: model
-          path: .wdv3/model.json
-      - name: Expose explicit current-DAG edges
-        id: edges
-        if: always()
-        run: python -m three_workflow_delivery_v3.python_cli export --purpose "${WDV3_PURPOSE}"
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs: discover-python
-    env:
-      WDV3_REFERENCES: ${{ needs.discover-python.outputs.references }}
-  plan-python-release:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - name: Check out exact target without credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/workflow-delivery-v3-python-setup
-      - name: Download only explicit predecessor artifact IDs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          artifact-ids: ${{ needs.compile-python.outputs.artifact-ids }}
-          path: .wdv3
-          merge-multiple: true
-          skip-decompress: true
-          digest-mismatch: error
-      - name: plan Python qualification
-        id: plan
-        run: python -m three_workflow_delivery_v3.python_cli plan --purpose "${WDV3_PURPOSE}" --output .wdv3/qualification.json
-      - name: Persist and read back qualification
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: qualification
-          path: .wdv3/qualification.json
-      - name: Expose explicit current-DAG edges
-        id: edges
-        if: always()
-        run: python -m three_workflow_delivery_v3.python_cli export --purpose "${WDV3_PURPOSE}"
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs: compile-python
-    env:
-      WDV3_REFERENCES: ${{ needs.compile-python.outputs.references }}
-    if: github.event_name == 'workflow_dispatch'
-  build-python:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - name: Check out exact target without credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/workflow-delivery-v3-python-setup
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          artifact-ids: ${{ needs.plan-python-release.outputs.artifact-ids }}
-          path: .wdv3
-          merge-multiple: true
-          skip-decompress: true
-          digest-mismatch: error
-      - name: build Python build-report
-        id: build
-        run: python -m three_workflow_delivery_v3.python_cli build --purpose "${WDV3_PURPOSE}" --output .wdv3/build-report.json
-      - name: Persist and read back wheel
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: wheel
-          path: ${{ steps.build.outputs.wheel-path }}
-      - name: Persist and read back sdist
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: sdist
-          path: ${{ steps.build.outputs.sdist-path }}
-      - name: Persist and read back build-report
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: build-report
-          path: .wdv3/build-report.json
-      - name: Expose explicit current-DAG edges
-        id: edges
-        if: always()
-        run: python -m three_workflow_delivery_v3.python_cli export --purpose "${WDV3_PURPOSE}"
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs:
-      - plan-python-release
-    env:
-      WDV3_REFERENCES: ${{ needs.plan-python-release.outputs.references }}
-    if: "!cancelled() && needs.plan-python-release.result == 'success'"
-  qualify-python:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - name: Check out exact target without credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/workflow-delivery-v3-python-setup
-      - name: Download only explicit predecessor artifact IDs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          artifact-ids: ${{ needs.build-python.outputs.references && needs.build-python.outputs.artifact-ids && needs.build-python.outputs.artifact-ids || needs.plan-python-release.outputs.artifact-ids }}
-          path: .wdv3
-          merge-multiple: true
-          skip-decompress: true
-          digest-mismatch: error
-      - name: artifacts Python artifacts
-        id: artifacts
-        run: python -m three_workflow_delivery_v3.python_cli artifacts --purpose "${WDV3_PURPOSE}" --output .wdv3/artifacts.json
-        if: needs.build-python.result == 'success'
-        continue-on-error: true
-      - name: Persist and read back artifacts
-        id: artifact-records
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        if: steps.artifacts.outcome == 'success'
-        continue-on-error: true
-        with:
-          role: artifacts
-          path: .wdv3/artifacts.json
-      - name: quality Python quality
-        id: quality
-        run: python -m three_workflow_delivery_v3.python_cli quality --purpose "${WDV3_PURPOSE}" --output .wdv3/quality.json
-        if: steps.artifact-records.outcome == 'success'
-        continue-on-error: true
-      - name: Persist and read back quality
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        if: steps.quality.outcome == 'success'
-        continue-on-error: true
-        with:
-          role: quality
-          path: .wdv3/quality.json
-      - name: decision Python decision
-        id: decision
-        run: python -m three_workflow_delivery_v3.python_cli decision --purpose "${WDV3_PURPOSE}" --output .wdv3/decision.json
-        continue-on-error: true
-      - name: Persist and read back decision
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: decision
-          path: .wdv3/decision.json
-      - name: Require passed qualification
-        env:
-          DECISION: ${{ steps.decision.outputs.qualification-result }}
-        run: test "${DECISION}" = passed
-      - name: Expose explicit current-DAG edges
-        id: edges
-        if: always()
-        run: python -m three_workflow_delivery_v3.python_cli export --purpose "${WDV3_PURPOSE}"
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-    needs:
-      - build-python
-      - plan-python-release
-    if: always() && needs.plan-python-release.result == 'success'
-    env:
-      WDV3_REFERENCES: ${{ needs.build-python.outputs.references && needs.build-python.outputs.artifact-ids && needs.build-python.outputs.references || needs.plan-python-release.outputs.references }}
-  prepare-python-publication:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      actions: read
-      deployments: read
-    steps:
-      - name: Check out exact target without credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/workflow-delivery-v3-python-setup
-      - name: Download only explicit predecessor artifact IDs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          artifact-ids: ${{ needs.qualify-python.outputs.artifact-ids }}
-          path: .wdv3
-          merge-multiple: true
-          skip-decompress: true
-          digest-mismatch: error
-      - name: observe Python observation
-        id: observe
-        run: python -m three_workflow_delivery_v3.python_cli observe --purpose "${WDV3_PURPOSE}" --output .wdv3/observation.json
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-      - name: Persist and read back observation
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: observation
-          path: .wdv3/observation.json
-      - name: prepare Python publication
-        id: prepare
-        run: python -m three_workflow_delivery_v3.python_cli prepare --purpose "${WDV3_PURPOSE}" --output .wdv3/publication.json
-      - name: Persist and read back publication
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: publication
-          path: .wdv3/publication.json
-      - name: summary Python summary
-        id: summary
-        run: python -m three_workflow_delivery_v3.python_cli summary --purpose "${WDV3_PURPOSE}" --output .wdv3/summary.json
-        if: steps.prepare.outputs.action-required == 'true'
-      - name: Persist and read back summary
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: summary
-          path: .wdv3/summary.json
-        if: steps.prepare.outputs.action-required == 'true'
-      - name: bundle Python bundle
-        id: bundle
-        run: python -m three_workflow_delivery_v3.python_cli bundle --purpose "${WDV3_PURPOSE}" --output .wdv3/bundle.json
-        if: steps.prepare.outputs.action-required == 'true'
-      - name: Persist and read back bundle
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: bundle
-          path: .wdv3/bundle.json
-        if: steps.prepare.outputs.action-required == 'true'
-      - name: Expose explicit current-DAG edges
-        id: edges
-        if: always()
-        run: python -m three_workflow_delivery_v3.python_cli export --purpose "${WDV3_PURPOSE}"
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-      action-required: ${{ steps.prepare.outputs.action-required }}
-      environment: ${{ steps.prepare.outputs.environment }}
-    needs: qualify-python
-    env:
-      WDV3_REFERENCES: ${{ needs.qualify-python.outputs.references }}
-    if: "!cancelled() && github.event_name == 'workflow_dispatch' && needs.qualify-python.result == 'success'"
-  publish-python:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      actions: read
-      deployments: read
       id-token: write
     steps:
-      - name: Check out exact target without credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - *id001
+      - *id002
+      - name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/workflow-delivery-v3-python-setup
-      - name: Download only explicit predecessor artifact IDs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          artifact-ids: ${{ needs.prepare-python-publication.outputs.artifact-ids }}
-          path: .wdv3
-          merge-multiple: true
-          skip-decompress: true
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
           digest-mismatch: error
-      - name: authorize Python authorization
-        id: authorize
-        run: python -m three_workflow_delivery_v3.python_cli authorize --purpose "${WDV3_PURPOSE}" --output .wdv3/authorization.json
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          WDV3_APPROVAL_ENVIRONMENT_MARKER: ${{ vars.WDV3_APPROVAL_ENVIRONMENT_MARKER }}
-      - name: Persist and read back authorization
-        uses: ./.github/actions/workflow-delivery-v3-python-record
+      - name: Prepare runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
-          role: authorization
-          path: .wdv3/authorization.json
-      - name: token Python token
-        id: token
-        run: python -m three_workflow_delivery_v3.python_cli token --purpose "${WDV3_PURPOSE}" --output .wdv3/token.json
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-      - name: marker Python marker
-        id: marker
-        run: python -m three_workflow_delivery_v3.python_cli marker --purpose "${WDV3_PURPOSE}" --output .wdv3/marker.json
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-      - name: Persist and read back marker
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: marker
-          path: .wdv3/marker.json
-      - name: execute Python result
-        id: execute
-        run: python -m three_workflow_delivery_v3.python_cli execute --purpose "${WDV3_PURPOSE}" --output .wdv3/result.json
-      - name: Persist and read back result
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: result
-          path: .wdv3/result.json
-      - name: Expose scalar terminal evidence
-        id: terminal
+          version: 2026.8.10
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected runtimes
+        run: |
+          set -Eeuo pipefail
+          mise install --yes dotnet@10.0.401 python@3.14.3 uv@0.12.24
+          printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)" >> "$GITHUB_ENV"
+          printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)" >> "$GITHUB_ENV"
+          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+        working-directory: ${{ runner.temp }}
+      - name: Validate actual transferred request and producer
+        run: |
+          set -Eeuo pipefail
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" validate control prepared observation
+      - name: Prepare locked registry-only index tools
+        run: |
+          set -Eeuo pipefail
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" tool-request
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
+      - name: Refresh complete state and invoke native UV for remaining originals
+        run: |
+          set -Eeuo pipefail
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" phase publication
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" index-config publication-observation-scratch
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" publisher-config
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/index-tools.json" "$RUNNER_TEMP/publisher-tools.json" > "$RUNNER_TEMP/publication/publication.json"
+      - name: Retain actual publication results
+        id: retain
         if: always()
-        run: python -m three_workflow_delivery_v3.python_cli terminal --purpose "${WDV3_PURPOSE}"
-      - name: Expose explicit current-DAG edges
-        id: edges
-        if: always()
-        run: python -m three_workflow_delivery_v3.python_cli export --purpose "${WDV3_PURPOSE}"
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
-      terminal-reference: ${{ steps.terminal.outputs.terminal-reference }}
-      publication-step-outcome: ${{ steps.execute.outcome }}
-    needs: prepare-python-publication
-    env:
-      WDV3_REFERENCES: ${{ needs.prepare-python-publication.outputs.references }}
-    if:
-      "!cancelled() && github.event_name == 'workflow_dispatch' && needs.prepare-python-publication.result == 'success' && needs.prepare-python-publication.outputs.action-required ==
-      'true'"
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: python-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publication
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    needs:
+      - prepare
+      - observe
+    if: inputs.dry-run == false && needs.observe.outputs.write-needed == 'true'
     environment:
-      name: ${{ needs.prepare-python-publication.outputs.environment }}
-  finalize-attempt:
+      name: ${{ inputs.registry == 'testpypi' && 'workflow-delivery-v3-python-testpypi' || 'workflow-delivery-v3-python-pypi' }}
+    outputs:
+      publication-id: ${{ steps.retain.outputs.artifact-id }}
+  verify-result:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
-      - name: Check out exact target without credentials
+      - *id001
+      - *id002
+      - name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - name: Download publication by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.publish.outputs.publication-id }}
+          path: ${{ runner.temp }}/publication
+          digest-mismatch: error
+        if: needs.publish.outputs.publication-id != ''
+      - name: Check out exact source without credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/workflow-delivery-v3-python-setup
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      - name: Prepare runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
-          artifact-ids:
-            ${{ needs.publish-python.outputs.artifact-ids || needs.prepare-python-publication.outputs.artifact-ids
-            || needs.qualify-python.outputs.artifact-ids }}
-          path: .wdv3
-          merge-multiple: true
-          skip-decompress: true
-          digest-mismatch: error
-      - name: exact-proof Python exact-proof
-        id: exact-proof
-        run: python -m three_workflow_delivery_v3.python_cli exact-proof --purpose "${WDV3_PURPOSE}" --output .wdv3/exact-proof.json
-        continue-on-error: true
-        if: needs.prepare-python-publication.outputs.action-required == 'false' && needs.publish-python.result ==
-          'skipped'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-      - name: Persist and read back exact-proof
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        continue-on-error: true
-        with:
-          role: exact-proof
-          path: .wdv3/exact-proof.json
-        if: needs.prepare-python-publication.outputs.action-required == 'false' && needs.publish-python.result ==
-          'skipped' && steps.exact-proof.outcome == 'success'
-      - name: finalize Python outcome
-        id: finalize
-        run: |-
-          python -m three_workflow_delivery_v3.python_cli finalize --purpose "${WDV3_PURPOSE}" --output .wdv3/outcome.json \
-            --publisher-conclusion "${PUBLISHER_CONCLUSION}" \
-            --publication-step-outcome "${PUBLICATION_STEP_OUTCOME}" \
-            --terminal-reference "${TERMINAL_REFERENCE}" \
-            --observation-conclusion "${OBSERVATION_CONCLUSION}"
-        continue-on-error: true
-      - name: Persist and read back outcome
-        uses: ./.github/actions/workflow-delivery-v3-python-record
-        with:
-          role: outcome
-          path: .wdv3/outcome.json
-      - name: Require authoritative successful outcome
-        env:
-          FINALIZER_OUTCOME: ${{ steps.finalize.outcome }}
-        run: test "${FINALIZER_OUTCOME}" = success
-      - name: Expose explicit current-DAG edges
-        id: edges
+          version: 2026.8.10
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected runtimes
+        run: |
+          set -Eeuo pipefail
+          mise install --yes dotnet@10.0.401 python@3.14.3 uv@0.12.24
+          printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)" >> "$GITHUB_ENV"
+          printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)" >> "$GITHUB_ENV"
+          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+        working-directory: ${{ runner.temp }}
+      - name: Validate actual transferred request and available publication producer
+        run: |
+          set -Eeuo pipefail
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" validate control prepared observation
+          if [ -d "$RUNNER_TEMP/publication" ]; then "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" validate publication; fi
+      - name: Prepare locked registry-only index tools
+        run: |
+          set -Eeuo pipefail
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" tool-request
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
+      - name: Verify both required remote formats and complete final public state
+        run: |
+          set -Eeuo pipefail
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" phase verification
+          mise exec dotnet@10.0.401 -- dotnet tool restore
+          for kind in python-wheel python-sdist; do
+            "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" consumer-config "$kind"
+            status=0
+            mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release consume-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$kind" "$RUNNER_TEMP/$kind-tools.json" > "$RUNNER_TEMP/verification/$kind.json" || status=$?
+            if [ "$status" -gt 1 ]; then exit "$status"; fi
+          done
+          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" index-config final-observation-scratch
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/index-tools.json" > "$RUNNER_TEMP/verification/final.json" || true
+          publication=-
+          if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$RUNNER_TEMP/verification/python-wheel.json" "$RUNNER_TEMP/verification/python-sdist.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
+      - name: Show actual available business result
+        run: |
+          set -Eeuo pipefail
+          if [ -s "$RUNNER_TEMP/verification/outcome.json" ]; then
+            cat "$RUNNER_TEMP/verification/outcome.json" >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '%s\n' 'Required Python completion result is unavailable.' >> "$GITHUB_STEP_SUMMARY"
+          fi
         if: always()
-        run: python -m three_workflow_delivery_v3.python_cli export --purpose "${WDV3_PURPOSE}"
-    outputs:
-      references: ${{ steps.edges.outputs.references }}
-      artifact-ids: ${{ steps.edges.outputs.artifact-ids }}
+      - name: Retain actual verification results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: python-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verification
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
     needs:
-      - qualify-python
-      - prepare-python-publication
-      - publish-python
-    if: always() && github.event_name == 'workflow_dispatch' && needs.qualify-python.result == 'success'
-    env:
-      WDV3_REFERENCES:
-        ${{ needs.publish-python.outputs.references || needs.prepare-python-publication.outputs.references
-        || needs.qualify-python.outputs.references }}
-      PUBLISHER_CONCLUSION: ${{ needs.publish-python.result }}
-      PUBLICATION_STEP_OUTCOME: ${{ needs.publish-python.outputs.publication-step-outcome }}
-      TERMINAL_REFERENCE: ${{ needs.publish-python.outputs.terminal-reference }}
-      OBSERVATION_CONCLUSION: ${{ needs.prepare-python-publication.result }}
+      - prepare
+      - observe
+      - publish
+    if: always() && !cancelled() && inputs.dry-run == false && needs.prepare.result == 'success' && needs.observe.result == 'success'

@@ -79,6 +79,13 @@ The private application's [native Python remote consumer](../../../../private/ap
 has controlled selected-index/format/hash and installed-consumption coverage.
 These qualify component boundaries, not deployed index or ordinary caller behavior.
 
+The [ordinary Python Release interface](../../../../private/app/workflow-delivery/README.md#ordinary-python-release)
+composes complete preparation, public observation, conditional native publication
+and separate required format consumers/result in the current CLI and four-job
+caller. Controlled/local checks do not establish deployed index/OIDC behavior;
+final-source ordinary Linux CI and independent reconciliation qualify delivery.
+Completed campaigns remain closed.
+
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration
 preflight, metadata adaptation and operation dependency projection with controlled
