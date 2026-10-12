@@ -150,6 +150,11 @@ operating guidance, not a second normative specification.
 
 ## Ruby Smoke Design
 
+The [native Release assessment](./research/ruby-native-publisher.md) records
+pinned RubyGems publisher, credential, observation and consumer interfaces for
+the contraction. It is source evidence, not a concrete caller contract or new
+live qualification.
+
 The owner selected the complete Ruby journey under [Issue #954](https://github.com/hcoona/three/issues/954).
 [`WD-RUBY-*`](./requirements.md#ruby-smoke-slice), the [HLD extension](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md#ruby-smoke-extension)
 and [Ruby LLD](./hcoona-release-smoke-ruby-lld.md) define the minimal integration.

@@ -201,6 +201,12 @@ no publication or campaign continuation.
 
 ## Ruby Delivery Entry
 
+The [native Release assessment](./research/ruby-native-publisher.md) provides
+the source basis for the next concrete Ruby contract. It establishes neither
+caller implementation nor current feed/authentication qualification. Select and
+accept the concrete contract before implementation or caller cutover; retain
+the existing campaign boundaries below.
+
 The [Ruby normal Live evidence](./validation/ruby-normal-live-evidence.md)
 records independently accepted GitHub Packages and RubyGems.org publication,
 exact original-byte/witness readback, clean remote consumers and durable
