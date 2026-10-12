@@ -1223,23 +1223,203 @@ def test_scope_retains_other_jobs_without_python_selection(path, jobs):
 @pytest.mark.parametrize(
     ("path", "selected"),
     [
-        ("src/public/lib/nbgv-python/src/nbgv_python/cli.py", True),
+        ("src/private/app/workflow-delivery/Release/NuGetPreparation.cs", True),
         (
-            "src/public/lib/three-workflow-delivery-v3/tests/adapters/test_dotnet.py",
+            (
+                "tests/private/app/workflow-delivery/Release/"
+                "NuGetPreparationNativeTests.cs"
+            ),
             True,
         ),
+        (
+            "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs",
+            True,
+        ),
+        (
+            (
+                "src/public/lib/hcoona-release-smoke-github-packages/"
+                "packages.lock.json"
+            ),
+            True,
+        ),
+        (
+            (
+                "src/public/lib/hcoona-release-smoke-github-packages/"
+                "workflow-delivery.release-unit.yml"
+            ),
+            True,
+        ),
+        (
+            (
+                "tests/private/app/workflow-delivery/fixtures/"
+                "dotnet-remote-consumer/Consumer.csproj"
+            ),
+            True,
+        ),
+        ("src/private/Directory.Build.targets", True),
+        ("global.json", True),
         ("Directory.Packages.props", True),
+        ("stylecop.json", True),
+        (".gitattributes", True),
+        ("src/.gitattributes", True),
+        ("src/public/.gitattributes", True),
+        ("src/public/lib/.gitattributes", True),
+        ("src/private/app/.gitattributes", True),
+        ("tests/.gitattributes", True),
+        ("eng/scripts/ci_scope.py", True),
+        (".github/workflows/ci.yml", True),
+        ("src/public/lib/nbgv-python/src/nbgv_python/cli.py", False),
+        (
+            "src/public/lib/three-workflow-delivery-v3/tests/adapters/test_dotnet.py",
+            False,
+        ),
+        ("pyproject.toml", False),
+        ("uv.lock", False),
+        (
+            (
+                "src/public/lib/hcoona-release-smoke-python/src/"
+                "hcoona_release_smoke_python/__init__.py"
+            ),
+            False,
+        ),
         ("src/private/app/git-commit-heatmap/README.md", False),
+        ("src/private/app/git-commit-heatmap/.gitattributes", False),
+        ("src/unused/stylecop.json", False),
+        (
+            "src/private/app/workflow-delivery-v3-dotnet-provider/Program.cs",
+            False,
+        ),
         ("docs/README.md", False),
     ],
 )
 def test_nuget_reproducibility_has_its_own_retained_consumer(path, selected):
-    """Managed recovery validation no longer masquerades as Python execution."""
+    """Native scenarios follow their actual managed and product consumers."""
     result = scope.select(ROOT, (path,), base="HEAD")
     assert result["nuget_reproducibility"] is selected
     assert scope.select(ROOT, (), base="HEAD", full=True)[
         "nuget_reproducibility"
     ]
+
+
+def test_nuget_reproducibility_preserves_added_moved_and_deleted_inputs(
+    comparison,
+):
+    """Each actual endpoint transition retains the native validation owner."""
+    root, _, before = comparison
+    original = (
+        root / "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs"
+    )
+    moved = (
+        root
+        / "tests/private/app/workflow-delivery/fixtures/products/nuget/Smoke.cs"
+    )
+    original.parent.mkdir(parents=True)
+    original.write_text("public static class Smoke {}\n")
+    for operation in ("add", "move", "delete"):
+        if operation == "move":
+            moved.parent.mkdir(parents=True)
+            original.rename(moved)
+        elif operation == "delete":
+            moved.unlink()
+        _git(root, "add", "-A")
+        _git(root, "commit", "-qm", operation + " native product input")
+        candidate = _git(root, "rev-parse", "HEAD")
+        paths = _git(
+            root, "diff", "--name-only", "--no-renames", before, candidate
+        ).splitlines()
+        assert scope.select(root, tuple(paths), base=before)[
+            "nuget_reproducibility"
+        ]
+        before = candidate
+
+
+@pytest.mark.parametrize("path", ["stylecop.json", ".gitattributes"])
+def test_nuget_reproducibility_preserves_changed_and_deleted_shared_inputs(
+    comparison, path
+):
+    """Both endpoints retain actual analyzer and Git materialization inputs."""
+    root, _, before = comparison
+    shared = root / path
+    for operation in ("add", "change", "delete"):
+        if operation == "delete":
+            shared.unlink()
+        else:
+            shared.write_text(operation + " shared native input\n")
+        _git(root, "add", "-A")
+        _git(root, "commit", "-qm", operation + " shared native input")
+        candidate = _git(root, "rev-parse", "HEAD")
+        paths = _git(
+            root, "diff", "--name-only", before, candidate
+        ).splitlines()
+        assert paths == [path]
+        assert scope.select(root, tuple(paths), base=before)[
+            "nuget_reproducibility"
+        ]
+        before = candidate
+
+
+@pytest.mark.parametrize("endpoint", ["basis", "candidate"])
+def test_nuget_reproducibility_uses_native_control_resource_inputs(endpoint):
+    """Resources outside owner roots retain native endpoint identity."""
+    path = "eng/native-resource.json"
+    receipt = _control_response("HEAD", "HEAD")
+    receipt[endpoint]["inputs"] = [path]
+    assert scope.select(ROOT, (path,), base="HEAD", control_inputs=receipt)[
+        "nuget_reproducibility"
+    ]
+    assert not scope.select(ROOT, (path,), base="HEAD")["nuget_reproducibility"]
+
+
+def test_nuget_reproducibility_selects_native_windows_evidence():
+    """The Windows caller retains actual managed results and originals."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    job = workflow["jobs"]["nuget-reproducibility"]
+    assert job["runs-on"].startswith("windows-")
+    assert job["steps"][0]["env"]["APPLICABLE"] == (
+        "${{ needs.scope.outputs.nuget_reproducibility }}"
+    )
+    checkout = next(
+        step
+        for step in job["steps"]
+        if step.get("uses", "").startswith("actions/checkout@")
+    )
+    assert checkout["with"]["fetch-depth"] == 0
+    assert checkout["with"]["persist-credentials"] is False
+    execute = next(
+        step for step in job["steps"] if "dotnet test" in step.get("run", "")
+    )
+    assert execute["shell"] == "pwsh"
+    assert scope.CONTROL_PROJECT in execute["run"]
+    assert "--filter 'TestCategory=NuGetNativeScenarios'" in execute["run"]
+    assert "--minimum-expected-tests 7" in execute["run"]
+    assert "--report-trx" in execute["run"]
+    assert (
+        '--results-directory "$env:WDV3_NUGET_REPRO_EVIDENCE"' in execute["run"]
+    )
+    assert "native-scenarios.binlog" in execute["run"]
+    assert "$LASTEXITCODE -ne 0" in execute["run"]
+    assert "$reports.Count -ne 1" in execute["run"]
+    for counter in ("passed", "failed", "notExecuted", "total", "executed"):
+        assert "$counts." + counter in execute["run"]
+    assert not any(
+        step.get("uses", "").startswith(
+            ("actions/setup-python@", "astral-sh/setup-uv@")
+        )
+        for step in job["steps"]
+    )
+    upload = next(
+        step
+        for step in job["steps"]
+        if step.get("uses", "").startswith("actions/upload-artifact@")
+    )
+    assert upload["if"] == "always() && steps.scope.outputs.run == 'true'"
+    assert upload["with"]["name"] == "nuget-reproducibility-windows"
+    assert upload["with"]["if-no-files-found"] == "error"
+    assert upload["with"]["path"] == "artifacts/nuget-reproducibility"
+    assert upload["with"]["retention-days"] == 30
+    assert job["env"]["WDV3_NUGET_REPRO_EVIDENCE"] == (
+        "${{ github.workspace }}/artifacts/nuget-reproducibility"
+    )
 
 
 def test_scope_does_not_parse_or_select_python_configuration(comparison):

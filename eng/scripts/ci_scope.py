@@ -40,6 +40,11 @@ ALL_INPUTS = {
 CONTROL_PROJECT = (
     "tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj"
 )
+NUGET_SCENARIO_ROOTS = {
+    "src/private/app/workflow-delivery",
+    str(PurePosixPath(CONTROL_PROJECT).parent),
+    "src/public/lib/hcoona-release-smoke-github-packages",
+}
 PYTHON_INPUTS = {
     "pyproject.toml",
     "uv.lock",
@@ -53,6 +58,7 @@ PYTHON_INPUTS = {
 }
 DOTNET_INPUTS = {
     ".editorconfig",
+    ".gitattributes",
     "global.json",
     "NuGet.Config",
     "nuget.config",
@@ -98,6 +104,7 @@ def _under(path: str, directory: str) -> bool:
 def _dotnet_input(path: str, roots: set[str]) -> bool:
     inherited = PurePosixPath(path).name in {
         ".editorconfig",
+        ".gitattributes",
         "Directory.Build.props",
         "Directory.Build.targets",
         "Directory.Packages.props",
@@ -253,14 +260,10 @@ def select(
         "scopes": {job: bool(why) for job, why in reasons.items()},
         "nuget_reproducibility": full
         or any(
-            path in ALL_INPUTS | PYTHON_INPUTS | DOTNET_INPUTS
-            or _v3_input(path)
-            or (
-                _under(path, V3)
-                and not _under(path, V3 + "/docs")
-                and path != V3 + "/README.md"
-            )
-            or _under(path, "src/public/lib/nbgv-python")
+            path in ALL_INPUTS
+            or path == "stylecop.json"
+            or _dotnet_input(path, NUGET_SCENARIO_ROOTS)
+            or bool(_resource_reasons(path, control_inputs))
             for path in paths
         ),
         "reasons": {job: sorted(why) for job, why in reasons.items()},

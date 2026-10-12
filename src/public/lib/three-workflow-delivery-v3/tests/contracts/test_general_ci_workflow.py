@@ -1026,43 +1026,6 @@ def test_required_validate_rejects_missing_or_failed_consumers(
             assert "Required validation did not complete" in result.stderr
 
 
-def test_nuget_reproducibility_selects_native_windows_evidence(workflow):
-    """Required Windows validation covers native bytes and Attempt recovery."""
-    job = workflow["jobs"]["nuget-reproducibility"]
-    assert job["runs-on"].startswith("windows-")
-    assert job["steps"][0]["env"]["APPLICABLE"] == (
-        "${{ needs.scope.outputs.nuget_reproducibility }}"
-    )
-    checkout = _action(job, "actions/checkout")
-    assert checkout["with"]["fetch-depth"] == 0
-    assert checkout["with"]["persist-credentials"] is False
-    execute = next(
-        step for step in job["steps"] if "pytest" in step.get("run", "")
-    )
-    assert execute["shell"] == "pwsh"
-    for path in (
-        "tests/adapters/test_dotnet.py",
-        "tests/release/test_nuget_native_recovery.py",
-    ):
-        assert path in execute["run"]
-    for selector in (
-        "reproduc",
-        "target_timestamp",
-        "negative_controls",
-        "fresh_nuget_attempt",
-    ):
-        assert selector in execute["run"]
-    assert "--basetemp" in execute["run"]
-    assert "--junitxml" in execute["run"]
-    upload = _action(job, "actions/upload-artifact")
-    assert upload["if"] == "always() && steps.scope.outputs.run == 'true'"
-    assert upload["with"]["if-no-files-found"] == "error"
-    assert upload["with"]["path"] == "artifacts/nuget-reproducibility"
-    assert job["env"]["WDV3_NUGET_REPRO_EVIDENCE"] == (
-        "${{ github.workspace }}/artifacts/nuget-reproducibility"
-    )
-
-
 def _cancelable_dotnet_step(step):
     """Keep optional diagnostics separate from required result retention."""
     if step["name"] == "Retain NuGet authority diagnostics":

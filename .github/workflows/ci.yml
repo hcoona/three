@@ -422,6 +422,10 @@ jobs:
           PLAN_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
           COMPARISON_BASIS: ${{ needs.scope.outputs.base }}
           TESTED_CANDIDATE: ${{ needs.scope.outputs.candidate }}
+          TESTINGPLATFORM_DIAGNOSTIC: "1"
+          TESTINGPLATFORM_DIAGNOSTIC_VERBOSITY: Trace
+          TESTINGPLATFORM_DIAGNOSTIC_SYNCHRONOUS_WRITE: "1"
+          TESTINGPLATFORM_DIAGNOSTIC_OUTPUT_DIRECTORY: ${{ runner.temp }}/dotnet-execution/mtp-diagnostics
         run: |
           python eng/scripts/run_dotnet_ci_group.py execute --transfer "$RUNNER_TEMP/dotnet-plan-transfer" \
             --directory "$RUNNER_TEMP/dotnet-execution" --artifact-metadata "$RUNNER_TEMP/dotnet-plan-artifact.json" \
@@ -831,29 +835,34 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-      - name: Setup Python
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: actions/setup-python@v7
-        with:
-          python-version-file: .python-version
-      - name: Install uv
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          version-file: .config/uv/uv.toml
-      - name: Restore .NET tools
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        run: dotnet tool restore
-      - name: Verify original archives and fresh-Attempt recovery
+      - name: Prepare pinned native product dependencies
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: pwsh
         run: |
-          uv run --frozen --package three-workflow-delivery-v3 pytest `
-            src/public/lib/three-workflow-delivery-v3/tests/adapters/test_dotnet.py `
-            src/public/lib/three-workflow-delivery-v3/tests/release/test_nuget_native_recovery.py `
-            -k 'reproduc or target_timestamp or negative_controls or fresh_nuget_attempt' `
-            --basetemp "$env:RUNNER_TEMP/nuget-repro-pytest" `
-            --junitxml "$env:WDV3_NUGET_REPRO_EVIDENCE/junit.xml"
+          New-Item -ItemType Directory -Force -Path $env:WDV3_NUGET_REPRO_EVIDENCE | Out-Null
+          dotnet restore src/public/lib/hcoona-release-smoke-github-packages/hcoona-release-smoke-github-packages.csproj `
+            -p:RestoreLockedMode=true `
+            "-bl:$env:WDV3_NUGET_REPRO_EVIDENCE/product-restore.binlog"
+          exit $LASTEXITCODE
+      - name: Verify native originals, sensitivity and fresh recovery
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        shell: pwsh
+        run: |
+          dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj `
+            -p:RestoreLockedMode=true --filter 'TestCategory=NuGetNativeScenarios' `
+            --minimum-expected-tests 7 `
+            --report-trx --results-directory "$env:WDV3_NUGET_REPRO_EVIDENCE" `
+            "-bl:$env:WDV3_NUGET_REPRO_EVIDENCE/native-scenarios.binlog"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $reports = @(Get-ChildItem $env:WDV3_NUGET_REPRO_EVIDENCE -Filter *.trx -Recurse)
+          if ($reports.Count -ne 1) { throw 'Expected one native scenario TRX report.' }
+          [xml]$report = Get-Content -Raw $reports[0].FullName
+          $counts = $report.TestRun.ResultSummary.Counters
+          if ([int]$counts.total -ne 7 -or [int]$counts.executed -ne 7 -or
+              [int]$counts.passed -ne 7 -or [int]$counts.failed -ne 0 -or
+              [int]$counts.notExecuted -ne 0) {
+            throw 'The seven native scenarios must all execute and pass.'
+          }
       - name: Retain original archives and native evidence
         if: always() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
