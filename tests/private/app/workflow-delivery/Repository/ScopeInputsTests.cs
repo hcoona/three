@@ -10,6 +10,54 @@ public sealed class ScopeInputsTests
 {
     private const string Unrelated = "docs/guide.md";
     private const string Catalog = "docs/governance/record-families.yaml";
+    private const string Codeowners = ".github/CODEOWNERS";
+
+    [TestMethod]
+    [DataRow(true, true)]
+    [DataRow(false, true)]
+    [DataRow(true, false)]
+    public void PlatformRoutingKeepsEmptyNativeWork(bool basisPresent, bool candidatePresent)
+    {
+        Scenario scenario = PlatformScenario(basisPresent, candidatePresent);
+        PlanRequest request = scenario.Read().Bind(scenario.Basis, scenario.Candidate);
+        CiPlan plan = ImpactPlanner.Plan(request);
+
+        Assert.IsEmpty(plan.Checks);
+        CollectionAssert.AreEqual(new[] { Codeowners }, request.Basis.UnaffectedPaths);
+        CollectionAssert.AreEqual(new[] { Codeowners }, request.Candidate.UnaffectedPaths);
+        Assert.AreEqual(NodeScenario.Basis, plan.Comparison);
+        Assert.AreEqual(NodeScenario.Candidate, plan.Candidate);
+    }
+
+    [TestMethod]
+    [DataRow("basis")]
+    [DataRow("candidate")]
+    public void PlatformRoutingCannotBorrowTheOtherPresentEndpoint(string endpoint)
+    {
+        Scenario scenario = PlatformScenario(true, true);
+        scenario.Row(endpoint)["reasons"] = new JsonArray();
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            scenario.Read().Bind(scenario.Basis, scenario.Candidate));
+        Assert.Contains(Codeowners, error.Message);
+    }
+
+    [TestMethod]
+    public void PlatformRoutingCannotSuppressNativeConsumption()
+    {
+        Scenario scenario = PlatformScenario(true, true);
+        RepositoryFacts basis = scenario.Basis with
+        { SharedInputs = [.. scenario.Basis.SharedInputs, new(Codeowners, ["src/a"])] };
+
+        PlanRequest request = scenario.Read().Bind(basis, scenario.Candidate);
+        CiPlan plan = ImpactPlanner.Plan(request);
+
+        Assert.IsEmpty(request.Basis.UnaffectedPaths);
+        Assert.HasCount(2, plan.Checks);
+        foreach (PlannedCheck check in plan.Checks)
+            Assert.AreEqual(new SelectionReason(Codeowners, NodeScenario.Basis, "src/a"),
+                Assert.ContainsSingle(check.Reasons));
+    }
 
     [TestMethod]
     public void OwnedUnrelatedChangesRemainKnownWithoutSelectingWork()
@@ -234,6 +282,35 @@ public sealed class ScopeInputsTests
             };
 
         Assert.ThrowsExactly<InvalidDataException>(() => scenario.Read());
+    }
+
+    private static Scenario PlatformScenario(bool basisPresent, bool candidatePresent)
+    {
+        var scenario = new Scenario(Codeowners);
+        foreach ((string endpoint, bool present) in new[]
+        { ("basis", basisPresent), ("candidate", candidatePresent) })
+        {
+            if (present)
+            {
+                GitRevision revision = endpoint == "basis" ? scenario.Native.Basis :
+                    scenario.Native.Candidate;
+                revision = revision with
+                { Entries = [.. revision.Entries, NodeScenario.File(Codeowners)] };
+                scenario.Native = endpoint == "basis" ? scenario.Native with { Basis = revision } :
+                    scenario.Native with { Candidate = revision };
+            }
+            JsonObject row = scenario.Row(endpoint);
+            row["present"] = present;
+            row["mode"] = present ? "100644" : null;
+            row["reasons"] = present ? new JsonArray(new JsonObject
+            {
+                ["owner"] = "github",
+                ["target"] = Codeowners,
+                ["rule"] = "native-codeowners-routing",
+                ["sources"] = new JsonArray(Codeowners),
+            }) : new JsonArray();
+        }
+        return scenario;
     }
 
     private sealed class Scenario

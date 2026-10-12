@@ -134,7 +134,37 @@ internal static class PythonRepositoryInputs
         }
     }
 
+    // Delete this finite old-basis association after the retirement is accepted.
+    private static bool RetiringInput(string path) => path is
+        ".github/actions/workflow-delivery-v3-python-setup/action.yml" or
+        ".github/actions/workflow-delivery-v3-ruby-operation-record/action.yml" or
+        ".github/actions/workflow-delivery-v3-ruby-setup/action.yml" or
+        ".github/workflow-delivery/bootstrap/python-pypi-request.json" or
+        ".github/workflow-delivery/bootstrap/python-request.json" or
+        ".github/workflow-delivery/configuration/hcoona-release-smoke-ruby-github-packages.json" or
+        ".github/workflow-delivery/configuration/hcoona-release-smoke-ruby-rubygems.json" or
+        ".github/workflow-delivery/governance/hcoona-release-smoke-github-packages.json" or
+        ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json" or
+        ".github/workflow-delivery/governance/hcoona-release-smoke-python-pypi.json" or
+        ".github/workflow-delivery/governance/hcoona-release-smoke-python-testpypi.json" or
+        ".github/workflow-delivery/governance/hcoona-release-smoke-ruby-github-packages.json" or
+        ".github/workflow-delivery/governance/hcoona-release-smoke-ruby-rubygems.json" or
+        ".github/workflow-delivery/native/python-requests.json" or
+        ".github/workflow-delivery/requests/hcoona-release-smoke-ruby.json" or
+        "eng/workflow-delivery/v3/policies/hcoona-release-smoke-github-packages.yml" or
+        "eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml" or
+        "eng/workflow-delivery/v3/policies/hcoona-release-smoke-python.yml" or
+        "eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml" or
+        "eng/workflow-delivery/v3/python-build-constraints.txt" or
+        "eng/scripts/workflow_delivery_v3_native_npm.mjs" or
+        "eng/scripts/workflow_delivery_v3_static_reference_node.mjs" or
+        "hk.pkl";
+
     private static bool Special(string target, string path) =>
+        (target == "src/public/lib/three-workflow-delivery-v3/tests" && RetiringInput(path)) ||
+        (target == "tests/eng/test_python_runtime.py" &&
+            path is "renovate.json" or
+                ".github/actions/workflow-delivery-v3-python-setup/action.yml") ||
         (target == "tests/private/app/workflow-delivery/Native/Ruby" &&
             (Under(path, "src/private/app/workflow-delivery/Native/Ruby") ||
              Under(path, "tests/private/app/workflow-delivery/fixtures/products/" +

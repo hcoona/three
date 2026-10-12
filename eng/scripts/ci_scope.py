@@ -512,7 +512,225 @@ def record_control_owners(
     return reasons
 
 
-def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit endpoint facts.
+def _retiring_python_consumers(path: str) -> tuple[str, ...]:
+    """Keep exact old readers until retirement removes the comparison basis."""
+    return {
+        ".github/actions/workflow-delivery-v3-python-setup/action.yml": (
+            ".github/workflows/workflow-delivery-v3-bootstrap-python.yml",
+            "tests/eng/test_python_runtime.py",
+        ),
+        (
+            ".github/actions/workflow-delivery-v3-ruby-operation-record/"
+            "action.yml"
+        ): (".github/workflows/workflow-delivery-v3-ruby-bootstrap.yml",),
+        ".github/actions/workflow-delivery-v3-ruby-setup/action.yml": (
+            ".github/workflows/workflow-delivery-v3-ruby-bootstrap.yml",
+        ),
+        ".github/workflow-delivery/bootstrap/python-pypi-request.json": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/acceptance/"
+                "python_bootstrap_contract.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/acceptance/"
+                "test_python_bootstrap_contract.py"
+            ),
+        ),
+        ".github/workflow-delivery/bootstrap/python-request.json": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/acceptance/"
+                "python_bootstrap_contract.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/acceptance/"
+                "test_python_bootstrap_contract.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/configuration/"
+            "hcoona-release-smoke-ruby-github-packages.json"
+        ): (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/ruby_controls.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/repository/"
+                "test_ruby_control_version.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/configuration/"
+            "hcoona-release-smoke-ruby-rubygems.json"
+        ): (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/ruby_controls.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/repository/"
+                "test_ruby_control_version.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/governance/"
+            "hcoona-release-smoke-github-packages.json"
+        ): (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/descriptors.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/compiler.py"
+            ),
+        ),
+        ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/descriptors.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/compiler.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/governance/"
+            "hcoona-release-smoke-python-pypi.json"
+        ): (
+            (
+                "eng/workflow-delivery/v3/policies/"
+                "hcoona-release-smoke-python.yml"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/release/python_governance.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/governance/"
+            "hcoona-release-smoke-python-testpypi.json"
+        ): (
+            (
+                "eng/workflow-delivery/v3/policies/"
+                "hcoona-release-smoke-python.yml"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/release/python_governance.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/governance/"
+            "hcoona-release-smoke-ruby-github-packages.json"
+        ): (
+            ("eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml"),
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/release/ruby_governance.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/governance/"
+            "hcoona-release-smoke-ruby-rubygems.json"
+        ): (
+            ("eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml"),
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/release/ruby_governance.py"
+            ),
+        ),
+        ".github/workflow-delivery/native/python-requests.json": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/acceptance/python_native_contract.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/acceptance/"
+                "test_python_bootstrap_workflow.py"
+            ),
+        ),
+        ".github/workflow-delivery/requests/hcoona-release-smoke-ruby.json": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/ruby_controls.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/repository/"
+                "test_ruby_control_version.py"
+            ),
+        ),
+        (
+            "eng/workflow-delivery/v3/policies/"
+            "hcoona-release-smoke-github-packages.yml"
+        ): (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/catalogs.py"
+            ),
+        ),
+        "eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/catalogs.py"
+            ),
+        ),
+        "eng/workflow-delivery/v3/policies/hcoona-release-smoke-python.yml": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/catalogs.py"
+            ),
+        ),
+        "eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/catalogs.py"
+            ),
+        ),
+        "eng/workflow-delivery/v3/python-build-constraints.txt": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/python_provider.py"
+            ),
+            "eng/scripts/sync_python_build_backend.py",
+        ),
+        "eng/scripts/workflow_delivery_v3_native_npm.mjs": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/acceptance/npm_fixture.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/acceptance/"
+                "test_npm_fixture.py"
+            ),
+        ),
+        "eng/scripts/workflow_delivery_v3_static_reference_node.mjs": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/release/static_reference_authority.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/release/"
+                "test_static_reference_sidecars.py"
+            ),
+        ),
+        "hk.pkl": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/ci/"
+                "test_scenarios.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/"
+                "test_hk_trigger.py"
+            ),
+        ),
+    }.get(path, ())
+
+
+def _path_owner_reasons(  # noqa: C901, PLR0912, PLR0913 - Finite roles share explicit endpoint facts.
     path: str,
     *,
     modes: dict[str, str],
@@ -543,6 +761,48 @@ def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit en
                     "sources": sources,
                 }
             )
+
+    if path == ".github/CODEOWNERS":
+        add("github", path, "native-codeowners-routing", [path])
+
+    if path == "hk.pkl" and modes.get(".github/workflows/ci.yml") in {
+        "100644",
+        "100755",
+    }:
+        add(
+            "conformance",
+            ".github/workflows/ci.yml#conformance",
+            "native-hk-configuration",
+            [".github/workflows/ci.yml", path],
+        )
+
+    # These finite old readers disappear after this retirement is accepted.
+    consumers = _retiring_python_consumers(path)
+    if (
+        consumers
+        and modes.get("pyproject.toml") in {"100644", "100755"}
+        and any(
+            modes.get(source) in {"100644", "100755"} for source in consumers
+        )
+    ):
+        add(
+            "python",
+            ".github/workflows/ci.yml#python-tests",
+            "retiring-python-consumer",
+            ["pyproject.toml", *consumers],
+        )
+    if (
+        path == "renovate.json"
+        and modes.get("pyproject.toml") in {"100644", "100755"}
+        and modes.get("tests/eng/test_python_runtime.py")
+        in {"100644", "100755"}
+    ):
+        add(
+            "python",
+            "pytest:tests/eng/test_python_runtime.py",
+            "configured-python-runtime-input",
+            ["pyproject.toml", "tests/eng/test_python_runtime.py"],
+        )
 
     scopes = _work_scopes(path, work_roots)
     for manifest in manifests:
