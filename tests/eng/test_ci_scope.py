@@ -1266,6 +1266,31 @@ def test_scope_retains_other_jobs_without_python_selection(path, jobs):
         ("src/public/lib/.gitattributes", False),
         ("src/private/app/.gitattributes", True),
         ("tests/.gitattributes", True),
+        *[
+            (
+                "tests/private/app/workflow-delivery/fixtures/products/" + name,
+                True,
+            )
+            for name in (
+                ".gitattributes",
+                ".editorconfig",
+                "Directory.Build.props",
+                "Directory.Build.targets",
+                "Directory.Packages.props",
+            )
+        ],
+        *[
+            (
+                "tests/private/app/workflow-delivery/fixtures/products/" + name,
+                False,
+            )
+            for name in (
+                "stylecop.json",
+                "shared.cs",
+                "shared/Directory.Build.props",
+                "hcoona-release-smoke-ruby/.gitattributes",
+            )
+        ],
         ("eng/scripts/ci_scope.py", True),
         (".github/workflows/ci.yml", True),
         ("src/public/lib/nbgv-python/src/nbgv_python/cli.py", False),
@@ -1336,13 +1361,30 @@ def test_nuget_reproducibility_preserves_added_moved_and_deleted_inputs(
         before = candidate
 
 
-@pytest.mark.parametrize("path", ["stylecop.json", ".gitattributes"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "stylecop.json",
+        ".gitattributes",
+        *[
+            "tests/private/app/workflow-delivery/fixtures/products/" + name
+            for name in (
+                ".gitattributes",
+                ".editorconfig",
+                "Directory.Build.props",
+                "Directory.Build.targets",
+                "Directory.Packages.props",
+            )
+        ],
+    ],
+)
 def test_nuget_reproducibility_preserves_changed_and_deleted_shared_inputs(
     comparison, path
 ):
     """Both endpoints retain actual analyzer and Git materialization inputs."""
     root, _, before = comparison
     shared = root / path
+    shared.parent.mkdir(parents=True, exist_ok=True)
     for operation in ("add", "change", "delete"):
         if operation == "delete":
             shared.unlink()

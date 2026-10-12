@@ -365,8 +365,6 @@ jobs:
 
     env:
       NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
-      NUGET_AUTHORITY_DIAGNOSTICS_DIRECTORY: ${{ github.workspace }}/artifacts/nuget-authority-diagnostics
-      NUGET_AUTHORITY_DUMP_TOOL: ${{ github.workspace }}/artifacts/nuget-authority-tools/dotnet-dump.exe
 
     permissions:
       contents: read
@@ -409,12 +407,6 @@ jobs:
           artifact-ids: ${{ needs.scope.outputs.dotnet_artifact_id }}
           path: ${{ runner.temp }}/dotnet-plan-transfer
           merge-multiple: true
-
-      - name: Prepare NuGet authority dump collection
-        if: ${{ success() && needs.scope.outputs.dotnet == 'true' }}
-        continue-on-error: true
-        shell: pwsh
-        run: dotnet tool install dotnet-dump --version 10.0.745401 --tool-path (Split-Path $env:NUGET_AUTHORITY_DUMP_TOOL)
 
       - name: Execute and collect the unchanged original native plan
         shell: bash

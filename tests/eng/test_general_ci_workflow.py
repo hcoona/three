@@ -169,19 +169,6 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
             "/global.json"
         )
         assert not step.get("continue-on-error", False)
-    elif key == "dotnet-tests" and step["name"] in {
-        "Prepare NuGet authority dump collection",
-        "Retain NuGet authority diagnostics",
-    }:
-        assert step["continue-on-error"] is True
-        if "run" in step:
-            assert step["shell"] == "pwsh"
-            assert step["run"] == (
-                "dotnet tool install dotnet-dump --version 10.0.745401 "
-                "--tool-path (Split-Path $env:NUGET_AUTHORITY_DUMP_TOOL)"
-            )
-        else:
-            assert step["uses"].startswith("actions/upload-artifact@")
     elif key == "python-tests" and "Retain" in step["name"]:
         _python_retention_step(step)
     elif key == "python-tests" and "adapter" in step["name"].lower():
@@ -1020,21 +1007,8 @@ def test_required_validate_rejects_missing_or_failed_consumers(
 
 
 def _cancelable_dotnet_step(step):
-    """Keep optional diagnostics separate from required result retention."""
-    if step["name"] == "Retain NuGet authority diagnostics":
-        assert step["continue-on-error"] is True
-        assert step["if"] == (
-            "(failure() || "
-            "hashFiles('artifacts/nuget-authority-diagnostics/"
-            "**/slow-process.txt') != '')"
-        )
-    elif step["name"] == "Prepare NuGet authority dump collection":
-        assert step["continue-on-error"] is True
-        assert step["shell"] == "pwsh"
-        assert step["if"] == (
-            "${{ success() && needs.scope.outputs.dotnet == 'true' }}"
-        )
-    elif "Retain" in step["name"]:
+    """Preserve required native result retention and failure handling."""
+    if "Retain" in step["name"]:
         assert step["if"] == "always()"
         assert step["uses"].startswith("actions/upload-artifact@")
         assert not step.get("continue-on-error", False)

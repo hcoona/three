@@ -119,7 +119,7 @@ def _nuget_scenario_input(path: str) -> bool:
     products = "tests/private/app/workflow-delivery/fixtures/products"
     nuget = products + "/hcoona-release-smoke-github-packages"
     if _under(path, products) and not _under(path, nuget):
-        return False
+        return _dotnet_input(path, {nuget})
     return _dotnet_input(path, NUGET_SCENARIO_ROOTS)
 
 

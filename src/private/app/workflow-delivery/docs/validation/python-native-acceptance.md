@@ -6,8 +6,11 @@ reliance without further verification under
 [`WD-PY-006`](../requirements.md#python-smoke-slice). Duplicate/race probes and a
 passing native generation are no longer Python admission prerequisites. This
 record is not an executable protocol or authorization for another generation.
+Current validation and publication/consumer completion requirements follow the
+[requirements](../requirements.md#python-smoke-slice) and
+[concrete Python Release integration](../migration-strategy.md#concrete-python-release-integration).
 The [Python LLD](../hcoona-release-smoke-python-lld.md#evidence-and-delivery-gates)
-owns current validation and actual publication/consumer completion requirements.
+remains a historical interpretation source.
 
 The [original protocol at its accepted revision](https://github.com/hcoona/three/blob/4e840f3fe0090d6e5b209a27f98b4ae854b74a44/src/public/lib/three-workflow-delivery-v3/docs/validation/python-native-acceptance.md)
 remains the interpretation contract for its original bytes, finite schedule and
@@ -21,10 +24,11 @@ uploaded. The pre-existing partial `0.1.0b6` bootstrap file remains untouched.
 The failed generation and request stay spent; the revised dependency decision
 neither retroactively passes the run nor proves its missing state.
 
-The [retained tooling boundary](python-native-readiness.md) routes historical
-inspection/replay after producer retirement. Both protected
-native request slots remain null. Do not populate them, prepare another native
-generation, dispatch, retry, refill or clean up from this record. The
-implementation preserves original reader contracts and removes the
-prerequisite producer route. No service configuration or publisher removal is
-implied by retiring the protocol.
+The [retained tooling boundary](python-native-readiness.md) and
+[historical-reader map](historical-readers.md#producer-qualified-readers)
+route historical inspection after source retirement. The current tree has no
+native request-slot file or replay entry point. Do not recreate or populate
+slots, prepare another native generation, dispatch, retry, refill or clean up
+from this record. Original reader contracts remain recoverable in their pinned
+Git source; no runtime compatibility service is retained. No service
+configuration or publisher removal is implied by retiring the protocol.
