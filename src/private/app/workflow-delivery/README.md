@@ -1678,3 +1678,18 @@ repository's PowerShell tool; PNPM replay tests execute no native PNPM query.
 These tests do not qualify complete native fact collectors. Each
 native integration still needs the migration plan's concrete coverage and caller
 validation before switching a workflow.
+
+### NuGet remote consumer component
+
+`DotNetRemoteConsumer` generates a native restore graph for an external exact-version
+`net10.0` consumer and invokes official NuGet `RestoreRunner`. An owned source-local
+HTTP resource supplies read credentials only to the selected origin, with bounded
+body reads and one credential-free archive redirect. Native NuGet owns resolution,
+retries and extraction; the application compares actual LockFile inputs and installed
+original bytes before native Build/GetTargetPath and marker invocation.
+
+The caller must execute this component in a separate no-write process/job with fresh
+external package, HTTP, plugin, profile, CLI and temporary directories. Product child
+commands use cleared explicit environments without the read capability. Source-local
+cache settings do not replace that process/job boundary. No workflow cutover, live-feed
+qualification or publication authorization is claimed by this component.

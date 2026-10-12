@@ -980,3 +980,12 @@ applicable documentation and repository gates but keeps the same validate-before
 - Update the handoff, v3 README, and affected concern records when phase or
   slice status changes; keep run chronology in the delivery work carrier.
 - Keep claims truthful, relevant, clear, and no more detailed than necessary.
+
+### NuGet remote consumer implementation transition
+
+The internal application's `DotNetRemoteConsumer` implements native graph generation,
+official source-local restore and installed-original comparison before build/marker
+execution under the accepted Concrete NuGet Buddy Integration contract. It requires
+a separate no-write caller with owned fresh directories. Controlled local validation
+does not establish live-feed behavior; CLI/workflow caller cutover and its existing
+ordinary Windows CI gate remain separate. Completed native/live campaigns stay closed.

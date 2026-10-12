@@ -260,6 +260,13 @@ including the exact owner-root publish address, and retains the complete
 actual Windows profile for independent review. It neither admits a native
 generation nor enables Live; source availability grants no observation run.
 
+The private application's [NuGet remote consumer component](../../../private/app/workflow-delivery/README.md#nuget-remote-consumer-component)
+implements official native restore, original-byte comparison, build and marker
+invocation with a separate no-write caller boundary. Its controlled validation
+does not establish ordinary CLI/workflow cutover or new live-feed acceptance.
+The legacy coordinator and restore host below retain their existing consumers
+until the corresponding cutover and retirement.
+
 The [destination consumer component](src/three_workflow_delivery_v3/acceptance/nuget_consumer.py)
 creates a fresh, fixed consumer and SDK graph, then calls the prebuilt
 [native restore host](../../../private/app/workflow-delivery-v3-nuget-consumer/README.md).
