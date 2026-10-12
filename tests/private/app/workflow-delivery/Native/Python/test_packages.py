@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import subprocess
 import sys
 import tarfile
 import zipfile
@@ -27,6 +28,134 @@ NAME = "hcoona-release-smoke-python"
 VERSION = "1.0.0.dev3+g1234567"
 STEM = "hcoona_release_smoke_python-" + VERSION
 METADATA = f"Metadata-Version: 2.4\nName: {NAME}\nVersion: {VERSION}\n".encode()
+
+
+def public_index(tmp_path, files, *, name=NAME, api="1.4"):
+    """Write one supplied public index without contacting a destination."""
+    path = tmp_path / "index.json"
+    path.write_text(
+        json.dumps({"meta": {"api-version": api}, "name": name, "files": files})
+    )
+    return path
+
+
+def index_entry(filename, **values):
+    """Supply native file metadata without installed/source identities."""
+    return {
+        "filename": filename,
+        "url": "https://test-files.pythonhosted.org/" + filename,
+        "hashes": {"sha256": "a" * 64},
+        **values,
+    }
+
+
+def test_public_index_uses_native_names_versions_and_filename_semantics(
+    tmp_path,
+):
+    """Packaging owns normalization and selected-version equivalence."""
+    entries = [
+        index_entry("hcoona_release_smoke_python-1.2.3.0-py3-none-any.whl"),
+        index_entry("hcoona_release_smoke_python-1.2.3.tar.gz"),
+        index_entry("hcoona_release_smoke_python-2.0.tar.gz"),
+    ]
+    facts = packages.index_facts(
+        public_index(tmp_path, entries, name="Hcoona_Release.Smoke-Python"),
+        NAME,
+        "1.2.3",
+    )
+    assert facts["matches_name"] is True
+    assert [entry["filename"] for entry in facts["files"]] == [
+        entry["filename"] for entry in entries[:2]
+    ]
+    assert all(entry["sha256"] == "a" * 64 for entry in facts["files"])
+    assert all(entry["yanked"] is False for entry in facts["files"])
+
+
+def test_public_index_cli_uses_isolated_native_packaging_and_complete_json(
+    tmp_path,
+):
+    """Exercise the isolated native protocol without network or credentials."""
+    path = public_index(
+        tmp_path, [index_entry("hcoona_release_smoke_python-1.2.3.tar.gz")]
+    )
+    result = subprocess.run(  # noqa: S603 - Controlled maintained Python helper.
+        [
+            sys.executable,
+            "-I",
+            "-B",
+            SPEC.origin,
+            "index-facts",
+            str(path),
+            NAME,
+            "1.2.3",
+        ],
+        cwd=tmp_path,
+        env={},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert json.loads(result.stdout) == packages.index_facts(
+        path, NAME, "1.2.3"
+    )
+
+
+@pytest.mark.parametrize("yanked", [True, "withdrawn", ""])
+def test_public_index_preserves_native_yanked_visibility(tmp_path, yanked):
+    """An empty native reason still means that the selected file is yanked."""
+    facts = packages.index_facts(
+        public_index(tmp_path, [index_entry(STEM + ".tar.gz", yanked=yanked)]),
+        NAME,
+        VERSION,
+    )
+    assert facts["files"][0]["yanked"] is True
+
+
+@pytest.mark.parametrize("foreign", ["project", "file"])
+def test_public_index_reports_contradictory_native_names(tmp_path, foreign):
+    """Foreign native coordinates cannot become a complete matching set."""
+    filename = "other" if foreign == "file" else "hcoona_release_smoke_python"
+    facts = packages.index_facts(
+        public_index(
+            tmp_path,
+            [index_entry(filename + "-1.2.3.tar.gz")],
+            name="other" if foreign == "project" else NAME,
+        ),
+        NAME,
+        "1.2.3",
+    )
+    assert facts["matches_name"] is False
+
+
+@pytest.mark.parametrize(
+    "defect", ["api", "filename", "requires-python", "yanked", "inventory"]
+)
+def test_public_index_rejects_unavailable_or_unsupported_native_facts(
+    tmp_path, defect
+):
+    """Native interpretation failures supply no partial successful facts."""
+    entry = index_entry(STEM + ".tar.gz")
+    if defect == "filename":
+        entry["filename"] = "uninterpretable"
+    elif defect == "requires-python":
+        entry["requires-python"] = "unsupported constraint"
+    elif defect == "yanked":
+        entry["yanked"] = None
+    entries = [entry] * (4097 if defect == "inventory" else 1)
+    with pytest.raises(
+        (ValueError, TypeError),
+        match=r"metadata|filename|specifier|visibility|bound",
+    ):
+        packages.index_facts(
+            public_index(
+                tmp_path, entries, api="2.0" if defect == "api" else "1.0"
+            ),
+            NAME,
+            VERSION,
+        )
 
 
 def wheel(directory, *, metadata=METADATA, payload=True, extra=None):

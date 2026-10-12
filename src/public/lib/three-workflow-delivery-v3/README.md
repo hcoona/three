@@ -77,9 +77,14 @@ Release/feed behavior or new live acceptance. Other quality presets and remainin
 Release integrations are pending.
 The private application's [Python preparation component](../../../private/app/workflow-delivery/README.md#python-release-preparation-component)
 qualifies the complete original wheel/sdist pair independently of CI, with
-controlled and local native Linux coverage. Destination observation, publication,
-remote consumption and ordinary Release caller cutover remain pending; this
-component does not establish hosted Release or live qualification.
+controlled and local native Linux coverage. Publication, remote consumption and
+ordinary Release caller cutover remain pending; this component does not establish
+hosted Release or live qualification.
+The private application's [Python public index observer](../../../private/app/workflow-delivery/README.md#python-public-index-observation-component)
+compares the qualified original wheel/sdist pair with the selected public index.
+Controlled and local native helper tests qualify this component; live index
+behavior, native publication, remote consumption and ordinary Release caller
+qualification remain separate gates.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
 that the existing runtime already satisfies the contraction requirements.

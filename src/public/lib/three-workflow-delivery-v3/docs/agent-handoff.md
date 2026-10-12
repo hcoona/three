@@ -54,8 +54,13 @@ is source evidence. The private application's
 implements complete original wheel/sdist qualification independently of CI,
 including native branch versioning and Git-free sdist consumption. Controlled
 tests and a local native Linux fixture do not establish hosted caller or live
-qualification. Destination observation, native publisher, remote consumption
-and ordinary caller cutover remain pending; completed campaigns stay closed.
+qualification. The private application's
+[Python public index observer](../../../../private/app/workflow-delivery/README.md#python-public-index-observation-component)
+implements bounded anonymous selected-index/original reads with maintained
+packaging interpretation. Controlled scenarios and local native helper tests
+establish component boundaries, without deployed index qualification. Native
+publisher, remote consumption and ordinary caller cutover remain pending;
+completed campaigns stay closed.
 Root CI owns the native Ruby group, qualified in ordinary
 [PR #1124](https://github.com/hcoona/three/pull/1124) CI. It receives the exact scope
 and complete candidate control artifact, prepares native facts once and executes

@@ -62,8 +62,15 @@ Neither record authorizes a new publication or reopens a completed campaign.
 The private application's [Python preparation component](../../../../private/app/workflow-delivery/README.md#python-release-preparation-component)
 implements complete original wheel/sdist qualification with controlled and local
 native Linux coverage. Hosted caller and live behavior remain unqualified;
-destination observation, publication, remote consumption and caller cutover are
+publication, remote consumption and caller cutover are
 still pending.
+
+The private application's
+[Python public index observation component](../../../../private/app/workflow-delivery/README.md#python-public-index-observation-component)
+has controlled complete-pair, exact-subset, original-byte and bounded public-read
+coverage, with maintained-packaging and isolated helper tests. These establish
+component boundaries; deployed index and ordinary Release caller qualification
+remain separate.
 
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration
