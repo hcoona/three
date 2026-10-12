@@ -46,6 +46,10 @@ consumption. It preserves the actual official invocation beside common business
 completion and replaces the ordinary Python admission/approval-mirror/marker/proof
 chain. Historical campaign readers retain their current consumers. Controlled
 tests and ordinary CI establish no new dispatch, live-feed or publication authority.
+The [concrete Python Release contract](./migration-strategy.md#concrete-python-release-integration)
+routes the next preparation, native UV publication, remote consumption and
+ordinary caller work. Its [publisher assessment](./research/python-native-publisher.md)
+is source evidence; no new Python implementation or live qualification is claimed.
 Root CI owns the native Ruby group, qualified in ordinary
 [PR #1124](https://github.com/hcoona/three/pull/1124) CI. It receives the exact scope
 and complete candidate control artifact, prepares native facts once and executes

@@ -54,6 +54,12 @@ Live run. The [NuGet Buddy interface](../../../../private/app/workflow-delivery/
 also composes its ordinary caller; caller delivery requires the separate ordinary
 Windows CI gate. Remaining Release integrations and quality presets remain pending.
 
+The [concrete Python Release contract](./migration-strategy.md#concrete-python-release-integration)
+defines the next preparation, native publisher, remote consumer and ordinary
+caller boundary. Its [publisher source assessment](./research/python-native-publisher.md)
+distinguishes native OIDC/retry and output handling from runtime qualification.
+Neither record authorizes a new publication or reopens a completed campaign.
+
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration
 preflight, metadata adaptation and operation dependency projection with controlled
