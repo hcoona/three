@@ -108,8 +108,9 @@ the component awaits native completion rather than abandoning an active upload.
 The native timeout is 120 seconds. Its typed result preserves command success,
 parent cancellation, sanitized failure type and duration separately from business
 completion. Controlled tests exercise the actual official client through supplied
-transport. This component has no CLI or workflow caller yet and establishes no
-live publication, remote-consumer or platform qualification.
+transport. The [NuGet Buddy caller](#nuget-buddy-release) integrates this component
+with the ordinary Release CLI and workflow. Controlled component tests establish
+no live publication, remote-consumer or platform qualification.
 
 ## Native Ruby Primitives
 
