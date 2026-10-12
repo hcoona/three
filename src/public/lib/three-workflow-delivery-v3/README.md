@@ -75,6 +75,11 @@ independently of CI. The [NuGet Buddy interface](../../../private/app/workflow-d
 composes the ordinary caller; component qualification does not establish hosted
 Release/feed behavior or new live acceptance. Other quality presets and remaining
 Release integrations are pending.
+The private application's [Python preparation component](../../../private/app/workflow-delivery/README.md#python-release-preparation-component)
+qualifies the complete original wheel/sdist pair independently of CI, with
+controlled and local native Linux coverage. Destination observation, publication,
+remote consumption and ordinary Release caller cutover remain pending; this
+component does not establish hosted Release or live qualification.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
 that the existing runtime already satisfies the contraction requirements.
