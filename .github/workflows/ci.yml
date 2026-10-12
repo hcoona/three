@@ -422,6 +422,10 @@ jobs:
           PLAN_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
           COMPARISON_BASIS: ${{ needs.scope.outputs.base }}
           TESTED_CANDIDATE: ${{ needs.scope.outputs.candidate }}
+          TESTINGPLATFORM_DIAGNOSTIC: "1"
+          TESTINGPLATFORM_DIAGNOSTIC_VERBOSITY: Trace
+          TESTINGPLATFORM_DIAGNOSTIC_SYNCHRONOUS_WRITE: "1"
+          TESTINGPLATFORM_DIAGNOSTIC_OUTPUT_DIRECTORY: ${{ runner.temp }}/dotnet-execution/mtp-diagnostics
         run: |
           python eng/scripts/run_dotnet_ci_group.py execute --transfer "$RUNNER_TEMP/dotnet-plan-transfer" \
             --directory "$RUNNER_TEMP/dotnet-execution" --artifact-metadata "$RUNNER_TEMP/dotnet-plan-artifact.json" \
