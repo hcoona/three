@@ -72,6 +72,11 @@ coverage, with maintained-packaging and isolated helper tests. These establish
 component boundaries; deployed index and ordinary Release caller qualification
 remain separate.
 
+The private application's [native Python publisher component](../../../../private/app/workflow-delivery/README.md#native-python-publisher-component)
+has controlled UV command/output coverage and a local native EOF check. These
+qualify component boundaries only; deployed publisher and ordinary caller
+qualification remain separate.
+
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration
 preflight, metadata adaptation and operation dependency projection with controlled
