@@ -12,6 +12,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+_PHYSICAL_CONCURRENCY_GROUP = (
+    "${{ format('workflow-delivery-{0}-hcoona-release-smoke-python', "
+    "inputs.registry == 'testpypi' && 'test.pypi.org' || 'pypi.org') }}"
+)
+
 ROOT = Path(__file__).resolve().parents[2]
 NATIVE = (
     ROOT / "src/private/app/workflow-delivery/Native/Python/release_caller.py"
@@ -597,10 +602,7 @@ def test_workflow_frozen_recipe_and_registry_package_concurrency(
     concurrency = workflow["concurrency"]
     assert concurrency["cancel-in-progress"] is False
     group = concurrency["group"]
-    assert "inputs.registry" in group
-    assert "test.pypi.org" in group
-    assert "pypi.org" in group
-    assert "hcoona-release-smoke-python" in group
+    assert group == _PHYSICAL_CONCURRENCY_GROUP
     assert not any(
         field in group
         for field in ("github.run_id", "github.ref", "inputs.dry-run")

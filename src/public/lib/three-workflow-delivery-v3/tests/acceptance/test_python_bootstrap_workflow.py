@@ -12,6 +12,11 @@ from three_workflow_delivery_v3.canonical import parse_json_strict
 
 _ROOT = Path(__file__).resolve().parents[6]
 
+_PHYSICAL_CONCURRENCY_GROUP = (
+    "${{ format('workflow-delivery-{0}-hcoona-release-smoke-python', "
+    "inputs.registry == 'testpypi' && 'test.pypi.org' || 'pypi.org') }}"
+)
+
 
 def test_bootstrap_workflow_binds_immutable_artifact_dag():
     """Every dependency downloads an explicit returned ID and verifies bytes."""
@@ -108,7 +113,7 @@ def test_bootstrap_workflow_limits_capability_and_retains_failure():
     workflow = yaml.safe_load((_ROOT / WORKFLOW).read_text())
     assert workflow["permissions"] == {}
     assert workflow["concurrency"] == {
-        "group": "wdv3-python-project-${{ inputs.registry }}",
+        "group": _PHYSICAL_CONCURRENCY_GROUP,
         "cancel-in-progress": False,
     }
     for name, job in workflow["jobs"].items():
@@ -231,13 +236,9 @@ def test_bootstrap_workflow_closes_and_propagates_selected_destination():
             _ROOT / ".github/workflows/workflow-delivery-v3-python-smoke.yml"
         ).read_text()
     )
+    assert normal["concurrency"] == workflow["concurrency"]
     assert normal["concurrency"] == {
-        "group": "${{ format('wdv3-python-project-{0}', inputs.registry) }}",
+        "group": _PHYSICAL_CONCURRENCY_GROUP,
         "cancel-in-progress": False,
     }
-    for registry in ("testpypi", "pypi"):
-        group = workflow["concurrency"]["group"].replace(
-            "${{ inputs.registry }}", registry
-        )
-        assert group == f"wdv3-python-project-{registry}"
     assert set(SLOT_PATHS) == {"testpypi", "pypi"}
