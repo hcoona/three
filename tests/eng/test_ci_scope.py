@@ -1259,6 +1259,13 @@ def test_scope_retains_other_jobs_without_python_selection(path, jobs):
         ("src/private/Directory.Build.targets", True),
         ("global.json", True),
         ("Directory.Packages.props", True),
+        ("stylecop.json", True),
+        (".gitattributes", True),
+        ("src/.gitattributes", True),
+        ("src/public/.gitattributes", True),
+        ("src/public/lib/.gitattributes", True),
+        ("src/private/app/.gitattributes", True),
+        ("tests/.gitattributes", True),
         ("eng/scripts/ci_scope.py", True),
         (".github/workflows/ci.yml", True),
         ("src/public/lib/nbgv-python/src/nbgv_python/cli.py", False),
@@ -1276,6 +1283,8 @@ def test_scope_retains_other_jobs_without_python_selection(path, jobs):
             False,
         ),
         ("src/private/app/git-commit-heatmap/README.md", False),
+        ("src/private/app/git-commit-heatmap/.gitattributes", False),
+        ("src/unused/stylecop.json", False),
         (
             "src/private/app/workflow-delivery-v3-dotnet-provider/Program.cs",
             False,
@@ -1318,6 +1327,31 @@ def test_nuget_reproducibility_preserves_added_moved_and_deleted_inputs(
         paths = _git(
             root, "diff", "--name-only", "--no-renames", before, candidate
         ).splitlines()
+        assert scope.select(root, tuple(paths), base=before)[
+            "nuget_reproducibility"
+        ]
+        before = candidate
+
+
+@pytest.mark.parametrize("path", ["stylecop.json", ".gitattributes"])
+def test_nuget_reproducibility_preserves_changed_and_deleted_shared_inputs(
+    comparison, path
+):
+    """Both endpoints retain actual analyzer and Git materialization inputs."""
+    root, _, before = comparison
+    shared = root / path
+    for operation in ("add", "change", "delete"):
+        if operation == "delete":
+            shared.unlink()
+        else:
+            shared.write_text(operation + " shared native input\n")
+        _git(root, "add", "-A")
+        _git(root, "commit", "-qm", operation + " shared native input")
+        candidate = _git(root, "rev-parse", "HEAD")
+        paths = _git(
+            root, "diff", "--name-only", before, candidate
+        ).splitlines()
+        assert paths == [path]
         assert scope.select(root, tuple(paths), base=before)[
             "nuget_reproducibility"
         ]

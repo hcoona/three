@@ -1670,7 +1670,9 @@ publisher invocation, and conflicting bytes block completion.
 
 The [scope selector](../../../../eng/scripts/ci_scope.py) follows the current
 application, test owner, product, inherited managed build inputs and native
-control resources. Old Python-package/helper inputs do not select this job.
+control resources, including the product's root analyzer configuration and
+applicable Git attributes for source materialization. Old Python-package/helper
+inputs do not select this job.
 The caller restores pinned product dependencies before the tests and requires
 one TRX with every selected case executed and passed. Actual results,
 attachments, original packages and binlogs retain the existing

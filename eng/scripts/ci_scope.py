@@ -58,6 +58,7 @@ PYTHON_INPUTS = {
 }
 DOTNET_INPUTS = {
     ".editorconfig",
+    ".gitattributes",
     "global.json",
     "NuGet.Config",
     "nuget.config",
@@ -103,6 +104,7 @@ def _under(path: str, directory: str) -> bool:
 def _dotnet_input(path: str, roots: set[str]) -> bool:
     inherited = PurePosixPath(path).name in {
         ".editorconfig",
+        ".gitattributes",
         "Directory.Build.props",
         "Directory.Build.targets",
         "Directory.Packages.props",
@@ -259,6 +261,7 @@ def select(
         "nuget_reproducibility": full
         or any(
             path in ALL_INPUTS
+            or path == "stylecop.json"
             or _dotnet_input(path, NUGET_SCENARIO_ROOTS)
             or bool(_resource_reasons(path, control_inputs))
             for path in paths
