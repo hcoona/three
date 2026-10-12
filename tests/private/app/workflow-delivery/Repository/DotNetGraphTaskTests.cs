@@ -887,8 +887,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         "WebHdfs.Extensions.FileProviders.UnitTest.csproj",
         "PreBuild")]
     [DataRow("dirs.proj", "RestoreWindowsOnlyProjectsOnNonWindows")]
-    [DataRow("tests/private/app/workflow-delivery/" +
-        "fixtures/products/hcoona-release-smoke-github-packages/" +
+    [DataRow("src/public/lib/hcoona-release-smoke-github-packages/" +
         "hcoona-release-smoke-github-packages.csproj",
         "ValidateWorkflowDeliveryFrozenInputs")]
     [Timeout(30000, CooperativeCancellation = true)]
@@ -951,21 +950,28 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("UnknownProducer")]
-    [DataRow("ReferenceOfficialNbgv")]
+    [DataRow("dirs.proj", "UnknownProducer")]
+    [DataRow("dirs.proj", "ReferenceOfficialNbgv")]
+    [DataRow("tests/private/app/workflow-delivery/" +
+        "fixtures/products/hcoona-release-smoke-github-packages/" +
+        "hcoona-release-smoke-github-packages.csproj",
+        "ValidateWorkflowDeliveryFrozenInputs")]
     [Timeout(30000, CooperativeCancellation = true)]
-    public async Task UnknownRepositoryProducersFailWithoutAResponse(string name)
+    public async Task UnknownRepositoryProducersFailWithoutAResponse(string origin, string name)
     {
         using var fixture = new GraphFixture();
-        fixture.Write("dirs.proj", $"<Project><Target Name=\"{name}\" /></Project>");
-        fixture.CommittedPaths = [fixture.PathOf("dirs.proj")];
+        fixture.Write(origin, $"<Project><Target Name=\"{name}\" /></Project>",
+            restoreProject: false);
+        if (origin != "dirs.proj")
+            fixture.Write("dirs.proj", $"<Project><Import Project=\"{origin}\" /></Project>");
+        fixture.CommittedPaths = [fixture.PathOf(origin)];
         await fixture.PrepareAsync(context.CancellationToken);
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
         foreach (string expected in new[] { name, fixture.Root, GraphFixture.Revision,
             "RepositoryTarget", "RestoreLockedMode" })
             Assert.Contains(expected, error.Message);
-        Assert.IsTrue(error.Message.Contains(fixture.PathOf("dirs.proj"),
+        Assert.IsTrue(error.Message.Contains(fixture.PathOf(origin),
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
                 StringComparison.Ordinal));
         Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
