@@ -524,11 +524,12 @@ command outcomes and complete failed/cancelled/timed-out/skipped checks. Files
 carry portable native coordinates, declared output identities, sizes and digests.
 Controlled scenarios and a native Linux local fixture exercise this component;
 they do not establish feed, OIDC, publication or hosted caller behavior.
-The finite `python-release-preparation-native` HK check selects related inputs
-in ordinary Linux Source conformance. It uses the existing locked Python/UV
-declarations and native test, rejects zero/skipped results, and retains original
-TRX, preparation and distribution attachments. It is a component qualification
-route; ordinary caller qualification remains separate.
+The existing Linux Python project-test path selects
+`tests/eng/test_python_release_preparation_gate.py` from its consumed inputs.
+That target invokes the native scenario using committed Python/UV tools and its
+selected MISE resource, rejects zero/skipped results, and retains original TRX,
+preparation and distribution attachments through the Python job. It is a
+component qualification route; ordinary caller qualification remains separate.
 Native publisher, destination observation, remote consumption and ordinary caller cutover
 remain pending under the [accepted contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
 

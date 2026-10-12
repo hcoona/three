@@ -144,7 +144,17 @@ public sealed class PythonRepositoryInputsTests
         "eng/scripts/check_python_release_preparation.py")]
     [DataRow("tests/eng/test_python_release_preparation_gate.py",
         "eng/scripts/run_node_ci_group.py")]
-    [DataRow("tests/eng/test_python_release_preparation_gate.py", "hk.pkl")]
+    [DataRow("tests/eng/test_python_release_preparation_gate.py", "workflow-delivery.quality.yml")]
+    [DataRow("tests/eng/test_python_release_preparation_gate.py",
+        "src/private/app/workflow-delivery/Release/PythonPreparation.cs")]
+    [DataRow("tests/eng/test_python_release_preparation_gate.py",
+        "tests/private/app/workflow-delivery/Release/PythonPreparationNativeTests.cs")]
+    [DataRow("tests/eng/test_python_release_preparation_gate.py",
+        "src/public/lib/hcoona-release-smoke-python/version.json")]
+    [DataRow("tests/eng/test_python_release_preparation_gate.py",
+        "src/public/lib/nbgv-python/src/nbgv_python/plugin.py")]
+    [DataRow("tests/eng/test_python_release_preparation_gate.py",
+        "src/private/Directory.Packages.props")]
     [DataRow("tests/eng/test_run_python_ci_group.py", "eng/scripts/run_node_ci_group.py")]
     [DataRow("tests/eng/test_run_python_ci_group.py", "eng/scripts/run_dotnet_ci_group.py")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/workflow_delivery_v3_hk.py")]

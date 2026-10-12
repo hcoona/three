@@ -31,6 +31,9 @@ internal static class PythonRepositoryInputs
         "src/public/lib/hcoona-release-smoke-github-packages"];
     private static readonly string[] AzureRoots = [
         "src/private/app/azureauth-credprovider", "tests/private/app/azureauth-credprovider"];
+    private static readonly string[] PythonPreparationRoots = [
+        "src/private/app/workflow-delivery", "tests/private/app/workflow-delivery",
+        "src/public/lib/hcoona-release-smoke-python", "src/public/lib/nbgv-python"];
 
     internal static PythonInputBinding[] Map(GitRevision revision,
         PythonProjectDependencies[] projects, PythonPytestTargetSet targets,
@@ -156,8 +159,10 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_run_dotnet_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target == "tests/eng/test_python_release_preparation_gate.py" &&
-            path is "eng/scripts/check_python_release_preparation.py" or
-                "eng/scripts/run_node_ci_group.py" or "hk.pkl") ||
+            (DotnetInput(path, PythonPreparationRoots) ||
+             path is "eng/scripts/check_python_release_preparation.py" or
+                "eng/scripts/run_node_ci_group.py" or "workflow-delivery.quality.yml" ||
+             path.EndsWith("/workflow-delivery.quality.yml", StringComparison.Ordinal))) ||
         (target == "tests/eng/test_run_python_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&

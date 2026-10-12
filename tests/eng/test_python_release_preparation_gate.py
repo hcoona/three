@@ -18,6 +18,12 @@ finally:
     sys.path.pop(0)
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux qualification")
+def test_native_python_release_preparation():
+    """The selected project test owns the native scenario and evidence."""
+    assert gate.main() == 0
+
+
 def _report(  # noqa: PLR0913 - Controlled native report fields.
     path,
     *,

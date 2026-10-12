@@ -20,6 +20,7 @@ V3_TESTS = "src/public/lib/three-workflow-delivery-v3/tests"
 NATIVE_TESTS = "tests/private/app/workflow-delivery/Native/Python"
 RUBY_TESTS = "tests/private/app/workflow-delivery/Native/Ruby"
 AZURE_TESTS = "src/private/app/azureauth-credprovider/python/tests"
+PREPARATION_TESTS = "tests/eng/test_python_release_preparation_gate.py"
 
 
 def executable(name: str) -> str:
@@ -149,6 +150,7 @@ def plan(root: Path, directory: Path) -> dict[str, Any]:
         legacy_v3=str(selected["legacy_v3"]).lower(),
         native_helper=str(selected["native_helper"]).lower(),
         native_ruby=str(selected["native_ruby"]).lower(),
+        native_preparation=str(selected["native_preparation"]).lower(),
     )
     return readback
 
@@ -179,6 +181,7 @@ def auxiliary(plan_value: dict[str, Any]) -> dict[str, bool]:
         "native_helper": NATIVE_TESTS in targets,
         "native_ruby": RUBY_TESTS in targets,
         "azure_bundle": AZURE_TESTS in targets,
+        "native_preparation": PREPARATION_TESTS in targets,
     }
 
 
@@ -222,6 +225,49 @@ def prepare_ruby_test_tools(root: Path, directory: Path) -> dict[str, str]:
     }
 
 
+def prepare_mise_test_tools(
+    checkout: Path,
+    directory: Path,
+    environment: dict[str, str | None],
+    mise_data: Path | None,
+    *,
+    legacy: bool,
+) -> None:
+    """Bind selected tests to their owned, committed MISE preparation."""
+    if (
+        mise_data is None
+        or not mise_data.is_absolute()
+        or not mise_data.is_dir()
+    ):
+        message = "Selected tests require their prepared mise data directory"
+        raise ValueError(message)
+    tools = (
+        ("node", "pnpm", "hk", "pkl", "ruby", "mise") if legacy else ("mise",)
+    )
+    native_tools = {name: executable(name) for name in tools}
+    environment["MISE_DATA_DIR"] = str(mise_data)
+    environment["MISE_TASK_RUN_AUTO_INSTALL"] = "false"
+    environment["MISE_EXEC_AUTO_INSTALL"] = "0"
+    if legacy and "HK_PROFILE" in os.environ:
+        environment["HK_PROFILE"] = os.environ["HK_PROFILE"]
+    environment["PATH"] = os.pathsep.join(
+        dict.fromkeys(
+            [str(Path(path).parent) for path in native_tools.values()]
+            + environment["PATH"].split(os.pathsep)
+        )
+    )
+    node.run(
+        checkout,
+        directory,
+        "mise-trust",
+        native_tools["mise"],
+        "trust",
+        str(checkout / "mise.toml"),
+        timeout=30,
+        environment=environment,
+    )
+
+
 def execute(
     root: Path, directory: Path, mise_data: Path | None = None
 ) -> dict[str, Any]:
@@ -258,46 +304,15 @@ def execute(
                 if name in os.environ
             }
         )
-    if selected["legacy_v3"]:
-        if (
-            mise_data is None
-            or not mise_data.is_absolute()
-            or not mise_data.is_dir()
-        ):
-            message = (
-                "Selected V3 tests require their prepared mise data directory"
-            )
-            raise ValueError(message)
-        native_tools = {
-            name: executable(name)
-            for name in ("node", "pnpm", "hk", "pkl", "ruby", "mise")
-        }
-        environment["MISE_DATA_DIR"] = str(mise_data)
-        environment["MISE_TASK_RUN_AUTO_INSTALL"] = "false"
-        environment["MISE_EXEC_AUTO_INSTALL"] = "0"
-        environment.update(
-            {
-                name: os.environ[name]
-                for name in ("HK_PROFILE",)
-                if name in os.environ
-            }
-        )
-        environment["PATH"] = os.pathsep.join(
-            dict.fromkeys(
-                [str(Path(path).parent) for path in native_tools.values()]
-                + environment["PATH"].split(os.pathsep)
-            )
-        )
-        node.run(
+    if selected["legacy_v3"] or selected["native_preparation"]:
+        prepare_mise_test_tools(
             Path(context["candidate"]["directory"]),
             directory,
-            "mise-trust",
-            native_tools["mise"],
-            "trust",
-            str(Path(context["candidate"]["directory"]) / "mise.toml"),
-            timeout=30,
-            environment=environment,
+            environment,
+            mise_data,
+            legacy=selected["legacy_v3"],
         )
+    if selected["legacy_v3"]:
         node.run(
             Path(context["candidate"]["directory"]),
             directory,

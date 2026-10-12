@@ -40,8 +40,7 @@ def qualify(root: Path, directory: Path) -> None:
         raise ValueError(message)
     directory.mkdir(parents=True, exist_ok=False)
     environment = dict(os.environ)
-    # Source conformance disables Python in its general MISE preparation.
-    # Install only the existing locked Python/UV tools for this obligation.
+    # Prepare only the existing locked Python/UV tools for this obligation.
     environment.pop("MISE_DISABLE_TOOLS", None)
     capture.run(
         root,
@@ -91,7 +90,7 @@ def qualify(root: Path, directory: Path) -> None:
 
 
 def main() -> int:
-    """HK owns finite input selection; this entry has no second input roster."""
+    """The selected pytest target owns invocation without another roster."""
     root = Path(__file__).resolve().parents[2]
     directory = root / "artifacts/python-release-preparation" / uuid.uuid4().hex
     qualify(root, directory)
