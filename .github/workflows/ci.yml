@@ -345,11 +345,11 @@ jobs:
         run: |
           set -Eeuo pipefail
           if [[ "$CI_FULL" == 'true' ]]; then
-            hk check --check --no-stage --no-progress --no-fail-fast --all
+            hk --profile small --profile medium --profile large check --check --no-stage --no-progress --no-fail-fast --all
           else
             python eng/scripts/workflow_delivery_v3_hk.py \
               --from-ref "$CI_BASE" --to-ref "$CI_CANDIDATE" --files0 \
-              -- hk check --check --no-stage --no-progress --no-fail-fast
+              -- hk --profile small --profile medium --profile large check --check --no-stage --no-progress --no-fail-fast
           fi
 
       - name: Reject canceled validation
@@ -958,15 +958,15 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24.21.0'
-      - name: Setup selected HK and Pkl adapters
-        if: steps.plan.outputs.legacy_v3 == 'true'
+      - name: Setup selected MISE adapters
+        if: steps.plan.outputs.legacy_v3 == 'true' || steps.plan.outputs.native_preparation == 'true'
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         env:
           MISE_DATA_DIR: ${{ runner.temp }}/python-auxiliary-mise
         with:
           version: '2026.8.10'
           experimental: true
-          install_args: aqua:jdx/hk pkl
+          install_args: ${{ steps.plan.outputs.legacy_v3 == 'true' && 'aqua:jdx/hk pkl' || 'python uv' }}
       - name: Setup selected Ruby adapter
         if: steps.plan.outputs.legacy_v3 == 'true' || steps.plan.outputs.native_ruby == 'true'
         uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
@@ -990,6 +990,15 @@ jobs:
             ${{ runner.temp }}/python-group/execution/pytest/junit-*.xml
           if-no-files-found: ignore
           retention-days: 7
+      - name: Retain selected native Python preparation qualification
+        if: always() && steps.plan.outputs.native_preparation == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-release-preparation
+          path: ${{ steps.endpoints.outputs.candidate_directory }}/artifacts/python-release-preparation/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Reject canceled validation
         if: cancelled()
         run: |

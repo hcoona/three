@@ -501,6 +501,38 @@ unsupported relevant shapes in `errors`. An empty error array is a producer's
 result, not an admission certificate or proof that a reader is implemented.
 The scope label must agree across revisions; it is not a coverage inference.
 
+### Python Release Preparation Component
+
+[`PythonPreparation`](Release/PythonPreparation.cs) qualifies the selected complete
+wheel/sdist declaration independently of CI impact selection. It reads committed
+release and quality inputs, queries locked native MISE tool selection, restores
+the committed NBGV tool and uses shared frozen UV/backend preparation. The caller
+supplies MISE's existing installation directory as an execution resource; it is
+not another tool-version declaration. Product builds and consumers use fresh
+external state with no publication credentials.
+
+Hatchling, `nbgv-python` and maintained packaging supply version, public-release,
+commit, dependency and interpreter facts. Live Buddy accepts branch refs for
+TestPyPI; live Official requires `refs/heads/main`, PyPI and the native public
+projection. Dry run can qualify another ref and retains its native version.
+The selected project's branch-wide NBGV public-version mode shapes versions for
+CI and Release; it does not authorize Official publication.
+
+Preparation requires build, contents, original wheel consumption, Git-free
+original sdist consumption and unchanged originals. It retains actual reached
+command outcomes and complete failed/cancelled/timed-out/skipped checks. Files
+carry portable native coordinates, declared output identities, sizes and digests.
+Controlled scenarios and a native Linux local fixture exercise this component;
+they do not establish feed, OIDC, publication or hosted caller behavior.
+The existing Linux Python project-test path selects
+`tests/eng/test_python_release_preparation_gate.py` from its consumed inputs.
+That target invokes the native scenario using committed Python/UV tools and its
+selected MISE resource, rejects zero/skipped results, and retains original TRX,
+preparation and distribution attachments through the Python job. It is a
+component qualification route; ordinary caller qualification remains separate.
+Native publisher, destination observation, remote consumption and ordinary caller cutover
+remain pending under the [accepted contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
+
 ### Python Package Execution Component
 
 `ci run-python-package <plan.json> <request.json>` executes the selected adopted
@@ -515,7 +547,7 @@ tool preparation, native identity/build, original distribution inspection and bo
 clean consumers inside the existing application. It consumes no CI plan, check
 or Release outcome. CI retains committed obligation validation and adapts each
 reached native command and result to its original four-check plan. Release
-preparation and caller integration remain pending under the
+caller integration remains pending under the
 [concrete contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-python-release-integration).
 
 UV prepares the existing frozen root groups with native workspace editability
@@ -705,8 +737,11 @@ the controlled composition only. The separately accepted
 [current-tool observation](../../../public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md#completed-ordinary-and-no-dev-observation)
 qualifies actual native collection on its exact subjects. The separate planning-input
 observation qualifies committed version/quality input binding on those subjects.
-Package preset expansion, preparation/execution and caller cutover remain pending;
-completed graph, enrichment and primitive campaigns supply no execution allowance.
+Adopted package expansion and preparation/execution are implemented through the
+[package execution component](#python-package-execution-component); the
+[native Python CI caller](#native-python-ci-caller) composes ordinary CI.
+Release remains separate. Completed graph, enrichment and primitive campaigns
+supply no execution allowance.
 
 ### Controlled Python Input Consumer Mapping
 

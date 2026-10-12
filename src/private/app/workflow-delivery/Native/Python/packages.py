@@ -33,6 +33,36 @@ def native_identity(project: Path) -> dict:
     return {"name": metadata.core.name, "version": metadata.version}
 
 
+def native_version_facts(project: Path) -> dict:
+    """Expose maintained backend and version facts for the caller."""
+    from hatchling.builders.wheel import WheelBuilder  # noqa: PLC0415
+    from packaging.version import Version  # noqa: PLC0415
+
+    metadata = WheelBuilder(str(project.resolve())).metadata
+    source = metadata.hatch.version.source
+    if source.PLUGIN_NAME != "nbgv":
+        message = "Unsupported selected native version source"
+        raise ValueError(message)
+    data = source.get_version_data()
+    version = Version(metadata.version)
+    if Version(data["version"]) != version:
+        message = "Native backend version recomputation differs"
+        raise ValueError(message)
+    native = data["metadata"]
+    return {
+        "name": metadata.core.name,
+        "version": str(version),
+        "commit": native["GitCommitId"],
+        "public_release": native["PublicRelease"],
+        "local_version": version.local,
+        "dependencies": metadata.core.dependencies,
+        "implementation": sys.implementation.name,
+        "interpreter_version": ".".join(
+            str(part) for part in sys.version_info[:3]
+        ),
+    }
+
+
 def member_path(name: str) -> str:
     """Reject reader-ambiguous archive coordinates before metadata lookup."""
     value = name.removesuffix("/")
@@ -269,6 +299,8 @@ def _dispatch() -> dict | list:
     match sys.argv[1:]:
         case ["identity", project]:
             return native_identity(Path(project))
+        case ["version-facts", project]:
+            return native_version_facts(Path(project))
         case ["outputs", directory, name, version, quality]:
             return inspect_outputs(Path(directory), name, version, quality)
         case ["archive", path, name, version, quality]:

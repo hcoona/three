@@ -40,7 +40,11 @@ universal `py3-none-any` wheel expresses absence of native ABI/platform payload,
 not evidence of support on every Python implementation or operating system.
 
 A project-local NBGV `version.json` owns the smoke lineage and public-main
-projection. The Provider reads complete history/tags at the exact target,
+projection at the pre-contraction target revisions retained by campaign evidence.
+The current committed projection follows the
+[Concrete Python Release Integration](./migration-strategy.md#concrete-python-release-integration).
+Retained legacy readers interpret their own target's committed projection and
+retain the existing live public-version guard. The Provider reads complete history/tags at the exact target,
 selects `SemVer2`, calls the existing `nbgv-python` normalization and freezes
 the canonical facts, field and exact PEP 440 value. Normalized parseable local
 versions are valid for non-publishing CI/qualification. Release Live admission

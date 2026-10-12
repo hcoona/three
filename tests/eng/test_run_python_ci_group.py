@@ -467,7 +467,11 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
             "preparation",
             "planning",
             "mise-trust",
-            "static-reference-preparation",
+            *(
+                ["static-reference-preparation"]
+                if target == group.V3_TESTS
+                else []
+            ),
             "execution",
         ]
         assert native["environment"]["MISE_DATA_DIR"] == str(mise_data)
@@ -632,6 +636,37 @@ def test_receiver_rejects_foreign_artifact_before_materialization(
     assert not directory.exists()
 
 
+def test_selected_preparation_uses_owned_mise_without_legacy_adapters(
+    flow, tmp_path, monkeypatch
+):
+    """Selected native preparation uses its committed MISE resource."""
+    monkeypatch.setenv("HK_PROFILE", "ambient")
+    flow.state["checks"] = [check("python/pytest-v1", group.PREPARATION_TESTS)]
+    group.plan(flow.root, flow.directory)
+    data = tmp_path / "mise"
+    data.mkdir()
+    query_tool_count = len(flow.tool_requests)
+    outcome = group.execute(flow.root, flow.directory, data)
+    request = group.node.read_json(flow.directory / "execution-request.json")
+    environment = request["native"]["environment"]
+    assert outcome["satisfied"] is True
+    assert flow.tool_requests[query_tool_count:] == ["mise"]
+    assert [row[0] for row in flow.calls] == [
+        "preparation",
+        "planning",
+        "mise-trust",
+        "execution",
+    ]
+    assert environment["MISE_DATA_DIR"] == str(data)
+    assert environment["MISE_EXEC_AUTO_INSTALL"] == "0"
+    assert str(tmp_path / "tools") in environment["PATH"].split(os.pathsep)
+    assert "HK_PROFILE" not in environment
+    assert "native_preparation=true" in flow.output.read_text()
+    assert (
+        request["native"]["checkout"] == flow.context["candidate"]["directory"]
+    )
+
+
 @pytest.mark.parametrize(
     "kind",
     [
@@ -643,6 +678,8 @@ def test_receiver_rejects_foreign_artifact_before_materialization(
         "azure_bundle",
         "legacy_v3_pwsh",
         "legacy_v3_mise",
+        "native_preparation_mise",
+        "native_preparation_resource",
     ],
 )
 def test_failed_selected_auxiliary_cannot_dispatch_products(
@@ -658,6 +695,8 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         "azure_bundle": group.AZURE_TESTS,
         "legacy_v3_pwsh": group.V3_TESTS,
         "legacy_v3_mise": group.V3_TESTS,
+        "native_preparation_mise": group.PREPARATION_TESTS,
+        "native_preparation_resource": group.PREPARATION_TESTS,
     }[kind]
     flow.state["checks"] = [check("python/pytest-v1", target)]
     group.plan(flow.root, flow.directory)
@@ -670,6 +709,7 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         "native_ruby": "ruby-test-tools-2.4.20",
         "native_ruby_second": "ruby-test-tools-2.7.2",
         "legacy_v3_mise": "mise-trust",
+        "native_preparation_mise": "mise-trust",
     }.get(kind)
 
     def run(root, directory, label, *args, **options):
@@ -678,7 +718,10 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         return native_run(root, directory, label, *args, **options)
 
     monkeypatch.setattr(group.node, "run", run)
-    if kind in ("azure_bundle", "legacy_v3_pwsh", "native_ruby_runtime"):
+    if kind == "native_preparation_resource":
+        with pytest.raises(ValueError, match="prepared mise data directory"):
+            group.execute(flow.root, flow.directory)
+    elif kind in ("azure_bundle", "legacy_v3_pwsh", "native_ruby_runtime"):
         native_executable = group.executable
         missing_tool = "ruby" if kind == "native_ruby_runtime" else "pwsh"
 

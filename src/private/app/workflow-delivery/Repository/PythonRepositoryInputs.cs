@@ -5,6 +5,7 @@ namespace WorkflowDelivery.Repository;
 // Repository engineering inputs select actual supplied checks, never a native target roster.
 internal static class PythonRepositoryInputs
 {
+    private const string PythonPreparationProduct = "src/public/lib/hcoona-release-smoke-python";
     private static readonly string[] Shared = [
         ".github/workflows/ci.yml", "eng/scripts/ci_scope.py",
         "eng/scripts/repository_path_patterns.py", "eng/scripts/prepare_ci_control_inputs.py",
@@ -31,6 +32,9 @@ internal static class PythonRepositoryInputs
         "src/public/lib/hcoona-release-smoke-github-packages"];
     private static readonly string[] AzureRoots = [
         "src/private/app/azureauth-credprovider", "tests/private/app/azureauth-credprovider"];
+    private static readonly string[] PythonPreparationRoots = [
+        "src/private/app/workflow-delivery", "tests/private/app/workflow-delivery",
+        PythonPreparationProduct, "src/public/lib/nbgv-python"];
 
     internal static PythonInputBinding[] Map(GitRevision revision,
         PythonProjectDependencies[] projects, PythonPytestTargetSet targets,
@@ -155,11 +159,24 @@ internal static class PythonRepositoryInputs
             path == "eng/scripts/run_ruby_ci_group.py") ||
         (target == "tests/eng/test_run_dotnet_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
+        (target == "tests/eng/test_python_release_preparation_gate.py" &&
+            PythonPreparationInput(path)) ||
         (target == "tests/eng/test_run_python_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
             path is "eng/scripts/ci_scope.py" or "eng/scripts/sync_python_version.py" or
                 "eng/scripts/workflow_delivery_v3_hk.py");
+
+    private static bool PythonPreparationInput(string path)
+    {
+        const string quality = "workflow-delivery.quality.yml";
+        if (path == quality) return true;
+        if (path.EndsWith("/" + quality, StringComparison.Ordinal))
+            return Under(PythonPreparationProduct, path[..path.LastIndexOf('/')]);
+        return DotnetInput(path, PythonPreparationRoots) ||
+            path is "eng/scripts/check_python_release_preparation.py" or
+                "eng/scripts/run_node_ci_group.py";
+    }
 
     private static bool Azure(string path) => DotnetInput(path, AzureRoots) ||
         Under(path, "eng/scripts/azureauth-credprovider") ||

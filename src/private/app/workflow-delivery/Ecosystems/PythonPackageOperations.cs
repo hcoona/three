@@ -87,6 +87,12 @@ internal sealed class PythonPackageOperations(PythonPackageTools tools, string r
         return [.. originals];
     }
 
+    internal async Task<JsonDocument> VersionFactsAsync(string directory,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token) => JsonDocument.Parse((await execute(Helper(python,
+            tools.Checkout, ["version-facts", Path.Combine(tools.Checkout, directory)]), token))
+                .Stdout);
+
     internal async Task ContentsAsync(PythonDistribution[] originals, string name, string version,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
