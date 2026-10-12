@@ -1050,6 +1050,294 @@ and record/research reviews, and ordinary Windows CI before caller delivery.
 These checks do not prove new hosted Release/feed behavior or grant publication,
 campaign replay, configuration changes or postmerge tests.
 
+### Concrete Python Release Integration
+
+This contract selects the existing `hcoona-release-smoke-python` release unit,
+its declared wheel/sdist build and adopted Python distribution quality preset.
+TestPyPI is Buddy and PyPI is Official. It adds no product, destination,
+publication authority or native experiment. Source findings follow the
+[native publisher assessment](./research/python-native-publisher.md); closed
+campaigns remain historical evidence rather than executable callers.
+
+Preparation reads the exact committed release declaration, project entry and
+quality selection using existing Git/declaration readers. Unsupported builds,
+outputs, quality recipes or required tests remain unavailable. Resolve native
+metadata through the maintained backend and `nbgv-python`; use the selected
+CPython/UV and the synchronized root lock. Live Official requires the selected
+official ref and the native public-release projection. This existing Official
+caller selects `refs/heads/main`; the native Environment may constrain it
+further. Buddy accepts repository branch refs; dry run does not require live ref
+eligibility. Keep one
+source/control revision throughout; do not inject versions or a target witness.
+
+Make this project's committed NBGV `publicReleaseRefSpec` match
+`^refs/heads/`, retaining its existing base, prerelease height and maintained
+`SemVer2` normalization for both CI and Release. The current main-only setting
+can produce a PEP 440 local part on development branches, which these indexes
+reject. This native public-version mode shapes a version; it supplies no
+Official authorization. Keep the Official selected-ref check independent.
+Provide faithful selected native ref/commit context on detached materializations;
+missing required history/context or a live local-version projection blocks that
+request. Do not strip suffixes, choose another field or override only Release's
+version. Same-version/different-byte conflicts retain their normal outcome.
+The configuration change belongs with shared preparation and its qualification,
+not this source-only contract delivery.
+
+Extract concrete package operations from `CI/PythonPackageExecution` into shared
+ecosystem code inside the existing private application. CI retains its plan and
+check adaptation; Release does not consume `CiPlan` or `CheckSpec`. Share native
+frozen tool preparation, metadata/output inspection, complete wheel/sdist build,
+original size/digest checks and clean consumers. Follow the
+[existing native package contract](./middle-level-design.md#native-python-package-execution):
+one frozen sync selecting root `dev` and `workflow-delivery-python`, native
+backend-requirement preparation, shared product build with native dependency
+checking, and noneditable backend/plugin reconciliation before Git-free sdist
+consumption. Do not maintain another backend roster, dependency evaluator or
+version engine. Native packaging interprets filenames and versions; Python
+library interfaces interpret archive and installed metadata.
+
+Complete preparation records native inputs/version, build, contents, original
+wheel consumer, Git-free original sdist consumer and original-byte results,
+plus any applicable declared tests. Preserve each reached command's actual
+termination and failed/missing/cancelled results. Bind portable native name,
+version, filenames, declared output roles, sizes and digests to the request;
+checkout-specific paths are not remote identity. The selected project has no
+runtime dependencies; another dependency shape needs its concrete integration.
+
+Use explicit closed destinations: TestPyPI Simple Index
+`https://test.pypi.org/simple/`, upload `https://test.pypi.org/legacy/` and file
+host `test-files.pythonhosted.org`; PyPI Simple Index
+`https://pypi.org/simple/`, upload `https://upload.pypi.org/legacy/` and file
+host `files.pythonhosted.org`. Observe publicly, without OIDC or write credentials.
+Read the project's PEP 691 JSON index, then interpret selected-version filenames
+through maintained packaging and compare actual original bytes. Require the
+complete declared pair, native coordinate, visibility and file metadata. A
+missing project or missing expected file can be absent; contradictory metadata,
+unexpected selected-version files, conflicting bytes or unavailable required
+facts cannot permit mutation. Registry active-file non-overwrite is the native
+dependency; no atomic two-file release or lifetime-global retention is promised.
+
+Bound each observation phase to 90 seconds and nine HTTP reads, each
+body-inclusive read to 30 seconds, index JSON to 2 MiB/4,096 entries and each
+original to 8 MiB. Use verified HTTPS, no automatic redirects, cookies,
+proxy/default credentials or insecure fallback. Accept file URLs only on the
+selected public storage host with no user information or fragment. Bounded
+visibility polling is read-only and remains inside those phase limits. Retain
+necessary sanitized observations rather than a replayable HTTP trust ledger.
+
+Only the actual publisher receives the existing destination Environment and
+native `id-token: write`. Invoke the repository-selected UV publisher once for
+one explicit still-needed original, with `--no-config`, the selected
+`--publish-url`, `--trusted-publishing always`, `--keyring-provider disabled`
+and `--no-attestations`; no index alias, wildcard or alternative credentials.
+Do not supply native `--check-url`; application complete verification stays separate.
+Native UV owns multipart, OIDC/short-lived token exchange, response
+interpretation, bounded retry and supported redirect behavior. The application
+provides an owned external working directory, fresh home/config/cache state,
+closed stdin, an environment containing only required platform/tool variables
+and a 180-second whole-process deadline. Supply the native GitHub OIDC request
+variables only to this publisher. Keep credentials out of arguments, request
+records and persisted native configuration. Token invalidation remains a native
+best-effort operation; record no application revocation certificate.
+
+Publication output needs a credential-aware boundary before any persistence.
+Forward complete native `add-mask` controls to the runner through stderr, keeping
+CLI stdout reserved for its JSON result. Do not forward arbitrary child workflow
+commands or retain token-bearing control lines. Persist only sanitized native
+diagnostics; omit unsafe text with an explicit diagnostic limitation. Preserve
+actual termination, exit, elapsed time and unknown effects on every error,
+output-limit, cancellation and timeout path. Runner masking does not replace
+result-file sanitation. Never fabricate native success to hide output handling.
+
+Refresh the complete observation immediately before mutation. Remove writes
+that became unnecessary; conflict or unknown state stops them. Invoke missing
+wheel before missing sdist, retaining already exact originals. Continue to the
+next missing file only after acknowledged native success and required exact
+intermediate readback. A returned failure/ambiguity or interruption stops all
+further application writes even if a subsequent read confirms that file.
+Bounded complete verification may still satisfy the active request; retain the
+actual command abnormality and do not attribute insertion. A fresh same-revision
+request can consider supported exact-subset completion after rebuilding and
+qualifying its own pair. No automatic resend, rerun recovery or compensation.
+
+Required remote consumers run in a separate no-write job for either initial
+exact state or new publication. Resolve each format from only the selected
+index with native UV and a generated exact-version/hash requirement. Force
+wheel or sdist respectively; reject local-file/source substitution, fallback
+indexes and populated caches. The original archive hash binds native resolution
+to the qualified output; installed version equality alone is insufficient.
+Use fresh external environments with no checkout import path. Prepare the
+sdist's noneditable backend/plugin tools through the same frozen native recipe
+outside publication capability, then consume in a Git-free directory with
+shared build mode. Build prerequisites and the smoke's destination remain
+separate native inputs. Check installed native metadata, import origin and
+the selected project's API. Missing native selection/hash evidence or required
+consumer results blocks completion; local-original install cannot establish
+remote index routing. No witness comparison is required.
+
+Switch the ordinary Python entry and actual Release caller atomically after
+component qualification. Use prepare, observe, gated publish and separate
+verify/result jobs on the supported Linux runner. Build/retain complete control
+before product execution; bind immutable transferred control, preparation and
+original artifacts to source/ref, unit/channel/destination/mode and actual
+producer/run, with the existing 45-day retention setting. Serialize by physical
+registry and normalized package through required verification. Dry run uses
+qualification/read/hypothetical operations and never `uv publish --dry-run`.
+Exact-state and dry-run paths enter no write gate. Common result evaluation
+retains attempted effects, actual command outcomes, observed state and business
+satisfaction separately. Historical readers retain their actual consumers;
+there is no runtime-schema compatibility alias.
+
+Before implementation or caller cutover, accept this contract with independent
+engineering/OCR and record/research review. Validate native command/configuration
+and output boundaries, original preparation/consumption, partial-state order,
+failure-after-effect, cancellation, missing transfers and complete results with
+controlled contract tests and credential-free local builds/tests. Run complete
+affected suites, HK/hooks and exact record checks. Ordinary Linux CI must qualify
+the final component/caller subject before delivery. These checks do not prove
+current OIDC configuration, live registry behavior or a new publication and do
+not reopen the stopped Python package or publication campaigns.
+
+### Concrete Ruby Release Integration
+
+This contract selects the existing `hcoona-release-smoke-ruby` unit under
+`tests/private/app/workflow-delivery/fixtures/products`, its declared single gem
+and adopted quality selection. GitHub Packages at
+`https://rubygems.pkg.github.com/hcoona` is Buddy; `https://rubygems.org` is
+Official. The [native assessment](./research/ruby-native-publisher.md) supplies
+the source basis. This adds no product, destination, publication authority or
+native experiment and reopens no completed campaign.
+
+Read the exact committed declaration, native gemspec and quality selection
+through existing repository readers. Support the declared dependency-free
+`ruby`-platform gem with no extensions. Another dependency/build/quality shape
+needs a concrete adapter, rather than a generic resolver or task framework.
+Buddy accepts repository branch refs; this Official caller selects
+`refs/heads/main`, with any further eligibility enforced by the native
+Environment. Dry run does not require live ref eligibility. Keep one faithful
+source/control revision and selected native ref context; missing history or
+unsupported native facts block the request. Use the existing NBGV `SemVer2` and
+maintained RubyGems version projection, without an application suffix stripper,
+publication-only version override or injected commit witness.
+
+Extract concrete build, native archive inspection and original local consumption
+from `CI/RubyPackageExecution` into `Ecosystems` inside the existing private
+application. CI keeps its plan/check adaptation; Release does not consume
+`CiPlan` or `CheckSpec`. Share the selected Ruby/RubyGems/NBGV tools, closed
+environment and native builder. Exclude inherited `SOURCE_DATE_EPOCH` for this
+fixture and use RubyGems' fixed native default; do not introduce a timestamp or
+archive engine. Native default timestamps do not promise byte identity across
+different tools, compression, file modes or source inputs.
+
+Qualification requires native name/version/platform, declared contents, no
+runtime dependencies/extensions, GitHub repository metadata, complete original
+size/digest, original local installation and a clean installed API/origin check,
+plus any adopted required tests. Retain actual reached command termination and
+failed/missing/cancelled checks. Portable native identity and original bytes bind
+the request; checkout paths and a version string alone do not. A fresh recovery
+rebuilds and qualifies its own original at the same revision. A conflicting
+same-version original remains a conflict.
+
+Observation uses a small adapter over public RubyGems APIs. Configure only the
+selected `Gem::Source` in memory through `SourceList`/`Gem.sources=`. Call native
+`Source.load_specs(:released)` and `Source.load_specs(:prerelease)` separately
+and require both to succeed; do not use convenience results that silently omit
+failed prerelease reads. Match native name/requirement/platform, fetch the native
+specification and download the original through that selected native Source.
+Require consistent native identity, owned fresh cache/download paths and actual
+original size/digest. Missing tuples after successful complete reads can be
+absent; transport/authentication/index/spec failures or contradictory facts are
+unknown. An exact original can be reused; different bytes forbid publication.
+
+Each observation uses a fresh external process/home/spec cache, a 90-second
+whole-process deadline, at most 64 selected tuples, a 256-KiB JSON answer and an
+8-MiB selected original. These are application process/result/original limits;
+RubyGems owns full inventory transfers, decompression and native request retries.
+Do not claim an underlying HTTP/inflated-index byte ceiling or replace native
+fetching to simulate one. Allow bounded read-only visibility polling only within
+the phase deadline. Retain sanitized business observations, not a replayable
+transport trust ledger.
+
+GitHub read credentials belong only to the read adapter's environment and
+in-memory owner Source URI. Use no global authorization header, credentials in
+arguments or persisted native source configuration. Native RubyGems owns its
+finite HTTPS continuation: an ordinary signed storage Location without the
+source URI's user information receives no original Basic credentials. Preserve
+the assessment's stated redirect shape and limits; add no custom one-hop
+downloader or arbitrary-origin guarantee. RubyGems.org observation is public.
+
+Only an actual publisher receives the existing destination Environment and
+write capability. Buddy uses repository `GITHUB_TOKEN` with `packages: write`,
+passed to the native command as `GEM_HOST_API_KEY` with the documented Bearer
+composition. Official uses the maintained pinned credential Action's
+trusted-publisher path with `id-token: write`, explicit RubyGems.org server and
+audience, no account credential, static key or role fallback. That Action owns
+OIDC, native masking and token exchange, including its mode-0600 native
+credential-file write. Give it fresh owned job home/state; exclude that state
+from retained artifacts and clean only owned state. Do not claim automatic key
+revocation or recreate platform authorization/MFA/scope management.
+
+Refresh observation immediately before mutation. If state became exact, omit
+the write; conflict or unknown state stops it. Invoke maintained `gem push` once
+for the explicit qualified original and selected host, under a 180-second
+whole-process deadline, closed stdin/non-TTY, native `--norc`, fresh working
+home/cache and an allowlisted environment. RubyGems owns package interpretation,
+upload, supported retry and native response handling. Do not patch private
+sign-in, OTP or scope methods. Native generic auxiliary requests remain subject
+to the documented selected token/platform profile; no account mutation is
+authorized. No application resend, compensation or rerun recovery follows a
+failure or interruption. Complete fresh observation and required consumers may
+still satisfy the request; preserve the actual command abnormality and unknown
+effects without attributing unique insertion.
+
+Suppress unsafe publisher/read diagnostics before persistence, including
+credential-bearing URIs and partial failure/cancellation output. Preserve actual
+exit, termination, duration and uncertainty. Native runner masking does not
+sanitize result files. Read adapters serialize only portable sanitized native
+answers; missing/invalid/oversized output stays unknown. Configure native
+`ConfigFile(['--norc'])` when calling public Ruby APIs: it ignores user/system
+configuration values while retaining native platform defaults, rather than
+claiming those files are never read. Own `HOME`, gem/spec/cache/temp roots and
+exclude inherited proxy, Gem/Bundler credentials, `RUBYOPT` and `RUBYLIB`.
+Load only prepared maintained tools; product code is absent from the publisher.
+
+Required remote consumption runs in a separate no-write job on both initial
+exact state and new publication. Native selected-source inventory/spec/download
+must produce a fresh remote original; a prebuilt local-original install is not
+remote routing proof. End the read-credential process, validate the actual
+remote original digest/identity/contents and dependency/extension constraints,
+then install that fetched original in a credential-free child using public
+`Gem::Installer.at` with fresh `install_dir`, `only_install_dir: true`,
+`force: false`, `ignore_dependencies: false` and no development dependencies.
+Keep native dependency/runtime/platform validation. Compare native installed
+name/version/platform and cached original digest, then require the selected API
+and import origin in a clean credential-free child outside the checkout.
+Post-install version/digest checks alone cannot justify installing unqualified
+remote code with a read token. This sequence delegates source routing,
+downloading, archive semantics and installation to RubyGems; it implements no
+second resolver. Missing routing, original or consumer results block completion.
+
+Switch the ordinary Ruby entry and actual caller together after component
+qualification. Use prepare, observe, gated publish and separate verify/result
+jobs on the supported Linux runner. Transfer complete same-revision control
+before product execution and bind immutable preparation/original transfers to
+source/ref, unit/channel/destination/mode and actual producer/run. Use the
+existing 45-day retention and physical registry/package native concurrency
+through verification. Dry run performs qualification/read/hypothetical work
+with no publication credential acquisition or `gem push`. Exact/dry-run paths
+enter no write gate. The common result separates attempted effects, actual
+command outcomes, observed state and required business satisfaction.
+
+Before implementation or caller cutover, accept this contract with independent
+engineering/OCR and record/research review. Controlled credential-free component
+tests and ordinary Linux CI must qualify native command/configuration/output
+boundaries, original build/inspection/consumption, hash-before-install routing,
+failure-after-effect, cancellation, missing transfers and complete results on
+the final subject. Run complete affected suites and repository HK/hooks/record
+checks. These checks do not establish current token/publisher configuration or
+a new live feed/publication. Historical readers and spent campaigns remain
+intact; no runtime schema compatibility alias is added.
+
 ## Behavior and Evidence Compatibility
 
 Tests move by retained behavior, not by old class or chronology-named file. Paths

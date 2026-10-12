@@ -54,6 +54,12 @@ Live run. The [NuGet Buddy interface](../../../../private/app/workflow-delivery/
 also composes its ordinary caller; caller delivery requires the separate ordinary
 Windows CI gate. Remaining Release integrations and quality presets remain pending.
 
+The [concrete Python Release contract](./migration-strategy.md#concrete-python-release-integration)
+defines the next preparation, native publisher, remote consumer and ordinary
+caller boundary. Its [publisher source assessment](./research/python-native-publisher.md)
+distinguishes native OIDC/retry and output handling from runtime qualification.
+Neither record authorizes a new publication or reopens a completed campaign.
+
 The [native Python planning contract](./middle-level-design.md#native-python-planning-facts)
 has passive extraction, a pinned Rust supplement, ordered configuration
 preflight, metadata adaptation and operation dependency projection with controlled
@@ -143,6 +149,14 @@ Before planning or editing v3 work, read the [Workflow Delivery v3 AI Agent Hand
 operating guidance, not a second normative specification.
 
 ## Ruby Smoke Design
+
+The [concrete Release contract](./migration-strategy.md#concrete-ruby-release-integration)
+selects the shared native gem operations, source routing, publisher profiles,
+credential-free remote installation and caller qualification boundary.
+The [native Release assessment](./research/ruby-native-publisher.md) records
+pinned RubyGems publisher, credential, observation and consumer interfaces for
+the contraction. It is source evidence, not a concrete caller contract or new
+live qualification.
 
 The owner selected the complete Ruby journey under [Issue #954](https://github.com/hcoona/three/issues/954).
 [`WD-RUBY-*`](./requirements.md#ruby-smoke-slice), the [HLD extension](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md#ruby-smoke-extension)
