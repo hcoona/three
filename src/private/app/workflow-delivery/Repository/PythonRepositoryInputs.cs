@@ -166,6 +166,9 @@ internal static class PythonRepositoryInputs
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target == "tests/eng/test_python_release_preparation_gate.py" &&
             PythonPreparationInput(path)) ||
+        (target == "tests/eng/test_python_release_caller.py" &&
+            path is "src/private/app/workflow-delivery/Native/Python/release_caller.py" or
+                ".github/workflows/workflow-delivery-v3-python-smoke.yml") ||
         (target == "tests/eng/test_ruby_release_preparation_gate.py" &&
             RubyPreparationInput(path)) ||
         (target == "tests/eng/test_run_python_ci_group.py" &&

@@ -6,6 +6,7 @@ using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 using WorkflowDelivery.Release;
 using WorkflowDelivery.Destinations;
+using WorkflowDelivery.Ecosystems;
 
 namespace WorkflowDelivery;
 
@@ -305,6 +306,17 @@ internal static class Program
 [JsonSerializable(typeof(NpmPreparationResult))]
 [JsonSerializable(typeof(NuGetPreparationRequest))]
 [JsonSerializable(typeof(NuGetPreparationResult))]
+[JsonSerializable(typeof(PythonPreparationRequest))]
+[JsonSerializable(typeof(PythonPreparationResult))]
+[JsonSerializable(typeof(PythonIndexTools))]
+[JsonSerializable(typeof(PythonIndexToolRequest))]
+[JsonSerializable(typeof(PythonIndexToolResult))]
+[JsonSerializable(typeof(PythonPublisherTools))]
+[JsonSerializable(typeof(PythonPackageTools))]
+[JsonSerializable(typeof(PythonIndexObservationResult))]
+[JsonSerializable(typeof(PythonPublicationResult))]
+[JsonSerializable(typeof(PythonRemoteConsumerResult))]
+[JsonSerializable(typeof(PythonCompletionResult))]
 [JsonSerializable(typeof(RubyPreparationRequest))]
 [JsonSerializable(typeof(RubyPreparationResult))]
 [JsonSerializable(typeof(RubyRemoteConsumerTools))]

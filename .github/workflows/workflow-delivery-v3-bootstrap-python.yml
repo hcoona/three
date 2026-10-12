@@ -18,7 +18,7 @@ name: Workflow Delivery v3 Python bootstrap
         required: true
 permissions: {}
 concurrency:
-  group: wdv3-python-project-${{ inputs.registry }}
+  group: ${{ format('workflow-delivery-{0}-hcoona-release-smoke-python', inputs.registry == 'testpypi' && 'test.pypi.org' || 'pypi.org') }}
   cancel-in-progress: false
 defaults:
   run:

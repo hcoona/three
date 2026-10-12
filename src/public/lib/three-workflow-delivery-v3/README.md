@@ -94,6 +94,12 @@ The private application's [native Python remote consumer](../../../private/app/w
 uses selected-index UV installation with the qualified original hash and isolated
 installed metadata/API checks. Controlled scenarios qualify component boundaries;
 live destination and ordinary Release caller qualification remain separate.
+The [ordinary Python Release interface](../../../private/app/workflow-delivery/README.md#ordinary-python-release)
+composes complete preparation, public observation, conditional native publication
+and separate required format consumers/result in the current CLI and four-job
+caller. Controlled/local checks do not establish deployed index/OIDC behavior;
+final-source ordinary Linux CI and independent reconciliation qualify delivery.
+Completed campaigns remain closed.
 
 The private application's [Ruby Release preparation component](../../../private/app/workflow-delivery/README.md#ruby-release-preparation-component)
 implements complete declared gem qualification independently of CI. Its local
