@@ -1651,6 +1651,34 @@ and isolated native preparation tests qualify this component only. The ordinary
 caller below composes it with destination observation, publication and required
 remote consumption; component qualification does not establish live feed behavior.
 
+### Native NuGet CI Scenarios
+
+The existing `nuget-reproducibility` Windows job selects `NuGetNativeScenarios`
+in the managed test owner. Its
+[native preparation scenarios](../../../../tests/private/app/workflow-delivery/Release/NuGetPreparationNativeTests.cs)
+compare independently prepared originals across different checkout roots,
+source mtimes and dependency caches, including native DLL/PDB bytes and debug
+paths. Source and explicit timestamp controls establish sensitivity; the
+timestamp control keeps entry payloads equal while archive metadata changes.
+Portable PDBs are inspected separately because the selected product does not
+package symbols.
+
+Fresh exact/conflicting observations use independently rebuilt originals and
+the real native consumer with controlled HTTP. The first missing-publication
+result remains Unknown; exact recovery requires clean consumption without a
+publisher invocation, and conflicting bytes block completion.
+
+The [scope selector](../../../../eng/scripts/ci_scope.py) follows the current
+application, test owner, product, inherited managed build inputs and native
+control resources. Old Python-package/helper inputs do not select this job.
+The caller restores pinned product dependencies before the tests and requires
+one TRX with every selected case executed and passed. Actual results,
+attachments, original packages and binlogs retain the existing
+`nuget-reproducibility-windows` artifact, `artifacts/nuget-reproducibility`
+directory and 30-day lifetime, including failures. Local Linux qualification
+does not establish Windows execution, a deployed feed or publication; ordinary
+final-source Windows CI remains required before delivery.
+
 ### NuGet Buddy Release
 
 The ordinary NuGet entry and reusable Release workflow use four concrete jobs:
