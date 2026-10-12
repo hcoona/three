@@ -218,6 +218,12 @@ no publication or campaign continuation.
 
 ## Ruby Delivery Entry
 
+The [native Ruby remote consumer](../../../../private/app/workflow-delivery/README.md#native-ruby-remote-consumer-component)
+uses shared native source reads and archive inspection before credential-free
+installation and a separate clean API/origin child. Component source/local
+qualification is separate from ordinary final-source caller CI and deployed
+feed behavior. Existing campaign/publication limits remain unchanged.
+
 The [concrete Release contract](./migration-strategy.md#concrete-ruby-release-integration)
 and [native assessment](./research/ruby-native-publisher.md) define the next
 implementation boundary. They establish neither caller implementation nor

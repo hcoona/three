@@ -1892,3 +1892,32 @@ configuration values without claiming those files are never read.
 Preparation performs no feed observation, authentication or publication. Remote
 consumption and ordinary caller integration retain their separate gates under
 the [concrete Ruby contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-ruby-release-integration).
+
+### Native Ruby remote consumer component
+
+`RubyRemoteConsumer.RunAsync` requires complete qualified preparation and a
+fresh selected-source original. The shared `RubySourceReader` delegates source
+inventory, specification and original download to public RubyGems APIs. Only
+that external read process receives Buddy read credentials; Official reads are
+public. The read result retains sanitized process facts and portable original
+identity, never its credential-bearing environment.
+
+After the read process ends, the component checks the actual remote digest and
+uses shared `RubyPackageOperations.InspectReleaseAsync` to qualify its native
+identity, contents, repository metadata and dependency/extension-free shape.
+No local-original fallback or read credential enters archive inspection,
+installation or product execution. The credential-free native helper uses
+public `Gem::Installer.at` with an owned install directory, native dependency
+validation and no force/ignore-dependency override. A separate clean child
+checks the installed specification, cached original digest, API and import
+origin outside the checkout.
+
+The result carries its required remote consumer check, reached sanitized command
+outcomes and failure limits. Missing/conflicting/unknown originals, failed native
+inspection or installation, wrong API/origin, cancellation and timeouts block
+completion. A five-minute phase lifetime bounds the existing 90-second source
+read and each 90-second native inspection/install/consume process. Local and
+controlled qualification, ordinary final-source Linux CI and actual deployed
+feed qualification remain distinct; this component grants no publication or
+campaign operation. The [concrete Ruby contract](../../../public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#concrete-ruby-release-integration)
+retains the ordinary caller's separate delivery gate.

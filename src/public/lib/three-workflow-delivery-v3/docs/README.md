@@ -474,3 +474,9 @@ does not repair that bootstrap version or revive its request.
 The [Delivery Wave](../../../../../docs/delivery-wave.md) owns current work
 authorization, and the [handoff](./agent-handoff.md#starting-a-new-session)
 routes the accepted operation, configuration and remaining evidence gates.
+
+The private application's [native Ruby remote consumer](../../../../private/app/workflow-delivery/README.md#native-ruby-remote-consumer-component)
+uses selected native source routing, hash-before-install archive qualification
+and separate credential-free installed API/origin consumption. Component and
+ordinary caller delivery retain separate final-source qualification; neither
+establishes new live feed/publication behavior or reopens spent campaigns.

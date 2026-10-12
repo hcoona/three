@@ -435,3 +435,9 @@ failed RubyGems normal01 and normal02's successful publication with failed
 workflow closure. Completion refunds no slot and authorizes no further
 dispatch, Approval, publication or configuration. Historical Governance
 and its original expiry remain unchanged.
+
+The private application's [native Ruby remote consumer](../../../private/app/workflow-delivery/README.md#native-ruby-remote-consumer-component)
+uses selected native source routing, hash-before-install archive qualification
+and separate credential-free installed API/origin consumption. Component and
+ordinary caller delivery retain separate final-source qualification; neither
+establishes new live feed/publication behavior or reopens spent campaigns.

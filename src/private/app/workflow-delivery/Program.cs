@@ -1,4 +1,5 @@
 using System.Text.Json;
+using WorkflowDelivery.Ecosystems;
 using System.Text.Json.Serialization;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
@@ -292,7 +293,8 @@ internal static class Program
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     Converters = new[] { typeof(CheckStatusJsonConverter), typeof(NativeTerminationJsonConverter),
         typeof(CheckOriginJsonConverter), typeof(ReleaseCheckStatusJsonConverter),
-        typeof(ReleaseFileStateJsonConverter), typeof(ReleaseBusinessStateJsonConverter) },
+        typeof(ReleaseFileStateJsonConverter), typeof(ReleaseBusinessStateJsonConverter),
+        typeof(RubySourceStateJsonConverter) },
     WriteIndented = true,
     RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true,
@@ -305,6 +307,8 @@ internal static class Program
 [JsonSerializable(typeof(NuGetPreparationResult))]
 [JsonSerializable(typeof(RubyPreparationRequest))]
 [JsonSerializable(typeof(RubyPreparationResult))]
+[JsonSerializable(typeof(RubyRemoteConsumerTools))]
+[JsonSerializable(typeof(RubyRemoteConsumerResult))]
 [JsonSerializable(typeof(GithubNuGetObservationResult))]
 [JsonSerializable(typeof(GithubNuGetPublicationResult))]
 [JsonSerializable(typeof(GithubNuGetConsumerResult))]
@@ -370,3 +374,6 @@ internal sealed class ReleaseFileStateJsonConverter()
 
 internal sealed class ReleaseBusinessStateJsonConverter()
     : JsonStringEnumConverter<ReleaseBusinessState>(allowIntegerValues: false);
+
+internal sealed class RubySourceStateJsonConverter()
+    : JsonStringEnumConverter<RubySourceState>(allowIntegerValues: false);
