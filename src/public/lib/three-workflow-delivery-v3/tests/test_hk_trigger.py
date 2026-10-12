@@ -1511,6 +1511,12 @@ python() {
     calls = tuple(trace.read_text().rstrip("\0").split("\0"))
     hk_arguments = (
         "hk",
+        "--profile",
+        "small",
+        "--profile",
+        "medium",
+        "--profile",
+        "large",
         "check",
         "--check",
         "--no-stage",

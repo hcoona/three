@@ -93,12 +93,33 @@ def _required_step(scope: dict[str, Any]) -> None:
 
 
 def _python_adapter_condition(step: dict[str, Any]) -> str:
+    if step.get("uses", "").startswith("jdx/mise-action@"):
+        return (
+            "steps.plan.outputs.legacy_v3 == 'true' || "
+            "steps.plan.outputs.native_preparation == 'true'"
+        )
     if step.get("uses", "").startswith("ruby/setup-ruby@"):
         return (
             "steps.plan.outputs.legacy_v3 == 'true' || "
             "steps.plan.outputs.native_ruby == 'true'"
         )
     return "steps.plan.outputs.legacy_v3 == 'true'"
+
+
+def _python_retention_step(step: dict[str, Any]) -> None:
+    if step["with"]["name"] == "python-release-preparation":
+        assert step["if"] == (
+            "always() && steps.plan.outputs.native_preparation == 'true'"
+        )
+        assert step["with"]["path"] == (
+            "${{ steps.endpoints.outputs.candidate_directory }}"
+            "/artifacts/python-release-preparation/"
+        )
+        assert step["with"]["if-no-files-found"] == "error"
+    else:
+        assert step["if"] == "always()"
+    assert step["uses"].startswith("actions/upload-artifact@")
+    assert not step.get("continue-on-error", False)
 
 
 def _required_context_step(key: str, step: dict[str, Any]) -> None:
@@ -151,9 +172,7 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
         else:
             assert step["uses"].startswith("actions/upload-artifact@")
     elif key == "python-tests" and "Retain" in step["name"]:
-        assert step["if"] == "always()"
-        assert step["uses"].startswith("actions/upload-artifact@")
-        assert not step.get("continue-on-error", False)
+        _python_retention_step(step)
     elif key == "python-tests" and "adapter" in step["name"].lower():
         assert step["if"] == _python_adapter_condition(step)
         assert not step.get("continue-on-error", False)
@@ -391,9 +410,17 @@ def test_validation_uses_captured_tools_before_install_and_hk(
     }
     install = calls.index(["mise", "install", "--locked"])
     bootstrap = calls.index(["mise", "bootstrap"])
-    hk = next(
-        index for index, call in enumerate(calls) if call[:2] == ["hk", "check"]
-    )
+    hk = next(index for index, call in enumerate(calls) if call[0] == "hk")
+    assert calls[hk][:8] == [
+        "hk",
+        "--profile",
+        "small",
+        "--profile",
+        "medium",
+        "--profile",
+        "large",
+        "check",
+    ]
     assert install < bootstrap < hk
     for item in _observations(env):
         if item["command"][0] in {"mise", "hk"}:
@@ -441,10 +468,27 @@ def test_validation_hk_uses_tested_comparison_and_propagates_failure(
     command = observed["command"]
     if full:
         assert "--all" in command
+        hk = command
     else:
         assert command[1] == "eng/scripts/workflow_delivery_v3_hk.py"
         assert command[command.index("--from-ref") + 1] == "a" * 40
         assert command[command.index("--to-ref") + 1] == "d" * 40
+        hk = command[command.index("--") + 1 :]
+    assert hk == [
+        "hk",
+        "--profile",
+        "small",
+        "--profile",
+        "medium",
+        "--profile",
+        "large",
+        "check",
+        "--check",
+        "--no-stage",
+        "--no-progress",
+        "--no-fail-fast",
+        *(["--all"] if full else []),
+    ]
     assert {"small", "medium", "large"} <= set(observed["profile"].split(","))
 
 
@@ -631,7 +675,10 @@ def test_python_check_has_consumed_toolchain_prerequisites(workflow):
     )
     mise = _action(job, "jdx/mise-action")
     assert mise["with"]["experimental"] is True
-    assert {"aqua:jdx/hk", "pkl"} <= set(mise["with"]["install_args"].split())
+    assert mise["with"]["install_args"] == (
+        "${{ steps.plan.outputs.legacy_v3 == 'true' && "
+        "'aqua:jdx/hk pkl' || 'python uv' }}"
+    )
     assert (
         mise["env"]["MISE_DATA_DIR"]
         == "${{ runner.temp }}/python-auxiliary-mise"
