@@ -69,7 +69,11 @@ still require their applicable complete qualification. The
 qualifies the pinned helper composition. Complete hosted caller qualification
 is carried by [PR #1114](https://github.com/hcoona/three/pull/1114); completed enrichment and graph campaigns
 supply no further execution allowance.
-Other quality presets, ecosystem execution cutover and Release remain pending.
+The private application's [NuGet Release preparation component](../../../private/app/workflow-delivery/README.md#nuget-release-preparation-component)
+implements complete native preparation for Buddy and development dry runs
+independently of CI. This component does not establish ordinary NuGet caller
+cutover, publication or new live acceptance. Other quality presets and remaining
+Release integrations are pending.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
 that the existing runtime already satisfies the contraction requirements.
