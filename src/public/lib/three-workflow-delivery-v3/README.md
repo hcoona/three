@@ -71,8 +71,9 @@ is carried by [PR #1114](https://github.com/hcoona/three/pull/1114); completed e
 supply no further execution allowance.
 The private application's [NuGet Release preparation component](../../../private/app/workflow-delivery/README.md#nuget-release-preparation-component)
 implements complete native preparation for Buddy and development dry runs
-independently of CI. This component does not establish ordinary NuGet caller
-cutover, publication or new live acceptance. Other quality presets and remaining
+independently of CI. The [NuGet Buddy interface](../../../private/app/workflow-delivery/README.md#nuget-buddy-release)
+composes the ordinary caller; component qualification does not establish hosted
+Release/feed behavior or new live acceptance. Other quality presets and remaining
 Release integrations are pending.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
@@ -120,8 +121,9 @@ The old `governance run-fixed-acceptance-probe` command and fixed-coordinate
 Python producer APIs are retired. `governance admit-acceptance-evidence` and
 reviewer inspection still read historical evidence; the original bytes and
 provenance remain retained. Old producer replay requires its exact historical
-Git revision and separate operation authorization. npm/NuGet native acceptance
-and Release continue to use their existing commands and contracts.
+Git revision and separate operation authorization. Retained npm/NuGet native
+acceptance commands serve their historical consumers; ordinary Release callers
+use the private application's interfaces.
 
 The [Python smoke package](../hcoona-release-smoke-python/README.md) provides the
 wheel/sdist proving payload. The [Python LLD](docs/hcoona-release-smoke-python-lld.md)
@@ -148,8 +150,10 @@ confirmed requirements, protected design and implementation. The
 [selected NuGet smoke library](../hcoona-release-smoke-github-packages/README.md)
 owns its marker-product purpose; the
 [native .NET helper](../../../private/app/workflow-delivery-v3-dotnet-provider/README.md)
-is a v3 Provider and package-inspection component. The handoff retains the
-distinct native and publication admission gates. Explicit NuGet Release
+is retained for historical Provider and package-inspection consumers. The handoff
+retains the distinct native-operation and publication authorization gates. The
+following record-chain summary describes retained historical source and evidence,
+not the replacement ordinary caller. Explicit NuGet Release
 records and qualification bind admitted native inputs and the original package
 to separate content and consumer Evidence. Destination integration
 adds native eligibility, active observation, original-archive publication,
@@ -162,8 +166,10 @@ zero-or-one action materialization, and current-Attempt Approval/Authorization.
 Native publication commands connect fresh exact-state proof, build-free
 preparation, one-shot execution, and current-DAG finalization. The separate
 [NuGet manual caller](../../../../.github/workflows/workflow-delivery-v3-nuget-buddy-smoke.yml)
-and [reusable Attempt](../../../../.github/workflows/workflow-delivery-v3-nuget-live-attempt.yml)
-connect these commands on Windows. The [audited native generation and Governance evidence](docs/research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
+and [reusable Release](../../../../.github/workflows/workflow-delivery-v3-nuget-live-attempt.yml)
+now compose the private application's [NuGet Buddy interface](../../../private/app/workflow-delivery/README.md#nuget-buddy-release)
+on Windows. Their current preparation, native operations and result boundary are
+described there. The [audited native generation and Governance evidence](docs/research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation)
 are bound by the exact production admission and ready Governance with Live enabled.
 Windows normal-Live publication and fresh exact-version destination consumption
 are [independently verified](docs/validation/nuget-normal-live-evidence.md).
@@ -330,6 +336,11 @@ including its integration-contract revision and evidence digest. Its production
 registry contains the independently audited generation linked above; no
 separate atomic-assurance registry is used.
 
+The remaining NuGet command descriptions serve retained historical source and
+evidence readers, including the fixture, profile and acceptance entries above.
+They do not describe the replacement ordinary caller or reopen any stopped
+campaign. The [handoff](docs/agent-handoff.md) retains operation limits.
+
 `repository provide-dotnet --help` describes the unprivileged native Provider
 entry. `release nuget --help` exposes the separate control commands for Intent,
 Model, Eligibility, Attempt admission, Build/Qualification, approval, publication,
@@ -374,16 +385,11 @@ records and current terminal chain without destination reads. Missing terminal
 evidence cannot establish success. Use each command's `--help` for its complete
 current-run transport inputs.
 
-The native workflows bind the actual NuGet caller path and current immutable
-artifacts. An unprivileged job builds the trusted same-revision helper and
-transports its complete runtime to readers and the publisher. Target evaluation,
-Build, and both quality checks have no publication permission; the publisher
-uses the prebuilt helper. Blocked Eligibility retains its Decision and fails
-before the Attempt. Zero action uses fresh proof; one action requires the existing
-Approval Environment, current Authorization, and re-admission of the uploaded
-marker before invocation. Failed Result and Outcome payloads remain available
-for immutable upload. Local glue tests establish no Actions or destination
-behavior, and workflow availability supplies no missing native admission.
+The ordinary NuGet entry and reusable Release route to the private interface
+above. Its source implementation and controlled tests establish no new hosted
+Release/feed qualification. The retained old command/marker descriptions preserve
+their historical consumers and terminal outcomes; they do not supply ordinary
+caller admission or new operation authorization.
 
 The documentation records accepted domain constraints and evidence. It grants no
 runtime work and does not renew either spent npm dispatch authorization.

@@ -30,16 +30,22 @@ their actual consumers. No new live dispatch or publication is implied.
 The private application's [NuGet Release preparation component](../../../../private/app/workflow-delivery/README.md#nuget-release-preparation-component)
 implements the accepted concrete Buddy preparation contract independently of CI,
 using native NBGV/Build/Pack and shared original-package inspection and local
-consumption. Its isolated local qualification does not establish a NuGet Release
-caller, destination observation, publication or new live acceptance.
+consumption. Its isolated local qualification does not establish hosted Release
+or feed behavior.
 The private application's [NuGet destination observation component](../../../../private/app/workflow-delivery/README.md#nuget-destination-observation)
 implements bounded service-index, package metadata and original archive reads
 using official NuGet interpretation. Controlled tests establish credential
 separation, finite reads and unknown/conflict handling; they do not qualify live
 feed behavior. The [native publisher](../../../../private/app/workflow-delivery/README.md#native-nuget-publisher-component)
 and [remote consumer](../../../../private/app/workflow-delivery/README.md#nuget-remote-consumer-component)
-have implemented component boundaries; their ordinary NuGet caller integration
-and cutover remain separate under the accepted concrete integration contract.
+have implemented component boundaries. The [NuGet Buddy interface](../../../../private/app/workflow-delivery/README.md#nuget-buddy-release)
+composes the ordinary entry and reusable caller under the accepted concrete
+integration contract: complete same-revision preparation/control transfer, native
+observation, approval only on the actual publisher and separate required read-only
+consumption. It preserves the actual official invocation beside common business
+completion and replaces the ordinary Python admission/approval-mirror/marker/proof
+chain. Historical campaign readers retain their current consumers. Controlled
+tests and ordinary CI establish no new dispatch, live-feed or publication authority.
 Root CI owns the native Ruby group, qualified in ordinary
 [PR #1124](https://github.com/hcoona/three/pull/1124) CI. It receives the exact scope
 and complete candidate control artifact, prepares native facts once and executes
@@ -988,6 +994,8 @@ applicable documentation and repository gates but keeps the same validate-before
 The internal application's `DotNetRemoteConsumer` implements native graph generation,
 official source-local restore and installed-original comparison before build/marker
 execution under the accepted Concrete NuGet Buddy Integration contract. It requires
-a separate no-write caller with owned fresh directories. Controlled local validation
-does not establish live-feed behavior; CLI/workflow caller cutover and its existing
-ordinary Windows CI gate remain separate. Completed native/live campaigns stay closed.
+a separate no-write caller with owned fresh directories. The
+[NuGet Buddy interface](../../../../private/app/workflow-delivery/README.md#nuget-buddy-release)
+composes the ordinary CLI/workflow caller. Caller delivery requires its separate
+ordinary Windows CI gate; controlled local validation does not establish live-feed
+behavior. Completed native/live campaigns stay closed.

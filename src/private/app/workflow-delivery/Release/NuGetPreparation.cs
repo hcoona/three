@@ -16,7 +16,7 @@ internal sealed record NuGetPreparationResult(PreparedRelease Prepared,
 internal static class NuGetPreparation
 {
     internal const string Preset = "dotnet/hcoona-release-smoke-github-packages-v1";
-    private static readonly string[] Required = ["native-input", "build", "pack", "contents",
+    internal static readonly string[] Required = ["native-input", "build", "pack", "contents",
         "consumer", "original-bytes"];
     private static readonly string[] Versions = ["PackageId", "NuGetPackageVersion",
         "PackageVersion", "AssemblyVersion", "AssemblyFileVersion", "AssemblyInformationalVersion"];

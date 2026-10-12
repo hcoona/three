@@ -108,8 +108,9 @@ the component awaits native completion rather than abandoning an active upload.
 The native timeout is 120 seconds. Its typed result preserves command success,
 parent cancellation, sanitized failure type and duration separately from business
 completion. Controlled tests exercise the actual official client through supplied
-transport. This component has no CLI or workflow caller yet and establishes no
-live publication, remote-consumer or platform qualification.
+transport. The [NuGet Buddy caller](#nuget-buddy-release) integrates this component
+with the ordinary Release CLI and workflow. Controlled component tests establish
+no live publication, remote-consumer or platform qualification.
 
 ## Native Ruby Primitives
 
@@ -1140,8 +1141,10 @@ uses Bearer authentication. Only the original archive can follow one supported
 HTTPS storage redirect, without credentials. Signed locations remain in memory;
 diagnostics retain only the storage origin and location digest. Cancellation and
 missing responses retain unknown state. Controlled handler scenarios qualify
-this component's behavior, not live feed responses or publication. Release CLI,
-publisher and required remote consumption remain separate integration work.
+this component's behavior, not live feed responses or publication. The
+[NuGet Buddy caller](#nuget-buddy-release) composes native observation, publication
+and required remote consumption without promoting controlled results to live-feed
+qualification.
 
 ### Native .NET Group Interface
 
@@ -1593,8 +1596,60 @@ checkout paths. Native NBGV caching and reproducibility remain authoritative;
 preparation maps the complete source checkout to a stable native compiler path,
 including generated sources and PDB paths. It injects neither frozen versions nor
 a witness. Controlled failures
-and isolated native preparation tests qualify this component only. No NuGet
-Release CLI, hosted caller, destination observation or publication is supplied.
+and isolated native preparation tests qualify this component only. The ordinary
+caller below composes it with destination observation, publication and required
+remote consumption; component qualification does not establish live feed behavior.
+
+### NuGet Buddy Release
+
+The ordinary NuGet entry and reusable Release workflow use four concrete jobs:
+prepare, observe, publish and verify/result. The containing entry owns native
+package concurrency through verification. Preparation builds and transfers the
+complete same-revision control distribution before running product code. Receiving
+jobs download immutable artifact IDs with native digest rejection and bind the
+actual run, attempt, source commit, selected ref, unit and dry-run mode. Complete
+preparation, original packages and actual business results use 45-day retention.
+
+The private interface is:
+
+```text
+release prepare-nuget REQUEST
+release observe-github-nuget PREPARATION ORIGINALS
+release describe-github-nuget PREPARATION OBSERVATION
+release publish-github-nuget PREPARATION ORIGINALS
+release consume-github-nuget PREPARATION OBSERVATION ORIGINALS SCRATCH
+release complete-github-nuget PREPARATION INITIAL FINAL CONSUMER PUBLISHER_OR_-
+```
+
+`ORIGINALS` is an absolute receiving directory containing the original relative
+package path. Native size, digest and package identity checks precede network
+activity. `SCRATCH` is a fresh external directory. Transferred native expectations
+omit checkout-specific preparation paths. JSON inputs reject missing, null,
+unknown and duplicate properties through the existing typed transfer boundary.
+
+Buddy development refs and dry runs are supported. Dry run qualifies complete
+preparation and describes supported missing writes without entering an Environment,
+invoking publication or claiming live completion. Live reruns remain unavailable.
+The existing `workflow-delivery-v3-buddy-approval` Environment applies only to the
+actual publisher. That job runs transferred control without rebuilding or executing
+product code. Publication refreshes native state; exact removes the write, absent
+permits one official NuGet invocation, and conflict or unknown blocks it.
+
+An official upload returns its actual `NuGetPushResult`, preserving handled
+timeout, cancellation or failure rather than inventing a process result. Handled
+upload abnormality permits bounded independent readback and required native remote
+restore/build/marker consumption. The separate consumer job has read permission;
+product child processes receive cleared environments without that capability.
+Captured command results survive later handled consumer failure.
+
+Completion uses initial and final observations and the required consumer result.
+Initial exact legitimately requires no publisher result. Initial absent requires
+an actual publisher result; missing evidence leaves mutation effects and business
+completion unknown. A complete refreshed-exact publisher result explicitly records
+zero invocation. Complete fresh verification may satisfy the request after a handled
+upload failure while retaining that abnormality. An unexpected task crash remains a
+platform failure and cannot be hidden by blanket job continuation. Controlled tests
+and ordinary CI do not authorize dispatch, live feeds, publication or campaign replay.
 
 ### Release Unit Declaration Component
 
@@ -1691,5 +1746,6 @@ original bytes before native Build/GetTargetPath and marker invocation.
 The caller must execute this component in a separate no-write process/job with fresh
 external package, HTTP, plugin, profile, CLI and temporary directories. Product child
 commands use cleared explicit environments without the read capability. Source-local
-cache settings do not replace that process/job boundary. No workflow cutover, live-feed
-qualification or publication authorization is claimed by this component.
+cache settings do not replace that process/job boundary. The ordinary NuGet caller
+above supplies the separate receiving job; this component's controlled qualification
+does not establish live-feed behavior or publication authorization.

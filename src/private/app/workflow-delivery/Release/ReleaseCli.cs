@@ -11,6 +11,7 @@ internal static class ReleaseCli
         Func<NpmPreparationRequest, CancellationToken, Task<NpmPreparationResult>>? prepare = null,
         Func<PreparedRelease, CancellationToken, Task<NpmjsObservationResult>>? observe = null)
     {
+        if (NuGetReleaseCli.Run(args, output) is { } nugetStatus) return nugetStatus;
         if (args is ["release", "prepare-npm", var requestPath])
         {
             NpmPreparationResult result = (prepare ?? NpmPreparation.PrepareAsync)(
@@ -176,7 +177,7 @@ internal static class ReleaseCli
         }
     }
 
-    private static T Read<T>(string path, JsonTypeInfo<T> type)
+    internal static T Read<T>(string path, JsonTypeInfo<T> type)
     {
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path,
             new System.Text.UTF8Encoding(false, true)));
