@@ -75,6 +75,11 @@ independently of CI. The [NuGet Buddy interface](../../../private/app/workflow-d
 composes the ordinary caller; component qualification does not establish hosted
 Release/feed behavior or new live acceptance. Other quality presets and remaining
 Release integrations are pending.
+The private application's [Python public index observer](../../../private/app/workflow-delivery/README.md#python-public-index-observation-component)
+compares the qualified original wheel/sdist pair with the selected public index.
+Controlled and local native helper tests qualify this component; live index
+behavior, native publication, remote consumption and ordinary Release caller
+qualification remain separate gates.
 The [transition boundary](docs/requirements.md#requirements-and-implementation-transition)
 scopes the implementation descriptions and evidence below; they are not a claim
 that the existing runtime already satisfies the contraction requirements.
