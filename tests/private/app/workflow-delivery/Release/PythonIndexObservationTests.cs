@@ -35,6 +35,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
                 return Task.FromResult(Native(Facts(fixture.Prepared, storage)));
             }, context.CancellationToken);
 
+        Assert.HasCount(2, result.Observation.Files);
         Assert.IsTrue(result.Observation.Files.All(file => file.State == ReleaseFileState.Exact));
         Assert.HasCount(3, handler.Requests);
         Assert.AreEqual($"https://{origin}/simple/hcoona-release-smoke-python/",
@@ -70,6 +71,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
             fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) =>
                 throw new AssertFailedException("Unavailable index reached native parsing."),
             context.CancellationToken);
+        Assert.HasCount(2, result.Observation.Files);
         Assert.IsTrue(result.Observation.Files.All(file => file.State ==
             Enum.Parse<ReleaseFileState>(expected)));
         Assert.HasCount(1, handler.Requests);
@@ -177,6 +179,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
                     Facts(fixture.Prepared, "test-files.pythonhosted.org"),
                     "unsafe native output", 1, "unsafe native error")),
                 context.CancellationToken);
+        Assert.HasCount(2, result.Observation.Files);
         Assert.IsTrue(result.Observation.Files.All(file => file.State == ReleaseFileState.Unknown));
         Assert.HasCount(1, handler.Requests);
         Assert.Contains(termination, result.Reads[^1].Detail);
@@ -196,6 +199,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
         PythonIndexObservationResult result = await new PythonIndexObservation(client,
             fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) => Task.FromResult(Native(facts)),
             context.CancellationToken);
+        Assert.HasCount(2, result.Observation.Files);
         Assert.IsTrue(result.Observation.Files.All(file => file.State == ReleaseFileState.Unknown));
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Observation.Checks[0].Status);
         Assert.HasCount(1, handler.Requests);
