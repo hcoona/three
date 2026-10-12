@@ -1,5 +1,5 @@
-using System.Security.Cryptography;
 using System.Text.Json;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
@@ -30,18 +30,9 @@ internal static class PythonPackageExecution
         CancellationToken token)
     {
         string checkout = Absolute(request.Checkout), scratch = Absolute(request.Scratch);
-        _ = Absolute(request.Interpreter);
-        _ = Absolute(request.Helper);
-        if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            HasLinkedAncestor(checkout) || HasLinkedAncestor(scratch) ||
-            Within(scratch, checkout) || Within(checkout, scratch) ||
-            Directory.EnumerateFileSystemEntries(scratch).Any() || request.DeadlineSeconds <= 0)
-            throw new InvalidDataException(
-                "Python package execution requires fresh external scratch.");
-        for (DirectoryInfo? parent = new(scratch); parent is not null; parent = parent.Parent)
-            if (File.Exists(Path.Combine(parent.FullName, ".git")) ||
-                Directory.Exists(Path.Combine(parent.FullName, ".git")))
-                throw new InvalidDataException("Python consumers require Git-free scratch.");
+        var tools = new PythonPackageTools(checkout, scratch, request.Uv, request.Interpreter,
+            request.Helper, request.DeadlineSeconds, request.Environment);
+        PythonPackageOperations.Validate(tools);
         ResultCollector.Collect(plan, []);
         if (plan.Scope != PythonFactsAssembler.Scope)
             throw new InvalidDataException("Unsupported Python package execution scope.");
@@ -64,20 +55,8 @@ internal static class PythonPackageExecution
             string name = request.Members.Single(member =>
                 member.Directory == subject.Directory).Name;
             string root = Path.Combine(scratch, "package-" + ordinal++);
-            string tools = Path.Combine(root, "tools");
-            string python = Python(tools);
-            string archives = Path.Combine(root, "archives");
-            var environment = new Dictionary<string, string?>(request.Environment,
-                StringComparer.Ordinal)
-            {
-                ["UV_PROJECT_ENVIRONMENT"] = tools,
-                ["UV_CACHE_DIR"] = Path.Combine(scratch, "uv-cache"),
-                ["UV_PYTHON_DOWNLOADS"] = "never",
-                ["PYTHONPATH"] = null,
-                ["PYTHONHOME"] = null,
-                ["VIRTUAL_ENV"] = null,
-            };
-            PythonOriginalDistribution[] originals = [];
+            var operations = new PythonPackageOperations(tools, root);
+            PythonDistribution[] originals = [];
             foreach (string kind in PythonPackageChecks.Kinds)
             {
                 CheckSpec check = plan.Checks.Single(item =>
@@ -88,97 +67,27 @@ internal static class PythonPackageExecution
                     status = CheckStatus.Skipped;
                 else try
                     {
-                        Directory.CreateDirectory(root);
                         if (kind == PythonPackageChecks.Build)
                         {
-                            Directory.CreateDirectory(archives);
-                            await UvAsync(checkout, ["sync", "--frozen", "--only-group", "dev",
-                                "--only-group", "workflow-delivery-python", "--python",
-                                request.Interpreter]);
-                            NativeCommandResult identity = await HelperAsync(python, checkout,
-                                ["identity", Path.Combine(checkout, subject.Directory)]);
-                            using JsonDocument native = JsonDocument.Parse(identity.Stdout);
-                            if (native.RootElement.GetProperty("name").GetString() != name ||
-                                native.RootElement.GetProperty("version").GetString() !=
-                                    subject.ExpectedVersion)
+                            (string actualName, string actualVersion) =
+                                await operations.PrepareAsync(subject.Directory, RunAsync, token);
+                            if (actualName != name || actualVersion != subject.ExpectedVersion)
                                 throw new InvalidDataException(
                                     "Native Python version projection differs.");
-                            await UvAsync(checkout, ["build", "--package", name,
-                                "--no-create-gitignore",
-                                "--no-build-isolation", "--python", python, "--out-dir", archives,
-                                "--preview-features", "build-dependency-check"]);
-                            // Build checks completeness and native output identity.
-                            NativeCommandResult receipt = await HelperAsync(python, root,
-                                ["outputs", archives, name, subject.ExpectedVersion,
-                                    PythonPackageChecks.Preset]);
-                            originals = ReadDistributions(subject, receipt.Stdout, archives);
-                            distributions.AddRange(originals);
+                            originals = await operations.BuildAsync(name, subject.ExpectedVersion,
+                                RunAsync, token);
+                            distributions.AddRange(originals.Select(original => new
+                                PythonOriginalDistribution(subject.Unit, subject.Build,
+                                    subject.Outputs.Single(output => output.Kind == original.Kind),
+                                    original.Path, original.Length, original.Sha256)));
                         }
                         else if (kind == PythonPackageChecks.Contents)
-                        {
-                            foreach (PythonOriginalDistribution original in originals)
-                            {
-                                RequireOriginal(original);
-                                await HelperAsync(python, root, ["archive", original.Path, name,
-                                    subject.ExpectedVersion, PythonPackageChecks.Preset]);
-                                RequireOriginal(original);
-                            }
-                        }
+                            await operations.ContentsAsync(originals, name, subject.ExpectedVersion,
+                                RunAsync, token);
                         else
-                        {
-                            string outputKind = kind == PythonPackageChecks.Wheel
-                                ? "python-wheel" : "python-sdist";
-                            PythonOriginalDistribution original = originals.Single(item =>
-                                item.Output.Kind == outputKind);
-                            RequireOriginal(original);
-                            string consumer = Directory.CreateDirectory(Path.Combine(root,
-                                outputKind + "-consumer")).FullName;
-                            string install = original.Path;
-                            if (kind == PythonPackageChecks.Sdist)
-                            {
-                                await UvAsync(checkout, ["sync", "--frozen", "--only-group", "dev",
-                                    "--only-group", "workflow-delivery-python",
-                                    "--no-build-isolation", "--no-editable", "--python",
-                                    request.Interpreter]);
-                                foreach (PythonOriginalDistribution retained in originals)
-                                    RequireOriginal(retained);
-                                // No Git coordinates or editable plugin enter this native build.
-                                var neutral = new Dictionary<string, string?>(environment,
-                                    StringComparer.Ordinal);
-                                foreach (System.Collections.DictionaryEntry variable in
-                                         System.Environment.GetEnvironmentVariables())
-                                    if (((string)variable.Key).StartsWith("GIT_",
-                                            StringComparison.Ordinal))
-                                        neutral[(string)variable.Key] = null;
-                                foreach (string key in request.Environment.Keys.Where(key =>
-                                             key.StartsWith("GIT_", StringComparison.Ordinal)))
-                                    neutral[key] = null;
-                                string rebuilt = Directory.CreateDirectory(Path.Combine(consumer,
-                                    "rebuilt")).FullName;
-                                await RunAsync(new(request.Uv, consumer, ["build", original.Path,
-                                    "--wheel", "--no-create-gitignore", "--no-build-isolation",
-                                    "--python", python,
-                                    "--out-dir", rebuilt, "--preview-features",
-                                    "build-dependency-check", "--offline"], request.DeadlineSeconds,
-                                    neutral));
-                                string[] outputs = Directory.GetFileSystemEntries(rebuilt);
-                                if (outputs.Length != 1 || !outputs[0].EndsWith(".whl",
-                                        StringComparison.Ordinal))
-                                    throw new InvalidDataException(
-                                        "Incomplete Git-free native wheel output.");
-                                install = outputs[0];
-                                await HelperAsync(python, consumer, ["archive", install, name,
-                                    subject.ExpectedVersion, PythonPackageChecks.Preset]);
-                            }
-                            string venv = Path.Combine(consumer, "venv");
-                            await UvAsync(consumer, ["venv", venv, "--python", request.Interpreter,
-                                "--no-project"]);
-                            await UvAsync(consumer, ["pip", "install", "--python", Python(venv),
-                                "--no-deps", "--no-cache", "--offline", install]);
-                            await HelperAsync(Python(venv), consumer, ["consume", name,
-                                subject.ExpectedVersion, PythonPackageChecks.Preset]);
-                            RequireOriginal(original);
-                        }
+                            await operations.ConsumeAsync(kind == PythonPackageChecks.Wheel
+                                    ? "python-wheel" : "python-sdist", originals, name,
+                                subject.ExpectedVersion, RunAsync, token);
                         token.ThrowIfCancellationRequested();
                         status = CheckStatus.Passed;
                     }
@@ -194,16 +103,10 @@ internal static class PythonPackageExecution
                         exception.Message)); }
                 results.Add(check.Key, new(plan.Candidate, check.Key, status));
 
-                Task<NativeCommandResult> UvAsync(string directory, string[] arguments) =>
-                    RunAsync(new(request.Uv, directory, arguments, request.DeadlineSeconds,
-                        environment));
-                Task<NativeCommandResult> HelperAsync(string executable, string directory,
-                    string[] arguments) => RunAsync(new(executable, directory,
-                        ["-I", request.Helper, .. arguments], request.DeadlineSeconds,
-                            environment));
-                async Task<NativeCommandResult> RunAsync(NativeCommand command)
+                async Task<NativeCommandResult> RunAsync(NativeCommand command,
+                    CancellationToken cancellation)
                 {
-                    NativeCommandResult result = await execute(command, token);
+                    NativeCommandResult result = await execute(command, cancellation);
                     commands.Add(new(check.Key, command, result));
                     if (!result.Succeeded || result.Error is not null)
                         throw new PackageCommandFailure(result.Termination switch
@@ -257,57 +160,10 @@ internal static class PythonPackageExecution
         }
     }
 
-    private static PythonOriginalDistribution[] ReadDistributions(PackageTarget subject,
-        string text, string directory)
-    {
-        using JsonDocument document = JsonDocument.Parse(text);
-        var originals = new List<PythonOriginalDistribution>();
-        foreach (JsonElement value in document.RootElement.EnumerateArray())
-        {
-            string kind = value.GetProperty("kind").GetString()!;
-            PackageOutput output = subject.Outputs.Single(item => item.Kind == kind);
-            string path = Absolute(value.GetProperty("path").GetString()!);
-            if (Path.GetDirectoryName(path) != directory ||
-                originals.Any(item => item.Output == output))
-                throw new InvalidDataException("Ambiguous original Python output.");
-            var original = new PythonOriginalDistribution(subject.Unit, subject.Build, output,
-                path, value.GetProperty("length").GetInt64(), value.GetProperty(
-                    "sha256").GetString()!);
-            RequireOriginal(original);
-            originals.Add(original);
-        }
-        if (originals.Count != 2 || Directory.GetFileSystemEntries(directory).Length != 2)
-            throw new InvalidDataException("Incomplete original Python output set.");
-        return originals.ToArray();
-    }
-
-    private static void RequireOriginal(PythonOriginalDistribution original)
-    {
-        var info = new FileInfo(original.Path);
-        if (!info.Exists || info.LinkTarget is not null || info.Length != original.Length)
-            throw new InvalidDataException("Original Python distribution changed.");
-        using FileStream stream = info.OpenRead();
-        if (Convert.ToHexStringLower(SHA256.HashData(stream)) != original.Sha256)
-            throw new InvalidDataException("Original Python distribution bytes changed.");
-    }
-
     private sealed class PackageCommandFailure(CheckStatus status,
         string message) : Exception(message)
     { internal CheckStatus Status { get; } = status; }
-    private static string Python(string venv) => Path.Combine(venv,
-        OperatingSystem.IsWindows() ? "Scripts/python.exe" : "bin/python");
     private static string Absolute(string path) => Path.IsPathFullyQualified(path)
         ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path))
         : throw new InvalidDataException("Python package paths must be absolute.");
-    private static bool HasLinkedAncestor(string path)
-    {
-        for (DirectoryInfo? directory = new(path); directory is not null;
-            directory = directory.Parent)
-            if ((directory.Attributes & FileAttributes.ReparsePoint) != 0)
-                return true;
-        return false;
-    }
-    private static bool Within(string child, string parent) => child == parent ||
-        child.StartsWith(parent + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 }
