@@ -787,12 +787,14 @@ consumer mapping blocks the dependent change.
 For affected changes, validate transitive/removed/native local inputs, dependency-edge
 changes, source moves/deletions, selected unadopted members, explicit full/empty
 plans, genuine shared/control inputs and unrelated owned Node/C#/Python/record
-nonselection. Validate real target-added NBGV references, later analyzer-config
-inputs, generated/pinned input classification, supported copy roles, task context
-correlation, missing/failed/skipped compiler facts and unsupported indirect reads.
-Verify the exact SDK logging/replay dependency assumptions in ordinary authorized
-implementation tests, then the actual changed-code hosted transfer, retained
-filter and all seven obligations. These are changed-source qualification conditions,
+nonselection. Validate real target-added NBGV references, native compiler/resource/
+configuration inputs, locked providers, supported copy roles and exact native
+response/output bindings. Validate failed preparation, missing output and unsupported
+necessary source/configuration shapes; trust maintained SDK/package implementations
+for generated sources and task execution without log replay or producer proofs.
+Qualify the actual changed-code single-entry/native-provider integration on supported
+Linux and Windows contexts, hosted transfer, retained filter and all seven
+obligations. These are changed-source qualification conditions,
 not transferable acceptance from an earlier source or permission to revive the stopped
 Node campaign. A necessary native capability gap returns to the owner.
 
