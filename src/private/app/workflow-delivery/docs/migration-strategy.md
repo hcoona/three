@@ -489,15 +489,34 @@ applicability. Failed/missing/cancelled planning cannot become a successful skip
 Successful empty work remains valid; required CI composition still accounts for
 the planning owner and .NET execution/result check.
 
-Build selected native projects/variants individually with the original
-operation globals; MSBuild owns references/order. Repeated reference work is an
-acceptable cost. Traversal filtering is an optional later optimization requiring
-its own native hook/variant qualification, not an application scheduler. Evaluated
+Submit selected native projects/variants together to the selected SDK's native
+`ProjectGraph` and `BuildManager` graph-build interface, with the original
+operation globals for each entry. The SDK-hosted task disables its nested
+manager's in-process node and uses native node lifetimes and result codes.
+MSBuild owns references, ordering, parallelism and its invocation-local target
+cache. A thin task in the existing application projects native per-entry target
+outputs; it does not resolve dependencies or implement a scheduler. Retain one
+batch command observation and bind its outputs to the original selected entries.
+Preserve successful independent builds when another entry fails. Missing native
+outputs, interruption or failed extraction cannot establish a passed build.
+Tests follow their own satisfied build obligations. Retain Build in each test
+invocation where native build-time properties or environment are required; do
+not substitute inferred paths or a test-binary launcher. Evaluated
 `IsTestingPlatformApplication` selects MTP; otherwise `IsTestProject` selects
 VSTest using native inner `GetTargetPath` output. Do not infer framework paths or
 capability from package names. Every selected supported variant contributes its
 required checks, collected against the original plan and candidate. Exit zero
 cannot satisfy absent, skipped or failed obligations.
+
+The Workflow Delivery test project's native MTP configuration excludes the
+`NuGetNativeScenarios` category by default. The existing Windows scenario job
+owns those seven mandatory cases and overrides that default through MTP's
+ordinary command-line filter. Its independent applicability and result consumer
+remain required. Explicit local filters also override the default; this is
+project-owned test configuration, not a Workflow filter interpreter.
+Native graph-test fixtures may batch restore their disposable projects through
+an ordinary solution. Seed fixture locks and still validate the locked restore;
+do not share mutable fixture state or introduce a Workflow restore cache.
 
 The current native plan and executor own the complete group; retired commands
 cannot satisfy its results. Affected changes qualify task/dependency

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
@@ -16,6 +17,7 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan) : IDi
     internal List<NativeCommand> Commands { get; } = [];
     internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
     internal Action<JsonObject>? ModifyResponse { get; set; }
+    internal Action<JsonObject>? ModifyBatchResponse { get; set; }
     internal DotNetRunRequest Request => new(Repo.Directory, Scratch, 60);
 
     internal static async Task<DotNetExecutionFixture> CreateAsync(CancellationToken token,
@@ -61,8 +63,10 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan) : IDi
         if (Override?.Invoke(command) is { } result) return result;
         Directory.CreateDirectory(Path.GetDirectoryName(Output)!);
         await File.WriteAllTextAsync(Output, "native output", token);
-        string query = command.Arguments.Single(arg => arg.StartsWith("-getTargetResult:",
-            StringComparison.Ordinal))["-getTargetResult:".Length..];
+        bool batch = command.Arguments.Contains("-target:BuildSelected");
+        string query = batch ? "Build,GetTargetPath" : command.Arguments.Single(arg =>
+            arg.StartsWith("-getTargetResult:", StringComparison.Ordinal))[
+            "-getTargetResult:".Length..];
         var targets = new JsonObject();
         foreach (string name in query.Split(','))
             targets[name] = new JsonObject
@@ -73,6 +77,32 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan) : IDi
             };
         var response = new JsonObject { ["TargetResults"] = targets };
         ModifyResponse?.Invoke(response);
+        if (batch)
+        {
+            DotNetBuildRequest request = JsonSerializer.Deserialize(await File.ReadAllTextAsync(
+                Path.Combine(Scratch, "build-request.json"), token),
+                TransferJson.Default.DotNetBuildRequest)!;
+            var entries = new JsonArray();
+            foreach (DotNetNodeIdentity identity in request.Entries)
+                entries.Add(new JsonObject
+                {
+                    ["identity"] = JsonSerializer.SerializeToNode(identity,
+                        TransferJson.Default.DotNetNodeIdentity),
+                    ["build"] = targets["Build"]?["Result"]?.GetValue<string>() ?? "Missing",
+                    ["getTargetPath"] = targets["GetTargetPath"]?["Result"]?.GetValue<string>()
+                        ?? "Missing",
+                    ["outputs"] = new JsonArray((targets["GetTargetPath"]?["Items"]?.AsArray()
+                        ?? []).Select(item => (JsonNode?)new JsonObject
+                        {
+                            ["identity"] = item?["Identity"]?.DeepClone(),
+                            ["fullPath"] = item?["FullPath"]?.DeepClone(),
+                        }).ToArray()),
+                });
+            var projection = new JsonObject { ["entries"] = entries };
+            ModifyBatchResponse?.Invoke(projection);
+            await File.WriteAllTextAsync(request.Destination, projection.ToJsonString(), token);
+            return new(NativeTermination.Exited, 0, "native batch stdout", "", 0.1, null);
+        }
         string destination = command.Arguments.Single(arg => arg.StartsWith(
             "-getResultOutputFile:", StringComparison.Ordinal))["-getResultOutputFile:".Length..];
         await File.WriteAllTextAsync(destination, response.ToJsonString(), token);

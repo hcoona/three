@@ -202,6 +202,12 @@ root workflow contracts live under `tests/eng/`. From the repository root:
 dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj
 ```
 
+The project's native MTP default excludes `NuGetNativeScenarios`; their existing
+Windows CI job owns the seven required cases. To run those cases locally, override
+the default with `--filter 'TestCategory=NuGetNativeScenarios'
+--minimum-expected-tests 7`. An explicit filter replaces the default, so an
+unrestricted local run uses `--filter 'FullyQualifiedName~WorkflowDelivery'`.
+
 Use complete affected scenario/contract tests, HK, hooks and independent review
 for changes. Real transfers, supported native tool interfaces and required
 ordinary runner qualification need their actual evidence. Controlled/local

@@ -1261,15 +1261,21 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         internal async Task PrepareAsync(CancellationToken token)
         {
             if (_prepared) return;
-            foreach (string project in _projects)
+            if (_projects.Count != 0)
             {
+                string solution = PathOf("restore.slnx");
+                new System.Xml.Linq.XDocument(new System.Xml.Linq.XElement("Solution",
+                    _projects.Order(StringComparer.Ordinal).Select(project =>
+                        new System.Xml.Linq.XElement("Project",
+                            new System.Xml.Linq.XAttribute("Path", project)))))
+                    .Save(solution);
                 string[] operation = ["-property:Configuration=Debug",
                     "-property:ContinuousIntegrationBuild=true"];
                 // Seed only disposable fixture locks, then perform the supported locked operation.
                 await RestoreAsync(
-                    ["restore", project, "--use-lock-file", .. operation], token);
+                    ["restore", solution, "--use-lock-file", .. operation], token);
                 await RestoreAsync(
-                    ["restore", project, "--locked-mode", "--force", .. operation], token);
+                    ["restore", solution, "--locked-mode", "--force", .. operation], token);
             }
             if (_restoreTraversal)
                 await RestoreAsync(["restore", PathOf("dirs.proj"), "--locked-mode",

@@ -67,6 +67,12 @@ tools prepared, run Workflow Delivery's managed tests from the repository root:
 dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj
 ```
 
+The project's native MTP default excludes `NuGetNativeScenarios`; their existing
+Windows CI job owns the seven required cases. To run those cases locally, override
+the default with `--filter 'TestCategory=NuGetNativeScenarios'
+--minimum-expected-tests 7`. An explicit filter replaces the default, so an
+unrestricted local run uses `--filter 'FullyQualifiedName~WorkflowDelivery'`.
+
 `mise run test:python` runs the
 [native Python group](src/private/app/workflow-delivery/README.md#native-python-ci-caller)
 at committed HEAD in explicit full mode on Linux, including native preparation,
