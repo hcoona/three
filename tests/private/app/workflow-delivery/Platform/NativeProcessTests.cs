@@ -137,11 +137,21 @@ public sealed class NativeProcessTests
         Exception? failure = null;
         try
         {
-            while (!File.Exists(pidPath) && !query.IsCompleted)
-                await Task.Delay(50, cancellation.Token);
-            Assert.IsTrue(File.Exists(pidPath),
+            string? pidText = null;
+            while (pidText is null && !query.IsCompleted)
+            {
+                try
+                {
+                    pidText = await File.ReadAllTextAsync(pidPath, cancellation.Token);
+                }
+                catch (FileNotFoundException) { }
+                catch (IOException exception) when (OperatingSystem.IsWindows() &&
+                    (exception.HResult & 0xffff) is 32 or 33) { }
+                if (pidText is null) await Task.Delay(50, cancellation.Token);
+            }
+            Assert.IsNotNull(pidText,
                 "The child process must start before cancellation.");
-            int pid = int.Parse(await File.ReadAllTextAsync(pidPath, cancellation.Token),
+            int pid = int.Parse(pidText,
                 System.Globalization.CultureInfo.InvariantCulture);
             using Process child = Process.GetProcessById(pid);
 

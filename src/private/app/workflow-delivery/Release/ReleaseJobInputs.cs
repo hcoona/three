@@ -43,7 +43,7 @@ internal static class ReleaseJobInputs
             if (string.IsNullOrWhiteSpace(name) || name.Contains('\\') || name.Contains(':') ||
                 name.Split('/').Any(part => part is "" or "." or ".."))
                 throw new InvalidDataException("Expected a relative caller path.");
-            string path = Path.Combine(root, name);
+            string path = Path.GetFullPath(Path.Combine(root, name));
             RequireUnlinked(path, root);
             return path;
         }
