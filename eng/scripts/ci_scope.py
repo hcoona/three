@@ -515,6 +515,25 @@ def record_control_owners(
 def _retiring_python_consumers(path: str) -> tuple[str, ...]:
     """Keep exact old readers until retirement removes the comparison basis."""
     return {
+        ".gitattributes": (
+            "src/public/lib/three-workflow-delivery-v3/tests/adapters/test_dotnet.py",
+        ),
+        "eng/scripts/sync_python_build_backend.py": (
+            "src/public/lib/three-workflow-delivery-v3/tests/repository/test_python_backend.py",
+        ),
+        "eng/scripts/workflow_delivery_v3_prepare_static_reference.py": (
+            "src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py",
+        ),
+        "eng/scripts/workflow_delivery_v3_run_created_epoch.py": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/contracts/"
+                "test_workflow_delivery_v3_run_created_epoch.py"
+            ),
+        ),
+        "eng/scripts/workflow_delivery_v3_static_reference.py": (
+            "src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py",
+            "src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py",
+        ),
         ".github/actions/workflow-delivery-v3-python-setup/action.yml": (
             ".github/workflows/workflow-delivery-v3-bootstrap-python.yml",
             "tests/eng/test_python_runtime.py",
@@ -776,6 +795,18 @@ def _path_owner_reasons(  # noqa: C901, PLR0912, PLR0913 - Finite roles share ex
             [".github/workflows/ci.yml", path],
         )
 
+    if (
+        path == "eng/scripts/update_node_mise_lock.py"
+        and modes.get("hk.pkl") in {"100644", "100755"}
+        and modes.get(".github/workflows/ci.yml") in {"100644", "100755"}
+    ):
+        add(
+            "conformance",
+            ".github/workflows/ci.yml#conformance",
+            "native-hk-node-mise-authority",
+            [".github/workflows/ci.yml", "hk.pkl", path],
+        )
+
     # These finite old readers disappear after this retirement is accepted.
     consumers = _retiring_python_consumers(path)
     if (
@@ -850,7 +881,14 @@ def _path_owner_reasons(  # noqa: C901, PLR0912, PLR0913 - Finite roles share ex
         and _under(path, str(PurePosixPath(manifest).parent))
     ]
     if python_manifests or (
-        path.endswith(".py")
+        (
+            path.endswith(".py")
+            and path
+            not in {
+                "eng/scripts/check_repository_records.py",
+                "eng/scripts/update_node_mise_lock.py",
+            }
+        )
         or path in ALL_INPUTS | PYTHON_INPUTS
         or _under(path, "tests/eng")
         or _under(path, "src/private/app/workflow-delivery")

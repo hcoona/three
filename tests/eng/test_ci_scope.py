@@ -883,6 +883,40 @@ def test_codeowners_routing_does_not_own_nearby_unknown_files(comparison):
                 ),
             ],
         ),
+        (
+            ".gitattributes",
+            [
+                "src/public/lib/three-workflow-delivery-v3/tests/adapters/test_dotnet.py"
+            ],
+        ),
+        (
+            "eng/scripts/sync_python_build_backend.py",
+            [
+                "src/public/lib/three-workflow-delivery-v3/tests/repository/test_python_backend.py"
+            ],
+        ),
+        (
+            "eng/scripts/workflow_delivery_v3_prepare_static_reference.py",
+            [
+                "src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py"
+            ],
+        ),
+        (
+            "eng/scripts/workflow_delivery_v3_run_created_epoch.py",
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/tests/contracts/"
+                    "test_workflow_delivery_v3_run_created_epoch.py"
+                )
+            ],
+        ),
+        (
+            "eng/scripts/workflow_delivery_v3_static_reference.py",
+            [
+                "src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py",
+                "src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py",
+            ],
+        ),
     ],
 )
 def test_retired_inputs_keep_only_actual_basis_consumer_responsibility(
@@ -1090,6 +1124,103 @@ def test_control_preparation_remains_available_without_endpoint_parser():
     assert result.returncode == 0, result.stderr
     assert "prepare" in result.stdout
     assert "evaluate" in result.stdout
+
+
+@pytest.mark.parametrize("transition", ["change", "add", "delete"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "eng/scripts/check_repository_records.py",
+        "eng/scripts/update_node_mise_lock.py",
+    ],
+)
+def test_conformance_scripts_keep_actual_responsibility_without_python_claim(
+    tmp_path, transition, path
+):
+    """Actual record/HK consumers do not become root Python project checks."""
+    _git(tmp_path, "init", "-q")
+    for coordinate, content in {
+        scope.CONTROL_PROJECT: "<Project />",
+        "pyproject.toml": '[project]\nname = "root"\n',
+        ".github/workflows/ci.yml": "name: CI\n",
+        "hk.pkl": "configuration = 1\n",
+    }.items():
+        destination = tmp_path / coordinate
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding="utf-8")
+    if path.endswith("check_repository_records.py"):
+        _catalog(tmp_path, pattern=path)
+    script = tmp_path / path
+    script.parent.mkdir(parents=True, exist_ok=True)
+    if transition != "add":
+        script.write_text("basis = True\n", encoding="utf-8")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "Conformance script basis")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    if transition == "delete":
+        script.unlink()
+    else:
+        script.write_text("candidate = True\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "Conformance script change")
+    result = _select_cli(tmp_path, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    for endpoint, present in (
+        ("basis", transition != "add"),
+        ("candidate", transition != "delete"),
+    ):
+        row = _owner_rows(selected, endpoint)[path]
+        assert row["present"] is present
+        assert row["mode"] == ("100644" if present else None)
+        expected = (
+            {
+                "owner": "record-system",
+                "target": path,
+                "rule": "record-binding:project-docs",
+                "sources": [scope.FAMILY_CATALOG],
+            }
+            if path.endswith("check_repository_records.py")
+            else {
+                "owner": "conformance",
+                "target": ".github/workflows/ci.yml#conformance",
+                "rule": "native-hk-node-mise-authority",
+                "sources": sorted([".github/workflows/ci.yml", "hk.pkl", path]),
+            }
+        )
+        assert row["reasons"] == ([expected] if present else [])
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "eng/scripts/check_repository_records_other.py",
+        "eng/scripts/update_node_mise_lock_other.py",
+    ],
+)
+def test_conformance_script_neighbors_still_require_python_resolution(
+    comparison, path
+):
+    """An exact caller correction cannot hide an unexplained Python script."""
+    root, _, base = comparison
+    script = root / path
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("unresolved = True\n", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Unknown neighboring script")
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    reasons = _owner_rows(json.loads(result.stdout), "candidate")[path][
+        "reasons"
+    ]
+    assert reasons == [
+        {
+            "owner": "python",
+            "target": ".github/workflows/ci.yml#python-tests",
+            "rule": "native-python-caller-responsibility",
+            "sources": ["pyproject.toml"],
+        }
+    ]
 
 
 def test_endpoint_owners_preserve_changed_coordinate_identity(comparison):

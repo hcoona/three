@@ -20,7 +20,7 @@ internal static class PythonRepositoryInputs
     private static readonly string[] Pytest = [
         "conftest.py", "pytest.ini", "eng/scripts/run_python_tests.py"];
     private static readonly string[] Dotnet = [
-        ".editorconfig", "global.json", "NuGet.Config", "nuget.config",
+        ".editorconfig", ".gitattributes", "global.json", "NuGet.Config", "nuget.config",
         ".config/dotnet-tools.json", "version.json", "Directory.Build.props",
         "Directory.Build.targets", "Directory.Packages.props", "dirs.proj"];
     private static readonly string[] AzureRoots = [
@@ -136,6 +136,11 @@ internal static class PythonRepositoryInputs
 
     // Delete this finite old-basis association after the retirement is accepted.
     private static bool RetiringInput(string path) => path is
+        ".gitattributes" or
+        "eng/scripts/sync_python_build_backend.py" or
+        "eng/scripts/workflow_delivery_v3_prepare_static_reference.py" or
+        "eng/scripts/workflow_delivery_v3_run_created_epoch.py" or
+        "eng/scripts/workflow_delivery_v3_static_reference.py" or
         ".github/actions/workflow-delivery-v3-python-setup/action.yml" or
         ".github/actions/workflow-delivery-v3-ruby-operation-record/action.yml" or
         ".github/actions/workflow-delivery-v3-ruby-setup/action.yml" or
@@ -231,7 +236,7 @@ internal static class PythonRepositoryInputs
         int separator = path.LastIndexOf('/');
         string name = path[(separator + 1)..];
         string directory = separator < 0 ? "" : path[..separator];
-        bool inherited = name is ".editorconfig" or "Directory.Build.props" or
+        bool inherited = name is ".editorconfig" or ".gitattributes" or "Directory.Build.props" or
             "Directory.Build.targets" or "Directory.Packages.props" or "version.json" or
             "NuGet.Config" or "nuget.config" or "global.json";
         return roots.Any(root => Under(path, root) ||
