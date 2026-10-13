@@ -40,7 +40,8 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
         native["AssemblyInformationalVersion"] = "1.0.0";
         var subject = new ReleaseSubject(new string('a', 40), "refs/heads/development",
             "hcoona-release-smoke-github-packages",
-            "src/public/lib/hcoona-release-smoke-github-packages/"
+            "tests/private/app/workflow-delivery/" +
+                "fixtures/products/hcoona-release-smoke-github-packages/"
                 + "workflow-delivery.release-unit.yml",
             "buddy", "github-packages-nuget", dryRun);
         var prepared = new PreparedRelease(subject,

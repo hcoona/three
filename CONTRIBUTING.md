@@ -60,10 +60,20 @@ Write the report outside the worktree so it does not become an input to the
 next validation run.
 
 HK checks source/configuration conformance. Run affected project tests
-explicitly before independent implementation review; `mise run test:v3` runs
-Workflow Delivery v3 working-tree self-tests. `mise run test:python` runs the
+explicitly before independent implementation review. With the pinned SDK and
+tools prepared, run Workflow Delivery's managed tests from the repository root:
+
+```powershell
+dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj
+```
+
+`mise run test:python` runs the
 [native Python group](src/private/app/workflow-delivery/README.md#native-python-ci-caller)
-at committed HEAD in explicit full mode on Linux. General CI selects affected
+at committed HEAD in explicit full mode on Linux, including native preparation,
+configured pytest targets and adopted distribution checks. Commit tracked changes
+before using this command; Windows contributors need a Linux environment for it.
+The managed project command does not replace that complete native group.
+General CI selects affected
 work from its actual Git comparison; its
 explicit full mode selects all suites. See the
 [execution contract](docs/engineering/hk-execution.md#ci-execution-contract).

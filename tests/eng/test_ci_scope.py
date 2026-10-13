@@ -509,6 +509,605 @@ def _owner_rows(result, name):
     }
 
 
+@pytest.mark.parametrize("transition", ["change", "add", "delete"])
+def test_codeowners_routing_keeps_exact_endpoint_responsibility(
+    tmp_path, transition
+):
+    """Native GitHub routing is known without selecting product work."""
+    _git(tmp_path, "init", "-q")
+    project = tmp_path / scope.CONTROL_PROJECT
+    project.parent.mkdir(parents=True)
+    project.write_text("<Project />", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "root"\n')
+    owners = tmp_path / ".github/CODEOWNERS"
+    owners.parent.mkdir()
+    if transition != "add":
+        owners.write_text("/src/ @first\n", encoding="utf-8")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "Base routing")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    if transition == "delete":
+        owners.unlink()
+    else:
+        owners.write_text("/src/ @second\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "Update routing")
+    candidate = _git(tmp_path, "rev-parse", "HEAD")
+
+    result = _select_cli(tmp_path, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    assert selected["changed_paths"] == [".github/CODEOWNERS"]
+    assert selected["scopes"]["validation"] is True
+    assert not any(
+        value
+        for key, value in selected["scopes"].items()
+        if key != "validation"
+    )
+    assert selected["nuget_reproducibility"] is False
+    for endpoint, revision, present in (
+        ("basis", base, transition != "add"),
+        ("candidate", candidate, transition != "delete"),
+    ):
+        assert selected["endpoint_owners"][endpoint]["revision"] == revision
+        row = _owner_rows(selected, endpoint)[".github/CODEOWNERS"]
+        assert row["present"] is present
+        assert row["mode"] == ("100644" if present else None)
+        assert row["reasons"] == (
+            [
+                {
+                    "owner": "github",
+                    "target": ".github/CODEOWNERS",
+                    "rule": "native-codeowners-routing",
+                    "sources": [".github/CODEOWNERS"],
+                }
+            ]
+            if present
+            else []
+        )
+
+
+def test_codeowners_routing_does_not_own_nearby_unknown_files(comparison):
+    """A platform filename is not a fallback for the GitHub directory."""
+    root, _, base = comparison
+    unknown = root / ".github/CODEOWNERS.extra"
+    unknown.parent.mkdir()
+    unknown.write_text("unrecognized\n", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Add unrelated platform neighbor")
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    row = _owner_rows(selected, "candidate")[".github/CODEOWNERS.extra"]
+    assert row["present"] is True
+    assert row["mode"] == "100644"
+    assert row["reasons"] == []
+
+
+@pytest.mark.parametrize(
+    ("path", "consumers"),
+    [
+        (
+            ".github/actions/workflow-delivery-v3-python-setup/action.yml",
+            [
+                (".github/workflows/workflow-delivery-v3-bootstrap-python.yml"),
+                "tests/eng/test_python_runtime.py",
+            ],
+        ),
+        (
+            (
+                ".github/actions/workflow-delivery-v3-ruby-operation-record/"
+                "action.yml"
+            ),
+            [
+                ".github/workflows/workflow-delivery-v3-ruby-bootstrap.yml",
+            ],
+        ),
+        (
+            ".github/actions/workflow-delivery-v3-ruby-setup/action.yml",
+            [
+                ".github/workflows/workflow-delivery-v3-ruby-bootstrap.yml",
+            ],
+        ),
+        (
+            ".github/workflow-delivery/bootstrap/python-pypi-request.json",
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/acceptance/"
+                    "python_bootstrap_contract.py"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/tests/acceptance/"
+                    "test_python_bootstrap_contract.py"
+                ),
+            ],
+        ),
+        (
+            ".github/workflow-delivery/bootstrap/python-request.json",
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/acceptance/"
+                    "python_bootstrap_contract.py"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/tests/acceptance/"
+                    "test_python_bootstrap_contract.py"
+                ),
+            ],
+        ),
+        (
+            (
+                ".github/workflow-delivery/configuration/"
+                "hcoona-release-smoke-ruby-github-packages.json"
+            ),
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/repository/ruby_controls.py"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/tests/repository/"
+                    "test_ruby_control_version.py"
+                ),
+            ],
+        ),
+        (
+            (
+                ".github/workflow-delivery/configuration/"
+                "hcoona-release-smoke-ruby-rubygems.json"
+            ),
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/repository/ruby_controls.py"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/tests/repository/"
+                    "test_ruby_control_version.py"
+                ),
+            ],
+        ),
+        (
+            (
+                ".github/workflow-delivery/governance/"
+                "hcoona-release-smoke-github-packages.json"
+            ),
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/repository/descriptors.py"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/repository/compiler.py"
+                ),
+            ],
+        ),
+        (
+            (
+                ".github/workflow-delivery/governance/"
+                "hcoona-release-smoke-npm.json"
+            ),
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/repository/descriptors.py"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/repository/compiler.py"
+                ),
+            ],
+        ),
+        (
+            (
+                ".github/workflow-delivery/governance/"
+                "hcoona-release-smoke-python-pypi.json"
+            ),
+            [
+                (
+                    "eng/workflow-delivery/v3/policies/"
+                    "hcoona-release-smoke-python.yml"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/release/python_governance.py"
+                ),
+            ],
+        ),
+        (
+            (
+                ".github/workflow-delivery/governance/"
+                "hcoona-release-smoke-python-testpypi.json"
+            ),
+            [
+                (
+                    "eng/workflow-delivery/v3/policies/"
+                    "hcoona-release-smoke-python.yml"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/release/python_governance.py"
+                ),
+            ],
+        ),
+        (
+            (
+                ".github/workflow-delivery/governance/"
+                "hcoona-release-smoke-ruby-github-packages.json"
+            ),
+            [
+                (
+                    "eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/release/ruby_governance.py"
+                ),
+            ],
+        ),
+        (
+            (
+                ".github/workflow-delivery/governance/"
+                "hcoona-release-smoke-ruby-rubygems.json"
+            ),
+            [
+                (
+                    "eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/release/ruby_governance.py"
+                ),
+            ],
+        ),
+        (
+            ".github/workflow-delivery/native/python-requests.json",
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/acceptance/python_native_contract.py"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/tests/acceptance/"
+                    "test_python_bootstrap_workflow.py"
+                ),
+            ],
+        ),
+        (
+            (
+                ".github/workflow-delivery/requests/"
+                "hcoona-release-smoke-ruby.json"
+            ),
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/repository/ruby_controls.py"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/tests/repository/"
+                    "test_ruby_control_version.py"
+                ),
+            ],
+        ),
+        (
+            (
+                "eng/workflow-delivery/v3/policies/"
+                "hcoona-release-smoke-github-packages.yml"
+            ),
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/catalogs.py"
+                ),
+            ],
+        ),
+        (
+            "eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml",
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/catalogs.py"
+                ),
+            ],
+        ),
+        (
+            (
+                "eng/workflow-delivery/v3/policies/"
+                "hcoona-release-smoke-python.yml"
+            ),
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/catalogs.py"
+                ),
+            ],
+        ),
+        (
+            ("eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml"),
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/catalogs.py"
+                ),
+            ],
+        ),
+        (
+            "eng/workflow-delivery/v3/python-build-constraints.txt",
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/repository/python_provider.py"
+                ),
+                "eng/scripts/sync_python_build_backend.py",
+            ],
+        ),
+        (
+            "eng/scripts/workflow_delivery_v3_native_npm.mjs",
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/acceptance/npm_fixture.py"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/tests/acceptance/"
+                    "test_npm_fixture.py"
+                ),
+            ],
+        ),
+        (
+            "eng/scripts/workflow_delivery_v3_static_reference_node.mjs",
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/src/"
+                    "three_workflow_delivery_v3/release/static_reference_authority.py"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/tests/release/"
+                    "test_static_reference_sidecars.py"
+                ),
+            ],
+        ),
+        (
+            "hk.pkl",
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/tests/ci/"
+                    "test_scenarios.py"
+                ),
+                (
+                    "src/public/lib/three-workflow-delivery-v3/tests/"
+                    "test_hk_trigger.py"
+                ),
+            ],
+        ),
+        (
+            ".gitattributes",
+            [
+                "src/public/lib/three-workflow-delivery-v3/tests/adapters/test_dotnet.py"
+            ],
+        ),
+        (
+            "eng/scripts/sync_python_build_backend.py",
+            [
+                "src/public/lib/three-workflow-delivery-v3/tests/repository/test_python_backend.py"
+            ],
+        ),
+        (
+            "eng/scripts/workflow_delivery_v3_prepare_static_reference.py",
+            [
+                "src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py"
+            ],
+        ),
+        (
+            "eng/scripts/workflow_delivery_v3_run_created_epoch.py",
+            [
+                (
+                    "src/public/lib/three-workflow-delivery-v3/tests/contracts/"
+                    "test_workflow_delivery_v3_run_created_epoch.py"
+                )
+            ],
+        ),
+        (
+            "eng/scripts/workflow_delivery_v3_static_reference.py",
+            [
+                "src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py",
+                "src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py",
+            ],
+        ),
+    ],
+)
+def test_retired_inputs_keep_only_actual_basis_consumer_responsibility(
+    tmp_path, path, consumers
+):
+    """Deletion retains old readers without reviving candidate work."""
+    _git(tmp_path, "init", "-q")
+    project = tmp_path / scope.CONTROL_PROJECT
+    project.parent.mkdir(parents=True)
+    project.write_text("<Project />", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "root"\n[tool.pytest.ini_options]\n'
+        'testpaths = ["src/public/lib/three-workflow-delivery-v3/tests"]\n',
+        encoding="utf-8",
+    )
+    for coordinate in [path, *consumers]:
+        destination = tmp_path / coordinate
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(
+            "retired input or actual reader\n", encoding="utf-8"
+        )
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "Retained basis consumers")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    (tmp_path / path).unlink()
+    for consumer in consumers:
+        (tmp_path / consumer).unlink()
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "Retire actual carriers and readers")
+    result = _select_cli(tmp_path, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    before = _owner_rows(selected, "basis")[path]
+    after = _owner_rows(selected, "candidate")[path]
+    assert before["present"] is True
+    assert before["mode"] == "100644"
+    reason = next(
+        reason
+        for reason in before["reasons"]
+        if reason["rule"] == "retiring-python-consumer"
+    )
+    assert reason["owner"] == "python"
+    assert reason["target"] == ".github/workflows/ci.yml#python-tests"
+    assert reason["sources"] == sorted(["pyproject.toml", *consumers])
+    assert after == {
+        "path": path,
+        "present": False,
+        "mode": None,
+        "reasons": [],
+    }
+    assert selected["endpoint_owners"]["basis"]["revision"] == base
+    assert selected["endpoint_owners"]["candidate"]["revision"] == _git(
+        tmp_path, "rev-parse", "HEAD"
+    )
+
+
+@pytest.mark.parametrize("transition", ["change", "add", "delete"])
+def test_renovate_keeps_exact_runtime_consumer_responsibility(
+    tmp_path, transition
+):
+    """Renovate retains its actual configured Python test consumer."""
+    _git(tmp_path, "init", "-q")
+    for coordinate, content in {
+        scope.CONTROL_PROJECT: "<Project />",
+        "pyproject.toml": (
+            '[project]\nname = "root"\n[tool.pytest.ini_options]\n'
+            'testpaths = ["tests/eng/test_python_runtime.py"]\n'
+        ),
+        "tests/eng/test_python_runtime.py": "def test_runtime(): pass\n",
+    }.items():
+        destination = tmp_path / coordinate
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding="utf-8")
+    path = tmp_path / "renovate.json"
+    if transition != "add":
+        path.write_text("{}\n", encoding="utf-8")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "Runtime basis")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    if transition == "delete":
+        path.unlink()
+    else:
+        path.write_text('{"enabled":true}\n', encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "Runtime configuration change")
+    result = _select_cli(tmp_path, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    for endpoint, present in (
+        ("basis", transition != "add"),
+        ("candidate", transition != "delete"),
+    ):
+        row = _owner_rows(selected, endpoint)["renovate.json"]
+        assert row["present"] is present
+        assert row["reasons"] == (
+            [
+                {
+                    "owner": "python",
+                    "target": "pytest:tests/eng/test_python_runtime.py",
+                    "rule": "configured-python-runtime-input",
+                    "sources": [
+                        "pyproject.toml",
+                        "tests/eng/test_python_runtime.py",
+                    ],
+                }
+            ]
+            if present
+            else []
+        )
+
+
+def test_finite_consumer_routes_reject_absent_readers_and_unknown_neighbors(
+    comparison,
+):
+    """No reader or nearby filename can manufacture a finite relationship."""
+    root, _, base = comparison
+    paths = [
+        "renovate.json",
+        "other.json",
+        "hk.pkl.extra",
+        ".github/workflow-delivery/native/python-requests.json",
+        ".github/workflow-delivery/native/other.json",
+    ]
+    for path in paths:
+        destination = root / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text("{}\n", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Absent readers and unknown neighbors")
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    rows = _owner_rows(json.loads(result.stdout), "candidate")
+    for path in paths:
+        assert rows[path]["present"] is True
+        assert rows[path]["reasons"] == []
+
+
+@pytest.mark.parametrize("transition", ["change", "add", "delete"])
+def test_hk_configuration_keeps_exact_conformance_responsibility(
+    tmp_path, transition
+):
+    """HK configuration retains only its actual conformance caller."""
+    _git(tmp_path, "init", "-q")
+    for coordinate, content in {
+        scope.CONTROL_PROJECT: "<Project />",
+        "pyproject.toml": '[project]\nname = "root"\n',
+        ".github/workflows/ci.yml": "name: CI\n",
+    }.items():
+        destination = tmp_path / coordinate
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding="utf-8")
+    path = tmp_path / "hk.pkl"
+    if transition != "add":
+        path.write_text("configuration = 1\n", encoding="utf-8")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "HK basis")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    if transition == "delete":
+        path.unlink()
+    else:
+        path.write_text("configuration = 2\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "HK configuration change")
+    result = _select_cli(tmp_path, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    assert not any(
+        value
+        for key, value in selected["scopes"].items()
+        if key != "validation"
+    )
+    for endpoint, present in (
+        ("basis", transition != "add"),
+        ("candidate", transition != "delete"),
+    ):
+        row = _owner_rows(selected, endpoint)["hk.pkl"]
+        assert row["present"] is present
+        assert row["reasons"] == (
+            [
+                {
+                    "owner": "conformance",
+                    "target": ".github/workflows/ci.yml#conformance",
+                    "rule": "native-hk-configuration",
+                    "sources": [".github/workflows/ci.yml", "hk.pkl"],
+                }
+            ]
+            if present
+            else []
+        )
+
+
 def test_control_preparation_remains_available_without_endpoint_parser():
     """System-Python bootstrap must not require the UV endpoint parser."""
     result = subprocess.run(  # noqa: S603 - Exact interpreter and repository help command.
@@ -525,6 +1124,103 @@ def test_control_preparation_remains_available_without_endpoint_parser():
     assert result.returncode == 0, result.stderr
     assert "prepare" in result.stdout
     assert "evaluate" in result.stdout
+
+
+@pytest.mark.parametrize("transition", ["change", "add", "delete"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "eng/scripts/check_repository_records.py",
+        "eng/scripts/update_node_mise_lock.py",
+    ],
+)
+def test_conformance_scripts_keep_actual_responsibility_without_python_claim(
+    tmp_path, transition, path
+):
+    """Actual record/HK consumers do not become root Python project checks."""
+    _git(tmp_path, "init", "-q")
+    for coordinate, content in {
+        scope.CONTROL_PROJECT: "<Project />",
+        "pyproject.toml": '[project]\nname = "root"\n',
+        ".github/workflows/ci.yml": "name: CI\n",
+        "hk.pkl": "configuration = 1\n",
+    }.items():
+        destination = tmp_path / coordinate
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding="utf-8")
+    if path.endswith("check_repository_records.py"):
+        _catalog(tmp_path, pattern=path)
+    script = tmp_path / path
+    script.parent.mkdir(parents=True, exist_ok=True)
+    if transition != "add":
+        script.write_text("basis = True\n", encoding="utf-8")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "Conformance script basis")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    if transition == "delete":
+        script.unlink()
+    else:
+        script.write_text("candidate = True\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "Conformance script change")
+    result = _select_cli(tmp_path, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    for endpoint, present in (
+        ("basis", transition != "add"),
+        ("candidate", transition != "delete"),
+    ):
+        row = _owner_rows(selected, endpoint)[path]
+        assert row["present"] is present
+        assert row["mode"] == ("100644" if present else None)
+        expected = (
+            {
+                "owner": "record-system",
+                "target": path,
+                "rule": "record-binding:project-docs",
+                "sources": [scope.FAMILY_CATALOG],
+            }
+            if path.endswith("check_repository_records.py")
+            else {
+                "owner": "conformance",
+                "target": ".github/workflows/ci.yml#conformance",
+                "rule": "native-hk-node-mise-authority",
+                "sources": sorted([".github/workflows/ci.yml", "hk.pkl", path]),
+            }
+        )
+        assert row["reasons"] == ([expected] if present else [])
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "eng/scripts/check_repository_records_other.py",
+        "eng/scripts/update_node_mise_lock_other.py",
+    ],
+)
+def test_conformance_script_neighbors_still_require_python_resolution(
+    comparison, path
+):
+    """An exact caller correction cannot hide an unexplained Python script."""
+    root, _, base = comparison
+    script = root / path
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("unresolved = True\n", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Unknown neighboring script")
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    reasons = _owner_rows(json.loads(result.stdout), "candidate")[path][
+        "reasons"
+    ]
+    assert reasons == [
+        {
+            "owner": "python",
+            "target": ".github/workflows/ci.yml#python-tests",
+            "rule": "native-python-caller-responsibility",
+            "sources": ["pyproject.toml"],
+        }
+    ]
 
 
 def test_endpoint_owners_preserve_changed_coordinate_identity(comparison):
@@ -1232,19 +1928,19 @@ def test_scope_retains_other_jobs_without_python_selection(path, jobs):
             True,
         ),
         (
-            "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs",
+            "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/Smoke.cs",
             True,
         ),
         (
             (
-                "src/public/lib/hcoona-release-smoke-github-packages/"
+                "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/"
                 "packages.lock.json"
             ),
             True,
         ),
         (
             (
-                "src/public/lib/hcoona-release-smoke-github-packages/"
+                "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/"
                 "workflow-delivery.release-unit.yml"
             ),
             True,
@@ -1262,10 +1958,35 @@ def test_scope_retains_other_jobs_without_python_selection(path, jobs):
         ("stylecop.json", True),
         (".gitattributes", True),
         ("src/.gitattributes", True),
-        ("src/public/.gitattributes", True),
-        ("src/public/lib/.gitattributes", True),
+        ("src/public/.gitattributes", False),
+        ("src/public/lib/.gitattributes", False),
         ("src/private/app/.gitattributes", True),
         ("tests/.gitattributes", True),
+        *[
+            (
+                "tests/private/app/workflow-delivery/fixtures/products/" + name,
+                True,
+            )
+            for name in (
+                ".gitattributes",
+                ".editorconfig",
+                "Directory.Build.props",
+                "Directory.Build.targets",
+                "Directory.Packages.props",
+            )
+        ],
+        *[
+            (
+                "tests/private/app/workflow-delivery/fixtures/products/" + name,
+                False,
+            )
+            for name in (
+                "stylecop.json",
+                "shared.cs",
+                "shared/Directory.Build.props",
+                "hcoona-release-smoke-ruby/.gitattributes",
+            )
+        ],
         ("eng/scripts/ci_scope.py", True),
         (".github/workflows/ci.yml", True),
         ("src/public/lib/nbgv-python/src/nbgv_python/cli.py", False),
@@ -1277,7 +1998,7 @@ def test_scope_retains_other_jobs_without_python_selection(path, jobs):
         ("uv.lock", False),
         (
             (
-                "src/public/lib/hcoona-release-smoke-python/src/"
+                "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/src/"
                 "hcoona_release_smoke_python/__init__.py"
             ),
             False,
@@ -1307,11 +2028,14 @@ def test_nuget_reproducibility_preserves_added_moved_and_deleted_inputs(
     """Each actual endpoint transition retains the native validation owner."""
     root, _, before = comparison
     original = (
-        root / "src/public/lib/hcoona-release-smoke-github-packages/Smoke.cs"
+        root
+        / "tests/private/app/workflow-delivery/fixtures/products"
+        / "hcoona-release-smoke-github-packages/Smoke.cs"
     )
     moved = (
         root
-        / "tests/private/app/workflow-delivery/fixtures/products/nuget/Smoke.cs"
+        / "tests/private/app/workflow-delivery/fixtures/products"
+        / "hcoona-release-smoke-github-packages/nested/Smoke.cs"
     )
     original.parent.mkdir(parents=True)
     original.write_text("public static class Smoke {}\n")
@@ -1333,13 +2057,30 @@ def test_nuget_reproducibility_preserves_added_moved_and_deleted_inputs(
         before = candidate
 
 
-@pytest.mark.parametrize("path", ["stylecop.json", ".gitattributes"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "stylecop.json",
+        ".gitattributes",
+        *[
+            "tests/private/app/workflow-delivery/fixtures/products/" + name
+            for name in (
+                ".gitattributes",
+                ".editorconfig",
+                "Directory.Build.props",
+                "Directory.Build.targets",
+                "Directory.Packages.props",
+            )
+        ],
+    ],
+)
 def test_nuget_reproducibility_preserves_changed_and_deleted_shared_inputs(
     comparison, path
 ):
     """Both endpoints retain actual analyzer and Git materialization inputs."""
     root, _, before = comparison
     shared = root / path
+    shared.parent.mkdir(parents=True, exist_ok=True)
     for operation in ("add", "change", "delete"):
         if operation == "delete":
             shared.unlink()

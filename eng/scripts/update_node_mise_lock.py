@@ -45,9 +45,9 @@ def _validate_workflow(node: str) -> None:
             (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         )
     )
-    if pins != (node, node):
+    if not pins or any(pin != node for pin in pins):
         message = (
-            ".github/workflows/ci.yml must contain exactly two exact "
+            ".github/workflows/ci.yml must contain at least one exact "
             f"setup-node pins matching mise.lock Node {node}; found {pins!r}"
         )
         raise ValueError(message)

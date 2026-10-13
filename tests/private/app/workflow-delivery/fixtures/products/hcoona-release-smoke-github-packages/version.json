@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/Nerdbank.GitVersioning/main/src/NerdBank.GitVersioning/version.schema.json",
+  "version": "1.0.0-beta.{height}",
+  "pathFilters": [
+    ".",
+    ":/mise.toml",
+    ":/mise.lock",
+    ":/.config/dotnet-tools.json",
+    ":/global.json",
+    ":/Directory.Build.props",
+    ":/Directory.Build.targets",
+    ":/Directory.Packages.props",
+    ":/tests/Directory.Build.props"
+  ],
+  "gitCommitIdShortFixedLength": 7,
+  "gitCommitIdShortAutoMinimum": 7,
+  "nugetPackageVersion": {
+    "semVer": 2
+  },
+  "publicReleaseRefSpec": ["^refs/heads/main$", "^refs/tags/release/hcoona-release-smoke-github-packages/v.+$"],
+  "inherit": false
+}

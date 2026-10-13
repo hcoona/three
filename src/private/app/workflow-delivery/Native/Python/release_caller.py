@@ -10,7 +10,7 @@ from pathlib import Path
 
 UNIT = "hcoona-release-smoke-python"
 DECLARATION = (
-    "src/public/lib/hcoona-release-smoke-python/"
+    "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/"
     "workflow-delivery.release-unit.yml"
 )
 

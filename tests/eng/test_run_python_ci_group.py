@@ -339,7 +339,6 @@ def test_no_work_has_no_product_or_auxiliary_preparation(flow):
         "execution",
     ]
     assert "selected=false" in flow.output.read_text()
-    assert "legacy_v3=false" in flow.output.read_text()
     assert "native_helper=false" in flow.output.read_text()
     assert "native_ruby=false" in flow.output.read_text()
     assert "pwsh" not in flow.tool_requests
@@ -422,7 +421,6 @@ def test_selected_ruby_helper_prepares_isolated_native_fixture_context(
 @pytest.mark.parametrize(
     "target",
     [
-        group.V3_TESTS,
         group.NATIVE_TESTS,
         group.AZURE_TESTS,
         "tests/eng/check.py",
@@ -462,39 +460,7 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
     native = group.node.read_json(flow.directory / "execution-request.json")[
         "native"
     ]
-    if target == group.V3_TESTS:
-        assert labels == [
-            "preparation",
-            "planning",
-            "mise-trust",
-            *(
-                ["static-reference-preparation"]
-                if target == group.V3_TESTS
-                else []
-            ),
-            "execution",
-        ]
-        assert native["environment"]["MISE_DATA_DIR"] == str(mise_data)
-        assert native["environment"]["MISE_TASK_RUN_AUTO_INSTALL"] == "false"
-        assert str(tmp_path / "tools") in native["environment"]["PATH"].split(
-            os.pathsep
-        )
-        trust = next(row for row in flow.calls if row[0] == "mise-trust")
-        assert trust[1] == (
-            str(tmp_path / "tools/mise"),
-            "trust",
-            str(Path(flow.context["candidate"]["directory"]) / "mise.toml"),
-        )
-        assert trust[2]["environment"] == native["environment"] | {
-            "PYTHONSAFEPATH": "1"
-        }
-        assert trust[2]["timeout"] == 30
-        assert trust[2]["environment"]["HOME"] == str(
-            flow.directory / "query-preparation/candidate/home"
-        )
-        for name in ("MISE_STATE_DIR", "XDG_STATE_HOME"):
-            assert name not in trust[2]["environment"]
-    elif target == group.NATIVE_TESTS:
+    if target == group.NATIVE_TESTS:
         assert labels == [
             "preparation",
             "planning",
@@ -511,9 +477,7 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
     else:
         assert labels == ["preparation", "planning", "execution"]
     assert native["environment"]["PYTHONSAFEPATH"] is None
-    assert native["environment"].get("MISE_EXEC_AUTO_INSTALL") == (
-        "0" if target == group.V3_TESTS else None
-    )
+    assert native["environment"].get("MISE_EXEC_AUTO_INSTALL") is None
     assert (
         group.node.read_json(flow.directory / "preparation.json")["request"][
             "candidate"
@@ -523,14 +487,11 @@ def test_only_selected_native_target_prepares_auxiliary_tools(
     paths = native["environment"]["PATH"].split(os.pathsep)
     assert "/native/bin" in paths
     assert (str(tmp_path / "powershell") in paths) is (
-        target in (group.AZURE_TESTS, group.V3_TESTS)
+        target == group.AZURE_TESTS
     )
-    assert ("pwsh" in flow.tool_requests) is (
-        target in (group.AZURE_TESTS, group.V3_TESTS)
-    )
+    assert ("pwsh" in flow.tool_requests) is (target == group.AZURE_TESTS)
     for name, value in native_settings.items():
-        consumer = group.V3_TESTS if name == "HK_PROFILE" else group.AZURE_TESTS
-        if configured and target == consumer:
+        if configured and target == group.AZURE_TESTS and name != "HK_PROFILE":
             assert native["environment"][name] == value
         else:
             assert name not in native["environment"]
@@ -667,21 +628,106 @@ def test_selected_preparation_uses_owned_mise_without_legacy_adapters(
     )
 
 
+@pytest.mark.parametrize("satisfied", [True, False])
+def test_selected_official_contract_receives_native_node_without_replanning(
+    flow, tmp_path, monkeypatch, satisfied
+):
+    """Retained hash checks receive native Node and complete outcomes."""
+    flow.state.update(
+        checks=[
+            check(
+                "python/pytest-v1", "tests/eng/test_legacy_release_contract.py"
+            ),
+            check("python/distribution-set-v1"),
+        ],
+        satisfied=satisfied,
+    )
+    runtime = tmp_path / "native node" / "bin" / "node"
+    native_executable = group.executable
+    monkeypatch.setattr(
+        group,
+        "executable",
+        lambda name: (
+            str(runtime) if name == "node" else native_executable(name)
+        ),
+    )
+    monkeypatch.setenv("PATH", "/unrelated/receiver/tools")
+    readback = group.plan(flow.root, flow.directory)
+    data = tmp_path / "mise"
+    data.mkdir()
+    outcome = group.execute(flow.root, flow.directory, data)
+    execution = flow.calls[-1]
+    native = group.node.read_json(flow.directory / "execution-request.json")[
+        "native"
+    ]
+    paths = native["environment"]["PATH"].split(os.pathsep)
+    assert str(runtime.parent) in paths
+    assert "/native/bin" in paths
+    assert "/unrelated/receiver/tools" not in paths
+    assert native["environment"]["MISE_DATA_DIR"] == str(data)
+    assert native["environment"]["MISE_EXEC_AUTO_INSTALL"] == "0"
+    assert "native_node=true" in flow.output.read_text()
+    assert outcome["satisfied"] is satisfied
+    assert execution[2]["environment"] == native["environment"]
+    assert group.node.read_json(Path(execution[1][-2])) == readback["plan"]
+    assert [row[0] for row in flow.calls] == [
+        "preparation",
+        "planning",
+        "mise-trust",
+        "execution",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("kind", "target"),
+    [
+        (None, None),
+        ("python/distribution-set-v1", None),
+        (
+            "python/pytest-v1",
+            "tests/eng/test_legacy_release_contract.py.backup",
+        ),
+        ("python/pytest-v1", "tests/eng/unrelated.py"),
+    ],
+)
+def test_unselected_official_contract_does_not_require_node(
+    flow, monkeypatch, kind, target
+):
+    """Empty and unrelated work retains its prepared runtime boundary."""
+    flow.state["checks"] = [] if kind is None else [check(kind, target)]
+    native_executable = group.executable
+
+    def executable(name):
+        if name == "node":
+            message = "Unselected Node runtime must not be requested"
+            raise AssertionError(message)
+        return native_executable(name)
+
+    monkeypatch.setattr(group, "executable", executable)
+    readback = group.plan(flow.root, flow.directory)
+    assert group.execute(flow.root, flow.directory)["satisfied"] is True
+    assert "native_node=false" in flow.output.read_text()
+    execution = flow.calls[-1]
+    request = group.node.read_json(flow.directory / "execution-request.json")
+    assert request["native"]["environment"]["PATH"] == "/native/bin"
+    assert group.node.read_json(Path(execution[1][-2])) == readback["plan"]
+
+
 @pytest.mark.parametrize(
     "kind",
     [
-        "legacy_v3",
         "native_helper",
         "native_ruby",
         "native_ruby_second",
         "native_ruby_runtime",
         "azure_bundle",
-        "legacy_v3_pwsh",
-        "legacy_v3_mise",
         "native_preparation_mise",
         "native_preparation_resource",
         "native_ruby_preparation_mise",
         "native_ruby_preparation_resource",
+        "native_node_runtime",
+        "native_node_mise",
+        "native_node_resource",
     ],
 )
 def test_failed_selected_auxiliary_cannot_dispatch_products(
@@ -689,18 +735,18 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
 ):
     """Failed retained prerequisites remain terminal, with no replan."""
     target = {
-        "legacy_v3": group.V3_TESTS,
         "native_helper": group.NATIVE_TESTS,
         "native_ruby": group.RUBY_TESTS,
         "native_ruby_second": group.RUBY_TESTS,
         "native_ruby_runtime": group.RUBY_TESTS,
         "azure_bundle": group.AZURE_TESTS,
-        "legacy_v3_pwsh": group.V3_TESTS,
-        "legacy_v3_mise": group.V3_TESTS,
         "native_preparation_mise": group.PREPARATION_TESTS,
         "native_preparation_resource": group.PREPARATION_TESTS,
         "native_ruby_preparation_mise": group.RUBY_PREPARATION_TESTS,
         "native_ruby_preparation_resource": group.RUBY_PREPARATION_TESTS,
+        "native_node_runtime": "tests/eng/test_legacy_release_contract.py",
+        "native_node_mise": "tests/eng/test_legacy_release_contract.py",
+        "native_node_resource": "tests/eng/test_legacy_release_contract.py",
     }[kind]
     flow.state["checks"] = [check("python/pytest-v1", target)]
     group.plan(flow.root, flow.directory)
@@ -708,13 +754,12 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
     data.mkdir()
     native_run = group.node.run
     failed_phase = {
-        "legacy_v3": "static-reference-preparation",
         "native_helper": "native-helper-format",
         "native_ruby": "ruby-test-tools-2.4.20",
         "native_ruby_second": "ruby-test-tools-2.7.2",
-        "legacy_v3_mise": "mise-trust",
         "native_preparation_mise": "mise-trust",
         "native_ruby_preparation_mise": "mise-trust",
+        "native_node_mise": "mise-trust",
     }.get(kind)
 
     def run(root, directory, label, *args, **options):
@@ -726,12 +771,17 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
     if kind in (
         "native_preparation_resource",
         "native_ruby_preparation_resource",
+        "native_node_resource",
     ):
         with pytest.raises(ValueError, match="prepared mise data directory"):
             group.execute(flow.root, flow.directory)
-    elif kind in ("azure_bundle", "legacy_v3_pwsh", "native_ruby_runtime"):
+    elif kind in ("azure_bundle", "native_ruby_runtime", "native_node_runtime"):
         native_executable = group.executable
-        missing_tool = "ruby" if kind == "native_ruby_runtime" else "pwsh"
+        missing_tool = {
+            "native_ruby_runtime": "ruby",
+            "native_node_runtime": "node",
+            "azure_bundle": "pwsh",
+        }[kind]
 
         def executable(name):
             if name == missing_tool:
@@ -746,8 +796,6 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
             group.execute(flow.root, flow.directory, data)
         assert error.value.returncode == 17
     expected = ["preparation", "planning"]
-    if kind == "legacy_v3":
-        expected.append("mise-trust")
     if kind == "native_ruby_second":
         expected.append("ruby-test-tools-2.4.20")
     assert [row[0] for row in flow.calls] == expected
@@ -817,7 +865,6 @@ def test_ruby_only_preparation_receives_tools_without_extra_adapters_or_replan(
     assert "WORKFLOW_DELIVERY_TEST_RUBY_GEM_HOMES" not in environment
     assert "native_ruby_preparation=true" in flow.output.read_text()
     assert "native_preparation=false" in flow.output.read_text()
-    assert "legacy_v3=false" in flow.output.read_text()
     assert native["checkout"] == flow.context["candidate"]["directory"]
     execution = flow.calls[-1]
     assert execution[2]["environment"] == environment

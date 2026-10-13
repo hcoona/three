@@ -19,26 +19,30 @@ packages without those scripts. Review needed install scripts with
 
 ## Python
 
-[pyproject.toml](../../pyproject.toml) owns uv workspace membership. Members live
-under `src/`; there is no separate top-level `OnePython/` workspace. Project
+[pyproject.toml](../../pyproject.toml) owns uv workspace membership. Projects live
+under `src/`, with internal delivery fixtures under `tests/`; there is no separate
+top-level `OnePython/` workspace. Project
 manifests own their dependencies, supported versions and package contracts.
 
-The root `.python-version`, setup-uv configuration `.config/uv/uv.toml`, and
-V3 package runtime constants are generated from `mise.lock`, checked against
+The root `.python-version` and setup-uv configuration `.config/uv/uv.toml`
+are generated from `mise.lock`, checked against
 `mise.toml`. After a Python or UV lock update, run
 `mise run sync:python-version`; HK checks projection drift. Synchronize an
 existing environment before using `--no-sync`. For example:
 
 ```powershell
-uv sync --frozen --package three-workflow-delivery-v3
-mise run test:v3
+uv sync --frozen
 ```
 
 `mise run test:python` runs the
 [native Python group](../../src/private/app/workflow-delivery/README.md#native-python-ci-caller)
 in explicit full mode against committed HEAD on Linux, including configured
-pytest targets and adopted distribution checks. `mise run test:v3` remains a
-direct working-tree self-test command. Ordinary commits run HK source checks;
+pytest targets and adopted distribution checks. Commit tracked changes before
+using this command; Windows contributors need a Linux environment for it.
+For the internal application's managed tests, prepare the pinned SDK/tools and
+run `dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj`
+from the repository root. That project check does not replace the complete native
+Python group. Ordinary commits run HK source checks;
 affected CI owns project tests. The
 [execution contract](hk-execution.md#ci-execution-contract) explains selection,
 required results and timing evidence. Scholarly-publication's standalone
@@ -49,10 +53,9 @@ implicit temporary session directory after a successful run. Failed test-call
 fixtures remain available for diagnosis within pytest's default three-session
 retention window; its existing cleanup locks protect active runs. This applies
 to all tests using the root configuration in explicit local commands and CI.
-Workflow Delivery v3's session fixture also places native subprocess temporary
-files under that session directory, so their scratch files and temporary caches
-share its retention lifecycle. Its environment lasts for the pytest session and
-can also affect later tests from other projects in that process.
+Native callers own their separate scratch and cache directories. Root pytest
+retention does not establish cleanup of native subprocess files outside
+pytest-owned state.
 
 Use an executable temporary filesystem with enough free bytes and inodes for
 native integration fixtures. On Linux, check both `df -h` and `df -i` for that

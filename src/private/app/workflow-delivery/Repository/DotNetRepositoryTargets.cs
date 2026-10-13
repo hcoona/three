@@ -31,6 +31,7 @@ internal sealed class DotNetRepositoryTargets
             "WebHdfs.Extensions.FileProviders.UnitTest.csproj",
             "PreBuild"),
         ("dirs.proj", "RestoreWindowsOnlyProjectsOnNonWindows"),
+        // The accepted comparison basis still declares this removed producer.
         ("src/public/lib/hcoona-release-smoke-github-packages/" +
             "hcoona-release-smoke-github-packages.csproj",
             "ValidateWorkflowDeliveryFrozenInputs"),

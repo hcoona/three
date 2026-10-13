@@ -9,8 +9,8 @@ This filename remains a reader interface embedded in the retained validator
 and workflow diagnostics. It preserves channel-migration guidance and the
 context of their Step 2 through Step 6 comments. It is not an executable
 refactoring plan. Current delivery work starts with the
-[v3 handoff](../../src/public/lib/three-workflow-delivery-v3/docs/agent-handoff.md)
-and its [legacy boundary evidence](../../src/public/lib/three-workflow-delivery-v3/docs/research/legacy-workflow-boundary.md).
+[v3 handoff](../../src/private/app/workflow-delivery/docs/agent-handoff.md)
+and its [legacy boundary evidence](../../src/private/app/workflow-delivery/docs/research/legacy-workflow-boundary.md).
 Generic work procedure belongs to [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 The [original plan](https://github.com/hcoona/three/blob/b673ee27aab8553a4ee259bcaca87a197178463c/.github/workflows/REFACTOR_PLAN.md)

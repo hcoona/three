@@ -16,12 +16,12 @@ import run_node_ci_group as node
 
 NATIVE_SOURCE = "src/private/app/workflow-delivery/Native/Python"
 SCOPE = "python/native-paired-facts-v1"
-V3_TESTS = "src/public/lib/three-workflow-delivery-v3/tests"
 NATIVE_TESTS = "tests/private/app/workflow-delivery/Native/Python"
 RUBY_TESTS = "tests/private/app/workflow-delivery/Native/Ruby"
 AZURE_TESTS = "src/private/app/azureauth-credprovider/python/tests"
 PREPARATION_TESTS = "tests/eng/test_python_release_preparation_gate.py"
 RUBY_PREPARATION_TESTS = "tests/eng/test_ruby_release_preparation_gate.py"
+OFFICIAL_TESTS = "tests/eng/test_legacy_release_contract.py"
 
 
 def executable(name: str) -> str:
@@ -148,9 +148,9 @@ def plan(root: Path, directory: Path) -> dict[str, Any]:
     selected = auxiliary(readback["plan"])
     output(
         selected=str(bool(readback["plan"]["checks"])).lower(),
-        legacy_v3=str(selected["legacy_v3"]).lower(),
         native_helper=str(selected["native_helper"]).lower(),
         native_ruby=str(selected["native_ruby"]).lower(),
+        native_node=str(selected["native_node"]).lower(),
         native_preparation=str(selected["native_preparation"]).lower(),
         native_ruby_preparation=str(
             selected["native_ruby_preparation"]
@@ -178,12 +178,9 @@ def auxiliary(plan_value: dict[str, Any]) -> dict[str, bool]:
         if item["work"]["key"]["check"] == "python/pytest-v1"
     }
     return {
-        "legacy_v3": any(
-            target == V3_TESTS or target.startswith(V3_TESTS + "/")
-            for target in targets
-        ),
         "native_helper": NATIVE_TESTS in targets,
         "native_ruby": RUBY_TESTS in targets,
+        "native_node": OFFICIAL_TESTS in targets,
         "azure_bundle": AZURE_TESTS in targets,
         "native_preparation": PREPARATION_TESTS in targets,
         "native_ruby_preparation": RUBY_PREPARATION_TESTS in targets,
@@ -236,7 +233,7 @@ def prepare_mise_test_tools(
     environment: dict[str, str | None],
     mise_data: Path | None,
     *,
-    legacy: bool,
+    native_node: bool = False,
 ) -> None:
     """Bind selected tests to their owned, committed MISE preparation."""
     if (
@@ -246,15 +243,11 @@ def prepare_mise_test_tools(
     ):
         message = "Selected tests require their prepared mise data directory"
         raise ValueError(message)
-    tools = (
-        ("node", "pnpm", "hk", "pkl", "ruby", "mise") if legacy else ("mise",)
-    )
+    tools = ("mise", "node") if native_node else ("mise",)
     native_tools = {name: executable(name) for name in tools}
     environment["MISE_DATA_DIR"] = str(mise_data)
     environment["MISE_TASK_RUN_AUTO_INSTALL"] = "false"
     environment["MISE_EXEC_AUTO_INSTALL"] = "0"
-    if legacy and "HK_PROFILE" in os.environ:
-        environment["HK_PROFILE"] = os.environ["HK_PROFILE"]
     environment["PATH"] = os.pathsep.join(
         dict.fromkeys(
             [str(Path(path).parent) for path in native_tools.values()]
@@ -288,7 +281,7 @@ def execute(
         raise ValueError(message)
     selected = auxiliary(plan_value)
     environment = dict(candidate["environment"])
-    if selected["legacy_v3"] or selected["azure_bundle"]:
+    if selected["azure_bundle"]:
         environment["PATH"] = os.pathsep.join(
             dict.fromkeys(
                 [
@@ -310,17 +303,18 @@ def execute(
             }
         )
     if (
-        selected["legacy_v3"]
-        or selected["native_preparation"]
+        selected["native_preparation"]
         or selected["native_ruby_preparation"]
+        or selected["native_node"]
     ):
         prepare_mise_test_tools(
             Path(context["candidate"]["directory"]),
             directory,
             environment,
             mise_data,
-            legacy=selected["legacy_v3"],
+            native_node=selected["native_node"],
         )
+    if selected["native_preparation"] or selected["native_ruby_preparation"]:
         prepared_dotnet = node.read_json(
             directory / "preparation-request.json"
         )["tools"]["dotnet"]
@@ -331,15 +325,6 @@ def execute(
                     *environment["PATH"].split(os.pathsep),
                 ]
             )
-        )
-    if selected["legacy_v3"]:
-        node.run(
-            Path(context["candidate"]["directory"]),
-            directory,
-            "static-reference-preparation",
-            candidate["collection"]["graph"]["interpreter"],
-            "eng/scripts/workflow_delivery_v3_prepare_static_reference.py",
-            environment=environment,
         )
     if selected["native_helper"]:
         compilation = next(

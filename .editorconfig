@@ -33,8 +33,6 @@ indent_size = 4
 [*.ipynb]
 indent_size = unset
 
-[src/public/lib/three-workflow-delivery-v3/tests/fixtures/**/*.json]
-insert_final_newline = false
 
 [*.cs]
 indent_size = 4

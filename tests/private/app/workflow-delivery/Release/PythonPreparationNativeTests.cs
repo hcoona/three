@@ -9,7 +9,8 @@ namespace WorkflowDelivery.Tests.Release;
 [TestClass]
 public sealed class PythonPreparationNativeTests(TestContext context)
 {
-    private const string Product = "src/public/lib/hcoona-release-smoke-python";
+    private const string Product = "tests/private/app/workflow-delivery/" +
+        "fixtures/products/hcoona-release-smoke-python";
     private static readonly string[] NativeInputs = [Product + "/version.json",
         "src/private/app/workflow-delivery/Native/Python/packages.py",
         "src/private/app/workflow-delivery/Native/Python/release_caller.py"];

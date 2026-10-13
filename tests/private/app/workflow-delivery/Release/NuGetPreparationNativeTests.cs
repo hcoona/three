@@ -385,7 +385,8 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
         internal string Root { get; } = Directory.CreateTempSubdirectory("nuget-native-").FullName;
         private string Retained { get; } = Directory.CreateDirectory(Path.Combine(
             context.TestResultsDirectory!, "nuget-native", Guid.NewGuid().ToString("N"))).FullName;
-        private const string Product = "src/public/lib/hcoona-release-smoke-github-packages";
+        private const string Product = "tests/private/app/workflow-delivery/" +
+            "fixtures/products/hcoona-release-smoke-github-packages";
         internal const string Project = Product + "/hcoona-release-smoke-github-packages.csproj";
         private static readonly string[] RootInputs = ["global.json", "Directory.Build.props",
             "Directory.Packages.props", "nuget.config", "version.json",

@@ -365,8 +365,6 @@ jobs:
 
     env:
       NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
-      NUGET_AUTHORITY_DIAGNOSTICS_DIRECTORY: ${{ github.workspace }}/artifacts/nuget-authority-diagnostics
-      NUGET_AUTHORITY_DUMP_TOOL: ${{ github.workspace }}/artifacts/nuget-authority-tools/dotnet-dump.exe
 
     permissions:
       contents: read
@@ -410,12 +408,6 @@ jobs:
           path: ${{ runner.temp }}/dotnet-plan-transfer
           merge-multiple: true
 
-      - name: Prepare NuGet authority dump collection
-        if: ${{ success() && needs.scope.outputs.dotnet == 'true' }}
-        continue-on-error: true
-        shell: pwsh
-        run: dotnet tool install dotnet-dump --version 10.0.745401 --tool-path (Split-Path $env:NUGET_AUTHORITY_DUMP_TOOL)
-
       - name: Execute and collect the unchanged original native plan
         shell: bash
         env:
@@ -439,19 +431,6 @@ jobs:
           name: dotnet-group-results
           path: ${{ runner.temp }}/dotnet-execution/
           if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Retain NuGet authority diagnostics
-        continue-on-error: true
-        if: >-
-          (failure() || hashFiles('artifacts/nuget-authority-diagnostics/**/slow-process.txt') != '')
-        uses: actions/upload-artifact@v7
-        with:
-          name: nuget-authority-diagnostics-${{ github.run_attempt }}
-          path: |
-            artifacts/nuget-authority-diagnostics/
-            src/private/app/workflow-delivery-v3-nuget-authority/bin/Debug/net10.0/
-          if-no-files-found: warn
           retention-days: 7
 
       - name: Reject canceled validation
@@ -840,7 +819,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path $env:WDV3_NUGET_REPRO_EVIDENCE | Out-Null
-          dotnet restore src/public/lib/hcoona-release-smoke-github-packages/hcoona-release-smoke-github-packages.csproj `
+          dotnet restore tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/hcoona-release-smoke-github-packages.csproj `
             -p:RestoreLockedMode=true `
             "-bl:$env:WDV3_NUGET_REPRO_EVIDENCE/product-restore.binlog"
           exit $LASTEXITCODE
@@ -957,18 +936,8 @@ jobs:
       - name: Prepare native query tools and select once
         id: plan
         run: python eng/scripts/run_python_ci_group.py plan --directory "$RUNNER_TEMP/python-group"
-      - name: Setup selected PNPM adapter
-        if: steps.plan.outputs.legacy_v3 == 'true'
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-        with:
-          version: 12.11.2
-      - name: Setup selected Node adapter
-        if: steps.plan.outputs.legacy_v3 == 'true'
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24.21.0'
       - name: Setup selected MISE adapters
-        if: steps.plan.outputs.legacy_v3 == 'true' || steps.plan.outputs.native_preparation == 'true' || steps.plan.outputs.native_ruby_preparation == 'true'
+        if: steps.plan.outputs.native_preparation == 'true' || steps.plan.outputs.native_ruby_preparation == 'true' || steps.plan.outputs.native_node == 'true'
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         env:
           MISE_DATA_DIR: ${{ runner.temp }}/python-auxiliary-mise
@@ -976,11 +945,11 @@ jobs:
           version: '2026.8.10'
           experimental: true
           install_args: >-
-            ${{ steps.plan.outputs.legacy_v3 == 'true' && 'aqua:jdx/hk pkl' || '' }}
             ${{ steps.plan.outputs.native_preparation == 'true' && 'python uv' || '' }}
             ${{ steps.plan.outputs.native_ruby_preparation == 'true' && 'ruby dotnet' || '' }}
+            ${{ steps.plan.outputs.native_node == 'true' && 'node' || '' }}
       - name: Setup selected Ruby adapter
-        if: steps.plan.outputs.legacy_v3 == 'true' || steps.plan.outputs.native_ruby == 'true'
+        if: steps.plan.outputs.native_ruby == 'true'
         uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
           ruby-version: '4.0.7'

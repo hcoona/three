@@ -83,7 +83,7 @@ def test_request_transfers_exact_source_destination_mode_and_producer(
         "selectedRef": "refs/heads/development",
         "unit": "hcoona-release-smoke-python",
         "declaration": (
-            "src/public/lib/hcoona-release-smoke-python/"
+            "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/"
             "workflow-delivery.release-unit.yml"
         ),
         "channel": channel,

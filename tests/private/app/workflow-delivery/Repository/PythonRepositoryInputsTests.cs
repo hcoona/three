@@ -50,6 +50,134 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
+    public void AttributesSelectOnlyConfiguredDotnetDependentChecks()
+    {
+        const string path = ".gitattributes";
+        string[] targets = ["src/public/lib/nbgv-python/tests",
+            "src/private/app/azureauth-credprovider/python/tests",
+            "tests/eng/test_python_release_preparation_gate.py",
+            "tests/eng/test_ruby_release_preparation_gate.py",
+            "tests/eng/test_ruby_release_caller.py"];
+        foreach ((bool before, bool after) in QualityPresence)
+        {
+            PythonFactsEndpoint basis = Facts(Endpoint([.. targets, "tests/unrelated.py"],
+                before ? [path] : [], "before"));
+            PythonFactsEndpoint candidate = Facts(Endpoint([.. targets, "tests/unrelated.py"],
+                after ? [path] : [], "after"));
+            SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+            SelectionReason[] expected = targets.SelectMany(target => PairedRevisions
+                .Where(revision => revision == "before" ? before : after)
+                .Select(revision => new SelectionReason(path, revision, "pytest:" + target)))
+                .ToArray();
+            CollectionAssert.AreEquivalent(expected, paired);
+            PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+                [path], false, paired);
+            CiPlan plan = ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+            CollectionAssert.AreEquivalent(targets.Select(target =>
+                new CheckKey("pytest:" + target, "python/pytest-v1", "default")).ToArray(),
+                plan.Checks.Select(check => check.Work.Key).ToArray());
+            foreach (PlannedCheck check in plan.Checks)
+            {
+                Assert.IsTrue(check.Work.Required);
+                CollectionAssert.AreEquivalent(expected.Where(reason =>
+                    reason.Project == check.Work.Key.Target).ToArray(), check.Reasons);
+            }
+        }
+    }
+
+    [TestMethod]
+    [DataRow("src/.gitattributes",
+        "src/private/app/azureauth-credprovider/python/tests", true)]
+    [DataRow("src/private/.gitattributes",
+        "tests/eng/test_python_release_preparation_gate.py", true)]
+    [DataRow("tests/.gitattributes", "tests/eng/test_ruby_release_preparation_gate.py", true)]
+    [DataRow("src/private/app/.gitattributes", "tests/eng/test_ruby_release_caller.py", true)]
+    [DataRow("tests/.gitattributes", "tests/eng/test_ruby_release_caller.py", false)]
+    [DataRow("src/public/.gitattributes",
+        "src/private/app/azureauth-credprovider/python/tests", false)]
+    [DataRow("src/private/app/workflow-delivery-other/.gitattributes",
+        "tests/eng/test_ruby_release_caller.py", false)]
+    public void AncestorAttributesRespectActualConsumerRoots(string path, string target,
+        bool consumed)
+    {
+        foreach ((bool before, bool after) in QualityPresence)
+        {
+            PythonFactsEndpoint basis = Facts(Endpoint([target, "tests/unrelated.py"],
+                before ? [path] : [], "before"));
+            PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"],
+                after ? [path] : [], "after"));
+            SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+            if (!consumed)
+            {
+                Assert.IsEmpty(paired);
+                Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
+                    basis, candidate, [path], false, paired));
+                continue;
+            }
+            SelectionReason[] expected = PairedRevisions.Where(revision =>
+                revision == "before" ? before : after).Select(revision =>
+                    new SelectionReason(path, revision, "pytest:" + target)).ToArray();
+            CollectionAssert.AreEquivalent(expected, paired);
+            PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+                [path], false, paired);
+            PlannedCheck check = Assert.ContainsSingle(
+                ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+            Assert.AreEqual(new CheckKey("pytest:" + target, "python/pytest-v1", "default"),
+                check.Work.Key);
+            CollectionAssert.AreEquivalent(expected, check.Reasons);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void AttributesKeepIntroducedCheckAndOriginalInputReason(bool inputAtBasis)
+    {
+        const string path = ".gitattributes";
+        const string target = "tests/eng/test_ruby_release_caller.py";
+        PythonFactsEndpoint basis = Facts(Endpoint(["tests/unrelated.py"],
+            inputAtBasis ? [path] : [], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"],
+            inputAtBasis ? [] : [path], "after"));
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        var expected = new SelectionReason(path, inputAtBasis ? "before" : "after",
+            "pytest:" + target);
+        Assert.AreEqual(expected, Assert.ContainsSingle(paired));
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, paired);
+        PlannedCheck check = Assert.ContainsSingle(
+            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+        Assert.AreEqual("pytest:" + target, check.Work.Key.Target);
+        Assert.AreEqual(expected, Assert.ContainsSingle(check.Reasons));
+        Assert.DoesNotContain("pytest:" + target,
+            assembly.Request.Basis.Projects.Select(project => project.Id));
+    }
+
+    [TestMethod]
+    public void RetiredAttributesKeepEndpointReasonsWithoutCandidateWork()
+    {
+        const string path = ".gitattributes";
+        const string target = "src/public/lib/three-workflow-delivery-v3/tests";
+        foreach ((bool before, bool after) in QualityPresence)
+        {
+            PythonFactsEndpoint basis = Facts(Endpoint([target],
+                before ? [path] : [], "before"));
+            PythonFactsEndpoint candidate = Facts(Endpoint(["tests/unrelated.py"],
+                after ? [path] : [], "after"));
+            SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+            SelectionReason[] expected = PairedRevisions.Where(revision =>
+                revision == "before" ? before : after).Select(revision =>
+                    new SelectionReason(path, revision, "pytest:" + target)).ToArray();
+            CollectionAssert.AreEquivalent(expected, paired);
+            PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+                [path], false, paired);
+            Assert.IsEmpty(ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+            Assert.DoesNotContain("pytest:" + target,
+                assembly.Request.Candidate.Projects.Select(project => project.Id));
+        }
+    }
+
+    [TestMethod]
     [DataRow("src/private/app/workflow-delivery/Native/Python/release_caller.py")]
     [DataRow(".github/workflows/workflow-delivery-v3-python-smoke.yml")]
     public void PythonReleaseCallerInputsSelectTheirDeclaredPytestTarget(string path)
@@ -179,31 +307,6 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
-    [DataRow(".github/workflows/workflow-delivery-v3-ruby-smoke.yml")]
-    [DataRow(".github/workflows/workflow-delivery-v3-ruby-bootstrap.yml")]
-    public void RubyReleaseWorkflowInputsSelectPublicRouteOnly(string path)
-    {
-        const string publicTarget = "src/public/lib/three-workflow-delivery-v3/tests";
-        string[] targets = ["tests/eng/test_ruby_release_caller.py",
-            "tests/eng/test_ruby_release_preparation_gate.py",
-            "tests/private/app/workflow-delivery/Native/Ruby", publicTarget,
-            "tests/unrelated.py"];
-        PythonFactsEndpoint basis = Facts(Endpoint(targets, [path], "before"));
-        PythonFactsEndpoint candidate = Facts(Endpoint(targets, [path], "after"));
-        Owners(basis.Inputs, path, "pytest:" + publicTarget);
-        Owners(candidate.Inputs, path, "pytest:" + publicTarget);
-        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
-        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
-            [path], false, paired);
-        PlannedCheck selected = Assert.ContainsSingle(
-            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
-        Assert.AreEqual("pytest:" + publicTarget, selected.Work.Key.Target);
-        CollectionAssert.AreEquivalent(PairedRevisions.Select(revision =>
-            new SelectionReason(path, revision, "pytest:" + publicTarget)).ToArray(),
-            selected.Reasons);
-    }
-
-    [TestMethod]
     [DataRow(true, true, true)]
     [DataRow(true, true, false)]
     [DataRow(true, false, true)]
@@ -283,8 +386,6 @@ public sealed class PythonRepositoryInputsTests
                 "hcoona-release-smoke-ruby/hcoona-release-smoke-ruby.gemspec")]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
                 "hcoona-release-smoke-ruby/lib/hcoona_release_smoke_ruby.rb")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/" +
-        "src/three_workflow_delivery_v3/_ruby_helper.rb")]
     public void RubyHelperInputsSelectOnlyTheirAdoptedPytestTarget(string path)
     {
         const string target = "tests/private/app/workflow-delivery/Native/Ruby";
@@ -310,15 +411,24 @@ public sealed class PythonRepositoryInputsTests
 
     [TestMethod]
     [DataRow("workflow-delivery.quality.yml", true)]
-    [DataRow("src/workflow-delivery.quality.yml", true)]
-    [DataRow("src/public/workflow-delivery.quality.yml", true)]
-    [DataRow("src/public/lib/workflow-delivery.quality.yml", true)]
-    [DataRow("src/public/lib/hcoona-release-smoke-python/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/app/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/app/workflow-delivery/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/app/workflow-delivery/" +
+        "fixtures/products/workflow-delivery.quality.yml", true)]
+    [DataRow("tests/private/app/workflow-delivery/" +
+        "fixtures/products/hcoona-release-smoke-python/workflow-delivery.quality.yml", true)]
     [DataRow("src/public/lib/asciidoctor-latexmath/workflow-delivery.quality.yml", false)]
-    [DataRow("src/public/lib/hcoona-release-smoke-python-other/workflow-delivery.quality.yml",
+    [DataRow("tests/private/app/workflow-delivery/" +
+        "fixtures/products/hcoona-release-smoke-python-other/workflow-delivery.quality.yml",
         false)]
     [DataRow("src/private/app/workflow-delivery/workflow-delivery.quality.yml", false)]
     [DataRow("src/public/lib/nbgv-python/workflow-delivery.quality.yml", false)]
+    [DataRow("src/workflow-delivery.quality.yml", false)]
+    [DataRow("src/public/workflow-delivery.quality.yml", false)]
+    [DataRow("src/public/lib/workflow-delivery.quality.yml", false)]
     public void QualityChangesSelectOnlyNativePreparationConsumers(string path, bool consumed)
     {
         const string target = "tests/eng/test_python_release_preparation_gate.py";
@@ -417,7 +527,8 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/private/app/workflow-delivery/workflow-delivery.quality.yml", true)]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
         "hcoona-release-smoke-ruby/workflow-delivery.quality.yml", true)]
-    [DataRow("src/public/lib/hcoona-release-smoke-python/workflow-delivery.quality.yml", false)]
+    [DataRow("tests/private/app/workflow-delivery/" +
+        "fixtures/products/hcoona-release-smoke-python/workflow-delivery.quality.yml", false)]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
         "hcoona-release-smoke-ruby-other/workflow-delivery.quality.yml", false)]
     [DataRow("eng/scripts/check_ruby_release_preparation.py.backup", false)]
@@ -480,17 +591,6 @@ public sealed class PythonRepositoryInputsTests
         "src/private/app/workflow-delivery/Native/Python/native/main.rs")]
     [DataRow("tests/private/app/workflow-delivery/Native/Python",
         "src/public/lib/nbgv-python/src/nbgv_python/config.py")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/tests",
-        ".github/workflows/workflow-delivery-v3-python-smoke.yml")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/tests",
-        ".github/actions/workflow-delivery-v3-node/action.yml")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/tests",
-        "src/private/lib/hk/steps/Check.pkl")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/tests",
-        "src/private/app/workflow-delivery-v3-nuget-authority/Program.cs")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/tests",
-        "src/private/app/Directory.Build.props")]
-    [DataRow("src/public/lib/three-workflow-delivery-v3/tests", "pnpm-lock.yaml")]
     [DataRow("src/private/app/azureauth-credprovider/tests",
         "tests/private/app/azureauth-credprovider/Interop.cs")]
     [DataRow("src/private/app/azureauth-credprovider/tests",
@@ -500,6 +600,7 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("src/private/app/azureauth-credprovider/tests",
         "src/private/Directory.Packages.props")]
     [DataRow("src/public/lib/nbgv-python/tests", "global.json")]
+    [DataRow("tests/eng/test_general_ci_workflow.py", "tests/eng/ci_workflow_shell.py")]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml")]
     [DataRow("tests/eng/test_run_node_ci_group.py", "eng/scripts/run_node_ci_group.py")]
     [DataRow("tests/eng/test_run_ruby_ci_group.py", "eng/scripts/run_ruby_ci_group.py")]
@@ -515,7 +616,8 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_python_release_preparation_gate.py",
         "tests/private/app/workflow-delivery/Release/PythonPreparationNativeTests.cs")]
     [DataRow("tests/eng/test_python_release_preparation_gate.py",
-        "src/public/lib/hcoona-release-smoke-python/version.json")]
+        "tests/private/app/workflow-delivery/" +
+            "fixtures/products/hcoona-release-smoke-python/version.json")]
     [DataRow("tests/eng/test_python_release_preparation_gate.py",
         "src/public/lib/nbgv-python/src/nbgv_python/plugin.py")]
     [DataRow("tests/eng/test_python_release_preparation_gate.py",
@@ -563,6 +665,114 @@ public sealed class PythonRepositoryInputsTests
         PythonInputBinding[] bindings = PythonRepositoryInputs.Map(endpoint.Revision,
             endpoint.Projects, endpoint.Targets, []);
         Assert.DoesNotContain(path, bindings.Select(binding => binding.Path));
+    }
+
+    [TestMethod]
+    [DataRow(".github/actions/workflow-delivery-v3-python-setup/action.yml")]
+    [DataRow(".github/actions/workflow-delivery-v3-ruby-operation-record/action.yml")]
+    [DataRow(".github/actions/workflow-delivery-v3-ruby-setup/action.yml")]
+    [DataRow(".github/workflow-delivery/bootstrap/python-pypi-request.json")]
+    [DataRow(".github/workflow-delivery/bootstrap/python-request.json")]
+    [DataRow(".github/workflow-delivery/configuration/" +
+        "hcoona-release-smoke-ruby-github-packages.json")]
+    [DataRow(".github/workflow-delivery/configuration/hcoona-release-smoke-ruby-rubygems.json")]
+    [DataRow(".github/workflow-delivery/governance/hcoona-release-smoke-github-packages.json")]
+    [DataRow(".github/workflow-delivery/governance/hcoona-release-smoke-npm.json")]
+    [DataRow(".github/workflow-delivery/governance/hcoona-release-smoke-python-pypi.json")]
+    [DataRow(".github/workflow-delivery/governance/hcoona-release-smoke-python-testpypi.json")]
+    [DataRow(".github/workflow-delivery/governance/hcoona-release-smoke-ruby-github-packages.json")]
+    [DataRow(".github/workflow-delivery/governance/hcoona-release-smoke-ruby-rubygems.json")]
+    [DataRow(".github/workflow-delivery/native/python-requests.json")]
+    [DataRow(".github/workflow-delivery/requests/hcoona-release-smoke-ruby.json")]
+    [DataRow("eng/workflow-delivery/v3/policies/hcoona-release-smoke-github-packages.yml")]
+    [DataRow("eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml")]
+    [DataRow("eng/workflow-delivery/v3/policies/hcoona-release-smoke-python.yml")]
+    [DataRow("eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml")]
+    [DataRow("eng/workflow-delivery/v3/python-build-constraints.txt")]
+    [DataRow("eng/scripts/workflow_delivery_v3_native_npm.mjs")]
+    [DataRow("eng/scripts/workflow_delivery_v3_static_reference_node.mjs")]
+    [DataRow("hk.pkl")]
+    [DataRow(".gitattributes")]
+    [DataRow("eng/scripts/sync_python_build_backend.py")]
+    [DataRow("eng/scripts/workflow_delivery_v3_prepare_static_reference.py")]
+    [DataRow("eng/scripts/workflow_delivery_v3_run_created_epoch.py")]
+    [DataRow("eng/scripts/workflow_delivery_v3_static_reference.py")]
+    public void RetiredInputsKeepConfiguredBasisOwnersWithoutInventingCandidateWork(string path)
+    {
+        const string target = "src/public/lib/three-workflow-delivery-v3/tests";
+        PythonFactsEndpoint basis = Facts(Endpoint([target], [path], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint(["tests/unrelated.py"], [], "after"));
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        Assert.AreEqual(new SelectionReason(path, "before", "pytest:" + target),
+            Assert.ContainsSingle(paired));
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, paired);
+        Assert.IsEmpty(ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+        Assert.DoesNotContain("pytest:" + target,
+            assembly.Request.Candidate.Projects.Select(project => project.Id));
+    }
+
+    [TestMethod]
+    [DataRow(true, true)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    public void RuntimeRenovateChangesSelectOnlyCompleteConfiguredCheck(bool before, bool after)
+    {
+        const string path = "renovate.json";
+        const string target = "tests/eng/test_python_runtime.py";
+        PythonFactsEndpoint basis = Facts(Endpoint([target, "tests/unrelated.py"],
+            before ? [path] : [], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"],
+            after ? [path] : [], "after"));
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, paired);
+        PlannedCheck selected = Assert.ContainsSingle(
+            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+        Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
+        string[] expected = PairedRevisions.Where(revision =>
+            revision == "before" ? before : after).ToArray();
+        CollectionAssert.AreEquivalent(expected,
+            selected.Reasons.Select(reason => reason.Revision).ToArray());
+        foreach (SelectionReason reason in selected.Reasons)
+            Assert.AreEqual(new SelectionReason(path, reason.Revision, "pytest:" + target), reason);
+    }
+
+    [TestMethod]
+    public void RetiredPythonSetupKeepsSurvivingRuntimeCheck()
+    {
+        const string path = ".github/actions/workflow-delivery-v3-python-setup/action.yml";
+        const string target = "tests/eng/test_python_runtime.py";
+        PythonFactsEndpoint basis = Facts(Endpoint([target], [path], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint([target], [], "after"));
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, paired);
+        PlannedCheck selected = Assert.ContainsSingle(
+            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+        Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
+        Assert.AreEqual(new SelectionReason(path, "before", "pytest:" + target),
+            Assert.ContainsSingle(selected.Reasons));
+    }
+
+    [TestMethod]
+    [DataRow("renovate.json")]
+    [DataRow(".github/workflow-delivery/native/python-requests.json")]
+    [DataRow(".github/workflow-delivery/native/other.json")]
+    [DataRow("other.json")]
+    [DataRow(".gitattributes")]
+    [DataRow("src/.gitattributes")]
+    [DataRow("eng/scripts/sync_python_build_backend.py")]
+    [DataRow("eng/scripts/workflow_delivery_v3_prepare_static_reference.py")]
+    [DataRow("eng/scripts/workflow_delivery_v3_run_created_epoch.py")]
+    [DataRow("eng/scripts/workflow_delivery_v3_static_reference.py")]
+    public void FiniteInputsWithoutConfiguredConsumersRemainUnresolved(string path)
+    {
+        PythonFactsEndpoint endpoint = Facts(Endpoint(["tests/unrelated.py"], [path]));
+        Assert.IsEmpty(PythonRepositoryInputs.Pair(endpoint, endpoint, [path]));
+        foreach (bool full in PairedInputPresence)
+            Assert.ThrowsExactly<InvalidDataException>(() =>
+                PythonFactsAssembler.Assemble(endpoint, endpoint, [path], full, []));
     }
 
     [TestMethod]

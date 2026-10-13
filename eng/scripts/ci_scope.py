@@ -17,7 +17,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 ROOT = Path(__file__).resolve().parents[2]
-V3 = "src/public/lib/three-workflow-delivery-v3"
 AZURE = "src/private/app/azureauth-credprovider"
 SCHOLARLY = "src/private/lib/scholarly-publication"
 SCOPES = (
@@ -43,7 +42,7 @@ CONTROL_PROJECT = (
 NUGET_SCENARIO_ROOTS = {
     "src/private/app/workflow-delivery",
     str(PurePosixPath(CONTROL_PROJECT).parent),
-    "src/public/lib/hcoona-release-smoke-github-packages",
+    "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages",
 }
 PYTHON_INPUTS = {
     "pyproject.toml",
@@ -78,10 +77,6 @@ NODE_INPUTS = {
     ".config/dotnet-tools.json",
     "global.json",
 }
-V3_NATIVE = tuple(
-    f"src/private/app/workflow-delivery-v3-{name}/"
-    for name in ("dotnet-provider", "nuget-authority", "nuget-consumer")
-)
 
 
 def git(root: Path, *arguments: str) -> str:
@@ -120,6 +115,14 @@ def _dotnet_input(path: str, roots: set[str]) -> bool:
     )
 
 
+def _nuget_scenario_input(path: str) -> bool:
+    products = "tests/private/app/workflow-delivery/fixtures/products"
+    nuget = products + "/hcoona-release-smoke-github-packages"
+    if _under(path, products) and not _under(path, nuget):
+        return _dotnet_input(path, {nuget})
+    return _dotnet_input(path, NUGET_SCENARIO_ROOTS)
+
+
 def _azure_input(path: str) -> bool:
     return (
         _dotnet_input(path, {AZURE, "tests/private/app/azureauth-credprovider"})
@@ -131,44 +134,6 @@ def _azure_input(path: str) -> bool:
             )
         )
         or path in PYTHON_INPUTS
-    )
-
-
-def _v3_input(path: str) -> bool:
-    return (
-        _dotnet_input(
-            path,
-            {
-                *V3_NATIVE,
-                "tests/private/app/workflow-delivery-v3-nuget-authority",
-                "tests/private/app/workflow-delivery-v3-nuget-consumer",
-                "src/public/lib/hcoona-release-smoke-github-packages",
-            },
-        )
-        or path in NODE_INPUTS
-        or path
-        in {
-            "hk.pkl",
-            ".gitignore",
-            ".gitattributes",
-            ".github/CODEOWNERS",
-            "eng/scripts/hk_exec.py",
-            "eng/scripts/hk_file_operands.py",
-            "eng/scripts/hk_actionlint.py",
-            "eng/scripts/hk_pkl_eval.py",
-        }
-        or path.startswith(
-            (
-                ".github/workflows/workflow-delivery-v3-",
-                ".github/actions/workflow-delivery-v3",
-                ".github/workflow-delivery/",
-                "eng/workflow-delivery/v3/",
-                "eng/scripts/workflow_delivery_v3_",
-                "src/private/lib/hk/",
-                "tests/private/app/workflow-delivery-v3-",
-                "src/public/lib/hcoona-release-smoke-",
-            )
-        )
     )
 
 
@@ -262,7 +227,7 @@ def select(
         or any(
             path in ALL_INPUTS
             or path == "stylecop.json"
-            or _dotnet_input(path, NUGET_SCENARIO_ROOTS)
+            or _nuget_scenario_input(path)
             or bool(_resource_reasons(path, control_inputs))
             for path in paths
         ),
@@ -547,7 +512,244 @@ def record_control_owners(
     return reasons
 
 
-def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit endpoint facts.
+def _retiring_python_consumers(path: str) -> tuple[str, ...]:
+    """Keep exact old readers until retirement removes the comparison basis."""
+    return {
+        ".gitattributes": (
+            "src/public/lib/three-workflow-delivery-v3/tests/adapters/test_dotnet.py",
+        ),
+        "eng/scripts/sync_python_build_backend.py": (
+            "src/public/lib/three-workflow-delivery-v3/tests/repository/test_python_backend.py",
+        ),
+        "eng/scripts/workflow_delivery_v3_prepare_static_reference.py": (
+            "src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py",
+        ),
+        "eng/scripts/workflow_delivery_v3_run_created_epoch.py": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/contracts/"
+                "test_workflow_delivery_v3_run_created_epoch.py"
+            ),
+        ),
+        "eng/scripts/workflow_delivery_v3_static_reference.py": (
+            "src/public/lib/three-workflow-delivery-v3/tests/release/test_static_reference.py",
+            "src/public/lib/three-workflow-delivery-v3/tests/test_hk_trigger.py",
+        ),
+        ".github/actions/workflow-delivery-v3-python-setup/action.yml": (
+            ".github/workflows/workflow-delivery-v3-bootstrap-python.yml",
+            "tests/eng/test_python_runtime.py",
+        ),
+        (
+            ".github/actions/workflow-delivery-v3-ruby-operation-record/"
+            "action.yml"
+        ): (".github/workflows/workflow-delivery-v3-ruby-bootstrap.yml",),
+        ".github/actions/workflow-delivery-v3-ruby-setup/action.yml": (
+            ".github/workflows/workflow-delivery-v3-ruby-bootstrap.yml",
+        ),
+        ".github/workflow-delivery/bootstrap/python-pypi-request.json": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/acceptance/"
+                "python_bootstrap_contract.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/acceptance/"
+                "test_python_bootstrap_contract.py"
+            ),
+        ),
+        ".github/workflow-delivery/bootstrap/python-request.json": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/acceptance/"
+                "python_bootstrap_contract.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/acceptance/"
+                "test_python_bootstrap_contract.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/configuration/"
+            "hcoona-release-smoke-ruby-github-packages.json"
+        ): (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/ruby_controls.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/repository/"
+                "test_ruby_control_version.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/configuration/"
+            "hcoona-release-smoke-ruby-rubygems.json"
+        ): (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/ruby_controls.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/repository/"
+                "test_ruby_control_version.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/governance/"
+            "hcoona-release-smoke-github-packages.json"
+        ): (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/descriptors.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/compiler.py"
+            ),
+        ),
+        ".github/workflow-delivery/governance/hcoona-release-smoke-npm.json": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/descriptors.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/compiler.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/governance/"
+            "hcoona-release-smoke-python-pypi.json"
+        ): (
+            (
+                "eng/workflow-delivery/v3/policies/"
+                "hcoona-release-smoke-python.yml"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/release/python_governance.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/governance/"
+            "hcoona-release-smoke-python-testpypi.json"
+        ): (
+            (
+                "eng/workflow-delivery/v3/policies/"
+                "hcoona-release-smoke-python.yml"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/release/python_governance.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/governance/"
+            "hcoona-release-smoke-ruby-github-packages.json"
+        ): (
+            ("eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml"),
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/release/ruby_governance.py"
+            ),
+        ),
+        (
+            ".github/workflow-delivery/governance/"
+            "hcoona-release-smoke-ruby-rubygems.json"
+        ): (
+            ("eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml"),
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/release/ruby_governance.py"
+            ),
+        ),
+        ".github/workflow-delivery/native/python-requests.json": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/acceptance/python_native_contract.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/acceptance/"
+                "test_python_bootstrap_workflow.py"
+            ),
+        ),
+        ".github/workflow-delivery/requests/hcoona-release-smoke-ruby.json": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/ruby_controls.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/repository/"
+                "test_ruby_control_version.py"
+            ),
+        ),
+        (
+            "eng/workflow-delivery/v3/policies/"
+            "hcoona-release-smoke-github-packages.yml"
+        ): (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/catalogs.py"
+            ),
+        ),
+        "eng/workflow-delivery/v3/policies/hcoona-release-smoke-npm.yml": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/catalogs.py"
+            ),
+        ),
+        "eng/workflow-delivery/v3/policies/hcoona-release-smoke-python.yml": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/catalogs.py"
+            ),
+        ),
+        "eng/workflow-delivery/v3/policies/hcoona-release-smoke-ruby.yml": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/catalogs.py"
+            ),
+        ),
+        "eng/workflow-delivery/v3/python-build-constraints.txt": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/repository/python_provider.py"
+            ),
+            "eng/scripts/sync_python_build_backend.py",
+        ),
+        "eng/scripts/workflow_delivery_v3_native_npm.mjs": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/acceptance/npm_fixture.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/acceptance/"
+                "test_npm_fixture.py"
+            ),
+        ),
+        "eng/scripts/workflow_delivery_v3_static_reference_node.mjs": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/src/"
+                "three_workflow_delivery_v3/release/static_reference_authority.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/release/"
+                "test_static_reference_sidecars.py"
+            ),
+        ),
+        "hk.pkl": (
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/ci/"
+                "test_scenarios.py"
+            ),
+            (
+                "src/public/lib/three-workflow-delivery-v3/tests/"
+                "test_hk_trigger.py"
+            ),
+        ),
+    }.get(path, ())
+
+
+def _path_owner_reasons(  # noqa: C901, PLR0912, PLR0913 - Finite roles share explicit endpoint facts.
     path: str,
     *,
     modes: dict[str, str],
@@ -578,6 +780,60 @@ def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit en
                     "sources": sources,
                 }
             )
+
+    if path == ".github/CODEOWNERS":
+        add("github", path, "native-codeowners-routing", [path])
+
+    if path == "hk.pkl" and modes.get(".github/workflows/ci.yml") in {
+        "100644",
+        "100755",
+    }:
+        add(
+            "conformance",
+            ".github/workflows/ci.yml#conformance",
+            "native-hk-configuration",
+            [".github/workflows/ci.yml", path],
+        )
+
+    if (
+        path == "eng/scripts/update_node_mise_lock.py"
+        and modes.get("hk.pkl") in {"100644", "100755"}
+        and modes.get(".github/workflows/ci.yml") in {"100644", "100755"}
+    ):
+        add(
+            "conformance",
+            ".github/workflows/ci.yml#conformance",
+            "native-hk-node-mise-authority",
+            [".github/workflows/ci.yml", "hk.pkl", path],
+        )
+
+    # These finite old readers disappear after this retirement is accepted.
+    consumers = _retiring_python_consumers(path)
+    if (
+        consumers
+        and modes.get("pyproject.toml") in {"100644", "100755"}
+        and any(
+            modes.get(source) in {"100644", "100755"} for source in consumers
+        )
+    ):
+        add(
+            "python",
+            ".github/workflows/ci.yml#python-tests",
+            "retiring-python-consumer",
+            ["pyproject.toml", *consumers],
+        )
+    if (
+        path == "renovate.json"
+        and modes.get("pyproject.toml") in {"100644", "100755"}
+        and modes.get("tests/eng/test_python_runtime.py")
+        in {"100644", "100755"}
+    ):
+        add(
+            "python",
+            "pytest:tests/eng/test_python_runtime.py",
+            "configured-python-runtime-input",
+            ["pyproject.toml", "tests/eng/test_python_runtime.py"],
+        )
 
     scopes = _work_scopes(path, work_roots)
     for manifest in manifests:
@@ -625,10 +881,33 @@ def _path_owner_reasons(  # noqa: C901, PLR0913 - Finite roles share explicit en
         and _under(path, str(PurePosixPath(manifest).parent))
     ]
     if python_manifests or (
-        path.endswith(".py")
+        (
+            path.endswith(".py")
+            and path
+            not in {
+                "eng/scripts/check_repository_records.py",
+                "eng/scripts/update_node_mise_lock.py",
+            }
+        )
         or path in ALL_INPUTS | PYTHON_INPUTS
         or _under(path, "tests/eng")
-        or _v3_input(path)
+        or _under(path, "src/private/app/workflow-delivery")
+        or (
+            _under(path, "tests/private/app/workflow-delivery")
+            and not _under(
+                path, "tests/private/app/workflow-delivery/fixtures/products"
+            )
+        )
+        or _under(
+            path,
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-ruby",
+        )
+        or path
+        in {
+            ".github/workflows/workflow-delivery-v3-python-smoke.yml",
+            ".github/workflows/workflow-delivery-v3-ruby-smoke.yml",
+        }
         or _azure_input(path)
         or _legacy_release_input(path)
         or path == ".typos.toml"

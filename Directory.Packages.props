@@ -51,7 +51,7 @@
     <PackageVersion Include="System.IO.Compression.ZipFile" Version="4.3.0" />
     <PackageVersion Include="System.CommandLine" Version="2.0.12" />
     <PackageVersion Include="System.IO.Hashing" Version="10.0.12" />
-    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" Condition="'$(MSBuildProjectName)' == 'WorkflowDeliveryV3DotnetProvider' or '$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
+    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
     <PackageVersion Include="System.Text.Json" Version="10.0.12" />
     <PackageVersion Include="System.Threading.Tasks.Dataflow" Version="10.0.12" />
     <PackageVersion Include="WebMarkupMin.Core" Version="2.22.5" />

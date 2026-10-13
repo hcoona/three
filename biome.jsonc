@@ -20,7 +20,6 @@
       "**/*.tsx",
       "**/*.css",
       "!.build-executor-*",
-      "!src/public/lib/three-workflow-delivery-v3/tests/fixtures/**/*.json",
       "!.copilot"
     ]
   },
