@@ -628,6 +628,91 @@ def test_selected_preparation_uses_owned_mise_without_legacy_adapters(
     )
 
 
+@pytest.mark.parametrize("satisfied", [True, False])
+def test_selected_official_contract_receives_native_node_without_replanning(
+    flow, tmp_path, monkeypatch, satisfied
+):
+    """Retained hash checks receive native Node and complete outcomes."""
+    flow.state.update(
+        checks=[
+            check(
+                "python/pytest-v1", "tests/eng/test_legacy_release_contract.py"
+            ),
+            check("python/distribution-set-v1"),
+        ],
+        satisfied=satisfied,
+    )
+    runtime = tmp_path / "native node" / "bin" / "node"
+    native_executable = group.executable
+    monkeypatch.setattr(
+        group,
+        "executable",
+        lambda name: (
+            str(runtime) if name == "node" else native_executable(name)
+        ),
+    )
+    monkeypatch.setenv("PATH", "/unrelated/receiver/tools")
+    readback = group.plan(flow.root, flow.directory)
+    data = tmp_path / "mise"
+    data.mkdir()
+    outcome = group.execute(flow.root, flow.directory, data)
+    execution = flow.calls[-1]
+    native = group.node.read_json(flow.directory / "execution-request.json")[
+        "native"
+    ]
+    paths = native["environment"]["PATH"].split(os.pathsep)
+    assert str(runtime.parent) in paths
+    assert "/native/bin" in paths
+    assert "/unrelated/receiver/tools" not in paths
+    assert native["environment"]["MISE_DATA_DIR"] == str(data)
+    assert native["environment"]["MISE_EXEC_AUTO_INSTALL"] == "0"
+    assert "native_node=true" in flow.output.read_text()
+    assert outcome["satisfied"] is satisfied
+    assert execution[2]["environment"] == native["environment"]
+    assert group.node.read_json(Path(execution[1][-2])) == readback["plan"]
+    assert [row[0] for row in flow.calls] == [
+        "preparation",
+        "planning",
+        "mise-trust",
+        "execution",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("kind", "target"),
+    [
+        (None, None),
+        ("python/distribution-set-v1", None),
+        (
+            "python/pytest-v1",
+            "tests/eng/test_legacy_release_contract.py.backup",
+        ),
+        ("python/pytest-v1", "tests/eng/unrelated.py"),
+    ],
+)
+def test_unselected_official_contract_does_not_require_node(
+    flow, monkeypatch, kind, target
+):
+    """Empty and unrelated work retains its prepared runtime boundary."""
+    flow.state["checks"] = [] if kind is None else [check(kind, target)]
+    native_executable = group.executable
+
+    def executable(name):
+        if name == "node":
+            message = "Unselected Node runtime must not be requested"
+            raise AssertionError(message)
+        return native_executable(name)
+
+    monkeypatch.setattr(group, "executable", executable)
+    readback = group.plan(flow.root, flow.directory)
+    assert group.execute(flow.root, flow.directory)["satisfied"] is True
+    assert "native_node=false" in flow.output.read_text()
+    execution = flow.calls[-1]
+    request = group.node.read_json(flow.directory / "execution-request.json")
+    assert request["native"]["environment"]["PATH"] == "/native/bin"
+    assert group.node.read_json(Path(execution[1][-2])) == readback["plan"]
+
+
 @pytest.mark.parametrize(
     "kind",
     [
@@ -640,6 +725,9 @@ def test_selected_preparation_uses_owned_mise_without_legacy_adapters(
         "native_preparation_resource",
         "native_ruby_preparation_mise",
         "native_ruby_preparation_resource",
+        "native_node_runtime",
+        "native_node_mise",
+        "native_node_resource",
     ],
 )
 def test_failed_selected_auxiliary_cannot_dispatch_products(
@@ -656,6 +744,9 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         "native_preparation_resource": group.PREPARATION_TESTS,
         "native_ruby_preparation_mise": group.RUBY_PREPARATION_TESTS,
         "native_ruby_preparation_resource": group.RUBY_PREPARATION_TESTS,
+        "native_node_runtime": "tests/eng/test_legacy_release_contract.py",
+        "native_node_mise": "tests/eng/test_legacy_release_contract.py",
+        "native_node_resource": "tests/eng/test_legacy_release_contract.py",
     }[kind]
     flow.state["checks"] = [check("python/pytest-v1", target)]
     group.plan(flow.root, flow.directory)
@@ -668,6 +759,7 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
         "native_ruby_second": "ruby-test-tools-2.7.2",
         "native_preparation_mise": "mise-trust",
         "native_ruby_preparation_mise": "mise-trust",
+        "native_node_mise": "mise-trust",
     }.get(kind)
 
     def run(root, directory, label, *args, **options):
@@ -679,12 +771,17 @@ def test_failed_selected_auxiliary_cannot_dispatch_products(
     if kind in (
         "native_preparation_resource",
         "native_ruby_preparation_resource",
+        "native_node_resource",
     ):
         with pytest.raises(ValueError, match="prepared mise data directory"):
             group.execute(flow.root, flow.directory)
-    elif kind in ("azure_bundle", "native_ruby_runtime"):
+    elif kind in ("azure_bundle", "native_ruby_runtime", "native_node_runtime"):
         native_executable = group.executable
-        missing_tool = "ruby" if kind == "native_ruby_runtime" else "pwsh"
+        missing_tool = {
+            "native_ruby_runtime": "ruby",
+            "native_node_runtime": "node",
+            "azure_bundle": "pwsh",
+        }[kind]
 
         def executable(name):
             if name == missing_tool:

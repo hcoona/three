@@ -937,7 +937,7 @@ jobs:
         id: plan
         run: python eng/scripts/run_python_ci_group.py plan --directory "$RUNNER_TEMP/python-group"
       - name: Setup selected MISE adapters
-        if: steps.plan.outputs.native_preparation == 'true' || steps.plan.outputs.native_ruby_preparation == 'true'
+        if: steps.plan.outputs.native_preparation == 'true' || steps.plan.outputs.native_ruby_preparation == 'true' || steps.plan.outputs.native_node == 'true'
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         env:
           MISE_DATA_DIR: ${{ runner.temp }}/python-auxiliary-mise
@@ -947,6 +947,7 @@ jobs:
           install_args: >-
             ${{ steps.plan.outputs.native_preparation == 'true' && 'python uv' || '' }}
             ${{ steps.plan.outputs.native_ruby_preparation == 'true' && 'ruby dotnet' || '' }}
+            ${{ steps.plan.outputs.native_node == 'true' && 'node' || '' }}
       - name: Setup selected Ruby adapter
         if: steps.plan.outputs.native_ruby == 'true'
         uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0

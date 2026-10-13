@@ -21,6 +21,7 @@ RUBY_TESTS = "tests/private/app/workflow-delivery/Native/Ruby"
 AZURE_TESTS = "src/private/app/azureauth-credprovider/python/tests"
 PREPARATION_TESTS = "tests/eng/test_python_release_preparation_gate.py"
 RUBY_PREPARATION_TESTS = "tests/eng/test_ruby_release_preparation_gate.py"
+OFFICIAL_TESTS = "tests/eng/test_legacy_release_contract.py"
 
 
 def executable(name: str) -> str:
@@ -149,6 +150,7 @@ def plan(root: Path, directory: Path) -> dict[str, Any]:
         selected=str(bool(readback["plan"]["checks"])).lower(),
         native_helper=str(selected["native_helper"]).lower(),
         native_ruby=str(selected["native_ruby"]).lower(),
+        native_node=str(selected["native_node"]).lower(),
         native_preparation=str(selected["native_preparation"]).lower(),
         native_ruby_preparation=str(
             selected["native_ruby_preparation"]
@@ -178,6 +180,7 @@ def auxiliary(plan_value: dict[str, Any]) -> dict[str, bool]:
     return {
         "native_helper": NATIVE_TESTS in targets,
         "native_ruby": RUBY_TESTS in targets,
+        "native_node": OFFICIAL_TESTS in targets,
         "azure_bundle": AZURE_TESTS in targets,
         "native_preparation": PREPARATION_TESTS in targets,
         "native_ruby_preparation": RUBY_PREPARATION_TESTS in targets,
@@ -229,6 +232,8 @@ def prepare_mise_test_tools(
     directory: Path,
     environment: dict[str, str | None],
     mise_data: Path | None,
+    *,
+    native_node: bool = False,
 ) -> None:
     """Bind selected tests to their owned, committed MISE preparation."""
     if (
@@ -238,7 +243,7 @@ def prepare_mise_test_tools(
     ):
         message = "Selected tests require their prepared mise data directory"
         raise ValueError(message)
-    tools = ("mise",)
+    tools = ("mise", "node") if native_node else ("mise",)
     native_tools = {name: executable(name) for name in tools}
     environment["MISE_DATA_DIR"] = str(mise_data)
     environment["MISE_TASK_RUN_AUTO_INSTALL"] = "false"
@@ -297,13 +302,19 @@ def execute(
                 if name in os.environ
             }
         )
-    if selected["native_preparation"] or selected["native_ruby_preparation"]:
+    if (
+        selected["native_preparation"]
+        or selected["native_ruby_preparation"]
+        or selected["native_node"]
+    ):
         prepare_mise_test_tools(
             Path(context["candidate"]["directory"]),
             directory,
             environment,
             mise_data,
+            native_node=selected["native_node"],
         )
+    if selected["native_preparation"] or selected["native_ruby_preparation"]:
         prepared_dotnet = node.read_json(
             directory / "preparation-request.json"
         )["tools"]["dotnet"]

@@ -93,7 +93,8 @@ def _python_adapter_condition(step: dict[str, Any]) -> str:
     if step.get("uses", "").startswith("jdx/mise-action@"):
         return (
             "steps.plan.outputs.native_preparation == 'true' || "
-            "steps.plan.outputs.native_ruby_preparation == 'true'"
+            "steps.plan.outputs.native_ruby_preparation == 'true' || "
+            "steps.plan.outputs.native_node == 'true'"
         )
     if step.get("uses", "").startswith("ruby/setup-ruby@"):
         return "steps.plan.outputs.native_ruby == 'true'"
@@ -678,7 +679,8 @@ def test_python_check_has_consumed_toolchain_prerequisites(workflow):
         "${{ steps.plan.outputs.native_preparation == 'true' && "
         "'python uv' || '' }} "
         "${{ steps.plan.outputs.native_ruby_preparation == 'true' && "
-        "'ruby dotnet' || '' }}"
+        "'ruby dotnet' || '' }} "
+        "${{ steps.plan.outputs.native_node == 'true' && 'node' || '' }}"
     )
     assert (
         mise["env"]["MISE_DATA_DIR"]
