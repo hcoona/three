@@ -8,11 +8,13 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
-### Remove excess Workflow Delivery CI execution and validation cost
+### Contract implemented Workflow Delivery architecture and CI cost
 
 - **Work carrier:** the pull request proposing this entry and its linked
   implementation PRs. The owner requested removal of unnecessary work under the
-  [engineering principles](engineering/engineering-principles.md).
+  [engineering principles](engineering/engineering-principles.md), followed by
+  owner-approved contraction of the implemented .NET, Node, Python and Ruby
+  architecture and caller responsibilities.
 - **Accepted inputs:** the current Workflow Delivery
   [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
   [HLD](../src/private/app/workflow-delivery/docs/high-level-design.md),
@@ -29,7 +31,18 @@ ends a grant. Git and the proposing PR retain the reason and history.
   native build scheduling where its selected-project, variant and result contracts
   are established. Reduce avoidable endpoint and planning preparation without
   duplicating native dependency/version interpretation or broadening failed
-  selection. Update affected callers and current records atomically.
+  selection. Contract application-owned control-input adaptation without a
+  task-by-task build-log interpretation requirement; retain paired endpoint facts,
+  concrete native tool exceptions and real source/configuration consumers. Keep
+  tool selection in existing configuration and distinguish it from native adapter
+  compatibility limits. Consolidate non-native Ruby/Python Release caller glue
+  into the existing C# application, and review the other implemented ecosystem
+  callers against the same boundary. Retain native-library bridges only for real
+  native capabilities. Describe remaining application-owned cross-language JSON
+  contracts from one maintained serialization authority for independent consumer
+  tests, without mirroring upstream formats or adding a compatibility lifecycle.
+  Make concrete product recipes explicit and retire consumer-free internal
+  compatibility. Update affected callers and current records atomically.
 - **Ordering and gates:** independently classify material findings before they
   drive repairs. Review affected architecture, check ownership and validation
   contracts before implementation. Preserve meaningful impact selection, complete
