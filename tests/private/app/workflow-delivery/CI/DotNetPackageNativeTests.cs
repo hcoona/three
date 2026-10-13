@@ -152,23 +152,37 @@ public sealed class DotNetPackageNativeTests(TestContext context)
     public async Task NativeTimestampDefaultPreservesExplicitInputs(string property,
         string epoch, string deterministic, string expected)
     {
-        using var fixture = await ProductFixture.CreateAsync(context.CancellationToken);
-        var arguments = new List<string> { "msbuild", ProductFixture.Project, "-nologo",
-            "-getProperty:Deterministic,DeterministicTimestamp,SOURCE_DATE_EPOCH",
-            "-property:Deterministic=" + deterministic };
-        if (property.Length != 0) arguments.Add("-property:DeterministicTimestamp=" + property);
-        NativeCommandResult result = await NativeProcess.ExecuteAsync(new("dotnet",
-            fixture.Checkout, arguments.ToArray(), 60,
-            new Dictionary<string, string?>
-            { ["SOURCE_DATE_EPOCH"] = epoch.Length == 0 ? null : epoch }),
-            context.CancellationToken);
-        DotNetNativeFixture.RequireSuccess(result, "Native timestamp precedence");
-        context.WriteLine(result.Stdout);
-        using JsonDocument response = JsonDocument.Parse(result.Stdout);
-        JsonElement values = response.RootElement.GetProperty("Properties");
-        Assert.AreEqual(expected, values.GetProperty("DeterministicTimestamp").GetString());
-        Assert.AreEqual(epoch, values.GetProperty("SOURCE_DATE_EPOCH").GetString());
-        Assert.AreEqual(deterministic, values.GetProperty("Deterministic").GetString());
+        string source = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(source, "global.json")) ||
+               !File.Exists(Path.Combine(source, ProductFixture.Project)))
+            source = Path.GetDirectoryName(source) ??
+                throw new InvalidDataException("Repository source root is unavailable.");
+        string scratch = Directory.CreateTempSubdirectory("workflow-native-timestamp-").FullName;
+        try
+        {
+            string project = Path.Combine(scratch, Path.GetFileName(ProductFixture.Project));
+            File.Copy(Path.Combine(source, ProductFixture.Project), project);
+            File.Copy(Path.Combine(source, "global.json"), Path.Combine(scratch, "global.json"));
+            var arguments = new List<string> { "msbuild", project, "-nologo", "-noAutoResponse",
+                "-property:ImportDirectoryBuildProps=false",
+                "-property:ImportDirectoryBuildTargets=false",
+                "-getProperty:Deterministic,DeterministicTimestamp,SOURCE_DATE_EPOCH",
+                "-property:Deterministic=" + deterministic };
+            if (property.Length != 0) arguments.Add("-property:DeterministicTimestamp=" + property);
+            NativeCommandResult result = await NativeProcess.ExecuteAsync(new("dotnet",
+                scratch, arguments.ToArray(), 60,
+                new Dictionary<string, string?>
+                { ["SOURCE_DATE_EPOCH"] = epoch.Length == 0 ? null : epoch }),
+                context.CancellationToken);
+            DotNetNativeFixture.RequireSuccess(result, "Native timestamp precedence");
+            context.WriteLine(result.Stdout);
+            using JsonDocument response = JsonDocument.Parse(result.Stdout);
+            JsonElement values = response.RootElement.GetProperty("Properties");
+            Assert.AreEqual(expected, values.GetProperty("DeterministicTimestamp").GetString());
+            Assert.AreEqual(epoch, values.GetProperty("SOURCE_DATE_EPOCH").GetString());
+            Assert.AreEqual(deterministic, values.GetProperty("Deterministic").GetString());
+        }
+        finally { Directory.Delete(scratch, true); }
     }
 
     [TestMethod]

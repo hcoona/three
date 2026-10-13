@@ -649,7 +649,7 @@ def test_successful_native_json_remains_quiet(tmp_path, monkeypatch, capsys):
     assert (tmp_path / "success.stderr").read_bytes() == b"warning"
 
 
-@pytest.mark.parametrize("failed_action", [None, "restore", "build", "target"])
+@pytest.mark.parametrize("failed_action", [None, "restore", "build"])
 def test_control_build_uses_locked_native_runtime_preparation(
     tmp_path, monkeypatch, failed_action
 ):
@@ -669,7 +669,7 @@ def test_control_build_uses_locked_native_runtime_preparation(
         calls.append((checkout, carrier, label, args))
         if label == "control-" + str(failed_action):
             raise error
-        return str(target) + "\n" if label == "control-target" else ""
+        return str(target) + "\n" if label == "control-build" else ""
 
     monkeypatch.setattr(group, "run", native)
     if failed_action:
@@ -681,7 +681,7 @@ def test_control_build_uses_locked_native_runtime_preparation(
             directory / "control.binlog",
             target,
         )
-    labels = ["control-restore", "control-build", "control-target"]
+    labels = ["control-restore", "control-build"]
     if failed_action:
         labels = labels[: labels.index("control-" + failed_action) + 1]
     assert [label for _, _, label, _ in calls] == labels
@@ -706,9 +706,7 @@ def test_control_build_uses_locked_native_runtime_preparation(
     if len(calls) > 1:
         assert "-target:Build" in calls[1][3]
         assert "-noAutoResponse" in calls[1][3]
-    if len(calls) > 2:
-        assert "-getProperty:TargetPath" in calls[2][3]
-        assert "-noAutoResponse" in calls[2][3]
+        assert "-getProperty:TargetPath" in calls[1][3]
 
 
 @pytest.mark.parametrize("probe_selected", [False, True])

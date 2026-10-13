@@ -14,6 +14,10 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
         Directory.CreateTempSubdirectory("workflow-native-check-").FullName;
     internal string RunScratch => Directory.CreateDirectory(Path.Combine(Scratch, "run")).FullName;
     internal const string Project = "tests/NativeTests.csproj";
+    internal const string SdkSelection = """
+        {"sdk":{"version":"10.0.401","rollForward":"disable"},
+         "msbuild-sdks":{"MSTest.Sdk":"4.3.3"}}
+        """;
 
     internal static async Task<DotNetNativeFixture> CreateAsync(string capability,
         CancellationToken token, bool nbgv = false)
@@ -23,10 +27,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
         {
             var files = new Dictionary<string, string>
             {
-                ["global.json"] = """
-                    {"sdk":{"version":"10.0.401","rollForward":"disable"},
-                     "msbuild-sdks":{"MSTest.Sdk":"4.3.3"}}
-                    """,
+                ["global.json"] = SdkSelection,
                 ["nuget.config"] = """
                     <configuration><packageSources><clear />
                       <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />

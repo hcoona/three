@@ -14,8 +14,6 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
     [Timeout(180000, CooperativeCancellation = true)]
     public async Task NativeGlobalsRoundTripThroughSelectedSdk()
     {
-        using var fixture = await DotNetNativeFixture.CreateAsync("VSTest",
-            context.CancellationToken);
         Dictionary<string, string> globals = DotNetNativeFixture.Globals();
         foreach ((string name, string value) in new Dictionary<string, string>
         {
@@ -29,13 +27,31 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
             ["ProbeSlash"] = "space and trailing\\",
             ["ProbeTogether"] = "space %3B %25 = \"quote\" \\tail",
         }) globals.Add(name, value);
-        using JsonDocument response = await fixture.QueryAsync(globals, globals.Keys.ToArray(),
-            context.CancellationToken);
-        JsonElement properties = response.RootElement.GetProperty("Properties");
-        foreach ((string name, string original) in globals)
-            Assert.AreEqual(ProjectCollection.Unescape(original),
-                properties.GetProperty(name).GetString(),
-                "Original native global: " + name);
+        string directory = Directory.CreateTempSubdirectory("workflow-native-globals-").FullName;
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(directory, "global.json"),
+                DotNetNativeFixture.SdkSelection, context.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(directory, "query.proj"), "<Project />",
+                context.CancellationToken);
+            string receipt = Path.Combine(directory, "query.json");
+            NativeCommandResult query = await NativeProcess.ExecuteAsync(new("dotnet", directory,
+                ["msbuild", "query.proj", "-nologo", "-noAutoResponse",
+                    "-getProperty:" + string.Join(',', globals.Keys),
+                    "-getResultOutputFile:" + receipt, .. DotNetChecks.Properties(globals)], 60),
+                context.CancellationToken);
+            DotNetNativeFixture.RequireSuccess(query, "Native property query");
+            using JsonDocument response = JsonDocument.Parse(await File.ReadAllTextAsync(receipt,
+                context.CancellationToken));
+            JsonElement properties = response.RootElement.GetProperty("Properties");
+            foreach ((string name, string original) in globals)
+                Assert.AreEqual(ProjectCollection.Unescape(original),
+                    properties.GetProperty(name).GetString(), "Original native global: " + name);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [TestMethod]
