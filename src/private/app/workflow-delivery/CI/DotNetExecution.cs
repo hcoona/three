@@ -101,8 +101,8 @@ internal static class DotNetExecution
                     NativeTermination.TimedOut => CheckStatus.TimedOut,
                     _ => CheckStatus.Failed,
                 };
-                // An exited aggregate can contain independent successful native entries.
-                if (native.Termination == NativeTermination.Exited)
+                // A successful wrapper can contain independently failed native entries.
+                if (native.Succeeded)
                 {
                     await using var file = File.OpenRead(response);
                     DotNetBuildResponse projection = await JsonSerializer.DeserializeAsync(file,
