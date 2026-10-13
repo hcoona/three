@@ -268,10 +268,12 @@ acceptance/rejection without another native campaign.
 
 ## Bounded Local CLI Validation Protocol
 
-This protocol supports the decision whether the candidate above is sufficient
-and the later credential-free adapter tests. It is executable only after this
-protocol is accepted through repository delivery under the contraction Wave.
-It grants no external experiment, registry publication or hosted dispatch.
+This historical protocol supported the decision whether the candidate above was
+sufficient and the later credential-free adapter tests. It was admitted under the
+[then-accepted contraction Wave](https://github.com/hcoona/three/blob/057a7a0f420f0d9adbce236bd6c808a2ed783cd0/docs/delivery-wave.md#complete-the-workflow-v3-contraction).
+The retained recipe supplies no current execution permission; future work requires
+the [current Wave](../../../../../../docs/delivery-wave.md) and applicable concrete
+authorization. It grants no external experiment, registry publication or hosted dispatch.
 
 - **Subject and environment:** the repository-pinned PNPM 12.8.1 CLI on the
   active Linux host. Record the exact executable/tool versions, fixture inputs,
@@ -427,11 +429,14 @@ observations and immutable source findings retain their separate evidence levels
 
 ## Bounded Directory Join Follow-up Protocol
 
-This is a distinct follow-up to the exhausted original preparation budget, not
-permission to repeat or refill that execution. It becomes executable only when
-accepted through repository delivery under the contraction Wave. Its consumer
-is the decision whether the directory adaptation above avoids a second manually
-maintained declaration while retaining meaningful impact selection.
+This historical follow-up was distinct from the exhausted original preparation
+budget and did not permit repeating or refilling that execution. It was admitted
+under its own [then-accepted contraction Wave](https://github.com/hcoona/three/blob/73d47a43edf76749e78a8b92702e15d6d5555411/docs/delivery-wave.md#complete-the-workflow-v3-contraction).
+Its consumer was the decision whether the directory adaptation above avoided a
+second manually maintained declaration while retaining meaningful impact selection.
+The retained recipe supplies no current execution permission; future work requires
+the [current Wave](../../../../../../docs/delivery-wave.md) and applicable concrete
+authorization. The original and follow-up budgets remain exhausted.
 
 - **Subject and environment:** PNPM 12.8.1 on the active Linux x86_64 host. Record
   executable identity/hash, environment, accepted protocol revision, exact

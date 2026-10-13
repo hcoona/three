@@ -2,13 +2,17 @@
 
 ## Question and Authority
 
-Qualify the existing application's composition of retained native graph facts,
-native pytest configuration, official managed NBGV inputs, committed quality
-selection and input consumers. This implements the accepted
-[Python integration order](../migration-strategy.md#python-planning-integration-and-later-caller-cutover)
-under the whole-contraction [Delivery Wave](../../../../../../docs/delivery-wave.md).
+This retained protocol defined qualification of the application's composition of native graph
+facts, native pytest configuration, official managed NBGV inputs, committed
+quality selection and input consumers. Its historical admission followed the
+[then-accepted Python integration order](https://github.com/hcoona/three/blob/ca011be183c2aa6f9e2dea7f202c71bcabacc46c/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#python-planning-integration-and-later-caller-cutover)
+and [whole-contraction Wave](https://github.com/hcoona/three/blob/ca011be183c2aa6f9e2dea7f202c71bcabacc46c/docs/delivery-wave.md#complete-the-workflow-v3-contraction).
 Exact source, preparation, protocol and public evidence reviews and protected
-delivery precede execution. This protocol does not claim a runtime outcome.
+delivery were prerequisites for execution. The protocol itself does not claim a
+runtime outcome; the observation below retains its actual evidence. The retained
+recipe supplies no current execution permission. Future work requires the
+[current Wave](../../../../../../docs/delivery-wave.md) and applicable concrete
+authorization; completed campaigns and spent ceilings remain unchanged.
 
 Reuse the independently accepted original ordinary/no-dev graphs from the
 [completed collector observation](python-native-graph-qualification.md#completed-ordinary-and-no-dev-observation).

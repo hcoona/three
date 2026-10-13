@@ -33,10 +33,13 @@ It produces the complete four-check partition with candidate equal to basis; thi
 isolates execution, not changed-commit impact completeness. No workspace roster,
 backend requirements, UV resolver, group semantics or version engine is copied.
 
-The accepted contraction Wave permits isolated builds/tests, credential-free
-adapter validation and tool/dependency preparation. This distinct finite local
-package activity uses that grant only after the exact concrete protocol receives
-independent engineering/OCR, record/research review and protected merge. It does
+The [then-accepted contraction Wave](https://github.com/hcoona/three/blob/3bf79a4ba11676e9ec74934b0402edb10f7928b7/docs/delivery-wave.md#complete-the-workflow-v3-contraction)
+permitted isolated builds/tests, credential-free adapter validation and
+tool/dependency preparation. This distinct finite local package activity required
+independent engineering/OCR, record/research review and protected acceptance of
+its exact concrete protocol before execution. The retained recipe below is
+historical; future work requires the [current Wave](../../../../../../docs/delivery-wave.md)
+and its applicable concrete authorization. This record does
 not revive graph/enrichment/native publication campaigns, refund failed calls or
 authorize registry writes, authentication/access/Environment changes or dispatch.
 
@@ -1417,7 +1420,7 @@ included.
 
 ## Fresh Output-Option Package Reserve
 
-### Current approval and purpose
+### Historical approval and purpose
 
 The owner approved three additional fresh package lifetimes for the repaired
 four-check composition, with at most 32 reserved recipe calls and 600 inclusive
