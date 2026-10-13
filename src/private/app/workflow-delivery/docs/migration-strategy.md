@@ -1013,18 +1013,18 @@ further. Buddy accepts repository branch refs; dry run does not require live ref
 eligibility. Keep one
 source/control revision throughout; do not inject versions or a target witness.
 
-Make this project's committed NBGV `publicReleaseRefSpec` match
-`^refs/heads/`, retaining its existing base, prerelease height and maintained
-`SemVer2` normalization for both CI and Release. The current main-only setting
-can produce a PEP 440 local part on development branches, which these indexes
-reject. This native public-version mode shapes a version; it supplies no
+This project's committed NBGV `publicReleaseRefSpec` is `^refs/heads/`.
+Shared CI and Release preparation retain its existing base, prerelease height
+and maintained `SemVer2` normalization. This native public-version mode shapes
+a version; it supplies no
 Official authorization. Keep the Official selected-ref check independent.
 Provide faithful selected native ref/commit context on detached materializations;
 missing required history/context or a live local-version projection blocks that
 request. Do not strip suffixes, choose another field or override only Release's
 version. Same-version/different-byte conflicts retain their normal outcome.
-The configuration change belongs with shared preparation and its qualification,
-not this source-only contract delivery.
+Changes to this configuration or shared preparation require qualification of
+the exact changed source and affected CI/Release version and identity boundaries
+before delivery; they supply no new native experiment or live-operation authority.
 
 Extract concrete package operations from `CI/PythonPackageExecution` into shared
 ecosystem code inside the existing private application. CI retains its plan and
