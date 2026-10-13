@@ -1,14 +1,17 @@
 # Workflow Boundary Contraction Evidence
 
-Frozen independent reviews, finding classifications, original hosted failures and local
-validation for PR #1169. The final statically reviewed implementation commit is
+Frozen independent reviews, classifications, original hosted failures and validation
+for PR #1169. The final implementation commit is
 `ae9553f443ef0e94da5eb3a855974771a6fd93eb`.
-The archive retains both original and final commit-input record checker reports,
-including the unchanged native MTP classification limitation. Earlier execution
-results keep their original source scope. The first hosted run failed. The next run retained a failed Python job and an
-incomplete .NET job cancelled by the superseding repair push. The final native
-Python target passes locally; final ordinary hosted CI remains pending. Static
-clearance is not hosted or performance acceptance.
+Ordinary CI `38468035622` passed at a PR merge with the same source tree.
+The archive includes all four satisfied collectors and bounded independent
+hosted-evidence clearance. The final file index includes that clearance; the
+index present during its review is also retained.
+
+Earlier failures, cancelled incomplete execution and local source/host limits
+retain their original identities. Both commit-input record reports preserve the
+unchanged native MTP classification diagnostic. Ordinary CI is not live registry,
+new product or performance acceptance. The shared Wave remains for separate cost work.
 
 This evidence branch is not proposed for merge and supplies no product or work authority.
 The implementation PR and accepted project records own their respective decisions.
