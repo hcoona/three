@@ -115,9 +115,10 @@ inheritance or historical version-height evaluation. Preserve native case
 semantics, missing/added/deleted inputs and both revision identities. The
 [source findings and local qualification](research/nbgv-native-inputs.md)
 identify the compile-time official-package integration and its observed Linux
-delivery boundary. Consumer mapping remains to be implemented and validated;
-unresolved necessary inputs still fail planning. This component evidence does
-not establish complete CI fact assembly.
+delivery boundary. The implemented `NbgvInputReader` supplies those committed
+native inputs for consumer mapping in paired CI fact assembly;
+unresolved necessary inputs still fail planning. The component research retains
+its original bounded scope; ordinary caller qualification is separate evidence.
 
 Use ordinary typed values inside one invocation. Do not require a Provider Request
 Manifest, Fact Bundle, admission token or immutable Repository Model aggregate.
@@ -1040,24 +1041,26 @@ Static inspection at [the pre-cutover source][source-base] found that the
 [Node Provider][node-provider] rejects workspace closure, the
 [.NET Provider][dotnet-provider] rejects project references and additional
 framework/RID scope, and the [Python Provider][python-provider] validates a literal
-smoke shape. The [Node CI][node-ci] has four fixed lanes; Python/Ruby use fixed
-check lists. [Python][python-publication] and [Ruby][ruby-publication] normal
-post-upload reads currently follow successful upload only.
+smoke shape. At that basis, the [Node CI][node-ci] had four fixed lanes;
+Python/Ruby used fixed check lists. [Python][python-publication] and
+[Ruby][ruby-publication] normal post-upload reads followed successful upload only.
 These are source findings, not empirical evidence of replacement feasibility.
 
-Consequently the rewrite must add supported native ownership/dependency coverage
-and observation-based completion while removing obsolete proof machinery. A
-literal class-for-class language port would preserve the current limitations.
+Consequently the replacement requires supported native ownership/dependency
+coverage and observation-based completion. The internal application implements
+these responsibilities without the obsolete proof machinery; a literal
+class-for-class language port would have preserved the former limitations.
 
 The [implementation plan](migration-strategy.md) owns the concrete project and
 CLI/workflow caller inventory, integration payloads, destination conditions,
 behavior/evidence mapping and dependency-ordered transitions. Keep that mapping
 with actual caller changes; do not maintain a second inventory here.
 
-Old records or code survive only for actual consumers. Pin historical source when
-it serves an evidence reader, preserving original outcomes and provenance. Retiring
-the five former MLD files uses this mechanism; runtime and ecosystem LLD retirement
-still follows the corresponding actual caller transition.
+Old records or code survive only for actual consumers. Historical readers use
+pinned producer source, preserving original outcomes and provenance after the
+public control runtime's retirement. The five former MLD files are immutable
+historical sources; retained ecosystem LLDs serve their actual evidence-interpretation
+consumers, not the current runtime. The project portal routes those readers.
 
 [source-base]: https://github.com/hcoona/three/tree/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3
 [node-provider]: https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/repository/node_provider.py#L1264

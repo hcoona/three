@@ -464,9 +464,9 @@ Native `ProjectInstance.Targets` and `ProjectTargetInstance.Location` identify
 effective repository target definitions and their origins, not arbitrary task
 I/O. The current finite producer scope includes Pack-only `SetPackageReleaseNotes`,
 official tool references in `ReferenceOfficialNbgv`, WebHdfs `PreBuild`, the
-traversal's non-Windows restore customization and conditional
-`ValidateWorkflowDeliveryFrozenInputs`. Preserve their native conditions/effects;
-ordinary Windows CI does not activate the non-Windows or frozen-release operation.
+traversal's non-Windows restore customization. Preserve their native
+conditions/effects; ordinary Windows CI does not activate the non-Windows
+restore operation.
 New or unrecognized repository producers need a reviewed adapter/operation scope;
 report unsupported origin/name. This is no SDK task allowlist, hash admission
 policy, universal tracer or claim about every locked package's hidden I/O.
