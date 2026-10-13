@@ -97,7 +97,8 @@ internal sealed class DotNetNativeGraphReader
         token.ThrowIfCancellationRequested();
         if (graph.Revision != checkout.Revision.Commit ||
             !PhysicalPaths.Equals(Absolute(graph.Root), checkout.Root) ||
-            !PhysicalPaths.Equals(Absolute(graph.Entry), Path.Combine(checkout.Root, entry)))
+            !PhysicalPaths.Equals(Absolute(graph.Entry),
+                Absolute(Path.Combine(checkout.Root, entry))))
             throw Unavailable("Response", "Different native revision/root/entry.");
         RequireFile(graph.Entry, "Entry");
         if (graph.Nodes is null || graph.Edges is null || graph.Inputs is null ||

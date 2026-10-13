@@ -33,6 +33,34 @@ public sealed class ControlNativeInputTests(TestContext context)
     public static void Cleanup() => repository.Dispose();
 
     [TestMethod]
+    [DataRow("same")]
+    [DataRow("revision")]
+    [DataRow("root")]
+    [DataRow("entry")]
+    public void NativeNestedEntryKeepsExactSubject(string subject)
+    {
+        using var row = new Row();
+        DotNetGraphResponse graph = row.Graph with { Entry = Path.GetFullPath(row.Graph.Entry) };
+        graph = subject switch
+        {
+            "revision" => graph with { Revision = new string('f', 40) },
+            "root" => graph with { Root = Path.GetTempPath() },
+            "entry" => graph with { Entry = Path.GetFullPath(Path.Combine(checkout.Root, Source)) },
+            _ => graph,
+        };
+        var reader = new DotNetNativeGraphReader(checkout, new("", "", "", "", 30));
+        if (subject != "same")
+        {
+            Assert.ThrowsExactly<InvalidDataException>(() => reader.Bind(graph, Project,
+                context.CancellationToken));
+            return;
+        }
+        DotNetBoundGraph bound = reader.Bind(graph, Project, context.CancellationToken);
+        Assert.AreEqual(Project, Assert.ContainsSingle(bound.Nodes).Project);
+        Assert.Contains(Source, bound.Inputs.Select(input => input.Path));
+    }
+
+    [TestMethod]
     public void NativeInputsRetainCompilerCopyConfigurationAndAbsentCandidates()
     {
         using var row = new Row();
