@@ -5,11 +5,11 @@ namespace WorkflowDelivery.Repository;
 
 internal sealed record NodeGroupRequest(MaterializedEndpoint Basis,
     MaterializedEndpoint Candidate, bool Full, string ScopePath,
-    string? BasisBuildLog, string CandidateBuildLog, RubyNodeContribution? Ruby = null);
+    DotNetReadFiles? BasisControlFiles, DotNetReadFiles CandidateControlFiles,
+    RubyNodeContribution? Ruby = null);
 internal sealed record RubyNodeContribution(RubyFactsEndpoint Basis, RubyFactsEndpoint Candidate);
 internal sealed record NodeGroupReadback(CiPlan Adopted, RetainedNodeSelection[] Retained,
-    string AdoptedDirectory, NodeRuntimeInputs Runtime, ControlBuildConsumption? BasisControl,
-    ControlBuildConsumption CandidateControl);
+    string AdoptedDirectory, NodeRuntimeInputs Runtime);
 
 // One concrete root-CI caller joins native consumption and endpoint responsibility.
 internal static class NodeGroupReader
@@ -48,10 +48,10 @@ internal static class NodeGroupReader
         {
             (basis, candidate) = WithRubyInputs(basis, candidate, request.Ruby);
         }
-        ControlBuildConsumption? basisControl = await ControlAsync(before,
-            request.BasisBuildLog, false, token);
-        ControlBuildConsumption candidateControl = await ControlAsync(after,
-            request.CandidateBuildLog, true, token)
+        ControlInputFacts? basisControl = await ControlAsync(before,
+            request.BasisControlFiles, false, token);
+        ControlInputFacts candidateControl = await ControlAsync(after,
+            request.CandidateControlFiles, true, token)
             ?? throw new InvalidDataException("Missing candidate control build.");
         NodeRuntimeInputs runtime = await new NodeRuntimeReader(after).ReadAsync(token);
         basis = WithControlInputs(basis, basisControl, false);
@@ -63,8 +63,7 @@ internal static class NodeGroupReader
         NodeGroupPlan plan = await NodeGroupPlanning.PlanAsync(basis, candidate, scope,
             fixture.Directory, candidateReader.ScriptsAsync,
             candidateReader.NpmVersionAsync, token);
-        return new(runtime.Expand(plan.Adopted), plan.Retained, fixture.Directory, runtime,
-            basisControl, candidateControl);
+        return new(runtime.Expand(plan.Adopted), plan.Retained, fixture.Directory, runtime);
     }
 
     internal static (NodeRevisionInputs Basis, NodeRevisionInputs Candidate) WithRubyInputs(
@@ -73,7 +72,7 @@ internal static class NodeGroupReader
             RubyNodeInputConsumers.Join(candidate, ruby.Candidate));
 
     internal static NodeRevisionInputs WithControlInputs(NodeRevisionInputs inputs,
-        ControlBuildConsumption? control, bool candidate)
+        ControlInputFacts? control, bool candidate)
     {
         GitEntry? owner = inputs.Revision.Entries.SingleOrDefault(entry =>
             entry.Path == ControlProject);
@@ -81,7 +80,7 @@ internal static class NodeGroupReader
             owner.Mode is not ("100644" or "100755"))) ||
             (owner is null ? control is not null || candidate : control is null))
             throw new InvalidDataException("Unresolved native control owner or build.");
-        if (control is not null && control.Operation.Revision != inputs.Revision.Commit)
+        if (control is not null && control.Revision != inputs.Revision.Commit)
             throw new InvalidDataException("Control inputs have a different endpoint revision.");
         string[] consumers = inputs.Graph.Projects.Where(project => project.Directory != ".")
             .Select(project => project.Directory).ToArray();
@@ -114,26 +113,20 @@ internal static class NodeGroupReader
         }
     }
 
-    internal static async Task<ControlBuildConsumption?> ControlAsync(GitMaterialization checkout,
-        string? binlog, bool required, CancellationToken token)
+    internal static async Task<ControlInputFacts?> ControlAsync(GitMaterialization checkout,
+        DotNetReadFiles? files, bool required, CancellationToken token)
     {
         bool present = checkout.Revision.Entries.Any(entry => entry.Path == ControlProject);
         if (!present)
         {
-            if (required || binlog is not null)
-                throw new InvalidDataException("Missing or substituted control operation.");
+            if (required || files is not null)
+                throw new InvalidDataException("Missing or substituted control input context.");
             return null;
         }
-        if (string.IsNullOrWhiteSpace(binlog))
-            throw new InvalidDataException("Missing native control build log.");
-        ControlBuildContext operation = await new ControlBuildContextReader(checkout)
-            .ReadAsync(ControlProject, token);
-        ControlBuildLog log = ControlBuildLogReader.Read(Path.GetFullPath(binlog),
-            operation.Project, token);
-        ControlBuildDependencies dependencies = ControlBuildDependencyReader.Read(operation, log);
-        NbgvInputs version = new NbgvInputReader(checkout.Root).Read(checkout.Revision,
-            "src/private/app/workflow-delivery", token);
-        return ControlBuildInputProjection.Project(checkout, operation, log, dependencies,
-            version.ConfigurationCandidates);
+        if (files is null)
+            throw new InvalidDataException("Missing native control input preparation.");
+        DotNetRevisionInputs inputs = await new DotNetRepositoryReader(checkout, files,
+            entryProject: ControlProject).ReadAsync(token);
+        return ControlInputs.Read(inputs, required);
     }
 }

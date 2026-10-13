@@ -238,7 +238,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                 // Native restore also enforces original bytes before consumer Build/API.
                 InvalidDataException failure =
                     await Assert.ThrowsExactlyAsync<InvalidDataException>(
-                    () => DotNetRemoteConsumer.RunAsync(NuGetRelease.Original(fresh.Result,
+                    () => DotNetSmokeRemoteConsumer.RunAsync(NuGetRelease.Original(fresh.Result,
                         fresh.Scratch), fresh.Result.Native, remoteRoot, "controlled-read",
                         context.CancellationToken, feed, ExecuteAsync));
                 Assert.Contains("Installed remote original bytes differ", failure.Message);
@@ -249,7 +249,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             }
             else
             {
-                DotNetRemoteConsumerResult result = await DotNetRemoteConsumer.RunAsync(
+                DotNetSmokeRemoteConsumerResult result = await DotNetSmokeRemoteConsumer.RunAsync(
                     NuGetRelease.Original(fresh.Result, fresh.Scratch), fresh.Result.Native,
                     remoteRoot, "controlled-read", context.CancellationToken, feed, ExecuteAsync);
                 var consumer = new GithubNuGetConsumerResult(fresh.Result.Prepared.Subject,
@@ -674,7 +674,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             Assert.AreEqual(HttpMethod.Get, request.Method);
             Uri uri = request.RequestUri!;
             HttpResponseMessage response;
-            if (uri == new Uri(DotNetRemoteConsumer.ServiceIndex))
+            if (uri == new Uri(DotNetSmokeRemoteConsumer.ServiceIndex))
                 response = Json("""
                     {"version":"3.0.0","resources":[
                       {"@id":"https://nuget.pkg.github.com/hcoona/flat/",

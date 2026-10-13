@@ -66,8 +66,10 @@ internal static class NodeExecution
         string pnpmVersion = ReadVersion(pnpm, "pnpm");
         Dictionary<string, string> dimensions = selected.Checks[0].Work.Dimensions;
         if (pnpmVersion != dimensions["pnpm"] ||
-            (request.Runtime == "node24" ? nodeVersion != dimensions["node-version"] :
-                System.Version.Parse(nodeVersion).Major != 22))
+            (dimensions.TryGetValue("node-version", out string? exact) ? nodeVersion != exact :
+                System.Version.Parse(nodeVersion).Major.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture) +
+                        ".x" != dimensions["node"]))
             throw new InvalidDataException(
                 "Native runtime differs from the selected Node context.");
         var runtimeVersions = new NodeRuntimeReadback(nodeVersion, pnpmVersion, node, pnpm);
@@ -130,7 +132,7 @@ internal static class NodeExecution
                     await NpmPackageOperations.InstallAsync(archive, directory, token));
                 if (installed != CheckStatus.Passed)
                     return installed;
-                return await CommandAsync(check, NpmPackageOperations.Import(directory));
+                return await CommandAsync(check, AdoptedNpmPackage.Import(directory));
             });
         }
         return new(plan.Candidate, selected.Checks.Select(item => results[item.Work.Key]).ToArray(),
@@ -182,25 +184,31 @@ internal static class NodeExecution
         _ => result.Succeeded ? CheckStatus.Passed : CheckStatus.Failed,
     };
 
+    private static bool IsRuntime(string value) =>
+        System.Text.RegularExpressions.Regex.IsMatch(value, "^node[1-9][0-9]*$",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     internal static CiPlan SelectRuntime(CiPlan plan, string runtime)
     {
         ResultCollector.Collect(plan, []);
-        if (plan.Scope != NodeFactsAssembler.Scope || runtime is not ("node22" or "node24"))
+        if (plan.Scope != NodeFactsAssembler.Scope || !IsRuntime(runtime))
             throw new InvalidDataException("Unsupported Node execution scope.");
         var work = plan.Checks.ToDictionary(item => item.Work.Key, item => item.Work);
         var outputIds = new HashSet<(string Unit, string Output)>();
         string? pnpmVersion = null;
-        string? node24Version = null;
+        var contexts = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+        string[] sourceVariants = plan.Checks.Where(item => item.Work.Key.Check is Build or Test)
+            .Select(item => item.Work.Key.Variant).Distinct(StringComparer.Ordinal).ToArray();
         foreach (PlannedCheck item in plan.Checks)
         {
             CheckSpec check = item.Work;
             string variant = check.Key.Variant;
             if (!check.Required || check.Runner != "ubuntu-latest" ||
-                variant is not ("node22" or "node24") ||
+                !IsRuntime(variant) ||
                 !check.Dimensions.TryGetValue("node", out string? selector) ||
-                selector != (variant == "node22" ? "22.x" : "24.x") ||
+                selector != variant[4..] + ".x" ||
                 !check.Dimensions.TryGetValue("pnpm", out string? pnpm) || !IsVersion(pnpm) ||
-                check.Dimensions.Count != (variant == "node22" ? 2 : 3) ||
+                check.Dimensions.Count != (check.Dimensions.ContainsKey("node-version") ? 3 : 2) ||
                 item.QualityPresets is not { Length: > 0 } ||
                 item.QualityPresets.Any(preset => preset != Preset))
                 throw new InvalidDataException(
@@ -208,27 +216,28 @@ internal static class NodeExecution
             pnpmVersion ??= pnpm;
             if (pnpmVersion != pnpm)
                 throw new InvalidDataException("Conflicting planned PNPM versions.");
-            if (variant == "node24")
-            {
-                if (!check.Dimensions.TryGetValue("node-version", out string? nodeVersion) ||
-                    !IsVersion(nodeVersion) || System.Version.Parse(nodeVersion).Major != 24)
-                    throw new InvalidDataException("Missing exact planned Node24 version.");
-                node24Version ??= nodeVersion;
-                if (node24Version != nodeVersion)
-                    throw new InvalidDataException("Conflicting planned Node24 versions.");
-            }
+            if (check.Dimensions.TryGetValue("node-version", out string? nodeVersion) &&
+                (!IsVersion(nodeVersion) ||
+                 System.Version.Parse(nodeVersion).Major.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture) + ".x" != selector))
+                throw new InvalidDataException("Missing exact planned packaging Node version.");
+            if (contexts.TryGetValue(variant, out Dictionary<string, string>? previous) &&
+                (previous.Count != check.Dimensions.Count || previous.Any(pair =>
+                    !check.Dimensions.TryGetValue(pair.Key, out string? value) ||
+                        value != pair.Value)))
+                throw new InvalidDataException("Conflicting planned Node runtime context.");
+            contexts[variant] = check.Dimensions;
             if (check.Key.Check is Build or Test)
             {
                 ImpactPlanner.ValidatePath(check.Key.Target);
                 if (check.Package is not null || check.Prerequisites.Length != 0 ||
-                    !work.ContainsKey(new(check.Key.Target, Build, "node22")) ||
-                    !work.ContainsKey(new(check.Key.Target, Test, "node22")) ||
-                    !work.ContainsKey(new(check.Key.Target, Build, "node24")) ||
-                    !work.ContainsKey(new(check.Key.Target, Test, "node24")))
+                    sourceVariants.Any(sourceVariant =>
+                        !work.ContainsKey(new(check.Key.Target, Build, sourceVariant)) ||
+                        !work.ContainsKey(new(check.Key.Target, Test, sourceVariant))))
                     throw new InvalidDataException("Unresolved complete Node source checks.");
                 continue;
             }
-            if (variant != "node24" ||
+            if (!check.Dimensions.ContainsKey("node-version") ||
                 check.Key.Check is not (Pack or Contents or Consumer) || check.Package is null)
                 throw new InvalidDataException("Unsupported Node execution check.");
             PackageTarget package = check.Package;
@@ -251,6 +260,8 @@ internal static class NodeExecution
                     throw new InvalidDataException(
                         "Incomplete or conflicting Node package checks.");
         }
+        if (plan.Checks.Length != 0 && !contexts.ContainsKey(runtime))
+            throw new InvalidDataException("Runtime is absent from the original Node plan.");
         return plan with
         {
             Checks = plan.Checks.Where(item =>

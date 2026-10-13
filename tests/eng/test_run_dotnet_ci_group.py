@@ -122,9 +122,7 @@ def test_bootstrap_transfers_complete_native_default_output(
         for path in (state / "transfer/control").rglob("*")
         if path.is_file()
     }
-    assert (
-        state / "transfer/candidate-control.binlog"
-    ).read_bytes() == log.read_bytes()
+    assert not (state / "transfer/candidate-control.binlog").exists()
     with zipfile.ZipFile(state / "transfer/python-control.zip") as archive:
         assert {
             item.filename: archive.read(item)
@@ -248,8 +246,8 @@ def test_absent_basis_control_still_prepares_both_native_endpoints(
         return
     request_path = group.prepare(root, state, endpoints_path)
     request = group.node.read_json(request_path)
-    assert request["basisControl"] is None
-    assert request["basisBuildLog"] is None
+    assert "basisControl" not in request
+    assert "basisBuildLog" not in request
     assert request["basisFiles"]["deadlineSeconds"] == 900
     assert request["candidateFiles"]["deadlineSeconds"] == 900
     assert request["completion"]["deadlineSeconds"] == 900

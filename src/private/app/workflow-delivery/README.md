@@ -44,7 +44,13 @@ artifact, ambient fallback or second dependency declaration.
 | `ci plan-dotnet-group`, `ci run-dotnet`                                  | Select and execute native managed work                                                            |
 | `ci run-node`, `ci run-python-package`, `ci result`                      | Execute selected work or collect its candidate-bound results                                      |
 | `release prepare-*`, destination observation/description                 | Independently qualify originals and describe exact, absent, partial, conflicting or unknown state |
+| `release job-inputs ruby/python <operation>`                             | Prepare existing ordinary Release caller inputs and transfers                                     |
+| `native-message-schemas <directory>`                                     | Regenerate static descriptions of maintained native helper messages                               |
 | Destination publication, consumption and completion commands             | Invoke the native publisher, require separate consumers and report truthful business results      |
+
+The [static native helper contracts](Native/contracts/) come from actual serializer
+metadata. Managed tests check regeneration; native helper tests use the static
+schemas directly. Native identity and business checks remain separate.
 
 ## Implemented Scope
 
@@ -82,7 +88,10 @@ projects and publish directories retain their distinct identities; Workflow
 combines native endpoint facts without parsing or resolving dependencies itself.
 Root CI runs the adopted package and selected retained Node matrix. Ruby's
 successful same-run typed contribution is received once by Node, with no native
-recollection or parallel declaration.
+recollection or parallel declaration. Planning needs synchronized frozen native
+locks and tool preparation, without endpoint product installation. Execution
+installs selected product dependencies. The existing workflow matrix and native
+mise selection own runtime variants and the configured packaging context.
 
 ### Native .NET Group Interface
 

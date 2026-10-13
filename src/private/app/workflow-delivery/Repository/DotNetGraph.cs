@@ -29,8 +29,11 @@ internal static class DotNetGraph
         "PotentialEditorConfigFiles",
         "GlobalAnalyzerConfigFiles", "ApplicationDefinition", "Page", "Resource",
         "SplashScreen", "Manifest"];
+    private static readonly string[] UnsupportedControlIndirectInputs = ["CompilerResponseFile",
+        "AdditionalLibPaths", "AddModules", "LinkResource", "KeyOriginatorFile"];
     private static readonly string[] EvaluatedFileProperties = ["ApplicationIcon",
-        "ApplicationManifest", "Win32Manifest", "Win32Resource"];
+        "ApplicationManifest", "Win32Manifest", "Win32Resource", "Win32Icon",
+        "AppConfig", "AppConfigForCompiler", "CodeAnalysisRuleSet", "AssemblyOriginatorKeyFile"];
 
     internal static DotNetGraphResponse Read(DotNetGraphRequest request)
     {
@@ -115,6 +118,20 @@ internal static class DotNetGraph
         {
             ProjectInstance project = node.ProjectInstance;
             DotNetNodeIdentity consumer = identities[node];
+            bool control = Path.GetRelativePath(root, project.FullPath).Replace('\\', '/') ==
+                NodeGroupReader.ControlProject;
+            if (control)
+            {
+                foreach (string name in UnsupportedControlIndirectInputs)
+                    if (project.GetPropertyValue(name).Length != 0 || project.GetItems(
+                        name).Count != 0)
+                        throw Unavailable(consumer, name,
+                            "Indirect control inputs require a concrete native adapter.");
+                if (project.GetItems("Reference").Any(item => item.GetMetadataValue(
+                    "HintPath").Length == 0))
+                    throw Unavailable(consumer, "ReferenceHintPath",
+                        "Control references require explicit native HintPaths.");
+            }
             DotNetRestoreInputs[] restore = restored[node];
             var providers = new DotNetNativeInputs(project, imports[project], restore,
                 request.CommittedPaths);
@@ -137,6 +154,12 @@ internal static class DotNetGraph
                     .Select(item => new DotNetGraphInput(
                         Absolute(item.GetMetadataValue("FullPath")), type,
                         "Evaluation", consumer))))
+                .Concat(project.GetItems("Reference").Where(item =>
+                    item.GetMetadataValue("HintPath").Length != 0).Select(
+                        item => new DotNetGraphInput(
+                        Path.GetFullPath(item.GetMetadataValue("HintPath"),
+                            Path.GetDirectoryName(project.FullPath)!),
+                        "ReferenceHintPath", "Evaluation", consumer)))
                 .Concat(EvaluatedFileProperties.Select(name => (Name: name,
                         Value: project.GetPropertyValue(name)))
                     .Where(property => property.Value.Length != 0)

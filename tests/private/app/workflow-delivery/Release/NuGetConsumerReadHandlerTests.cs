@@ -238,7 +238,7 @@ public sealed class NuGetConsumerReadHandlerTests(TestContext context)
             context.CancellationToken);
         using var client = new HttpClient(handler);
         await Assert.ThrowsExactlyAsync<IOException>(() => client.GetAsync(
-            DotNetRemoteConsumer.ServiceIndex, context.CancellationToken));
+            DotNetSmokeRemoteConsumer.ServiceIndex, context.CancellationToken));
     }
 
     private sealed class Tracked(byte[] bytes) : MemoryStream(bytes)

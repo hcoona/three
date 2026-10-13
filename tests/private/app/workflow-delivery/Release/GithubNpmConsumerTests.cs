@@ -52,6 +52,8 @@ public sealed class GithubNpmConsumerTests
             string originals = Directory.CreateDirectory(Path.Combine(root, "outputs")).FullName;
             string runtime = Directory.CreateDirectory(Path.Combine(root, "runtime")).FullName;
             string tools = Directory.CreateDirectory(Path.Combine(root, "tools")).FullName;
+            System.IO.File.WriteAllText(Path.Combine(tools, "selected-tools.json"),
+                "{\"node\":\"24.19.0\",\"npm\":\"11.17.0\"}");
             Directory.CreateDirectory(Path.Combine(originals, "original"));
             byte[] bytes = [1, 2, 3];
             System.IO.File.WriteAllBytes(Path.Combine(originals, "original/package.tgz"), bytes);

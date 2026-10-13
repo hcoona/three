@@ -13,6 +13,7 @@ classifiers = ["Private :: Do Not Upload"]
 # Preserve the validated lint baseline until the Ruff 0.16 migration.
 dev = [
   "hatchling>=1.25.0",
+  "jsonschema==4.26.0",
   "pyrefly>=1.0.0",
   "pytest>=8.3.4",
   "PyYAML>=6.0.2",
@@ -206,7 +207,6 @@ testpaths = [
   "tests/eng/test_python_release_preparation_gate.py",
   "tests/eng/test_python_release_caller.py",
   "tests/eng/test_ruby_release_preparation_gate.py",
-  "tests/eng/test_ruby_release_caller.py",
   "tests/eng/test_run_python_ci_group.py",
   "tests/eng/test_general_ci_workflow.py",
   "tests/eng/test_run_ruby_ci_group.py",

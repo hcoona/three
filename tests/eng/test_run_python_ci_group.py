@@ -535,7 +535,7 @@ def test_shared_capture_replaces_environment_without_changing_default(
         environment={"PATH": "/owned", "REMOVED": None},
     )
     assert seen[0]["AMBIENT_CAPTURE_SETTING"] == "ordinary"
-    assert seen[0]["MSBUILDLOGTASKINPUTS"] == "1"
+    assert "MSBUILDLOGTASKINPUTS" not in seen[0]
     assert seen[1] == {"PATH": "/owned"}
 
 

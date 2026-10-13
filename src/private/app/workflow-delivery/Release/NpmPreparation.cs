@@ -157,7 +157,7 @@ internal static class NpmPreparation
         {
             await RunAsync("consumer", await NpmPackageOperations.InstallAsync(archive, scratch,
                 token));
-            await RunAsync("consumer", NpmPackageOperations.Import(scratch));
+            await RunAsync("consumer", AdoptedNpmPackage.Import(scratch));
         });
         await CheckAsync("original-bytes", async () =>
         {

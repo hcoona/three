@@ -57,7 +57,8 @@ internal static class PythonRelease
             if (!path.StartsWith(root + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
                     ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
                 throw new InvalidDataException("Original Python path leaves its transfer root.");
-            PythonPackageOperations.RequireOriginal(new(file.Kind, path, file.Size, file.Sha256));
+            PythonSmokePackageOperations.RequireOriginal(new(file.Kind, path, file.Size,
+                file.Sha256));
         }
     }
 

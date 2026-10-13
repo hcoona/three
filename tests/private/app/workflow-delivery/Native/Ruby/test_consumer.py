@@ -12,8 +12,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[6]
+CONTRACTS = ROOT / "src/private/app/workflow-delivery/Native/contracts"
 HELPER = ROOT / "src/private/app/workflow-delivery/Native/Ruby/consumer.rb"
 PRODUCT = (
     ROOT
@@ -162,7 +164,12 @@ class Native:
     def helper(self, operation, request):
         """Invoke the actual helper with an owned persisted request."""
         path = self.root / f"request-{len(self.calls):02d}.json"
-        path.write_text(json.dumps(request | {"operation": operation}))
+        message = request | {"operation": operation}
+        schema = json.loads(
+            (CONTRACTS / "ruby-consumer-request.schema.json").read_text()
+        )
+        Draft202012Validator(schema).validate(message)
+        path.write_text(json.dumps(message))
         return self.run([HELPER, path])
 
 
@@ -176,6 +183,10 @@ def success(result, version):
     """Portable facts cannot replace actual native process success."""
     assert result.returncode == 0, result.stderr
     assert result.stderr == ""
+    schema = json.loads(
+        (CONTRACTS / "ruby-consumer-answer.schema.json").read_text()
+    )
+    Draft202012Validator(schema).validate(json.loads(result.stdout))
     assert json.loads(result.stdout) == {
         "name": NAME,
         "version": version,

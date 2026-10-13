@@ -440,15 +440,7 @@ def test_native_prepare_preserves_endpoints_and_locked_context(
         scratch / "response.json",
     )
     assert result == response
-    assert {directory for directory, _ in restored} == {before, after}
-    for _, arguments in restored:
-        assert arguments == (
-            "dotnet",
-            "restore",
-            scope.CONTROL_PROJECT,
-            "--locked-mode",
-            "-p:Configuration=Debug",
-        )
+    assert not restored
     assert (
         json.loads((scratch / "response.json").read_text(encoding="utf-8"))
         == response

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using WorkflowDelivery.Platform;
+using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Ecosystems;
 
@@ -41,10 +42,9 @@ internal static class RubySourceReader
         string scratch = Path.TrimEndingDirectorySeparator(Path.GetFullPath(tools.Scratch));
         string download = Directory.CreateDirectory(Path.Combine(scratch, "download")).FullName;
         string input = Path.Combine(scratch, "request.json");
-        await File.WriteAllTextAsync(input, JsonSerializer.Serialize(new
-        {
-            host, name = "hcoona-release-smoke-ruby", version, directory = download,
-        }), token);
+        await File.WriteAllTextAsync(input, JsonSerializer.Serialize(new RubySourceRequest(host,
+            "hcoona-release-smoke-ruby", version, download),
+                RubyFactJson.Default.RubySourceRequest), token);
         var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (string name in new[] { "SystemRoot", "WINDIR", "PATHEXT" })
             environment[name] = Environment.GetEnvironmentVariable(name);
@@ -73,19 +73,20 @@ internal static class RubySourceReader
         {
             if (Encoding.UTF8.GetByteCount(reached.Stdout) > 256 * 1024)
                 return Unknown("Native Ruby source answer exceeds its result limit.");
-            using JsonDocument answer = JsonDocument.Parse(reached.Stdout);
-            JsonElement value = answer.RootElement;
-            switch (value.GetProperty("state").GetString())
+            RubySourceAnswer value = JsonSerializer.Deserialize(reached.Stdout,
+                RubyFactJson.Default.RubySourceAnswer)
+                ?? throw new JsonException("Missing native Ruby source answer.");
+            switch (value.State)
             {
                 case "absent":
                     return new(RubySourceState.Absent, null, command, []);
                 case "present":
-                    string path = value.GetProperty("path").GetString()!;
-                    string digest = value.GetProperty("sha256").GetString()!;
-                    long size = value.GetProperty("size").GetInt64();
-                    if (value.GetProperty("name").GetString() != "hcoona-release-smoke-ruby" ||
-                        value.GetProperty("version").GetString() != version ||
-                        value.GetProperty("platform").GetString() != "ruby" ||
+                    string path = value.Path!;
+                    string digest = value.Sha256!;
+                    long size = value.Size ?? 0;
+                    if (value.Name != "hcoona-release-smoke-ruby" ||
+                        value.Version != version ||
+                        value.Platform != "ruby" ||
                         !Path.IsPathFullyQualified(path) ||
                         !Path.GetFullPath(path).StartsWith(download + Path.DirectorySeparatorChar,
                             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :

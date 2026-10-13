@@ -379,7 +379,7 @@ def test_installed_consumer_requires_native_metadata_origin_and_registered_api(
         sys, "base_prefix", str(root if defect == "no-venv" else tmp_path)
     )
     if defect is None:
-        assert packages.consume(NAME, VERSION, packages.QUALITY) == {
+        assert packages.consume_smoke(NAME, VERSION, packages.QUALITY) == {
             "name": NAME,
             "version": VERSION,
             "origin": str(origin),
@@ -389,7 +389,7 @@ def test_installed_consumer_requires_native_metadata_origin_and_registered_api(
             ValueError,
             match=r"origin|metadata",
         ):
-            packages.consume(NAME, VERSION, packages.QUALITY)
+            packages.consume_smoke(NAME, VERSION, packages.QUALITY)
 
 
 def test_failed_cli_emits_no_partial_facts_or_private_diagnostics(

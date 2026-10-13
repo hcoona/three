@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);docs/**;README.md</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="WorkflowDelivery.Tests" />

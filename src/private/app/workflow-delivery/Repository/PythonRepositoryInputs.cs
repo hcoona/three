@@ -31,8 +31,6 @@ internal static class PythonRepositoryInputs
 
     private static readonly string[] RubyPreparationRoots = [
         "src/private/app/workflow-delivery", "tests/private/app/workflow-delivery"];
-    private static readonly string[] RubyCallerRoots = [
-        "src/private/app/workflow-delivery"];
 
     internal static PythonInputBinding[] Map(GitRevision revision,
         PythonProjectDependencies[] projects, PythonPytestTargetSet targets,
@@ -107,6 +105,7 @@ internal static class PythonRepositoryInputs
         foreach (string path in Pytest)
             foreach (PythonPytestTarget target in targets.Targets)
                 Add(path, "pytest:" + target.Target);
+        foreach (string path in paths.Where(InertControlDocument)) Add(path, null);
         foreach (PythonPytestTarget target in targets.Targets)
         {
             string owner = "pytest:" + target.Target;
@@ -122,7 +121,7 @@ internal static class PythonRepositoryInputs
             .Select(item => new PythonInputBinding(item.Key, [],
                 item.Value.Order(StringComparer.Ordinal).ToArray())).ToArray();
 
-        void Add(string path, string owner)
+        void Add(string path, string? owner)
         {
             ImpactPlanner.ValidatePath(path);
             if (entries.TryGetValue(path, out GitEntry? entry) &&
@@ -130,7 +129,7 @@ internal static class PythonRepositoryInputs
                 throw new InvalidDataException("Python repository inputs require regular files.");
             if (!inputs.TryGetValue(path, out HashSet<string>? consumers))
                 inputs.Add(path, consumers = new(StringComparer.Ordinal));
-            consumers.Add(owner);
+            if (owner is not null) consumers.Add(owner);
         }
     }
 
@@ -138,6 +137,9 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_python_runtime.py" && path == "renovate.json") ||
         (target == "tests/private/app/workflow-delivery/Native/Ruby" &&
             (Under(path, "src/private/app/workflow-delivery/Native/Ruby") ||
+             (path.StartsWith("src/private/app/workflow-delivery/Native/contracts/ruby-",
+                  StringComparison.Ordinal) && path.EndsWith(".schema.json",
+                      StringComparison.Ordinal)) ||
              Under(path, "tests/private/app/workflow-delivery/fixtures/products/" +
                 "hcoona-release-smoke-ruby"))) ||
         (target == "tests/private/app/workflow-delivery/Native/Python" &&
@@ -157,12 +159,9 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_python_release_preparation_gate.py" &&
             PythonPreparationInput(path)) ||
         (target == "tests/eng/test_python_release_caller.py" &&
-            path is "src/private/app/workflow-delivery/Native/Python/release_caller.py" or
-                ".github/workflows/workflow-delivery-v3-python-smoke.yml") ||
+            path == ".github/workflows/workflow-delivery-v3-python-smoke.yml") ||
         (target == "tests/eng/test_ruby_release_preparation_gate.py" &&
             RubyPreparationInput(path)) ||
-        (target == "tests/eng/test_ruby_release_caller.py" &&
-            DotnetInput(path, RubyCallerRoots)) ||
         (target == "tests/eng/test_run_python_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
@@ -225,6 +224,11 @@ internal static class PythonRepositoryInputs
             "eng/scripts/workflow_release_acceptance_gate.py" or
             "eng/scripts/workflow_release_control.py";
 
+    private static bool InertControlDocument(string path) =>
+        path == "src/private/app/workflow-delivery/README.md" ||
+        path.StartsWith("src/private/app/workflow-delivery/docs/", StringComparison.Ordinal);
+
     private static bool Under(string path, string root) =>
-        path == root || path.StartsWith(root + "/", StringComparison.Ordinal);
+        !(root == "src/private/app/workflow-delivery" && InertControlDocument(path)) &&
+        (path == root || path.StartsWith(root + "/", StringComparison.Ordinal));
 }

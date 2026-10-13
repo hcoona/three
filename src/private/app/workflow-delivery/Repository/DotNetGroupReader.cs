@@ -6,10 +6,9 @@ namespace WorkflowDelivery.Repository;
 internal sealed record DotNetGroupRequest(MaterializedEndpoint Basis,
     MaterializedEndpoint Candidate, bool Full, string ScopePath,
     DotNetReadFiles BasisFiles, DotNetReadFiles CandidateFiles,
-    MaterializedEndpoint? BasisControl, MaterializedEndpoint CandidateControl,
-    string? BasisBuildLog, string CandidateBuildLog, DotNetRunRequest Completion);
+    DotNetRunRequest Completion);
 internal sealed record DotNetGroupReadback(CiPlan Plan, ScopeCoordinate[] Basis,
-    ScopeCoordinate[] Candidate, ControlBuildContext CandidateContext);
+    ScopeCoordinate[] Candidate);
 
 // The root caller joins actual native responsibilities before the shared scope binder.
 internal static class DotNetGroupReader
@@ -35,17 +34,12 @@ internal static class DotNetGroupReader
             comparison, request.Full);
         DotNetRevisionInputs before = await new DotNetRepositoryReader(basis,
             request.BasisFiles).ReadAsync(token);
-        DotNetRevisionInputs after = await new DotNetRepositoryReader(candidate,
-            request.CandidateFiles).ReadAsync(token);
-        GitMaterialization beforeControl = request.BasisControl is null ? basis :
-            await ControlEndpointAsync(request.BasisControl, comparison.Basis, token);
-        GitMaterialization afterControl = await ControlEndpointAsync(request.CandidateControl,
-            comparison.Candidate, token);
-        ControlBuildConsumption? controlBasis = await NodeGroupReader.ControlAsync(beforeControl,
-            request.BasisBuildLog, false, token);
-        ControlBuildConsumption controlCandidate = await NodeGroupReader.ControlAsync(afterControl,
-            request.CandidateBuildLog, true, token) ??
-            throw new InvalidDataException("Missing candidate control consumption.");
+        DotNetRevisionInputs after = comparison.Basis.Commit == comparison.Candidate.Commit &&
+            basis.Root == candidate.Root && request.BasisFiles == request.CandidateFiles ? before :
+            await new DotNetRepositoryReader(candidate, request.CandidateFiles).ReadAsync(token);
+        ControlInputFacts? controlBasis = ControlInputs.Read(before, false);
+        ControlInputFacts controlCandidate = ControlInputs.Read(after, true) ??
+            throw new InvalidDataException("Missing candidate control inputs.");
         NodeRevisionInputs nodeBefore = NodeGroupReader.WithControlInputs(
             await NodeReader(basis).ReadAsync(token), controlBasis, false);
         NodeRevisionInputs nodeAfter = NodeGroupReader.WithControlInputs(
@@ -59,7 +53,7 @@ internal static class DotNetGroupReader
         PlanRequest bound = joined.Bind(dotnetBefore, dotnetAfter);
         CiPlan plan = await DotNetFactsAssembler.CompleteAsync(
             DotNetFactsAssembler.Select(bound, after), request.Completion, token);
-        return new(plan, joined.Basis, joined.Candidate, controlCandidate.Operation);
+        return new(plan, joined.Basis, joined.Candidate);
     }
 
     private static NodeRepositoryReader NodeReader(GitMaterialization endpoint) =>
@@ -103,12 +97,12 @@ internal static class DotNetGroupReader
     }
 
     internal static DotNetRevisionInputs WithControlInputs(DotNetRevisionInputs inputs,
-        ControlBuildConsumption? control, bool candidate)
+        ControlInputFacts? control, bool candidate)
     {
         bool owner = inputs.Revision.Entries.Any(entry => entry.Path ==
             NodeGroupReader.ControlProject);
         if ((owner ? control is null : control is not null || candidate) ||
-            (control is not null && control.Operation.Revision != inputs.Revision.Commit))
+            (control is not null && control.Revision != inputs.Revision.Commit))
             throw new InvalidDataException("Unresolved native .NET control owner or build.");
         string[] consumers = inputs.Nodes.Where(node => node.Project != "dirs.proj")
             .Select(node => node.Project).Distinct(StringComparer.Ordinal).ToArray();
@@ -139,14 +133,4 @@ internal static class DotNetGroupReader
         }
     }
 
-    private static async Task<GitMaterialization> ControlEndpointAsync(MaterializedEndpoint
-        endpoint,
-        GitRevision expected, CancellationToken token)
-    {
-        GitRevision actual = await new GitReader(endpoint.Directory).ReadAsync(
-            endpoint.Reference, token);
-        if (actual.Commit != expected.Commit)
-            throw new InvalidDataException("Control source has a different endpoint revision.");
-        return await GitMaterialization.BindAsync(endpoint.Directory, actual, token);
-    }
 }

@@ -21,7 +21,9 @@ public sealed class RubyNodeInputConsumersTests
             removed: true);
         var request = new NodeGroupRequest(new(Path.GetFullPath("basis"), NodeScenario.Basis),
             new(Path.GetFullPath("candidate"), NodeScenario.Candidate), false,
-            Path.GetFullPath("scope.json"), null, Path.GetFullPath("candidate.binlog"),
+            Path.GetFullPath("scope.json"), null,
+            new(Path.GetFullPath("control.dll"), Path.GetFullPath("wrapper.proj"),
+                Path.GetFullPath("request.json"), Path.GetFullPath("graph.json"), 900),
             new(rubyBefore, rubyAfter));
         NodeGroupRequest received = JsonSerializer.Deserialize(JsonSerializer.Serialize(request,
             TransferJson.Default.NodeGroupRequest), TransferJson.Default.NodeGroupRequest)!;

@@ -1275,6 +1275,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "hatchling" },
+    { name = "jsonschema" },
     { name = "pyrefly" },
     { name = "pytest" },
     { name = "pyyaml" },
@@ -1290,6 +1291,7 @@ workflow-delivery-python = [
 [package.metadata.requires-dev]
 dev = [
     { name = "hatchling", specifier = ">=1.25.0" },
+    { name = "jsonschema", specifier = "==4.26.0" },
     { name = "pyrefly", specifier = ">=1.0.0" },
     { name = "pytest", specifier = ">=8.3.4" },
     { name = "pyyaml", specifier = ">=6.0.2" },

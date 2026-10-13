@@ -1127,6 +1127,89 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                 "ApplicationManifest" or "Win32Manifest" or "Win32Resource"));
     }
 
+    [TestMethod]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task NativeControlReferencesRetainExternalCommittedConsumers()
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", "<Project><ItemGroup><ProjectReference Include=\"" +
+            NodeGroupReader.ControlProject + "\" /></ItemGroup></Project>");
+        fixture.Write(NodeGroupReader.ControlProject, GraphFixture.Project.Replace("</Project>",
+            "<ItemGroup><Reference Include=\"NativeFixture\"><HintPath>" +
+            "$(MSBuildThisFileDirectory)../../../../shared/fixture.dll" +
+            "</HintPath></Reference></ItemGroup></Project>"));
+        fixture.Write("shared/fixture.dll",
+            "Committed fixture input; evaluation does not execute it.");
+        fixture.CommittedPaths = [fixture.PathOf(NodeGroupReader.ControlProject), fixture.PathOf(
+            "shared/fixture.dll")];
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+        DotNetGraphInput reference = Assert.ContainsSingle(response.Inputs.Where(
+            input => input.Role == "ReferenceHintPath"));
+        Assert.AreEqual(fixture.PathOf("shared/fixture.dll"), reference.Path);
+        Assert.AreEqual(fixture.PathOf(NodeGroupReader.ControlProject), reference.Consumer.Project);
+        Assert.IsNull(reference.Provider);
+    }
+
+    [TestMethod]
+    [DataRow("CompilerResponseFile")]
+    [DataRow("AdditionalLibPaths")]
+    [DataRow("KeyOriginatorFile")]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task UnadaptedControlIndirectInputsFailNativePlanning(string property)
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", "<Project><ItemGroup><ProjectReference Include=\"" +
+            NodeGroupReader.ControlProject + "\" /></ItemGroup></Project>");
+        fixture.Write(NodeGroupReader.ControlProject, GraphFixture.Project.Replace("</Project>",
+            "<PropertyGroup><" + property + ">unadapted-file</" + property +
+                "></PropertyGroup></Project>"));
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(context.CancellationToken));
+        Assert.Contains("Indirect control inputs require a concrete native adapter",
+            failure.Message);
+    }
+
+    [TestMethod]
+    [DataRow("AddModules")]
+    [DataRow("LinkResource")]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task UnadaptedControlCompilerItemsFailNativePlanning(string item)
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", "<Project><ItemGroup><ProjectReference Include=\"" +
+            NodeGroupReader.ControlProject + "\" /></ItemGroup></Project>");
+        fixture.Write(NodeGroupReader.ControlProject, GraphFixture.Project.Replace("</Project>",
+            "<ItemGroup><" + item +
+                " Include=\"../../../../shared/input.bin\" /></ItemGroup></Project>"));
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(context.CancellationToken));
+        Assert.Contains("Indirect control inputs require a concrete native adapter",
+            failure.Message);
+    }
+
+    [TestMethod]
+    [DataRow("AppConfig")]
+    [DataRow("AppConfigForCompiler")]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task NativeControlCompilerConfigurationRetainsCommittedConsumer(string property)
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", "<Project><ItemGroup><ProjectReference Include=\"" +
+            NodeGroupReader.ControlProject + "\" /></ItemGroup></Project>");
+        fixture.Write(NodeGroupReader.ControlProject, GraphFixture.Project.Replace("</Project>",
+            "<PropertyGroup><" + property + ">../../../../shared/app.config</" + property +
+                "></PropertyGroup></Project>"));
+        fixture.Write("shared/app.config", "<configuration />");
+        fixture.CommittedPaths = [fixture.PathOf(NodeGroupReader.ControlProject), fixture.PathOf(
+            "shared/app.config")];
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+        DotNetGraphInput input = Assert.ContainsSingle(response.Inputs.Where(
+            input => input.Role == property));
+        Assert.AreEqual(fixture.PathOf("shared/app.config"), input.Path);
+        Assert.AreEqual(fixture.PathOf(NodeGroupReader.ControlProject), input.Consumer.Project);
+        Assert.IsNull(input.Provider);
+    }
+
     private sealed class GraphFixture : IDisposable
     {
         internal const string Revision = "1111111111111111111111111111111111111111";

@@ -14,10 +14,11 @@ public sealed class RubyPreparationNativeTests(TestContext context)
     private const string Product =
         "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby";
     private const string Helper = "src/private/app/workflow-delivery/Native/Ruby/facts.rb";
-    private const string Caller = "src/private/app/workflow-delivery/Native/Ruby/release_caller.rb";
+    private const string JobInputs =
+        "src/private/app/workflow-delivery/Release/ReleaseJobInputs.cs";
     private static readonly string[] CompositionInputs =
     [
-        Caller,
+        JobInputs,
         "src/private/app/workflow-delivery/Release/RubyReleaseCli.cs",
         "src/private/app/workflow-delivery/Release/RubyRelease.cs",
         "src/private/app/workflow-delivery/Program.cs",
@@ -77,11 +78,6 @@ public sealed class RubyPreparationNativeTests(TestContext context)
         );
         try
         {
-            // Freeze the actual caller outside the committed preparation clone.
-            string caller = Path.Combine(root, "release_caller.rb");
-            File.Copy(Path.Combine(source, Caller), caller);
-            Assert.AreEqual(frozenInputs[Caller], Hash(caller));
-            await RetainAsync("release_caller.rb", await File.ReadAllTextAsync(caller));
             string checkout = Path.Combine(root, "source");
             string basis = (
                 await RunAsync(new("git", source, ["rev-parse", "HEAD"], 30))
@@ -240,7 +236,7 @@ public sealed class RubyPreparationNativeTests(TestContext context)
             Assert.AreEqual("hcoona-release-smoke-ruby", file.Name);
             Assert.AreEqual(result.Native["version"], file.Version);
             string original = Path.Combine(scratch, file.Path);
-            RubyPackageOperations.RequireOriginal(new(original, file.Size, file.Sha256));
+            RubySmokePackageOperations.RequireOriginal(new(original, file.Size, file.Sha256));
 
             NativeCommand factsCommand = Assert
                 .ContainsSingle(result.Commands.Where(command => command.Check == "contents"))
@@ -335,7 +331,7 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                 Tools = request.Tools,
                 FixtureInputs = fixtureInputs,
                 FrozenInputs = frozenInputs,
-                CallerSha256 = Hash(caller),
+                JobInputsSha256 = frozenInputs[JobInputs],
                 CompositionAssemblySha256 = Hash(typeof(ReleaseSubject).Assembly.Location),
                 Original = file,
                 ActualOriginalSha256 = Hash(original),
@@ -368,10 +364,9 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                     ["GITHUB_RUN_ATTEMPT"] = "1",
                     ["GITHUB_OUTPUT"] = outputPath,
                 };
-                var phaseCommand = new NativeCommand(ruby, phase,
-                    [caller, "phase", "observation"], 30, environment,
-                    InheritEnvironment: false, CloseStandardInput: true);
-                await RunAsync(phaseCommand);
+                Assert.AreEqual(0, ReleaseJobInputs.Run(["release", "job-inputs", "ruby",
+                    "phase", "observation"],
+                    name => environment.GetValueOrDefault(name)));
                 string producerPath = Path.Combine(phase, "observation", "producer.json");
                 string producerJson = await File.ReadAllTextAsync(producerPath);
                 await RetainAsync($"{state}-producer.json", producerJson);
@@ -440,28 +435,17 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                 string observationPath = Path.Combine(phase, "observation", "observation.json");
                 await File.WriteAllTextAsync(observationPath, observationJson,
                     context.CancellationToken);
-                NativeCommand stateCommand = phaseCommand with { Arguments = [caller, "state"] };
-                Assert.IsFalse(stateCommand.InheritEnvironment);
-                Assert.IsTrue(stateCommand.CloseStandardInput);
-                foreach (string excluded in new[] { "GITHUB_TOKEN", "GH_TOKEN", "GEM_HOST_API_KEY",
-                    "HTTP_PROXY", "HTTPS_PROXY", "RUBYOPT", "RUBYLIB", "BUNDLE_GEMS__RUBYGEMS__ORG"
-                        })
-                    Assert.IsFalse(environment.ContainsKey(excluded), excluded);
-                NativeCommandResult child = await RunAsync(stateCommand);
-                await RetainAsync($"{state}-caller.stdout.txt", child.Stdout);
-                await RetainAsync($"{state}-caller.stderr.txt", child.Stderr);
+                Assert.AreEqual(0, ReleaseJobInputs.Run(["release", "job-inputs", "ruby", "state"],
+                    name => environment.GetValueOrDefault(name)));
                 string transferredOutput = await File.ReadAllTextAsync(outputPath);
                 await RetainAsync($"{state}-github-output.txt", transferredOutput);
                 Assert.AreEqual(expectedOutput, transferredOutput);
-                Assert.AreEqual("", child.Stdout);
-                Assert.AreEqual("", child.Stderr);
                 Assert.AreEqual(Hash(Path.Combine(retained, $"{state}-observation.json")),
                     Hash(observationPath));
-                RubyPackageOperations.RequireOriginal(new(original, file.Size, file.Sha256));
+                RubySmokePackageOperations.RequireOriginal(new(original, file.Size, file.Sha256));
             }
             foreach ((string input, string digest) in frozenInputs)
                 Assert.AreEqual(digest, Hash(Path.Combine(source, input)), input);
-            Assert.AreEqual(frozenInputs[Caller], Hash(caller));
             Assert.AreEqual(
                 "",
                 (

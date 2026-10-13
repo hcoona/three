@@ -167,9 +167,7 @@ public sealed class NodeGroupReaderTests
         };
     }
 
-    private static ControlBuildConsumption Control(string revision,
-        params ControlSourceInput[] sources) => new(new(revision, NodeGroupReader.ControlProject,
-            new("Debug", "net10.0"), "10.0.401", "/sdk", "/dotnet", "/packages", "/output",
-            "/intermediate", "/intermediate", "/assets", "/output/app.dll", [], [],
-            new Dictionary<string, string>()), sources, [], []);
+    private static ControlInputFacts Control(string revision,
+        params ControlSourceInput[] sources) => new(revision, NodeGroupReader.ControlProject,
+            sources);
 }

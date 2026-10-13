@@ -1,5 +1,6 @@
 using System.Text.Json;
 using WorkflowDelivery.Platform;
+using WorkflowDelivery.Repository;
 using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Ecosystems;
@@ -85,30 +86,30 @@ internal static class RubyRemoteConsumer
             environment["LC_ALL"] = "C.UTF-8";
             string queries = Directory.CreateDirectory(Path.Combine(consumer, "queries"))
                 .FullName;
-            var operations = new RubyPackageOperations(new(tools.Ruby, tools.FactsHelper,
+            var operations = new RubySmokePackageOperations(new(tools.Ruby, tools.FactsHelper,
                 queries, environment, 90), "", "", consumer);
             await operations.InspectReleaseAsync(remote, original.Version,
                 (command, _) => RunAsync("remote-original", command), cancellation);
             foreach (string operation in new[] { "install", "consume" })
             {
                 cancellation.ThrowIfCancellationRequested();
-                RubyPackageOperations.RequireOriginal(remote);
+                RubySmokePackageOperations.RequireOriginal(remote);
                 string request = Path.Combine(consumer, operation + ".json");
-                await File.WriteAllTextAsync(request, JsonSerializer.Serialize(new
-                {
-                    operation, original = remote.Path, version = original.Version,
-                    sha256 = original.Sha256, install_dir = gems,
-                }), cancellation);
+                await File.WriteAllTextAsync(request, JsonSerializer.Serialize(
+                    new RubyConsumerRequest(
+                    operation, remote.Path, original.Version, original.Sha256, gems),
+                    RubyFactJson.Default.RubyConsumerRequest), cancellation);
                 NativeCommandResult result = await RunAsync("remote-" + operation,
                     new(tools.Ruby, consumer, [tools.ConsumerHelper, request], 90, environment,
                         InheritEnvironment: false, CloseStandardInput: true));
-                using JsonDocument facts = JsonDocument.Parse(result.Stdout);
-                if (facts.RootElement.GetProperty("name").GetString() != original.Name ||
-                    facts.RootElement.GetProperty("version").GetString() != original.Version ||
-                    !facts.RootElement.GetProperty("passed").GetBoolean())
+                RubyConsumerAnswer facts = JsonSerializer.Deserialize(result.Stdout,
+                    RubyFactJson.Default.RubyConsumerAnswer) ?? throw new JsonException(
+                        "Missing consumer answer.");
+                if (facts.Name != original.Name || facts.Version != original.Version ||
+                    !facts.Passed)
                     throw new InvalidDataException("Remote installed consumption was incomplete.");
             }
-            RubyPackageOperations.RequireOriginal(remote);
+            RubySmokePackageOperations.RequireOriginal(remote);
             cancellation.ThrowIfCancellationRequested();
         }
         catch (ConsumerStopped stopped)

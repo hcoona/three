@@ -56,7 +56,7 @@ internal static class RubyRelease
         if (!path.StartsWith(root + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
                 ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new InvalidDataException("Original Ruby path leaves its transfer root.");
-        RubyPackageOperations.RequireOriginal(new(path, file.Size, file.Sha256));
+        RubySmokePackageOperations.RequireOriginal(new(path, file.Size, file.Sha256));
     }
 
     internal static void ValidateObservation(PreparedRelease prepared,

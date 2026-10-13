@@ -33,7 +33,15 @@ execution. Native observation, conditional publication, separate clean consumers
 and truthful completion replace the former dynamic admission, approval mirror,
 marker and proof chain. Effective native Environment/identity/destination
 configuration owns publication authorization. Existing external resources and
-publisher registrations are unchanged by source retirement.
+publisher registrations are unchanged by source retirement. Ordinary Ruby/Python
+caller inputs now belong to the existing C# CLI; native helpers retain native
+library operations. [Static wire descriptions](../Native/contracts/) are generated
+from consumed serializer types and have no compatibility promise.
+
+Control input selection uses native source/configuration/reference facts without
+a fresh basis build or task-log interpreter. The separate default Debug
+control-resource query remains necessary because the full graph has different
+CI globals. The [integration contract](migration-strategy.md) owns these bounds.
 
 Products live under `tests/private/app/workflow-delivery/fixtures/products/`
 with ordinary native manifests, coordinates and quality declarations.

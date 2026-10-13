@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Text.Json;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
@@ -34,8 +35,8 @@ internal static partial class GithubNpmPublication
             throw new InvalidDataException("Publication original differs from preparation.");
         Dictionary<string, string?> environment = await GithubNpmRuntime.PrepareAsync(scratch,
             toolchain, credential, token);
-        foreach ((string executable, string expected) in new[]
-            { ("node", "v24.19.0"), ("npm", "11.17.0") })
+        foreach ((string executable, string expected) in GithubNpmRuntime.SelectedVersions(
+            toolchain))
         {
             NativeCommandResult query = await execute(Command(executable, ["--version"], 20),
                 token);
@@ -84,8 +85,23 @@ internal static partial class GithubNpmPublication
     }
 }
 
+internal sealed record GithubNpmToolSelection(string Node, string Npm);
+
 internal static partial class GithubNpmRuntime
 {
+    internal static (string Executable, string Expected)[] SelectedVersions(string toolchain)
+    {
+        var selected = JsonSerializer.Deserialize(File.ReadAllText(
+            Path.Combine(toolchain, "selected-tools.json")),
+                TransferJson.Default.GithubNpmToolSelection)
+            ?? throw new InvalidDataException("Missing selected native npm tools.");
+        foreach (string version in new[] { selected.Node, selected.Npm })
+            if (!Version.TryParse(version, out Version? parsed) || parsed.Build < 0 ||
+                parsed.ToString() != version)
+                throw new InvalidDataException("Selected native npm tools require exact versions.");
+        return [("node", "v" + selected.Node), ("npm", selected.Npm)];
+    }
+
     internal static async Task<Dictionary<string, string?>> PrepareAsync(string scratch,
         string toolchain, string credential, CancellationToken token)
     {

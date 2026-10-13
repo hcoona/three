@@ -333,11 +333,9 @@ provider. This does not admit all installed packs, expand unrelated SDK roots or
 implement workload resolution. Preserve the native locator identity and version
 field without claiming an exact pack version; unknown external inputs remain
 unsupported. The [application entry](../README.md)
-retains the source basis and implementation boundary. At the separate
-control-build binlog boundary, the selected SDK's literal autoimport and its
-native evaluation/import lineage associate only observed, connected files
-inside the specific pack. This supplies exact dependency membership without
-reconstructing SDK results or enumerating installed pack files.
+retains the source basis and implementation boundary. Control inputs use the same native graph/provider contract, retaining
+explicit references, evaluated inputs and concrete configuration consumers.
+No separate build-task log interpreter is required.
 
 Exact native locked-restore configuration contributors remain source inputs when
 committed and invocation-local environment facts when outside the checkout.
@@ -388,7 +386,10 @@ The initial supported shape has one nonempty effective TFM, empty multiple-TFM
 and multiple-RID declarations and a possibly empty effective RID. Reject an
 unsupported relevant shape. Reuse the native reader's project/path/item
 validation and original committed spelling; do not build a dimension service.
-Each endpoint uses its own committed inputs, SDK and locked native preparation.
+Each endpoint uses its own committed inputs, SDK and existing root locked native
+preparation. Do not restore the test project again. The full root graph uses
+additional CI/locked-restore globals; retain this query's default Debug context
+rather than claiming equivalent conditional resources.
 
 At the C#-to-Python process boundary, the required response carries the exact
 native comparison and each endpoint's revision, project, concrete effective

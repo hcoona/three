@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "properties": {
+    "host": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "directory": {
+      "type": "string"
+    }
+  },
+  "required": ["host", "name", "version", "directory"],
+  "additionalProperties": false
+}

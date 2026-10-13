@@ -27,19 +27,26 @@ internal sealed class DotNetRepositoryReader
         "AdditionalFiles", "Analyzer", "EditorConfigFiles", "GlobalAnalyzerConfigFiles",
         "PotentialEditorConfigFiles", "ApplicationDefinition", "Page", "Resource",
         "SplashScreen", "Manifest", "ApplicationIcon", "ApplicationManifest",
-        "Win32Manifest", "Win32Resource", "SdkConfigurationCandidate",
+        "Win32Manifest", "Win32Resource", "Win32Icon", "AppConfig", "AppConfigForCompiler",
+        "CodeAnalysisRuleSet", "AssemblyOriginatorKeyFile", "ReferenceHintPath",
+            "SdkConfigurationCandidate",
         "ConfigurationCandidate", "RestoreLockCandidate", "CentralPackageConfiguration",
     };
     private readonly GitMaterialization checkout;
     private readonly DotNetReadFiles files;
+    private readonly string entryProject;
     private readonly Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> query;
     private readonly Dictionary<string, GitEntry> coordinates = new(PhysicalPaths);
 
     internal DotNetRepositoryReader(GitMaterialization checkout, DotNetReadFiles files,
-        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>>? query = null)
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>>? query = null,
+        string entryProject = "dirs.proj")
     {
         this.checkout = checkout;
         this.files = files;
+        this.entryProject = entryProject;
+        if (entryProject is not ("dirs.proj" or NodeGroupReader.ControlProject))
+            throw new InvalidDataException("Unsupported native graph entry.");
         this.query = query ?? NativeProcess.ExecuteAsync;
         foreach (GitEntry entry in checkout.Revision.Entries)
             if (!coordinates.TryAdd(Path.GetFullPath(Path.Combine(checkout.Root, entry.Path)),
@@ -51,7 +58,7 @@ internal sealed class DotNetRepositoryReader
     internal async Task<DotNetRevisionInputs> ReadAsync(CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        string entry = Path.Combine(checkout.Root, "dirs.proj");
+        string entry = Path.Combine(checkout.Root, entryProject);
         RequireFile(entry, "Entry");
         if (new[] { files.Assembly, files.Wrapper, files.Request, files.Response }
             .Any(path => !Path.IsPathFullyQualified(path)) || files.DeadlineSeconds <= 0 ||
@@ -102,7 +109,7 @@ internal sealed class DotNetRepositoryReader
         token.ThrowIfCancellationRequested();
         if (graph.Revision != checkout.Revision.Commit ||
             !PhysicalPaths.Equals(Absolute(graph.Root), checkout.Root) ||
-            !PhysicalPaths.Equals(Absolute(graph.Entry), Path.Combine(checkout.Root, "dirs.proj")))
+            !PhysicalPaths.Equals(Absolute(graph.Entry), Path.Combine(checkout.Root, entryProject)))
             throw Unavailable("Response", "Different native revision/root/traversal.");
         RequireFile(graph.Entry, "Entry");
         if (graph.Nodes is null || graph.Edges is null || graph.Inputs is null ||
@@ -126,7 +133,7 @@ internal sealed class DotNetRepositoryReader
             if (!traversal && !new[] { ".csproj", ".fsproj", ".vbproj" }.Contains(
                     Path.GetExtension(project), StringComparer.OrdinalIgnoreCase))
                 throw Unavailable("Project", "Unsupported native project kind.", node.Identity);
-            if (traversal && node.OwnedPaths.Length != 0)
+            if (traversal && entryProject == "dirs.proj" && node.OwnedPaths.Length != 0)
                 throw Unavailable("Ownership", "Traversal cannot own a root region.",
                     node.Identity);
             var bound = new DotNetBoundNode(project, node, node.OwnedPaths.Select(path =>
@@ -134,7 +141,7 @@ internal sealed class DotNetRepositoryReader
             if (!nodes.TryAdd(Key(node.Identity), bound))
                 throw Unavailable("Node", "Duplicate complete native identity.", node.Identity);
         }
-        if (!nodes.Values.Any(node => node.Project == "dirs.proj"))
+        if (!nodes.Values.Any(node => node.Project == entryProject))
             throw Unavailable("Entry", "Native traversal node is absent.");
         foreach (DotNetGraphEdge edge in graph.Edges)
         {
@@ -318,7 +325,7 @@ internal sealed class DotNetRepositoryReader
                 "TraversalPackage" => input.Stage == "Evaluation" &&
                     input.Role is not ("Project" or "CentralPackageConfiguration") &&
                     !IsCandidate(input.Role) && PhysicalPaths.Equals(input.Consumer.Project,
-                        Path.Combine(checkout.Root, "dirs.proj")),
+                        Path.Combine(checkout.Root, entryProject)),
                 "RestoreGenerated" => input.Role == "Import" && input.Stage == "Evaluation",
                 "RestoreAssets" => input.Role == "RestoreAssets" && input.Stage == "LockedRestore",
                 "RestoreEnvironment" => input.Role == "RestoreConfiguration" &&

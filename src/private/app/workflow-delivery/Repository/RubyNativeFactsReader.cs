@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace WorkflowDelivery.Repository;
 
@@ -24,114 +25,99 @@ internal sealed record RubyVersionProjection(string Gemspec, string Raw, string 
 // RubyGems/Bundler own semantics. This reader binds and preserves their structured answers.
 internal static class RubyNativeFactsReader
 {
-    internal static RubySourceGemFacts ParseSource(string text, string expectedGemspec) =>
-        Read<RubySourceGemFacts>(text, value =>
-            new(Bind(value, "gemspec", expectedGemspec), Gem(value)));
-
-    internal static RubyArchiveFacts ParseArchive(string text, string expectedArchive) =>
-        Read<RubyArchiveFacts>(text, value => new(Bind(value, "archive", expectedArchive),
-            Gem(value), Strings(value, "contents"))
-        {
-            Extensions = value.TryGetProperty("extensions", out _) ?
-                Strings(value, "extensions") : null,
-            Repository = value.TryGetProperty("metadata", out JsonElement metadata) &&
-                metadata.TryGetProperty("github_repo", out JsonElement repository) ?
-                    Text(repository) : null,
-        });
-
-    internal static RubyBundleContext ParseContext(string text, string expectedGemfile,
-        string expectedBundlerVersion) => Read<RubyBundleContext>(text, value =>
-        {
-            string version = Text(value.GetProperty("bundler_version"));
-            if (version != expectedBundlerVersion)
-                throw new InvalidDataException("Native Bundler probe differs from the request.");
-            return new(Bind(value, "gemfile", expectedGemfile),
-                Absolute(Text(value.GetProperty("lockfile"))), version,
-                Text(value.GetProperty("locked_bundler_version")));
-        });
-
-    internal static RubyVersionProjection ParseVersion(string text, string expectedGemspec,
-        string expectedRaw) => Read<RubyVersionProjection>(text, value =>
-        {
-            string raw = Text(value.GetProperty("raw"));
-            if (raw != expectedRaw)
-                throw new InvalidDataException(
-                    "Native Ruby projection has a different version input.");
-            return new(Bind(value, "gemspec", expectedGemspec), raw,
-                Text(value.GetProperty("version")), Text(value.GetProperty("literal")));
-        });
-
-    internal static RubyBundleFacts ParseBundle(string text, string expectedGemfile,
-        string expectedBundlerVersion) => Read<RubyBundleFacts>(text, value =>
-        {
-            string gemfile = Bind(value, "gemfile", expectedGemfile);
-            string version = Text(value.GetProperty("bundler_version"));
-            if (version != expectedBundlerVersion ||
-                Text(value.GetProperty("locked_bundler_version")) != expectedBundlerVersion)
-                throw new InvalidDataException("Native Bundler version differs from the request.");
-            string[] gemfiles = Strings(value, "gemfiles").Select(Absolute).ToArray();
-            if (!gemfiles.Contains(gemfile, PathComparison))
-                throw new InvalidDataException("Native Bundler inputs omit the requested Gemfile.");
-            RubyBundleSpecification[] specifications = value.GetProperty("specifications")
-                .EnumerateArray().Select(specification => new RubyBundleSpecification(
-                    Gem(specification), Source(specification.GetProperty("source")))).ToArray();
-            return new(gemfile, Absolute(Text(value.GetProperty("lockfile"))), version,
-                gemfiles, Strings(value, "direct_dependencies"), specifications);
-        });
-
-    private static RubyGemFacts Gem(JsonElement value) => new(
-        Text(value.GetProperty("name")), Text(value.GetProperty("version")),
-        Text(value.GetProperty("platform")), Strings(value, "require_paths"),
-        Strings(value, "files"), value.GetProperty("runtime_dependencies").EnumerateArray()
-            .Select(dependency => new RubyDependency(Text(dependency.GetProperty("name")),
-                Text(dependency.GetProperty("requirement")))).ToArray());
-
-    private static RubyNativeSource Source(JsonElement value)
+    internal static RubySourceGemFacts ParseSource(string text, string expectedGemspec)
     {
-        string kind = Text(value.GetProperty("kind"));
-        return kind switch
+        RubySourceMessage value = Read(text, RubyFactJson.Default.RubySourceMessage);
+        return new(Bind(value.Gemspec, expectedGemspec), Gem(value));
+    }
+
+    internal static RubyArchiveFacts ParseArchive(string text, string expectedArchive)
+    {
+        RubyArchiveMessage value = Read(text, RubyFactJson.Default.RubyArchiveMessage);
+        return new(Bind(value.Archive, expectedArchive), Gem(value), Strings(value.Contents))
         {
-            "path" or "local_git" => new(kind, Absolute(Text(value.GetProperty("path"))),
-                Absolute(Text(value.GetProperty("gemspec"))),
-                Absolute(Text(value.GetProperty("directory")))),
-            "git" => new(kind, Uri: Text(value.GetProperty("uri")),
-                Revision: Text(value.GetProperty("revision"))),
-            "rubygems" or "metadata" => new(kind),
-            _ => throw new InvalidDataException("Unsupported native Bundler source.")
+            Extensions = value.Extensions is null ? null : Strings(value.Extensions),
+            Repository = value.Metadata?.GetValueOrDefault("github_repo") is { } repository
+                ? Text(repository) : null,
         };
     }
 
-    private static T Read<T>(string text, Func<JsonElement, T> parse)
+    internal static RubyBundleContext ParseContext(string text, string expectedGemfile,
+        string expectedBundlerVersion)
+    {
+        RubyContextMessage value = Read(text, RubyFactJson.Default.RubyContextMessage);
+        if (value.BundlerVersion != expectedBundlerVersion)
+            throw new InvalidDataException("Native Bundler probe differs from the request.");
+        return new(Bind(value.Gemfile, expectedGemfile), Absolute(Text(value.Lockfile)),
+            Text(value.BundlerVersion), Text(value.LockedBundlerVersion));
+    }
+
+    internal static RubyVersionProjection ParseVersion(string text, string expectedGemspec,
+        string expectedRaw)
+    {
+        RubyVersionMessage value = Read(text, RubyFactJson.Default.RubyVersionMessage);
+        if (value.Raw != expectedRaw)
+            throw new InvalidDataException("Native Ruby projection has a different version input.");
+        return new(Bind(value.Gemspec, expectedGemspec), Text(value.Raw), Text(value.Version),
+            Text(value.Literal));
+    }
+
+    internal static RubyBundleFacts ParseBundle(string text, string expectedGemfile,
+        string expectedBundlerVersion)
+    {
+        RubyBundleMessage value = Read(text, RubyFactJson.Default.RubyBundleMessage);
+        string gemfile = Bind(value.Gemfile, expectedGemfile);
+        if (value.BundlerVersion != expectedBundlerVersion ||
+            value.LockedBundlerVersion != expectedBundlerVersion)
+            throw new InvalidDataException("Native Bundler version differs from the request.");
+        string[] gemfiles = Strings(value.Gemfiles).Select(Absolute).ToArray();
+        if (!gemfiles.Contains(gemfile, PathComparison))
+            throw new InvalidDataException("Native Bundler inputs omit the requested Gemfile.");
+        return new(gemfile, Absolute(Text(value.Lockfile)), Text(value.BundlerVersion),
+            gemfiles, Strings(value.DirectDependencies), value.Specifications.Select(
+                specification =>
+                new RubyBundleSpecification(Gem(specification), Source(
+                    specification.Source))).ToArray());
+    }
+
+    private static RubyGemFacts Gem(RubyGemMessage value) => new(Text(value.Name), Text(
+        value.Version),
+        Text(value.Platform), Strings(value.RequirePaths), Strings(value.Files),
+            value.RuntimeDependencies
+            .Select(dependency => new RubyDependency(Text(dependency.Name), Text(
+                dependency.Requirement))).ToArray());
+
+    private static RubyNativeSource Source(RubyNativeSource value) => value.Kind switch
+    {
+        "path" or "local_git" => new(value.Kind, Absolute(Text(value.Path)),
+            Absolute(Text(value.Gemspec)), Absolute(Text(value.Directory))),
+        "git" => new(value.Kind, Uri: Text(value.Uri), Revision: Text(value.Revision)),
+        "rubygems" or "metadata" => new(value.Kind),
+        _ => throw new InvalidDataException("Unsupported native Bundler source.")
+    };
+
+    private static T Read<T>(string text, JsonTypeInfo<T> type)
     {
         try
         {
-            using JsonDocument document = JsonDocument.Parse(text);
-            return parse(document.RootElement);
+            return JsonSerializer.Deserialize(text, type) ??
+                throw new InvalidDataException("Missing native Ruby fact response.");
         }
-        catch (Exception error) when (error is JsonException or InvalidOperationException or
-            KeyNotFoundException)
-        {
-            throw new InvalidDataException("Incomplete native Ruby fact response.", error);
-        }
+        catch (JsonException error)
+        { throw new InvalidDataException("Incomplete native Ruby fact response.", error); }
     }
 
-    private static string Bind(JsonElement value, string field, string expected)
+    private static string Bind(string actual, string expected)
     {
-        string actual = Absolute(Text(value.GetProperty(field)));
+        actual = Absolute(Text(actual));
         if (!PathComparison.Equals(actual, Absolute(expected)))
             throw new InvalidDataException("Native Ruby response differs from the request.");
         return actual;
     }
-
-    private static string Text(JsonElement value)
-    {
-        string? text = value.GetString();
-        return string.IsNullOrWhiteSpace(text)
-            ? throw new InvalidDataException("Missing native Ruby text.") : text;
-    }
-
-    private static string[] Strings(JsonElement value, string field) =>
-        value.GetProperty(field).EnumerateArray().Select(Text).ToArray();
+    private static string Text(string? value) => !string.IsNullOrWhiteSpace(value) ? value :
+        throw new InvalidDataException("Missing native Ruby text.");
+    private static string[] Strings(string[] values) => values.Select(value => Text(
+        value)).ToArray();
 
     private static string Absolute(string path) => Path.IsPathFullyQualified(path)
         ? Path.GetFullPath(path)
