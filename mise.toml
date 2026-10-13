@@ -61,7 +61,7 @@ dotenv-linter = "latest"
 # Utilities
 #
 fd = "latest"
-gopass = "1.17.3"
+gopass = "1.17.4"
 ripgrep = "latest"
 github-cli = "latest"
 "github:microsoft/apm" = "v0.33.0"
