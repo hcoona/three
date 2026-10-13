@@ -5,8 +5,8 @@
 Can the replacement tool obtain the control test project's embedded npm fixture
 version input through MSBuild's supported native interface, without maintaining
 another resource declaration or interpreting project XML?
-The internal [resource reader](../../Repository/MsBuildResourceReader.cs)
-consumes the native answer under the HLD's [native boundary](../high-level-design.md#native-integrations)
+The former [resource reader][former-reader]
+consumed the native answer under the HLD's [native boundary](../high-level-design.md#native-integrations)
 and MLD's [minimum facts](../middle-level-design.md#minimum-facts). The first actual
 consumer is `tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj`:
 its resource input crosses the npm fixture and existing .NET test-owner boundary.
@@ -30,7 +30,12 @@ claims.
 | Evaluation processes properties, imports and items outside targets                                                         | [Build process overview, evaluation sections][process]    |
 | Property functions call .NET methods and are evaluated for properties/items outside targets before any target runs         | [Property functions, lines 15–19][functions]              |
 
-## Adaptation and Alternatives
+## Original Adaptation and Alternatives
+
+The following describes the original narrow reader. Current routing uses the
+already bound native graph through the MLD's [resource consumer](../middle-level-design.md#control-test-resource-consumer),
+with actual Debug/CI variants. The separate reader and its restore/evaluation
+are retired; this source study does not require retaining that implementation.
 
 Use `dotnet msbuild` to request `MSBuildProjectFullPath`, `Configuration`,
 `TargetFramework` and `RuntimeIdentifier` together with `EmbeddedResource`.
@@ -98,3 +103,4 @@ native-integration review.
 [cli]: https://github.com/MicrosoftDocs/visualstudio-docs/blob/653cd6e4ffe7e1ff69ba2c4eade3c29ed49a4336/docs/msbuild/msbuild-command-line-reference.md#L59
 [process]: https://github.com/MicrosoftDocs/visualstudio-docs/blob/653cd6e4ffe7e1ff69ba2c4eade3c29ed49a4336/docs/msbuild/build-process-overview.md
 [functions]: https://github.com/MicrosoftDocs/visualstudio-docs/blob/653cd6e4ffe7e1ff69ba2c4eade3c29ed49a4336/docs/msbuild/property-functions.md#L15
+[former-reader]: https://github.com/hcoona/three/blob/5c5a68cc6540a532b3fda9c262d61e4dd5def5dc/src/private/app/workflow-delivery/Repository/MsBuildResourceReader.cs

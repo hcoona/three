@@ -1127,6 +1127,60 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                 "ApplicationManifest" or "Win32Manifest" or "Win32Resource"));
     }
 
+    [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    public async Task NativeEmbeddedResourcesUseCiVariantUnion()
+    {
+        using var fixture = new GraphFixture();
+        fixture.Write("dirs.proj", """
+            <Project><ItemGroup><ProjectReference Include="product/main.csproj" />
+            </ItemGroup></Project>
+            """);
+        fixture.Write("product/main.csproj", """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+              <TargetFrameworks>net10.0;net9.0</TargetFrameworks>
+            </PropertyGroup><ItemGroup>
+              <EmbeddedResource Include="../shared/common.json" />
+              <EmbeddedResource Include="../shared/ci.json"
+                Condition="'$(Configuration)' == 'Debug' and
+                  '$(ContinuousIntegrationBuild)' == 'true'" />
+              <EmbeddedResource Include="../shared/net9.json"
+                Condition="'$(TargetFramework)' == 'net9.0'" />
+              <EmbeddedResource Include="../shared/non-ci.json"
+                Condition="'$(ContinuousIntegrationBuild)' != 'true'" />
+            </ItemGroup></Project>
+            """);
+        foreach (string name in new[] { "common", "ci", "net9", "non-ci" })
+            fixture.Write("shared/" + name + ".json", "{}");
+        fixture.CommittedPaths = [fixture.PathOf("product/main.csproj"),
+            fixture.PathOf("shared/common.json"), fixture.PathOf("shared/ci.json"),
+            fixture.PathOf("shared/net9.json"), fixture.PathOf("shared/non-ci.json")];
+
+        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
+
+        DotNetGraphNode[] nodes = response.Nodes.Where(node => node.Identity.Project ==
+            fixture.PathOf("product/main.csproj")).ToArray();
+        Assert.HasCount(3, nodes);
+        foreach (DotNetGraphNode node in nodes)
+        {
+            Assert.AreEqual("Debug", node.Identity.Globals["Configuration"]);
+            Assert.AreEqual("true", node.Identity.Globals["ContinuousIntegrationBuild"]);
+            DotNetGraphInput[] resources = response.Inputs.Where(input =>
+                input.Role == "EmbeddedResource" && SameIdentity(input.Consumer, node.Identity))
+                .ToArray();
+            string[] expected = node.Dimension.TargetFramework == "net9.0"
+                ? ["shared/common.json", "shared/ci.json", "shared/net9.json"]
+                : ["shared/common.json", "shared/ci.json"];
+            CollectionAssert.AreEquivalent(expected.Select(fixture.PathOf).ToArray(),
+                resources.Select(input => input.Path).ToArray());
+            Assert.IsTrue(resources.All(input => input.Stage == "Evaluation"));
+        }
+        CollectionAssert.AreEquivalent(new[] { fixture.PathOf("shared/common.json"),
+                fixture.PathOf("shared/ci.json"), fixture.PathOf("shared/net9.json") },
+            response.Inputs.Where(input => input.Role == "EmbeddedResource")
+                .Select(input => input.Path).Distinct(StringComparer.Ordinal).ToArray());
+    }
+
     private sealed class GraphFixture : IDisposable
     {
         internal const string Revision = "1111111111111111111111111111111111111111";

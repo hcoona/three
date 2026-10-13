@@ -64,6 +64,106 @@ def bootstrap(root: Path, directory: Path) -> Path:
     return application
 
 
+def materialize(
+    root: Path,
+    directory: Path,
+    application: Path,
+    native_event: tuple[str, Path, str],
+) -> dict:
+    """Resolve the native comparison and materialize its exact Git objects."""
+    if directory.is_relative_to(root):
+        message = "Control endpoints must be outside the candidate source root"
+        raise ValueError(message)
+    comparison = json.loads(
+        node.run(
+            root,
+            directory.parent,
+            directory.name + "-comparison",
+            "dotnet",
+            str(application),
+            "ci",
+            "comparison",
+            native_event[0],
+            str(native_event[1]),
+            native_event[2],
+            timeout=300,
+        )
+    )
+    for name in ("basis", "candidate"):
+        comparison[name] = ci_scope.git(
+            root,
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            comparison[name] + "^{commit}",
+        ).strip()
+    if (
+        comparison["candidate"]
+        != ci_scope.git(root, "rev-parse", "HEAD").strip()
+    ):
+        message = "Native comparison does not name the checked-out candidate"
+        raise ValueError(message)
+    if comparison["full"] and comparison["basis"] != comparison["candidate"]:
+        message = "Explicit full must retain one exact comparison identity"
+        raise ValueError(message)
+    ci_scope.owner_present(root, comparison["basis"])
+    if not ci_scope.owner_present(root, comparison["candidate"]):
+        message = "The candidate must retain the control test owner"
+        raise ValueError(message)
+    directory.mkdir(parents=True, exist_ok=False)
+    after = directory / "candidate"
+    node.run(
+        root,
+        directory,
+        "candidate-materialization",
+        "git",
+        "worktree",
+        "add",
+        "--detach",
+        str(after),
+        comparison["candidate"],
+        timeout=300,
+    )
+    if comparison["basis"] == comparison["candidate"]:
+        before = after
+    else:
+        before = directory / "basis"
+        node.run(
+            root,
+            directory,
+            "basis-materialization",
+            "git",
+            "worktree",
+            "add",
+            "--detach",
+            str(before),
+            comparison["basis"],
+            timeout=300,
+        )
+    endpoints = {
+        "full": comparison["full"],
+        "basis": {"directory": str(before), "reference": comparison["basis"]},
+        "candidate": {
+            "directory": str(after),
+            "reference": comparison["candidate"],
+        },
+    }
+    (directory / "group-endpoints.json").write_text(
+        json.dumps(endpoints, indent=2) + "\n", encoding="utf-8"
+    )
+    if output := os.environ.get("GITHUB_OUTPUT"):
+        with Path(output).open("a", encoding="utf-8") as stream:
+            stream.write(f"candidate_directory={after}\n")
+            stream.write(f"basis_directory={before}\n")
+            separate = str(before is not None and before != after).lower()
+            stream.write(f"basis_separate={separate}\n")
+            stream.write(
+                f"basis={comparison['basis']}\ncandidate={comparison['candidate']}\n"
+            )
+            stream.write(f"full={str(comparison['full']).lower()}\n")
+    return endpoints
+
+
 def prepare(root: Path, directory: Path, endpoints_path: Path) -> Path:
     """Prepare exact endpoints with locked native assets."""
     control = node.read_json(directory / "control.json")
@@ -189,8 +289,24 @@ def finish(
     ):
         message = "Native .NET readback has a different comparison or scope"
         raise ValueError(message)
-    for name in ("basis", "candidate"):
+    resources = {
+        name: readback[name + "Resources"] for name in ("basis", "candidate")
+    }
+    for name, revision in (
+        ("basis", preliminary["base"]),
+        ("candidate", preliminary["candidate"]),
+    ):
+        ci_scope.validate_resource_endpoint(
+            root, resources[name], revision, name
+        )
         joined["endpoint_owners"][name]["paths"] = readback[name]
+    joined["nuget_reproducibility"] = preliminary[
+        "nuget_reproducibility"
+    ] or any(
+        path in endpoint["inputs"]
+        for endpoint in resources.values()
+        for path in preliminary["changed_paths"]
+    )
     joined["scopes"]["dotnet"] = bool(plan["checks"])
     joined["reasons"]["dotnet"] = sorted(
         {
@@ -316,6 +432,12 @@ def main() -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     first = commands.add_parser("bootstrap")
     first.add_argument("--directory", type=Path, required=True)
+    materialization = commands.add_parser("materialize")
+    materialization.add_argument("--directory", type=Path, required=True)
+    materialization.add_argument("--application", type=Path, required=True)
+    materialization.add_argument("--event-name", required=True)
+    materialization.add_argument("--event-path", type=Path, required=True)
+    materialization.add_argument("--candidate", required=True)
     preparation = commands.add_parser("prepare")
     preparation.add_argument("--directory", type=Path, required=True)
     preparation.add_argument("--endpoints", type=Path, required=True)
@@ -337,6 +459,17 @@ def main() -> int:
         parser.error("native group state must be outside the source checkout")
     if options.command == "bootstrap":
         bootstrap(root, directory)
+    elif options.command == "materialize":
+        materialize(
+            root,
+            directory,
+            options.application.resolve(),
+            (
+                options.event_name,
+                options.event_path.resolve(),
+                options.candidate,
+            ),
+        )
     elif options.command == "prepare":
         prepare(root, directory, options.endpoints.resolve())
     else:

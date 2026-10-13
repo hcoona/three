@@ -5,6 +5,8 @@ using Microsoft.Build.Graph;
 
 namespace WorkflowDelivery.Repository;
 
+internal sealed record MsBuildDimension(string Configuration, string TargetFramework,
+    string RuntimeIdentifier = "");
 internal sealed record DotNetGraphRequest(string Revision, string Root, string Entry,
     Dictionary<string, string> Globals, string Destination, string[] CommittedPaths);
 internal sealed record DotNetNodeIdentity(string Project, Dictionary<string, string> Globals);

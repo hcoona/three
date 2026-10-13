@@ -37,7 +37,7 @@ artifact, ambient fallback or second dependency declaration.
 
 | Interface                                                                | Purpose                                                                                           |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `ci comparison`, `ci control-inputs`                                     | Resolve the event comparison and actual control-test resource consumers                           |
+| `ci comparison`                                                          | Resolve the native event comparison                                                               |
 | `ci plan`, `ci plan-node`, `ci plan-node-group`                          | Select declared work from native paired facts and reasons                                         |
 | `ci prepare-python-group`, `ci plan-python-group`, `ci run-python-group` | Prepare, select and execute the original Python plan                                              |
 | `ci prepare-ruby-group`, `ci plan-ruby-group`, `ci run-ruby-group`       | Prepare, select and execute Ruby checks and transfer native Node contributions                    |

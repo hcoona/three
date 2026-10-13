@@ -156,7 +156,7 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
             "'src/public/lib/hexo-renderer-asciidoc')"
         )
         assert not step.get("continue-on-error", False)
-    elif (key == "scope" and step["name"] == "Setup basis resource SDK") or (
+    elif (key == "scope" and step["name"] == "Setup basis graph SDK") or (
         key == "python-tests"
         and step["name"] == "Setup candidate NBGV and control SDK"
     ):
@@ -1063,7 +1063,7 @@ def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
 
 
 @pytest.mark.parametrize("full", ["false", "true"])
-@pytest.mark.parametrize("failure", [None, "evaluate", "select"])
+@pytest.mark.parametrize("failure", [None, "select"])
 def test_scope_selection_uses_project_python_and_tested_comparison(
     workflow, tmp_path, full, failure
 ):
@@ -1086,21 +1086,6 @@ def test_scope_selection_uses_project_python_and_tested_comparison(
         "--no-install-project --no-install-workspace"
     )
     env = _commands(tmp_path)
-    runner_temp = tmp_path / "runner temp"
-    request = str(runner_temp / "ci-control-inputs/request.json")
-    response = str(runner_temp / "ci-control-inputs/response.json")
-    env["RUNNER_TEMP"] = str(runner_temp)
-    evaluate = [
-        "python",
-        "eng/scripts/prepare_ci_control_inputs.py",
-        "--application",
-        _bindings(tmp_path)["steps.control.outputs.application"],
-        "evaluate",
-        "--request",
-        request,
-        "--response",
-        response,
-    ]
     selector = [
         "uv",
         "run",
@@ -1113,8 +1098,6 @@ def test_scope_selection_uses_project_python_and_tested_comparison(
             if full == "true"
             else ["--from-ref", "a" * 40, "--to-ref", "d" * 40]
         ),
-        "--control-inputs",
-        response,
         "--output",
         "artifacts/ci-scope.json",
         "--application",
@@ -1123,16 +1106,13 @@ def test_scope_selection_uses_project_python_and_tested_comparison(
         _bindings(tmp_path)["steps.dotnet-group.outputs.request"],
     ]
     if failure is not None:
-        env["FAIL_COMMAND"] = json.dumps(
-            evaluate if failure == "evaluate" else selector
-        )
+        env["FAIL_COMMAND"] = json.dumps(selector)
     result = run_step(
         select,
         cwd=tmp_path,
         env=env,
         bindings=_bindings(tmp_path)
         | {
-            "steps.materialize.outputs.request": request,
             "steps.materialize.outputs.basis": ("d" if full == "true" else "a")
             * 40,
             "steps.materialize.outputs.candidate": "d" * 40,
@@ -1146,8 +1126,7 @@ def test_scope_selection_uses_project_python_and_tested_comparison(
     )
     assert [item["command"] for item in _observations(env)] == [
         ["python", "--version"],
-        evaluate,
-        *([] if failure == "evaluate" else [selector]),
+        selector,
     ]
 
 

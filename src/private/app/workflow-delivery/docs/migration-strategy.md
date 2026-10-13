@@ -532,28 +532,22 @@ follows from this group.
 
 ### Control-Test Input Routing
 
-Root CI connects the MLD's
-[control-test resource consumer](middle-level-design.md#control-test-resource-consumer)
-to root CI. Run native evaluation and final selection in the existing `scope`
-job on Windows, keeping its job name, outputs, downstream guards and final
-`ci-scope` artifact. Keep `Build & Test (.NET 10)` as the sole general .NET test
-executor. This co-location needs neither an extra resource producer job nor a
-resource/CLI artifact transfer; only the concrete receiving process consumes the
-comparison/resource response.
+Root CI consumes the MLD's
+[control-test resource projection](middle-level-design.md#control-test-resource-consumer)
+in the existing Windows `scope` job. Preserve its outputs, downstream guards and
+final `ci-scope` artifact; `Build & Test (.NET 10)` remains the general .NET test
+executor. The separate Windows NuGet scenario job retains its finite trigger and
+required results.
 
-Prepare the selected candidate control application once using its pinned SDK
-and locked native dependencies. Invoke that complete same-runner build output
-with its selected .NET runtime; keep required assemblies, dependency metadata and
-runtime configuration together without creating a portable archive. Resolve the
-native event comparison once with `ci comparison`, then resolve its actual Git
-objects. Confirm the named test project's committed entry, materialize exact
-endpoints outside the candidate source root, install each endpoint's selected
-`global.json` SDK, and perform necessary locked restore of that test project and
-its native reference closure under Debug before the single evaluation query.
-Candidate preparation never substitutes for unavailable base inputs. Native
-preparation/evaluation is unprivileged; the scope job runs no second test suite.
-Confirmed base absence requires successful inventory inspection; the candidate
-owner must remain present. Identical full-mode endpoints may reuse one evaluation.
+The native .NET group caller prepares the complete candidate control application,
+resolves `ci comparison` and materializes exact committed endpoints outside the
+candidate source root. Retain each endpoint's selected SDK/tool setup and locked
+traversal preparation, and the distinct ordinary control-build context. Project
+resources from the same successfully bound Debug/CI native graphs used for
+impact planning; no extra test-project restore or passive resource evaluation is
+needed. Confirm basis absence from committed inventory and require the candidate
+owner. The existing group readback carries the finite resource union to final
+selection; there is no resource request/response file or extra artifact.
 
 The existing scope job explicitly prepares locked dotnet, Node and PNPM tools
 before native environment export, with `MISE_EXEC_AUTO_INSTALL=0` scoped to that
@@ -567,17 +561,17 @@ This bounds implicit installation, not tool visibility or all network effects.
 Change the Python selector's logical Git-coordinate operations to `PurePosixPath`;
 retain `Path` for filesystem access. Use strict UTF-8 for Git, JSON and text at
 the process boundary, and an explicit compatible workflow shell rather than
-inheriting Windows defaults for the current Bash block. Consume the required
-native response before emitting final applicability and reasons. Preserve all
+inheriting Windows defaults for the current Bash block. Consume the successful
+native group readback before emitting final applicability and reasons. Preserve all
 other source inventories/selectors and the existing successful-scope guards.
 Missing response, malformed/conflicting identities or native errors fail the
 scope job; they cannot appear as non-applicable downstream work.
 
 Validate fixture-version-only and Debug-conditional resource changes selecting
 the existing .NET owner; base/candidate removed, moved and added resources;
-confirmed base absence versus native failure; default and unsupported dimensions;
+confirmed base absence versus native failure; actual CI-conditional native variants and their union;
 missing/malformed response and candidate mismatch; unrelated Node nonselection;
-and coherent explicit full. Reuse existing native item-semantics tests and run
+and coherent explicit full. Use focused resource projection tests and native graph integration; run
 existing selector scenarios, including Unicode and inherited/deleted/renamed
 inputs. Ordinary changed-code hosted CI must exercise Windows preparation, final
 selection and required-check behavior. A component or design result alone does

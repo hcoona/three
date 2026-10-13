@@ -171,18 +171,6 @@ internal static class Program
                     TransferJson.Default.CiComparison));
                 return 0;
             }
-            if (args is ["ci", "control-inputs", var controlInputPath])
-            {
-                ControlTestInputRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(controlInputPath, new System.Text.UTF8Encoding(false, true)),
-                    TransferJson.Default.ControlTestInputRequest
-                ) ?? throw new InvalidDataException("Missing control input request.");
-                ControlTestInputResponse result = ControlTestInputs.ReadAsync(request,
-                    CancellationToken.None).GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(result,
-                    TransferJson.Default.ControlTestInputResponse));
-                return 0;
-            }
             if (args is ["ci", "run-node", var executionPlanPath, var executionRequestPath])
             {
                 CiPlan plan = JsonSerializer.Deserialize(
@@ -247,7 +235,6 @@ internal static class Program
                     + " | release observe-npmjs <preparation.json> <original-directory>"
                     + " | release describe-npmjs <preparation.json> <observation.json>"
                     + " | ci comparison <event-name> <native-event.json> <tested-candidate>"
-                    + " | ci control-inputs <request.json>"
                     + " | ci plan-node <request.json>"
                     + " | ci plan-node-group <request.json>"
                     + " | ci plan-dotnet-group <request.json>"
@@ -336,8 +323,6 @@ internal static class Program
 [JsonSerializable(typeof(GithubNpmPublicationResult))]
 [JsonSerializable(typeof(GithubNpmConsumerResult))]
 [JsonSerializable(typeof(CiComparison))]
-[JsonSerializable(typeof(ControlTestInputRequest))]
-[JsonSerializable(typeof(ControlTestInputResponse))]
 [JsonSerializable(typeof(DotNetGraphRequest))]
 [JsonSerializable(typeof(DotNetGraphResponse))]
 [JsonSerializable(typeof(KeyValuePair<string, string>[]))]

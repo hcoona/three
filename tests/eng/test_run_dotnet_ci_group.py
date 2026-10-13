@@ -300,6 +300,8 @@ def test_only_successful_planning_finalizes_applicability(
         "base": BASIS,
         "candidate": CANDIDATE,
         "full": False,
+        "changed_paths": [],
+        "nuget_reproducibility": False,
         "scopes": {"dotnet": True, "python": True},
         "reasons": {
             "dotnet": ["old heuristic"],
@@ -333,10 +335,24 @@ def test_only_successful_planning_finalizes_applicability(
                 "basis": [],
                 "candidate": [],
                 "candidateContext": {"revision": CANDIDATE},
+                **{
+                    name + "Resources": {
+                        "revision": revision,
+                        "project": group.ci_scope.CONTROL_PROJECT,
+                        "present": True,
+                        "inputs": [],
+                    }
+                    for name, revision in (
+                        ("basis", BASIS),
+                        ("candidate", CANDIDATE),
+                    )
+                },
             }
         )
 
     monkeypatch.setattr(group.node, "run", native)
+    monkeypatch.setattr(group.ci_scope, "owner_present", lambda *_: True)
+    monkeypatch.setattr(group.ci_scope, "_entry_modes", lambda *_: {})
     if failed:
         with pytest.raises(subprocess.CalledProcessError):
             group.finish(

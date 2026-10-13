@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import re
 import subprocess
 import sys
+from contextlib import redirect_stderr, redirect_stdout
 from importlib import import_module
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -25,7 +28,7 @@ sys.path.insert(0, str(SCRIPTS))
 try:
     scope = importlib.util.module_from_spec(SPEC)
     SPEC.loader.exec_module(scope)
-    preparation = import_module("prepare_ci_control_inputs")
+    preparation = import_module("run_dotnet_ci_group")
 finally:
     sys.path.remove(str(SCRIPTS))
 
@@ -87,11 +90,6 @@ def _control_response(base, candidate, *, full=False, before=(), after=()):
             "revision": revision,
             "project": scope.CONTROL_PROJECT,
             "present": True,
-            "dimension": {
-                "configuration": "Debug",
-                "targetFramework": "net10.0",
-                "runtimeIdentifier": "",
-            },
             "inputs": list(inputs),
         }
 
@@ -115,26 +113,112 @@ def _select_cli(root, *arguments, receipt=None):
         if receipt is None
         else receipt
     )
-    source = root / "control-inputs.json"
-    source.write_text(
-        response if isinstance(response, str) else json.dumps(response),
+    state = root.parent / (root.name + "-group")
+    (state / "planning").mkdir(parents=True, exist_ok=True)
+    (state / "transfer").mkdir(exist_ok=True)
+    request = state / "planning/request.json"
+    request.write_text(
+        json.dumps(
+            {
+                "scopePath": str(state / "planning/preliminary.json"),
+                "basis": {"directory": str(root)},
+                "candidate": {"directory": str(root)},
+            }
+        ),
         encoding="utf-8",
     )
-    return subprocess.run(  # noqa: S603 - Fixed tool/script and owned fixture arguments.
-        [
-            sys.executable,
-            str(SCRIPTS / "ci_scope.py"),
-            "--repository",
-            str(root),
-            "--control-inputs",
-            str(source),
-            *arguments,
-        ],
-        env=dict(os.environ, GITHUB_OUTPUT=str(root / "outputs")),
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
+
+    def native(_root, _state, _label, *_args):
+        if isinstance(response, str):
+            return response
+        preliminary = json.loads(
+            (state / "planning/preliminary.json").read_text()
+        )
+        reasons = [
+            {
+                "path": path,
+                "project": scope.CONTROL_PROJECT,
+                "revision": endpoint["revision"],
+            }
+            for endpoint in (
+                response.get("basis", {}),
+                response.get("candidate", {}),
+            )
+            for path in endpoint.get("inputs", []) or []
+            if path in preliminary["changed_paths"]
+        ]
+        selected = preliminary["scopes"]["dotnet"] or bool(reasons)
+        for name in ("basis", "candidate"):
+            endpoint = response.get(name, {})
+            for row in preliminary["endpoint_owners"][name]["paths"]:
+                if row["present"] and row["path"] in (
+                    endpoint.get("inputs") or []
+                ):
+                    row["reasons"].append(
+                        {
+                            "owner": "dotnet",
+                            "target": scope.CONTROL_PROJECT,
+                            "rule": "native-consumer",
+                            "sources": [scope.CONTROL_PROJECT, row["path"]],
+                        }
+                    )
+        # Controlled native result; C# owns graph and plan creation.
+        return json.dumps(
+            {
+                "plan": {
+                    "comparison": response["comparison"]["basis"],
+                    "candidate": response["comparison"]["candidate"],
+                    "scope": "dotnet/native-endpoint-selection-v1",
+                    "checks": [{"reasons": reasons}] if selected else [],
+                },
+                "basis": preliminary["endpoint_owners"]["basis"]["paths"],
+                "candidate": preliminary["endpoint_owners"]["candidate"][
+                    "paths"
+                ],
+                "candidateContext": {"revision": candidate},
+                **{
+                    name + "Resources": response[name]
+                    for name in ("basis", "candidate")
+                    if name in response
+                },
+            }
+        )
+
+    argv = [
+        "ci_scope.py",
+        "--repository",
+        str(root),
+        "--dotnet-group-request",
+        str(request),
+        "--application",
+        str(root / "control.dll"),
+        *arguments,
+    ]
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with (
+        patch.object(sys, "argv", argv),
+        patch.dict(os.environ, GITHUB_OUTPUT=str(root / "outputs")),
+        patch.object(preparation.node, "run", native),
+        patch.object(
+            preparation.node, "join_record_owners", lambda _, value, __: value
+        ),
+        redirect_stdout(stdout),
+        redirect_stderr(stderr),
+    ):
+        try:
+            code = scope.main()
+        except SystemExit as error:
+            code = error.code
+        except (
+            ValueError,
+            KeyError,
+            OSError,
+            subprocess.CalledProcessError,
+        ) as error:
+            stderr.write(str(error))
+            code = 1
+    return subprocess.CompletedProcess(
+        argv, code, stdout.getvalue(), stderr.getvalue()
     )
 
 
@@ -212,6 +296,7 @@ def test_resource_input_selects_existing_dotnet_owner_from_both_revisions(
     assert result.returncode == 0, result.stderr
     selected = json.loads(result.stdout)
     assert selected["scopes"]["dotnet"]
+    assert selected["nuget_reproducibility"]
     assert selected["scopes"]["node"]
     assert "python" not in selected["scopes"]
     expected = {
@@ -249,8 +334,26 @@ def test_unrelated_node_input_does_not_select_control_tests(comparison):
     selected = json.loads(result.stdout)
     assert selected["scopes"]["node"]
     assert not selected["scopes"]["dotnet"]
+    assert not selected["nuget_reproducibility"]
     assert selected["reasons"]["dotnet"] == []
     assert "dotnet=false\n" in (root / "outputs").read_text(encoding="utf-8")
+
+
+def test_unrelated_selected_dotnet_project_does_not_trigger_nuget_scenarios(
+    comparison,
+):
+    """An ordinary selected .NET project is not the dedicated job predicate."""
+    root, _, base = comparison
+    project = root / "src/plain/App.csproj"
+    project.parent.mkdir(parents=True)
+    project.write_text("<Project />", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Add ordinary managed project")
+    result = _select_cli(root, "--from-ref", base)
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    assert selected["scopes"]["dotnet"] is True
+    assert selected["nuget_reproducibility"] is False
 
 
 @pytest.mark.parametrize(
@@ -263,8 +366,7 @@ def test_unrelated_node_input_does_not_select_control_tests(comparison):
         "wrong-revision",
         "wrong-project",
         "wrong-presence",
-        "empty-framework",
-        "wrong-configuration",
+        "uncommitted-input",
         "inputs-null",
         "outside-input",
         "duplicate",
@@ -289,14 +391,7 @@ def test_invalid_native_response_emits_no_successful_scope(comparison, defect):
             "wrong-revision": (("basis", "revision"), candidate),
             "wrong-project": (("candidate", "project"), "other.csproj"),
             "wrong-presence": (("basis", "present"), False),
-            "empty-framework": (
-                ("candidate", "dimension", "targetFramework"),
-                "",
-            ),
-            "wrong-configuration": (
-                ("candidate", "dimension", "configuration"),
-                "Release",
-            ),
+            "uncommitted-input": (("candidate", "inputs"), ["missing.json"]),
             "inputs-null": (("candidate", "inputs"), None),
             "outside-input": (("candidate", "inputs"), ["../outside.json"]),
         }
@@ -326,8 +421,10 @@ def test_missing_native_response_is_not_an_incremental_or_full_fallback(
                 "--repository",
                 str(root),
                 *mode,
-                "--control-inputs",
-                str(root / "missing-response.json"),
+                "--dotnet-group-request",
+                str(root / "missing-request.json"),
+                "--application",
+                str(root / "control.dll"),
             ],
             env=dict(os.environ, GITHUB_OUTPUT=str(root / "outputs")),
             capture_output=True,
@@ -372,7 +469,7 @@ def test_confirmed_base_owner_absence_is_explicit_and_candidate_is_required(
     _git(root, "commit", "-qm", "Add candidate owner")
     candidate = _git(root, "rev-parse", "HEAD")
     response = _control_response(base, candidate)
-    response["basis"].update(present=False, dimension=None)
+    response["basis"].update(present=False)
 
     result = _select_cli(root, "--from-ref", base, receipt=response)
 
@@ -384,117 +481,77 @@ def test_confirmed_base_owner_absence_is_explicit_and_candidate_is_required(
     _git(root, "commit", "-qm", "Remove candidate owner")
     absent = _git(root, "rev-parse", "HEAD")
     response = _control_response(candidate, absent)
-    response["candidate"].update(present=False, dimension=None)
+    response["candidate"].update(present=False)
     result = _select_cli(root, "--from-ref", candidate, receipt=response)
     assert result.returncode != 0
     assert not (root / "outputs").exists()
 
 
 @pytest.mark.parametrize("full", [False, True])
-def test_native_prepare_preserves_endpoints_and_locked_context(
+def test_native_materialization_preserves_exact_endpoints(
     comparison, monkeypatch, tmp_path_factory, full
 ):
-    """Native preparation uses exact Git endpoints and locked contexts."""
+    """Materialize exact commits without separate resource evaluation."""
     root, basis, candidate = comparison
     if full:
         basis = candidate
-    native_comparison = {"basis": basis, "candidate": candidate, "full": full}
-    restored = []
-    original = preparation.run
-    response = _control_response(basis, candidate, full=full)
+    original = preparation.node.run
 
-    def native(directory, *arguments):
-        if arguments[0] == "git":
-            return original(directory, *arguments)
-        if arguments[1] == "restore":
-            restored.append((directory, arguments))
-            return "Locked fixture preparation\n"
+    def native(directory, state, label, *arguments, **options):
         if "comparison" in arguments:
-            return json.dumps(native_comparison)
-        assert "control-inputs" in arguments
-        return json.dumps(response)
+            return json.dumps(
+                {"basis": basis, "candidate": candidate, "full": full}
+            )
+        return original(directory, state, label, *arguments, **options)
 
-    monkeypatch.setattr(preparation, "run", native)
-    scratch = tmp_path_factory.mktemp("control-inputs") / "endpoints"
-    request = preparation.prepare(
+    monkeypatch.setattr(preparation.node, "run", native)
+    scratch = tmp_path_factory.mktemp("native-endpoints") / "endpoints"
+    endpoints = preparation.materialize(
         root,
         scratch,
         root / "control.dll",
         ("pull_request", root / "event.json", candidate),
     )
-    before = Path(request["basisDirectory"])
-    after = Path(request["candidateDirectory"])
+    before = Path(endpoints["basis"]["directory"])
+    after = Path(endpoints["candidate"]["directory"])
     assert not before.is_relative_to(root)
     assert not after.is_relative_to(root)
     assert _git(before, "rev-parse", "HEAD") == basis
     assert _git(after, "rev-parse", "HEAD") == candidate
     assert (before == after) is full
     assert (
-        json.loads((scratch / "request.json").read_text(encoding="utf-8"))
-        == request
+        json.loads((scratch / "group-endpoints.json").read_text()) == endpoints
     )
-    result = preparation.evaluate(
-        root,
-        root / "control.dll",
-        scratch / "request.json",
-        scratch / "response.json",
-    )
-    assert result == response
-    assert {directory for directory, _ in restored} == {before, after}
-    for _, arguments in restored:
-        assert arguments == (
-            "dotnet",
-            "restore",
-            scope.CONTROL_PROJECT,
-            "--locked-mode",
-            "-p:Configuration=Debug",
-        )
-    assert (
-        json.loads((scratch / "response.json").read_text(encoding="utf-8"))
-        == response
-    )
-
-
-def test_native_prepare_failure_does_not_write_facts(comparison, monkeypatch):
-    """Failed required native operations never write successful facts."""
-    root, basis, candidate = comparison
-    scratch = root.parent / (root.name + "-failed-endpoints")
-    request = {
-        "comparison": {"basis": basis, "candidate": candidate, "full": False},
-        "repository": str(root),
-        "basisDirectory": str(scratch / "basis"),
-        "candidateDirectory": str(scratch / "candidate"),
-    }
-    scratch.mkdir()
-    request_path = scratch / "request.json"
-    request_path.write_text(json.dumps(request), encoding="utf-8")
-
-    def unavailable(*_arguments):
-        raise subprocess.CalledProcessError(1, ["dotnet", "restore"])
-
-    monkeypatch.setattr(preparation, "run", unavailable)
-    with pytest.raises(subprocess.CalledProcessError):
-        preparation.evaluate(
-            root, root / "control.dll", request_path, scratch / "response.json"
-        )
+    assert not (scratch / "request.json").exists()
     assert not (scratch / "response.json").exists()
+
+
+def test_native_materialization_failure_does_not_write_endpoints(
+    comparison, monkeypatch
+):
+    """Failed native comparison cannot become successful graph preparation."""
+    root, _, candidate = comparison
+    scratch = root.parent / (root.name + "-failed-endpoints")
+
+    def unavailable(*_arguments, **_options):
+        raise subprocess.CalledProcessError(1, ["dotnet", "ci", "comparison"])
+
+    monkeypatch.setattr(preparation.node, "run", unavailable)
     with pytest.raises(subprocess.CalledProcessError):
-        preparation.prepare(
+        preparation.materialize(
             root,
-            scratch / "not-created",
+            scratch,
             root / "control.dll",
             ("push", root / "event.json", candidate),
         )
-    assert not (scratch / "not-created").exists()
+    assert not scratch.exists()
 
 
-def test_native_prepare_rejects_source_subdirectories(
-    comparison,
-):
+def test_native_materialization_rejects_source_subdirectories(comparison):
     """Temporary checkouts cannot pollute the candidate source inventory."""
     root, _, candidate = comparison
     with pytest.raises(ValueError, match="outside"):
-        preparation.prepare(
+        preparation.materialize(
             root,
             root / "generated",
             root / "control.dll",
@@ -725,7 +782,7 @@ def test_control_preparation_remains_available_without_endpoint_parser():
         [
             sys.executable,
             "-S",
-            str(SCRIPTS / "prepare_ci_control_inputs.py"),
+            str(SCRIPTS / "run_dotnet_ci_group.py"),
             "--help",
         ],
         capture_output=True,
@@ -734,7 +791,7 @@ def test_control_preparation_remains_available_without_endpoint_parser():
     )
     assert result.returncode == 0, result.stderr
     assert "prepare" in result.stdout
-    assert "evaluate" in result.stdout
+    assert "materialize" in result.stdout
 
 
 @pytest.mark.parametrize("transition", ["change", "add", "delete"])
@@ -920,8 +977,8 @@ def test_endpoint_owners_retain_multiple_native_and_project_responsibilities(
         {
             "owner": "dotnet",
             "target": scope.CONTROL_PROJECT,
-            "rule": "native-embedded-resource",
-            "sources": [scope.CONTROL_PROJECT],
+            "rule": "native-consumer",
+            "sources": [scope.CONTROL_PROJECT, str(resource.relative_to(root))],
         },
     ]
     assert selected["scopes"]["dotnet"]
@@ -1708,18 +1765,6 @@ def test_nuget_reproducibility_preserves_changed_and_deleted_shared_inputs(
             "nuget_reproducibility"
         ]
         before = candidate
-
-
-@pytest.mark.parametrize("endpoint", ["basis", "candidate"])
-def test_nuget_reproducibility_uses_native_control_resource_inputs(endpoint):
-    """Resources outside owner roots retain native endpoint identity."""
-    path = "eng/native-resource.json"
-    receipt = _control_response("HEAD", "HEAD")
-    receipt[endpoint]["inputs"] = [path]
-    assert scope.select(ROOT, (path,), base="HEAD", control_inputs=receipt)[
-        "nuget_reproducibility"
-    ]
-    assert not scope.select(ROOT, (path,), base="HEAD")["nuget_reproducibility"]
 
 
 def test_nuget_reproducibility_selects_native_windows_evidence():

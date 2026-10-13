@@ -9,13 +9,16 @@ internal sealed record DotNetGroupRequest(MaterializedEndpoint Basis,
     MaterializedEndpoint? BasisControl, MaterializedEndpoint CandidateControl,
     string? BasisBuildLog, string CandidateBuildLog, DotNetRunRequest Completion);
 internal sealed record DotNetGroupReadback(CiPlan Plan, ScopeCoordinate[] Basis,
-    ScopeCoordinate[] Candidate, ControlBuildContext CandidateContext);
+    ScopeCoordinate[] Candidate, ControlBuildContext CandidateContext,
+    DotNetResourceEndpoint BasisResources, DotNetResourceEndpoint CandidateResources);
+internal sealed record DotNetResourceEndpoint(string Revision, string Project, bool Present,
+    string[] Inputs);
 
 // The root caller joins actual native responsibilities before the shared scope binder.
 internal static class DotNetGroupReader
 {
     internal static readonly string[] CallerSources = [".github/workflows/ci.yml",
-        "eng/scripts/ci_scope.py", "eng/scripts/prepare_ci_control_inputs.py",
+        "eng/scripts/ci_scope.py",
         "eng/scripts/run_dotnet_ci_group.py", "eng/scripts/run_node_ci_group.py",
         "eng/scripts/repository_path_patterns.py", "eng/scripts/workflow_delivery_v3_hk.py",
         "pyproject.toml", "uv.lock", "uv.toml", ".python-version", ".config/uv/uv.toml",
@@ -50,6 +53,8 @@ internal static class DotNetGroupReader
             await NodeReader(basis).ReadAsync(token), controlBasis, false);
         NodeRevisionInputs nodeAfter = NodeGroupReader.WithControlInputs(
             await NodeReader(candidate).ReadAsync(token), controlCandidate, true);
+        DotNetResourceEndpoint basisResources = Resources(before, false);
+        DotNetResourceEndpoint candidateResources = Resources(after, true);
         before = WithControlInputs(before, controlBasis, false);
         after = WithControlInputs(after, controlCandidate, true);
         RepositoryFacts dotnetBefore = DotNetFactsAssembler.Assemble(before, []);
@@ -59,7 +64,37 @@ internal static class DotNetGroupReader
         PlanRequest bound = joined.Bind(dotnetBefore, dotnetAfter);
         CiPlan plan = await DotNetFactsAssembler.CompleteAsync(
             DotNetFactsAssembler.Select(bound, after), request.Completion, token);
-        return new(plan, joined.Basis, joined.Candidate, controlCandidate.Operation);
+        return new(plan, joined.Basis, joined.Candidate, controlCandidate.Operation,
+            basisResources, candidateResources);
+    }
+
+    internal const string TestProject =
+        "tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj";
+
+    // Projection from already bound Debug/CI native nodes; no second evaluation.
+    internal static DotNetResourceEndpoint Resources(DotNetRevisionInputs inputs, bool candidate)
+    {
+        GitEntry? owner = inputs.Revision.Entries.SingleOrDefault(entry => entry.Path ==
+            TestProject);
+        if (owner is null && !candidate)
+            return new(inputs.Revision.Commit, TestProject, false, []);
+        if (owner is null || owner.ObjectType != "blob" ||
+            owner.Mode is not ("100644" or "100755"))
+            throw new InvalidDataException(
+                "The control test owner must be a committed regular project.");
+        var identities = inputs.Nodes.Where(node => node.Project == TestProject)
+            .Select(node => DotNetRepositoryReader.Key(node.Native.Identity)).ToHashSet(
+                new DotNetRepositoryReader.NativeIdentityComparer());
+        if (identities.Count == 0)
+            throw new InvalidDataException(
+                "The committed control test owner is missing from the native graph.");
+        string[] resources = inputs.Inputs.Where(input => input.Native.Stage == "Evaluation" &&
+            input.Native.Role == "EmbeddedResource" &&
+            identities.Contains(DotNetRepositoryReader.Key(input.Native.Consumer)))
+            .Select(input => input.Path ?? throw new InvalidDataException(
+                "Control test resources require committed source coordinates."))
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        return new(inputs.Revision.Commit, TestProject, true, resources);
     }
 
     private static NodeRepositoryReader NodeReader(GitMaterialization endpoint) =>

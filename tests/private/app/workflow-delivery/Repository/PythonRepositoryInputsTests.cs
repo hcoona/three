@@ -582,6 +582,8 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_run_ruby_ci_group.py", "eng/scripts/run_ruby_ci_group.py")]
     [DataRow("tests/eng/test_run_dotnet_ci_group.py", "eng/scripts/run_node_ci_group.py")]
     [DataRow("tests/eng/test_run_dotnet_ci_group.py", "eng/scripts/run_dotnet_ci_group.py")]
+    [DataRow("tests/eng/test_ci_scope.py", "eng/scripts/run_dotnet_ci_group.py")]
+    [DataRow("tests/eng/test_general_ci_workflow.py", "eng/scripts/run_dotnet_ci_group.py")]
     [DataRow("tests/eng/test_python_release_preparation_gate.py",
         "eng/scripts/check_python_release_preparation.py")]
     [DataRow("tests/eng/test_python_release_preparation_gate.py",
@@ -614,6 +616,18 @@ public sealed class PythonRepositoryInputsTests
             endpoint.Projects, endpoint.Targets, []);
         Owners(bindings, path, "pytest:" + target);
         Assert.DoesNotContain("docs/unrelated.md", bindings.Select(binding => binding.Path));
+    }
+
+    [TestMethod]
+    public void NativeGroupCallerDoesNotBecomeUniversalPythonPreparation()
+    {
+        const string path = "eng/scripts/run_dotnet_ci_group.py";
+        var endpoint = Endpoint(["tests/eng/test_ci_scope.py", "tests/unrelated.py"], [path],
+            members: [Member("."), Member("src/pkg")]);
+        PythonInputBinding[] bindings = PythonRepositoryInputs.Map(endpoint.Revision,
+            endpoint.Projects, endpoint.Targets, [Package()]);
+
+        Owners(bindings, path, "pytest:tests/eng/test_ci_scope.py");
     }
 
     [TestMethod]

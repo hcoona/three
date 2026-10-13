@@ -32,7 +32,6 @@ ALL_INPUTS = {
     ".github/workflows/ci.yml",
     "eng/scripts/ci_scope.py",
     "eng/scripts/repository_path_patterns.py",
-    "eng/scripts/prepare_ci_control_inputs.py",
     "mise.toml",
     "mise.lock",
 }
@@ -201,7 +200,6 @@ def select(
     *,
     base: str,
     full: bool = False,
-    control_inputs: dict | None = None,
 ) -> dict:
     """Select retained special jobs; native groups own product impact."""
     files = set(
@@ -217,7 +215,6 @@ def select(
     for path in paths:
         for job in _work_scopes(path, roots):
             reasons[job].add(path)
-        reasons["dotnet"].update(_resource_reasons(path, control_inputs))
     if full:
         for why in reasons.values():
             why.add("explicit full validation")
@@ -228,25 +225,14 @@ def select(
             path in ALL_INPUTS
             or path == "stylecop.json"
             or _nuget_scenario_input(path)
-            or bool(_resource_reasons(path, control_inputs))
             for path in paths
         ),
         "reasons": {job: sorted(why) for job, why in reasons.items()},
     }
 
 
-def _resource_reasons(path: str, response: dict | None) -> set[str]:
-    if response is None:
-        return set()
-    return {
-        f"{path} -> {endpoint['project']} ({endpoint['revision']})"
-        for endpoint in (response["basis"], response["candidate"])
-        if path in endpoint["inputs"]
-    }
-
-
 def _unique_object(
-    pairs: list[tuple[str, object]], context: str = "control input"
+    pairs: list[tuple[str, object]], context: str = "native readback"
 ) -> dict:
     result: dict = {}
     for name, value in pairs:
@@ -512,14 +498,13 @@ def record_control_owners(
     return reasons
 
 
-def _path_owner_reasons(  # noqa: C901, PLR0912, PLR0913 - Finite roles share explicit endpoint facts.
+def _path_owner_reasons(  # noqa: C901 - Finite roles share explicit endpoint facts.
     path: str,
     *,
     modes: dict[str, str],
     work_roots: dict[str, set[str]],
     manifests: tuple[str, ...],
     bindings: list[dict],
-    native: dict,
 ) -> list[dict]:
     """Describe other-job responsibility without a Python graph or selection."""
     if path not in modes:
@@ -666,13 +651,6 @@ def _path_owner_reasons(  # noqa: C901, PLR0912, PLR0913 - Finite roles share ex
             "native-python-caller-responsibility",
             ["pyproject.toml", *python_manifests],
         )
-    if path in native["inputs"]:
-        add(
-            "dotnet",
-            native["project"],
-            "native-embedded-resource",
-            [native["project"]],
-        )
     for binding in bindings:
         if matches(path, binding["path"]):
             add(
@@ -693,7 +671,6 @@ def endpoint_owners(
     *,
     base: str,
     candidate: str,
-    control_inputs: dict,
 ) -> dict:
     """Project retained responsibility; PNPM supplies native Node ownership."""
     endpoints = {}
@@ -728,7 +705,6 @@ def endpoint_owners(
                     work_roots=work_roots,
                     manifests=manifests,
                     bindings=bindings,
-                    native=control_inputs[name],
                 ),
             }
             for path in paths
@@ -754,42 +730,13 @@ def owner_present(root: Path, revision: str) -> bool:
     return True
 
 
-def read_control_inputs(
-    root: Path, source: Path, *, base: str, candidate: str, full: bool
-) -> dict:
-    """Validate the receiving-process contract before final scope output."""
-    response = json.loads(
-        source.read_text(encoding="utf-8"), object_pairs_hook=_unique_object
-    )
-    if not isinstance(response, dict) or set(response) != {
-        "comparison",
-        "basis",
-        "candidate",
-    }:
-        message = "Missing or malformed native control input response"
-        raise ValueError(message)
-    expected = {"basis": base, "candidate": candidate, "full": full}
-    comparison = response["comparison"]
-    if (
-        not isinstance(comparison, dict)
-        or type(comparison.get("full")) is not bool
-        or comparison != expected
-        or (full and base != candidate)
-    ):
-        message = "Control inputs disagree with the exact Git comparison"
-        raise ValueError(message)
-    for name, revision in (("basis", base), ("candidate", candidate)):
-        _validate_control_endpoint(root, response[name], revision, name)
-    return response
-
-
-def _validate_control_endpoint(
+def validate_resource_endpoint(
     root: Path, endpoint: dict, revision: str, name: str
 ) -> None:
+    """Bind graph-projected resource coordinates to the exact Git endpoint."""
     if (
         not isinstance(endpoint, dict)
-        or set(endpoint)
-        != {"revision", "project", "present", "dimension", "inputs"}
+        or set(endpoint) != {"revision", "project", "present", "inputs"}
         or endpoint["revision"] != revision
         or endpoint["project"] != CONTROL_PROJECT
         or type(endpoint["present"]) is not bool
@@ -801,23 +748,12 @@ def _validate_control_endpoint(
     if endpoint["present"] != present or (name == "candidate" and not present):
         message = "Control project presence disagrees with the native inventory"
         raise ValueError(message)
-    dimension = endpoint["dimension"]
     if not present:
-        if dimension is not None or endpoint["inputs"]:
+        if endpoint["inputs"]:
             message = "An absent control owner cannot return resource facts"
             raise ValueError(message)
         return
-    if (
-        not isinstance(dimension, dict)
-        or set(dimension)
-        != {"configuration", "targetFramework", "runtimeIdentifier"}
-        or dimension["configuration"] != "Debug"
-        or not isinstance(dimension["targetFramework"], str)
-        or not dimension["targetFramework"].strip()
-        or not isinstance(dimension["runtimeIdentifier"], str)
-    ):
-        message = "Unsupported native control resource dimension"
-        raise ValueError(message)
+    modes = _entry_modes(root, revision)
     for path in endpoint["inputs"]:
         if (
             not isinstance(path, str)
@@ -825,6 +761,7 @@ def _validate_control_endpoint(
             or path.startswith("/")
             or "\\" in path
             or any(part in {"", ".", ".."} for part in path.split("/"))
+            or modes.get(path) not in {"100644", "100755"}
         ):
             message = "Noncanonical native resource input coordinate"
             raise ValueError(message)
@@ -834,8 +771,6 @@ def _complete_dotnet_scope(
     root: Path, result: dict, options: argparse.Namespace
 ) -> dict:
     """Join native facts before final applicability."""
-    if not options.dotnet_group_request:
-        return result
     from run_dotnet_ci_group import finish  # noqa: PLC0415
 
     return finish(
@@ -853,10 +788,9 @@ def main() -> int:
     parser.add_argument("--from-ref")
     parser.add_argument("--to-ref", default="HEAD")
     parser.add_argument("--full", action="store_true")
-    parser.add_argument("--control-inputs", type=Path, required=True)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--dotnet-group-request", type=Path)
-    parser.add_argument("--application", type=Path)
+    parser.add_argument("--dotnet-group-request", type=Path, required=True)
+    parser.add_argument("--application", type=Path, required=True)
     options = parser.parse_args()
     if options.dotnet_group_request and options.application is None:
         parser.error("native .NET group requires --application")
@@ -883,13 +817,6 @@ def main() -> int:
             f"{options.from_ref}^{{commit}}",
         ).strip()
         paths = changed_paths(root, base, candidate)
-    control_inputs = read_control_inputs(
-        root,
-        options.control_inputs,
-        base=base,
-        candidate=candidate,
-        full=options.full,
-    )
     result = {
         "base": base,
         "candidate": candidate,
@@ -900,14 +827,12 @@ def main() -> int:
             paths,
             base=base,
             candidate=candidate,
-            control_inputs=control_inputs,
         ),
         **select(
             root,
             paths,
             base=base,
             full=options.full,
-            control_inputs=control_inputs,
         ),
     }
     result = _complete_dotnet_scope(root, result, options)

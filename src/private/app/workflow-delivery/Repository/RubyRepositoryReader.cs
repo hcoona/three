@@ -15,7 +15,7 @@ internal static class RubyRepositoryReader
     internal static readonly string[] CallerSources = [".github/workflows/ci.yml",
         "eng/scripts/run_ruby_ci_group.py", "eng/scripts/run_node_ci_group.py",
         "eng/scripts/run_dotnet_ci_group.py", "eng/scripts/ci_scope.py",
-        "eng/scripts/repository_path_patterns.py", "eng/scripts/prepare_ci_control_inputs.py",
+        "eng/scripts/repository_path_patterns.py",
         "mise.toml", "mise.lock"];
 
     internal static Task<RubyRevisionInputs> ReadAsync(GitMaterialization checkout,

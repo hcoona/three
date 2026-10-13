@@ -74,17 +74,17 @@ jobs:
           MSBUILDLOGTASKINPUTS: '1'
           MSBUILDLOGTASKOUTPUTS: '1'
         run: python eng/scripts/run_dotnet_ci_group.py bootstrap --directory "$RUNNER_TEMP/dotnet-group"
-      - name: Resolve and materialize exact control-input endpoints
+      - name: Resolve and materialize exact native graph endpoints
         id: materialize
         run: |
-          python eng/scripts/prepare_ci_control_inputs.py --application "${{ steps.control.outputs.application }}" prepare \
-            --directory "$RUNNER_TEMP/ci-control-inputs" --event-name "$GITHUB_EVENT_NAME" \
+          python eng/scripts/run_dotnet_ci_group.py materialize --application "${{ steps.control.outputs.application }}" \
+            --directory "$RUNNER_TEMP/ci-endpoints" --event-name "$GITHUB_EVENT_NAME" \
             --event-path "$GITHUB_EVENT_PATH" --candidate "$GITHUB_SHA"
-      - name: Setup candidate resource SDK
+      - name: Setup candidate graph SDK
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: ${{ steps.materialize.outputs.candidate_directory }}/global.json
-      - name: Setup basis resource SDK
+      - name: Setup basis graph SDK
         if: steps.materialize.outputs.basis_separate == 'true'
         uses: actions/setup-dotnet@v6
         with:
@@ -93,25 +93,22 @@ jobs:
         id: dotnet-group
         run: |
           python eng/scripts/run_dotnet_ci_group.py prepare --directory "$RUNNER_TEMP/dotnet-group" \
-            --endpoints "$RUNNER_TEMP/ci-control-inputs/group-endpoints.json"
+            --endpoints "$RUNNER_TEMP/ci-endpoints/group-endpoints.json"
       - name: Select work from the actual comparison
         id: select
         env:
-          CONTROL_REQUEST: ${{ steps.materialize.outputs.request }}
           COMPARISON_BASE: ${{ steps.materialize.outputs.basis }}
           TESTED_CANDIDATE: ${{ steps.materialize.outputs.candidate }}
           FULL: ${{ steps.materialize.outputs.full }}
         run: |
           python --version
-          python eng/scripts/prepare_ci_control_inputs.py --application "${{ steps.control.outputs.application }}" evaluate \
-            --request "$CONTROL_REQUEST" --response "$RUNNER_TEMP/ci-control-inputs/response.json"
           if [[ "$FULL" == 'true' ]]; then
-            uv run --frozen --no-sync python eng/scripts/ci_scope.py --full --control-inputs "$RUNNER_TEMP/ci-control-inputs/response.json" \
+            uv run --frozen --no-sync python eng/scripts/ci_scope.py --full \
               --output artifacts/ci-scope.json --application "${{ steps.control.outputs.application }}" \
               --dotnet-group-request "${{ steps.dotnet-group.outputs.request }}"
           else
             uv run --frozen --no-sync python eng/scripts/ci_scope.py --from-ref "$COMPARISON_BASE" \
-              --to-ref "$TESTED_CANDIDATE" --control-inputs "$RUNNER_TEMP/ci-control-inputs/response.json" \
+              --to-ref "$TESTED_CANDIDATE" \
               --output artifacts/ci-scope.json --application "${{ steps.control.outputs.application }}" \
               --dotnet-group-request "${{ steps.dotnet-group.outputs.request }}"
           fi
@@ -414,9 +411,9 @@ jobs:
           PLAN_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
           COMPARISON_BASIS: ${{ needs.scope.outputs.base }}
           TESTED_CANDIDATE: ${{ needs.scope.outputs.candidate }}
-          TESTINGPLATFORM_DIAGNOSTIC: "1"
+          TESTINGPLATFORM_DIAGNOSTIC: '1'
           TESTINGPLATFORM_DIAGNOSTIC_VERBOSITY: Trace
-          TESTINGPLATFORM_DIAGNOSTIC_SYNCHRONOUS_WRITE: "1"
+          TESTINGPLATFORM_DIAGNOSTIC_SYNCHRONOUS_WRITE: '1'
           TESTINGPLATFORM_DIAGNOSTIC_OUTPUT_DIRECTORY: ${{ runner.temp }}/dotnet-execution/mtp-diagnostics
         run: |
           python eng/scripts/run_dotnet_ci_group.py execute --transfer "$RUNNER_TEMP/dotnet-plan-transfer" \

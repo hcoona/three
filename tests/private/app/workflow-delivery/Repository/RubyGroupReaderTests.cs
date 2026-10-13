@@ -69,7 +69,6 @@ public sealed class RubyGroupReaderTests(TestContext context)
     [DataRow("eng/scripts/run_dotnet_ci_group.py")]
     [DataRow("eng/scripts/ci_scope.py")]
     [DataRow("eng/scripts/repository_path_patterns.py")]
-    [DataRow("eng/scripts/prepare_ci_control_inputs.py")]
     [DataRow("mise.toml")]
     [DataRow("mise.lock")]
     public async Task ActualCallerInputsSelectAdoptedChecksAcrossBothEndpoints(string path)

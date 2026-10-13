@@ -11,7 +11,7 @@ internal static class PythonRepositoryInputs
         "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby";
     private static readonly string[] Shared = [
         ".github/workflows/ci.yml", "eng/scripts/ci_scope.py",
-        "eng/scripts/repository_path_patterns.py", "eng/scripts/prepare_ci_control_inputs.py",
+        "eng/scripts/repository_path_patterns.py",
         "eng/scripts/run_python_ci_group.py",
         "mise.toml", "mise.lock"];
     private static readonly string[] Preparation = [
@@ -152,6 +152,8 @@ internal static class PythonRepositoryInputs
             path == "eng/scripts/run_node_ci_group.py") ||
         (target == "tests/eng/test_run_ruby_ci_group.py" &&
             path == "eng/scripts/run_ruby_ci_group.py") ||
+        (target is "tests/eng/test_ci_scope.py" or "tests/eng/test_general_ci_workflow.py" &&
+            path == "eng/scripts/run_dotnet_ci_group.py") ||
         (target == "tests/eng/test_run_dotnet_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target == "tests/eng/test_python_release_preparation_gate.py" &&

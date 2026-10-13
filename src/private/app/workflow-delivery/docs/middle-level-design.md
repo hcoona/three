@@ -373,39 +373,39 @@ dynamic admission policy.
 
 ### Control-Test Resource Consumer
 
-The existing general .NET CI owner must be selected when a changed input is
-embedded by `tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj`.
-Read `EmbeddedResource` at both comparison revisions through supported native
-MSBuild evaluation. This is one concrete input-consumer projection, not a
-complete .NET graph or another resource declaration. Preserve the existing owner.
+The ordinary .NET responsibility join selects the existing control-test owner
+for changed embedded resources through the bound native project graph. Its
+concrete owner is `tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj`.
+The dedicated NuGet scenario job also consumes that owner's evaluation-stage
+`EmbeddedResource` coordinates at both comparison endpoints, including resources
+outside project roots. Unrelated .NET selection does not trigger that job.
 
-Evaluate the owner's default property context in one query: set
-`Configuration=Debug`, with no TFM/RID global override, and request
-`MSBuildProjectFullPath`, `Configuration`, `TargetFramework`, `TargetFrameworks`,
-`RuntimeIdentifier`, `RuntimeIdentifiers` and `EmbeddedResource` together.
-Use `-noAutoResponse`; request no target, target result, restore or repair.
-The initial supported shape has one nonempty effective TFM, empty multiple-TFM
-and multiple-RID declarations and a possibly empty effective RID. Reject an
-unsupported relevant shape. Reuse the native reader's project/path/item
-validation and original committed spelling; do not build a dimension service.
-Each endpoint uses its own committed inputs, SDK and locked native preparation.
+Use the already successful native endpoint graph under its actual
+`Configuration=Debug`, `ContinuousIntegrationBuild=true` and locked-restore
+operation globals. Union resource inputs across the owner's returned native
+nodes using complete project/global identities; do not infer TFM/RID variants or
+run a separate evaluator. This context replaces the former single default,
+non-CI evaluation; the two contexts are not claimed equivalent.
 
-At the C#-to-Python process boundary, the required response carries the exact
-native comparison and each endpoint's revision, project, concrete effective
-dimension and committed resource array. Represent confirmed base-project absence
-explicitly; missing facts or failed evaluation are not absence. The candidate
-must retain the named owner; moving or replacing it requires an atomic reviewed
-owner change. An absent/nonregular candidate project, conflicting identity,
-missing materialized input or unavailable native preparation fails selection.
+Project committed source coordinates from the bound inputs. A provider-only or
+uncommitted required resource cannot disappear from the union: report the
+projection unavailable. Candidate owner presence is mandatory. Confirm basis
+absence through exact committed inventory; a present owner missing from the
+native graph is unavailable, not absent. Retain original Git spelling.
 
-The receiving selector binds the response to the checked-out candidate and
-Git-resolved basis, then intersects changed paths with both resource input sets.
-A hit adds the existing .NET owner with its changed path, project and revision
-reason to the final scope. Retain other selector reasons and owners. Emit
-successful scope outputs only after required response validation and final
-selection; no later executor override or automatic full fallback is permitted.
-Explicit manual full retains the native `basis == candidate` comparison identity.
-The process response is a consumed input, not an internal trust or approval record.
+The existing .NET group readback carries each endpoint's revision, concrete
+project, presence and resource array alongside the original plan and joined
+responsibilities. The Python receiver checks the comparison and endpoint binding,
+then intersects changed coordinates with resources at either endpoint. Finalize
+`nuget_reproducibility` from those hits and the existing explicit-full,
+scenario-source and shared-input predicates only after successful native
+readback. Missing, malformed, failed or conflicting facts fail selection; they
+cannot produce successful non-applicability or a full fallback.
+
+No separate resource CLI, restore, evaluator, dimension record or resource
+artifact is retained. The readback is the existing process-transfer contract;
+it does not establish another trust or approval mechanism. Explicit full keeps
+the exact `basis == candidate` comparison.
 
 ### GitHub Event Comparison
 
