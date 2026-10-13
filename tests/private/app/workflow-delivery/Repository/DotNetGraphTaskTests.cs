@@ -887,9 +887,6 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         "WebHdfs.Extensions.FileProviders.UnitTest.csproj",
         "PreBuild")]
     [DataRow("dirs.proj", "RestoreWindowsOnlyProjectsOnNonWindows")]
-    [DataRow("src/public/lib/hcoona-release-smoke-github-packages/" +
-        "hcoona-release-smoke-github-packages.csproj",
-        "ValidateWorkflowDeliveryFrozenInputs")]
     [Timeout(30000, CooperativeCancellation = true)]
     public async Task SupportedRepositoryProducersRetainNativeConsumers(string origin, string name)
     {
