@@ -2,7 +2,7 @@
 
 ## Status
 
-This page defines the requirements for the repository-internal V3 contraction.
+This page defines the requirements for the repository-internal V3 application.
 It owns intended product behavior and scope, including the requirements changes
 accepted for the contraction. Architecture and implementation alignment follow
 these requirements; their completion is not a prerequisite for agreeing them.
@@ -14,12 +14,15 @@ markers, not continuing obligations.
 
 ## Requirements and Implementation Transition
 
-These requirements govern new contraction work. The
-[HLD](high-level-design.md) defines the replacement architecture and order;
+These requirements govern the current internal application. The
+[HLD](high-level-design.md) defines its architecture and responsibilities;
 the [middle-level design](middle-level-design.md) defines its component,
 selection, execution, transfer and outcome contracts. The
 [implementation plan](migration-strategy.md) maps their concrete callers and
-validation dependencies. These documents do not claim implementation cutover.
+validation dependencies. The [application interface](../README.md) and
+[handoff](agent-handoff.md) route the implemented CLI and ordinary callers.
+The former public Python control runtime and its obsolete callers are retired;
+historical readers use their [actual pinned producer source](validation/historical-readers.md).
 The existing glossary, ecosystem LLDs and pinned former migration plan, together with the
 [pinned former MLDs](README.md#normative-hierarchy), describe the pre-contraction
 implementation and retained evidence contracts for their actual consumers.
@@ -41,12 +44,13 @@ publication. Existing operation protocols continue to bound their historical
 readers and any separately authorized operation; future operations require their
 own concrete authorization and applicable protocol.
 
-For each affected scope, confirm these requirements first, reconcile the HLD
+For later changes, confirm the affected requirements first, reconcile the HLD
 and necessary contracts next, then implement and validate before switching its
 callers. Update the relevant implementation-baseline notice when that scope is
 aligned. Any feasibility conflict returns to an explicit requirement decision.
-Do not assume the current implementation already satisfies the replacement
-requirements or silently keep removed mechanisms as new design obligations.
+Changed-source qualification remains necessary; prior success does not qualify
+a different implementation or environment. Removed mechanisms do not become
+new design obligations.
 
 [implementation-requirements]: https://github.com/hcoona/three/blob/f1c3ec1039625464d76cf09a06bd2363fdaaf056/src/public/lib/three-workflow-delivery-v3/docs/requirements.md
 
@@ -523,7 +527,7 @@ The [Ruby LLD](hcoona-release-smoke-ruby-lld.md) retains the existing gem, nativ
 - **WD-RUBY-006:** Retired - current authority: WD-SYS-004
 - **WD-RUBY-007:** Retired - current authority: WD-SEC-004
 
-## Requirements Stage Exit
+## Requirement Change Review
 
 Requirements review is complete when the supported journeys, mandatory behavior,
 non-goals and platform assumptions have explicit dispositions and no unresolved
@@ -532,6 +536,5 @@ then maps the accepted behavior to responsibilities and necessary contracts.
 
 Later design cannot silently weaken these requirements. Support and completion
 claims require the corresponding implementation and validation; requirements
-acceptance alone supplies neither. The Wave entry is removed when its complete
-bounded contraction outcome is accepted, not merely when this requirements stage
-finishes.
+acceptance alone supplies neither. The [repository record policy](../../../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+owns work authorization and its termination through accepted Wave changes.

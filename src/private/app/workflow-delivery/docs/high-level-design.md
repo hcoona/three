@@ -12,7 +12,7 @@ The [middle-level design](middle-level-design.md) owns the component,
 selection, execution, transfer and outcome contracts for this architecture.
 The [implementation plan](migration-strategy.md) maps concrete projects/callers,
 integration contracts and retirement dependencies.
-The [Wave](../../../../../docs/delivery-wave.md) authorizes the bounded work;
+The [Wave](../../../../../docs/delivery-wave.md) owns current work authorization;
 the [handoff](agent-handoff.md) retains operational limits. The
 [pinned former MLDs and migration plan](README.md#normative-hierarchy),
 old glossary and ecosystem LLDs describe the historical
@@ -390,32 +390,30 @@ failure does not undo an established result; missing required completion evidenc
 leaves uncertainty. No permanent ledger or mandatory per-product GitHub Release
 is added.
 
-## Implementation and Retirement Order
+## Implementation and Retirement Boundaries
 
-Confirm this architecture and affected boundary contracts/validation basis, then
-implement directly in the final private application location. Do not first move
-the old Python framework and then port all its abstractions.
+The application and its tests use the final private locations. The old Python
+framework is retired rather than relocated or ported class for class.
 
-Introduce the native fact/impact and build/check code needed for the first
-complete CI journey. Complete common Release preparation, dry run and
-destination/result contracts before switching their callers. Cut over bounded
-complete journeys, with one active authoritative path each. Temporary comparison
-execution is explicitly non-authoritative. Dependencies drive this order; there
-is no obligation to keep two long-lived systems.
+Native fact/impact and build/check code serve the retained CI groups. Common
+Release preparation, dry run and destination/result contracts serve the ordinary
+callers. Each journey has one active authoritative path; historical comparisons
+and evidence readers do not create a second runtime. Changes preserve complete
+journeys and their actual dependency, permission and transfer boundaries.
 
-Consolidate provider and native-consumer helpers as internal modules, retaining
-actual process boundaries. Retire the static-reference scanner and its admission
-callers. Keep real ecosystem manifests and consumer projects as fixtures without
+Provider and native-consumer helpers are internal modules with actual process
+boundaries. The static-reference scanner and its admission callers are retired.
+Real ecosystem manifests and consumer projects remain ordinary fixtures without
 special trust. The independently useful `nbgv-python` remains public. Necessary
 native fixtures do not contradict the one-application/one-test starting point.
 
-Switch or retire workflow/CLI callers, tests, schemas and dependencies with each
-journey. There is no old-format/API compatibility requirement. Preserve original
-historical outcomes and provenance required by current readers, without creating
-a legacy replay product. Retire old design/implementation carriers when their
-last concrete consumer is gone; five MLDs are not a target-design requirement.
+Workflow/CLI callers, tests, schemas and dependencies follow their current
+journey owners. There is no old-format/API compatibility requirement. Historical
+outcomes and provenance remain with their actual readers and pinned producer
+source, without a legacy replay product. Old design/implementation carriers
+remain only for concrete evidence consumers.
 
-## Validation Basis and Remaining Design Work
+## Validation Basis and Integration Contracts
 
 Scenario tests cover selected CI and complete variants/checks, development dry
 runs, Buddy/Official eligibility, exact-state completion, supported missing-file
@@ -432,11 +430,12 @@ files, clean consumption and same-input reproducibility without cross-commit or
 old/new-format byte equality.
 
 The [middle-level design](middle-level-design.md) closes common selection,
-quality, package/consumer, Release-state and transfer behavior. Before each
-implementation scope, specify concrete command/transfer fields, native fact
-extraction coverage, destination completion conditions/read bounds, runner mapping
-and retention. Validate/review them with their caller group. These are bounded
-implementation contracts, not new frameworks or automatic owner questions.
+quality, package/consumer, Release-state and transfer behavior. The
+[integration contract](migration-strategy.md) specifies concrete command/transfer
+fields, native fact extraction coverage, destination completion conditions/read
+bounds, runner mapping and retention. Changes validate/review these boundaries
+with their affected caller group. These are bounded implementation contracts,
+not new frameworks or automatic owner questions.
 New behavior, trust-boundary or material scope/cost conflicts return for owner
 disposition.
 

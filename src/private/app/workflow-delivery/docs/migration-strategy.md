@@ -7,6 +7,8 @@ This contract connects the [HLD](high-level-design.md) and
 integrations, ordinary workflow callers and retirement boundaries. Implementers
 and reviewers use it to preserve complete journeys across actual process,
 permission and artifact transfers. It is not an execution or publication grant.
+The contracts below govern current integrations and changes to them; their
+preparation and acceptance conditions are not a remaining migration backlog.
 The [Wave](../../../../../docs/delivery-wave.md) owns work authorization;
 [agent handoff](agent-handoff.md) retains operation and evidence limits.
 
@@ -1309,36 +1311,23 @@ retired proof contracts are expected to differ. Windows remains the accepted
 assumption, with ordinary changed-code validation rather than a new feasibility
 gate. Local tests and fixture success are not new live destination acceptance.
 
-## Dependency-Ordered Delivery
+## Current Integration Boundaries
 
-1. Introduce the final private CLI/test projects and native facts/selection core.
-   Close the concrete fields above with the first caller, establish local-reference
-   and quality scenarios, and give the application tests one root CI owner.
-2. Switch complete CI groups in Node, .NET, Python and Ruby as their native facts,
-   full selected variants and package/check contracts are implemented. Move each
-   corresponding fixture atomically. Preserve outside-group CI ownership and
-   reject unresolved cross-group closure; no fixed lane port or full-run fallback.
-3. Implement complete common Release preparation and development dry run before
-   privileged callers. Consolidate native provider/consumer helpers and the Python
-   locked-build-input consumers with those integrations.
-4. Switch ordinary destination callers one complete permission/transfer/result
-   boundary at a time. Preserve native trust identities; make required consumer
-   conditions, read limits and retention concrete before the change. Keep external
-   configuration/live acceptance outside this source-only grant.
-5. Retire closed campaign callers and obsolete admission/scanner groups with their
-   last active consumer, extracting shared native behavior first. Campaign source
-   needed by evidence readers is pinned in Git rather than ported as a second tool.
-6. Remove remaining Python entrypoints, dependencies and workspace/test/task roots;
-   move the project authority/evidence root directly to the final private location.
-   Reconcile all root selectors, record bindings and documentation readers, then
-   rerun affected native scenarios, HK, record checks and independent reviews.
+The final private CLI/test projects own native facts, meaningful impact selection,
+complete selected CI checks and common Release behavior. Node, .NET, Python and
+Ruby groups use their native contracts and original candidate-bound plans.
+Ordinary destination callers retain their actual permission, transfer, consumer
+and result boundaries. The fixtures, native helpers, root tooling and project
+records use their current private locations. Independently useful public
+components retain their own consumers.
 
-The last two items may accompany earlier groups when their dependencies are
-already closed. Do not preserve a retired framework merely to enforce this list's
-numbering. Each delivery PR names the actual caller group, switched authority,
-retained old consumers, validation and unresolved native effects. The contraction
-is complete only when the Wave's implementation and retirement outcome is met;
-accepting this plan alone does not complete #985, #986 or the Wave.
+Closed campaign callers, the public Python control package, obsolete admission
+and scanner groups, and old-basis compatibility mappings are retired. Historical
+evidence readers use actual pinned producer source rather than a runtime fallback.
+Later changes reconcile actual callers, selectors, workspace/version inputs,
+record routing and complete affected validation together. Their source acceptance
+does not qualify new live destination behavior or reopen a stopped campaign;
+work and operation authorization remain with the accepted Wave and domain gates.
 
 [baseline]: https://github.com/hcoona/three/tree/67f294cfd864a6376c14bee4a9f2ed0b92af9552
 [former-plan]: https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md
