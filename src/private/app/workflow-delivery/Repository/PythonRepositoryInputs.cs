@@ -105,6 +105,7 @@ internal static class PythonRepositoryInputs
         foreach (string path in Pytest)
             foreach (PythonPytestTarget target in targets.Targets)
                 Add(path, "pytest:" + target.Target);
+        foreach (string path in paths.Where(InertControlDocument)) Add(path, null);
         foreach (PythonPytestTarget target in targets.Targets)
         {
             string owner = "pytest:" + target.Target;
@@ -120,7 +121,7 @@ internal static class PythonRepositoryInputs
             .Select(item => new PythonInputBinding(item.Key, [],
                 item.Value.Order(StringComparer.Ordinal).ToArray())).ToArray();
 
-        void Add(string path, string owner)
+        void Add(string path, string? owner)
         {
             ImpactPlanner.ValidatePath(path);
             if (entries.TryGetValue(path, out GitEntry? entry) &&
@@ -128,7 +129,7 @@ internal static class PythonRepositoryInputs
                 throw new InvalidDataException("Python repository inputs require regular files.");
             if (!inputs.TryGetValue(path, out HashSet<string>? consumers))
                 inputs.Add(path, consumers = new(StringComparer.Ordinal));
-            consumers.Add(owner);
+            if (owner is not null) consumers.Add(owner);
         }
     }
 
@@ -223,9 +224,11 @@ internal static class PythonRepositoryInputs
             "eng/scripts/workflow_release_acceptance_gate.py" or
             "eng/scripts/workflow_release_control.py";
 
+    private static bool InertControlDocument(string path) =>
+        path == "src/private/app/workflow-delivery/README.md" ||
+        path.StartsWith("src/private/app/workflow-delivery/docs/", StringComparison.Ordinal);
+
     private static bool Under(string path, string root) =>
-        !(root == "src/private/app/workflow-delivery" &&
-          (path.StartsWith(root + "/docs/", StringComparison.Ordinal) ||
-           path == root + "/README.md")) &&
+        !(root == "src/private/app/workflow-delivery" && InertControlDocument(path)) &&
         (path == root || path.StartsWith(root + "/", StringComparison.Ordinal));
 }

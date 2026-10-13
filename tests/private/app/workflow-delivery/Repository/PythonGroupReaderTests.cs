@@ -128,6 +128,20 @@ public sealed class PythonGroupReaderTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow("src/private/app/workflow-delivery/README.md")]
+    [DataRow("src/private/app/workflow-delivery/docs/high-level-design.md")]
+    public async Task DeclaredControlDocumentsRemainNonconsumersWithPythonCallerResponsibility(
+        string path)
+    {
+        using var fixture = await Fixture.CreateAsync(path, false,
+            context.CancellationToken, "python");
+        PythonGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
+        Assert.IsEmpty(result.Plan.Checks);
+        Assert.HasCount(2, fixture.Collected);
+        Assert.AreEqual(fixture.Request.Candidate.Checkout.Reference, result.Plan.Candidate);
+    }
+
+    [TestMethod]
     [DataRow(null)]
     [DataRow("python")]
     public async Task UnknownOrLegacyPythonHeuristicCannotBecomeSuccessfulNoWork(string? owner)
@@ -294,14 +308,16 @@ public sealed class PythonGroupReaderTests(TestContext context)
                     new("src/input", "input", [], [])];
                 var configuration = new PythonPytestConfiguration("pyproject.toml",
                     ["src/input/tests"], ["--import-mode=importlib"]);
-                PythonInputBinding[] inputs = CrossInput ?
-                    [new("src/other/code.cs", [], ["pytest:src/input/tests"])] : [];
                 var metadata = new PythonMetadata(checkout.Root, "workspace", ">=3.14",
                     projects.Select(project => new PythonMetadataMember(project.Name,
                         project.Directory, project.Name)).ToArray(),
                     new Dictionary<string, PythonMetadataNode>());
                 PythonPytestTargetSet targets = PythonPytestTargets.Bind(configuration,
                     checkout.Revision, projects);
+                PythonInputBinding[] inputs = [.. PythonRepositoryInputs.Map(checkout.Revision,
+                    projects, targets, []), .. CrossInput
+                        ? new[] { new PythonInputBinding("src/other/code.cs", [],
+                            ["pytest:src/input/tests"]) } : []];
                 var result = new PythonRevisionInputs(new(checkout.Revision, projects,
                     configuration, endpoint.Collection.Operation, [], inputs),
                     new(metadata, endpoint.Collection.Graph.Interpreter, [], [], projects, []),

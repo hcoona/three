@@ -816,6 +816,58 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
+    [DataRow("src/private/app/workflow-delivery/README.md")]
+    [DataRow("src/private/app/workflow-delivery/docs/high-level-design.md")]
+    public void InertControlDocumentsRetainExplicitPairedNonconsumerFacts(string path)
+    {
+        foreach ((bool before, bool after) in QualityPresence)
+        {
+            PythonFactsEndpoint basis = Facts(Endpoint(["tests/unrelated.py"],
+                before ? [path] : [], "before"));
+            PythonFactsEndpoint candidate = Facts(Endpoint(["tests/unrelated.py"],
+                after ? [path] : [], "after"));
+            if (before) Owners(basis.Inputs, path);
+            if (after) Owners(candidate.Inputs, path);
+            SelectionReason[] reasons = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+            Assert.IsEmpty(reasons);
+            PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+                [path], false, reasons);
+            Assert.IsEmpty(ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+            if (before) Assert.Contains(path, assembly.Request.Basis.UnaffectedPaths);
+            if (after) Assert.Contains(path, assembly.Request.Candidate.UnaffectedPaths);
+        }
+    }
+
+    [TestMethod]
+    public void ActualDocumentConsumerTakesPrecedenceOverInertControlClassification()
+    {
+        const string path = "src/private/app/workflow-delivery/docs/native-input.json";
+        const string target = "tests/unrelated.py";
+        PythonFactsEndpoint basis = Facts(Endpoint([target], [path], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint([target], [path], "after"));
+        candidate = candidate with
+        {
+            Inputs = [.. candidate.Inputs, new(path, [], ["pytest:" + target])]
+        };
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, PythonRepositoryInputs.Pair(basis, candidate, [path]));
+        PlannedCheck check = Assert.ContainsSingle(
+            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+        Assert.AreEqual("pytest:" + target, check.Work.Key.Target);
+        Assert.DoesNotContain(path, assembly.Request.Candidate.UnaffectedPaths);
+    }
+
+    [TestMethod]
+    [DataRow("src/private/app/workflow-delivery/README-other.md")]
+    [DataRow("src/private/app/workflow-delivery/docs-other/input.txt")]
+    public void DocumentationExclusionCannotCertifyNearbyUnmappedInputs(string path)
+    {
+        PythonFactsEndpoint endpoint = Facts(Endpoint(["tests/unrelated.py"], [path]));
+        Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(
+            endpoint, endpoint, [path], false));
+    }
+
+    [TestMethod]
     public void UnassociatedPathRemainsUnresolved()
     {
         var endpoint = Endpoint(["tests/standalone.py"], ["docs/unknown.md"]);
