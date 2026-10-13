@@ -359,11 +359,15 @@ eight qualification gates continue to govern changes to this operation.
 #### Native Process and Endpoint Facts
 
 Build the candidate private application completely before task use. Its native
-locked restore, build and output-path query specify `dotnet` as the mise tool
+locked restore and combined Build/output-path query specify `dotnet` as the mise tool
 argument, preserving configured SDK choices while restricting automatic missing-tool
 installation to that control dependency. Other configured tools may remain in
 the native environment; this is not isolation or a zero-network guarantee. Its
-assembly supplies one public `ITask` entry loaded through `UsingTask` in an ordinary
+Build invocation requests `-getProperty:TargetPath` after the target and retains
+the complete Build binlog. Require the returned absolute existing output inside
+the control checkout; do not predict its path or start a second evaluation merely
+to obtain that property. Native restore and Build failures remain unavailable.
+Its assembly supplies one public `ITask` entry loaded through `UsingTask` in an ordinary
 endpoint-selected `dotnet msbuild` process. Use native `ProjectGraph` with explicit
 entry/global properties. MSBuild owns SDK resolution, task/dependency loading,
 evaluation and reference propagation. Do not introduce MSBuildLocator, a custom

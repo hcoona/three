@@ -228,7 +228,7 @@ def build(root: Path, directory: Path, name: str) -> tuple[Path, Path]:
         "-binaryLogger:" + str(directory / (name + "-restore.binlog")),
     )
     log = directory / (name + ".binlog")
-    run(
+    target = run(
         root,
         directory,
         name + "-build",
@@ -243,26 +243,9 @@ def build(root: Path, directory: Path, name: str) -> tuple[Path, Path]:
         "-nologo",
         "-noAutoResponse",
         "-target:Build",
+        "-getProperty:TargetPath",
         *BUILD_PROPERTIES,
         "-binaryLogger:" + str(log),
-    )
-    target = run(
-        root,
-        directory,
-        name + "-target",
-        "mise",
-        "exec",
-        "--locked",
-        "dotnet",
-        "--",
-        "dotnet",
-        "msbuild",
-        CONTROL_PROJECT,
-        "-nologo",
-        "-noAutoResponse",
-        *BUILD_PROPERTIES,
-        "-getProperty:TargetPath",
-        "-binaryLogger:" + str(directory / (name + "-target.binlog")),
     ).strip()
     path = Path(target)
     if (
