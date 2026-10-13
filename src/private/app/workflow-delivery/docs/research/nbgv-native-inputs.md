@@ -8,7 +8,7 @@ The [middle-level contract](../middle-level-design.md#minimum-facts) consumes th
 research. Source inspection identifies the integration; the
 [local application observation](#local-application-observation) qualifies
 ordinary compilation and runtime dependency delivery on Linux. Complete CI
-integration remains pending.
+integration is outside that observation's evidence scope.
 
 The source pin is NBGV 3.10.94, commit
 `dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb`, retrieved on 2026-10-03/04.
@@ -121,11 +121,14 @@ a replacement evaluator or a full-run fallback.
 
 ## Bounded Local Application Qualification Protocol
 
-This protocol becomes executable only after repository acceptance under the
-[contraction Wave](../../../../../../docs/delivery-wave.md). It qualifies the
-official-library delivery candidate and the already implemented PNPM reader at
-the repository-selected pin. It is a distinct application qualification, not a
-refill or repetition of either completed PNPM CLI research budget.
+This historical protocol was admitted under the
+[then-accepted contraction Wave](https://github.com/hcoona/three/blob/ab0b6f67afa73e842e3d70d9c09a881c83f6b351/docs/delivery-wave.md#complete-the-workflow-v3-contraction).
+It qualified the official-library delivery candidate and the already implemented
+PNPM reader at the repository-selected pin, as recorded in the observation below.
+Its retained recipe supplies no current execution permission; future work requires
+the [current Wave](../../../../../../docs/delivery-wave.md) and applicable concrete
+authorization. It was a distinct application qualification, not a refill or
+repetition of either completed PNPM CLI research budget.
 
 - **Subject and environment:** active Linux x86_64 host, repository-pinned .NET
   SDK, NBGV 3.10.94 and PNPM 12.8.2. Record the accepted protocol commit, exact

@@ -33,10 +33,13 @@ It produces the complete four-check partition with candidate equal to basis; thi
 isolates execution, not changed-commit impact completeness. No workspace roster,
 backend requirements, UV resolver, group semantics or version engine is copied.
 
-The accepted contraction Wave permits isolated builds/tests, credential-free
-adapter validation and tool/dependency preparation. This distinct finite local
-package activity uses that grant only after the exact concrete protocol receives
-independent engineering/OCR, record/research review and protected merge. It does
+The [then-accepted contraction Wave](https://github.com/hcoona/three/blob/3bf79a4ba11676e9ec74934b0402edb10f7928b7/docs/delivery-wave.md#complete-the-workflow-v3-contraction)
+permitted isolated builds/tests, credential-free adapter validation and
+tool/dependency preparation. This distinct finite local package activity required
+independent engineering/OCR, record/research review and protected acceptance of
+its exact concrete protocol before execution. The retained recipe below is
+historical; future work requires the [current Wave](../../../../../../docs/delivery-wave.md)
+and its applicable concrete authorization. This record does
 not revive graph/enrichment/native publication campaigns, refund failed calls or
 authorize registry writes, authentication/access/Environment changes or dispatch.
 
@@ -1417,18 +1420,21 @@ included.
 
 ## Fresh Output-Option Package Reserve
 
-### Current approval and purpose
+### Historical approval and purpose
 
 The owner approved three additional fresh package lifetimes for the repaired
 four-check composition, with at most 32 reserved recipe calls and 600 inclusive
 seconds per lifetime, and 1,800 cumulative inclusive seconds for this new reserve.
 Stop at the first independently accepted complete success and expire unused
 package reserve. A started or uncertain launch consumes a lifetime without refund.
-This is a new campaign, not renewal of any historical grant. The accepted
-[contraction Wave](../../../../../../docs/delivery-wave.md#complete-the-workflow-v3-contraction)
-continues to supply the repository-work authority and exclusions; this accepted
-concrete protocol supplies the bounded native recipe. Independent engineering/OCR
-and record/research review and normal protected merge precede the first launch.
+This was a new campaign, not renewal of any historical grant. At this historical
+admission, the then-accepted
+[contraction Wave](https://github.com/hcoona/three/blob/9992b45b87efb36da524a7fb66b691353ab96aa0/docs/delivery-wave.md#complete-the-workflow-v3-contraction)
+supplied the repository-work authority and exclusions; the protected concrete
+protocol supplied the bounded native recipe. Independent engineering/OCR and
+record/research review and normal protected merge were prerequisites for launch.
+Neither historical reference grants current work; current and future work
+authorization remains with the [accepted repository Delivery Wave](../../../../../../docs/delivery-wave.md).
 Owner approval does not substitute for those gates or prove native success.
 
 The prior three corrected-campaign lifetimes remain failed and spent. Readiness13

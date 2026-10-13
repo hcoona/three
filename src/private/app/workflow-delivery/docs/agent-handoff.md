@@ -11,9 +11,9 @@ before affected design, implementation or caller changes. Use the current
 [application interface](../README.md) and actual native sources for operations.
 
 The accepted [Wave](../../../../../docs/delivery-wave.md) is the sole positive
-work authority. Its whole-contraction outcome includes implementation, caller
-cutover, validation and retirement. A PR, proposed document, research result,
-local observation or merged source cannot grant itself broader effects.
+work authority. Further substantive work requires an accepted entry. A PR,
+proposed document, research result, local observation or merged source cannot
+grant itself broader effects.
 Do not use Workflow v1/v2 to fill a V3 decision gap. Internal formats may break;
 there is no requirement to retain old readers in the new core.
 
@@ -164,4 +164,5 @@ own current interfaces and route to canonical contracts. Git and PR/Issue
 carriers retain chronology; do not add retry ledgers, test-count histories or
 session machinery to current pages or the Wave. Preserve unique human facts,
 licenses, actual producer source and original failures before retirement.
-Delete the Wave entry only after its entire accepted outcome is complete.
+Use the accepted Wave and record policy for work authorization and its
+termination.

@@ -596,8 +596,10 @@ queries; each query retains its own endpoint configuration, lock, groups and
 actual Linux interpreter facts. Preserve native configuration preflight,
 ambient-setting/error behavior and owned credential-free query state. Necessary
 tool preparation or compilation failure, timeout or cancellation stops analysis.
-This proposed preparation still needs actual caller qualification; the stopped
-graph/enrichment observations do not establish installation or caller success.
+The current native Python callers own this preparation. Affected preparation or
+caller changes require qualification of their actual source and environment;
+stopped graph/enrichment observations alone do not establish installation or
+caller success.
 
 Reuse the accepted native metadata, passive extraction, UV supplement and pytest query;
 candidate facts cannot substitute for missing basis facts. Bind actual quality
@@ -656,13 +658,14 @@ independent package obligations visible even when pytest fails. The package
 partition retains its separate phase-specific preparation, original archives and
 four required distribution checks under the contract below.
 
-Controlled validation covers root-only and mixed member preparation, native
-name/target agreement, explicit full versus incremental selection, complete
-partition/result transfer and failures/cancellation. Ordinary authorized PR CI
-must qualify the complete caller group before cutover. The existing local full
-runner and smoke PR caller remain until their selected/full preparation and check
-consumers switch together. No local package experiment, historical campaign,
-Release or publication authority follows from this integration contract.
+The root CI group and local full runner use the same native Python group and
+preparation contract. Affected producer/consumer changes preserve selected/full
+preparation and complete checks together. Controlled validation covers root-only
+and mixed member preparation, native name/target agreement, explicit full versus
+incremental selection, complete partition/result transfer and failures/cancellation.
+Ordinary authorized PR CI qualifies the complete affected caller group before
+delivery. No local package experiment, historical campaign, Release or publication
+authority follows from this integration contract.
 
 ### Native Ruby CI Group
 
@@ -677,11 +680,10 @@ become a successful check. Apply project quality requirements to pending results
 a universal extra quality policy is not introduced here.
 
 The registered `ruby/project-rspec-v1` check invokes that whole native RSpec
-recipe and is required by the `ruby/rspec-v1` preset. Explicitly adopt this preset
-in Latexmath's source-local `workflow-delivery.quality.yml` when implementing the
-replacement group, preserving its existing required suite and external tools.
-The check registration, preset and actual selection must exist before replacement
-planning and caller qualification. Structural discovery does not supply a default
+recipe and is required by the `ruby/rspec-v1` preset. Latexmath adopts this preset
+in its source-local `workflow-delivery.quality.yml`, preserving its required suite
+and external tools. Check registration, the adopted preset and actual selection
+remain prerequisites for planning and caller qualification. Structural discovery does not supply a default
 quality selection. The smoke gem retains its separate content/clean-require
 preset; Hexo remains a bundle-only dependency consumer without an invented Ruby
 package or check owner.
@@ -696,11 +698,11 @@ provenance admission chain or Release state machine is added to CI.
 The caller transfers exact endpoint/plan/control context and executes every
 selected variant against the original plan without replanning. Failed preparation,
 cancellation and absent required results retain failure. Explainable empty
-selection performs no product preparation. Root RSpec and adopted gem consumers
-switch as one complete Ruby group; retire their duplicate automated PR trigger
-only after ordinary hosted transfer/execution/result qualification. Manual
-Release and historical evidence consumers remain with their owning retirement
-groups. This contract does not reopen any completed Ruby campaign or authorize
+selection performs no product preparation. Root CI owns RSpec and adopted gem
+consumers as one complete Ruby group; their duplicate automated PR trigger is
+retired. Affected caller changes require ordinary hosted transfer/execution/result
+qualification. Manual Release and historical evidence consumers retain their
+distinct owning contracts. This contract does not reopen any completed Ruby campaign or authorize
 publication, dispatch or credential/configuration changes.
 
 ## Builds, Packages and Consumers
@@ -775,9 +777,13 @@ source-directory workspace lowering. This source-supported distinction remains
 subject to complete native qualification. Neither consumer
 implicitly imports the source checkout. Native installed metadata, import origin
 and the applicable project API check must agree with the intended native version
-and outputs; command exit alone cannot satisfy them. Native Hatchling metadata
-reuse is a source-supported candidate for retaining the sdist version, not an
-accepted Git-free runtime result. Do not rewrite `pyproject.toml` to force success.
+and outputs; command exit alone cannot satisfy them. A source finding about
+native Hatchling metadata reuse alone does not establish Git-free runtime
+qualification. The adopted composition retains its exact original-wheel and
+Git-free original-sdist [package observations](research/python-native-package-qualification.md);
+current caller qualification and affected changes remain scoped to their actual
+source, tools and environment. This establishes no universal backend/version
+support. Do not rewrite `pyproject.toml` to force success.
 
 Keep complete build, contents, wheel install/import and Git-free sdist
 build/install/import obligations individually visible even when one native

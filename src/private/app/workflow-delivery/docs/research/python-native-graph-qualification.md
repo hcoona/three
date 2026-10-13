@@ -2,10 +2,16 @@
 
 ## Question and Authority
 
-This protocol qualifies the actual managed collector against the current
-repository lock and prepared tools. It implements the accepted
-[Python integration order](../migration-strategy.md#python-planning-integration-and-later-caller-cutover)
-within the accepted [Delivery Wave](../../../../../../docs/delivery-wave.md).
+This retained protocol defined qualification of the managed collector against
+the then-selected repository lock and prepared tools. Its
+[original protected protocol](https://github.com/hcoona/three/blob/42d6cc385d469a7785eaaa80fa627666956bf305/src/public/lib/three-workflow-delivery-v3/docs/research/python-native-graph-qualification.md)
+followed the [then-accepted Python integration order](https://github.com/hcoona/three/blob/42d6cc385d469a7785eaaa80fa627666956bf305/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md#python-planning-integration-and-later-caller-cutover)
+under its [historical admitting Wave](https://github.com/hcoona/three/blob/42d6cc385d469a7785eaaa80fa627666956bf305/docs/delivery-wave.md#complete-the-workflow-v3-contraction).
+The later six-slot extension had its own
+[historical grant](https://github.com/hcoona/three/blob/ae36e8eff1577731bf2336bd298743de641a5c4f/docs/delivery-wave.md#complete-the-workflow-v3-contraction).
+All retained recipe and correction sections are historical and supply no current
+operation authority. Future work requires the [current accepted Wave](../../../../../../docs/delivery-wave.md)
+and its applicable concrete protocol and authorization.
 The campaign completed with the independently accepted ordinary/no-dev
 [observation](#completed-ordinary-and-no-dev-observation) and once-only owned
 cleanup. All four captures, including the three failed lifetimes, and the unique
