@@ -153,7 +153,8 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_run_ruby_ci_group.py" &&
             path == "eng/scripts/run_ruby_ci_group.py") ||
         (target is "tests/eng/test_ci_scope.py" or "tests/eng/test_general_ci_workflow.py" &&
-            path == "eng/scripts/run_dotnet_ci_group.py") ||
+            path is "eng/scripts/run_dotnet_ci_group.py" or
+                "eng/scripts/prepare_ci_control_inputs.py") ||
         (target == "tests/eng/test_run_dotnet_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target == "tests/eng/test_python_release_preparation_gate.py" &&

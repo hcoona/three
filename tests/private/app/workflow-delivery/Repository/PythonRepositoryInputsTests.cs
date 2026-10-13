@@ -631,7 +631,42 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
+    public void DeletedControlPreparationSelectsOnlyItsSurvivingConsumers()
+    {
+        const string path = "eng/scripts/prepare_ci_control_inputs.py";
+        string[] consumers = ["tests/eng/test_ci_scope.py",
+            "tests/eng/test_general_ci_workflow.py"];
+        string[] targets = [.. consumers, "tests/unrelated.py", "src/pkg/tests"];
+        PythonProjectDependencies[] members = [Member("."), Member("src/pkg")];
+        PythonFactsEndpoint basis = Facts(Endpoint(targets, [path], "before", members),
+            [Package()]);
+        PythonFactsEndpoint candidate = Facts(Endpoint(targets, [], "after", members),
+            [Package()]);
+
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        SelectionReason[] expected = consumers.Select(target =>
+            new SelectionReason(path, "before", "pytest:" + target)).ToArray();
+        CollectionAssert.AreEquivalent(expected, paired);
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, paired);
+        CiPlan plan = ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+
+        CollectionAssert.AreEquivalent(consumers.Select(target =>
+            new CheckKey("pytest:" + target, "python/pytest-v1", "default")).ToArray(),
+            plan.Checks.Select(check => check.Work.Key).ToArray());
+        foreach (PlannedCheck check in plan.Checks)
+        {
+            Assert.IsTrue(check.Work.Required);
+            CollectionAssert.AreEquivalent(expected.Where(reason =>
+                reason.Project == check.Work.Key.Target).ToArray(), check.Reasons);
+        }
+    }
+
+    [TestMethod]
     [DataRow("tests/eng/test_run_node_ci_group.py", "eng/scripts/run_dotnet_ci_group.py")]
+    [DataRow("tests/eng/test_ci_scope.py", "eng/scripts/prepare_ci_control_inputs.py.backup")]
+    [DataRow("tests/eng/test_general_ci_workflow.py",
+        "eng/scripts/prepare_ci_control_inputs.py.backup")]
     [DataRow("tests/eng/test_python_release_preparation_gate.py",
         "eng/scripts/check_python_release_preparation.py.backup")]
     [DataRow("tests/eng/test_run_ruby_ci_group.py", "eng/scripts/run_ruby_ci_group.py.backup")]
