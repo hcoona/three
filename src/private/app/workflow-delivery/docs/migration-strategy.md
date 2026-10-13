@@ -601,9 +601,10 @@ and AzureAuth owners when applicable and the native control-test resource reason
 already integrated above.
 
 Record responsibility uses the accepted endpoint's record-family bindings and
-the existing component-aware matcher from `check_repository_records.py`. Extract
-that small pure matcher for both consumers rather than import the entire checker
-or introduce another glob dialect. Prepare the existing root dev dependency
+the shared component-aware matcher in `eng/scripts/repository_path_patterns.py`,
+used by both `ci_scope.py` and `check_repository_records.py`. Preserve that small
+pure interface rather than importing the entire checker or introducing another
+glob dialect. Prepare the existing root dev dependency
 group through frozen UV synchronization for its locked PyYAML parser; introduce
 no second parser/version/lock declaration. Catalog parsing and matching do not
 run the full contextual record checker in every scope job. Unconditional source
@@ -1026,9 +1027,11 @@ Changes to this configuration or shared preparation require qualification of
 the exact changed source and affected CI/Release version and identity boundaries
 before delivery; they supply no new native experiment or live-operation authority.
 
-Extract concrete package operations from `CI/PythonPackageExecution` into shared
-ecosystem code inside the existing private application. CI retains its plan and
-check adaptation; Release does not consume `CiPlan` or `CheckSpec`. Share native
+Shared `Ecosystems/PythonPackageOperations` owns concrete package operations
+inside the private application. `CI/PythonPackageExecution` and
+`Release/PythonPreparation` consume those operations while retaining distinct
+plan/check and request/qualification decisions. Release does not consume `CiPlan`
+or `CheckSpec`. The common mechanisms cover native
 frozen tool preparation, metadata/output inspection, complete wheel/sdist build,
 original size/digest checks and clean consumers. Follow the
 [existing native package contract](middle-level-design.md#native-python-package-execution):
@@ -1163,11 +1166,12 @@ unsupported native facts block the request. Use the existing NBGV `SemVer2` and
 maintained RubyGems version projection, without an application suffix stripper,
 publication-only version override or injected commit witness.
 
-Extract concrete build, native archive inspection and original local consumption
-from `CI/RubyPackageExecution` into `Ecosystems` inside the existing private
-application. CI keeps its plan/check adaptation; Release does not consume
-`CiPlan` or `CheckSpec`. Share the selected Ruby/RubyGems/NBGV tools, closed
-environment and native builder. Exclude inherited `SOURCE_DATE_EPOCH` for this
+Shared `Ecosystems/RubyPackageOperations` owns concrete build, native archive
+inspection and original local consumption inside the private application.
+`CI/RubyPackageExecution` and `Release/RubyPreparation` consume those operations
+while retaining distinct plan/check and request/qualification decisions. Release
+does not consume `CiPlan` or `CheckSpec`. The common mechanisms use the selected
+Ruby/RubyGems/NBGV tools, closed environment and native builder. Exclude inherited `SOURCE_DATE_EPOCH` for this
 fixture and use RubyGems' fixed native default; do not introduce a timestamp or
 archive engine. Native default timestamps do not promise byte identity across
 different tools, compression, file modes or source inputs.
