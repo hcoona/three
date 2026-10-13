@@ -274,10 +274,10 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
                     pair => pair.Key.ToUpperInvariant(), pair => pair.Value,
                     StringComparer.Ordinal)
             };
-            Assert.AreEqual(DotNetRepositoryReader.Key(original),
-                DotNetRepositoryReader.Key(reordered));
-            Assert.AreNotEqual(DotNetRepositoryReader.Key(original),
-                DotNetRepositoryReader.Key(native.Identity("product/A.csproj", "net9.0")));
+            Assert.AreEqual(DotNetNativeGraphReader.Key(original),
+                DotNetNativeGraphReader.Key(reordered));
+            Assert.AreNotEqual(DotNetNativeGraphReader.Key(original),
+                DotNetNativeGraphReader.Key(native.Identity("product/A.csproj", "net9.0")));
             return;
         }
 

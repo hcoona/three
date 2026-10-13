@@ -199,21 +199,20 @@ def prepare(root: Path, directory: Path, endpoints_path: Path) -> Path:
             "-binaryLogger:" + str(state / (name + "-restore.binlog")),
         )
     basis = Path(endpoints["basis"]["directory"])
-    basis_log = None
+    basis_target = None
     basis_control = None
     if node.owner_present(root, endpoints["basis"]["reference"]):
         if (
             endpoints["basis"]["reference"]
             == endpoints["candidate"]["reference"]
         ):
-            basis_log = control["log"]
+            basis_target = Path(control["application"])
             basis_control = {
                 "directory": str(root),
                 "reference": endpoints["basis"]["reference"],
             }
         else:
-            log, _ = node.build(basis, state, "basis-control")
-            basis_log = str(log)
+            _, basis_target = node.build(basis, state, "basis-control")
             basis_control = endpoints["basis"]
     files = {}
     for name in ("basis", "candidate"):
@@ -236,8 +235,19 @@ def prepare(root: Path, directory: Path, endpoints_path: Path) -> Path:
             "directory": str(root),
             "reference": endpoints["candidate"]["reference"],
         },
-        "basisBuildLog": basis_log,
-        "candidateBuildLog": control["log"],
+        "basisControlFiles": (
+            node.control_read_files(
+                Path(control["application"]), state, "basis", basis_target
+            )
+            if basis_target
+            else None
+        ),
+        "candidateControlFiles": node.control_read_files(
+            Path(control["application"]),
+            state,
+            "candidate",
+            Path(control["application"]),
+        ),
         "completion": {
             "checkout": endpoints["candidate"]["directory"],
             "scratch": str(completion),

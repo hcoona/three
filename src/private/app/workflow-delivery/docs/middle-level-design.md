@@ -334,7 +334,7 @@ implement workload resolution. Preserve the native locator identity and version
 field without claiming an exact pack version; unknown external inputs remain
 unsupported. The [application entry](../README.md)
 retains the source basis and implementation boundary. At the separate
-control-build binlog boundary, the selected SDK's literal autoimport and its
+native graph boundary, the selected SDK's literal autoimport and its
 native evaluation/import lineage associate only observed, connected files
 inside the specific pack. This supplies exact dependency membership without
 reconstructing SDK results or enumerating installed pack files.
@@ -370,6 +370,27 @@ embedded `version.json` still selects the .NET resource consumer. Concrete
 repository producers outside ordinary ownership require a reviewed native
 adapter. Trust SDK/package behavior without an application task allowlist or
 dynamic admission policy.
+
+### Control Execution Inputs
+
+The root Node and .NET groups consume the control executable's finite evaluated
+native dependencies, separately from ordinary project-region responsibility.
+Both readers share endpoint-selected MSBuild graph invocation and exact native
+input binding. The control consumer reads only its single prepared project;
+it does not add traversal, quality, release or product-version policy.
+
+Compiler/resource/configuration inputs, actual output-copy declarations, locked
+providers and evaluated optional runtime/editor configuration candidates form
+control dependencies. Passive Content/None and the whole control directory do
+not become universal edges. Preserve concrete caller and NBGV configuration
+relations while excluding unused control self-version provenance. Both endpoint
+unions and known-unrelated exclusions remain part of impact correctness.
+
+Trust maintained SDK/package behavior for generated files and task execution.
+Successful native preparation and bound complete output remain prerequisites;
+task implementation catalogs, binlog consumption replay and generated-producer
+proof chains are unnecessary. The concrete supported shape, failure boundary
+and runner qualification follow the [integration contract](migration-strategy.md#native-control-cli-inputs).
 
 ### Control-Test Resource Consumer
 

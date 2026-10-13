@@ -249,7 +249,7 @@ def test_absent_basis_control_still_prepares_both_native_endpoints(
     request_path = group.prepare(root, state, endpoints_path)
     request = group.node.read_json(request_path)
     assert request["basisControl"] is None
-    assert request["basisBuildLog"] is None
+    assert request["basisControlFiles"] is None
     assert request["basisFiles"]["deadlineSeconds"] == 900
     assert request["candidateFiles"]["deadlineSeconds"] == 900
     assert request["completion"]["deadlineSeconds"] == 900

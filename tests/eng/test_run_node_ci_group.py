@@ -300,12 +300,15 @@ def caller(tmp_path, monkeypatch):
             Path(arguments[-2]).mkdir()
         if label == "planning":
             request = group.read_json(Path(arguments[-1]))
-            assert request["candidateBuildLog"] == str(
-                directory / "candidate.binlog"
+            candidate_control = request["candidateControlFiles"]
+            assert candidate_control == group.control_read_files(
+                directory / "control/WorkflowDelivery.dll",
+                directory,
+                "candidate",
+                Path(request["candidate"]["directory"])
+                / "output/WorkflowDelivery.dll",
             )
-            assert request["basisBuildLog"] == (
-                str(directory / "basis.binlog") if state["basisOwner"] else None
-            )
+            assert bool(request["basisControlFiles"]) == state["basisOwner"]
             assert group.read_json(Path(request["scopePath"])) == payload
             assert request["ruby"] == state.get("ruby")
             return json.dumps(plan)

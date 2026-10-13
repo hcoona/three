@@ -75,7 +75,7 @@ internal static class DotNetFactsAssembler
     internal static CiPlan Complete(DotNetSelection selection, CancellationToken token)
     {
         var identities = new HashSet<(string Project, string Globals)>(
-            new DotNetRepositoryReader.NativeIdentityComparer());
+            new DotNetNativeGraphReader.NativeIdentityComparer());
         RepositoryFacts candidate = selection.Request.Candidate;
         var completed = new List<ProjectFacts>();
         foreach (ProjectFacts project in candidate.Projects)
@@ -95,7 +95,7 @@ internal static class DotNetFactsAssembler
             var checks = new List<CheckSpec>();
             foreach (DotNetGraphNode node in nodes.Where(node => !node.OuterBuild))
             {
-                if (!identities.Add(DotNetRepositoryReader.Key(node.Identity)))
+                if (!identities.Add(DotNetNativeGraphReader.Key(node.Identity)))
                     throw new InvalidDataException("Duplicate selected complete native identity.");
                 checks.AddRange(DotNetChecks.Expand(project.Id, node));
             }
@@ -135,24 +135,24 @@ internal static class DotNetFactsAssembler
     internal static RepositoryFacts Assemble(DotNetRevisionInputs inputs,
         string[] unaffectedPaths)
     {
-        var nodes = inputs.Nodes.ToDictionary(node => DotNetRepositoryReader.Key(
-            node.Native.Identity), new DotNetRepositoryReader.NativeIdentityComparer());
+        var nodes = inputs.Nodes.ToDictionary(node => DotNetNativeGraphReader.Key(
+            node.Native.Identity), new DotNetNativeGraphReader.NativeIdentityComparer());
         var business = inputs.Nodes.Where(node => node.Project != "dirs.proj")
             .GroupBy(node => node.Project, StringComparer.Ordinal).ToArray();
         var dependencies = business.ToDictionary(group => group.Key,
             _ => new HashSet<string>(StringComparer.Ordinal), StringComparer.Ordinal);
         var references = new Dictionary<(string Project, string Globals),
             HashSet<(string Project, string Globals)>>(
-                new DotNetRepositoryReader.NativeIdentityComparer());
+                new DotNetNativeGraphReader.NativeIdentityComparer());
         foreach (DotNetGraphEdge edge in inputs.Graph.Edges)
         {
-            var consumer = DotNetRepositoryReader.Key(edge.Consumer);
-            var dependency = DotNetRepositoryReader.Key(edge.Dependency);
+            var consumer = DotNetNativeGraphReader.Key(edge.Consumer);
+            var dependency = DotNetNativeGraphReader.Key(edge.Dependency);
             DotNetBoundNode from = nodes[consumer];
             DotNetBoundNode to = nodes[dependency];
             if (!references.TryGetValue(consumer, out var targets))
                 references.Add(consumer, targets = new(
-                    new DotNetRepositoryReader.NativeIdentityComparer()));
+                    new DotNetNativeGraphReader.NativeIdentityComparer()));
             targets.Add(dependency);
             if (from.Project != "dirs.proj" && to.Project == "dirs.proj")
                 throw new InvalidDataException("Unsupported business reference to discovery node.");
@@ -162,7 +162,7 @@ internal static class DotNetFactsAssembler
         var shared = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         foreach (DotNetBoundInput input in inputs.Inputs.Where(input => input.Path is not null))
         {
-            var consumer = DotNetRepositoryReader.Key(input.Native.Consumer);
+            var consumer = DotNetNativeGraphReader.Key(input.Native.Consumer);
             string project = nodes[consumer].Project;
             Add(input.Path!, project == "dirs.proj" ? Reachable(consumer) : [project]);
         }
@@ -190,7 +190,7 @@ internal static class DotNetFactsAssembler
         string[] Reachable((string Project, string Globals) root)
         {
             var visited = new HashSet<(string Project, string Globals)>(
-                new DotNetRepositoryReader.NativeIdentityComparer());
+                new DotNetNativeGraphReader.NativeIdentityComparer());
             var pending = new Queue<(string Project, string Globals)>();
             var consumers = new HashSet<string>(StringComparer.Ordinal);
             pending.Enqueue(root);

@@ -5,11 +5,12 @@ namespace WorkflowDelivery.Repository;
 
 internal sealed record NodeGroupRequest(MaterializedEndpoint Basis,
     MaterializedEndpoint Candidate, bool Full, string ScopePath,
-    string? BasisBuildLog, string CandidateBuildLog, RubyNodeContribution? Ruby = null);
+    ControlReadFiles? BasisControlFiles, ControlReadFiles CandidateControlFiles,
+    RubyNodeContribution? Ruby = null);
 internal sealed record RubyNodeContribution(RubyFactsEndpoint Basis, RubyFactsEndpoint Candidate);
 internal sealed record NodeGroupReadback(CiPlan Adopted, RetainedNodeSelection[] Retained,
-    string AdoptedDirectory, NodeRuntimeInputs Runtime, ControlBuildConsumption? BasisControl,
-    ControlBuildConsumption CandidateControl);
+    string AdoptedDirectory, NodeRuntimeInputs Runtime, ControlNativeInputs? BasisControl,
+    ControlNativeInputs CandidateControl);
 
 // One concrete root-CI caller joins native consumption and endpoint responsibility.
 internal static class NodeGroupReader
@@ -48,10 +49,10 @@ internal static class NodeGroupReader
         {
             (basis, candidate) = WithRubyInputs(basis, candidate, request.Ruby);
         }
-        ControlBuildConsumption? basisControl = await ControlAsync(before,
-            request.BasisBuildLog, false, token);
-        ControlBuildConsumption candidateControl = await ControlAsync(after,
-            request.CandidateBuildLog, true, token)
+        ControlNativeInputs? basisControl = await ControlAsync(before,
+            request.BasisControlFiles, false, token);
+        ControlNativeInputs candidateControl = await ControlAsync(after,
+            request.CandidateControlFiles, true, token)
             ?? throw new InvalidDataException("Missing candidate control build.");
         NodeRuntimeInputs runtime = await new NodeRuntimeReader(after).ReadAsync(token);
         basis = WithControlInputs(basis, basisControl, false);
@@ -73,7 +74,7 @@ internal static class NodeGroupReader
             RubyNodeInputConsumers.Join(candidate, ruby.Candidate));
 
     internal static NodeRevisionInputs WithControlInputs(NodeRevisionInputs inputs,
-        ControlBuildConsumption? control, bool candidate)
+        ControlNativeInputs? control, bool candidate)
     {
         GitEntry? owner = inputs.Revision.Entries.SingleOrDefault(entry =>
             entry.Path == ControlProject);
@@ -114,26 +115,18 @@ internal static class NodeGroupReader
         }
     }
 
-    internal static async Task<ControlBuildConsumption?> ControlAsync(GitMaterialization checkout,
-        string? binlog, bool required, CancellationToken token)
+    internal static async Task<ControlNativeInputs?> ControlAsync(GitMaterialization checkout,
+        ControlReadFiles? files, bool required, CancellationToken token)
     {
         bool present = checkout.Revision.Entries.Any(entry => entry.Path == ControlProject);
         if (!present)
         {
-            if (required || binlog is not null)
+            if (required || files is not null)
                 throw new InvalidDataException("Missing or substituted control operation.");
             return null;
         }
-        if (string.IsNullOrWhiteSpace(binlog))
-            throw new InvalidDataException("Missing native control build log.");
-        ControlBuildContext operation = await new ControlBuildContextReader(checkout)
-            .ReadAsync(ControlProject, token);
-        ControlBuildLog log = ControlBuildLogReader.Read(Path.GetFullPath(binlog),
-            operation.Project, token);
-        ControlBuildDependencies dependencies = ControlBuildDependencyReader.Read(operation, log);
-        NbgvInputs version = new NbgvInputReader(checkout.Root).Read(checkout.Revision,
-            "src/private/app/workflow-delivery", token);
-        return ControlBuildInputProjection.Project(checkout, operation, log, dependencies,
-            version.ConfigurationCandidates);
+        if (files is null)
+            throw new InvalidDataException("Missing native control preparation.");
+        return await new ControlNativeInputReader(checkout, files).ReadAsync(token);
     }
 }

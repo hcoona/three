@@ -285,8 +285,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     }
 
     private static bool SameIdentity(DotNetNodeIdentity first, DotNetNodeIdentity second) =>
-        new DotNetRepositoryReader.NativeIdentityComparer().Equals(
-            DotNetRepositoryReader.Key(first), DotNetRepositoryReader.Key(second));
+        new DotNetNativeGraphReader.NativeIdentityComparer().Equals(
+            DotNetNativeGraphReader.Key(first), DotNetNativeGraphReader.Key(second));
 
     [TestMethod]
     // Fixture restore phases and the graph query retain their own command deadlines.

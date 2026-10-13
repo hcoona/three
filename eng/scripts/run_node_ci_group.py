@@ -19,7 +19,6 @@ BUILD_PROPERTIES = (
     "-property:Configuration=Debug",
     "-property:ContinuousIntegrationBuild=true",
     "-property:RestoreLockedMode=true",
-    "-property:MSBuildLogVerboseTaskParameters=true",
     "-property:NuGetInteractive=false",
 )
 
@@ -208,7 +207,7 @@ def join_record_owners(
 
 
 def build(root: Path, directory: Path, name: str) -> tuple[Path, Path]:
-    """Build fresh control outputs and retain complete native operation logs."""
+    """Build the exact control endpoint and retain native diagnostics."""
     run(
         root,
         directory,
@@ -256,6 +255,22 @@ def build(root: Path, directory: Path, name: str) -> tuple[Path, Path]:
         message = "The native control target is unavailable"
         raise ValueError(message)
     return log, path
+
+
+def control_read_files(
+    application: Path, directory: Path, name: str, target: Path
+) -> dict[str, Any]:
+    """Bind one prepared control output to its native single-project read."""
+    return {
+        "graph": {
+            "assembly": str(application),
+            "wrapper": str(directory / (name + "-control.proj")),
+            "request": str(directory / (name + "-control-request.json")),
+            "response": str(directory / (name + "-control-graph.json")),
+            "deadlineSeconds": 900,
+        },
+        "targetFile": str(target),
+    }
 
 
 def execute(
@@ -327,11 +342,9 @@ def execute(
             "tool",
             "restore",
         )
-    candidate_log, target = build(
-        endpoints["candidate"], directory, "candidate"
-    )
-    basis_log = (
-        build(endpoints["basis"], directory, "basis")[0]
+    _, target = build(endpoints["candidate"], directory, "candidate")
+    basis_target = (
+        build(endpoints["basis"], directory, "basis")[1]
         if basis_owner
         else None
     )
@@ -355,8 +368,16 @@ def execute(
             },
             "full": scope["full"],
             "scopePath": str(joined),
-            "basisBuildLog": str(basis_log) if basis_log else None,
-            "candidateBuildLog": str(candidate_log),
+            "basisControlFiles": (
+                control_read_files(
+                    application, directory, "basis", basis_target
+                )
+                if basis_target
+                else None
+            ),
+            "candidateControlFiles": control_read_files(
+                application, directory, "candidate", target
+            ),
             "ruby": ruby,
         },
     )

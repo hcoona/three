@@ -12,10 +12,12 @@ internal sealed record DotNetGraphRequest(string Revision, string Root, string E
 internal sealed record DotNetNodeIdentity(string Project, Dictionary<string, string> Globals);
 internal sealed record DotNetGraphNode(DotNetNodeIdentity Identity, bool OuterBuild,
     MsBuildDimension Dimension, string TargetFrameworks, string RuntimeIdentifiers,
-    string[] OwnedPaths, string TestCapability, string VersionBaseDirectory = "");
+    string[] OwnedPaths, string TestCapability, string VersionBaseDirectory = "",
+    string TargetFile = "", string SdkVersion = "");
 internal sealed record DotNetGraphEdge(DotNetNodeIdentity Consumer, DotNetNodeIdentity Dependency);
 internal sealed record DotNetGraphInput(string Path, string Role, string Stage,
-    DotNetNodeIdentity Consumer, DotNetInputProvider? Provider = null);
+    DotNetNodeIdentity Consumer, DotNetInputProvider? Provider = null,
+    string CopyToOutputDirectory = "");
 internal sealed record DotNetInputProvider(string Kind, string Root, string Identity,
     string Version);
 internal sealed record DotNetGraphResponse(string Revision, string Root, string Entry,
@@ -102,7 +104,9 @@ internal static class DotNetGraph
                     project.GetPropertyValue("RuntimeIdentifier")),
                 project.GetPropertyValue("TargetFrameworks"),
                 project.GetPropertyValue("RuntimeIdentifiers"), ownership.Read(project),
-                TestCapability(project, identities[node]), VersionBase(project));
+                TestCapability(project, identities[node]), VersionBase(project),
+                project.GetPropertyValue("TargetPath"),
+                project.GetPropertyValue("NETCoreSdkVersion"));
         }).ToArray();
         DotNetGraphEdge[] edges = retained.SelectMany(node =>
             node.ProjectReferences.Where(dependency => !helpers.Contains(dependency))
@@ -133,13 +137,25 @@ internal static class DotNetGraph
                 .Concat(EvaluatedInputTypes.SelectMany(type => project.GetItems(type)
                     .Select(item => new DotNetGraphInput(
                         Absolute(item.GetMetadataValue("FullPath")), type,
-                        "Evaluation", consumer))))
+                        "Evaluation", consumer, CopyToOutputDirectory:
+                            item.GetMetadataValue("CopyToOutputDirectory")))))
+                .Concat(RuntimeConfig(project, consumer))
                 .Concat(EvaluatedFileProperties.Select(name => (Name: name,
                         Value: project.GetPropertyValue(name)))
                     .Where(property => property.Value.Length != 0)
                     .Select(property => new DotNetGraphInput(Path.GetFullPath(property.Value,
                             Path.GetDirectoryName(project.FullPath)!), property.Name,
                         "Evaluation", consumer)));
+
+        static IEnumerable<DotNetGraphInput> RuntimeConfig(ProjectInstance project,
+            DotNetNodeIdentity consumer)
+        {
+            string path = project.GetPropertyValue("UserRuntimeConfig");
+            if (path.Length != 0 && project.GetPropertyValue("GenerateRuntimeConfigurationFiles")
+                .Equals("true", StringComparison.OrdinalIgnoreCase))
+                yield return new(Path.GetFullPath(path, Path.GetDirectoryName(project.FullPath)!),
+                    "UserRuntimeConfigCandidate", "Evaluation", consumer);
+        }
 
         string VersionBase(ProjectInstance project)
         {

@@ -186,10 +186,9 @@ public sealed class DotNetGroupReaderTests(TestContext context)
         DotNetRevisionInputs inputs = await fixture.BindAsync();
         var operation = new ControlBuildContext(inputs.Revision.Commit,
             fixture.PathOf(NodeGroupReader.ControlProject), new("Debug", "net10.0"),
-            "10.0.401", "", "", "", "", "", "", "", "", [], [],
-            new Dictionary<string, string>());
-        var control = new ControlBuildConsumption(operation,
-            [new(source, "Sources", true)], [], []);
+            "10.0.401", "");
+        var control = new ControlNativeInputs(operation,
+            [new(source, "Sources", true)]);
         DotNetRevisionInputs joined = DotNetGroupReader.WithControlInputs(inputs, control, true);
         RepositoryFacts facts = DotNetFactsAssembler.Assemble(joined, []);
         foreach (string path in new[] { source, caller })

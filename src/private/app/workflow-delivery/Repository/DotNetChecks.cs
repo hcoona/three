@@ -20,7 +20,7 @@ internal static class DotNetChecks
             node.Dimension.TargetFramework is null || node.Dimension.RuntimeIdentifier is null ||
             node.TestCapability is not ("None" or "MTP" or "VSTest"))
             throw new InvalidDataException("Unsupported retained native check context.");
-        string variant = DotNetRepositoryReader.Key(node.Identity).Globals;
+        string variant = DotNetNativeGraphReader.Key(node.Identity).Globals;
         Properties(node.Identity.Globals);
         var dimensions = new Dictionary<string, string>(StringComparer.Ordinal)
         {

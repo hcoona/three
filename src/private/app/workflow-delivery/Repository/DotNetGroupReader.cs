@@ -7,7 +7,8 @@ internal sealed record DotNetGroupRequest(MaterializedEndpoint Basis,
     MaterializedEndpoint Candidate, bool Full, string ScopePath,
     DotNetReadFiles BasisFiles, DotNetReadFiles CandidateFiles,
     MaterializedEndpoint? BasisControl, MaterializedEndpoint CandidateControl,
-    string? BasisBuildLog, string CandidateBuildLog, DotNetRunRequest Completion);
+    ControlReadFiles? BasisControlFiles, ControlReadFiles CandidateControlFiles,
+    DotNetRunRequest Completion);
 internal sealed record DotNetGroupReadback(CiPlan Plan, ScopeCoordinate[] Basis,
     ScopeCoordinate[] Candidate, ControlBuildContext CandidateContext,
     DotNetResourceEndpoint BasisResources, DotNetResourceEndpoint CandidateResources);
@@ -44,10 +45,10 @@ internal static class DotNetGroupReader
             await ControlEndpointAsync(request.BasisControl, comparison.Basis, token);
         GitMaterialization afterControl = await ControlEndpointAsync(request.CandidateControl,
             comparison.Candidate, token);
-        ControlBuildConsumption? controlBasis = await NodeGroupReader.ControlAsync(beforeControl,
-            request.BasisBuildLog, false, token);
-        ControlBuildConsumption controlCandidate = await NodeGroupReader.ControlAsync(afterControl,
-            request.CandidateBuildLog, true, token) ??
+        ControlNativeInputs? controlBasis = await NodeGroupReader.ControlAsync(beforeControl,
+            request.BasisControlFiles, false, token);
+        ControlNativeInputs controlCandidate = await NodeGroupReader.ControlAsync(afterControl,
+            request.CandidateControlFiles, true, token) ??
             throw new InvalidDataException("Missing candidate control consumption.");
         NodeRevisionInputs nodeBefore = NodeGroupReader.WithControlInputs(
             await NodeReader(basis).ReadAsync(token), controlBasis, false);
@@ -83,14 +84,14 @@ internal static class DotNetGroupReader
             throw new InvalidDataException(
                 "The control test owner must be a committed regular project.");
         var identities = inputs.Nodes.Where(node => node.Project == TestProject)
-            .Select(node => DotNetRepositoryReader.Key(node.Native.Identity)).ToHashSet(
-                new DotNetRepositoryReader.NativeIdentityComparer());
+            .Select(node => DotNetNativeGraphReader.Key(node.Native.Identity)).ToHashSet(
+                new DotNetNativeGraphReader.NativeIdentityComparer());
         if (identities.Count == 0)
             throw new InvalidDataException(
                 "The committed control test owner is missing from the native graph.");
         string[] resources = inputs.Inputs.Where(input => input.Native.Stage == "Evaluation" &&
             input.Native.Role == "EmbeddedResource" &&
-            identities.Contains(DotNetRepositoryReader.Key(input.Native.Consumer)))
+            identities.Contains(DotNetNativeGraphReader.Key(input.Native.Consumer)))
             .Select(input => input.Path ?? throw new InvalidDataException(
                 "Control test resources require committed source coordinates."))
             .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
@@ -138,7 +139,7 @@ internal static class DotNetGroupReader
     }
 
     internal static DotNetRevisionInputs WithControlInputs(DotNetRevisionInputs inputs,
-        ControlBuildConsumption? control, bool candidate)
+        ControlNativeInputs? control, bool candidate)
     {
         bool owner = inputs.Revision.Entries.Any(entry => entry.Path ==
             NodeGroupReader.ControlProject);

@@ -654,76 +654,65 @@ still rejects unresolved required facts. An empty plan retains its exact subject
 
 #### Native Control-CLI Inputs
 
-The supported control operation is unprivileged Ubuntu Debug locked restore/build
-of `src/private/app/workflow-delivery/WorkflowDelivery.csproj`, followed by Node
-planning/execution. Use the endpoint's committed SDK with one effective TFM, no
-RID override or project references, and ordinary build properties recorded with
-the operation. Record project, SDK, configuration, TFM, working directory,
-output/intermediate paths and relevant CI/global properties. The candidate CLI
-must build successfully even when no product check is selected. A distinct
-basis gets its own exact materialization and native context. Confirmed absence
-of the basis CLI is supported; a failed restore/build/read is not absence.
+The supported control operation is an unprivileged Debug/CI locked restore and
+Build of `src/private/app/workflow-delivery/WorkflowDelivery.csproj`, followed by
+Node or .NET planning/execution. Use the endpoint-selected SDK with one effective
+TFM, no RID override and no business ProjectReference. The candidate CLI must
+build successfully even when no product check is selected. A distinct basis
+gets its own exact materialization, successful preparation and native read.
+Confirmed absence of the basis CLI is supported; failed preparation or evaluation
+is not absence.
 
-Read the ordinary build's binary log through the selected SDK's maintained
-`BinaryLogReplayEventSource`, reusing only the predecessor's native replay
-mechanism inside the one private application. Use structured import, task,
-parameter and completion events, with `MSBuildLogVerboseTaskParameters=true` and
-task-input logging enabled. Native `-getItem/-getProperty` queries supplement the
-SDK's configuration candidate lists and operation context. Do not add a custom
-compiler snapshot, `ProjectCollection` host, SDK XML evaluator, compiler command
-parser, localized-text fallback or extra helper project.
+Read the single control project through the same endpoint-hosted native MSBuild
+ProjectGraph and exact source/input binder as ordinary .NET planning. This
+consumer does not import traversal, project quality, release-unit or product
+version policy. Evaluate each actual control checkout after its existing native
+restore/Build, with Debug, ContinuousIntegrationBuild, RestoreLockedMode and
+NuGetInteractive=false. Bind the revision, physical root, entry, effective
+configuration/TFM, selected SDK and native TargetPath to the caller's existing
+prepared output. Windows product materializations, the original Windows control
+checkout and Ubuntu endpoints are separate native contexts; no physical or
+runner equivalence follows from a shared commit. No repository-wide restore is
+introduced for the Node group.
 
-Correlate `TaskStarted`, `TaskInput` parameters and completion through native
-build/node/project/target/task contexts. Accept inputs only for the actual CLI
-operation and supported producers. Preserve the native parameter role, item
-identity and required metadata; `IList` alone does not define a universal path
-schema. The finite mapping is:
+The finite dependency projection retains:
 
-| Native role                        | Projection and supported boundary                                                                                                                                                                                                                                                                                                                                                                               |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Csc file lists                     | `Sources`, `Resources`, `References`, `AdditionalFiles`, `Analyzers`, `AnalyzerConfigFiles`, `EmbeddedFiles`, `AddModules` and `LinkResources`; include repository inputs and classify generated/external inputs below. Output assembly, documentation, PDB and generated-output directory parameters are outputs.                                                                                              |
-| Csc scalar/indirect files          | Recognize `ApplicationConfiguration`, `CodeAnalysisRuleSet`, `KeyFile`, `ResponseFiles`, `Win32Icon`, `Win32Manifest`, `Win32Resource` and `SourceLink`. The first operation supports generated SourceLink through its native producer/configuration; other nonempty forms remain unavailable until their native/explicit input adapter is implemented. A response filename alone cannot close indirect reads.  |
-| Standard generated compiler inputs | Associate SDK global-usings, assembly/TFM attributes, generated analyzer configuration and NBGV managed version source with their native producer inputs/outputs and contributing configuration. Preserve generated identity; do not rewrite an `obj` filename into a guessed source path. A generated resource or other generator outside this finite operation fails until its producer/input adapter exists. |
-| Runtime inputs                     | Include native source-backed copy inputs and resolved implementation dependencies used by running the CLI, not just Csc reference assemblies. Bind source files to native Copy input identities/metadata and their output roles. The current locked CopyOnWrite task implementation is part of the supported operation; task name alone does not establish implementation semantics.                            |
-| Project/configuration inputs       | Include the main project, contributing native imports, SDK/CPM/locked restore configuration and concrete group caller/preparation files. Native imports do not include the main project automatically.                                                                                                                                                                                                          |
-| Optional configuration candidates  | Query native `PotentialEditorConfigFiles` and `GlobalAnalyzerConfigFiles`, retaining relevant absent coordinates. The finite operation also includes standard root/ancestor SDK, NuGet, Directory.Build and Directory.Packages configuration search coordinates. These are supported search candidates, not a claim of arbitrary missing-import discovery.                                                      |
+- the main project and contributing native imports;
+- native Compile, resource, additional-file, analyzer and configuration inputs;
+- Content/None sources whose native CopyToOutputDirectory declares copying;
+- the evaluated UserRuntimeConfig candidate, including supported absence;
+- SDK, Directory.Build/Packages, locked restore and NuGet configuration inputs
+  and the native optional editor/global configuration candidates;
+- genuine NBGV configuration candidates and concrete caller/preparation inputs.
 
-Normalize repository paths in their native project/task context to the exact
-endpoint's committed spelling. Only supported regular Git files become source
-inputs. A generated file must join a supported native producer/configuration
-relation. Files outside the checkout must join the selected SDK or locked restore
-package/tool identity or be an exact configuration contributor reported by that
-operation's native locked restore. Require absolute existing contributor files
-before normalization; committed files retain source precedence. Outside-checkout
-contributors remain invocation-local restore-environment facts, without exact
-pins or portable Git coordinates. This configuration-role association grants no
-membership to imports, task implementations or compiler inputs. Unknown external
-files still fail. Do not invent source paths from output basenames or treat all
-external files as pinned dependencies.
+Native project-directory responsibility and passive Content/None are not all
+execution dependencies. In particular, control documentation and the independent
+Python/Ruby helpers do not select every Node/.NET project solely because they
+are in the control directory. Preserve their actual native and cross-ecosystem
+consumers. Product NBGV version paths remain product inputs; unused control
+self-version and SourceLink commit provenance alone create no universal edge.
 
-This is a maintained adapter for the concrete CLI build, not a filesystem trace
-or an arbitrary-MSBuild completeness promise. Review additions to custom tasks,
-imports, generators and indirect inputs against this boundary; detectable
-unsupported tasks/parameters fail at runtime. Native events cannot discover a
-custom task's arbitrary unreported reads. Such behavior requires an explicit
-adapter before adoption, rather than an application monitoring or trust service.
+Reuse the shared exact Git spelling, regular-source, absent-candidate and native
+provider/configuration binding. Unknown necessary sources, substituted responses,
+missing output or unsupported relevant project structure fail planning. The
+concrete repository `ReferenceOfficialNbgv` relation and locked NBGV provider
+remain supported; new repository generators or runtime source references require
+an explicit finite adapter before adoption. Native evaluation is not a promise
+to discover arbitrary unreported task I/O.
 
-Require successful restore/build, complete successful replay, successful relevant
-task completion and an actual required Csc invocation. Fresh endpoint output and
-intermediate state prevents an incremental hit from standing in for input
-coverage. Design-time/skipped compiler execution, truncated/malformed logs,
-missing required fields or conflicting contexts fail. Optional empty parameters
-remain distinguishable from required missing events. A supported SDK pair must
-have ordinary integration evidence for event emission and replay/dependency
-loading; an incompatible basis/candidate pair fails explicitly. Do not infer
-exact-runtime support from a newer public API page.
+Trust the maintained SDK/package implementations for reference resolution,
+generated sources and copying within this supported shape. Do not replay the
+build log to establish task implementation identity, enumerate task/parameter
+allowlists or trace generated-file producer chains. Successful Build and exact
+complete output binding remain required; an incremental native Build does not
+need to execute Csc solely to supply a consumption proof. Binlogs remain native
+diagnostics, rather than a planning-admission or task-closure record.
 
-Unused CLI self AssemblyVersion/InformationalVersion and source-link provenance
-do not create product-consumption edges solely because the repository commit
-changes. This narrow rule requires no current runtime consumer of that metadata;
-genuine CLI source/configuration/dependency/preparation inputs remain semantic.
-Product NBGV version inputs remain native product inputs. Always retain the exact
-candidate control-build provenance and native failure behavior.
+Validate observable compiler/configuration/copy selection, absent and removed
+edges, known-unrelated exclusions, exact output/response bindings and native
+failures at the least costly sufficient layer. Actual single-entry/native-provider
+integration on supported Linux and Windows contexts remains required; controlled
+facts and historical passing builds do not qualify changed runner behavior.
 
 #### Workflow, Runtime Variants and Results
 

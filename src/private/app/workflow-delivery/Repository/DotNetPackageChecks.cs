@@ -36,7 +36,7 @@ internal static class DotNetPackageChecks
             node.Dimension.TargetFramework != "net10.0" || node.Dimension.RuntimeIdentifier != "" ||
             node.TestCapability != "None")
             throw new InvalidDataException("Unresolved complete native package variant.");
-        DotNetRepositoryReader.Key(node.Identity);
+        DotNetNativeGraphReader.Key(node.Identity);
         DotNetChecks.Properties(node.Identity.Globals);
         if (node.Identity.Globals.Keys.Any(name =>
                 name.Equals("PackageOutputPath", StringComparison.OrdinalIgnoreCase)))
@@ -98,7 +98,7 @@ internal static class DotNetPackageChecks
             null, values["NuGetPackageVersion"], build.Outputs.Select(output =>
                 new PackageOutput(output.Id, output.Role, output.Kind)).ToArray());
         string target = "release/" + subject.Unit + "/" + subject.Build;
-        string variant = DotNetRepositoryReader.Key(context.Node.Identity).Globals;
+        string variant = DotNetNativeGraphReader.Key(context.Node.Identity).Globals;
         var dimensions = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["globals"] = JsonSerializer.Serialize(context.Node.Identity.Globals,

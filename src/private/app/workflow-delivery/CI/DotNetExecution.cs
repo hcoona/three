@@ -110,13 +110,13 @@ internal static class DotNetExecution
                         ?? throw new InvalidDataException("Missing native build response.");
                     if (projection.Entries is null)
                         throw new InvalidDataException("Missing native build entries.");
-                    entries = new(new DotNetRepositoryReader.NativeIdentityComparer());
+                    entries = new(new DotNetNativeGraphReader.NativeIdentityComparer());
                     foreach (DotNetBuildEntryResult entry in projection.Entries)
                         if (entry is null || !entries.TryAdd(
-                            DotNetRepositoryReader.Key(entry.Identity), entry))
+                            DotNetNativeGraphReader.Key(entry.Identity), entry))
                             throw new InvalidDataException("Ambiguous native build identity.");
                     if (entries.Count != builds.Length || builds.Any(build =>
-                        !entries.ContainsKey(DotNetRepositoryReader.Key(
+                        !entries.ContainsKey(DotNetNativeGraphReader.Key(
                             nodes[build.Work.Key].Identity))))
                         throw new InvalidDataException(
                             "Different selected native build identities.");
@@ -140,7 +140,7 @@ internal static class DotNetExecution
                 if (entries is not null)
                 {
                     DotNetBuildEntryResult entry = entries[
-                        DotNetRepositoryReader.Key(nodes[key].Identity)];
+                        DotNetNativeGraphReader.Key(nodes[key].Identity)];
                     try
                     {
                         if (entry.Build != "Success" || entry.GetTargetPath != "Success" ||
