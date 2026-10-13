@@ -468,6 +468,7 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
                 <Project>
                   <PropertyGroup>
                     <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+                    <UseSharedCompilation>false</UseSharedCompilation>
                   </PropertyGroup>
                 </Project>
                 """);
@@ -490,7 +491,8 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
             Directory.CreateDirectory(context.TestResultsDirectory!);
             NativeCommandResult initialized = await NativeProcess.ExecuteAsync(new("dotnet",
                 repo.Directory,
-                ["restore", "Control.csproj", "--configfile", configFile], 30),
+                ["restore", "Control.csproj", "--configfile", configFile,
+                    "-nodeReuse:false"], 30),
                 context.CancellationToken);
             Assert.IsTrue(initialized.Succeeded, initialized.ToString());
             await repo.SetAsync("packages.lock.json", await File.ReadAllTextAsync(
@@ -502,13 +504,14 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
             NativeCommandResult restored = await NativeProcess.ExecuteAsync(new("dotnet",
                 repo.Directory,
                 ["restore", "Control.csproj", "--locked-mode", "--configfile", configFile,
-                    "-p:ContinuousIntegrationBuild=true", "-bl:" + binlog + ".restore.binlog"], 30),
+                    "-p:ContinuousIntegrationBuild=true", "-nodeReuse:false",
+                    "-bl:" + binlog + ".restore.binlog"], 30),
                 context.CancellationToken);
             Assert.IsTrue(restored.Succeeded, restored.ToString());
             string ci = scenario == "different-operation" ? "false" : "true";
             NativeCommandResult built = await NativeProcess.ExecuteAsync(new("dotnet",
                 repo.Directory,
-                ["build", "Control.csproj", "--no-restore", "-noAutoResponse",
+                ["build", "Control.csproj", "--no-restore", "-noAutoResponse", "-nodeReuse:false",
                     "-p:Configuration=Debug", "-p:NuGetInteractive=false",
                     "-p:ContinuousIntegrationBuild=" + ci, "-p:RestoreLockedMode=" + ci,
                     "-p:MSBuildLogVerboseTaskParameters=true", "-bl:" + binlog], 30),

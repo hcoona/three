@@ -132,7 +132,15 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         Task<DotNetRunResult> running = DotNetExecution.RunAsync(plan,
-            new(fixture.Root, fixture.RunScratch, cancel ? 60 : 10), cancellation.Token);
+            new(fixture.Root, fixture.RunScratch, 60), (command, token) =>
+            {
+                NativeCommand actual = !cancel && command.Arguments.Contains(
+                    "-target:Build,GetTargetPath,InvokeTestingPlatform")
+                    ? command with { DeadlineSeconds = 20 } : command;
+                context.WriteLine(JsonSerializer.Serialize(actual,
+                    TransferJson.Default.NativeCommand));
+                return NativeProcess.ExecuteAsync(actual, token);
+            }, cancellation.Token);
         string started = Path.Combine(fixture.Root, "tests", "slow-started.txt");
         try
         {

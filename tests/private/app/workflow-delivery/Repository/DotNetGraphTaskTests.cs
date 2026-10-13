@@ -289,7 +289,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             DotNetRepositoryReader.Key(first), DotNetRepositoryReader.Key(second));
 
     [TestMethod]
-    // Eight restores and one query retain their own 30-second command deadlines.
+    // Fixture restore phases and the graph query retain their own command deadlines.
     [Timeout(360000, CooperativeCancellation = true)]
     public async Task LoadedNativeGraphPreservesInnerVariantsAndReferenceEdges()
     {
@@ -379,11 +379,11 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup><TargetFrameworks>net10.0;net9.0</TargetFrameworks></PropertyGroup>
             </Project>
-            """);
+            """, restoreProject: false);
         fixture.Globals.Add(name, value);
-        await fixture.PrepareAsync(context.CancellationToken);
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
+        Assert.Contains("does not accept caller variant selectors", error.Message);
         Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
     }
 

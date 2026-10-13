@@ -249,7 +249,8 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
               <VSTestResultsDirectory
                 >$(MSBuildProjectDirectory)/receipts/$(TargetFramework)</VSTestResultsDirectory>
             </PropertyGroup>{{packages}}<ItemGroup>
-              <ProjectReference Include="../library/Dependency.csproj" />
+              <ProjectReference Include="../library/Dependency.csproj"
+                GlobalPropertiesToRemove="UseAppHost" />
               <TestingPlatformEnvironmentVariable Include="WORKFLOW_NATIVE_PROBE"
                 Value="native-environment" />
               <TestingPlatformEnvironmentVariable Include="WORKFLOW_NATIVE_MTP" Value="true" />

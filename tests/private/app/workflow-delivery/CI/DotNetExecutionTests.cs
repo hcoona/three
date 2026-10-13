@@ -65,6 +65,31 @@ public sealed class DotNetExecutionTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow(1)]
+    [DataRow(null)]
+    public async Task FailedOuterCommandCannotPassFromSuccessfulBatchResponse(int? exitCode)
+    {
+        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        DotNetRunResult result = await DotNetExecution.RunAsync(fixture.Plan, fixture.Request,
+            async (command, token) =>
+            {
+                NativeCommandResult native = await fixture.ExecuteAsync(command, token);
+                return native with
+                { ExitCode = exitCode, Error = "Wrapper failed after response." };
+            }, context.CancellationToken);
+
+        Assert.IsTrue(File.Exists(Path.Combine(fixture.Scratch, "build-response.json")));
+        Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
+        Assert.AreEqual(CheckStatus.Skipped, result.Results[1].Status);
+        Assert.IsEmpty(result.Outputs);
+        Assert.AreEqual("Wrapper failed after response.",
+            Assert.ContainsSingle(result.Failures).Error);
+        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+        Assert.IsNotNull(result.BatchBuild);
+        Assert.AreEqual(exitCode, result.BatchBuild.Result.ExitCode);
+    }
+
+    [TestMethod]
     public async Task FailedBuildSkipsTestAndMissingCollectionRemainsUnsatisfied()
     {
         using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
