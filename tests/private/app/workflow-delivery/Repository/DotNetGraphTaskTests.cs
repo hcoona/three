@@ -368,8 +368,16 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     [DataRow("TargetFrameworks", "")]
     [DataRow("RuntimeIdentifier", "")]
     [DataRow("RuntimeIdentifiers", "")]
+    public void CallerVariantSelectorsFailValidation(string name, string value)
+    {
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            DotNetGraphRequestValidation.RejectVariantSelectors(new() { [name] = value }));
+        Assert.Contains("does not accept caller variant selectors", error.Message);
+    }
+
+    [TestMethod]
     [Timeout(30000, CooperativeCancellation = true)]
-    public async Task CallerVariantSelectorsFailWithoutAResponse(string name, string value)
+    public async Task CallerVariantSelectorFailsWithoutAResponse()
     {
         using var fixture = new GraphFixture();
         fixture.Write("dirs.proj", """
@@ -380,7 +388,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
               <PropertyGroup><TargetFrameworks>net10.0;net9.0</TargetFrameworks></PropertyGroup>
             </Project>
             """, restoreProject: false);
-        fixture.Globals.Add(name, value);
+        fixture.Globals.Add("TargetFramework", "net10.0");
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
         Assert.Contains("does not accept caller variant selectors", error.Message);
