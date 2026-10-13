@@ -11,29 +11,31 @@ namespace WorkflowDelivery.Tests.CI;
 public sealed class NodeExecutionTests(TestContext context)
 {
     [TestMethod]
-    [DataRow("check")]
-    [DataRow("runner")]
-    [DataRow("variant")]
-    [DataRow("dimensions")]
-    [DataRow("preset")]
-    [DataRow("association")]
-    [DataRow("prerequisite")]
-    [DataRow("missing-consumer")]
-    [DataRow("output-identity")]
-    [DataRow("definition")]
-    [DataRow("publish-directory")]
-    [DataRow("output-kind")]
-    [DataRow("scope")]
-    [DataRow("missing-node22")]
-    [DataRow("missing-node24-version")]
-    [DataRow("conflicting-pnpm")]
-    [DataRow("conflicting-node24")]
-    [DataRow("node22-package")]
-    public async Task RunRejectsCompletePlanBeforeAnyCommand(string defect)
+    [DataRow("check", "Incomplete or conflicting Node package checks")]
+    [DataRow("runner", "Unsupported Node execution quality/runner/variant")]
+    [DataRow("variant", "Incomplete or conflicting Node package checks")]
+    [DataRow("dimensions", "Unsupported Node execution quality/runner/variant")]
+    [DataRow("preset", "Unsupported Node execution quality/runner/variant")]
+    [DataRow("association", "Incomplete or conflicting Node package checks")]
+    [DataRow("prerequisite", "Unsupported complete Node package association")]
+    [DataRow("missing-consumer", "Incomplete or conflicting Node package checks")]
+    [DataRow("output-identity", "Conflicting unit-wide Node output identity")]
+    [DataRow("definition", "Unsupported complete Node package association")]
+    [DataRow("publish-directory", "Unsupported complete Node package association")]
+    [DataRow("output-kind", "Unsupported complete Node package association")]
+    [DataRow("scope", "Unsupported Node execution scope")]
+    [DataRow("missing-node22", "Unresolved complete Node source checks")]
+    [DataRow("missing-node24-version", "Unsupported Node execution quality/runner/variant")]
+    [DataRow("conflicting-pnpm", "Conflicting planned PNPM versions")]
+    [DataRow("conflicting-node24", "Conflicting planned Node24 versions")]
+    [DataRow("node22-package", "Incomplete or conflicting Node package checks")]
+    public async Task RunRejectsCompletePlanBeforeAnyCommand(string defect, string diagnostic)
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken,
-            "first", "second");
-        PlannedCheck[] checks = fixture.Plan.Checks.ToArray();
+        using var checkout = new ScratchFixture("checkout");
+        using var scratch = new ScratchFixture("scratch");
+        CiPlan original = NodeExecutionFixture.CreatePlan(new string('a', 40), "first", "second");
+        var commands = new List<NativeCommand>();
+        PlannedCheck[] checks = original.Checks.ToArray();
         PlannedCheck last = checks[^1];
         CheckSpec work = last.Work;
         work = defect switch
@@ -106,17 +108,24 @@ public sealed class NodeExecutionTests(TestContext context)
                         }
                     }
                 } : item).ToArray();
-        CiPlan plan = fixture.Plan with
+        CiPlan plan = original with
         {
             Checks = checks,
-            Scope = defect == "scope" ? "unknown" : fixture.Plan.Scope
+            Scope = defect == "scope" ? "unknown" : original.Scope
         };
 
-        await Assert.ThrowsAsync<InvalidDataException>(() => fixture.RunAsync(
-            context.CancellationToken, plan));
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            NodeExecution.RunAsync(plan, new(checkout.Scratch, scratch.Scratch, "node24"),
+                (command, _) =>
+                {
+                    commands.Add(command);
+                    return Task.FromResult(NodeExecutionFixture.Success());
+                }, context.CancellationToken));
 
-        Assert.IsEmpty(fixture.Commands);
-        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+        Assert.Contains(diagnostic, error.Message);
+        Assert.IsEmpty(commands);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(checkout.Scratch));
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(scratch.Scratch));
     }
 
     [TestMethod]

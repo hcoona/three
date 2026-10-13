@@ -289,7 +289,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             DotNetRepositoryReader.Key(first), DotNetRepositoryReader.Key(second));
 
     [TestMethod]
-    // Eight restores and one query retain their own 30-second command deadlines.
+    // Fixture restore phases and the graph query retain their own command deadlines.
     [Timeout(360000, CooperativeCancellation = true)]
     public async Task LoadedNativeGraphPreservesInnerVariantsAndReferenceEdges()
     {
@@ -379,11 +379,11 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup><TargetFrameworks>net10.0;net9.0</TargetFrameworks></PropertyGroup>
             </Project>
-            """);
+            """, restoreProject: false);
         fixture.Globals.Add(name, value);
-        await fixture.PrepareAsync(context.CancellationToken);
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
+        Assert.Contains("does not accept caller variant selectors", error.Message);
         Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
     }
 
@@ -1261,15 +1261,21 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         internal async Task PrepareAsync(CancellationToken token)
         {
             if (_prepared) return;
-            foreach (string project in _projects)
+            if (_projects.Count != 0)
             {
+                string solution = PathOf("restore.slnx");
+                new System.Xml.Linq.XDocument(new System.Xml.Linq.XElement("Solution",
+                    _projects.Order(StringComparer.Ordinal).Select(project =>
+                        new System.Xml.Linq.XElement("Project",
+                            new System.Xml.Linq.XAttribute("Path", project)))))
+                    .Save(solution);
                 string[] operation = ["-property:Configuration=Debug",
                     "-property:ContinuousIntegrationBuild=true"];
                 // Seed only disposable fixture locks, then perform the supported locked operation.
                 await RestoreAsync(
-                    ["restore", project, "--use-lock-file", .. operation], token);
+                    ["restore", solution, "--use-lock-file", .. operation], token);
                 await RestoreAsync(
-                    ["restore", project, "--locked-mode", "--force", .. operation], token);
+                    ["restore", solution, "--locked-mode", "--force", .. operation], token);
             }
             if (_restoreTraversal)
                 await RestoreAsync(["restore", PathOf("dirs.proj"), "--locked-mode",

@@ -16,7 +16,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
     internal const string Project = "tests/NativeTests.csproj";
 
     internal static async Task<DotNetNativeFixture> CreateAsync(string capability,
-        CancellationToken token)
+        CancellationToken token, bool nbgv = false)
     {
         GitFixture repo = await GitFixture.CreateAsync(token);
         try
@@ -138,6 +138,15 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                     </TestRunParameters></RunSettings>
                     """,
             };
+            if (nbgv)
+            {
+                files["version.json"] = """{"version":"0.1"}""";
+                files["Directory.Build.props"] = files["Directory.Build.props"].Replace(
+                    "</Project>", """
+                    <ItemGroup><PackageReference Include="Nerdbank.GitVersioning"
+                      Version="3.10.94" PrivateAssets="all" /></ItemGroup></Project>
+                    """, StringComparison.Ordinal);
+            }
             foreach ((string path, string content) in files)
                 await repo.SetAsync(path, content);
             string initial = await repo.CommitAsync();
@@ -240,7 +249,8 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
               <VSTestResultsDirectory
                 >$(MSBuildProjectDirectory)/receipts/$(TargetFramework)</VSTestResultsDirectory>
             </PropertyGroup>{{packages}}<ItemGroup>
-              <ProjectReference Include="../library/Dependency.csproj" />
+              <ProjectReference Include="../library/Dependency.csproj"
+                GlobalPropertiesToRemove="UseAppHost" />
               <TestingPlatformEnvironmentVariable Include="WORKFLOW_NATIVE_PROBE"
                 Value="native-environment" />
               <TestingPlatformEnvironmentVariable Include="WORKFLOW_NATIVE_MTP" Value="true" />

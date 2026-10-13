@@ -20,14 +20,20 @@ public sealed class DotNetExecutionTests(TestContext context)
         DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
         Assert.HasCount(2, fixture.Commands);
-        Assert.Contains("-target:Build,GetTargetPath", fixture.Commands[0].Arguments);
+        Assert.Contains("-target:BuildSelected", fixture.Commands[0].Arguments);
+        Assert.IsNotNull(result.BatchBuild);
+        DotNetBuildRequest request = JsonSerializer.Deserialize(await File.ReadAllTextAsync(
+            Path.Combine(fixture.Scratch, "build-request.json"), context.CancellationToken),
+            TransferJson.Default.DotNetBuildRequest)!;
+        Assert.AreEqual("true", Assert.ContainsSingle(request.Entries).Globals["IsGraphBuild"]);
         Assert.Contains("-target:Build,GetTargetPath," + target, fixture.Commands[1].Arguments);
         Assert.Contains("-getTargetResult:GetTargetPath," + target, fixture.Commands[1].Arguments);
         Assert.IsTrue(fixture.Commands.All(command => command.Executable == "dotnet" &&
             command.Directory == fixture.Repo.Directory &&
             command.Arguments.Contains("-noAutoResponse") &&
-            command.Arguments.Contains("-property:IsGraphBuild=true") &&
+
             !command.Arguments.Contains("-restore") && !command.Arguments.Contains("-graphBuild")));
+        Assert.Contains("-property:IsGraphBuild=true", fixture.Commands[1].Arguments);
         Assert.HasCount(2, result.Outputs);
         Assert.IsTrue(result.Outputs.All(output => output.Path == fixture.Output));
         Assert.IsEmpty(result.Failures);
@@ -56,6 +62,31 @@ public sealed class DotNetExecutionTests(TestContext context)
             item.Key.Check == DotNetChecks.Test).Status);
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
         Assert.HasCount(2, fixture.Commands);
+    }
+
+    [TestMethod]
+    [DataRow(1)]
+    [DataRow(null)]
+    public async Task FailedOuterCommandCannotPassFromSuccessfulBatchResponse(int? exitCode)
+    {
+        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        DotNetRunResult result = await DotNetExecution.RunAsync(fixture.Plan, fixture.Request,
+            async (command, token) =>
+            {
+                NativeCommandResult native = await fixture.ExecuteAsync(command, token);
+                return native with
+                { ExitCode = exitCode, Error = "Wrapper failed after response." };
+            }, context.CancellationToken);
+
+        Assert.IsTrue(File.Exists(Path.Combine(fixture.Scratch, "build-response.json")));
+        Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
+        Assert.AreEqual(CheckStatus.Skipped, result.Results[1].Status);
+        Assert.IsEmpty(result.Outputs);
+        Assert.AreEqual("Wrapper failed after response.",
+            Assert.ContainsSingle(result.Failures).Error);
+        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+        Assert.IsNotNull(result.BatchBuild);
+        Assert.AreEqual(exitCode, result.BatchBuild.Result.ExitCode);
     }
 
     [TestMethod]
@@ -135,6 +166,57 @@ public sealed class DotNetExecutionTests(TestContext context)
         Assert.IsEmpty(result.Outputs);
         Assert.IsNotEmpty(result.Failures);
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+    }
+
+    [TestMethod]
+    [DataRow("missing")]
+    [DataRow("duplicate")]
+    [DataRow("project")]
+    [DataRow("globals")]
+    public async Task MissingOrDifferentBatchIdentityCannotPass(string defect)
+    {
+        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        fixture.ModifyBatchResponse = response =>
+        {
+            JsonArray entries = response["entries"]!.AsArray();
+            if (defect == "missing") entries.Clear();
+            else if (defect == "duplicate") entries.Add(entries[0]!.DeepClone());
+            else if (defect == "project") entries[0]!["identity"]!["project"] =
+                Path.Combine(fixture.Repo.Directory, "other.csproj");
+            else entries[0]!["identity"]!["globals"]!["TargetFramework"] = "net8.0";
+        };
+        DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
+        Assert.AreEqual(CheckStatus.Skipped, result.Results[1].Status);
+        Assert.HasCount(1, fixture.Commands);
+        Assert.IsEmpty(result.Outputs);
+    }
+
+    [TestMethod]
+    public async Task ReorderedBatchResultsRetainOriginalVariantBinding()
+    {
+        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken,
+            "None");
+        var globals = new Dictionary<string, string>(DotNetNativeFixture.Globals("net8.0"));
+        CiPlan second = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
+            fixture.Plan.Candidate, "None", globals);
+        CiPlan plan = fixture.Plan with { Checks = [.. fixture.Plan.Checks, .. second.Checks] };
+        fixture.ModifyBatchResponse = response =>
+        {
+            JsonArray entries = response["entries"]!.AsArray();
+            JsonNode first = entries[0]!;
+            first["build"] = "Failure";
+            entries.RemoveAt(0);
+            entries.Add(first);
+        };
+        DotNetRunResult result = await fixture.RunAsync(context.CancellationToken, plan);
+        Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
+        Assert.AreEqual(CheckStatus.Passed, result.Results[1].Status);
+        Assert.AreEqual(second.Checks[0].Work.Key, Assert.ContainsSingle(result.Outputs).Key);
+        Assert.HasCount(1, fixture.Commands);
+        Assert.IsEmpty(result.Commands);
+        Assert.IsNotNull(result.BatchBuild);
+        Assert.HasCount(2, result.BatchBuild.Keys);
     }
 
     [TestMethod]

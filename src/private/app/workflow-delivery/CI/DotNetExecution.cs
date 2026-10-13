@@ -1,3 +1,4 @@
+using System.Security;
 using System.Text.Json;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -9,12 +10,16 @@ internal sealed record DotNetCommandObservation(CheckKey Key, NativeCommand Comm
     NativeCommandResult Result);
 internal sealed record DotNetNativeOutput(CheckKey Key, string Path);
 internal sealed record DotNetCheckFailure(CheckKey Key, string Error);
+internal sealed record DotNetBatchCommandObservation(CheckKey[] Keys, NativeCommand Command,
+    NativeCommandResult Result);
 internal sealed record DotNetRunResult(string Candidate, CheckResult[] Results,
     DotNetCommandObservation[] Commands, DotNetNativeOutput[] Outputs,
-    DotNetCheckFailure[] Failures);
+    DotNetCheckFailure[] Failures)
+{
+    public DotNetBatchCommandObservation? BatchBuild { get; init; }
+}
 
-// Two native phases per retained identity. MSBuild owns references and target state;
-// MTP/VSTest own launch and test verdicts. There is no application task scheduler.
+// MSBuild owns the selected build batch and reference scheduling; MTP/VSTest own tests.
 internal static class DotNetExecution
 {
     internal static Task<DotNetRunResult> RunAsync(CiPlan plan, DotNetRunRequest request,
@@ -48,16 +53,117 @@ internal static class DotNetExecution
         var outputs = new List<DotNetNativeOutput>();
         var failures = new List<DotNetCheckFailure>();
         int phase = 0;
-        foreach (PlannedCheck build in plan.Checks.Where(item =>
-                     item.Work.Key.Check == DotNetChecks.Build))
-        {
-            await CompleteAsync(build.Work);
-            PlannedCheck? test = plan.Checks.SingleOrDefault(item =>
-                item.Work.Key == (build.Work.Key with { Check = DotNetChecks.Test }));
-            if (test is not null) await CompleteAsync(test.Work);
-        }
+        PlannedCheck[] builds = plan.Checks.Where(item =>
+            item.Work.Key.Check == DotNetChecks.Build).ToArray();
+        DotNetBatchCommandObservation? batch = null;
+        if (builds.Length != 0) await BuildAsync();
+        foreach (PlannedCheck test in plan.Checks.Where(item =>
+                     item.Work.Key.Check == DotNetChecks.Test))
+            await CompleteAsync(test.Work);
         return new(plan.Candidate, plan.Checks.Select(item => results[item.Work.Key]).ToArray(),
-            commands.ToArray(), outputs.ToArray(), failures.ToArray());
+            commands.ToArray(), outputs.ToArray(), failures.ToArray()) { BatchBuild = batch };
+
+        async Task BuildAsync()
+        {
+            CheckStatus fallback = CheckStatus.Cancelled;
+            Dictionary<(string Project, string Globals), DotNetBuildEntryResult>? entries = null;
+            string? error = null;
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                string input = Path.Combine(scratch, "build-request.json");
+                string response = Path.Combine(scratch, "build-response.json");
+                string wrapper = Path.Combine(scratch, "build.proj");
+                var nativeRequest = new DotNetBuildRequest(builds.Select(build =>
+                    nodes[build.Work.Key].Identity).ToArray(), response);
+                await File.WriteAllTextAsync(input, JsonSerializer.Serialize(nativeRequest,
+                    TransferJson.Default.DotNetBuildRequest), token);
+                string assembly = SecurityElement.Escape(
+                    typeof(DotNetBuildTask).Assembly.Location)!;
+                string requestFile = SecurityElement.Escape(input)!;
+                await File.WriteAllTextAsync(wrapper, $"""
+                    <Project>
+                      <UsingTask TaskName="WorkflowDelivery.CI.DotNetBuildTask"
+                        AssemblyFile="{assembly}" />
+                      <Target Name="BuildSelected">
+                        <WorkflowDelivery.CI.DotNetBuildTask RequestFile="{requestFile}" />
+                      </Target>
+                    </Project>
+                    """, token);
+                var command = new NativeCommand("dotnet", checkout,
+                    ["msbuild", wrapper, "-nologo", "-noAutoResponse", "-target:BuildSelected"],
+                    request.DeadlineSeconds);
+                NativeCommandResult native = await execute(command, token);
+                batch = new(builds.Select(build => build.Work.Key).ToArray(), command, native);
+                fallback = native.Termination switch
+                {
+                    NativeTermination.Cancelled => CheckStatus.Cancelled,
+                    NativeTermination.TimedOut => CheckStatus.TimedOut,
+                    _ => CheckStatus.Failed,
+                };
+                // A successful wrapper can contain independently failed native entries.
+                if (native.Succeeded)
+                {
+                    await using var file = File.OpenRead(response);
+                    DotNetBuildResponse projection = await JsonSerializer.DeserializeAsync(file,
+                        TransferJson.Default.DotNetBuildResponse, token)
+                        ?? throw new InvalidDataException("Missing native build response.");
+                    if (projection.Entries is null)
+                        throw new InvalidDataException("Missing native build entries.");
+                    entries = new(new DotNetRepositoryReader.NativeIdentityComparer());
+                    foreach (DotNetBuildEntryResult entry in projection.Entries)
+                        if (entry is null || !entries.TryAdd(
+                            DotNetRepositoryReader.Key(entry.Identity), entry))
+                            throw new InvalidDataException("Ambiguous native build identity.");
+                    if (entries.Count != builds.Length || builds.Any(build =>
+                        !entries.ContainsKey(DotNetRepositoryReader.Key(
+                            nodes[build.Work.Key].Identity))))
+                        throw new InvalidDataException(
+                            "Different selected native build identities.");
+                }
+                else error = native.Error ??
+                    $"Native build {native.Termination}, exit {native.ExitCode}.";
+            }
+            catch (OperationCanceledException) { fallback = CheckStatus.Cancelled; }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or
+                JsonException or UnauthorizedAccessException)
+            {
+                entries = null;
+                fallback = CheckStatus.Failed;
+                error = exception.Message;
+            }
+            foreach (PlannedCheck build in builds)
+            {
+                CheckKey key = build.Work.Key;
+                CheckStatus status = fallback;
+                string? failure = error;
+                if (entries is not null)
+                {
+                    DotNetBuildEntryResult entry = entries[
+                        DotNetRepositoryReader.Key(nodes[key].Identity)];
+                    try
+                    {
+                        if (entry.Build != "Success" || entry.GetTargetPath != "Success" ||
+                            entry.Outputs is null || entry.Outputs.Length != 1 ||
+                            entry.Outputs[0] is not { } output ||
+                            string.IsNullOrWhiteSpace(output.Identity))
+                            throw new InvalidDataException(
+                                "Missing or failed native Build/GetTargetPath.");
+                        outputs.Add(new(key, RegularOutput(entry.Outputs[0].FullPath)));
+                        status = CheckStatus.Passed;
+                    }
+                    catch (Exception exception) when (exception is IOException or
+                        InvalidDataException or UnauthorizedAccessException)
+                    {
+                        status = CheckStatus.Failed;
+                        failure = exception.Message;
+                    }
+                }
+                results.Add(key, new(plan.Candidate, key, status));
+                if (status != CheckStatus.Passed)
+                    failures.Add(new(key, failure ?? "Native build did not complete."));
+            }
+        }
 
         async Task CompleteAsync(CheckSpec check)
         {
@@ -70,12 +176,10 @@ internal static class DotNetExecution
                 try
                 {
                     DotNetGraphNode node = nodes[check.Key];
-                    string? testTarget = check.Key.Check == DotNetChecks.Build ? null :
-                        node.TestCapability == "MTP" ? "InvokeTestingPlatform" : "VSTest";
-                    string targets = "Build,GetTargetPath" +
-                        (testTarget is null ? "" : "," + testTarget);
-                    string queried = testTarget is null ? "Build,GetTargetPath" :
-                        "GetTargetPath," + testTarget;
+                    string testTarget = node.TestCapability == "MTP"
+                        ? "InvokeTestingPlatform" : "VSTest";
+                    string targets = "Build,GetTargetPath," + testTarget;
+                    string queried = "GetTargetPath," + testTarget;
                     string response = Path.Combine(scratch, "phase-" + phase++ + ".json");
                     var command = new NativeCommand("dotnet", checkout,
                         ["msbuild", node.Identity.Project, "-nologo", "-noAutoResponse",
@@ -93,7 +197,7 @@ internal static class DotNetExecution
                     };
                     if (status == CheckStatus.Passed)
                         outputs.Add(new(check.Key, await ReadOutputAsync(response,
-                            testTarget ?? "Build", token)));
+                            testTarget, token)));
                     else failures.Add(new(check.Key, native.Error ??
                         $"Native command {native.Termination}, exit {native.ExitCode}."));
                 }
@@ -161,12 +265,7 @@ internal static class DotNetExecution
             fullPath.ValueKind != JsonValueKind.String ||
             !Path.IsPathFullyQualified(fullPath.GetString()!))
             throw new InvalidDataException("Invalid native GetTargetPath coordinate.");
-        string path = Path.GetFullPath(fullPath.GetString()!);
-        if (!File.Exists(path) ||
-            (File.GetAttributes(path) &
-                (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
-            throw new InvalidDataException("Native GetTargetPath is not a regular file.");
-        return path;
+        return RegularOutput(fullPath.GetString()!);
 
         JsonElement Required(string target)
         {
@@ -177,6 +276,17 @@ internal static class DotNetExecution
                 throw new InvalidDataException("Missing or failed native target: " + target);
             return result;
         }
+    }
+
+    private static string RegularOutput(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
+            throw new InvalidDataException("Invalid native GetTargetPath coordinate.");
+        path = Path.GetFullPath(path);
+        if (!File.Exists(path) || (File.GetAttributes(path) &
+            (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+            throw new InvalidDataException("Native GetTargetPath is not a regular file.");
+        return path;
     }
 
     private static string Absolute(string path) => Path.IsPathFullyQualified(path)
