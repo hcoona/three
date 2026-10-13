@@ -266,7 +266,7 @@ def execute(
         {
             "checkout": str(root),
             "scratch": str(scratch),
-            "deadlineSeconds": 900,
+            "deadlineSeconds": 1200,
         },
     )
     result = node.run(

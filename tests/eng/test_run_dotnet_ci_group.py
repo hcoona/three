@@ -456,7 +456,7 @@ def test_original_plan_still_reaches_receiver_and_collector(
     )
     assert (
         group.node.read_json(directory / "request.json")["deadlineSeconds"]
-        == 900
+        == 1200
     )
     assert plan_path.read_text(encoding="utf-8") == raw
     if termination != "passed":
