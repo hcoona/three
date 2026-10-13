@@ -8,13 +8,14 @@ namespace WorkflowDelivery.Repository;
 
 internal sealed record NodeRuntimeVariant(string Key, string Selector, string? ExactVersion);
 internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] Variants,
-    string PnpmVersion, string[] Sources)
+    string PnpmVersion, string[] Sources, string PackagingVariant)
 {
     internal CiPlan Expand(CiPlan plan)
     {
         if (plan.Candidate != Revision || plan.Scope != NodeFactsAssembler.Scope ||
-            Variants.Length != 2 || Variants.Count(v => v.Selector == "22.x") != 1 ||
-            Variants.Count(v => v.Selector == "24.x") != 1)
+            Variants.Length == 0 || Variants.Select(v => v.Key).Distinct().Count(
+                ) != Variants.Length ||
+            Variants.Count(v => v.Key == PackagingVariant && v.ExactVersion is not null) != 1)
             throw new InvalidDataException("Unresolved Node runtime plan subject.");
         // Validate the complete original plan before projecting its concrete variants.
         ResultCollector.Collect(plan, []);
@@ -29,7 +30,7 @@ internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] V
                     ("node/project-build-v1" or "node/project-test-v1")))
                 throw new InvalidDataException("Unsupported Node runtime check projection.");
             foreach (NodeRuntimeVariant variant in Variants.Where(v =>
-                !package || v.Selector == "24.x"))
+                !package || v.Key == PackagingVariant))
             {
                 var dimensions = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
@@ -97,24 +98,26 @@ internal sealed class NodeRuntimeReader
             "strategy"), "matrix");
         if (matrix is not IDictionary<object, object?> { Count: 1 } ||
             Field(matrix, "node-version") is not List<object?> values ||
-            values.Count != 2 || values.OfType<string>().Distinct().Count() != 2 ||
-            !values.Contains("22.x") || !values.Contains("24.x"))
+            values.Count == 0 || values.OfType<string>().Distinct().Count() != values.Count ||
+            values.OfType<string>().Count() != values.Count ||
+            values.OfType<string>().Any(value => !System.Text.RegularExpressions.Regex.IsMatch(
+                value, "^[1-9][0-9]*\\.x$",
+                    System.Text.RegularExpressions.RegexOptions.CultureInvariant)))
             throw new InvalidDataException("Unsupported complete Node runtime matrix.");
-        string node = await ToolAsync("node", "24", token);
-        string pnpm = await ToolAsync("pnpm", null, token);
-        if (!node.StartsWith("24.", StringComparison.Ordinal))
-            throw new InvalidDataException("The configured Node runtime differs from its matrix.");
-        NodeRuntimeVariant[] variants = values.Cast<string>().Select(selector => selector switch
-        {
-            "22.x" => new NodeRuntimeVariant("node22", selector, null),
-            "24.x" => new NodeRuntimeVariant("node24", selector, node),
-            _ => throw new InvalidDataException("Unsupported Node runtime."),
-        }).ToArray();
+        string node = await ToolAsync("node", false, token);
+        string pnpm = await ToolAsync("pnpm", true, token);
+        string packagingSelector = System.Version.Parse(node).Major + ".x";
+        if (!values.Contains(packagingSelector))
+            throw new InvalidDataException(
+                "The configured packaging runtime is absent from the matrix.");
+        NodeRuntimeVariant[] variants = values.Cast<string>().Select(selector =>
+            new NodeRuntimeVariant("node" + selector[..^2], selector,
+                selector == packagingSelector ? node : null)).ToArray();
         return new(checkout.Revision.Commit, variants, pnpm,
-            [Workflow, "mise.toml", "mise.lock"]);
+            [Workflow, "mise.toml", "mise.lock"], "node" + packagingSelector[..^2]);
     }
 
-    private async Task<string> ToolAsync(string tool, string? expectedRequest,
+    private async Task<string> ToolAsync(string tool, bool pinned,
         CancellationToken token)
     {
         using JsonDocument json = JsonDocument.Parse(await query(
@@ -128,8 +131,9 @@ internal sealed class NodeRuntimeReader
         string requested = Text(value, "requested_version");
         JsonElement source = value.GetProperty("source");
         if (!System.Version.TryParse(version, out System.Version? parsed) || parsed.Build < 0 ||
-            (expectedRequest is not null && requested != expectedRequest) ||
-            (expectedRequest is null && requested != version) ||
+            (pinned ? requested != version :
+                requested != version && requested != parsed.Major.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture)) ||
             value.GetProperty("active").ValueKind != JsonValueKind.True ||
             Text(source, "type") != "mise.toml" ||
             Text(source, "path") != Path.Combine(checkout.Root, "mise.toml"))

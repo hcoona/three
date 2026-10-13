@@ -17,16 +17,17 @@ using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Ecosystems;
 
-internal sealed record DotNetRemoteConsumerResult(string Output, int Reads,
+internal sealed record DotNetSmokeRemoteConsumerResult(string Output, int Reads,
     NativeCommandResult[] Commands);
 
 // The caller supplies a separate no-write process/job. Only HTTP receives its read capability.
-internal static class DotNetRemoteConsumer
+internal static class DotNetSmokeRemoteConsumer
 {
     internal const string ServiceIndex = "https://nuget.pkg.github.com/hcoona/index.json";
     internal const string Package = "Hcoona.ReleaseSmoke.GithubPackages";
 
-    internal static async Task<DotNetRemoteConsumerResult> RunAsync(DotNetOriginalPackage original,
+    internal static async Task<DotNetSmokeRemoteConsumerResult> RunAsync(
+        DotNetOriginalPackage original,
         Dictionary<string, string> native, string root, string credential,
         CancellationToken cancellation, HttpMessageHandler? controlledTransport = null,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>>? execute = null)

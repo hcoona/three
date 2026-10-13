@@ -184,12 +184,8 @@ public sealed class DotNetGroupReaderTests(TestContext context)
         await fixture.CommitAsync();
         fixture.Graph = fixture.Response();
         DotNetRevisionInputs inputs = await fixture.BindAsync();
-        var operation = new ControlBuildContext(inputs.Revision.Commit,
-            fixture.PathOf(NodeGroupReader.ControlProject), new("Debug", "net10.0"),
-            "10.0.401", "", "", "", "", "", "", "", "", [], [],
-            new Dictionary<string, string>());
-        var control = new ControlBuildConsumption(operation,
-            [new(source, "Sources", true)], [], []);
+        var control = new ControlInputFacts(inputs.Revision.Commit, NodeGroupReader.ControlProject,
+            [new(source, "Sources", true)]);
         DotNetRevisionInputs joined = DotNetGroupReader.WithControlInputs(inputs, control, true);
         RepositoryFacts facts = DotNetFactsAssembler.Assemble(joined, []);
         foreach (string path in new[] { source, caller })
@@ -200,7 +196,7 @@ public sealed class DotNetGroupReaderTests(TestContext context)
         Assert.ThrowsExactly<InvalidDataException>(() =>
             DotNetGroupReader.WithControlInputs(inputs, null, true));
         Assert.ThrowsExactly<InvalidDataException>(() => DotNetGroupReader.WithControlInputs(inputs,
-            control with { Operation = operation with { Revision = NodeScenario.Basis } }, true));
+            control with { Revision = NodeScenario.Basis }, true));
     }
 
     private sealed class GroupScenario

@@ -19,7 +19,6 @@ BUILD_PROPERTIES = (
     "-property:Configuration=Debug",
     "-property:ContinuousIntegrationBuild=true",
     "-property:RestoreLockedMode=true",
-    "-property:MSBuildLogVerboseTaskParameters=true",
     "-property:NuGetInteractive=false",
 )
 
@@ -88,8 +87,6 @@ def run(  # noqa: PLR0913 - Concrete process capture options.
             env=(
                 os.environ
                 | {
-                    "MSBUILDLOGTASKINPUTS": "1",
-                    "MSBUILDLOGTASKOUTPUTS": "1",
                     "MISE_EXEC_AUTO_INSTALL": "0",
                 }
             )
@@ -275,6 +272,17 @@ def build(root: Path, directory: Path, name: str) -> tuple[Path, Path]:
     return log, path
 
 
+def control_files(application: Path, state: Path, name: str) -> dict:
+    """Provide native task distribution and owned endpoint scratch."""
+    return {
+        "assembly": str(application),
+        "wrapper": str(state / (name + "-control.proj")),
+        "request": str(state / (name + "-control-request.json")),
+        "response": str(state / (name + "-control-graph.json")),
+        "deadlineSeconds": 900,
+    }
+
+
 def execute(
     root: Path, source: Path, directory: Path, ruby_inputs: Path | None = None
 ) -> dict[str, Any]:
@@ -325,17 +333,6 @@ def execute(
         run(
             endpoints[name],
             directory,
-            name + "-dependencies",
-            "mise",
-            "exec",
-            "--",
-            "pnpm",
-            "install",
-            "--frozen-lockfile",
-        )
-        run(
-            endpoints[name],
-            directory,
             name + "-dotnet-tools",
             "mise",
             "exec",
@@ -344,14 +341,23 @@ def execute(
             "tool",
             "restore",
         )
-    candidate_log, target = build(
-        endpoints["candidate"], directory, "candidate"
-    )
-    basis_log = (
-        build(endpoints["basis"], directory, "basis")[0]
-        if basis_owner
-        else None
-    )
+    _, target = build(endpoints["candidate"], directory, "candidate")
+    if basis_owner:
+        run(
+            endpoints["basis"],
+            directory,
+            "basis-restore",
+            "mise",
+            "exec",
+            "--locked",
+            "dotnet",
+            "--",
+            "dotnet",
+            "restore",
+            CONTROL_PROJECT,
+            "--locked-mode",
+            *BUILD_PROPERTIES,
+        )
     control = directory / "control"
     shutil.copytree(target.parent, control)
     application = control / target.name
@@ -372,8 +378,12 @@ def execute(
             },
             "full": scope["full"],
             "scopePath": str(joined),
-            "basisBuildLog": str(basis_log) if basis_log else None,
-            "candidateBuildLog": str(candidate_log),
+            "basisControlFiles": control_files(application, directory, "basis")
+            if basis_owner
+            else None,
+            "candidateControlFiles": control_files(
+                application, directory, "candidate"
+            ),
             "ruby": ruby,
         },
     )
@@ -478,8 +488,6 @@ def run_runtimes(
                     selector,
                     environment=os.environ
                     | {
-                        "MSBUILDLOGTASKINPUTS": "1",
-                        "MSBUILDLOGTASKOUTPUTS": "1",
                         "MISE_EXEC_AUTO_INSTALL": "0",
                         "MISE_LOCKED": "0",
                     },

@@ -300,12 +300,11 @@ def caller(tmp_path, monkeypatch):
             Path(arguments[-2]).mkdir()
         if label == "planning":
             request = group.read_json(Path(arguments[-1]))
-            assert request["candidateBuildLog"] == str(
-                directory / "candidate.binlog"
-            )
-            assert request["basisBuildLog"] == (
-                str(directory / "basis.binlog") if state["basisOwner"] else None
-            )
+            assert {"candidateBuildLog", "basisBuildLog"}.isdisjoint(request)
+            assert request["candidateControlFiles"]["deadlineSeconds"] == 900
+            assert (request["basisControlFiles"] is not None) == state[
+                "basisOwner"
+            ]
             assert group.read_json(Path(request["scopePath"])) == payload
             assert request["ruby"] == state.get("ruby")
             return json.dumps(plan)
@@ -398,7 +397,6 @@ def test_group_collects_both_isolated_runtimes_against_original_parent(
 
     assert builds == [
         (directory / "candidate", "candidate"),
-        (directory / "basis", "basis"),
     ]
     assert [
         (checkout, args)
@@ -424,8 +422,6 @@ def test_group_collects_both_isolated_runtimes_against_original_parent(
     alternate = state["environments"]["node22-tools"]
     assert alternate["MISE_LOCKED"] == "0"
     assert alternate["MISE_EXEC_AUTO_INSTALL"] == "0"
-    assert alternate["MSBUILDLOGTASKINPUTS"] == "1"
-    assert alternate["MSBUILDLOGTASKOUTPUTS"] == "1"
     assert alternate["DOTNET_ROOT"] == str(directory / "prepared-sdk")
     assert os.environ["MISE_LOCKED"] == "1"
     assert all(
@@ -440,7 +436,7 @@ def test_group_collects_both_isolated_runtimes_against_original_parent(
         for checkout, label, args, _ in calls
         if label.endswith("-dependencies")
     ]
-    assert len(installs) == 4
+    assert len(installs) == 2
     assert all(
         args[-2:] == ("install", "--frozen-lockfile") for _, args in installs
     )
@@ -551,8 +547,8 @@ def test_native_command_retains_failure_or_timeout(
     assert len(calls) == 1
     assert calls[0][1]["timeout"] == expected_budget
     assert calls[0][1]["env"]["MISE_EXEC_AUTO_INSTALL"] == "0"
-    assert calls[0][1]["env"]["MSBUILDLOGTASKINPUTS"] == "1"
-    assert calls[0][1]["env"]["MSBUILDLOGTASKOUTPUTS"] == "1"
+    assert "MSBUILDLOGTASKINPUTS" not in calls[0][1]["env"]
+    assert "MSBUILDLOGTASKOUTPUTS" not in calls[0][1]["env"]
     observation = group.read_json(tmp_path / "native.command.json")
     assert observation == {
         "arguments": ["native"],

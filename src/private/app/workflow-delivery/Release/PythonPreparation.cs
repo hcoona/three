@@ -34,7 +34,7 @@ internal static class PythonPreparation
         string helper = Path.Combine(checkout,
             "src/private/app/workflow-delivery/Native/Python/packages.py");
         // Validate before creating any owned execution state.
-        PythonPackageOperations.Validate(new(checkout, scratch, "uv", helper, helper, 300,
+        PythonSmokePackageOperations.Validate(new(checkout, scratch, "uv", helper, helper, 300,
             new Dictionary<string, string?>(), false));
         var commands = new List<ReleaseCommand>();
         var checks = new List<ReleaseCheck>();
@@ -45,7 +45,7 @@ internal static class PythonPreparation
             request.Subject);
         // The caller supplies the platform's existing tool installation resource.
         environment["MISE_DATA_DIR"] = Absolute(request.MiseDataDirectory);
-        PythonPackageOperations? operations = null;
+        PythonSmokePackageOperations? operations = null;
         ReleaseBuild? build = null;
         PythonDistribution[] originals = [];
         string name = "", version = "", current = "native-input";
@@ -89,7 +89,7 @@ internal static class PythonPreparation
             QualitySelection? quality = await new QualitySelectionReader(checkout,
                 bound.ReadOptionalTextAsync).ReadAsync(directory.Length == 0 ? "." : directory,
                     "python", token);
-            if (quality?.Preset != PythonPackageOperations.Preset)
+            if (quality?.Preset != PythonSmokePackageOperations.Preset)
                 throw new InvalidDataException("Unsupported complete Python quality selection.");
             foreach (string input in Inputs)
                 if (await bound.ReadOptionalTextAsync(input, token) is null)
@@ -142,7 +142,7 @@ internal static class PythonPreparation
         await CheckAsync("original-bytes", () =>
         {
             foreach (PythonDistribution original in originals)
-                PythonPackageOperations.RequireOriginal(original);
+                PythonSmokePackageOperations.RequireOriginal(original);
             foreach (PythonDistribution original in originals)
             {
                 ReleaseOutput output = build!.Outputs.Single(value => value.Kind == original.Kind);

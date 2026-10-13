@@ -7,7 +7,7 @@ namespace WorkflowDelivery.Ecosystems;
 internal sealed record RubyGemArchive(string Path, long Length, string Sha256);
 
 // RubyGems owns package semantics; callers own their plans and command/result recording.
-internal sealed class RubyPackageOperations(RubyFactTools tools, string gem, string nbgv,
+internal sealed class RubySmokePackageOperations(RubyFactTools tools, string gem, string nbgv,
     string state)
 {
     internal async Task<RubyGemArchive> BuildAsync(GitMaterialization checkout, string directory,
@@ -43,8 +43,7 @@ internal sealed class RubyPackageOperations(RubyFactTools tools, string gem, str
         RubyArchiveFacts facts = await collector.ArchiveAsync(original.Path, token);
         string[] expected = ["LICENSE", "README.md", "lib/hcoona_release_smoke_ruby.rb",
             "lib/hcoona_release_smoke_ruby/version.rb"];
-        string[] actual = facts.Contents.Where(path => path !=
-            "lib/hcoona_release_smoke_ruby/_workflow_delivery_provenance.json").ToArray();
+        string[] actual = facts.Contents;
         if (facts.Gem.Name != "hcoona-release-smoke-ruby" || facts.Gem.Version != version ||
             facts.Gem.Platform != "ruby" || facts.Gem.RuntimeDependencies.Length != 0 ||
             !actual.Order(StringComparer.Ordinal).SequenceEqual(expected.Order(

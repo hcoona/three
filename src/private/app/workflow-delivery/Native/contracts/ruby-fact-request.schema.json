@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "properties": {
+    "operation": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "raw": {
+      "type": ["string", "null"]
+    }
+  },
+  "required": ["operation", "path", "raw"],
+  "additionalProperties": false
+}

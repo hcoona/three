@@ -42,7 +42,7 @@ internal static class RubyPreparation
         var native = new Dictionary<string, string>(StringComparer.Ordinal);
         Dictionary<string, string?> environment = EnvironmentFor(scratch, request);
         GitMaterialization? bound = null;
-        RubyPackageOperations? operations = null;
+        RubySmokePackageOperations? operations = null;
         RubyGemArchive? original = null;
         ReleaseBuild? build = null;
         string entry = "", directory = "", version = "", current = "native-input";
@@ -157,7 +157,7 @@ internal static class RubyPreparation
             ExecuteAsync, token));
         await CheckAsync("original-bytes", () =>
         {
-            RubyPackageOperations.RequireOriginal(original!);
+            RubySmokePackageOperations.RequireOriginal(original!);
             files.Add(new(build!.Id, build.Outputs[0].Id, "ruby-gem", native["name"], version,
                 Path.GetRelativePath(scratch, original!.Path).Replace('\\', '/'), original.Length,
                 original.Sha256));

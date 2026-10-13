@@ -5,7 +5,7 @@ namespace WorkflowDelivery.Repository;
 
 internal static class PythonPackageChecks
 {
-    internal const string Preset = PythonPackageOperations.Preset;
+    internal const string Preset = PythonSmokePackageOperations.Preset;
     internal const string Build = "python/distribution-set-v1";
     internal const string Contents = "python/distribution-contents-v1";
     internal const string Wheel = "python/wheel-install-import-v1";

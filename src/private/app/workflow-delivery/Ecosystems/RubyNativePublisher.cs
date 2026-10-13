@@ -61,7 +61,7 @@ internal static class RubyNativePublisher
         if (!path.StartsWith(root + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
                 ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new InvalidDataException("Ruby original leaves its transfer root.");
-        RubyPackageOperations.RequireOriginal(new(path, original.Size, original.Sha256));
+        RubySmokePackageOperations.RequireOriginal(new(path, original.Size, original.Sha256));
 
         string keyName = buddy ? "GITHUB_TOKEN" : "GEM_HOST_API_KEY";
         if (!platform.TryGetValue(keyName, out string? key) || string.IsNullOrWhiteSpace(key))
@@ -81,7 +81,7 @@ internal static class RubyNativePublisher
         environment["GEM_HOST_API_KEY"] = buddy ? "Bearer " + key : key;
         string host = buddy ? "https://rubygems.pkg.github.com/hcoona" : "https://rubygems.org";
         token.ThrowIfCancellationRequested();
-        RubyPackageOperations.RequireOriginal(new(path, original.Size, original.Sha256));
+        RubySmokePackageOperations.RequireOriginal(new(path, original.Size, original.Sha256));
         NativeCommandResult result = await execute(new(tools.Ruby, tools.Scratch,
             [tools.Gem, "push", "--norc", path, "--host", host], 180, environment,
             InheritEnvironment: false, CloseStandardInput: true), token);

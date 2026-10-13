@@ -68,7 +68,7 @@ internal static class RubyPackageExecution
             PackageTarget subject = build.Package!;
             string state = Directory.CreateDirectory(Path.Combine(scratchRoot,
                 "gem-" + ordinal++)).FullName;
-            var operations = new RubyPackageOperations(request.Facts, request.Gem,
+            var operations = new RubySmokePackageOperations(request.Facts, request.Gem,
                 request.Nbgv, state);
             RubyGemArchive? original = null;
             foreach (string kind in RubyPackageChecks.Kinds)

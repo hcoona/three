@@ -9,7 +9,7 @@ using WorkflowDelivery.Platform;
 namespace WorkflowDelivery.Tests.Release;
 
 [TestClass]
-public sealed class DotNetRemoteConsumerTests(TestContext context)
+public sealed class DotNetSmokeRemoteConsumerTests(TestContext context)
 {
     private static readonly string[] WindowsInstallationInputs = ["ProgramFiles",
         "ProgramFiles(x86)"];
@@ -32,7 +32,7 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
                 DotNetPackageArchive.Digest(package));
             var native = new Dictionary<string, string>
             {
-                ["PackageId"] = DotNetRemoteConsumer.Package,
+                ["PackageId"] = DotNetSmokeRemoteConsumer.Package,
                 ["NuGetPackageVersion"] = "1.0.0", ["TargetFramework"] = "net10.0",
                 ["NETCoreSdkVersion"] = await SdkAsync(root),
             };
@@ -42,7 +42,8 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
                 context.CancellationToken), false, null, new(), 200);
             var seen = new List<NativeCommand>();
             string scratch = Directory.CreateDirectory(Path.Combine(root, "remote")).FullName;
-            Task<DotNetRemoteConsumerResult> operation = DotNetRemoteConsumer.RunAsync(original,
+            Task<DotNetSmokeRemoteConsumerResult> operation = DotNetSmokeRemoteConsumer.RunAsync(
+                original,
                 native, scratch, "controlled-read-capability", parent.Token, transport,
                 async (command, _) =>
                 {
@@ -103,11 +104,12 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
             var seen = new List<NativeCommand>();
             var native = new Dictionary<string, string>
             {
-                ["PackageId"] = DotNetRemoteConsumer.Package,
+                ["PackageId"] = DotNetSmokeRemoteConsumer.Package,
                 ["NuGetPackageVersion"] = "1.0.0", ["TargetFramework"] = "net10.0",
                 ["NETCoreSdkVersion"] = await SdkAsync(root),
             };
-            Task<DotNetRemoteConsumerResult> operation = DotNetRemoteConsumer.RunAsync(original,
+            Task<DotNetSmokeRemoteConsumerResult> operation = DotNetSmokeRemoteConsumer.RunAsync(
+                original,
                 native, scratch, "controlled-read-capability", parent.Token, transport,
                 async (command, token) =>
                 {
@@ -138,7 +140,7 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
                         string graph = Path.Combine(scratch, "consumer", "graph.json");
                         string content = await File.ReadAllTextAsync(graph, token);
                         await File.WriteAllTextAsync(graph, content.Replace(
-                            DotNetRemoteConsumer.ServiceIndex,
+                            DotNetSmokeRemoteConsumer.ServiceIndex,
                             "https://unselected.example.test/index.json", StringComparison.Ordinal),
                             token);
                     }
@@ -187,13 +189,13 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
                     "-target:Build,GetTargetPath")));
                 return;
             }
-            DotNetRemoteConsumerResult result = await operation;
+            DotNetSmokeRemoteConsumerResult result = await operation;
             Assert.AreEqual(DotNetPackageConsumer.Marker, result.Commands[^1].Stdout.Trim());
             Assert.IsTrue(result.Commands.All(command => command.Succeeded));
             Assert.IsTrue(File.Exists(result.Output));
             Assert.AreEqual(original.Sha256, DotNetPackageArchive.Digest(Path.Combine(scratch,
-                "packages", DotNetRemoteConsumer.Package.ToLowerInvariant(), "1.0.0",
-                DotNetRemoteConsumer.Package.ToLowerInvariant() + ".1.0.0.nupkg")));
+                "packages", DotNetSmokeRemoteConsumer.Package.ToLowerInvariant(), "1.0.0",
+                DotNetSmokeRemoteConsumer.Package.ToLowerInvariant() + ".1.0.0.nupkg")));
             Assert.Contains("-target:GenerateRestoreGraphFile", seen[1].Arguments);
             Assert.HasCount(4, seen);
             Assert.IsTrue(transport.Requests.All(item => item.Method == HttpMethod.Get));
@@ -267,7 +269,7 @@ public sealed class DotNetRemoteConsumerTests(TestContext context)
         Assert.IsTrue(build.Succeeded, build.Stdout + build.Stderr);
         var builder = new PackageBuilder
         {
-            Id = DotNetRemoteConsumer.Package, Version = new NuGetVersion(1, 0, 0),
+            Id = DotNetSmokeRemoteConsumer.Package, Version = new NuGetVersion(1, 0, 0),
             Description = "Controlled native consumer package.",
         };
         builder.Authors.Add("WorkflowDelivery.Tests");

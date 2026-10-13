@@ -139,6 +139,8 @@ public sealed class GithubNpmPublicationTests
             Originals = Directory.CreateDirectory(Path.Combine(Root, "outputs")).FullName;
             Runtime = Directory.CreateDirectory(Path.Combine(Root, "runtime")).FullName;
             Tools = Directory.CreateDirectory(Path.Combine(Root, "tools")).FullName;
+            File.WriteAllText(Path.Combine(Tools, "selected-tools.json"),
+                "{\"node\":\"24.19.0\",\"npm\":\"11.17.0\"}");
             Directory.CreateDirectory(Path.Combine(Originals, "original"));
             byte[] bytes = [1, 2, 3];
             File.WriteAllBytes(Path.Combine(Originals, "original/package.tgz"), bytes);

@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "properties": {
+    "gemfile": {
+      "type": "string"
+    },
+    "lockfile": {
+      "type": "string"
+    },
+    "bundler_version": {
+      "type": "string"
+    },
+    "locked_bundler_version": {
+      "type": "string"
+    }
+  },
+  "required": ["gemfile", "lockfile", "bundler_version", "locked_bundler_version"],
+  "additionalProperties": false
+}

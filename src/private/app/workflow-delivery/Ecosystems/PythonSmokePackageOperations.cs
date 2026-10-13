@@ -9,8 +9,9 @@ internal sealed record PythonPackageTools(string Checkout, string Scratch, strin
     IReadOnlyDictionary<string, string?> Environment, bool InheritEnvironment = true);
 internal sealed record PythonDistribution(string Kind, string Path, long Length, string Sha256);
 
-// Native package operations shared by callers; no CI planning or Release completion.
-internal sealed class PythonPackageOperations(PythonPackageTools tools, string root)
+// Concrete registered Python smoke recipe using native package operations; no CI planning or
+// Release completion.
+internal sealed class PythonSmokePackageOperations(PythonPackageTools tools, string root)
 {
     internal const string Preset = "python/hcoona-release-smoke-python-v1";
     private readonly string archives = Path.Combine(root, "archives");

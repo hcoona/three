@@ -56,9 +56,4 @@ internal static class NpmPackageOperations
             300);
     }
 
-    internal static NativeCommand Import(string directory) => new("node",
-        Path.Combine(directory, "consumer"),
-        ["--input-type=module", "--eval", "import { strict as assert } from 'node:assert';"
-            + "import { smokeMessage } from '@hcoona/hcoona-release-smoke-npm';"
-            + "assert.equal(smokeMessage(), 'hcoona-release-smoke-npm');"], 30);
 }

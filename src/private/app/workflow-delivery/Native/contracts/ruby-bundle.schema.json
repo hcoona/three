@@ -1,0 +1,128 @@
+{
+  "type": "object",
+  "properties": {
+    "gemfile": {
+      "type": "string"
+    },
+    "lockfile": {
+      "type": "string"
+    },
+    "bundler_version": {
+      "type": "string"
+    },
+    "locked_bundler_version": {
+      "type": "string"
+    },
+    "gemfiles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "direct_dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "specifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "path": {
+                "type": ["string", "null"],
+                "default": null
+              },
+              "gemspec": {
+                "type": ["string", "null"],
+                "default": null
+              },
+              "directory": {
+                "type": ["string", "null"],
+                "default": null
+              },
+              "uri": {
+                "type": ["string", "null"],
+                "default": null
+              },
+              "revision": {
+                "type": ["string", "null"],
+                "default": null
+              }
+            },
+            "required": ["kind"],
+            "additionalProperties": false
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "require_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "runtime_dependencies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "requirement": {
+                  "type": "string"
+                }
+              },
+              "required": ["name", "requirement"],
+              "additionalProperties": false
+            }
+          },
+          "extensions": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": ["object", "null"],
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["source", "name", "version", "platform", "require_paths", "files", "runtime_dependencies"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "gemfile",
+    "lockfile",
+    "bundler_version",
+    "locked_bundler_version",
+    "gemfiles",
+    "direct_dependencies",
+    "specifications"
+  ],
+  "additionalProperties": false
+}

@@ -103,7 +103,8 @@ internal static class NuGetRelease
         var commands = new List<NativeCommandResult>();
         try
         {
-            DotNetRemoteConsumerResult result = await DotNetRemoteConsumer.RunAsync(original,
+            DotNetSmokeRemoteConsumerResult result = await DotNetSmokeRemoteConsumer.RunAsync(
+                original,
                 preparation.Native, scratch, credential, token, execute: async (command, cancel) =>
                 {
                     NativeCommandResult actual = await execute(command, cancel);

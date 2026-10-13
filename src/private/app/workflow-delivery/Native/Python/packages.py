@@ -279,7 +279,7 @@ def consumer_absent(name: str, quality: str) -> dict:
     raise ValueError(message)
 
 
-def consume(name: str, version: str, quality: str) -> dict:
+def consume_smoke(name: str, version: str, quality: str) -> dict:
     """Check native installed metadata and the registered API from this venv."""
     if quality != QUALITY or name != "hcoona-release-smoke-python":
         message = "Unsupported registered Python package quality"
@@ -379,7 +379,7 @@ def _dispatch() -> dict | list:  # noqa: PLR0911 -- Match the closed native oper
         case ["archive", path, name, version, quality]:
             return inspect_archive(Path(path), name, version, quality)
         case ["consume", name, version, quality]:
-            return consume(name, version, quality)
+            return consume_smoke(name, version, quality)
         case ["index-facts", path, name, version]:
             return index_facts(Path(path), name, version)
         case ["consumer-absent", name, quality]:

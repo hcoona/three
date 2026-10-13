@@ -12,8 +12,7 @@ public sealed class PythonPreparationNativeTests(TestContext context)
     private const string Product = "tests/private/app/workflow-delivery/" +
         "fixtures/products/hcoona-release-smoke-python";
     private static readonly string[] NativeInputs = [Product + "/version.json",
-        "src/private/app/workflow-delivery/Native/Python/packages.py",
-        "src/private/app/workflow-delivery/Native/Python/release_caller.py"];
+        "src/private/app/workflow-delivery/Native/Python/packages.py"];
 
     [TestMethod]
     [OSCondition(OperatingSystems.Linux)]
@@ -82,7 +81,7 @@ public sealed class PythonPreparationNativeTests(TestContext context)
             foreach (ReleaseFile file in result.Prepared.Files)
             {
                 string path = Path.Combine(scratch, file.Path);
-                PythonPackageOperations.RequireOriginal(
+                PythonSmokePackageOperations.RequireOriginal(
                     new(file.Kind, path, file.Size, file.Sha256));
                 string archive = Path.Combine(retained, Path.GetFileName(path));
                 File.Copy(path, archive);
@@ -154,23 +153,15 @@ public sealed class PythonPreparationNativeTests(TestContext context)
             context.AddResultFile(observationPath);
             string output = Path.Combine(directory, "output.txt");
             ReleaseSubject subject = preparation.Prepared.Subject;
-            var command = new NativeCommand(interpreter, directory,
-                ["-I", "-B", Path.Combine(checkout,
-                    "src/private/app/workflow-delivery/Native/Python/release_caller.py"), "state"],
-                30, new Dictionary<string, string?>
-                {
-                    ["RUNNER_TEMP"] = directory, ["GITHUB_OUTPUT"] = output,
-                    ["GITHUB_SHA"] = subject.Revision, ["GITHUB_REF"] = subject.SelectedRef,
-                    ["DESTINATION"] = subject.Destination, ["DRY_RUN"] = "false",
-                }, InheritEnvironment: false, CloseStandardInput: true);
-            NativeCommandResult actual = await NativeProcess.ExecuteAsync(command,
-                context.CancellationToken);
-            string receipt = Path.Combine(directory, "command.json");
-            await File.WriteAllTextAsync(receipt, JsonSerializer.Serialize(new { command, actual }),
-                context.CancellationToken);
-            context.AddResultFile(receipt);
-            Assert.IsTrue(actual.Succeeded, actual.Stderr);
-            Assert.IsNull(actual.Error);
+            var callerEnvironment = new Dictionary<string, string?>
+            {
+                ["RUNNER_TEMP"] = directory, ["GITHUB_OUTPUT"] = output,
+                ["GITHUB_SHA"] = subject.Revision, ["GITHUB_REF"] = subject.SelectedRef,
+                ["DESTINATION"] = subject.Destination, ["DRY_RUN"] = "false",
+                ["GITHUB_RUN_ID"] = "native-preparation", ["GITHUB_RUN_ATTEMPT"] = "1",
+            };
+            Assert.AreEqual(0, ReleaseJobInputs.Run(["release", "job-inputs", "python", "state"],
+                name => callerEnvironment.GetValueOrDefault(name)));
             context.AddResultFile(output);
             Assert.AreEqual("write-needed=" + scenario.Needed.ToString().ToLowerInvariant() +
                 "\n", await File.ReadAllTextAsync(output, context.CancellationToken));

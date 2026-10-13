@@ -11,8 +11,10 @@ import time
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[6]
+CONTRACTS = ROOT / "src/private/app/workflow-delivery/Native/contracts"
 HELPER = ROOT / "src/private/app/workflow-delivery/Native/Ruby/source.rb"
 NAME = "hcoona-release-smoke-ruby"
 BUDDY = "https://rubygems.pkg.github.com/hcoona"
@@ -251,7 +253,15 @@ def invoke(native, scenario, *, host=OFFICIAL, version="1.2.3", defect=None):
         assert USER not in output
         assert TOKEN not in output
         assert UNSAFE not in output
-    return result, json.loads(result.stdout), trace, request
+    value = json.loads(result.stdout)
+    for name, message in (
+        ("ruby-source-request", request),
+        ("ruby-source-answer", value),
+    ):
+        schema = json.loads((CONTRACTS / (name + ".schema.json")).read_text())
+        Draft202012Validator.check_schema(schema)
+        Draft202012Validator(schema).validate(message)
+    return result, value, trace, request
 
 
 def assert_queries(trace):

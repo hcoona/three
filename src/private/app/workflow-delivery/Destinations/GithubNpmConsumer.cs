@@ -44,8 +44,8 @@ internal static class GithubNpmConsumer
         ReleaseCheckStatus status = ReleaseCheckStatus.Passed;
         try
         {
-            foreach ((string executable, string expected) in new[]
-                { ("node", "v24.19.0"), ("npm", "11.17.0") })
+            foreach ((string executable, string expected) in GithubNpmRuntime.SelectedVersions(
+                toolchain))
                 if ((await Run(executable, ["--version"], 20)).Stdout.Trim() != expected)
                     throw new InvalidDataException("Unavailable native consumer toolchain.");
             await Run("npm", ["install", file.Name + "@" + file.Version,
@@ -64,10 +64,8 @@ internal static class GithubNpmConsumer
                 if (urlDigest != observation.TarballUrlSha256)
                     throw new InvalidDataException("Native install resolved another tarball URL.");
             }
-            await Run("node", ["--input-type=module", "--eval",
-                "import { strict as assert } from 'node:assert';"
-                    + "import { smokeMessage } from '@hcoona/hcoona-release-smoke-npm';"
-                    + "assert.equal(smokeMessage(), 'hcoona-release-smoke-npm');"], 30);
+            NativeCommand import = AdoptedNpmPackage.Import(scratch);
+            await Run(import.Executable, import.Arguments, import.DeadlineSeconds);
         }
         catch (OperationCanceledException)
         { status = ReleaseCheckStatus.Cancelled; errors.Add("Native consumer cancelled."); }

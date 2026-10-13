@@ -115,9 +115,9 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
     {
         string workflow = defect switch
         {
-            "missing-runtime" => Workflow.Replace("[24.x, 22.x]", "[24.x]"),
+            "missing-runtime" => Workflow.Replace("[24.x, 22.x]", "[22.x]"),
             "duplicate-runtime" => Workflow.Replace("[24.x, 22.x]", "[24.x, 24.x]"),
-            "unsupported-runtime" => Workflow.Replace("22.x", "26.x"),
+            "unsupported-runtime" => Workflow.Replace("22.x", "latest"),
             "matrix-include" => Workflow + "        include: []\n",
             "duplicate-yaml-key" => Workflow + "        node-version: [24.x, 22.x]\n",
             _ => Workflow,
@@ -199,9 +199,28 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
             Inputs(NodeScenario.Candidate).Expand(plan));
     }
 
+    [TestMethod]
+    public async Task ConfiguredPackagingMajorCanBeBelowOtherDeclaredRuntimes()
+    {
+        string workflow = Workflow.Replace("22.x", "26.x");
+        using var repo = await RuntimeCheckoutAsync(workflow);
+        GitMaterialization checkout = await BindAsync(repo);
+        NodeRuntimeInputs inputs = await new NodeRuntimeReader(checkout, (args, _) =>
+            Task.FromResult(Tool(repo.Directory, args[^1]))).ReadAsync(context.CancellationToken);
+        Assert.AreEqual("node24", inputs.PackagingVariant);
+        Assert.AreEqual("node26", inputs.Variants[1].Key);
+        CiPlan parent = await PackagePlanAsync();
+        CiPlan plan = inputs.Expand(parent with { Candidate = inputs.Revision });
+        Assert.HasCount(2, NodeExecution.SelectRuntime(plan, "node26").Checks);
+        Assert.HasCount(5, NodeExecution.SelectRuntime(plan, "node24").Checks);
+        Assert.IsTrue(ResultCollector.Collect(plan, plan.Checks.Select(check =>
+            new CheckResult(plan.Candidate, check.Work.Key, CheckStatus.Passed)).ToArray(
+                )).Satisfied);
+    }
+
     private static NodeRuntimeInputs Inputs(string revision) => new(revision,
         [new("node22", "22.x", null), new("node24", "24.x", "24.21.0")], "12.8.2",
-        [NodeRuntimeReader.Workflow, "mise.toml", "mise.lock"]);
+        [NodeRuntimeReader.Workflow, "mise.toml", "mise.lock"], "node24");
 
     private static Task<CiPlan> PackagePlanAsync()
     {

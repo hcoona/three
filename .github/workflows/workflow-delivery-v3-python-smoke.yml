@@ -46,18 +46,21 @@ jobs:
         run: |
           set -Eeuo pipefail
           mise install --yes dotnet@10.0.401 python@3.14.3 uv@0.12.24
-          printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)" >> "$GITHUB_ENV"
-          printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)" >> "$GITHUB_ENV"
+          {
+            printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)"
+            printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+          } >> "$GITHUB_ENV"
           printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
       - name: Build complete control and frozen tool recipe before product execution
         run: |
           set -Eeuo pipefail
           mise exec --locked dotnet -- dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj -p:RestoreLockedMode=true -o "$RUNNER_TEMP/control"
-          cp src/private/app/workflow-delivery/Native/Python/{packages.py,release_caller.py} "$RUNNER_TEMP/control/"
+          cp src/private/app/workflow-delivery/Native/Python/packages.py "$RUNNER_TEMP/control/"
           "$UV_EXECUTABLE" --no-config export --frozen --only-group dev --no-emit-workspace --no-emit-local --no-annotate --no-header --format requirements.txt > "$RUNNER_TEMP/control/index-requirements.txt"
           export MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" request
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python request
       - name: Retain actual control results
         id: control
         if: always()
@@ -72,7 +75,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python "$RUNNER_TEMP/prepared/request.json" > "$RUNNER_TEMP/prepared/preparation.json"
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" originals
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python originals
       - name: Retain actual prepared results
         id: retain
         if: always()
@@ -116,29 +119,32 @@ jobs:
         run: |
           set -Eeuo pipefail
           mise install --yes dotnet@10.0.401 python@3.14.3 uv@0.12.24
-          printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)" >> "$GITHUB_ENV"
-          printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)" >> "$GITHUB_ENV"
+          {
+            printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)"
+            printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+          } >> "$GITHUB_ENV"
           printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
       - name: Validate actual transferred request and producer
         run: |
           set -Eeuo pipefail
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" validate control prepared
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python validate control prepared
       - name: Prepare locked registry-only index tools
         run: |
           set -Eeuo pipefail
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" tool-request
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python tool-request
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
       - name: Observe public destination and qualified originals
         run: |
           set -Eeuo pipefail
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" phase observation
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" index-config initial-observation-scratch
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python phase observation
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python index-config initial-observation-scratch
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/index-tools.json" > "$RUNNER_TEMP/observation/observation.json"
       - name: Expose required writes and describe dry run
         run: |
           set -Eeuo pipefail
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" state
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python state
           if [ "$DRY_RUN" = true ]; then
             mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/observation/dry-run.json"
             cat "$RUNNER_TEMP/observation/dry-run.json" >> "$GITHUB_STEP_SUMMARY"
@@ -183,25 +189,28 @@ jobs:
         run: |
           set -Eeuo pipefail
           mise install --yes dotnet@10.0.401 python@3.14.3 uv@0.12.24
-          printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)" >> "$GITHUB_ENV"
-          printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)" >> "$GITHUB_ENV"
+          {
+            printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)"
+            printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+          } >> "$GITHUB_ENV"
           printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
       - name: Validate actual transferred request and producer
         run: |
           set -Eeuo pipefail
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" validate control prepared observation
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python validate control prepared observation
       - name: Prepare locked registry-only index tools
         run: |
           set -Eeuo pipefail
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" tool-request
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python tool-request
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
       - name: Refresh complete state and invoke native UV for remaining originals
         run: |
           set -Eeuo pipefail
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" phase publication
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" index-config publication-observation-scratch
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" publisher-config
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python phase publication
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python index-config publication-observation-scratch
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python publisher-config
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/index-tools.json" "$RUNNER_TEMP/publisher-tools.json" > "$RUNNER_TEMP/publication/publication.json"
       - name: Retain actual publication results
         id: retain
@@ -258,32 +267,35 @@ jobs:
         run: |
           set -Eeuo pipefail
           mise install --yes dotnet@10.0.401 python@3.14.3 uv@0.12.24
-          printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)" >> "$GITHUB_ENV"
-          printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)" >> "$GITHUB_ENV"
+          {
+            printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)"
+            printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+          } >> "$GITHUB_ENV"
           printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
       - name: Validate actual transferred request and available publication producer
         run: |
           set -Eeuo pipefail
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" validate control prepared observation
-          if [ -d "$RUNNER_TEMP/publication" ]; then "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" validate publication; fi
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python validate control prepared observation
+          if [ -d "$RUNNER_TEMP/publication" ]; then "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python validate publication; fi
       - name: Prepare locked registry-only index tools
         run: |
           set -Eeuo pipefail
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" tool-request
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python tool-request
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
       - name: Verify both required remote formats and complete final public state
         run: |
           set -Eeuo pipefail
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" phase verification
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python phase verification
           mise exec dotnet@10.0.401 -- dotnet tool restore
           for kind in python-wheel python-sdist; do
-            "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" consumer-config "$kind"
+            "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python consumer-config "$kind"
             status=0
             mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release consume-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$kind" "$RUNNER_TEMP/$kind-tools.json" > "$RUNNER_TEMP/verification/$kind.json" || status=$?
             if [ "$status" -gt 1 ]; then exit "$status"; fi
           done
-          "$PYTHON_EXECUTABLE" -I -B "$RUNNER_TEMP/control/release_caller.py" index-config final-observation-scratch
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python index-config final-observation-scratch
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/index-tools.json" > "$RUNNER_TEMP/verification/final.json" || true
           publication=-
           if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi

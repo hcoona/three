@@ -37,6 +37,11 @@ internal static class Program
     {
         try
         {
+            if (args is ["native-message-schemas", var schemaDirectory])
+            {
+                NativeMessageSchemas.Write(schemaDirectory);
+                return 0;
+            }
             if (ReleaseCli.Run(args, output) is { } releaseStatus) return releaseStatus;
             if (args is ["ci", "prepare-ruby-group", var rubyPreparationPath])
             {
@@ -300,6 +305,8 @@ internal static class Program
     RespectRequiredConstructorParameters = true,
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
 )]
+[JsonSerializable(typeof(GithubNpmToolSelection))]
+[JsonSerializable(typeof(ReleaseJobProducer))]
 [JsonSerializable(typeof(PlanRequest))]
 [JsonSerializable(typeof(NpmPreparationRequest))]
 [JsonSerializable(typeof(NpmPreparationResult))]

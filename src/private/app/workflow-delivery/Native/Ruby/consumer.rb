@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# Concrete hcoona-release-smoke-ruby installation and API recipe.
+
 # RubyGems owns archive and installation semantics. This child never receives a read credential.
 require "json"
 require "digest"

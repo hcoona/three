@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "properties": {
+    "gemspec": {
+      "type": "string"
+    },
+    "raw": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "literal": {
+      "type": "string"
+    }
+  },
+  "required": ["gemspec", "raw", "version", "literal"],
+  "additionalProperties": false
+}

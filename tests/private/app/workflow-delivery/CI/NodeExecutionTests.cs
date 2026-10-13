@@ -24,10 +24,10 @@ public sealed class NodeExecutionTests(TestContext context)
     [DataRow("publish-directory", "Unsupported complete Node package association")]
     [DataRow("output-kind", "Unsupported complete Node package association")]
     [DataRow("scope", "Unsupported Node execution scope")]
-    [DataRow("missing-node22", "Unresolved complete Node source checks")]
-    [DataRow("missing-node24-version", "Unsupported Node execution quality/runner/variant")]
+    [DataRow("missing-source-test", "Unresolved complete Node source checks")]
+    [DataRow("missing-node24-version", "Conflicting planned Node runtime context")]
     [DataRow("conflicting-pnpm", "Conflicting planned PNPM versions")]
-    [DataRow("conflicting-node24", "Conflicting planned Node24 versions")]
+    [DataRow("conflicting-node24", "Conflicting planned Node runtime context")]
     [DataRow("node22-package", "Incomplete or conflicting Node package checks")]
     public async Task RunRejectsCompletePlanBeforeAnyCommand(string defect, string diagnostic)
     {
@@ -79,8 +79,9 @@ public sealed class NodeExecutionTests(TestContext context)
         };
         if (defect == "missing-consumer")
             checks = checks[..^1];
-        if (defect == "missing-node22")
-            checks = checks.Where(item => item.Work.Key.Variant != "node22").ToArray();
+        if (defect == "missing-source-test")
+            checks = checks.Where(item => !(item.Work.Key.Variant == "node22" &&
+                item.Work.Key.Check == "node/project-test-v1")).ToArray();
         if (defect == "output-identity")
             checks = checks.Select(item => item.Work.Package?.Build == "second"
                 ? item with

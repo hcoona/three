@@ -173,7 +173,10 @@ Use concrete implementations and static registration for supported combinations.
 Separate responsibilities where callers need them, without an interface for
 each noun, a universal optional-method adapter or a Cartesian plugin framework.
 Adding a special project can require an explicit implementation; this is an
-accepted extension cost.
+accepted extension cost. Existing smoke recipes are concrete product recipes,
+not universal ecosystem qualification promises. Application orchestration belongs
+in the C# use cases; native-language helpers exist only for required native
+library bindings. Actions retains job/permission orchestration.
 
 | Ecosystem | Build and qualification                                    | Destination consequence                                                                                         |
 | --------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -380,7 +383,10 @@ This does not require one file per row, a universal envelope, recursive digest
 chains, approval certificates, a durable attempt aggregate or a record engine.
 Concrete JSON fields and command signatures follow actual implementation
 consumers. Internal formats may break; callers change or retire together without
-mandatory historical readers in the new core.
+mandatory historical readers in the new core. Independently consumed helper
+messages may have static schemas generated from their actual serializer types;
+keep producer/consumer shape tests separate from native semantic tests. Do not
+mirror upstream native formats or introduce a runtime schema registry.
 
 Retain qualified files and required request/results through native approval waits
 and the supported operation window. Concrete retention belongs in workflow

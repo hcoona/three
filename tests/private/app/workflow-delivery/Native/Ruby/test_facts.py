@@ -9,8 +9,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[6]
+CONTRACTS = ROOT / "src/private/app/workflow-delivery/Native/contracts"
 HELPER = ROOT / "src/private/app/workflow-delivery/Native/Ruby/facts.rb"
 VERSIONS = ("2.4.20", "2.7.2")
 
@@ -64,6 +66,10 @@ def facts(native, operation, path, *, environment=None, raw=None):
     request.write_text(
         json.dumps({"operation": operation, "path": str(path), "raw": raw})
     )
+    schema = json.loads(
+        (CONTRACTS / "ruby-fact-request.schema.json").read_text()
+    )
+    Draft202012Validator(schema).validate(json.loads(request.read_text()))
     return command(
         native,
         path.parent,
@@ -81,7 +87,22 @@ def facts(native, operation, path, *, environment=None, raw=None):
 def answer(result):
     """Require successful native collection before parsing facts."""
     assert result.returncode == 0, result.stderr
-    return json.loads(result.stdout)
+    value = json.loads(result.stdout)
+    name = (
+        "ruby-archive"
+        if "archive" in value
+        else "ruby-bundle"
+        if "specifications" in value
+        else "ruby-version"
+        if "raw" in value
+        else "ruby-context"
+        if "gemfile" in value
+        else "ruby-source"
+    )
+    schema = json.loads((CONTRACTS / (name + ".schema.json")).read_text())
+    Draft202012Validator.check_schema(schema)
+    Draft202012Validator(schema).validate(value)
+    return value
 
 
 def gem(directory, name, dependencies=()):
@@ -539,7 +560,7 @@ def test_current_smoke_gemspec_builds_and_consumes_without_witness(
 def test_smoke_membership_uses_gemspec_directory_not_caller(
     native, tmp_path, has_witness
 ):
-    """Absolute native loading ignores a caller-local witness decoy."""
+    """Native membership ignores obsolete source and caller witnesses."""
     source = tmp_path / "source"
     shutil.copytree(
         ROOT
@@ -579,9 +600,8 @@ def test_smoke_membership_uses_gemspec_directory_not_caller(
         "lib/hcoona_release_smoke_ruby.rb",
         "lib/hcoona_release_smoke_ruby/version.rb",
     ]
-    if has_witness:
-        expected.append(relative_witness)
-    assert sorted(answer(loaded)) == sorted(expected)
+    assert loaded.returncode == 0, loaded.stderr
+    assert sorted(json.loads(loaded.stdout)) == sorted(expected)
 
 
 @pytest.mark.parametrize("native", ["2.4.20"], indirect=True)

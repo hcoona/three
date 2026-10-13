@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ci_scope import CONTROL_PROJECT, ROOT, git, owner_present
+from ci_scope import ROOT, git, owner_present
 
 
 def run(root: Path, *arguments: str) -> str:
@@ -70,7 +70,6 @@ def prepare(
     if comparison["full"] and comparison["basis"] != comparison["candidate"]:
         message = "Explicit full must retain one exact comparison identity"
         raise ValueError(message)
-    before_present = owner_present(root, comparison["basis"])
     if not owner_present(root, comparison["candidate"]):
         message = "The candidate must retain the control test owner"
         raise ValueError(message)
@@ -112,7 +111,9 @@ def prepare(
     request = {
         "comparison": comparison,
         "repository": str(root),
-        "basisDirectory": str(before) if before_present else None,
+        "basisDirectory": str(before)
+        if owner_present(root, comparison["basis"])
+        else None,
         "candidateDirectory": str(after),
     }
     request_path = directory / "request.json"
@@ -138,24 +139,6 @@ def evaluate(
     root: Path, application: Path, request_path: Path, response_path: Path
 ) -> dict:
     """Use each endpoint's selected SDK and locked reference preparation."""
-    request = json.loads(request_path.read_text(encoding="utf-8"))
-    directories = dict.fromkeys(
-        item
-        for item in (request["basisDirectory"], request["candidateDirectory"])
-        if item is not None
-    )
-    for directory in directories:
-        print(
-            run(
-                Path(directory),
-                "dotnet",
-                "restore",
-                CONTROL_PROJECT,
-                "--locked-mode",
-                "-p:Configuration=Debug",
-            ),
-            end="",
-        )
     response = json.loads(
         run(
             root,

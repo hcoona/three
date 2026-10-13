@@ -22,10 +22,9 @@ PROPERTIES = (
 def bootstrap(root: Path, directory: Path) -> Path:
     """Build control once and transfer its complete native output."""
     directory.mkdir(parents=True, exist_ok=False)
-    log, application = node.build(root, directory, "candidate-control")
+    _, application = node.build(root, directory, "candidate-control")
     transfer = directory / "transfer"
     shutil.copytree(application.parent, transfer / "control")
-    shutil.copyfile(log, transfer / "candidate-control.binlog")
     node.run(
         root,
         directory,
@@ -53,7 +52,6 @@ def bootstrap(root: Path, directory: Path) -> Path:
         directory / "control.json",
         {
             "application": str(application),
-            "log": str(log),
             "root": str(root),
             "transfer": str(transfer),
         },
@@ -64,7 +62,7 @@ def bootstrap(root: Path, directory: Path) -> Path:
     return application
 
 
-def prepare(root: Path, directory: Path, endpoints_path: Path) -> Path:
+def prepare(_root: Path, directory: Path, endpoints_path: Path) -> Path:
     """Prepare exact endpoints with locked native assets."""
     control = node.read_json(directory / "control.json")
     endpoints = node.read_json(endpoints_path)
@@ -98,23 +96,6 @@ def prepare(root: Path, directory: Path, endpoints_path: Path) -> Path:
             *PROPERTIES,
             "-binaryLogger:" + str(state / (name + "-restore.binlog")),
         )
-    basis = Path(endpoints["basis"]["directory"])
-    basis_log = None
-    basis_control = None
-    if node.owner_present(root, endpoints["basis"]["reference"]):
-        if (
-            endpoints["basis"]["reference"]
-            == endpoints["candidate"]["reference"]
-        ):
-            basis_log = control["log"]
-            basis_control = {
-                "directory": str(root),
-                "reference": endpoints["basis"]["reference"],
-            }
-        else:
-            log, _ = node.build(basis, state, "basis-control")
-            basis_log = str(log)
-            basis_control = endpoints["basis"]
     files = {}
     for name in ("basis", "candidate"):
         files[name] = {
@@ -124,6 +105,8 @@ def prepare(root: Path, directory: Path, endpoints_path: Path) -> Path:
             "response": str(state / (name + "-graph.json")),
             "deadlineSeconds": 900,
         }
+    if endpoints["basis"] == endpoints["candidate"]:
+        files["basis"] = files["candidate"]
     completion = state / "completion"
     completion.mkdir()
     request = {
@@ -131,13 +114,6 @@ def prepare(root: Path, directory: Path, endpoints_path: Path) -> Path:
         "scopePath": str(state / "preliminary-scope.json"),
         "basisFiles": files["basis"],
         "candidateFiles": files["candidate"],
-        "basisControl": basis_control,
-        "candidateControl": {
-            "directory": str(root),
-            "reference": endpoints["candidate"]["reference"],
-        },
-        "basisBuildLog": basis_log,
-        "candidateBuildLog": control["log"],
         "completion": {
             "checkout": endpoints["candidate"]["directory"],
             "scratch": str(completion),
@@ -201,9 +177,6 @@ def finish(
     )
     transfer = request_path.parent.parent / "transfer"
     node.write_json(transfer / "dotnet-plan.json", plan)
-    node.write_json(
-        transfer / "control-context.json", readback["candidateContext"]
-    )
     node.write_json(state / "readback.json", readback)
     return joined
 

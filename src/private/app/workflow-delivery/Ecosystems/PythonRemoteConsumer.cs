@@ -29,7 +29,7 @@ internal static class PythonRemoteConsumer
         CancellationToken token)
     {
         ReleaseCompletion.Validate(prepared);
-        PythonPackageOperations.Validate(tools);
+        PythonSmokePackageOperations.Validate(tools);
         if (kind is not ("python-wheel" or "python-sdist") ||
             prepared.Subject.Unit != Package || prepared.Files.Length != 2 ||
             prepared.Files.Count(file => file.Kind == "python-wheel") != 1 ||
@@ -71,7 +71,7 @@ internal static class PythonRemoteConsumer
             string python;
             if (kind == "python-sdist")
             {
-                var shared = new PythonPackageOperations(tools with
+                var shared = new PythonSmokePackageOperations(tools with
                 {
                     Environment = environment, InheritEnvironment = false,
                     DeadlineSeconds = Math.Min(tools.DeadlineSeconds, 180),
@@ -91,7 +91,7 @@ internal static class PythonRemoteConsumer
                     ? "Scripts/python.exe" : "bin/python");
             }
             NativeCommandResult absent = await RunAsync("absent", Helper("consumer-absent",
-                Package, PythonPackageOperations.Preset));
+                Package, PythonSmokePackageOperations.Preset));
             using (JsonDocument facts = JsonDocument.Parse(absent.Stdout))
                 if (facts.RootElement.GetProperty("name").GetString() != Package ||
                     !facts.RootElement.GetProperty("absent").GetBoolean())
@@ -106,7 +106,7 @@ internal static class PythonRemoteConsumer
                 "--no-cache", "--require-hashes", "--index-url", index,
                 "--keyring-provider", "disabled", .. format, "--requirements", requirement]));
             NativeCommandResult installed = await RunAsync("consume", Helper("consume", Package,
-                original.Version, PythonPackageOperations.Preset));
+                original.Version, PythonSmokePackageOperations.Preset));
             using (JsonDocument facts = JsonDocument.Parse(installed.Stdout))
                 if (facts.RootElement.GetProperty("name").GetString() != Package ||
                     facts.RootElement.GetProperty("version").GetString() != original.Version ||

@@ -8,6 +8,10 @@ on:
         type: boolean
         default: true
 
+env:
+  RELEASE_NODE_VERSION: '24.19.0'
+  RELEASE_NPM_VERSION: '11.17.0'
+
 permissions:
   contents: read
 
@@ -268,16 +272,18 @@ jobs:
       - name: Prepare qualified native npm toolchain
         working-directory: ${{ runner.temp }}
         run: |
-          mise install --yes node@24.19.0
-          node_root="$(mise where node@24.19.0)"
+          mise install --yes "node@$RELEASE_NODE_VERSION"
+          node_root="$(mise where "node@$RELEASE_NODE_VERSION")"
           toolchain="$RUNNER_TEMP/npm-tools"
           mkdir -p "$toolchain/bin" "$toolchain/home"
           ln -s "$node_root/bin/node" "$toolchain/bin/node"
+          jq -n --arg node "$RELEASE_NODE_VERSION" --arg npm "$RELEASE_NPM_VERSION" \
+            '{node: $node, npm: $npm}' > "$toolchain/bin/selected-tools.json"
           touch "$toolchain/user.npmrc" "$toolchain/global.npmrc"
           env -i PATH="$toolchain/bin:/usr/bin:/bin" HOME="$toolchain/home" \
             NPM_CONFIG_USERCONFIG="$toolchain/user.npmrc" NPM_CONFIG_GLOBALCONFIG="$toolchain/global.npmrc" \
             "$node_root/bin/npm" install --global --prefix "$toolchain" \
-            --ignore-scripts --registry=https://registry.npmjs.org npm@11.17.0
+            --ignore-scripts --registry=https://registry.npmjs.org "npm@$RELEASE_NPM_VERSION"
       - name: Publish once after fresh native observation
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -355,16 +361,18 @@ jobs:
       - name: Prepare qualified native npm toolchain
         working-directory: ${{ runner.temp }}
         run: |
-          mise install --yes node@24.19.0
-          node_root="$(mise where node@24.19.0)"
+          mise install --yes "node@$RELEASE_NODE_VERSION"
+          node_root="$(mise where "node@$RELEASE_NODE_VERSION")"
           toolchain="$RUNNER_TEMP/npm-tools"
           mkdir -p "$toolchain/bin" "$toolchain/home"
           ln -s "$node_root/bin/node" "$toolchain/bin/node"
+          jq -n --arg node "$RELEASE_NODE_VERSION" --arg npm "$RELEASE_NPM_VERSION" \
+            '{node: $node, npm: $npm}' > "$toolchain/bin/selected-tools.json"
           touch "$toolchain/user.npmrc" "$toolchain/global.npmrc"
           env -i PATH="$toolchain/bin:/usr/bin:/bin" HOME="$toolchain/home" \
             NPM_CONFIG_USERCONFIG="$toolchain/user.npmrc" NPM_CONFIG_GLOBALCONFIG="$toolchain/global.npmrc" \
             "$node_root/bin/npm" install --global --prefix "$toolchain" \
-            --ignore-scripts --registry=https://registry.npmjs.org npm@11.17.0
+            --ignore-scripts --registry=https://registry.npmjs.org "npm@$RELEASE_NPM_VERSION"
       - name: Download actual publication result when required
         if: needs.observe.outputs.write-needed == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8

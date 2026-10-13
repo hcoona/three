@@ -31,8 +31,6 @@ internal static class PythonRepositoryInputs
 
     private static readonly string[] RubyPreparationRoots = [
         "src/private/app/workflow-delivery", "tests/private/app/workflow-delivery"];
-    private static readonly string[] RubyCallerRoots = [
-        "src/private/app/workflow-delivery"];
 
     internal static PythonInputBinding[] Map(GitRevision revision,
         PythonProjectDependencies[] projects, PythonPytestTargetSet targets,
@@ -138,6 +136,9 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_python_runtime.py" && path == "renovate.json") ||
         (target == "tests/private/app/workflow-delivery/Native/Ruby" &&
             (Under(path, "src/private/app/workflow-delivery/Native/Ruby") ||
+             (path.StartsWith("src/private/app/workflow-delivery/Native/contracts/ruby-",
+                  StringComparison.Ordinal) && path.EndsWith(".schema.json",
+                      StringComparison.Ordinal)) ||
              Under(path, "tests/private/app/workflow-delivery/fixtures/products/" +
                 "hcoona-release-smoke-ruby"))) ||
         (target == "tests/private/app/workflow-delivery/Native/Python" &&
@@ -157,12 +158,9 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_python_release_preparation_gate.py" &&
             PythonPreparationInput(path)) ||
         (target == "tests/eng/test_python_release_caller.py" &&
-            path is "src/private/app/workflow-delivery/Native/Python/release_caller.py" or
-                ".github/workflows/workflow-delivery-v3-python-smoke.yml") ||
+            path == ".github/workflows/workflow-delivery-v3-python-smoke.yml") ||
         (target == "tests/eng/test_ruby_release_preparation_gate.py" &&
             RubyPreparationInput(path)) ||
-        (target == "tests/eng/test_ruby_release_caller.py" &&
-            DotnetInput(path, RubyCallerRoots)) ||
         (target == "tests/eng/test_run_python_ci_group.py" &&
             path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
@@ -226,5 +224,8 @@ internal static class PythonRepositoryInputs
             "eng/scripts/workflow_release_control.py";
 
     private static bool Under(string path, string root) =>
-        path == root || path.StartsWith(root + "/", StringComparison.Ordinal);
+        !(root == "src/private/app/workflow-delivery" &&
+          (path.StartsWith(root + "/docs/", StringComparison.Ordinal) ||
+           path == root + "/README.md")) &&
+        (path == root || path.StartsWith(root + "/", StringComparison.Ordinal));
 }
