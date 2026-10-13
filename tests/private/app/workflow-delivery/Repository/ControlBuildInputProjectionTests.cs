@@ -11,6 +11,37 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class ControlBuildInputProjectionTests(TestContext context)
 {
+    private static GitFixture? baselineRepo;
+    private static GitMaterialization? baselineCheckout;
+
+    [ClassInitialize]
+    public static async Task InitializeBaseline(TestContext context)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(context.CancellationToken);
+        try
+        {
+            foreach (string path in new[] { "control/Control.csproj", "control/Source.cs",
+                "control/Resource.txt", "control/settings.json", "control/native-input.txt",
+                ".editorconfig", "Shared.props" })
+                await repo.SetAsync(path);
+            await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", "HEAD");
+            GitRevision revision = await new GitReader(repo.Directory).ReadAsync("HEAD",
+                context.CancellationToken);
+            baselineCheckout = await GitMaterialization.BindAsync(repo.Directory, revision,
+                context.CancellationToken);
+            baselineRepo = repo;
+        }
+        catch
+        {
+            repo.Dispose();
+            throw;
+        }
+    }
+
+    [ClassCleanup]
+    public static void CleanupBaseline() => baselineRepo?.Dispose();
+
     [TestMethod]
     public async Task CompilerInputsRetainCommittedSpellingAndNativeRoles()
     {
@@ -155,7 +186,8 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
         switch (defect)
         {
             case "unproduced-generated":
-                tasks[0] = fixture.Compiler("obj/unknown.cs"); break;
+                tasks[0] = fixture.Compiler(System.IO.Path.Combine(
+                    fixture.Operation.IntermediateDirectory, "unknown.cs")); break;
             case "unknown-task":
                 tasks.Add(fixture.Task("CustomGenerator", "Microsoft.Build.Tasks.Core.dll")); break;
             case "unknown-parameter":
@@ -177,8 +209,9 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
             case "conflicting-copy":
                 tasks.Add(fixture.Task("Copy", "Microsoft.Build.Tasks.Core.dll",
                     Input("SourceFiles", "settings.json"),
-                    Input("DestinationFiles", "bin/a.json"), Output("DestinationFiles",
-                        "bin/b.json")));
+                    Input("DestinationFiles", System.IO.Path.Combine(
+                        fixture.Operation.OutputDirectory, "a.json")), Output("DestinationFiles",
+                        System.IO.Path.Combine(fixture.Operation.OutputDirectory, "b.json"))));
                 break;
             case "outside-producer":
                 tasks.Add(fixture.Task("WriteCodeFragment", "Microsoft.Build.Tasks.Core.dll",
@@ -866,20 +899,12 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
         new LockFileFormat().Write(operation.AssetsFile, assets);
     }
 
-    private async Task<Fixture> CreateAsync()
+    private Task<Fixture> CreateAsync()
     {
-        GitFixture repo = await GitFixture.CreateAsync(context.CancellationToken);
-        foreach (string path in new[] { "control/Control.csproj", "control/Source.cs",
-            "control/Resource.txt", "control/settings.json", "control/native-input.txt",
-            ".editorconfig", "Shared.props" })
-            await repo.SetAsync(path);
-        await repo.CommitAsync();
-        await repo.GitAsync("reset", "--hard", "HEAD");
-        GitRevision revision = await new GitReader(repo.Directory).ReadAsync("HEAD",
-            context.CancellationToken);
-        GitMaterialization checkout = await GitMaterialization.BindAsync(repo.Directory, revision,
-            context.CancellationToken);
-        return new(repo, checkout);
+        context.CancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new Fixture(
+            baselineRepo ?? throw new InvalidOperationException("Missing native fixture baseline."),
+            baselineCheckout ?? throw new InvalidOperationException("Missing native binding.")));
     }
 
     private static ControlBuildParameter Input(string name, params string[] paths) => new(
@@ -895,6 +920,7 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
     {
         private readonly GitFixture repo;
         private readonly GitMaterialization checkout;
+        private readonly string rowDirectory;
         internal ControlBuildContext Operation { get; set; }
         internal string ToolDirectory { get; }
         internal ControlBuildDependencies Dependencies { get; } = new([], [], []);
@@ -903,13 +929,19 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
         {
             this.repo = repo;
             this.checkout = checkout;
-            ToolDirectory = repo.Directory + ".tools";
+            string row = Guid.NewGuid().ToString("N");
+            ToolDirectory = repo.Directory + ".tools-" + row;
+            rowDirectory = Path("control/.fixture-rows/" + row);
+            Directory.CreateDirectory(rowDirectory);
+            string output = System.IO.Path.Combine(rowDirectory, "bin");
+            string intermediate = System.IO.Path.Combine(rowDirectory, "obj");
             string project = Path("control/Control.csproj");
             Operation = new(checkout.Revision.Commit, project, new("Debug", "net10.0"), "fixture",
                 System.IO.Path.Combine(ToolDirectory, "sdk"), ToolDirectory,
-                System.IO.Path.Combine(ToolDirectory, "packages"), Path("control/bin"),
-                Path("control/obj/Debug/net10.0"), Path("control/obj"),
-                Path("control/obj/project.assets.json"), Path("control/bin/Control.dll"), [], [],
+                System.IO.Path.Combine(ToolDirectory, "packages"), output,
+                System.IO.Path.Combine(intermediate, "Debug/net10.0"), intermediate,
+                System.IO.Path.Combine(intermediate, "project.assets.json"),
+                System.IO.Path.Combine(output, "Control.dll"), [], [],
                 new Dictionary<string, string>());
             Operation = Operation with
             {
@@ -959,9 +991,16 @@ public sealed class ControlBuildInputProjectionTests(TestContext context)
                 checkout, Operation, log, dependencies ?? Dependencies, ["version.json"]);
         public void Dispose()
         {
-            repo.Dispose();
-            if (Directory.Exists(ToolDirectory))
-                Directory.Delete(ToolDirectory, recursive: true);
+            try
+            {
+                if (Directory.Exists(rowDirectory))
+                    Directory.Delete(rowDirectory, recursive: true);
+            }
+            finally
+            {
+                if (Directory.Exists(ToolDirectory))
+                    Directory.Delete(ToolDirectory, recursive: true);
+            }
         }
     }
 }
