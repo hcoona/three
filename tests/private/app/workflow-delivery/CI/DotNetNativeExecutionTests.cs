@@ -105,7 +105,7 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
     public async Task NativeNoTestsPolicyRemainsNative(string capability)
     {
         using var fixture = await DotNetNativeFixture.CreateAsync(capability,
-            context.CancellationToken);
+            context.CancellationToken, includeDependencyGraph: false);
         Dictionary<string, string> globals = DotNetNativeFixture.Globals();
         globals.Add("FixtureNoTests", "true");
         CiPlan plan = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate, capability,
@@ -140,7 +140,8 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
     [Timeout(180000, CooperativeCancellation = true)]
     public async Task NativeInterruptedTestRetainsBuildResult(bool cancel)
     {
-        using var fixture = await DotNetNativeFixture.CreateAsync("MTP", context.CancellationToken);
+        using var fixture = await DotNetNativeFixture.CreateAsync("MTP", context.CancellationToken,
+            includeDependencyGraph: false);
         Dictionary<string, string> globals = DotNetNativeFixture.Globals();
         globals.Add("FixtureSlow", "true");
         CiPlan plan = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate, "MTP",

@@ -142,6 +142,7 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         Assert.AreEqual(result.Packages[0].Sha256, repeated.Packages[0].Sha256,
             "Bounded same-input native package byte reproducibility.");
         Assert.AreNotEqual(result.Packages[0].Path, repeated.Packages[0].Path);
+        await FreshConsumerCannotBorrowCachedMissingPackageAsync(fixture, result);
     }
 
     [TestMethod]
@@ -372,13 +373,10 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         context.WriteLine(File.ReadAllText(binding));
     }
 
-    [TestMethod]
-    public async Task FreshConsumerCannotBorrowCachedMissingPackage()
+    private async Task FreshConsumerCannotBorrowCachedMissingPackageAsync(ProductFixture fixture,
+        DotNetPackageRunResult first)
     {
-        using var fixture = await ProductFixture.CreateAsync(context.CancellationToken);
-        DotNetPackageRunResult first = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, first.Results).Satisfied,
-            string.Join("; ", first.Failures.Select(item => item.Error)));
+        context.WriteLine("Native package case: fresh consumer cannot borrow cached package");
         DotNetOriginalPackage original = first.Packages[0];
         string fresh =
             Directory.CreateDirectory(Path.Combine(fixture.Scratch, "missing-probe")).FullName;
@@ -404,6 +402,7 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         Assert.IsTrue(File.Exists(first.ConsumerOutputs[0].Path),
             "The prior successful installed consumer remains available " +
                 "but cannot mask this failure.");
+        Assert.AreEqual(original.Sha256, DotNetPackageArchive.Digest(original.Path));
     }
 
     private sealed class ProductFixture(string checkout, string scratch, CiPlan plan,
