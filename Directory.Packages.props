@@ -43,7 +43,7 @@
     <PackageVersion Include="NuGet.ProjectModel" Version="7.9.0" />
     <PackageVersion Include="NuGet.Protocol" Version="7.9.0" />
     <PackageVersion Include="NuGet.Versioning" Version="7.9.0" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
-    <PackageVersion Include="RocksDB" Version="11.8.1.6584" />
+    <PackageVersion Include="RocksDB" Version="11.8.1.6589" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="Svg" Version="3.4.8" />
