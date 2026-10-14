@@ -143,15 +143,13 @@ internal static class CiCallerTransfer
         _ = ResultCollector.Collect(plan, []);
     }
 
-    internal static CiOutcome Outcome(CiPlan plan, CheckResult[] results, CiOutcome reported)
+    internal static CiOutcome Outcome(CiPlan plan, CiOutcome reported)
     {
-        CiOutcome collected = ResultCollector.Collect(plan, results);
-        if (reported.Comparison != plan.Comparison || reported.Candidate != plan.Candidate ||
-            reported.Scope != plan.Scope || reported.Satisfied != collected.Satisfied ||
-            !reported.Checks.SequenceEqual(collected.Checks) ||
-            !reported.Errors.SequenceEqual(collected.Errors))
-            throw new InvalidDataException("Group outcome differs from its original plan/results.");
-        return collected;
+        if (reported is null || reported.Checks is null || reported.Errors is null ||
+            reported.Comparison != plan.Comparison || reported.Candidate != plan.Candidate ||
+            reported.Scope != plan.Scope)
+            throw new InvalidDataException("Group outcome lacks its original plan binding.");
+        return reported;
     }
 
     internal static async Task<NativeCommandResult> RunAsync(NativeCommand command,

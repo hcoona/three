@@ -119,7 +119,7 @@ internal static class DotNetCiCaller
             TransferJson.Default.CheckResultArray);
         if (result.Candidate != candidate)
             throw new InvalidDataException(".NET result has a different original candidate.");
-        CiOutcome outcome = CiCallerTransfer.Outcome(plan, result.Results, result.Outcome);
+        CiOutcome outcome = CiCallerTransfer.Outcome(plan, result.Outcome);
         CiCallerTransfer.Write(Path.Combine(directory, "outcome.json"), outcome,
             TransferJson.Default.CiOutcome);
         return outcome;

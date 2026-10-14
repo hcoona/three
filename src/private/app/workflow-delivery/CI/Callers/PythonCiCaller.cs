@@ -155,7 +155,7 @@ internal static class PythonCiCaller
             TransferJson.Default.CheckResultArray);
         if (result.Candidate != plan.Candidate)
             throw new InvalidDataException("Python execution returned a different candidate.");
-        CiOutcome outcome = CiCallerTransfer.Outcome(plan, result.Results, result.Outcome);
+        CiOutcome outcome = CiCallerTransfer.Outcome(plan, result.Outcome);
         CiCallerTransfer.Write(Path.Combine(directory, "outcome.json"), outcome,
             TransferJson.Default.CiOutcome);
         return outcome;

@@ -111,7 +111,7 @@ internal static class RubyCiCaller
             CiCallerTransfer.Write(Path.Combine(directory, "result.json"), result,
                 TransferJson.Default.RubyGroupRun);
             results = result.Results;
-            outcome = CiCallerTransfer.Outcome(plan, results, result.Outcome);
+            outcome = CiCallerTransfer.Outcome(plan, result.Outcome);
         }
         CiCallerTransfer.Write(Path.Combine(directory, "results.json"), results,
             TransferJson.Default.CheckResultArray);
