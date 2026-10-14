@@ -1,6 +1,7 @@
 using System.Text.Json;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.CI.Callers;
+using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
@@ -170,12 +171,18 @@ public sealed class CiCallerTransferTests(TestContext context)
     [TestMethod]
     [DataRow(true)]
     [DataRow(false)]
-    public void ExternalRejectsLinkedAncestorsBeforeStateCreation(bool linkedSource)
+    public async Task ExternalRejectsLinkedAncestorsBeforeStateCreation(bool linkedSource)
     {
         using var files = new CiCallerFiles();
         string source = Directory.CreateDirectory(Path.Combine(files.Root, "source")).FullName;
         string alias = Path.Combine(files.Root, "alias");
-        Directory.CreateSymbolicLink(alias, source);
+        if (OperatingSystem.IsWindows())
+        {
+            NativeCommandResult result = await NativeProcess.ExecuteAsync(new("cmd.exe", files.Root,
+                ["/d", "/c", "mklink", "/J", alias, source], 10), context.CancellationToken);
+            Assert.IsTrue(result.Succeeded, result.Stderr + result.Error);
+        }
+        else Directory.CreateSymbolicLink(alias, source);
         try
         {
             string state = linkedSource ? Path.Combine(source, "state") :
