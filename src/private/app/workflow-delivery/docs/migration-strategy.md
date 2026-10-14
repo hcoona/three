@@ -1048,7 +1048,9 @@ CPython/UV and the synchronized root lock. Live Official requires the selected
 official ref and the native public-release projection. This existing Official
 caller selects `refs/heads/main`; the native Environment may constrain it
 further. Buddy accepts repository branch refs; dry run does not require live ref
-eligibility. Keep one
+eligibility. The Buddy Environment `workflow-delivery-v3-python-testpypi` allows
+every branch (`**`) and keeps its required reviewer; the Official
+Environment remains limited to `main`. Keep one
 source/control revision throughout; do not inject versions or a target witness.
 
 This project's committed NBGV `publicReleaseRefSpec` is `^refs/heads/`.
@@ -1198,7 +1200,10 @@ through existing repository readers. Support the declared dependency-free
 needs a concrete adapter, rather than a generic resolver or task framework.
 Buddy accepts repository branch refs; this Official caller selects
 `refs/heads/main`, with any further eligibility enforced by the native
-Environment. Dry run does not require live ref eligibility. Keep one faithful
+Environment. The Buddy Environment `workflow-delivery-v3-ruby-github-packages`
+allows every branch (`**`) and keeps its required reviewer; the Official
+Environment remains limited to `main`. Dry run does not require live ref
+eligibility. Keep one faithful
 source/control revision and selected native ref context; missing history or
 unsupported native facts block the request. Use the existing NBGV `SemVer2` and
 maintained RubyGems version projection, without an application suffix stripper,
