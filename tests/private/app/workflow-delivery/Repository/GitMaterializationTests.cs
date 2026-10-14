@@ -65,6 +65,7 @@ public sealed class GitMaterializationTests(TestContext context)
                 break;
             case "staged":
                 await repo.SetAsync("content.txt", "staged change");
+                await repo.FlushAsync();
                 break;
             case "missing":
                 File.Delete(Path.Combine(repo.Directory, "content.txt"));

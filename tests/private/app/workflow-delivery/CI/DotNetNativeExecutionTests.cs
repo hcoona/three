@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Xml.Linq;
 using Microsoft.Build.Evaluation;
@@ -240,7 +241,10 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
                 AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
                 <ParameterGroup><Signal ParameterType="System.String" Required="true" />
                 </ParameterGroup><Task><Code Type="Fragment" Language="cs"><![CDATA[
-                  System.IO.File.WriteAllText(Signal, "started");
+                  System.IO.File.WriteAllText(Signal + ".tmp",
+                    System.Diagnostics.Process.GetCurrentProcess().Id.ToString(
+                      System.Globalization.CultureInfo.InvariantCulture));
+                  System.IO.File.Move(Signal + ".tmp", Signal);
                   System.Threading.Thread.Sleep(30000);
                 ]]></Code></Task>
               </UsingTask>
@@ -259,17 +263,25 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         Task<DotNetRunResult> running = DotNetExecution.RunAsync(fixture.Plan,
             fixture.Request with { DeadlineSeconds = cancel ? 60 : 10 }, cancellation.Token);
         string signal = Path.Combine(repo.Directory, "started.txt");
+        Process? worker = null;
         try
         {
-            if (cancel)
+            using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(
+                context.CancellationToken))
             {
-                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(
-                    context.CancellationToken);
                 deadline.CancelAfter(TimeSpan.FromSeconds(60));
                 while (!File.Exists(signal) && !running.IsCompleted)
                     await Task.Delay(50, deadline.Token);
-                await cancellation.CancelAsync();
             }
+            if (!File.Exists(signal))
+                Assert.Fail("The native worker must start before interruption. " +
+                    (running.IsCompleted ? Diagnostics(await running) : "No result."));
+            int workerId = int.Parse(await File.ReadAllTextAsync(signal,
+                context.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+            worker = Process.GetProcessById(workerId);
+            // Hold the actual worker handle before interruption, avoiding a later PID lookup.
+            _ = worker.Handle;
+            if (cancel) await cancellation.CancelAsync();
             DotNetRunResult result = await running;
             Assert.IsTrue(File.Exists(signal), Diagnostics(result));
             Assert.AreEqual(cancel ? CheckStatus.Cancelled : CheckStatus.TimedOut,
@@ -283,7 +295,19 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         finally
         {
             await cancellation.CancelAsync();
-            await running;
+            try { await running; }
+            finally
+            {
+                using (worker)
+                {
+                    if (worker is not null)
+                    {
+                        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                        await worker.WaitForExitAsync(cleanup.Token);
+                        context.WriteLine("Native worker exited before fixture cleanup.");
+                    }
+                }
+            }
         }
     }
 
