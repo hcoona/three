@@ -16,6 +16,7 @@ defaults:
   run:
     shell: pwsh
 env:
+  DESTINATION: github-packages-nuget
   SELECTED_REVISION: ${{ inputs.target-sha }}
   SELECTED_REF: ${{ inputs.selected-ref }}
   DRY_RUN: ${{ inputs.dry-run }}
@@ -51,14 +52,8 @@ jobs:
           mise exec --locked dotnet -- dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj -p:RestoreLockedMode=true -o "$env:RUNNER_TEMP/control"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          $producer = [ordered]@{
-            revision = $env:SELECTED_REVISION; selectedRef = $env:SELECTED_REF
-            run = $env:GITHUB_RUN_ID; attempt = $env:GITHUB_RUN_ATTEMPT
-            unit = 'hcoona-release-smoke-github-packages'
-            dryRun = $env:DRY_RUN -eq 'true'
-          }
-
-          $producer | ConvertTo-Json | Set-Content -LiteralPath "$env:RUNNER_TEMP/control/producer.json" -Encoding utf8
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget request
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain actual control results
         id: control
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -70,21 +65,11 @@ jobs:
           overwrite: false
       - name: Qualify complete selected NuGet release
         run: |
-          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/prepared/original", "$env:RUNNER_TEMP/scratch" | Out-Null
-          Copy-Item -LiteralPath "$env:RUNNER_TEMP/control/producer.json" -Destination "$env:RUNNER_TEMP/prepared/producer.json"
-          $request = @{
-            subject = @{
-              revision = $env:SELECTED_REVISION; selectedRef = $env:SELECTED_REF
-              unit = 'hcoona-release-smoke-github-packages'; declaration = 'tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/workflow-delivery.release-unit.yml'
-              channel = 'buddy'; destination = 'github-packages-nuget'; dryRun = $env:DRY_RUN -eq 'true'
-            }
-            checkout = $env:GITHUB_WORKSPACE; scratch = "$env:RUNNER_TEMP/scratch"
-          }
-          $request | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath "$env:RUNNER_TEMP/prepared/request.json" -Encoding utf8
           mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-nuget "$env:RUNNER_TEMP/prepared/request.json" > "$env:RUNNER_TEMP/prepared/preparation.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          Copy-Item -LiteralPath (Get-ChildItem -LiteralPath "$env:RUNNER_TEMP/scratch/original" -File).FullName -Destination "$env:RUNNER_TEMP/prepared/original"
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget originals
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain actual prepared results
         id: originals
         if: always()
@@ -118,28 +103,6 @@ jobs:
           artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
           path: ${{ runner.temp }}/prepared
           digest-mismatch: error
-      - name: Validate transferred source, mode and producer
-        run: |
-          $producer = [ordered]@{
-            revision = $env:SELECTED_REVISION; selectedRef = $env:SELECTED_REF
-            run = $env:GITHUB_RUN_ID; attempt = $env:GITHUB_RUN_ATTEMPT
-            unit = 'hcoona-release-smoke-github-packages'
-            dryRun = $env:DRY_RUN -eq 'true'
-          }
-
-          foreach ($kind in @('control', 'prepared')) {
-            $actual = Get-Content -LiteralPath "$env:RUNNER_TEMP/$kind/producer.json" -Raw | ConvertFrom-Json -AsHashtable
-            if ($actual.Count -ne $producer.Count) { throw 'Unexpected artifact producer fields' }
-            foreach ($key in $producer.Keys) {
-              if (-not $actual.ContainsKey($key) -or $actual[$key] -cne $producer[$key]) { throw 'Artifact producer mismatch' }
-            }
-          }
-          $prepared = Get-Content -LiteralPath "$env:RUNNER_TEMP/prepared/preparation.json" -Raw | ConvertFrom-Json
-          $subject = $prepared.prepared.subject
-          if ($subject.revision -cne $env:SELECTED_REVISION -or $subject.selectedRef -cne $env:SELECTED_REF -or
-              $subject.unit -cne $producer.unit -or $subject.dryRun -cne $producer.dryRun -or
-              $subject.declaration -cne 'tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/workflow-delivery.release-unit.yml' -or $subject.channel -cne 'buddy' -or
-              $subject.destination -cne 'github-packages-nuget') { throw 'Preparation subject mismatch' }
       - name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
@@ -151,20 +114,23 @@ jobs:
         run: |
           mise install --yes dotnet@10.0.401
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate transferred source, mode and producer
+        run: |
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget validate control prepared
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Observe native destination and original bytes
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/observation" | Out-Null
-          Copy-Item -LiteralPath "$env:RUNNER_TEMP/control/producer.json" -Destination "$env:RUNNER_TEMP/observation/producer.json"
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget phase observation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/observation/observation.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Describe native state and dry-run writes
         id: state
         run: |
-          $observation = Get-Content -LiteralPath "$env:RUNNER_TEMP/observation/observation.json" -Raw | ConvertFrom-Json
-          $write = $observation.observation.files[0].state -ceq 'absent'
-          "write-needed=$($write.ToString().ToLowerInvariant())" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget state
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($env:DRY_RUN -eq 'true') {
           mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/observation/observation.json" > "$env:RUNNER_TEMP/observation/dry-run.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -208,28 +174,6 @@ jobs:
           artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
           path: ${{ runner.temp }}/prepared
           digest-mismatch: error
-      - name: Validate transferred source, mode and producer
-        run: |
-          $producer = [ordered]@{
-            revision = $env:SELECTED_REVISION; selectedRef = $env:SELECTED_REF
-            run = $env:GITHUB_RUN_ID; attempt = $env:GITHUB_RUN_ATTEMPT
-            unit = 'hcoona-release-smoke-github-packages'
-            dryRun = $env:DRY_RUN -eq 'true'
-          }
-
-          foreach ($kind in @('control', 'prepared')) {
-            $actual = Get-Content -LiteralPath "$env:RUNNER_TEMP/$kind/producer.json" -Raw | ConvertFrom-Json -AsHashtable
-            if ($actual.Count -ne $producer.Count) { throw 'Unexpected artifact producer fields' }
-            foreach ($key in $producer.Keys) {
-              if (-not $actual.ContainsKey($key) -or $actual[$key] -cne $producer[$key]) { throw 'Artifact producer mismatch' }
-            }
-          }
-          $prepared = Get-Content -LiteralPath "$env:RUNNER_TEMP/prepared/preparation.json" -Raw | ConvertFrom-Json
-          $subject = $prepared.prepared.subject
-          if ($subject.revision -cne $env:SELECTED_REVISION -or $subject.selectedRef -cne $env:SELECTED_REF -or
-              $subject.unit -cne $producer.unit -or $subject.dryRun -cne $producer.dryRun -or
-              $subject.declaration -cne 'tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/workflow-delivery.release-unit.yml' -or $subject.channel -cne 'buddy' -or
-              $subject.destination -cne 'github-packages-nuget') { throw 'Preparation subject mismatch' }
       - name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
@@ -241,12 +185,16 @@ jobs:
         run: |
           mise install --yes dotnet@10.0.401
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate transferred source, mode and producer
+        run: |
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget validate control prepared
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Refresh and invoke official NuGet publisher once
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/publication" | Out-Null
-          Copy-Item -LiteralPath "$env:RUNNER_TEMP/control/producer.json" -Destination "$env:RUNNER_TEMP/publication/producer.json"
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget phase publication
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/publication/publication.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain actual publication results
@@ -285,28 +233,6 @@ jobs:
           artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
           path: ${{ runner.temp }}/prepared
           digest-mismatch: error
-      - name: Validate transferred source, mode and producer
-        run: |
-          $producer = [ordered]@{
-            revision = $env:SELECTED_REVISION; selectedRef = $env:SELECTED_REF
-            run = $env:GITHUB_RUN_ID; attempt = $env:GITHUB_RUN_ATTEMPT
-            unit = 'hcoona-release-smoke-github-packages'
-            dryRun = $env:DRY_RUN -eq 'true'
-          }
-
-          foreach ($kind in @('control', 'prepared')) {
-            $actual = Get-Content -LiteralPath "$env:RUNNER_TEMP/$kind/producer.json" -Raw | ConvertFrom-Json -AsHashtable
-            if ($actual.Count -ne $producer.Count) { throw 'Unexpected artifact producer fields' }
-            foreach ($key in $producer.Keys) {
-              if (-not $actual.ContainsKey($key) -or $actual[$key] -cne $producer[$key]) { throw 'Artifact producer mismatch' }
-            }
-          }
-          $prepared = Get-Content -LiteralPath "$env:RUNNER_TEMP/prepared/preparation.json" -Raw | ConvertFrom-Json
-          $subject = $prepared.prepared.subject
-          if ($subject.revision -cne $env:SELECTED_REVISION -or $subject.selectedRef -cne $env:SELECTED_REF -or
-              $subject.unit -cne $producer.unit -or $subject.dryRun -cne $producer.dryRun -or
-              $subject.declaration -cne 'tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/workflow-delivery.release-unit.yml' -or $subject.channel -cne 'buddy' -or
-              $subject.destination -cne 'github-packages-nuget') { throw 'Preparation subject mismatch' }
       - name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
@@ -317,6 +243,10 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: |
           mise install --yes dotnet@10.0.401
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate transferred source, mode and producer
+        run: |
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget validate control prepared
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Download observation by immutable artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
@@ -335,28 +265,18 @@ jobs:
         env:
           WRITE_NEEDED: ${{ needs.observe.outputs.write-needed }}
         run: |
-          $producer = [ordered]@{
-            revision = $env:SELECTED_REVISION; selectedRef = $env:SELECTED_REF
-            run = $env:GITHUB_RUN_ID; attempt = $env:GITHUB_RUN_ATTEMPT
-            unit = 'hcoona-release-smoke-github-packages'
-            dryRun = $env:DRY_RUN -eq 'true'
-          }
-
-          $kinds = @('observation')
+          $kinds = @('control', 'prepared', 'observation')
           if ($env:WRITE_NEEDED -eq 'true') { $kinds += 'publication' }
-          foreach ($kind in $kinds) {
-            $actual = Get-Content -LiteralPath "$env:RUNNER_TEMP/$kind/producer.json" -Raw | ConvertFrom-Json -AsHashtable
-            if ($actual.Count -ne $producer.Count) { throw 'Unexpected artifact producer fields' }
-            foreach ($key in $producer.Keys) {
-              if (-not $actual.ContainsKey($key) -or $actual[$key] -cne $producer[$key]) { throw 'Artifact producer mismatch' }
-            }
-          }
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget validate @kinds
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify original remote bytes and native scoped consumer
         env:
           GITHUB_TOKEN: ${{ github.token }}
           WRITE_NEEDED: ${{ needs.observe.outputs.write-needed }}
         run: |
-          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/verification", "$env:RUNNER_TEMP/consumer-runtime" | Out-Null
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget phase verification
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/consumer-runtime" | Out-Null
           mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/verification/before-consumer.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release consume-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/verification/before-consumer.json" "$env:RUNNER_TEMP/prepared" "$env:RUNNER_TEMP/consumer-runtime" > "$env:RUNNER_TEMP/verification/consumer.json"
@@ -364,8 +284,6 @@ jobs:
           $consumerStatus = $LASTEXITCODE
           # A handled consumer failure remains a required failed result for completion.
           if ($consumerStatus -notin @(0, 1)) { exit $consumerStatus }
-          $consumer = Get-Content -LiteralPath "$env:RUNNER_TEMP/verification/consumer.json" -Raw | ConvertFrom-Json
-          if (($consumerStatus -eq 0) -ne ($consumer.check.status -ceq 'passed')) { throw 'Consumer result differs from command status' }
           mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/verification/after-consumer.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

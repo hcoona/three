@@ -257,6 +257,25 @@ def _unique_object(
     return result
 
 
+def group_outcome(plan: dict, outcome: dict) -> dict:
+    """Bind the execution owner's outcome without reevaluating checks."""
+    if (
+        not isinstance(outcome, dict)
+        or any(
+            outcome.get(name) != plan[name]
+            for name in ("comparison", "candidate", "scope")
+        )
+        or not isinstance(outcome.get("satisfied"), bool)
+        or not isinstance(outcome.get("checks"), list)
+        or not isinstance(outcome.get("errors"), list)
+    ):
+        message = (
+            "Group outcome has an incomplete or different original binding"
+        )
+        raise ValueError(message)
+    return outcome
+
+
 FAMILY_CATALOG = "docs/governance/record-families.yaml"
 RECORD_CATALOG_VERSION = 3
 

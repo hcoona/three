@@ -44,13 +44,20 @@ artifact, ambient fallback or second dependency declaration.
 | `ci plan-dotnet-group`, `ci run-dotnet`                                  | Select and execute native managed work                                                            |
 | `ci run-node`, `ci run-python-package`, `ci result`                      | Execute selected work or collect its candidate-bound results                                      |
 | `release prepare-*`, destination observation/description                 | Independently qualify originals and describe exact, absent, partial, conflicting or unknown state |
-| `release job-inputs ruby/python <operation>`                             | Prepare existing ordinary Release caller inputs and transfers                                     |
+| `release job-inputs ruby/python/npm/nuget <operation>`                   | Prepare existing ordinary Release caller inputs and transfers                                     |
 | `native-message-schemas <directory>`                                     | Regenerate static descriptions of maintained native helper messages                               |
 | Destination publication, consumption and completion commands             | Invoke the native publisher, require separate consumers and report truthful business results      |
 
 The [static native helper contracts](Native/contracts/) come from actual serializer
 metadata. Managed tests check regeneration; native helper tests use the static
 schemas directly. Native identity and business checks remain separate.
+
+Ordinary Release callers use typed `job-inputs` operations for `request`, `originals`,
+`validate <phase...>`, `phase <phase>` and `state`. Native tool-config operations
+remain ecosystem-specific. npm Official simulation uses `simulation-request` in
+its single job. `complete-github-npm` takes preparation, initial observation,
+final observation, consumer and publication (`-` only when omitted) paths. Missing
+required publication information remains unknown even when final bytes match.
 
 ## Implemented Scope
 

@@ -1788,3 +1788,20 @@ def test_scope_does_not_parse_or_select_python_configuration(comparison):
         for row in endpoint["paths"]
         if row["path"] == "pyproject.toml"
     )
+
+
+@pytest.mark.parametrize(
+    "defect",
+    [None, "comparison", "candidate", "scope", "satisfied", "checks", "errors"],
+)
+def test_group_outcome_retains_binding_and_failed_results(defect):
+    """A process receiver retains the execution owner's bound failed outcome."""
+    plan = {"comparison": "a" * 40, "candidate": "b" * 40, "scope": "group"}
+    outcome = {**plan, "satisfied": False, "checks": [], "errors": ["failed"]}
+    if defect:
+        outcome[defect] = "substituted"
+        with pytest.raises(ValueError, match="original binding"):
+            scope.group_outcome(plan, outcome)
+    else:
+        assert scope.group_outcome(plan, outcome) is outcome
+        assert outcome["satisfied"] is False

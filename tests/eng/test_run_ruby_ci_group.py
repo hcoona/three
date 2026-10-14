@@ -111,7 +111,15 @@ def flow(tmp_path, monkeypatch):
             return json.dumps(
                 {
                     "results": [] if state["missing"] else [{"native": True}],
-                    "outcome": {"satisfied": True},
+                    "outcome": {
+                        "comparison": BEFORE,
+                        "candidate": AFTER,
+                        "scope": group.SCOPE,
+                        "satisfied": not state["missing"]
+                        and not state["failed"],
+                        "checks": [],
+                        "errors": [],
+                    },
                 }
             )
         assert label == "collection"
@@ -154,10 +162,10 @@ def test_planning_retains_original_paired_inputs_without_recollection(flow):
 @pytest.mark.parametrize(
     ("missing", "failed"), [(False, False), (True, False), (False, True)]
 )
-def test_original_results_determine_completion_despite_claimed_success(
+def test_execution_owner_retains_required_failure_outcome(
     flow, missing, failed
 ):
-    """Original result collection overrides a supplied success claim."""
+    """The bound execution outcome retains required failure."""
     flow.state.update(
         checks=[{"original": "selected"}], missing=missing, failed=failed
     )
@@ -171,7 +179,6 @@ def test_original_results_determine_completion_despite_claimed_success(
         "preparation",
         "planning",
         "execution",
-        "collection",
     ]
 
 

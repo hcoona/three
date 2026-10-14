@@ -7,13 +7,13 @@ namespace WorkflowDelivery.Release;
 
 internal sealed record ReleaseJobProducer(ReleaseSubject Subject, string Run, string Attempt);
 
-// Inputs for the two existing concrete Actions callers. Actions owns job orchestration.
+// Inputs for the existing concrete Actions callers. Actions owns job orchestration.
 internal static class ReleaseJobInputs
 {
     internal static int? Run(string[] args, Func<string, string?>? environment = null)
     {
         if (args is not ["release", "job-inputs", var ecosystem, .. var operation]) return null;
-        if (ecosystem is not ("ruby" or "python"))
+        if (ecosystem is not ("ruby" or "python" or "npm" or "nuget"))
             throw new InvalidDataException("Unsupported Release caller ecosystem.");
         environment ??= Environment.GetEnvironmentVariable;
         string Env(string name) => environment(name) is { Length: > 0 } value ? value :
@@ -22,15 +22,18 @@ internal static class ReleaseJobInputs
         if (!Path.IsPathFullyQualified(Env("RUNNER_TEMP")) || !Directory.Exists(root))
             throw new InvalidDataException("Release caller requires native runner scratch.");
         string destination = Env("DESTINATION");
-        bool buddy = ecosystem == "ruby" ? destination == "github-packages" :
-            destination == "testpypi";
-        if (ecosystem == "ruby" ? destination is not ("github-packages" or "rubygems") :
-            destination is not ("testpypi" or "pypi"))
-            throw new InvalidDataException("Unsupported Release caller destination.");
+        bool buddy = (ecosystem, destination) switch
+        {
+            ("ruby", "github-packages") or ("python", "testpypi") or
+                ("npm", "github-packages-npm") or ("nuget", "github-packages-nuget") => true,
+            ("ruby", "rubygems") or ("python", "pypi") or ("npm", "npmjs") => false,
+            _ => throw new InvalidDataException("Unsupported Release caller destination."),
+        };
         string dry = Env("DRY_RUN");
         if (dry is not ("true" or "false")) throw new InvalidDataException(
             "Invalid dry-run input.");
-        string unit = "hcoona-release-smoke-" + ecosystem;
+        string unit = "hcoona-release-smoke-" + (ecosystem == "nuget" ?
+            "github-packages" : ecosystem);
         var subject = new ReleaseSubject(Env("GITHUB_SHA"), Env("GITHUB_REF"), unit,
             "tests/private/app/workflow-delivery/fixtures/products/" + unit +
             "/workflow-delivery.release-unit.yml", buddy ? "buddy" : "official",
@@ -55,11 +58,18 @@ internal static class ReleaseJobInputs
             Directory.CreateDirectory(path);
             return path;
         }
-        PreparedRelease Preparation() => ecosystem == "ruby"
-            ? Read(Path.Combine(prepared, "preparation.json"),
-                TransferJson.Default.RubyPreparationResult).Prepared
-            : Read(Path.Combine(prepared, "preparation.json"),
-                TransferJson.Default.PythonPreparationResult).Prepared;
+        PreparedRelease Preparation() => ecosystem switch
+        {
+            "ruby" => Read(Path.Combine(prepared, "preparation.json"),
+                TransferJson.Default.RubyPreparationResult).Prepared,
+            "python" => Read(Path.Combine(prepared, "preparation.json"),
+                TransferJson.Default.PythonPreparationResult).Prepared,
+            "npm" => Read(Path.Combine(prepared, "preparation.json"),
+                TransferJson.Default.NpmPreparationResult).Prepared,
+            "nuget" => Read(Path.Combine(prepared, "preparation.json"),
+                TransferJson.Default.NuGetPreparationResult).Prepared,
+            _ => throw new InvalidDataException("Unsupported Release preparation."),
+        };
         void Same(ReleaseSubject actual)
         {
             if (actual != subject) throw new InvalidDataException(
@@ -68,26 +78,39 @@ internal static class ReleaseJobInputs
         switch (operation)
         {
             case ["request"]:
+            case ["simulation-request"] when ecosystem == "npm" && !buddy && subject.DryRun:
                 if (Env("GITHUB_REPOSITORY") != "hcoona/three" ||
                     !subject.DryRun && producer.Attempt != "1")
                     throw new InvalidDataException("Unsupported repository or live rerun.");
                 string scratch = Fresh("preparation-scratch");
                 Fresh("prepared");
-                Write(Path.Combine(control, "producer.json"), producer,
-                    TransferJson.Default.ReleaseJobProducer);
-                Write(Path.Combine(prepared, "producer.json"), producer,
-                    TransferJson.Default.ReleaseJobProducer);
+                // The single-job Official simulation has no producer transfer consumer.
+                if (operation[0] == "request")
+                {
+                    Write(Path.Combine(control, "producer.json"), producer,
+                        TransferJson.Default.ReleaseJobProducer);
+                    Write(Path.Combine(prepared, "producer.json"), producer,
+                        TransferJson.Default.ReleaseJobProducer);
+                }
                 if (ecosystem == "ruby")
                     Write(Path.Combine(prepared, "request.json"), new RubyPreparationRequest(
                         subject,
                         Env("GITHUB_WORKSPACE"), scratch, new(Env("RUBY_EXECUTABLE"),
                             Env("GEM_EXECUTABLE"), Env("DOTNET_EXECUTABLE"))),
                         TransferJson.Default.RubyPreparationRequest);
-                else
+                else if (ecosystem == "python")
                     Write(Path.Combine(prepared, "request.json"), new PythonPreparationRequest(
                         subject,
                         Env("GITHUB_WORKSPACE"), scratch, Env("MISE_DATA_DIR")),
                         TransferJson.Default.PythonPreparationRequest);
+                else if (ecosystem == "npm")
+                    Write(Path.Combine(prepared, "request.json"), new NpmPreparationRequest(
+                        subject, Env("GITHUB_WORKSPACE"), scratch),
+                        TransferJson.Default.NpmPreparationRequest);
+                else
+                    Write(Path.Combine(prepared, "request.json"), new NuGetPreparationRequest(
+                        subject, Env("GITHUB_WORKSPACE"), scratch),
+                        TransferJson.Default.NuGetPreparationRequest);
                 break;
             case ["originals"]:
                 PreparedRelease release = Preparation();
@@ -122,11 +145,20 @@ internal static class ReleaseJobInputs
                     TransferJson.Default.ReleaseJobProducer);
                 break;
             case ["state"]:
-                ReleaseObservation observation = ecosystem == "ruby"
-                    ? Read(At("observation/observation.json"),
-                        TransferJson.Default.RubyObservationResult).Observation
-                    : Read(At("observation/observation.json"),
-                        TransferJson.Default.PythonIndexObservationResult).Observation;
+                ReleaseObservation observation = ecosystem switch
+                {
+                    "ruby" => Read(At("observation/observation.json"),
+                        TransferJson.Default.RubyObservationResult).Observation,
+                    "python" => Read(At("observation/observation.json"),
+                        TransferJson.Default.PythonIndexObservationResult).Observation,
+                    "npm" when buddy => Read(At("observation/observation.json"),
+                        TransferJson.Default.GithubNpmObservationResult).Observation,
+                    "npm" => Read(At("observation/observation.json"),
+                        TransferJson.Default.NpmjsObservationResult).Observation,
+                    "nuget" => Read(At("observation/observation.json"),
+                        TransferJson.Default.GithubNuGetObservationResult).Observation,
+                    _ => throw new InvalidDataException("Unsupported Release observation."),
+                };
                 Same(observation.Subject);
                 bool needed = observation.Files.Any(file => file.State == ReleaseFileState.Absent);
                 File.AppendAllText(Env("GITHUB_OUTPUT"), "write-needed=" + (
@@ -182,8 +214,7 @@ internal static class ReleaseJobInputs
     }
 
     private static T Read<T>(string path, JsonTypeInfo<T> type) =>
-        JsonSerializer.Deserialize(File.ReadAllText(path), type) ??
-        throw new InvalidDataException("Missing typed caller input.");
+        ReleaseCli.Read(path, type);
     private static void Write<T>(string path, T value, JsonTypeInfo<T> type) =>
         File.WriteAllText(path, JsonSerializer.Serialize(value, type) + "\n");
     private static void RequireUnlinked(string path, string root)

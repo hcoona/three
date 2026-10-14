@@ -213,7 +213,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
     [TestMethod]
     [DataRow(true, 0)]
     [DataRow(false, 1)]
-    public async Task CliCollectsOriginalTransferredPlanDespiteClaimedOutcome(bool complete,
+    public async Task CliRetainsExecutionOwnerOutcomeAndMissingRequiredResults(bool complete,
         int expectedExit)
     {
         using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
@@ -233,7 +233,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
                 return Task.FromResult(new DotNetGroupRunResult(plan.Candidate, results,
                     new(plan.Candidate, results, [], [], []),
                     new(plan.Candidate, [], [], [], [], []),
-                    new(plan.Comparison, plan.Candidate, plan.Scope, true, [], [])));
+                    ResultCollector.Collect(plan, results)));
             });
         Assert.AreEqual(expectedExit, exit, error.ToString());
         Assert.AreEqual("", error.ToString());
@@ -241,7 +241,10 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
             TransferJson.Default.DotNetGroupRunResult)!;
         Assert.AreEqual(fixture.Plan.Candidate, transferred.Candidate);
         Assert.HasCount(complete ? 2 : 1, transferred.Results);
-        Assert.AreEqual(complete, ResultCollector.Collect(fixture.Plan,
-            transferred.Results).Satisfied);
+        Assert.AreEqual(complete, transferred.Outcome.Satisfied);
+        Assert.AreEqual(fixture.Plan.Comparison, transferred.Outcome.Comparison);
+        Assert.AreEqual(fixture.Plan.Scope, transferred.Outcome.Scope);
+        Assert.HasCount(complete ? 0 : 1,
+            transferred.Outcome.Checks.Where(check => check.Status == "missing"));
     }
 }
