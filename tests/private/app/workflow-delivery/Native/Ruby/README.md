@@ -30,6 +30,8 @@ must discover the declared suite rather than an empty successful run. Ordinary
 execution uses the existing `ruby/rspec-v1` project owner; root integration owns its selection and required result.
 
 Each example uses fresh temporary state outside the checkout, closed child
-configuration, EOF stdin and a 30-second deadline. Native results retain wire
-messages, stdout/stderr and subprocess outcomes. No publication or hosted-destination
+configuration, EOF stdin and a 30-second deadline. Its fixture inputs and child
+diagnostics are removed after execution. The ordinary group result retains the
+original RSpec formatter report, including native failure details, and the outer
+command's stdout/stderr and terminal outcome. No publication or hosted-destination
 qualification is established by this suite.

@@ -172,14 +172,13 @@ end
 
 RSpec.configure do |config|
   config.include NativeHelpers
-  config.before do
-    # Retain originals, wire messages and terminal receipts for the local/CI
-    # evidence consumer. The suite never writes to user configuration.
-    base = NativeHelpers::ROOT / ".testagent/ruby-native/runs"
-    FileUtils.mkdir_p(base)
-    @scratch = Pathname.new(Dir.mktmpdir("workflow-ruby-native-"))
-    File.symlink(@scratch, base / @scratch.basename)
-    @scratch.join("example.txt").write(RSpec.current_example.full_description)
-    @receipts = []
+  config.around do |example|
+    # Fixture state and child diagnostics are temporary execution inputs.
+    # The ordinary group result retains RSpec's report and outer command outcome.
+    Dir.mktmpdir("workflow-ruby-native-") do |directory|
+      @scratch = Pathname.new(directory)
+      @receipts = []
+      example.run
+    end
   end
 end

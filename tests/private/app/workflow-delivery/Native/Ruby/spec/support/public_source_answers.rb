@@ -17,7 +17,7 @@ Gem::Source.prepend(Module.new do
       raise "not the selected native SourceList"
     end
     raise "alternate source configured" unless Gem.sources.to_a == [uri.to_s]
-    if (Gem.configuration.sources || []).include?("https://alternate.invalid")
+    if (Gem.configuration.sources || []).any? { |source| source == "https://alternate.invalid" }
       raise "unexpected inherited config"
     end
     expected_host = JSON.parse(File.read(ARGV.fetch(0))).fetch("host")

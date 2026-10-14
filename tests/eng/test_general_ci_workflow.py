@@ -760,6 +760,189 @@ def _dotnet_commands(tmp_path: Path) -> dict[str, str]:
     return env
 
 
+def _scope_endpoint_commands(
+    tmp_path: Path, line_ending: str
+) -> tuple[dict[str, str], list[Path]]:
+    env = _commands(tmp_path)
+    tools = Path(env["PATH"])
+    for name in ("mkdir", "basename"):
+        command = shutil.which(name)
+        assert command is not None
+        (tools / name).symlink_to(command)
+    endpoints = [tmp_path / "basis \\native", tmp_path / "candidate checkout"]
+    for endpoint in endpoints:
+        endpoint.mkdir()
+    env.update(
+        NATIVE_ENDPOINTS=json.dumps([str(path) for path in endpoints]),
+        NATIVE_LINE_ENDING=line_ending,
+    )
+    executable(
+        tools / "jq",
+        COMMAND_RECORDER
+        + r"""
+if os.environ.get("JQ_EMIT_ROWS", "true") == "true":
+    ending = os.environ["NATIVE_LINE_ENDING"]
+    for endpoint in json.loads(os.environ["NATIVE_ENDPOINTS"]):
+        sys.stdout.buffer.write((endpoint + ending).encode("utf-8"))
+    sys.stdout.buffer.flush()
+sys.exit(int(os.environ.get("JQ_EXIT", "0")))
+""",
+    )
+    return env, endpoints
+
+
+def _scope_endpoint_step(workflow: dict[str, Any]) -> dict[str, Any]:
+    return next(
+        step
+        for step in workflow["jobs"]["scope"]["steps"]
+        if step.get("id") == "dotnet-group"
+    )
+
+
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n"], ids=["lf", "crlf"])
+def test_scope_prepares_exact_native_endpoints_from_native_line_records(
+    workflow: dict[str, Any], tmp_path: Path, line_ending: str
+) -> None:
+    """Preserve exact native endpoint paths across shell setup."""
+    env, endpoints = _scope_endpoint_commands(tmp_path, line_ending)
+    result = run_step(
+        _scope_endpoint_step(workflow),
+        cwd=tmp_path,
+        env=env,
+        bindings=_bindings(tmp_path),
+        workflow=workflow,
+        job=workflow["jobs"]["scope"],
+    )
+    assert result.returncode == 0, result.stderr
+    observations = [
+        json.loads(line)
+        for line in Path(env["COMMAND_LOG"]).read_text().splitlines()
+    ]
+    native = [row for row in observations if row["command"][0] == "mise"]
+    assert {Path(row["cwd"]) for row in native} == set(endpoints)
+    for endpoint in endpoints:
+        commands = [
+            row["command"] for row in native if row["cwd"] == str(endpoint)
+        ]
+        assert commands[:2] == [
+            ["mise", "install", "--locked", "dotnet", "node", "pnpm"],
+            [
+                "mise",
+                "exec",
+                "--locked",
+                "dotnet",
+                "--",
+                "dotnet",
+                "tool",
+                "restore",
+            ],
+        ]
+        assert commands[2][:8] == [
+            "mise",
+            "exec",
+            "--locked",
+            "dotnet",
+            "--",
+            "dotnet",
+            "restore",
+            "dirs.proj",
+        ]
+        assert "-property:RestoreLockedMode=true" in commands[2]
+    assert observations[-1]["command"][2:5] == [
+        "ci",
+        "caller-dotnet",
+        "prepare",
+    ]
+    assert observations[-1]["cwd"] == str(tmp_path)
+
+
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n"], ids=["lf", "crlf"])
+@pytest.mark.parametrize(
+    "failed_command",
+    [
+        ["mise", "install"],
+        [
+            "mise",
+            "exec",
+            "--locked",
+            "dotnet",
+            "--",
+            "dotnet",
+            "tool",
+            "restore",
+        ],
+        ["mise", "exec", "--locked", "dotnet", "--", "dotnet", "restore"],
+    ],
+    ids=["install", "tool-restore", "graph-restore"],
+)
+def test_scope_endpoint_native_failure_blocks_dependent_preparation(
+    workflow: dict[str, Any],
+    tmp_path: Path,
+    line_ending: str,
+    failed_command: list[str],
+) -> None:
+    """Keep every native prerequisite fatal before dependent preparation."""
+    env, endpoints = _scope_endpoint_commands(tmp_path, line_ending)
+    env["FAIL_COMMAND"] = json.dumps(failed_command)
+    result = run_step(
+        _scope_endpoint_step(workflow),
+        cwd=tmp_path,
+        env=env,
+        bindings=_bindings(tmp_path),
+        workflow=workflow,
+        job=workflow["jobs"]["scope"],
+    )
+    assert result.returncode == CHILD_FAILURE
+    observations = [
+        json.loads(line)
+        for line in Path(env["COMMAND_LOG"]).read_text().splitlines()
+    ]
+    assert observations[-1]["command"][: len(failed_command)] == failed_command
+    assert all(row["command"][0] != "dotnet" for row in observations)
+    assert {Path(row["cwd"]) for row in observations[1:]} == {endpoints[0]}
+
+
+@pytest.mark.parametrize(
+    "emit_rows", ["false", "true"], ids=["empty", "partial"]
+)
+def test_scope_failed_endpoint_producer_blocks_all_preparation(
+    workflow: dict[str, Any], tmp_path: Path, emit_rows: str
+) -> None:
+    """Reject unsuccessful extraction even when it emits partial rows."""
+    env, _ = _scope_endpoint_commands(tmp_path, "\r\n")
+    env.update(JQ_EXIT=str(CHILD_FAILURE), JQ_EMIT_ROWS=emit_rows)
+    result = run_step(
+        _scope_endpoint_step(workflow),
+        cwd=tmp_path,
+        env=env,
+        bindings=_bindings(tmp_path),
+        workflow=workflow,
+        job=workflow["jobs"]["scope"],
+    )
+    assert result.returncode == CHILD_FAILURE
+    observations = _observations(env)
+    assert [row["command"][0] for row in observations] == ["jq"]
+
+
+def test_scope_unwritable_endpoint_scratch_blocks_all_preparation(
+    workflow: dict[str, Any], tmp_path: Path
+) -> None:
+    """Do not start native work when the owned extraction file cannot open."""
+    env, _ = _scope_endpoint_commands(tmp_path, "\r\n")
+    scratch = Path(env["RUNNER_TEMP"]) / "dotnet-group/endpoint-preparation"
+    (scratch / "directories.txt").mkdir(parents=True)
+    result = run_step(
+        _scope_endpoint_step(workflow),
+        cwd=tmp_path,
+        env=env,
+        bindings=_bindings(tmp_path),
+        workflow=workflow,
+        job=workflow["jobs"]["scope"],
+    )
+    assert result.returncode != 0
+    assert _observations(env) == []
+
+
 def _dotnet_receiver_command(
     tmp_path: Path, artifact: str = "1054"
 ) -> list[str]:
