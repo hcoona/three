@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.CI.Callers;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 using WorkflowDelivery.Release;
@@ -43,6 +44,7 @@ internal static class Program
                 return 0;
             }
             if (ReleaseCli.Run(args, output) is { } releaseStatus) return releaseStatus;
+            if (CiCallerCli.Run(args, output) is { } callerStatus) return callerStatus;
             if (args is ["ci", "prepare-ruby-group", var rubyPreparationPath])
             {
                 RubyGroupPreparationRequest request = JsonSerializer.Deserialize(
@@ -313,6 +315,18 @@ internal static class Program
     RespectRequiredConstructorParameters = true,
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
 )]
+[JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(string[]))]
+[JsonSerializable(typeof(ScopeCoordinate[]))]
+[JsonSerializable(typeof(CiCallerEndpoints))]
+[JsonSerializable(typeof(CiCallerControl))]
+[JsonSerializable(typeof(CiCallerCommand))]
+[JsonSerializable(typeof(PythonCiCallerContext))]
+[JsonSerializable(typeof(RubyCiCallerContext))]
+[JsonSerializable(typeof(NodeCiCallerContext))]
+[JsonSerializable(typeof(RubyNodeContribution))]
+[JsonSerializable(typeof(PythonCiCallerReadback))]
+[JsonSerializable(typeof(RubyCiCallerReadback))]
 [JsonSerializable(typeof(GithubNpmToolSelection))]
 [JsonSerializable(typeof(ReleaseJobProducer))]
 [JsonSerializable(typeof(PlanRequest))]
