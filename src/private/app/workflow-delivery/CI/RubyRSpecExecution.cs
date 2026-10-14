@@ -39,8 +39,8 @@ internal static class RubyRSpecExecution
         };
         var command = new NativeCommand(request.Ruby, directory,
             [request.Bundle, "_" + request.BundlerVersion + "_", "exec", "rspec",
-                "--format", "json", "--out", output], request.DeadlineSeconds,
-            environment, InheritEnvironment: false);
+                "--fail-if-no-examples", "--format", "json", "--out", output],
+            request.DeadlineSeconds, environment, InheritEnvironment: false);
         try
         {
             NativeCommandResult result = await execute(command, token);

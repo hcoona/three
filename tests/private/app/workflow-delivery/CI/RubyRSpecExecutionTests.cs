@@ -54,6 +54,7 @@ public sealed class RubyRSpecExecutionTests
                     Assert.AreEqual(Path.GetFullPath(Path.Combine(request.Checkout, "src/product")),
                         command.Directory);
                     string[] expectedArguments = [request.Bundle, "_2.4.20_", "exec", "rspec",
+                        "--fail-if-no-examples",
                         "--format", "json", "--out", command.Arguments[^1]];
                     CollectionAssert.AreEqual(expectedArguments, command.Arguments);
                     Assert.AreEqual(request.Gemfile, command.Environment!["BUNDLE_GEMFILE"]);
