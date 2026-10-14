@@ -48,13 +48,16 @@ internal static class RubyRSpecResult
         }
     }
 
-    // Pending examples remain facts for adopted quality policy; do not strengthen native defaults.
+    // Pending examples remain facts for adopted quality policy. A required suite must run at
+    // least one example; rspec-core 3.13 exposes fail_if_no_examples only as configuration,
+    // not as a command-line switch, so the existing native report supplies the count.
     internal static CheckStatus Status(NativeCommandResult command, RubyRSpecReport? report) =>
         command.Termination switch
         {
             NativeTermination.Cancelled => CheckStatus.Cancelled,
             NativeTermination.TimedOut => CheckStatus.TimedOut,
             _ => command.Succeeded && command.Error is null && report is not null &&
+                report.ExampleCount > 0 &&
                 report.FailureCount == 0 && report.ErrorsOutsideExamples == 0
                     ? CheckStatus.Passed : CheckStatus.Failed,
         };
