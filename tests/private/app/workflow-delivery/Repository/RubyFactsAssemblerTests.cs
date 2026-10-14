@@ -69,6 +69,55 @@ public sealed class RubyFactsAssemblerTests
     }
 
     [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(true, true)]
+    public void BundleOnlySuiteRetainsTransitiveAndRemovedNativeProducerInputs(
+        bool nested, bool removed)
+    {
+        const string suite = "tests/native-ruby";
+        string context = nested ? suite + "/contexts/bundler" : suite;
+        string[] paths = [suite + "/Gemfile", suite + "/Gemfile.lock",
+            context + "/Gemfile", context + "/Gemfile.lock", "shared/version.json"];
+        var owner = new ProjectFacts("ruby:" + suite, suite, [], [], null,
+            RubyProjectChecks.Preset,
+            [new(new(suite, RubyProjectChecks.RSpec, "default"),
+                [], "ubuntu-latest", true, [])]);
+        RubyFactsEndpoint Native(string revision, bool remove)
+        {
+            RubyFactsEndpoint endpoint = Endpoint(revision,
+                [Producer("src/leaf"), Producer("src/gem", "src/leaf"),
+                    Producer("src/unrelated")], [owner], paths);
+            RubyBundleConsumption[] bundles =
+                [new(context + "/Gemfile", context,
+                    [context + "/Gemfile", context + "/Gemfile.lock"],
+                    remove ? [] : ["src/gem"])];
+            if (nested) bundles = [new(suite + "/Gemfile", suite,
+                [suite + "/Gemfile", suite + "/Gemfile.lock"], []), .. bundles];
+            return endpoint with
+            {
+                Native = new(endpoint.Native.Graph with { Bundles = bundles },
+                    [new("shared/version.json", ["src/leaf"])])
+            };
+        }
+        RubyFactsEndpoint basis = Native("basis", false);
+        RubyFactsEndpoint candidate = Native("candidate", removed);
+        foreach (string path in new[] { "src/leaf/lib.rb", "shared/version.json" })
+        {
+            RubyFactAssembly assembly = RubyFactsAssembler.Assemble(basis, candidate,
+                [path], false);
+            PlannedCheck check = Assert.ContainsSingle(Plan(assembly).Checks);
+            Assert.AreEqual(new CheckKey(suite, RubyProjectChecks.RSpec, "default"),
+                check.Work.Key);
+            Assert.Contains(new SelectionReason(path, "basis", "ruby:" + suite),
+                assembly.PairedReasons);
+            Assert.IsFalse(ResultCollector.Collect(Plan(assembly), []).Satisfied);
+        }
+        Assert.IsEmpty(Plan(RubyFactsAssembler.Assemble(basis, candidate,
+            ["src/unrelated/lib.rb"], false)).Checks);
+    }
+
+    [TestMethod]
     public void PairedTransitiveEdgesRetainInputOnlyProducersAndCompleteOwnerVariants()
     {
         RubyFactsEndpoint basis = Endpoint("basis",

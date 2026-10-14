@@ -17,6 +17,11 @@ public sealed class NativePreparationQualificationTests
 
     [TestMethod]
     [DataRow("README.md", false, false)]
+    [DataRow("pyproject.toml", true, false)]
+    [DataRow("uv.lock", true, false)]
+    [DataRow("uv.toml", true, false)]
+    [DataRow(".config/uv/uv.toml", true, false)]
+    [DataRow(".python-version", true, false)]
     [DataRow("src/public/lib/nbgv-python/nbgv.py", true, false)]
     [DataRow("src/private/app/workflow-delivery/Release/RubyPreparation.cs", true, true)]
     [DataRow("tests/private/app/workflow-delivery/Release/PythonPreparationNativeTests.cs",

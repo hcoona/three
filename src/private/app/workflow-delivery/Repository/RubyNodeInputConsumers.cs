@@ -21,7 +21,11 @@ internal static class RubyNodeInputConsumers
         {
             if (!nodeProjects.Contains(bundle.Directory))
             {
-                if (producers.Contains(bundle.Directory)) continue;
+                if (producers.Contains(bundle.Directory) || ruby.Owners.Any(owner =>
+                        !producers.Contains(owner.Directory) &&
+                        (bundle.Directory == owner.Directory ||
+                         bundle.Directory.StartsWith(owner.Directory + "/",
+                             StringComparison.Ordinal)))) continue;
                 throw new InvalidDataException(
                     "A bundle-only Ruby consumer has no native Node workspace identity.");
             }

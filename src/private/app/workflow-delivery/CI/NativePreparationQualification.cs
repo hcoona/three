@@ -116,6 +116,8 @@ internal static class NativePreparationQualification
             path.StartsWith("src/private/app/workflow-delivery/docs/", StringComparison.Ordinal))
             return false;
         if (Shared.Contains(path, StringComparer.Ordinal)) return true;
+        if (python && path is "pyproject.toml" or "uv.lock" or "uv.toml" or
+                ".config/uv/uv.toml" or ".python-version") return true;
         string[] roots = python ? [.. Managed, "src/public/lib/nbgv-python"] : Managed;
         int separator = path.LastIndexOf('/');
         string name = path[(separator + 1)..];

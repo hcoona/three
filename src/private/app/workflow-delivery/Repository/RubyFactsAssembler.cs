@@ -25,7 +25,15 @@ internal static class RubyFactsAssembler
                 foreach (string dependency in producer.Ordinary)
                     Add(downstream, dependency, producer.Directory);
             foreach (ProjectFacts owner in endpoint.Owners)
+            {
                 Add(owners, owner.Directory, owner.Id);
+                foreach (RubyBundleConsumption bundle in endpoint.Native.Graph.Bundles.Where(
+                             bundle => bundle.Directory == owner.Directory ||
+                                 bundle.Directory.StartsWith(owner.Directory + "/",
+                                     StringComparison.Ordinal)))
+                    foreach (string producer in bundle.Producers)
+                        Add(downstream, producer, owner.Directory);
+            }
         }
         var reasons = new HashSet<SelectionReason>();
         var unaffected = new HashSet<string>(StringComparer.Ordinal);

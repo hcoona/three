@@ -2,7 +2,7 @@
 # Bootstrap the committed control application; its typed caller owns full composition.
 set -Eeuo pipefail
 operator_directory=$PWD
-repository=$(git rev-parse --show-toplevel)
+repository=''
 directory=''
 tool_data='-'
 while (($#)); do
@@ -25,6 +25,7 @@ while (($#)); do
     ;;
   esac
 done
+if [[ -z $repository ]]; then repository=$(git rev-parse --show-toplevel); fi
 [[ $(uname -s) == Linux ]] || {
   echo 'Native Python full supports Linux.' >&2
   exit 2

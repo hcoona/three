@@ -120,7 +120,9 @@ def test_uv_workflow_and_renovate_consumers_use_mise_projection():
         assert {config_path, ".python-version"} <= set(tasks["fileFilters"])
 
 
-@pytest.mark.parametrize("defect", ["dirty", "option", "state", "source"])
+@pytest.mark.parametrize(
+    "defect", ["dirty", "option", "state", "source", "outside"]
+)
 def test_native_full_launcher_rejects_invalid_source_before_bootstrap(
     tmp_path, defect
 ):
@@ -159,7 +161,7 @@ def test_native_full_launcher_rejects_invalid_source_before_bootstrap(
         source.write_text("committed = False\n")
     elif defect == "option":
         arguments.append("--from-ref=HEAD")
-    elif defect == "state":
+    elif defect in {"state", "outside"}:
         state.mkdir()
     elif defect == "source":
         arguments[-1] = str(root / "state")
@@ -168,6 +170,7 @@ def test_native_full_launcher_rejects_invalid_source_before_bootstrap(
         capture_output=True,
         text=True,
         check=False,
+        cwd=tmp_path if defect == "outside" else root,
     )
     assert result.returncode == 2, result.stderr
     assert not (state / "control-checkout").exists()
