@@ -2,7 +2,7 @@
   "source": "fd9cd6450d874441dd828c3bd9b8a1e7875560fd",
   "source_tree": "ad32ef1be3118d9c21df268ace5639ca6fa8bf90",
   "base": "7be1babcb429c97bc68e3aa7a00f4faa4cccb3bf",
-  "archive_sha256": "0a0048a8678ea42bd606696c6a924af5d4f399162a7aa96e8f9a6a929d3a978a",
+  "archive_sha256": "173b1338d9f6ce2da9589b9cc96e665406ef3baa040a8fd932d1d549801bcec2",
   "files": [
     "v3-postmerge-architecture-independent-audit.md",
     "v3-postmerge-finding-triage-cli.md",
@@ -33,7 +33,9 @@
     "v3-caller-hk-repaired.log",
     "v3-caller-hk-final-snapshot.log",
     "v3-caller-commit.log",
-    "v3-caller-commit-repaired.log"
+    "v3-caller-commit-repaired.log",
+    "v3-caller-copilot-comments.json",
+    "v3-caller-copilot-triage.md"
   ],
   "evidence_scope": "Local unprivileged qualification of fingerprinted source, independent source and record review; no hosted, publication or performance acceptance.",
   "managed": {
@@ -45,5 +47,6 @@
     "passed": 543
   },
   "record_checker_exit": 1,
-  "record_checker_diagnostics": ["Existing testconfig.json classification-unresolved"]
+  "record_checker_diagnostics": ["Existing testconfig.json classification-unresolved"],
+  "copilot_findings": "Three independent false positives; no source repair."
 }
