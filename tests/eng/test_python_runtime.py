@@ -3,10 +3,10 @@
 import importlib.util
 import json
 import shlex
-import sys
+import shutil
+import subprocess
 import tomllib
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -46,174 +46,12 @@ def test_runtime_projection_checks_drift_without_rewriting(tmp_path, uv):
     assert (tmp_path / ".python-version").read_text() == "3.14.3\n"
 
 
-@pytest.fixture
-def test_runner(monkeypatch):
-    """Load the actual bounded runner with its existing selector import."""
-    monkeypatch.syspath_prepend(str(ROOT / "eng/scripts"))
-    spec = importlib.util.spec_from_file_location(
-        "run_python_tests", ROOT / "eng/scripts/run_python_tests.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-@pytest.fixture
-def committed_full_runner(test_runner, monkeypatch, tmp_path):
-    """Use real committed Git source and substitute costly native phases."""
-    root = tmp_path / "source"
-    root.mkdir()
-    (root / "source.py").write_text("original = True\n")
-
-    def git(*args):
-        return test_runner.ci_scope.git(
-            root,
-            "-c",
-            "core.hooksPath=/dev/null",
-            "-c",
-            "user.name=Full Caller",
-            "-c",
-            "user.email=full@example.invalid",
-            *args,
-        ).strip()
-
-    git("init", "-q")
-    git("add", ".")
-    git("commit", "-qm", "Commit full caller input")
-    candidate = git("rev-parse", "HEAD")
-    directory = tmp_path / "results"
-    data = tmp_path / "mise-data"
-    data.mkdir()
-    monkeypatch.setattr(sys, "platform", "linux")
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "run_python_tests.py",
-            "--repository",
-            str(root),
-            "--directory",
-            str(directory),
-            "--mise-data-directory",
-            str(data),
-        ],
-    )
-    calls = []
-    state = {"satisfied": True, "failure": False}
-
-    def materialize(receiving, scope, transfer, owned):
-        value = test_runner.group.node.read_json(scope)
-        calls.append(("materialize", receiving, value, transfer, owned))
-        assert value["base"] == value["candidate"] == candidate
-        assert value["full"] is True
-        assert value["changed_paths"] == []
-        assert value["endpoint_owners"] == {
-            name: {"revision": candidate, "paths": []}
-            for name in ("basis", "candidate")
-        }
-
-    def plan(_root, _directory):
-        calls.append(("plan",))
-        if state["failure"]:
-            message = "Native preparation failed"
-            raise ValueError(message)
-
-    def execute(_root, owned, mise):
-        calls.append(("execute", owned, mise))
-        return {"satisfied": state["satisfied"]}
-
-    monkeypatch.setattr(
-        test_runner.group.node, "run", lambda *args: calls.append(("git", args))
-    )
-    monkeypatch.setattr(
-        test_runner.dotnet,
-        "bootstrap",
-        lambda *args: calls.append(("bootstrap", args)),
-    )
-    monkeypatch.setattr(test_runner.group, "materialize", materialize)
-    monkeypatch.setattr(test_runner.group, "plan", plan)
-    monkeypatch.setattr(test_runner.group, "execute", execute)
-    return SimpleNamespace(
-        root=root,
-        candidate=candidate,
-        directory=directory,
-        data=data,
-        state=state,
-        calls=calls,
-        runner=test_runner,
-    )
-
-
-@pytest.mark.parametrize("satisfied", [True, False])
-def test_full_python_runner_uses_committed_native_group(
-    committed_full_runner, satisfied, capsys
-):
-    """Full means the original mixed group at the named committed candidate."""
-    fixture = committed_full_runner
-    fixture.state["satisfied"] = satisfied
-    assert fixture.runner.main() == (0 if satisfied else 1)
-    assert fixture.candidate in capsys.readouterr().out
-    assert [row[0] for row in fixture.calls] == [
-        "git",
-        "bootstrap",
-        "materialize",
-        "plan",
-        "execute",
-    ]
-    assert fixture.calls[-1][1:] == (fixture.directory / "group", fixture.data)
-
-
-def test_full_python_runner_dirty_source_fails_before_preparation(
-    committed_full_runner,
-):
-    """The committed-source claim cannot silently omit tracked edits."""
-    fixture = committed_full_runner
-    (fixture.root / "source.py").write_text("original = False\n")
-    with pytest.raises(SystemExit) as error:
-        fixture.runner.main()
-    assert error.value.code == 2
-    assert fixture.calls == []
-    assert not fixture.directory.exists()
-
-
-def test_full_python_runner_native_failure_cannot_be_success(
-    committed_full_runner,
-):
-    """Failed query installation never becomes an empty or full fallback."""
-    fixture = committed_full_runner
-    fixture.state["failure"] = True
-    with pytest.raises(ValueError, match="Native preparation failed"):
-        fixture.runner.main()
-    assert [row[0] for row in fixture.calls] == [
-        "git",
-        "bootstrap",
-        "materialize",
-        "plan",
-    ]
-
-
-@pytest.mark.parametrize(
-    "option", ["-q", "--junitxml=original.xml", "--from-ref=HEAD"]
-)
-def test_full_python_runner_rejects_unsupported_options(
-    committed_full_runner, monkeypatch, option
-):
-    """Unsupported pytest/selection options cannot silently narrow full."""
-    fixture = committed_full_runner
-    monkeypatch.setattr(sys, "argv", [*sys.argv, option])
-    with pytest.raises(SystemExit) as error:
-        fixture.runner.main()
-    assert error.value.code == 2
-    assert fixture.calls == []
-    assert not fixture.directory.exists()
-
-
 def test_python_tasks_preserve_exact_preparation_and_full_runner():
     """Documented tasks cannot retain unrelated workspace executables."""
     tasks = tomllib.loads((ROOT / "mise.toml").read_text())["tasks"]
     assert shlex.split(tasks["test:python"]["run"]) == [
-        "python",
-        "eng/scripts/run_python_tests.py",
+        "bash",
+        "eng/scripts/test-python.sh",
     ]
     assert "depends" not in tasks["test:python"]
 
@@ -280,3 +118,57 @@ def test_uv_workflow_and_renovate_consumers_use_mise_projection():
             "eng/scripts/sync_python_version.py --write" in tasks["commands"]
         )
         assert {config_path, ".python-version"} <= set(tasks["fileFilters"])
+
+
+@pytest.mark.parametrize("defect", ["dirty", "option", "state", "source"])
+def test_native_full_launcher_rejects_invalid_source_before_bootstrap(
+    tmp_path, defect
+):
+    """Reject invalid committed-source requests before bootstrap effects."""
+    root = tmp_path / "source"
+    root.mkdir()
+    native_git = shutil.which("git")
+    native_bash = shutil.which("bash")
+    assert native_git is not None
+    assert native_bash is not None
+
+    def git(*arguments):
+        subprocess.run(  # noqa: S603 - Native Git and this test's owned fixture.
+            [native_git, "-C", str(root), *arguments],
+            check=True,
+        )
+
+    git("init", "-q")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    source = root / "source.py"
+    source.write_text("committed = True\n")
+    git("add", "source.py")
+    git(
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgSign=false",
+        "commit",
+        "-qm",
+        "Fixture",
+    )
+    state = tmp_path / "state"
+    arguments = ["--repository", str(root), "--directory", str(state)]
+    if defect == "dirty":
+        source.write_text("committed = False\n")
+    elif defect == "option":
+        arguments.append("--from-ref=HEAD")
+    elif defect == "state":
+        state.mkdir()
+    elif defect == "source":
+        arguments[-1] = str(root / "state")
+    result = subprocess.run(  # noqa: S603 - Exact native launcher and fixture.
+        [native_bash, str(ROOT / "eng/scripts/test-python.sh"), *arguments],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2, result.stderr
+    assert not (state / "control-checkout").exists()
+    assert not (root / "state").exists()

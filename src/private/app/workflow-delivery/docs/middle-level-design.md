@@ -668,6 +668,16 @@ Ordinary authorized PR CI qualifies the complete affected caller group before
 delivery. No local package experiment, historical campaign, Release or publication
 authority follows from this integration contract.
 
+Finite `CI/Callers` composition assembles the existing .NET, Node, Python and Ruby
+requests and collects their original results. The YAML/catalog parser retains its
+maintained native Python dependency. Actions owns SDK and locked tool setup, the
+initial native control build and immutable artifact transport. Control-resource
+prepare/query remain separate around endpoint SDK setup; the query retains its
+default Debug context. The Linux-only Python and Ruby managed preparation scenarios
+run directly through .NET, independently of pytest. Their selected source/build/
+version/quality triggers, exact required rows, original reports and packages remain
+required; missing, skipped, failed or substituted rows cannot qualify.
+
 ### Native Ruby CI Group
 
 Plan complete adopted Ruby checks from the paired facts and quality declarations.
@@ -688,6 +698,13 @@ remain prerequisites for planning and caller qualification. Structural discovery
 quality selection. The smoke gem retains its separate content/clean-require
 preset; Hexo remains a bundle-only dependency consumer without an invented Ruby
 package or check owner.
+
+An explicitly quality-adopted bundle-only RSpec carrier can own a native suite
+without a synthetic gemspec or publishable unit. The Ruby helper carrier consumes
+its specs, native helpers, static wire descriptions and concrete gem fixtures.
+Native Bundler locks own all test dependencies and both Bundler contexts. C# tests
+its producer/reader/result side plus actual integration; pytest does not drive Ruby
+helper behavior. Selected Latexmath checks alone require its external TeX tools.
 
 An adopted gem distribution obligation does not require a Gemfile or spec
 folder. Use native gem build, RubyGems metadata/content inspection and the declared

@@ -119,13 +119,17 @@ internal static class RubyFactsAssembler
         var quality = new List<ProjectFacts>();
         foreach (ProjectFacts owner in endpoint.Owners)
         {
+            bool bundleOnly = !producers.Contains(owner.Directory) &&
+                owner.QualityPreset == RubyProjectChecks.Preset &&
+                endpoint.Native.Graph.Bundles.Any(bundle => bundle.Directory == owner.Directory);
             if (!ids.Add(owner.Id) || !owned.Add(owner.Directory) ||
-                !producers.Contains(owner.Directory))
+                (!producers.Contains(owner.Directory) && !bundleOnly))
                 throw new InvalidDataException("Unresolved actual Ruby quality owner.");
             ImpactPlanner.ValidateQualityOwner(owner);
             foreach (string path in owner.OwnedPaths ?? []) Require(path);
             string[] paths = endpoint.Revision.Entries.Select(entry => entry.Path)
-                .Where(path => Nearest(endpoint, path) == owner.Directory)
+                .Where(path => bundleOnly ? path.StartsWith(owner.Directory + "/",
+                    StringComparison.Ordinal) : Nearest(endpoint, path) == owner.Directory)
                 .Concat(owner.OwnedPaths ?? []).Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal).ToArray();
             foreach (string path in paths) Require(path);

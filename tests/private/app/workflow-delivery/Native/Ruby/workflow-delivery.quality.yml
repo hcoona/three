@@ -1,0 +1,4 @@
+schema: workflow-delivery/v3/quality-selection
+ecosystems:
+  ruby:
+    preset: ruby/rspec-v1

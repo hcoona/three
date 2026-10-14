@@ -38,6 +38,13 @@ caller inputs now belong to the existing C# CLI; native helpers retain native
 library operations. [Static wire descriptions](../Native/contracts/) are generated
 from consumed serializer types and have no compatibility promise.
 
+Finite CI callers also live in the existing C# application. Actions/native shell
+owns first control build, configured tools and artifact transfer; the retained
+Python YAML/catalog parser supplies its actual native capability. Ruby helper
+behavior runs in the quality-adopted native RSpec carrier. Linux managed Python/
+Ruby preparation scenarios run directly through .NET with exact report qualification
+and required Validate ownership; pytest is not their admission wrapper.
+
 Control input selection uses native source/configuration/reference facts without
 a fresh basis build or task-log interpreter. The separate default Debug
 control-resource query remains necessary because the full graph has different

@@ -30,6 +30,45 @@ public sealed class RubyFactsAssemblerTests
         ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
 
     [TestMethod]
+    [DataRow("tests/private/app/workflow-delivery/Native/Ruby/spec/facts_spec.rb")]
+    [DataRow("tests/private/app/workflow-delivery/Native/Ruby/Gemfile.lock")]
+    [DataRow("src/private/app/workflow-delivery/Native/Ruby/facts.rb")]
+    [DataRow("src/private/app/workflow-delivery/Native/contracts/ruby-bundle.schema.json")]
+    public void BundleOnlyNativeSuiteRetainsInputsAndRequiredResultWithoutSyntheticGem(
+        string changed)
+    {
+        string directory = RubyNativeTestInputs.Directory;
+        string[] paths = [directory + "/Gemfile", directory + "/Gemfile.lock",
+            directory + "/spec/facts_spec.rb",
+            "src/private/app/workflow-delivery/Native/Ruby/facts.rb",
+            "src/private/app/workflow-delivery/Native/contracts/ruby-bundle.schema.json"];
+        string id = "ruby:" + directory;
+        var owner = new ProjectFacts(id, directory, [], [], null, RubyProjectChecks.Preset,
+            [new(new(directory, RubyProjectChecks.RSpec, "default"),
+                [], "ubuntu-latest", true, [])],
+            paths.Where(path => path.StartsWith(directory + "/", StringComparison.Ordinal))
+                .ToArray());
+        RubyFactsEndpoint Endpoint(string commit) => new(new(commit,
+            paths.Select(path => new GitEntry(path, "100644", "blob")).ToArray()),
+            new(new([], [new(directory + "/Gemfile", directory,
+                [directory + "/Gemfile", directory + "/Gemfile.lock"], [])]), []), [owner],
+            paths.Where(RubyNativeTestInputs.Consumes).Select(path => new SharedInput(path, [id]))
+                .ToArray());
+        RubyFactAssembly assembly = RubyFactsAssembler.Assemble(Endpoint("basis"),
+            Endpoint("candidate"), [changed], false);
+        CiPlan plan = Plan(assembly);
+        PlannedCheck check = Assert.ContainsSingle(plan.Checks);
+        Assert.AreEqual(new CheckKey(directory, RubyProjectChecks.RSpec, "default"),
+            check.Work.Key);
+        Assert.IsTrue(check.Work.Required);
+        Assert.IsFalse(ResultCollector.Collect(plan, []).Satisfied);
+        Assert.IsTrue(ResultCollector.Collect(plan,
+            [new("candidate", check.Work.Key, CheckStatus.Passed)]).Satisfied);
+        Assert.IsEmpty(assembly.Request.Candidate.Projects[0].Dependencies);
+        Assert.IsEmpty(Endpoint("candidate").Native.Graph.Projects);
+    }
+
+    [TestMethod]
     public void PairedTransitiveEdgesRetainInputOnlyProducersAndCompleteOwnerVariants()
     {
         RubyFactsEndpoint basis = Endpoint("basis",
@@ -78,9 +117,15 @@ public sealed class RubyFactsAssemblerTests
         RubyFactsEndpoint basis = Endpoint("basis", [Producer("src/old")], [Owner("src/old")]);
         RubyFactsEndpoint candidate = Endpoint("candidate", [Producer("src/new")],
             [Owner("src/new")]);
-        candidate = candidate with { Native = candidate.Native with { Graph = new(
+        candidate = candidate with
+        {
+            Native = candidate.Native with
+            {
+                Graph = new(
             [candidate.Native.Graph.Projects[0] with {
-                Name = basis.Native.Graph.Projects[0].Name }], []) } };
+                Name = basis.Native.Graph.Projects[0].Name }], [])
+            }
+        };
         RubyFactAssembly assembly = RubyFactsAssembler.Assemble(basis, candidate,
             ["src/old/lib.rb", "src/new/lib.rb"], false);
         CiPlan plan = Plan(assembly);
@@ -98,8 +143,13 @@ public sealed class RubyFactsAssemblerTests
         RubyFactsEndpoint endpoint = Endpoint("candidate",
             [Producer("src/a", "src/b"), Producer("src/b", "src/a")],
             [Owner("src/b")], "version.json");
-        endpoint = endpoint with { Native = endpoint.Native with {
-            Inputs = [new("version.json", ["src/a"])] } };
+        endpoint = endpoint with
+        {
+            Native = endpoint.Native with
+            {
+                Inputs = [new("version.json", ["src/a"])]
+            }
+        };
         RubyFactAssembly assembly = RubyFactsAssembler.Assemble(endpoint, endpoint,
             ["version.json"], false);
         Assert.HasCount(2, Plan(assembly).Checks);
@@ -143,8 +193,14 @@ public sealed class RubyFactsAssemblerTests
     {
         RubyFactsEndpoint endpoint = Endpoint("candidate", [], [],
             "node/Gemfile", "node/Gemfile.lock");
-        endpoint = endpoint with { Native = endpoint.Native with { Graph = new([],
-            [new("node/Gemfile", "node", ["node/Gemfile", "node/Gemfile.lock"], [])]) } };
+        endpoint = endpoint with
+        {
+            Native = endpoint.Native with
+            {
+                Graph = new([],
+            [new("node/Gemfile", "node", ["node/Gemfile", "node/Gemfile.lock"], [])])
+            }
+        };
         RubyFactAssembly assembly = RubyFactsAssembler.Assemble(endpoint, endpoint,
             ["node/Gemfile"], false);
         Assert.IsEmpty(assembly.Request.Candidate.Projects);
@@ -167,23 +223,37 @@ public sealed class RubyFactsAssemblerTests
         RubyProjectDependencies producer = basis.Native.Graph.Projects[0];
         ProjectFacts owner = basis.Owners[0];
         if (defect == "dangling-producer")
-            basis = basis with { Native = basis.Native with { Graph = new(
-                [producer with { Ordinary = ["missing"] }], []) } };
+            basis = basis with
+            {
+                Native = basis.Native with
+                {
+                    Graph = new(
+                [producer with { Ordinary = ["missing"] }], [])
+                }
+            };
         if (defect == "missing-source")
             basis = basis with { Native = basis.Native with { Graph = new([], []) } };
         if (defect == "unknown-owner")
             basis = basis with { Owners = [Owner("src/unknown")] };
         if (defect == "missing-prerequisite")
-            basis = basis with { Owners = [owner with { Checks = [owner.Checks[0] with {
-                Prerequisites = [new("src/a", "missing", "first")] }] }] };
+            basis = basis with
+            {
+                Owners = [owner with { Checks = [owner.Checks[0] with {
+                Prerequisites = [new("src/a", "missing", "first")] }] }]
+            };
         if (defect == "missing-preset")
             basis = basis with { Owners = [owner with { QualityPreset = null }] };
         if (defect == "unknown-operation-owner")
             basis = basis with { OperationInputs = [new("version.json", ["unknown"])] };
         if (defect == "unsupported-owned-entry")
-            basis = basis with { Revision = basis.Revision with {
-                Entries = basis.Revision.Entries.Select(entry => entry.Path == "src/a/lib.rb"
-                    ? entry with { Mode = "120000" } : entry).ToArray() } };
+            basis = basis with
+            {
+                Revision = basis.Revision with
+                {
+                    Entries = basis.Revision.Entries.Select(entry => entry.Path == "src/a/lib.rb"
+                        ? entry with { Mode = "120000" } : entry).ToArray()
+                }
+            };
         RubyFactsEndpoint candidate = Endpoint("candidate", [], []);
         Assert.ThrowsExactly<InvalidDataException>(() =>
             RubyFactsAssembler.Assemble(basis, candidate, [], false));

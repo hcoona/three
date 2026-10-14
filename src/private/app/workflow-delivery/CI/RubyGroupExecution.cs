@@ -52,9 +52,8 @@ internal static class RubyGroupExecution
                 string directory = Path.GetFullPath(Path.Combine(checkout, check.Work.Key.Target));
                 RubyBundleFacts[] contexts = request.Candidate.Bundles.Where(bundle =>
                     Path.GetDirectoryName(Path.GetFullPath(bundle.Gemfile)) == directory).ToArray();
-                if (contexts.Length != 1 || !request.Candidate.Sources.Any(source =>
-                        Path.GetDirectoryName(Path.GetFullPath(source.Gemspec)) == directory))
-                    throw new InvalidDataException("Selected RSpec source/bundle is unresolved.");
+                if (contexts.Length != 1)
+                    throw new InvalidDataException("Selected RSpec bundle is unresolved.");
                 suites.Add((check, contexts[0]));
             }
             else if (check.QualityPresets.SequenceEqual([RubyPackageChecks.Preset]) &&

@@ -44,6 +44,10 @@ internal static class Program
                 return 0;
             }
             if (ReleaseCli.Run(args, output) is { } releaseStatus) return releaseStatus;
+            if (NativePreparationQualification.Run(args, output) is { } nativeStatus)
+                return nativeStatus;
+            if (ControlCiCaller.Run(args, output) is { } controlStatus) return controlStatus;
+            if (LocalPythonCiCaller.Run(args, output) is { } localStatus) return localStatus;
             if (CiCallerCli.Run(args, output) is { } callerStatus) return callerStatus;
             if (args is ["ci", "prepare-ruby-group", var rubyPreparationPath])
             {

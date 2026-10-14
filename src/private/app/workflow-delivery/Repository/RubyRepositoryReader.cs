@@ -13,9 +13,14 @@ internal static class RubyRepositoryReader
 {
     // Concrete root-CI operation inputs, separate from native producer membership.
     internal static readonly string[] CallerSources = [".github/workflows/ci.yml",
-        "eng/scripts/run_ruby_ci_group.py", "eng/scripts/run_node_ci_group.py",
-        "eng/scripts/run_dotnet_ci_group.py", "eng/scripts/ci_scope.py",
-        "eng/scripts/repository_path_patterns.py", "eng/scripts/prepare_ci_control_inputs.py",
+        "src/private/app/workflow-delivery/CI/Callers/RubyCiCaller.cs",
+        "src/private/app/workflow-delivery/CI/Callers/NodeCiCaller.cs",
+        "src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs", "eng/scripts/ci_scope.py",
+        "eng/scripts/repository_path_patterns.py", "eng/scripts/Bootstrap-CiControl.ps1",
+        "src/private/app/workflow-delivery/CI/Callers/CiCallerCli.cs",
+        "src/private/app/workflow-delivery/CI/Callers/CiCallerTransfer.cs",
+        "src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs",
+        "src/private/app/workflow-delivery/CI/Callers/CiArtifactReceipt.cs",
         "mise.toml", "mise.lock"];
 
     internal static Task<RubyRevisionInputs> ReadAsync(GitMaterialization checkout,
@@ -92,6 +97,35 @@ internal static class RubyRepositoryReader
             string id = "ruby:" + source.Directory;
             owners.Add(new(id, source.Directory, [], [], unit?.Id, selection.Preset, checks));
             if (unit is not null) operationInputs.Add(new(unit.SourcePath, [id]));
+        }
+        // A declared native test suite needs a bundle, not a synthetic publishable gem.
+        foreach (RubyBundleLocation bundle in inventory.Bundles)
+        {
+            if (native.ContainsKey(bundle.Directory) || owners.Any(owner =>
+                    bundle.Directory == owner.Directory ||
+                    bundle.Directory.StartsWith(owner.Directory + "/", StringComparison.Ordinal)))
+                continue;
+            QualitySelection? selection =
+                await selections.ReadAsync(bundle.Directory, "ruby", token);
+            if (selection is null) continue;
+            if (selection.Preset != RubyProjectChecks.Preset)
+                throw new InvalidDataException("Bundle-only Ruby quality requires native RSpec.");
+            string id = "ruby:" + bundle.Directory;
+            string[] paths = checkout.Revision.Entries.Select(entry => entry.Path).Where(path =>
+                path.StartsWith(bundle.Directory + "/", StringComparison.Ordinal)).ToArray();
+            owners.Add(new(id, bundle.Directory, [], [], null, selection.Preset,
+                RubyProjectChecks.Expand(selection, bundle.Directory), paths));
+            operationInputs.Add(new(selection.SourcePath, [id]));
+            // Native evaluated inputs can include files outside the suite directory.
+            foreach (RubyBundleConsumption context in inputs.Graph.Bundles.Where(context =>
+                         context.Directory == bundle.Directory ||
+                         context.Directory.StartsWith(bundle.Directory + "/",
+                             StringComparison.Ordinal)))
+                foreach (string path in context.Inputs) operationInputs.Add(new(path, [id]));
+            if (bundle.Directory == RubyNativeTestInputs.Directory)
+                foreach (string path in checkout.Revision.Entries.Select(entry => entry.Path)
+                             .Where(RubyNativeTestInputs.Consumes))
+                    operationInputs.Add(new(path, [id]));
         }
         string[] consumers = owners.Select(owner => owner.Id).ToArray();
         foreach (string path in CallerSources)

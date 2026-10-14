@@ -5,33 +5,26 @@ namespace WorkflowDelivery.Repository;
 // Repository engineering inputs select actual supplied checks, never a native target roster.
 internal static class PythonRepositoryInputs
 {
-    private const string PythonPreparationProduct = "tests/private/app/workflow-delivery/" +
-        "fixtures/products/hcoona-release-smoke-python";
-    private const string RubyPreparationProduct =
-        "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby";
     private static readonly string[] Shared = [
         ".github/workflows/ci.yml", "eng/scripts/ci_scope.py",
-        "eng/scripts/repository_path_patterns.py", "eng/scripts/prepare_ci_control_inputs.py",
-        "eng/scripts/run_python_ci_group.py",
+        "eng/scripts/repository_path_patterns.py", "eng/scripts/Bootstrap-CiControl.ps1",
+        "src/private/app/workflow-delivery/CI/Callers/PythonCiCaller.cs",
+        "src/private/app/workflow-delivery/CI/Callers/CiCallerCli.cs",
+        "src/private/app/workflow-delivery/CI/Callers/CiCallerTransfer.cs",
+        "src/private/app/workflow-delivery/CI/Callers/CiArtifactReceipt.cs",
         "mise.toml", "mise.lock"];
     private static readonly string[] Preparation = [
         "pyproject.toml", "uv.lock", "uv.toml", ".python-version", ".config/uv/uv.toml",
         "eng/scripts/sync_python_version.py"];
     private static readonly string[] Pytest = [
-        "conftest.py", "pytest.ini", "eng/scripts/run_python_tests.py"];
+        "conftest.py", "pytest.ini", "eng/scripts/test-python.sh",
+        "src/private/app/workflow-delivery/CI/Callers/LocalPythonCiCaller.cs"];
     private static readonly string[] Dotnet = [
         ".editorconfig", ".gitattributes", "global.json", "NuGet.Config", "nuget.config",
         ".config/dotnet-tools.json", "version.json", "Directory.Build.props",
         "Directory.Build.targets", "Directory.Packages.props", "dirs.proj"];
     private static readonly string[] AzureRoots = [
         "src/private/app/azureauth-credprovider", "tests/private/app/azureauth-credprovider"];
-    private static readonly string[] PythonPreparationRoots = [
-        "src/private/app/workflow-delivery", "tests/private/app/workflow-delivery",
-        PythonPreparationProduct, "src/public/lib/nbgv-python"];
-
-    private static readonly string[] RubyPreparationRoots = [
-        "src/private/app/workflow-delivery", "tests/private/app/workflow-delivery"];
-
     internal static PythonInputBinding[] Map(GitRevision revision,
         PythonProjectDependencies[] projects, PythonPytestTargetSet targets,
         ProjectFacts[] packages) => Map(revision, projects, targets, packages,
@@ -135,13 +128,6 @@ internal static class PythonRepositoryInputs
 
     private static bool Special(string target, string path) =>
         (target == "tests/eng/test_python_runtime.py" && path == "renovate.json") ||
-        (target == "tests/private/app/workflow-delivery/Native/Ruby" &&
-            (Under(path, "src/private/app/workflow-delivery/Native/Ruby") ||
-             (path.StartsWith("src/private/app/workflow-delivery/Native/contracts/ruby-",
-                  StringComparison.Ordinal) && path.EndsWith(".schema.json",
-                      StringComparison.Ordinal)) ||
-             Under(path, "tests/private/app/workflow-delivery/fixtures/products/" +
-                "hcoona-release-smoke-ruby"))) ||
         (target == "tests/private/app/workflow-delivery/Native/Python" &&
             (Under(path, "src/private/app/workflow-delivery/Native/Python") ||
              Under(path, "src/public/lib/nbgv-python"))) ||
@@ -150,46 +136,11 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_general_ci_workflow.py" &&
             path == "tests/eng/ci_workflow_shell.py") ||
         (target == "tests/eng/test_typos_config.py" && path == ".typos.toml") ||
-        (target == "tests/eng/test_run_node_ci_group.py" &&
-            path == "eng/scripts/run_node_ci_group.py") ||
-        (target == "tests/eng/test_run_ruby_ci_group.py" &&
-            path == "eng/scripts/run_ruby_ci_group.py") ||
-        (target == "tests/eng/test_run_dotnet_ci_group.py" &&
-            path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
-        (target == "tests/eng/test_python_release_preparation_gate.py" &&
-            PythonPreparationInput(path)) ||
         (target == "tests/eng/test_python_release_caller.py" &&
             path == ".github/workflows/workflow-delivery-v3-python-smoke.yml") ||
-        (target == "tests/eng/test_ruby_release_preparation_gate.py" &&
-            RubyPreparationInput(path)) ||
-        (target == "tests/eng/test_run_python_ci_group.py" &&
-            path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
             path is "eng/scripts/ci_scope.py" or "eng/scripts/sync_python_version.py" or
                 "eng/scripts/workflow_delivery_v3_hk.py");
-
-    private static bool PythonPreparationInput(string path)
-    {
-        const string quality = "workflow-delivery.quality.yml";
-        if (path == quality) return true;
-        if (path.EndsWith("/" + quality, StringComparison.Ordinal))
-            return Under(PythonPreparationProduct, path[..path.LastIndexOf('/')]);
-        return DotnetInput(path, PythonPreparationRoots) ||
-            path is "eng/scripts/check_python_release_preparation.py" or
-                "eng/scripts/run_node_ci_group.py";
-    }
-
-    private static bool RubyPreparationInput(string path)
-    {
-        const string quality = "workflow-delivery.quality.yml";
-        if (path == quality) return true;
-        if (path.EndsWith("/" + quality, StringComparison.Ordinal))
-            return Under(RubyPreparationProduct, path[..path.LastIndexOf('/')]);
-        return DotnetInput(path, RubyPreparationRoots) ||
-            path is "eng/scripts/check_ruby_release_preparation.py" or
-                "eng/scripts/check_python_release_preparation.py" or
-                "eng/scripts/run_node_ci_group.py";
-    }
 
     private static bool Azure(string path) => DotnetInput(path, AzureRoots) ||
         Under(path, "eng/scripts/azureauth-credprovider") ||

@@ -62,6 +62,9 @@ internal static class RubyCiCaller
             TransferJson.Default.RubyNodeContribution);
         CiCallerTransfer.Output("selected", (readback.Plan.Checks.Length !=
             0).ToString().ToLowerInvariant());
+        CiCallerTransfer.Output("latexmath", readback.Plan.Checks.Any(check =>
+            check.Work.Key.Target == "src/public/lib/asciidoctor-latexmath")
+                .ToString().ToLowerInvariant());
         return readback;
     }
 

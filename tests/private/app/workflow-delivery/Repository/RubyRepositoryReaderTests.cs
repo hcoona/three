@@ -1,4 +1,5 @@
 using System.Text.Json;
+using WorkflowDelivery.CI;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -27,6 +28,57 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task DeclaredBundleOnlySuiteOwnsNativeHelpersWithoutInventingPackage()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        string directory = RubyNativeTestInputs.Directory;
+        await repo.SetAsync(directory + "/Gemfile", "native declaration");
+        await repo.SetAsync(directory + "/Gemfile.lock", "native lock");
+        await repo.SetAsync(directory + "/spec/facts_spec.rb", "native examples");
+        await repo.SetAsync(directory + "/workflow-delivery.quality.yml",
+            "schema: workflow-delivery/v3/quality-selection\necosystems:\n  ruby:\n" +
+            "    preset: ruby/rspec-v1\n");
+        string helper = "src/private/app/workflow-delivery/Native/Ruby/facts.rb";
+        await repo.SetAsync(helper, "native implementation");
+        GitMaterialization checkout = await BindAsync(repo);
+        RubyRevisionInputs result = await RubyRepositoryReader.ReadAsync(checkout,
+            Request(repo.Directory), async (command, token) =>
+            {
+                using JsonDocument input = JsonDocument.Parse(
+                    await File.ReadAllTextAsync(command.Arguments[^1], token));
+                string gemfile = Path.Combine(repo.Directory, directory, "Gemfile");
+                if (input.RootElement.GetProperty("operation").GetString() == "bundle-context")
+                    return Answer(new
+                    {
+                        gemfile,
+                        lockfile = gemfile + ".lock",
+                        bundler_version = "2.7.2",
+                        locked_bundler_version = "2.7.2"
+                    });
+                return Answer(new
+                {
+                    gemfile,
+                    lockfile = gemfile + ".lock",
+                    bundler_version = "2.7.2",
+                    locked_bundler_version = "2.7.2",
+                    gemfiles = new[] { gemfile },
+                    direct_dependencies = Array.Empty<string>(),
+                    specifications = Array.Empty<object>()
+                });
+            }, context.CancellationToken);
+        Assert.IsEmpty(result.Sources);
+        Assert.IsEmpty(result.Units);
+        Assert.IsEmpty(result.Facts.Native.Graph.Projects);
+        ProjectFacts owner = Assert.ContainsSingle(result.Facts.Owners);
+        Assert.AreEqual(directory, owner.Directory);
+        Assert.IsNull(owner.ReleaseUnit);
+        Assert.AreEqual(RubyProjectChecks.RSpec, Assert.ContainsSingle(owner.Checks).Key.Check);
+        SharedInput input = Assert.ContainsSingle(result.Facts.OperationInputs.Where(row =>
+            row.Path == helper));
+        CollectionAssert.AreEqual(new[] { owner.Id }, input.Consumers);
+    }
+
+    [TestMethod]
     public async Task NativeCollectorsUseLockedBundleWithoutInventingOwner()
     {
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
@@ -43,15 +95,26 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
                 Assert.AreEqual(gemfile, input.RootElement.GetProperty("path").GetString());
                 Assert.IsFalse(command.InheritEnvironment);
                 if (input.RootElement.GetProperty("operation").GetString() == "bundle-context")
-                    return Answer(new { gemfile, lockfile = gemfile + ".lock",
-                        bundler_version = "2.7.2", locked_bundler_version = "2.4.20" });
+                    return Answer(new
+                    {
+                        gemfile,
+                        lockfile = gemfile + ".lock",
+                        bundler_version = "2.7.2",
+                        locked_bundler_version = "2.4.20"
+                    });
                 Assert.AreEqual("bundle", input.RootElement.GetProperty("operation").GetString());
                 Assert.AreEqual("2.4.20", command.Arguments[2]);
                 Assert.AreEqual("1", command.Environment!["BUNDLE_FROZEN"]);
-                return Answer(new { gemfile, lockfile = gemfile + ".lock",
-                    bundler_version = "2.4.20", locked_bundler_version = "2.4.20",
-                    gemfiles = new[] { gemfile }, direct_dependencies = Array.Empty<string>(),
-                    specifications = Array.Empty<object>() });
+                return Answer(new
+                {
+                    gemfile,
+                    lockfile = gemfile + ".lock",
+                    bundler_version = "2.4.20",
+                    locked_bundler_version = "2.4.20",
+                    gemfiles = new[] { gemfile },
+                    direct_dependencies = Array.Empty<string>(),
+                    specifications = Array.Empty<object>()
+                });
             }, context.CancellationToken);
         Assert.IsEmpty(result.Sources);
         Assert.IsEmpty(result.Facts.Owners);
@@ -102,12 +165,24 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
                     await File.ReadAllTextAsync(command.Arguments[^1], token));
                 string gemspec = Path.Combine(repo.Directory, directory, name + ".gemspec");
                 if (input.RootElement.GetProperty("operation").GetString() == "version")
-                    return Answer(new { gemspec, raw = "1.2.3+original", version = "1.2.3",
-                        literal = "\"1.2.3\"" });
+                    return Answer(new
+                    {
+                        gemspec,
+                        raw = "1.2.3+original",
+                        version = "1.2.3",
+                        literal = "\"1.2.3\""
+                    });
                 Assert.AreEqual("gemspec", input.RootElement.GetProperty("operation").GetString());
-                return Answer(new { gemspec, name, version = "1.2.3", platform = "ruby",
-                    require_paths = RequirePaths, files = Array.Empty<string>(),
-                    runtime_dependencies = Array.Empty<object>() });
+                return Answer(new
+                {
+                    gemspec,
+                    name,
+                    version = "1.2.3",
+                    platform = "ruby",
+                    require_paths = RequirePaths,
+                    files = Array.Empty<string>(),
+                    runtime_dependencies = Array.Empty<object>()
+                });
             }, context.CancellationToken);
         Assert.AreEqual(directory, Assert.ContainsSingle(result.Facts.Native.Graph.Projects)
             .Directory);
@@ -161,13 +236,24 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
                 if (defect == "failure") return Answer(new { }) with { ExitCode = 1 };
                 string gemfile = Path.Combine(repo.Directory, "node/Gemfile");
                 if (input.RootElement.GetProperty("operation").GetString() == "bundle-context")
-                    return Answer(new { gemfile, lockfile = gemfile + ".lock",
-                        bundler_version = "2.7.2", locked_bundler_version = "2.4.20" });
+                    return Answer(new
+                    {
+                        gemfile,
+                        lockfile = gemfile + ".lock",
+                        bundler_version = "2.7.2",
+                        locked_bundler_version = "2.4.20"
+                    });
                 if (defect == "incomplete-answer") return Answer(new { });
-                return Answer(new { gemfile, lockfile = gemfile + ".lock",
-                    bundler_version = "2.7.2", locked_bundler_version = "2.7.2",
-                    gemfiles = new[] { gemfile }, direct_dependencies = Array.Empty<string>(),
-                    specifications = Array.Empty<object>() });
+                return Answer(new
+                {
+                    gemfile,
+                    lockfile = gemfile + ".lock",
+                    bundler_version = "2.7.2",
+                    locked_bundler_version = "2.7.2",
+                    gemfiles = new[] { gemfile },
+                    direct_dependencies = Array.Empty<string>(),
+                    specifications = Array.Empty<object>()
+                });
             }, context.CancellationToken));
     }
 

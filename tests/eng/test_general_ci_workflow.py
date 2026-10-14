@@ -91,13 +91,7 @@ def _required_step(scope: dict[str, Any]) -> None:
 
 def _python_adapter_condition(step: dict[str, Any]) -> str:
     if step.get("uses", "").startswith("jdx/mise-action@"):
-        return (
-            "steps.plan.outputs.native_preparation == 'true' || "
-            "steps.plan.outputs.native_ruby_preparation == 'true' || "
-            "steps.plan.outputs.native_node == 'true'"
-        )
-    if step.get("uses", "").startswith("ruby/setup-ruby@"):
-        return "steps.plan.outputs.native_ruby == 'true'"
+        return "steps.plan.outputs.native_node == 'true'"
     message = "Unexpected selected Python adapter"
     raise AssertionError(message)
 
@@ -135,7 +129,28 @@ def _python_retention_step(step: dict[str, Any]) -> None:
 
 
 def _required_context_step(key: str, step: dict[str, Any]) -> None:
-    if key == "validation":
+    if key == "native-preparation-tests":
+        conditions = {
+            "Setup selected native tools": (
+                "steps.plan.outputs.python == 'true' || "
+                "steps.plan.outputs.ruby == 'true'"
+            ),
+            "Execute required original Python preparation scenario": (
+                "steps.plan.outputs.python == 'true'"
+            ),
+            "Execute all original Ruby preparation rows": (
+                "${{ !cancelled() && steps.plan.outputs.ruby == 'true' }}"
+            ),
+            "Retain original preparation plans, reports and packages": (
+                "always()"
+            ),
+            "Reject canceled qualification": "cancelled()",
+        }
+        assert step.get("if", "success()") == conditions.get(
+            step["name"], "success()"
+        )
+        assert not step.get("continue-on-error", False)
+    elif key == "validation":
         assert step["if"] in {"always()", "cancelled()"}
         assert not step.get("continue-on-error", False)
     elif key == "ruby-group" and step["name"] in {
@@ -143,7 +158,7 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
         "Ensure fd is available",
     }:
         assert step["if"] == (
-            "success() && steps.plan.outputs.selected == 'true'"
+            "success() && steps.plan.outputs.latexmath == 'true'"
         )
         assert not step.get("continue-on-error", False)
     elif (
@@ -236,6 +251,7 @@ def _commands(tmp_path: Path, *, missing: str | None = None) -> dict[str, str]:
         "GITHUB_ENV": str(tmp_path / "github-env"),
         "GITHUB_EVENT_NAME": "pull_request",
         "RUNNER_TEMP": str(tmp_path / "runner-state"),
+        "GITHUB_WORKSPACE": str(tmp_path),
     }
 
 
@@ -335,7 +351,9 @@ def test_required_general_ci_checks_remain_eligible(
     entry = next(
         step["run"] for step in group["steps"] if step.get("id") == "execute"
     )
-    assert "mise exec --locked uv python -- uv run --frozen python" in entry
+    assert "eng/scripts/ci_scope.py join-record-owners" in entry
+    assert "uv run --frozen --no-sync python" in entry
+    assert "ci caller-node plan" in entry
     contexts = {job["name"]: key for key, job in jobs.items()}
     node = jobs["node-tests"]
     for version in node["strategy"]["matrix"]["node-version"]:
@@ -367,7 +385,12 @@ def test_required_general_ci_checks_remain_eligible(
                 "always()" if key == "validation" else "${{ !cancelled() }}"
             )
             assert job["needs"] == (
-                ["conformance", "scholarly-tests", "nuget-reproducibility"]
+                [
+                    "conformance",
+                    "scholarly-tests",
+                    "nuget-reproducibility",
+                    "native-preparation-tests",
+                ]
                 if key == "validation"
                 else ["scope", "ruby-group"]
                 if key == "node-group"
@@ -493,15 +516,20 @@ def test_validation_hk_uses_tested_comparison_and_propagates_failure(
 
 def _retained_command(tmp_path: Path) -> list[str]:
     return [
-        "python",
-        "eng/scripts/run_node_ci_group.py",
+        "dotnet",
+        str(
+            tmp_path
+            / "runner-state/retained-control/control/WorkflowDelivery.dll"
+        ),
+        "ci",
+        "caller-node",
         "retained",
-        "--directories",
-        json.dumps(NODE_RETAINED),
-        "--adopted-directory",
-        NODE_ADOPTED,
-        "--directory",
+        str(tmp_path),
         str(tmp_path / "runner-state/retained-node"),
+        json.dumps(NODE_RETAINED),
+        NODE_ADOPTED,
+        NODE_PACKAGE_DIR,
+        str(tmp_path / "setup tools/pnpm"),
     ]
 
 
@@ -535,7 +563,7 @@ def test_node_checks_execute_selected_retained_members(
     [
         ("pnpm", "install"),
         ("dotnet", "tool", "restore"),
-        ("python", "eng/scripts/run_node_ci_group.py", "retained"),
+        ("dotnet",),
     ],
     ids=["pnpm-install", "dotnet-tools", "retained-execution"],
 )
@@ -612,7 +640,7 @@ def test_node_group_requires_received_immutable_scope(
     token_steps = [
         step for step in job["steps"] if "GH_TOKEN" in step.get("env", {})
     ]
-    assert len(token_steps) == 2
+    assert len(token_steps) == 3
     assert all("gh api" in step["run"] for step in token_steps)
 
 
@@ -627,10 +655,12 @@ def test_python_check_has_consumed_toolchain_prerequisites(workflow):
         for step in steps
         if step.get("uses", "").startswith("actions/setup-dotnet@")
     ]
-    basis_sdk, candidate_sdk = sdks
+    control_sdk, basis_sdk, candidate_sdk = sdks
+    assert steps.index(control_sdk) < steps.index(materialize)
+    assert control_sdk["with"]["global-json-file"] == "global.json"
     assert all(
         steps.index(materialize) < steps.index(sdk) < steps.index(plan)
-        for sdk in sdks
+        for sdk in (basis_sdk, candidate_sdk)
     )
     assert (
         basis_sdk["with"]["global-json-file"]
@@ -662,40 +692,25 @@ def test_python_check_has_consumed_toolchain_prerequisites(workflow):
             0
         ]["version"]
     )
-    adapters = [
-        _action(job, name)
-        for name in (
-            "jdx/mise-action",
-            "ruby/setup-ruby",
-        )
-    ]
-    assert all(steps.index(plan) < steps.index(step) for step in adapters)
-    assert all(
-        step["if"] == _python_adapter_condition(step) for step in adapters
-    )
-    mise = _action(job, "jdx/mise-action")
-    assert mise["with"]["experimental"] is True
-    assert mise["with"]["install_args"] == (
-        "${{ steps.plan.outputs.native_preparation == 'true' && "
-        "'python uv' || '' }} "
-        "${{ steps.plan.outputs.native_ruby_preparation == 'true' && "
-        "'ruby dotnet' || '' }} "
-        "${{ steps.plan.outputs.native_node == 'true' && 'node' || '' }}"
-    )
+    adapter = _action(job, "jdx/mise-action")
+    assert steps.index(plan) < steps.index(adapter)
+    assert adapter["if"] == _python_adapter_condition(adapter)
+    assert adapter["with"]["experimental"] is True
+    assert adapter["with"]["install_args"] == "node"
     assert (
-        mise["env"]["MISE_DATA_DIR"]
+        adapter["env"]["MISE_DATA_DIR"]
         == "${{ runner.temp }}/python-auxiliary-mise"
+    )
+    assert not any(
+        step.get("uses", "").startswith("ruby/setup-ruby@") for step in steps
     )
     execute = next(
         step
         for step in steps
-        if "run_python_ci_group.py execute " in step.get("run", "")
+        if "ci caller-python execute" in step.get("run", "")
     )
-    assert all(steps.index(step) < steps.index(execute) for step in adapters)
-    assert (
-        '--mise-data-directory "$RUNNER_TEMP/python-auxiliary-mise"'
-        in execute["run"]
-    )
+    assert steps.index(adapter) < steps.index(execute)
+    assert '"$RUNNER_TEMP/python-auxiliary-mise"' in execute["run"]
 
 
 def _run_dotnet(
@@ -741,6 +756,7 @@ def _dotnet_commands(tmp_path: Path) -> dict[str, str]:
         Path(env["PATH"]) / "gh",
         COMMAND_RECORDER + "\nprint('fixture-artifact-metadata')\n",
     )
+    executable(Path(env["PATH"]) / "jq", COMMAND_RECORDER + "\nprint(0)\n")
     return env
 
 
@@ -749,24 +765,19 @@ def _dotnet_receiver_command(
 ) -> list[str]:
     temporary = tmp_path / "runner-state"
     return [
-        "python",
-        "eng/scripts/run_dotnet_ci_group.py",
+        "dotnet",
+        str(temporary / "dotnet-plan-transfer/control/WorkflowDelivery.dll"),
+        "ci",
+        "caller-dotnet",
         "execute",
-        "--transfer",
+        str(tmp_path),
         str(temporary / "dotnet-plan-transfer"),
-        "--directory",
         str(temporary / "dotnet-execution"),
-        "--artifact-metadata",
         str(temporary / "dotnet-plan-artifact.json"),
-        "--artifact-id",
         artifact,
-        "--run-id",
         "67890",
-        "--repository-id",
         "12345",
-        "--basis",
         "a" * 40,
-        "--candidate",
         "d" * 40,
     ]
 
@@ -791,10 +802,8 @@ def test_dotnet_check_receives_original_plan_and_complete_control(
     producer = next(
         step for step in scope["steps"] if step.get("id") == "control"
     )
-    assert producer["run"].strip() == (
-        "python eng/scripts/run_dotnet_ci_group.py bootstrap "
-        '--directory "$RUNNER_TEMP/dotnet-group"'
-    )
+    assert producer["shell"] == "pwsh"
+    assert "Bootstrap-CiControl.ps1" in producer["run"]
     upload = next(
         step for step in scope["steps"] if step.get("id") == "retain-dotnet"
     )
@@ -827,10 +836,14 @@ def test_dotnet_check_receives_original_plan_and_complete_control(
     env = _dotnet_commands(tmp_path)
     result = _run_dotnet(workflow, tmp_path, env)
     assert result.returncode == 0, result.stderr
-    assert [item["command"] for item in _observations(env)] == [
-        ["gh", "api", "repos/hcoona/three/actions/artifacts/1054"],
-        _dotnet_receiver_command(tmp_path),
+    calls = [item["command"] for item in _observations(env)]
+    assert calls[0] == [
+        "gh",
+        "api",
+        "repos/hcoona/three/actions/artifacts/1054",
     ]
+    assert calls[-1] == _dotnet_receiver_command(tmp_path)
+    assert "caller-artifact" in calls[1]
     assert (
         tmp_path / "runner-state/dotnet-plan-artifact.json"
     ).read_text() == ("fixture-artifact-metadata\n")
@@ -853,14 +866,15 @@ def test_dotnet_check_propagates_required_command_failure(
     result = _run_dotnet(workflow, tmp_path, env)
     assert result.returncode == CHILD_FAILURE, result.stderr
     calls = [item["command"] for item in _observations(env)]
-    assert calls == [
-        ["gh", "api", "repos/hcoona/three/actions/artifacts/1054"],
-        *(
-            []
-            if failure == "metadata"
-            else [_dotnet_receiver_command(tmp_path)]
-        ),
+    assert calls[0] == [
+        "gh",
+        "api",
+        "repos/hcoona/three/actions/artifacts/1054",
     ]
+    if failure == "metadata":
+        assert len(calls) == 1
+    else:
+        assert calls[-1] == _dotnet_receiver_command(tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -900,10 +914,13 @@ def test_dotnet_group_requires_received_original_plan(
             tmp_path / "runner-state/dotnet-plan-artifact.json"
         ).exists()
     else:
-        assert [item["command"] for item in _observations(env)] == [
-            ["gh", "api", f"repos/hcoona/three/actions/artifacts/{artifact}"],
-            _dotnet_receiver_command(tmp_path, artifact),
+        calls = [item["command"] for item in _observations(env)]
+        assert calls[0] == [
+            "gh",
+            "api",
+            f"repos/hcoona/three/actions/artifacts/{artifact}",
         ]
+        assert calls[-1] == _dotnet_receiver_command(tmp_path, artifact)
 
 
 @pytest.mark.parametrize(
@@ -929,6 +946,7 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
             "ruby-group",
             "dotnet-tests",
             "python-tests",
+            "native-preparation-tests",
         }:
             continue
         assert job["needs"] == (
@@ -974,6 +992,7 @@ def test_required_validate_rejects_missing_or_failed_consumers(
         "conformance",
         "scholarly-tests",
         "nuget-reproducibility",
+        "native-preparation-tests",
     ]
     assert job["if"] == "always()"
     step = job["steps"][0]
@@ -983,12 +1002,14 @@ def test_required_validate_rejects_missing_or_failed_consumers(
         "needs.conformance.result": "success",
         "needs.scholarly-tests.result": "success",
         "needs.nuget-reproducibility.result": "success",
+        "needs.native-preparation-tests.result": "success",
     }
     scenarios = [successful]
     for dependency in (
         "conformance",
         "scholarly-tests",
         "nuget-reproducibility",
+        "native-preparation-tests",
     ):
         for result in ("failure", "cancelled", "skipped", ""):
             scenarios.append(
@@ -1032,11 +1053,16 @@ def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
                 _cancelable_dotnet_step(step)
             elif name == "python-tests":
                 _required_context_step(name, step)
-            elif name in {"node-group", "ruby-group"}:
-                assert step.get("if", "success()").split(" && ")[0] in {
-                    "success()",
-                    "always()",
-                }
+            elif name in {
+                "node-group",
+                "ruby-group",
+                "native-preparation-tests",
+            }:
+                if name != "native-preparation-tests":
+                    assert step.get("if", "success()").split(" && ")[0] in {
+                        "success()",
+                        "always()",
+                    }
                 assert not step.get("continue-on-error", False)
             elif step["if"].startswith("always() &&"):
                 assert step.get("uses", "").startswith(
@@ -1090,16 +1116,13 @@ def test_scope_selection_uses_project_python_and_tested_comparison(
     request = str(runner_temp / "ci-control-inputs/request.json")
     response = str(runner_temp / "ci-control-inputs/response.json")
     env["RUNNER_TEMP"] = str(runner_temp)
+    Path(response).parent.mkdir(parents=True)
     evaluate = [
-        "python",
-        "eng/scripts/prepare_ci_control_inputs.py",
-        "--application",
+        "dotnet",
         _bindings(tmp_path)["steps.control.outputs.application"],
-        "evaluate",
-        "--request",
+        "ci",
+        "control-inputs",
         request,
-        "--response",
-        response,
     ]
     selector = [
         "uv",
@@ -1193,13 +1216,14 @@ def test_python_group_requires_native_comparison_not_legacy_flags(
         if step.get("uses", "").startswith("actions/setup-dotnet@")
     ]
     assert sdks
-    assert all(materialize < i for i in sdks)
+    assert sdks[0] < materialize
+    assert all(materialize < i for i in sdks[1:])
     assert all(
         "steps.endpoints.outputs." in steps[i]["with"]["global-json-file"]
-        for i in sdks
+        for i in sdks[1:]
     )
     plan = next(step for step in steps if step.get("id") == "plan")
-    assert "run_python_ci_group.py plan " in plan["run"]
+    assert "ci caller-python plan " in plan["run"]
     assert "if" not in plan
     for step in steps:
         if "adapter" in step.get("name", "").lower():
@@ -1256,18 +1280,18 @@ def test_native_ruby_transfers_original_control_and_complete_plan(workflow):
     assert job["permissions"] == {"contents": "read", "actions": "read"}
     assert "environment" not in job
     runs = [step["run"] for step in job["steps"] if "run" in step]
-    entry = [run for run in runs if "run_ruby_ci_group.py" in run]
+    entry = [run for run in runs if "ci caller-ruby" in run]
     assert len(entry) == 3
     assert " materialize " in entry[0]
-    for argument in (
-        "--scope-metadata",
-        "--control-metadata",
-        "--scope-artifact-id",
-        "--control-artifact-id",
-        "--run-id",
-        "--repository-id",
+    for binding in (
+        "SCOPE_ARTIFACT_ID",
+        "CONTROL_ARTIFACT_ID",
+        "GITHUB_RUN_ID",
+        "GITHUB_REPOSITORY_ID",
+        "ruby-scope-artifact.json",
+        "ruby-control-artifact.json",
     ):
-        assert argument in entry[0]
+        assert binding in entry[0]
     assert " plan " in entry[1]
     assert " execute " in entry[2]
     assert all('"$RUNNER_TEMP/ruby-group"' in run for run in entry)
@@ -1283,8 +1307,10 @@ def test_native_ruby_retains_failed_outcomes_and_uses_native_runtime(workflow):
     job = workflow["jobs"]["ruby-group"]
     ruby = _action(job, "ruby/setup-ruby")
     assert ruby["with"] == {"ruby-version": "4.0.7"}
-    python = _action(job, "actions/setup-python")
-    assert python["with"] == {"python-version-file": ".python-version"}
+    assert not any(
+        step.get("uses", "").startswith("actions/setup-python@")
+        for step in job["steps"]
+    )
     retained = next(
         step
         for step in job["steps"]
@@ -1341,9 +1367,9 @@ def test_node_receives_only_successful_original_ruby_artifact(
     entry = next(
         step["run"] for step in node["steps"] if step.get("id") == "execute"
     )
-    assert "--ruby-inputs artifacts/node-ruby/node-inputs.json" in entry
-    assert "--ruby-artifact-id" in entry
-    assert "--ruby-artifact-metadata" in entry
+    assert '"$GITHUB_WORKSPACE/artifacts/node-ruby/node-inputs.json"' in entry
+    assert "ruby-node-inputs" in entry
+    assert "node-ruby-artifact.json" in entry
     assert "run_ruby_ci_group.py" not in json.dumps(node)
     result = run_step(
         node["steps"][0],

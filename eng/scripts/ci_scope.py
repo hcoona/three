@@ -32,7 +32,7 @@ ALL_INPUTS = {
     ".github/workflows/ci.yml",
     "eng/scripts/ci_scope.py",
     "eng/scripts/repository_path_patterns.py",
-    "eng/scripts/prepare_ci_control_inputs.py",
+    "eng/scripts/Bootstrap-CiControl.ps1",
     "mise.toml",
     "mise.lock",
 }
@@ -53,7 +53,7 @@ PYTHON_INPUTS = {
     "conftest.py",
     "pytest.ini",
     "eng/scripts/sync_python_version.py",
-    "eng/scripts/run_python_tests.py",
+    "eng/scripts/test-python.sh",
 }
 DOTNET_INPUTS = {
     ".editorconfig",
@@ -855,14 +855,90 @@ def _complete_dotnet_scope(
     """Join native facts before final applicability."""
     if not options.dotnet_group_request:
         return result
-    from run_dotnet_ci_group import finish  # noqa: PLC0415
-
-    return finish(
+    request_path = options.dotnet_group_request.resolve()
+    request = json.loads(
+        request_path.read_text(encoding="utf-8"),
+        object_pairs_hook=_unique_object,
+    )
+    joined = join_record_owners(
         root,
         result,
-        options.dotnet_group_request.resolve(),
-        options.application.resolve(),
+        {
+            name: Path(request[name]["directory"])
+            for name in ("basis", "candidate")
+        },
     )
+    source = request_path.parent / "joined-scope.json"
+    source.write_text(json.dumps(joined) + "\n", encoding="utf-8")
+    process = subprocess.run(
+        [
+            "dotnet",
+            str(options.application.resolve()),
+            "ci",
+            "caller-dotnet",
+            "finish",
+            str(root),
+            str(source),
+            str(request_path),
+            str(request_path.parent.parent / "transfer"),
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=1800,
+    )
+    return json.loads(process.stdout, object_pairs_hook=_unique_object)
+
+
+def join_record_owners(
+    root: Path, scope: dict, endpoints: dict[str, Path]
+) -> dict:
+    """Apply maintained YAML/catalog ownership to supplied endpoints."""
+    joined = json.loads(json.dumps(scope))
+    for name, revision in (
+        ("basis", scope["base"]),
+        ("candidate", scope["candidate"]),
+    ):
+        owners = record_control_owners(root, revision, endpoints[name])
+        endpoint = joined["endpoint_owners"][name]
+        if endpoint["revision"] != revision:
+            message = "Record responsibility has a different endpoint"
+            raise ValueError(message)
+        for row in endpoint["paths"]:
+            for reason in owners.get(row["path"], []):
+                if reason not in row["reasons"]:
+                    row["reasons"].append(reason)
+    return joined
+
+
+def join_records_main() -> int:
+    """Expose record interpretation without replanning native groups."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repository", type=Path, default=ROOT)
+    parser.add_argument("--scope", type=Path, required=True)
+    parser.add_argument("--context", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    options = parser.parse_args()
+    scope = json.loads(
+        options.scope.read_text(encoding="utf-8"),
+        object_pairs_hook=_unique_object,
+    )
+    context = json.loads(
+        options.context.read_text(encoding="utf-8"),
+        object_pairs_hook=_unique_object,
+    )
+    result = join_record_owners(
+        options.repository.resolve(),
+        scope,
+        {
+            name: Path(context[name]["directory"])
+            for name in ("basis", "candidate")
+        },
+    )
+    options.output.write_text(json.dumps(result) + "\n", encoding="utf-8")
+    return 0
 
 
 def main() -> int:
@@ -951,4 +1027,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "join-record-owners":
+        del sys.argv[1]
+        raise SystemExit(join_records_main())
     raise SystemExit(main())

@@ -8,7 +8,6 @@ import os
 import re
 import subprocess
 import sys
-from importlib import import_module
 from pathlib import Path
 
 import pytest
@@ -25,7 +24,6 @@ sys.path.insert(0, str(SCRIPTS))
 try:
     scope = importlib.util.module_from_spec(SPEC)
     SPEC.loader.exec_module(scope)
-    preparation = import_module("prepare_ci_control_inputs")
 finally:
     sys.path.remove(str(SCRIPTS))
 
@@ -390,111 +388,6 @@ def test_confirmed_base_owner_absence_is_explicit_and_candidate_is_required(
     assert not (root / "outputs").exists()
 
 
-@pytest.mark.parametrize("full", [False, True])
-def test_native_prepare_preserves_endpoints_and_locked_context(
-    comparison, monkeypatch, tmp_path_factory, full
-):
-    """Native preparation uses exact Git endpoints and locked contexts."""
-    root, basis, candidate = comparison
-    if full:
-        basis = candidate
-    native_comparison = {"basis": basis, "candidate": candidate, "full": full}
-    restored = []
-    original = preparation.run
-    response = _control_response(basis, candidate, full=full)
-
-    def native(directory, *arguments):
-        if arguments[0] == "git":
-            return original(directory, *arguments)
-        if arguments[1] == "restore":
-            restored.append((directory, arguments))
-            return "Locked fixture preparation\n"
-        if "comparison" in arguments:
-            return json.dumps(native_comparison)
-        assert "control-inputs" in arguments
-        return json.dumps(response)
-
-    monkeypatch.setattr(preparation, "run", native)
-    scratch = tmp_path_factory.mktemp("control-inputs") / "endpoints"
-    request = preparation.prepare(
-        root,
-        scratch,
-        root / "control.dll",
-        ("pull_request", root / "event.json", candidate),
-    )
-    before = Path(request["basisDirectory"])
-    after = Path(request["candidateDirectory"])
-    assert not before.is_relative_to(root)
-    assert not after.is_relative_to(root)
-    assert _git(before, "rev-parse", "HEAD") == basis
-    assert _git(after, "rev-parse", "HEAD") == candidate
-    assert (before == after) is full
-    assert (
-        json.loads((scratch / "request.json").read_text(encoding="utf-8"))
-        == request
-    )
-    result = preparation.evaluate(
-        root,
-        root / "control.dll",
-        scratch / "request.json",
-        scratch / "response.json",
-    )
-    assert result == response
-    assert not restored
-    assert (
-        json.loads((scratch / "response.json").read_text(encoding="utf-8"))
-        == response
-    )
-
-
-def test_native_prepare_failure_does_not_write_facts(comparison, monkeypatch):
-    """Failed required native operations never write successful facts."""
-    root, basis, candidate = comparison
-    scratch = root.parent / (root.name + "-failed-endpoints")
-    request = {
-        "comparison": {"basis": basis, "candidate": candidate, "full": False},
-        "repository": str(root),
-        "basisDirectory": str(scratch / "basis"),
-        "candidateDirectory": str(scratch / "candidate"),
-    }
-    scratch.mkdir()
-    request_path = scratch / "request.json"
-    request_path.write_text(json.dumps(request), encoding="utf-8")
-
-    def unavailable(*_arguments):
-        raise subprocess.CalledProcessError(1, ["dotnet", "restore"])
-
-    monkeypatch.setattr(preparation, "run", unavailable)
-    with pytest.raises(subprocess.CalledProcessError):
-        preparation.evaluate(
-            root, root / "control.dll", request_path, scratch / "response.json"
-        )
-    assert not (scratch / "response.json").exists()
-    with pytest.raises(subprocess.CalledProcessError):
-        preparation.prepare(
-            root,
-            scratch / "not-created",
-            root / "control.dll",
-            ("push", root / "event.json", candidate),
-        )
-    assert not (scratch / "not-created").exists()
-
-
-def test_native_prepare_rejects_source_subdirectories(
-    comparison,
-):
-    """Temporary checkouts cannot pollute the candidate source inventory."""
-    root, _, candidate = comparison
-    with pytest.raises(ValueError, match="outside"):
-        preparation.prepare(
-            root,
-            root / "generated",
-            root / "control.dll",
-            ("push", root / "event.json", candidate),
-        )
-    assert not (root / "generated").exists()
-
-
 def _owner_rows(result, name):
     return {
         row["path"]: row for row in result["endpoint_owners"][name]["paths"]
@@ -709,24 +602,6 @@ def test_hk_configuration_keeps_exact_conformance_responsibility(
             if present
             else []
         )
-
-
-def test_control_preparation_remains_available_without_endpoint_parser():
-    """System-Python bootstrap must not require the UV endpoint parser."""
-    result = subprocess.run(  # noqa: S603 - Exact interpreter and repository help command.
-        [
-            sys.executable,
-            "-S",
-            str(SCRIPTS / "prepare_ci_control_inputs.py"),
-            "--help",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "prepare" in result.stdout
-    assert "evaluate" in result.stdout
 
 
 @pytest.mark.parametrize("transition", ["change", "add", "delete"])
@@ -1506,7 +1381,10 @@ def test_endpoint_owners_keep_nonregular_git_modes_distinct(comparison):
             "src/private/lib/scholarly-publication/tests/test_assemble_print.py",
             {"scholarly"},
         ),
-        ("eng/scripts/run_python_ci_group.py", set()),
+        (
+            "src/private/app/workflow-delivery/CI/Callers/PythonCiCaller.cs",
+            {"dotnet"},
+        ),
     ],
 )
 def test_scope_retains_other_jobs_without_python_selection(path, jobs):
