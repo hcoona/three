@@ -129,6 +129,35 @@ public sealed class PythonGroupReaderTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task ControlCallerUsesNativeManagedResponsibility()
+    {
+        using var fixture = await Fixture.CreateAsync(
+            "src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs", false,
+            context.CancellationToken, "dotnet");
+        PythonGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
+        Assert.IsEmpty(result.Plan.Checks);
+        Assert.HasCount(2, fixture.Collected);
+    }
+
+    [TestMethod]
+    public async Task NativeManagedResponsibilityPreservesPythonRustConsumer()
+    {
+        const string path = "src/private/app/workflow-delivery/Native/Python/uv/src/main.rs";
+        const string target = "tests/private/app/workflow-delivery/Native/Python";
+        using var fixture = await Fixture.CreateAsync(path, false,
+            context.CancellationToken, "dotnet", target);
+        PythonGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
+        PlannedCheck check = Assert.ContainsSingle(result.Plan.Checks);
+        Assert.AreEqual("pytest:" + target, check.Work.Key.Target);
+        Assert.IsTrue(check.Work.Required);
+        CollectionAssert.AreEquivalent(new[] {
+            new SelectionReason(path, fixture.Request.Basis.Checkout.Reference,
+                "pytest:" + target),
+            new SelectionReason(path, fixture.Request.Candidate.Checkout.Reference,
+                "pytest:" + target) }, check.Reasons);
+    }
+
+    [TestMethod]
     [DataRow("src/private/app/workflow-delivery/README.md")]
     [DataRow("src/private/app/workflow-delivery/docs/high-level-design.md")]
     public async Task DeclaredControlDocumentsRemainNonconsumersWithPythonCallerResponsibility(
@@ -149,8 +178,9 @@ public sealed class PythonGroupReaderTests(TestContext context)
     {
         using var fixture = await Fixture.CreateAsync("unresolved.txt", false,
             context.CancellationToken, owner);
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
+        Assert.AreEqual("Unresolved Python input: unresolved.txt", error.Message);
     }
 
     [TestMethod]
@@ -240,17 +270,19 @@ public sealed class PythonGroupReaderTests(TestContext context)
         internal PythonRevisionInputs? After { get; private set; }
         internal List<string> Collected { get; } = [];
         internal bool CrossInput { get; set; }
+        private string testTarget = "src/input/tests";
         internal string? FailedEndpoint { get; set; }
         internal Action? AfterBasis { get; set; }
 
         internal static async Task<Fixture> CreateAsync(string changed, bool full,
-            CancellationToken token, string? owner = null)
+            CancellationToken token, string? owner = null, string target = "src/input/tests")
         {
             var fixture = new Fixture(await GitFixture.CreateAsync(token));
+            fixture.testTarget = target;
             try
             {
                 foreach (string path in (string[])["pyproject.toml", "src/input/pyproject.toml",
-                    "src/input/source.py", "src/input/tests/test_one.py", changed])
+                    "src/input/source.py", target + "/test_one.py", changed])
                     await repositorySet(path);
                 string before = await fixture.repo.CommitAsync();
                 await fixture.repo.GitAsync("reset", "--hard", before);
@@ -308,7 +340,7 @@ public sealed class PythonGroupReaderTests(TestContext context)
                 PythonProjectDependencies[] projects = [new(".", "root", [], []),
                     new("src/input", "input", [], [])];
                 var configuration = new PythonPytestConfiguration("pyproject.toml",
-                    ["src/input/tests"], ["--import-mode=importlib"]);
+                    [testTarget], ["--import-mode=importlib"]);
                 var metadata = new PythonMetadata(checkout.Root, "workspace", ">=3.14",
                     projects.Select(project => new PythonMetadataMember(project.Name,
                         project.Directory, project.Name)).ToArray(),

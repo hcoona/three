@@ -701,6 +701,85 @@ def test_conformance_script_neighbors_still_require_python_resolution(
     ]
 
 
+@pytest.mark.parametrize(
+    ("path", "python"),
+    [
+        (
+            "src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs",
+            False,
+        ),
+        (
+            "tests/private/app/workflow-delivery/CI/CiCallerControlTests.cs",
+            False,
+        ),
+        ("src/private/app/workflow-delivery/packages.lock.json", False),
+        ("src/private/app/workflow-delivery/Native/Ruby/facts.rb", False),
+        (
+            "src/private/app/workflow-delivery/Native/contracts/ruby-facts.schema.json",
+            False,
+        ),
+        (
+            "tests/private/app/workflow-delivery/Native/Ruby/spec/facts_spec.rb",
+            False,
+        ),
+        (
+            (
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-ruby/lib/smoke.rb"
+            ),
+            False,
+        ),
+        (
+            "src/private/app/workflow-delivery/Native/Python/uv/src/main.rs",
+            False,
+        ),
+        ("src/private/app/workflow-delivery/Native/Python/passive.py", True),
+        (
+            "tests/private/app/workflow-delivery/Native/Python/test_passive.py",
+            True,
+        ),
+        ("eng/scripts/test-python.sh", True),
+    ],
+)
+def test_native_test_migration_removes_only_retired_python_responsibility(
+    comparison, path, python
+):
+    """Native facts explain moved checks without inventing Python consumers."""
+    root, _, _ = comparison
+    source = root / path
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("before\n", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Native owner basis")
+    base = _git(root, "rev-parse", "HEAD")
+    source.write_text("after\n", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Native owner change")
+    candidate = _git(root, "rev-parse", "HEAD")
+    result = _select_cli(
+        root,
+        "--from-ref",
+        base,
+        receipt=_control_response(
+            base, candidate, before=(path,), after=(path,)
+        ),
+    )
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    assert selected["changed_paths"] == [path]
+    for endpoint in ("basis", "candidate"):
+        row = _owner_rows(selected, endpoint)[path]
+        assert row["present"] is True
+        reasons = row["reasons"]
+        assert any(reason["owner"] == "python" for reason in reasons) is python
+        assert {
+            "owner": "dotnet",
+            "target": scope.CONTROL_PROJECT,
+            "rule": "native-embedded-resource",
+            "sources": [scope.CONTROL_PROJECT],
+        } in reasons
+
+
 def test_endpoint_owners_preserve_changed_coordinate_identity(comparison):
     """Removed coordinates and both rename endpoints keep independent facts."""
     root, base, candidate = comparison

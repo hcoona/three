@@ -684,6 +684,14 @@ and former Ruby helper/schema/fixture consumer relationship for this transition.
 Source presence and native target binding govern these associations. They neither
 restore deleted execution nor create a candidate check; unknown inputs still fail.
 
+Retired pytest preparation gates and the former Ruby pytest carrier do not give
+the control application, managed test tree or Ruby fixture blanket Python
+responsibility. Their actual native managed/Ruby and record consumers explain
+those coordinates. Existing Python helper and caller bindings still select real
+Python consumers, including the Rust supplement, even when another native owner
+also consumes the input. A missing native responsibility or unresolved Python
+claim remains a planning failure.
+
 Record responsibility uses the accepted endpoint's record-family bindings and
 the shared component-aware matcher in `eng/scripts/repository_path_patterns.py`,
 used by both `ci_scope.py` and `check_repository_records.py`. Preserve that small

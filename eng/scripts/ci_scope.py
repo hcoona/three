@@ -658,18 +658,6 @@ def _path_owner_reasons(  # noqa: C901, PLR0912, PLR0913 - Finite roles share ex
         )
         or path in ALL_INPUTS | PYTHON_INPUTS
         or _under(path, "tests/eng")
-        or _under(path, "src/private/app/workflow-delivery")
-        or (
-            _under(path, "tests/private/app/workflow-delivery")
-            and not _under(
-                path, "tests/private/app/workflow-delivery/fixtures/products"
-            )
-        )
-        or _under(
-            path,
-            "tests/private/app/workflow-delivery/fixtures/products/"
-            "hcoona-release-smoke-ruby",
-        )
         or path
         in {
             ".github/workflows/workflow-delivery-v3-python-smoke.yml",
