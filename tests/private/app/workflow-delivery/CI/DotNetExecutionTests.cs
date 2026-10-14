@@ -50,6 +50,7 @@ public sealed class DotNetExecutionTests(TestContext context)
     public async Task NativeStagesPreserveOriginalGlobalsAndNativeOutput(string capability,
         string target)
     {
+        // Private repository: this row checks native output written inside the checkout.
         using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken,
             capability);
         DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
@@ -84,7 +85,7 @@ public sealed class DotNetExecutionTests(TestContext context)
     [DataRow("CleanupFailed", "Failed")]
     public async Task FailedTestCannotEraseEarlierBuild(string terminationName, string statusName)
     {
-        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         NativeTermination termination = Enum.Parse<NativeTermination>(terminationName);
         CheckStatus status = Enum.Parse<CheckStatus>(statusName);
         fixture.Override = command => command.Arguments.Contains(
@@ -104,7 +105,7 @@ public sealed class DotNetExecutionTests(TestContext context)
     [DataRow(null)]
     public async Task FailedOuterCommandCannotPassFromSuccessfulBatchResponse(int? exitCode)
     {
-        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         DotNetRunResult result = await DotNetExecution.RunAsync(fixture.Plan, fixture.Request,
             async (command, token) =>
             {
@@ -127,7 +128,7 @@ public sealed class DotNetExecutionTests(TestContext context)
     [TestMethod]
     public async Task FailedBuildSkipsTestAndMissingCollectionRemainsUnsatisfied()
     {
-        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         fixture.Override = _ => new(NativeTermination.StartFailed, null, "", "", 0, "cannot start");
         DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
@@ -147,7 +148,7 @@ public sealed class DotNetExecutionTests(TestContext context)
     [DataRow("invalid")]
     public async Task MissingTestReceiptRetainsBuildWithoutFabricatingTest(string defect)
     {
-        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         fixture.Override = command =>
         {
             if (!command.Arguments.Contains("-target:Build,GetTargetPath,InvokeTestingPlatform"))
@@ -210,7 +211,7 @@ public sealed class DotNetExecutionTests(TestContext context)
     [DataRow("globals")]
     public async Task MissingOrDifferentBatchIdentityCannotPass(string defect)
     {
-        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         fixture.ModifyBatchResponse = response =>
         {
             JsonArray entries = response["entries"]!.AsArray();
@@ -230,8 +231,7 @@ public sealed class DotNetExecutionTests(TestContext context)
     [TestMethod]
     public async Task ReorderedBatchResultsRetainOriginalVariantBinding()
     {
-        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken,
-            "None");
+        using var fixture = DotNetExecutionFixture.Shared(shared!, sharedCommit, "None");
         var globals = new Dictionary<string, string>(DotNetNativeFixture.Globals("net8.0"));
         CiPlan second = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
             fixture.Plan.Candidate, "None", globals);
@@ -343,8 +343,7 @@ public sealed class DotNetExecutionTests(TestContext context)
     [TestMethod]
     public async Task EmptyPlanRunsNoProductCommandAndNoneBuildsOnly()
     {
-        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken,
-            "None");
+        using var fixture = DotNetExecutionFixture.Shared(shared!, sharedCommit, "None");
         DotNetRunResult empty = await fixture.RunAsync(context.CancellationToken,
             fixture.Plan with { Checks = [] });
         Assert.IsEmpty(empty.Results);

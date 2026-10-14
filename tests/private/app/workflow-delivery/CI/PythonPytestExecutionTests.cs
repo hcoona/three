@@ -136,7 +136,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     [TestMethod]
     public async Task EmptyPartitionPerformsNoProductPreparation()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision!);
         CiPlan selected = fixture.Select();
         PythonPytestRunResult result = await fixture.RunAsync(selected, context.CancellationToken);
         Assert.IsTrue(ResultCollector.Collect(selected, result.Results).Satisfied);
@@ -153,7 +153,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     public async Task SharedPreparationFailureUnsatisfiesEveryOriginalTarget(
         string termination, string expected)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision!);
         fixture.Failure = "sync";
         fixture.Termination = Enum.Parse<NativeTermination>(termination);
         PythonPytestRunResult result = await fixture.RunAsync(fixture.Plan,
@@ -174,7 +174,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     public async Task OneTargetFailurePreservesOtherRequiredOutcomes(
         string termination, string expected)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision!);
         fixture.Failure = "tests/root";
         fixture.Termination = Enum.Parse<NativeTermination>(termination);
         PythonPytestRunResult result = await fixture.RunAsync(fixture.Plan,
@@ -193,7 +193,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     [DataRow("tests/root")]
     public async Task CancellationRetainsCompleteResultsAndStopsFurtherTargets(string cancelAt)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision!);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         fixture.After = command =>
@@ -268,7 +268,10 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     [DataRow("dirty")]
     public async Task InvalidTransferStopsBeforeNativeProductEffects(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        // Only the dirty row changes the checkout, so only it keeps a private repository.
+        using var fixture = defect == "dirty"
+            ? await Fixture.CreateAsync(context.CancellationToken)
+            : Fixture.Shared(shared!, sharedRevision!);
         PythonPytestRunRequest request = fixture.Request;
         CiPlan plan = fixture.Plan;
         if (defect == "candidate") request = request with

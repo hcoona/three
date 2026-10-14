@@ -71,10 +71,13 @@ public sealed class NuGetPreparationTests(TestContext context)
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         string check = phase == "restore" ? "native-input" : phase == "Build" ? "build" : "pack";
         Assert.AreEqual(expected, result.Prepared.Checks.Single(item => item.Id == check).Status);
+        Assert.IsTrue(result.Prepared.Checks.TakeWhile(item => item.Id != check)
+            .All(item => item.Status == ReleaseCheckStatus.Passed));
         Assert.IsEmpty(result.Prepared.Files);
         Assert.IsNotEmpty(result.Errors);
         ReleaseCommand failed = Assert.ContainsSingle(result.Commands.Where(item =>
             !item.Result.Succeeded));
+        Assert.AreEqual(check, failed.Check);
         Assert.AreEqual(termination, failed.Result.Termination);
         Assert.AreEqual("partial native output", failed.Result.Stdout);
         Assert.IsTrue(result.Prepared.Checks.SkipWhile(item => item.Id != check).Skip(1)
@@ -83,22 +86,33 @@ public sealed class NuGetPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Build", "NuGetPackageVersion", "2.0.0")]
-    [DataRow("Build", "AssemblyVersion", "2.0.0.0")]
-    [DataRow("Pack,_GetOutputItemsFromPack", "AssemblyInformationalVersion", "changed")]
-    [DataRow("GetBuildVersion", "RuntimeIdentifier", "linux-x64")]
-    [DataRow("GetBuildVersion", "NETCoreSdkVersion", "10.0.402")]
+    [DataRow("Build", "NuGetPackageVersion", "2.0.0", "build",
+        "inconsistent native package projections")]
+    [DataRow("Build", "AssemblyVersion", "2.0.0.0", "build", "recomputation differs")]
+    [DataRow("Pack,_GetOutputItemsFromPack", "AssemblyInformationalVersion", "changed", "pack",
+        "recomputation differs")]
+    [DataRow("GetBuildVersion", "RuntimeIdentifier", "linux-x64", "native-input",
+        "inconsistent native package projections")]
+    [DataRow("GetBuildVersion", "NETCoreSdkVersion", "10.0.402", "native-input",
+        "Unsupported native NuGet product or SDK")]
     public async Task NativeProjectionMismatchCannotQualifyRelease(string target,
-        string property, string value)
+        string property, string value, string check, string reason)
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Modify = (phase, document) =>
         { if (phase == target) document["Properties"]![property] = value; };
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
-        Assert.IsNotEmpty(result.Errors);
-        Assert.Contains(ReleaseCheckStatus.Failed, result.Prepared.Checks.Select(item =>
-            item.Status).ToArray());
+        // The defect-free shared control fails at pack for a missing archive, so each row
+        // must fail at its own check for its own reason, after every earlier check passed.
+        Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks.Single(item =>
+            item.Id == check).Status);
+        Assert.IsTrue(result.Prepared.Checks.TakeWhile(item => item.Id != check)
+            .All(item => item.Status == ReleaseCheckStatus.Passed));
+        string errors = string.Join(";", result.Errors);
+        Assert.Contains(reason, errors);
+        Assert.DoesNotContain("original native archive set", errors);
+        Assert.IsTrue(result.Commands.All(item => item.Result.Succeeded));
         Assert.DoesNotContain("consumer", result.Commands.Select(item => item.Check).ToArray());
     }
 
@@ -108,7 +122,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     [DataRow("Pack,_GetOutputItemsFromPack")]
     public async Task SuccessfulCommandWithoutRequiredTargetResultCannotPass(string target)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Modify = (phase, document) =>
         { if (phase == target) document["TargetResults"]!.AsObject().Clear(); };
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
@@ -120,6 +134,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     [TestMethod]
     public async Task UnknownQualitySelectionIsUnavailableBeforeNativeBuild()
     {
+        // Private repository: the unknown preset requires a different committed revision.
         using var fixture = await Fixture.CreateAsync(context.CancellationToken,
             "dotnet/unknown-v1");
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
@@ -137,7 +152,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     public async Task UnavailableNativeVariantOrRequiredTestCannotBeDropped(string property,
         string value)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Shape[property] = value;
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
@@ -149,7 +164,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     [TestMethod]
     public async Task MissingOriginalOutputDoesNotBecomeEmptySuccessfulRelease()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks.Single(item => item.Id
             == "pack").Status);
@@ -163,7 +178,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     [TestMethod]
     public async Task CancellationBeforePreparationProducesCompleteUnsatisfiedChecks()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
         NuGetPreparationResult result = await fixture.RunAsync(cancellation.Token);
@@ -176,7 +191,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     [TestMethod]
     public async Task EveryNativeCommandUsesSelectedVersionContextAndOwnedVariableOutput()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsNotEmpty(result.Commands);
         foreach (ReleaseCommand command in result.Commands)

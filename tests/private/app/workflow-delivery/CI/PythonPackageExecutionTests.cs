@@ -145,7 +145,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     [DataRow("TimedOut")]
     public async Task FailedSdistPreparationPreservesOriginalsAndCompletedWheel(string statusName)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedPlan!);
         fixture.Failure = "sdist-prepare";
         fixture.Terminal = Enum.Parse<CheckStatus>(statusName);
         PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
@@ -178,7 +178,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     [DataRow("python-sdist")]
     public async Task ChangedOriginalDuringSdistPreparationStopsConsumer(string changedKind)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedPlan!);
         fixture.Failure = "conversion-original-changed";
         fixture.ChangedKind = changedKind;
         PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
@@ -239,7 +239,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     public async Task ExtraBuildOutputFailsRequiredCheckAndStopsItsConsumers(
         string failure, string failedCheck)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedPlan!);
         fixture.Failure = failure;
         PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
 
@@ -271,7 +271,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     [TestMethod]
     public async Task WheelFailureDoesNotEraseIndependentSdistResult()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedPlan!);
         fixture.Failure = "wheel-consumer";
         PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
@@ -286,7 +286,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     [DataRow("original-changed")]
     public async Task InvalidOriginalContentBlocksBothConsumers(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedPlan!);
         fixture.Failure = defect;
         PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
@@ -307,7 +307,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     public async Task CliTransfersOriginalResultsAndCannotSatisfyMissingObligations(
         string statusName, int expectedExit)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedPlan!);
         CheckStatus status = Enum.Parse<CheckStatus>(statusName);
         string planFile = Path.Combine(fixture.Scratch, "plan.json");
         string requestFile = Path.Combine(fixture.Scratch, "request.json");
@@ -344,7 +344,10 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     [DataRow("prerequisite")]
     public async Task InvalidSelectedContractStopsBeforeNativeEffects(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        // Only the dirty row changes the checkout, so only it keeps a private repository.
+        using var fixture = defect == "dirty"
+            ? await Fixture.CreateAsync(context.CancellationToken)
+            : Fixture.Shared(shared!, sharedPlan!);
         CiPlan plan = fixture.Plan;
         if (defect == "missing-check") plan = plan with { Checks = plan.Checks[..3] };
         if (defect == "preset") plan = plan with { Checks = [plan.Checks[0] with
@@ -392,6 +395,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     public async Task LinkedScratchOrCheckoutStopsBeforeNativeEffects(
         string boundary, bool linkedAncestor)
     {
+        // Private repository: rows create directories in the checkout and link to it.
         using var fixture = await Fixture.CreateAsync(context.CancellationToken);
         string target = boundary == "scratch"
             ? Directory.CreateDirectory(Path.Combine(fixture.Repo.Directory,

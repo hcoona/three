@@ -17,7 +17,8 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         "malformed-unit"];
 
     // Rows that vary only controlled native answers read one class-owned committed checkout.
-    // Each adoption defect is a separate committed revision in its own read-only worktree.
+    // Each adoption defect is a separate committed revision in its own read-only worktree;
+    // the defect-free "control" worktree proves that the linked-worktree location qualifies.
     private static GitFixture? shared;
     private static GitRevision? sharedRevision;
     private static readonly Dictionary<string, (string Root, GitRevision Revision)>
@@ -33,6 +34,10 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
             await Fixture.StageAsync(shared);
             string basis = await shared.CommitAsync();
             string parent = Path.GetDirectoryName(shared.Directory)!;
+            string control = Path.Combine(parent, "control");
+            await shared.GitAsync("worktree", "add", "--detach", control, basis);
+            SharedDefects.Add("control", (control,
+                await new GitReader(control).ReadAsync(basis, token)));
             foreach (string defect in AdoptionDefects)
             {
                 await Fixture.StageAdoptionDefectAsync(shared, defect);
@@ -120,19 +125,32 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("missing-quality")]
-    [DataRow("missing-unit")]
-    [DataRow("unsupported-preset")]
-    [DataRow("unsupported-output")]
-    [DataRow("mixed-unit")]
-    [DataRow("foreign-entry")]
-    [DataRow("malformed-unit")]
-    public async Task MissingOrUnsupportedAdoptionCannotEraseDistributionObligations(string defect)
+    public async Task SharedLinkedWorktreeQualifiesAdoptedDistribution()
+    {
+        // Defect-free control for the adoption-defect location: a linked worktree at the basis.
+        (string root, GitRevision revision) = SharedDefects["control"];
+        using var fixture = Fixture.Shared(root, revision);
+        PythonRevisionInputs inputs = await fixture.ReadAsync(context.CancellationToken);
+        Assert.HasCount(4, Assert.ContainsSingle(inputs.Facts.Packages).Checks);
+        Assert.HasCount(2, fixture.Commands);
+    }
+
+    [TestMethod]
+    [DataRow("missing-quality", "Python distribution lacks adopted quality")]
+    [DataRow("missing-unit", "Adopted Python quality lacks a complete distribution")]
+    [DataRow("unsupported-preset", "Unsupported effective Python quality preset")]
+    [DataRow("unsupported-output", "Unsupported complete Python distribution set")]
+    [DataRow("mixed-unit", "Unsupported or duplicate Python release unit")]
+    [DataRow("foreign-entry", "Python distribution has no native member")]
+    [DataRow("malformed-unit", "Expected a release-unit mapping")]
+    public async Task MissingOrUnsupportedAdoptionCannotEraseDistributionObligations(string defect,
+        string reason)
     {
         (string root, GitRevision revision) = SharedDefects[defect];
         using var fixture = Fixture.Shared(root, revision);
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+        var error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
+        Assert.Contains(reason, error.Message);
     }
 
     [TestMethod]
