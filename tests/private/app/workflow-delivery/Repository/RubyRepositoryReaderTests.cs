@@ -11,6 +11,8 @@ namespace WorkflowDelivery.Tests.Repository;
 public sealed class RubyRepositoryReaderTests(TestContext context)
 {
     private static readonly string[] RequirePaths = ["lib"];
+    private static readonly string[] NestedOwnerDirectories =
+        ["tests/suite", "tests/suite/vendored"];
     private static NativeCommandResult Answer(object value) => new(NativeTermination.Exited,
         0, JsonSerializer.Serialize(value), "", 0, null);
     private static RubyRepositoryRequest Request(string root) => new(new(
@@ -76,6 +78,88 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         SharedInput input = Assert.ContainsSingle(result.Facts.OperationInputs.Where(row =>
             row.Path == helper));
         CollectionAssert.AreEqual(new[] { owner.Id }, input.Consumers);
+    }
+
+    [TestMethod]
+    public async Task BundleOnlySuiteOwnershipStopsAtNestedNativeGems()
+    {
+        const string quality = "schema: workflow-delivery/v3/quality-selection\necosystems:\n" +
+            "  ruby:\n    preset: ruby/rspec-v1\n";
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        // A gem nested in a bundle-only suite inherits quality but keeps its own files.
+        await repo.SetAsync("tests/suite/Gemfile", "native declaration");
+        await repo.SetAsync("tests/suite/Gemfile.lock", "native lock");
+        await repo.SetAsync("tests/suite/workflow-delivery.quality.yml", quality);
+        await repo.SetAsync("tests/suite/contexts/Gemfile", "native declaration");
+        await repo.SetAsync("tests/suite/contexts/Gemfile.lock", "native lock");
+        await repo.SetAsync("tests/suite/spec/a_spec.rb", "native examples");
+        await repo.SetAsync("tests/suite/vendored/asciidoctor-latexmath.gemspec",
+            "native source");
+        await repo.SetAsync("tests/suite/vendored/lib.rb", "native source");
+        await repo.SetAsync("tests/suite/vendored/version.json", "{\"version\":\"1.2\"}");
+        await repo.SetAsync("tests/suite/vendored/Gemfile", "native declaration");
+        await repo.SetAsync("tests/suite/vendored/Gemfile.lock", "native lock");
+        GitMaterialization checkout = await BindAsync(repo);
+        RubyRepositoryRequest request = Request(repo.Directory);
+        RubyRevisionInputs result = await RubyRepositoryReader.ReadAsync(checkout, request,
+            async (command, token) =>
+            {
+                if (command.Executable == request.Nbgv)
+                    return Answer(new { SemVer2 = "1.2.3" });
+                using JsonDocument input = JsonDocument.Parse(
+                    await File.ReadAllTextAsync(command.Arguments[^1], token));
+                string path = input.RootElement.GetProperty("path").GetString()!;
+                string operation = input.RootElement.GetProperty("operation").GetString()!;
+                if (operation == "gemspec")
+                    return Answer(new
+                    {
+                        gemspec = path,
+                        name = Path.GetFileNameWithoutExtension(path),
+                        version = "1.2.3",
+                        platform = "ruby",
+                        require_paths = RequirePaths,
+                        files = Array.Empty<string>(),
+                        runtime_dependencies = Array.Empty<object>()
+                    });
+                if (operation == "version")
+                    return Answer(new
+                    {
+                        gemspec = path,
+                        raw = "1.2.3",
+                        version = "1.2.3",
+                        literal = "\"1.2.3\""
+                    });
+                if (operation == "bundle-context")
+                    return Answer(new
+                    {
+                        gemfile = path,
+                        lockfile = path + ".lock",
+                        bundler_version = "2.7.2",
+                        locked_bundler_version = "2.7.2"
+                    });
+                return Answer(new
+                {
+                    gemfile = path,
+                    lockfile = path + ".lock",
+                    bundler_version = "2.7.2",
+                    locked_bundler_version = "2.7.2",
+                    gemfiles = new[] { path },
+                    direct_dependencies = Array.Empty<string>(),
+                    specifications = Array.Empty<object>()
+                });
+            }, context.CancellationToken);
+        CollectionAssert.AreEquivalent(NestedOwnerDirectories,
+            result.Facts.Owners.Select(owner => owner.Directory).ToArray());
+        ProjectFacts suite = result.Facts.Owners.Single(owner =>
+            owner.Directory == "tests/suite");
+        Assert.Contains("tests/suite/spec/a_spec.rb", suite.OwnedPaths!);
+        Assert.Contains("tests/suite/contexts/Gemfile", suite.OwnedPaths!);
+        Assert.IsFalse(suite.OwnedPaths!.Any(path =>
+            path.StartsWith("tests/suite/vendored/", StringComparison.Ordinal)));
+        Assert.IsTrue(result.Facts.OperationInputs.Any(input =>
+            input.Path == "tests/suite/contexts/Gemfile" && input.Consumers.Contains(suite.Id)));
+        Assert.IsFalse(result.Facts.OperationInputs.Any(input =>
+            input.Path == "tests/suite/vendored/Gemfile" && input.Consumers.Contains(suite.Id)));
     }
 
     [TestMethod]

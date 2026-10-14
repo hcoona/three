@@ -102,8 +102,7 @@ internal static class RubyRepositoryReader
         foreach (RubyBundleLocation bundle in inventory.Bundles)
         {
             if (native.ContainsKey(bundle.Directory) || owners.Any(owner =>
-                    bundle.Directory == owner.Directory ||
-                    bundle.Directory.StartsWith(owner.Directory + "/", StringComparison.Ordinal)))
+                    RubyFactsAssembler.Governs(owner.Directory, bundle.Directory, native.Keys)))
                 continue;
             QualitySelection? selection =
                 await selections.ReadAsync(bundle.Directory, "ruby", token);
