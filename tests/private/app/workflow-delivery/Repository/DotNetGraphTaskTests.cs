@@ -605,19 +605,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("missing-assets")]
-    [DataRow("unsupported-format")]
-    [DataRow("missing-project")]
-    [DataRow("missing-restore")]
-    [DataRow("unsupported-project-style")]
-    [DataRow("wrong-project")]
-    [DataRow("unlocked")]
-    [DataRow("empty-configurations")]
-    [DataRow("missing-root-contributor")]
-    [DataRow("uncommitted-root-configuration")]
-    [DataRow("missing-lock")]
     [Timeout(60000, CooperativeCancellation = true)]
-    public async Task MissingOrDifferentRestoreMetadataFailsWithoutAResponse(string scenario)
+    public async Task MissingOrDifferentRestoreMetadataFailsWithoutAResponse()
     {
         using var fixture = new GraphFixture();
         fixture.Write("dirs.proj", """
@@ -626,42 +615,61 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         fixture.Write("main.csproj", GraphFixture.Project);
         await fixture.PrepareAsync(context.CancellationToken);
         string path = fixture.PathOf("obj/main/project.assets.json");
+        string lockPath = fixture.PathOf("packages.main.lock.json");
+        byte[] originalAssets = await File.ReadAllBytesAsync(path, context.CancellationToken);
+        byte[] originalLock = await File.ReadAllBytesAsync(lockPath, context.CancellationToken);
         var format = new LockFileFormat();
-        LockFile assets = format.Read(path);
-        switch (scenario)
+        foreach (string scenario in new[] { "missing-assets", "unsupported-format",
+            "missing-project", "missing-restore", "unsupported-project-style", "wrong-project",
+            "unlocked", "empty-configurations", "missing-root-contributor",
+            "uncommitted-root-configuration", "missing-lock" })
         {
-            case "missing-assets": File.Delete(path); break;
-            case "missing-lock": File.Delete(fixture.PathOf("packages.main.lock.json")); break;
-            case "unsupported-format": assets.Version = LockFileFormat.Version + 1; break;
-            case "missing-project": assets.PackageSpec = null; break;
-            case "missing-restore": assets.PackageSpec.RestoreMetadata = null; break;
-            case "unsupported-project-style":
-                assets.PackageSpec.RestoreMetadata.ProjectStyle = ProjectStyle.Unknown;
-                break;
-            case "wrong-project":
-                assets.PackageSpec.RestoreMetadata.ProjectPath = fixture.PathOf("other.csproj");
-                break;
-            case "unlocked":
-                assets.PackageSpec.RestoreMetadata.RestoreLockProperties = new("true", null, false);
-                break;
-            case "empty-configurations":
-                assets.PackageSpec.RestoreMetadata.ConfigFilePaths.Clear();
-                break;
-            case "missing-root-contributor":
-                string rootConfiguration = fixture.PathOf("nuget.config");
-                var configurations = assets.PackageSpec.RestoreMetadata.ConfigFilePaths;
-                string contributor = Assert.ContainsSingle(configurations.Where(configuration =>
-                    PhysicalPathComparer.Equals(configuration, rootConfiguration)),
-                    $"Expected one root contributor at {rootConfiguration}. Native contributors: " +
-                    string.Join("; ", configurations));
-                Assert.IsTrue(configurations.Remove(contributor));
-                break;
-            case "uncommitted-root-configuration": fixture.IncludeRootConfiguration = false; break;
+            context.WriteLine("Restore metadata case: " + scenario);
+            await File.WriteAllBytesAsync(path, originalAssets, context.CancellationToken);
+            await File.WriteAllBytesAsync(lockPath, originalLock, context.CancellationToken);
+            fixture.IncludeRootConfiguration = true;
+            LockFile assets = format.Read(path);
+            switch (scenario)
+            {
+                case "missing-assets": File.Delete(path); break;
+                case "missing-lock": File.Delete(lockPath); break;
+                case "unsupported-format": assets.Version = LockFileFormat.Version + 1; break;
+                case "missing-project": assets.PackageSpec = null; break;
+                case "missing-restore": assets.PackageSpec.RestoreMetadata = null; break;
+                case "unsupported-project-style":
+                    assets.PackageSpec.RestoreMetadata.ProjectStyle = ProjectStyle.Unknown;
+                    break;
+                case "wrong-project":
+                    assets.PackageSpec.RestoreMetadata.ProjectPath =
+                        fixture.PathOf("other.csproj");
+                    break;
+                case "unlocked":
+                    assets.PackageSpec.RestoreMetadata.RestoreLockProperties =
+                        new("true", null, false);
+                    break;
+                case "empty-configurations":
+                    assets.PackageSpec.RestoreMetadata.ConfigFilePaths.Clear();
+                    break;
+                case "missing-root-contributor":
+                    string rootConfiguration = fixture.PathOf("nuget.config");
+                    var configurations = assets.PackageSpec.RestoreMetadata.ConfigFilePaths;
+                    string contributor = Assert.ContainsSingle(configurations.Where(
+                        configuration => PhysicalPathComparer.Equals(
+                            configuration, rootConfiguration)),
+                        $"Expected one root contributor at {rootConfiguration}. " +
+                        "Native contributors: " +
+                        string.Join("; ", configurations));
+                    Assert.IsTrue(configurations.Remove(contributor));
+                    break;
+                case "uncommitted-root-configuration":
+                    fixture.IncludeRootConfiguration = false;
+                    break;
+            }
+            if (scenario is not ("missing-assets" or "missing-lock")) format.Write(path, assets);
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+                fixture.ReadAsync(context.CancellationToken), scenario);
+            Assert.IsFalse(File.Exists(fixture.PathOf("response.json")), scenario);
         }
-        if (scenario is not ("missing-assets" or "missing-lock")) format.Write(path, assets);
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.ReadAsync(context.CancellationToken));
-        Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
     }
 
     [TestMethod]
@@ -771,42 +779,51 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("true", "true", "MTP")]
-    [DataRow("TRUE", "malformed", "MTP")]
-    [DataRow("true", "false", "MTP")]
-    [DataRow("false", "true", "VSTest")]
-    [DataRow("", "TRUE", "VSTest")]
-    [DataRow("false", "false", "None")]
-    [DataRow("", "", "None")]
-    [DataRow("FALSE", "", "None")]
     [Timeout(30000, CooperativeCancellation = true)]
-    public async Task NativeTestCapabilitiesFollowEvaluatedPrecedence(
-        string mtp, string vstest, string expected)
+    public async Task NativeTestCapabilitiesFollowEvaluatedPrecedence()
     {
         using var fixture = new GraphFixture();
-        fixture.Write("dirs.proj", """
-            <Project><ItemGroup><ProjectReference Include="main.csproj" /></ItemGroup></Project>
-            """);
-        fixture.Write("main.csproj", $"""
-            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
-              <TargetFrameworks>net10.0;net9.0</TargetFrameworks>
-              <IsTestingPlatformApplication>{mtp}</IsTestingPlatformApplication>
-              <IsTestProject>{vstest}</IsTestProject>
-            </PropertyGroup></Project>
-            """);
+        (string Project, string Mtp, string VSTest, string Expected)[] cases =
+        [
+            ("mtp-first.csproj", "true", "true", "MTP"),
+            ("uppercase-mtp.csproj", "TRUE", "malformed", "MTP"),
+            ("mtp-only.csproj", "true", "false", "MTP"),
+            ("vstest.csproj", "false", "true", "VSTest"),
+            ("uppercase-vstest.csproj", "", "TRUE", "VSTest"),
+            ("disabled.csproj", "false", "false", "None"),
+            ("unspecified.csproj", "", "", "None"),
+            ("uppercase-false.csproj", "FALSE", "", "None"),
+        ];
+        fixture.Write("dirs.proj", "<Project><ItemGroup>" + string.Join("",
+            cases.Select(value => $"<ProjectReference Include=\"{value.Project}\" />")) +
+            "</ItemGroup></Project>");
+        foreach (var value in cases)
+            fixture.Write(value.Project, $"""
+                <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+                  <TargetFrameworks>net10.0;net9.0</TargetFrameworks>
+                  <IsTestingPlatformApplication>{value.Mtp}</IsTestingPlatformApplication>
+                  <IsTestProject>{value.VSTest}</IsTestProject>
+                </PropertyGroup></Project>
+                """);
         DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
-        DotNetGraphNode[] nodes = response.Nodes.Where(node =>
-            PhysicalPathComparer.Equals(node.Identity.Project, fixture.PathOf("main.csproj")))
-            .ToArray();
-        Assert.HasCount(3, nodes);
-        Assert.HasCount(1, nodes.Where(node => node.OuterBuild));
-        Assert.HasCount(1, nodes.Where(node => node.Dimension.TargetFramework == "net10.0"));
-        Assert.HasCount(1, nodes.Where(node => node.Dimension.TargetFramework == "net9.0"));
-        foreach (DotNetGraphNode node in nodes)
+        Assert.HasCount(1 + cases.Length * 3, response.Nodes);
+        foreach (var value in cases)
         {
-            Assert.AreEqual(expected, node.TestCapability);
-            Assert.AreEqual("Debug", node.Identity.Globals["Configuration"]);
-            Assert.AreEqual("true", node.Identity.Globals["RestoreLockedMode"]);
+            DotNetGraphNode[] nodes = response.Nodes.Where(node =>
+                PhysicalPathComparer.Equals(node.Identity.Project, fixture.PathOf(value.Project)))
+                .ToArray();
+            Assert.HasCount(3, nodes, value.Project);
+            Assert.HasCount(1, nodes.Where(node => node.OuterBuild), value.Project);
+            Assert.HasCount(1, nodes.Where(node => node.Dimension.TargetFramework == "net10.0"),
+                value.Project);
+            Assert.HasCount(1, nodes.Where(node => node.Dimension.TargetFramework == "net9.0"),
+                value.Project);
+            foreach (DotNetGraphNode node in nodes)
+            {
+                Assert.AreEqual(value.Expected, node.TestCapability, value.Project);
+                Assert.AreEqual("Debug", node.Identity.Globals["Configuration"], value.Project);
+                Assert.AreEqual("true", node.Identity.Globals["RestoreLockedMode"], value.Project);
+            }
         }
         Assert.AreEqual("None", response.Nodes.Single(node =>
             PhysicalPathComparer.Equals(node.Identity.Project, fixture.PathOf("dirs.proj")))
