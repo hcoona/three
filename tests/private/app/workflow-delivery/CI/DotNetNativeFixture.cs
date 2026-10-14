@@ -20,7 +20,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
         """;
 
     internal static async Task<DotNetNativeFixture> CreateAsync(string capability,
-        CancellationToken token, bool nbgv = false)
+        CancellationToken token, bool nbgv = false, bool includeDependencyGraph = true)
     {
         GitFixture repo = await GitFixture.CreateAsync(token);
         try
@@ -87,7 +87,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                     """,
                 ["library/Value.cs"] = "public static class DependencyValue { " +
                     "public static int Answer => 35 + GeneratedValue.Answer; }",
-                ["tests/NativeTests.csproj"] = TestProject(capability),
+                ["tests/NativeTests.csproj"] = TestProject(capability, includeDependencyGraph),
                 ["tests/NativeTests.cs"] = """
                     using Microsoft.VisualStudio.TestTools.UnitTesting;
                     [assembly: DoNotParallelize]
@@ -139,6 +139,14 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                     </TestRunParameters></RunSettings>
                     """,
             };
+            if (!includeDependencyGraph)
+            {
+                foreach (string path in new[] { "analyzer/Generator.csproj",
+                    "analyzer/Generator.cs", "library/Dependency.csproj", "library/Value.cs" })
+                    files.Remove(path);
+                files["tests/NativeTests.cs"] = files["tests/NativeTests.cs"].Replace(
+                    "Assert.AreEqual(42, DependencyValue.Answer);", "", StringComparison.Ordinal);
+            }
             if (nbgv)
             {
                 files["version.json"] = """{"version":"0.1"}""";
@@ -160,9 +168,11 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                 repo.Directory,
                 ["restore", "tests/NativeTests.csproj", "--locked-mode", "--force"], 60), token);
             RequireSuccess(locked, "Fixture locked restore");
-            foreach (string path in new[] { "tests/packages.lock.json",
-                         "library/packages.lock.json",
-                         "analyzer/packages.lock.json" })
+            string[] locks = includeDependencyGraph
+                ? ["tests/packages.lock.json", "library/packages.lock.json",
+                    "analyzer/packages.lock.json"]
+                : ["tests/packages.lock.json"];
+            foreach (string path in locks)
                 await repo.SetAsync(path, await File.ReadAllTextAsync(Path.Combine(repo.Directory,
                     path), token));
             string candidate = await repo.CommitAsync(initial);
@@ -204,7 +214,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                 result.ExitCode + "\n" + result.Error + "\n" + result.Stdout + result.Stderr);
     }
 
-    private static string TestProject(string capability)
+    private static string TestProject(string capability, bool includeDependencyGraph)
     {
         string sdk = capability == "MTP" ? "MSTest.Sdk" : "Microsoft.NET.Sdk";
         string packages = capability == "MTP" ? """
@@ -226,6 +236,10 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
         string noTests = "--filter FullyQualifiedName~DoesNotExist " +
             "--minimum-expected-tests 1 " + report;
         string slow = "--filter FullyQualifiedName~SlowProbe " + results;
+        string reference = includeDependencyGraph ? """
+            <ProjectReference Include="../library/Dependency.csproj"
+              GlobalPropertiesToRemove="UseAppHost" />
+            """ : "";
         return $$"""
             <Project Sdk="{{sdk}}"><PropertyGroup>
               <TargetFrameworks>net10.0;net8.0</TargetFrameworks>
@@ -250,8 +264,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
               <VSTestResultsDirectory
                 >$(MSBuildProjectDirectory)/receipts/$(TargetFramework)</VSTestResultsDirectory>
             </PropertyGroup>{{packages}}<ItemGroup>
-              <ProjectReference Include="../library/Dependency.csproj"
-                GlobalPropertiesToRemove="UseAppHost" />
+              {{reference}}
               <TestingPlatformEnvironmentVariable Include="WORKFLOW_NATIVE_PROBE"
                 Value="native-environment" />
               <TestingPlatformEnvironmentVariable Include="WORKFLOW_NATIVE_MTP" Value="true" />
