@@ -158,40 +158,30 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("root-array")]
-    [DataRow("properties-missing")]
-    [DataRow("properties-null")]
-    [DataRow("items-missing")]
-    [DataRow("items-array")]
-    [DataRow("resources-missing")]
-    [DataRow("resources-null")]
-    [DataRow("resources-object")]
-    [DataRow("item-null")]
-    [DataRow("fullpath-missing")]
-    [DataRow("fullpath-null")]
-    [DataRow("fullpath-number")]
-    [DataRow("fullpath-empty")]
-    [DataRow("project-missing")]
-    [DataRow("project-null")]
-    [DataRow("configuration-null")]
-    [DataRow("framework-empty")]
-    [DataRow("rid-missing")]
-    [DataRow("rid-null")]
-    [DataRow("rid-number")]
-    [DataRow("duplicate-properties")]
-    [DataRow("duplicate-items")]
-    [DataRow("duplicate-project")]
-    [DataRow("duplicate-resources")]
-    [DataRow("duplicate-fullpath")]
-    public async Task ReadRejectsInvalidRequiredNativeResults(string defect)
+    public async Task ReadRejectsInvalidRequiredNativeResults()
     {
         using var repo = await FixtureAsync();
         GitMaterialization checkout = await BindAsync(repo);
-        string output = Defective(Output(checkout, Release, "shared/Version 雪.json"), defect);
-        var reader = new MsBuildResourceReader(checkout, (_, _) => Task.FromResult(output));
+        foreach (string defect in new[]
+        {
+            "root-array", "properties-missing", "properties-null",
+            "items-missing", "items-array", "resources-missing",
+            "resources-null", "resources-object", "item-null",
+            "fullpath-missing", "fullpath-null", "fullpath-number",
+            "fullpath-empty", "project-missing", "project-null",
+            "configuration-null", "framework-empty", "rid-missing",
+            "rid-null", "rid-number", "duplicate-properties",
+            "duplicate-items", "duplicate-project", "duplicate-resources",
+            "duplicate-fullpath"
+        })
+        {
+            context.WriteLine("Native result case: " + defect);
+            string output = Defective(Output(checkout, Release, "shared/Version 雪.json"), defect);
+            var reader = new MsBuildResourceReader(checkout, (_, _) => Task.FromResult(output));
 
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => reader.ReadAsync(Project,
-            Release, context.CancellationToken));
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(() => reader.ReadAsync(Project,
+                Release, context.CancellationToken), defect);
+        }
     }
 
     [TestMethod]

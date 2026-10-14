@@ -208,16 +208,16 @@ public sealed class GitReaderTests(TestContext context)
     private static string[] Paths(GitRevision revision) =>
         revision.Entries.Select(entry => entry.Path).ToArray();
 
-    internal sealed class GitFixture(CancellationToken token) : IDisposable
+    internal sealed class GitFixture(bool legacyNbgvCleanup, CancellationToken token) : IDisposable
     {
         private readonly string temporary = Path.Combine(Path.GetTempPath(),
             "workflow git facts " + Guid.NewGuid().ToString("N"));
         internal string Directory => Path.Combine(temporary, "repository");
 
         internal static async Task<GitFixture> CreateAsync(CancellationToken token,
-            string format = "sha1")
+            string format = "sha1", bool legacyNbgvCleanup = false)
         {
-            var fixture = new GitFixture(token);
+            var fixture = new GitFixture(legacyNbgvCleanup, token);
             try
             {
                 System.IO.Directory.CreateDirectory(fixture.Directory);
@@ -275,9 +275,9 @@ public sealed class GitReaderTests(TestContext context)
         {
             if (!System.IO.Directory.Exists(temporary))
                 return;
-            if (OperatingSystem.IsWindows())
+            if (OperatingSystem.IsWindows() && legacyNbgvCleanup)
             {
-                // NBGV's legacy version.txt reader leaves loose-object handles to finalization.
+                // NBGV 3.10.94 leaves committed version.txt streams open until finalization.
                 GC.Collect();
                 GC.WaitForPendingFinalizers();
             }

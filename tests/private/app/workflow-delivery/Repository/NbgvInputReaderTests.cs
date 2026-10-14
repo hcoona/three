@@ -163,7 +163,8 @@ public sealed class NbgvInputReaderTests(TestContext context)
     [TestMethod]
     public async Task ReadKeepsAncestorConfigurationInputsAfterNativeOverrides()
     {
-        using var repo = await GitReaderTests.GitFixture.CreateAsync(context.CancellationToken);
+        using var repo = await GitReaderTests.GitFixture.CreateAsync(context.CancellationToken,
+            legacyNbgvCleanup: true);
         await repo.SetAsync("version.txt", "1.0");
         await repo.SetAsync("version.json", """
             {"version":"1.2","pathFilters":[":/unrelated"]}

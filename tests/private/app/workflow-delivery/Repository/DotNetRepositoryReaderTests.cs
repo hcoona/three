@@ -51,25 +51,25 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("revision")]
-    [DataRow("root")]
-    [DataRow("entry")]
-    [DataRow("duplicate-node")]
-    [DataRow("duplicate-effective-node")]
-    [DataRow("missing-globals")]
-    [DataRow("ambiguous-globals")]
-    [DataRow("dangling-edge")]
-    [DataRow("substituted-edge")]
-    [DataRow("dangling-consumer")]
-    [DataRow("unknown-role")]
-    [DataRow("unknown-stage")]
-    [DataRow("missing-ownership")]
-    [DataRow("traversal-ownership")]
-    [DataRow("missing-inputs")]
-    [DataRow("missing-project-input")]
-    public async Task ReadRejectsSubstitutedNativeFacts(string defect)
+    public async Task ReadRejectsSubstitutedNativeFacts()
     {
         using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+        foreach (string defect in new[]
+        {
+            "revision", "root", "entry",
+            "duplicate-node", "duplicate-effective-node", "missing-globals",
+            "ambiguous-globals", "dangling-edge", "substituted-edge",
+            "dangling-consumer", "unknown-role", "unknown-stage",
+            "missing-ownership", "traversal-ownership", "missing-inputs",
+            "missing-project-input"
+        })
+            await RejectSubstitutedNativeFactsAsync(fixture, defect);
+    }
+
+    private async Task RejectSubstitutedNativeFactsAsync(DotNetEndpointFixture fixture,
+        string defect)
+    {
+        context.WriteLine("Native graph case: " + defect);
         DotNetGraphResponse graph = fixture.Graph;
         DotNetNodeIdentity consumer = graph.Nodes[1].Identity;
         DotNetNodeIdentity absent = fixture.Identity("product/A.csproj", "net8.0");
@@ -138,7 +138,7 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
             _ => throw new ArgumentOutOfRangeException(nameof(defect)),
         };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.Reader().BindAsync(graph, context.CancellationToken));
+            fixture.Reader().BindAsync(graph, context.CancellationToken), defect);
     }
 
     [TestMethod]
@@ -265,7 +265,8 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
             Assert.IsFalse(JsonSerializer.IsReflectionEnabledByDefault);
             await ReadCancellationAndNativeFailureReturnNoFacts();
             await ReadPreservesNativeVariantsAndOriginalGitCoordinates();
-            await ReadRejectsSubstitutedNativeFacts("unknown-role");
+            using var rejected = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+            await RejectSubstitutedNativeFactsAsync(rejected, "unknown-role");
             using var native = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
             DotNetNodeIdentity original = native.Identity("product/A.csproj", "net10.0");
             DotNetNodeIdentity reordered = original with
