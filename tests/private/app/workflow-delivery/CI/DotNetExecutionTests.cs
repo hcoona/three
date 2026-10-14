@@ -3,12 +3,47 @@ using System.Text.Json.Nodes;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
+using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
 namespace WorkflowDelivery.Tests.CI;
 
 [TestClass]
 public sealed class DotNetExecutionTests(TestContext context)
 {
+    // Rows that vary only the plan, request or native answers read one committed
+    // repository; each row still owns fresh scratch and native output.
+    private static GitFixture? shared;
+    private static string sharedCommit = "";
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            sharedCommit = await DotNetExecutionFixture.CommitAsync(repo);
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    private static DotNetExecutionFixture Shared() =>
+        DotNetExecutionFixture.Shared(shared!, sharedCommit);
+
+    [TestMethod]
+    public async Task SharedRepositoryControlQualifies()
+    {
+        using var fixture = Shared();
+        DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied,
+            string.Join("; ", result.Failures.Select(failure => failure.Error)));
+        Assert.HasCount(2, fixture.Commands);
+        Assert.HasCount(2, result.Outputs);
+    }
+
     [TestMethod]
     [DataRow("MTP", "InvokeTestingPlatform")]
     [DataRow("VSTest", "VSTest")]
@@ -143,7 +178,7 @@ public sealed class DotNetExecutionTests(TestContext context)
     [DataRow("nonfile")]
     public async Task MissingOrInvalidNativeOutputFails(string defect)
     {
-        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         fixture.ModifyResponse = response =>
         {
             JsonObject targets = response["TargetResults"]!.AsObject();
@@ -229,7 +264,7 @@ public sealed class DotNetExecutionTests(TestContext context)
     [DataRow("missing-build")]
     public async Task InvalidPlanStopsBeforeProductCommands(string defect)
     {
-        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         CiPlan plan = fixture.Plan;
         PlannedCheck first = plan.Checks[0];
         if (defect == "scope") plan = plan with { Scope = "other" };
@@ -266,7 +301,9 @@ public sealed class DotNetExecutionTests(TestContext context)
     [DataRow("uncommitted-project")]
     public async Task InvalidRequestStopsBeforeProductCommands(string defect)
     {
-        using var fixture = await DotNetExecutionFixture.CreateAsync(context.CancellationToken);
+        // Rows that change the checkout keep a private repository.
+        using var fixture = defect is "scratch-inside-checkout" or "dirty" or "wrong-head"
+            ? await DotNetExecutionFixture.CreateAsync(context.CancellationToken) : Shared();
         DotNetRunRequest request = fixture.Request;
         CiPlan plan = fixture.Plan;
         switch (defect)

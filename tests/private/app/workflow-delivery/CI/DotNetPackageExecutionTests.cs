@@ -5,12 +5,51 @@ using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
+using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
 namespace WorkflowDelivery.Tests.CI;
 
 [TestClass]
 public sealed class DotNetPackageExecutionTests(TestContext context)
 {
+    // Rows that vary only the selection, plan or native answers read one committed
+    // repository; each row still owns fresh scratch for archives and consumers.
+    private static GitFixture? shared;
+    private static string sharedCandidate = "";
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            sharedCandidate = await DotNetPackageFixture.CommitAsync(repo);
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    private static DotNetPackageFixture Shared() =>
+        DotNetPackageFixture.Shared(shared!, sharedCandidate);
+
+    [TestMethod]
+    public async Task SharedRepositoryControlQualifies()
+    {
+        using var projection = Shared();
+        CiPlan plan = await DotNetFactsAssembler.CompleteAsync(projection.Selection,
+            projection.Request, context.CancellationToken, projection.ExecuteAsync);
+        Assert.HasCount(3, plan.Checks);
+        using var fixture = Shared();
+        DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied,
+            string.Join("; ", result.Failures.Select(failure => failure.Error)));
+        Assert.HasCount(1, result.Packages);
+        Assert.HasCount(1, result.ConsumerOutputs);
+    }
+
     [TestMethod]
     public async Task SelectedRecipePreservesNativeContextAndPrerequisites()
     {
@@ -50,7 +89,7 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     [DataRow("extra-output")]
     public async Task UnresolvedSelectedRecipeStopsBeforeNativeEffects(string defect)
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         DotNetSelection selection = fixture.Selection;
         if (defect == "missing-unit") selection = selection with { CandidateUnits = [] };
         else if (defect is "variant" or "storage")
@@ -115,7 +154,9 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     [DataRow("dirty")]
     public async Task InvalidPackagePlanStopsBeforeNativeEffects(string defect)
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        // The dirty row changes the checkout, so it keeps a private repository.
+        using var fixture = defect == "dirty"
+            ? await DotNetPackageFixture.CreateAsync(context.CancellationToken) : Shared();
         CiPlan plan = fixture.Plan;
         if (defect == "scope") plan = plan with { Scope = "other" };
         else if (defect.StartsWith("missing-", StringComparison.Ordinal))
@@ -189,7 +230,7 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     [DataRow("missing-receipt")]
     public async Task MissingOrUndeclaredNativeArchivesCannotPassPack(string defect)
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         fixture.ModifyPack = document =>
         {
             string path =
@@ -222,7 +263,7 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     [DataRow("version")]
     public async Task ProductContentRejectsIdentityVersionAndPayloadDefects(string defect)
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         fixture.ModifyArchive = path =>
         {
             if (defect == "missing-dll")
@@ -264,7 +305,7 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     [DataRow("bad\\name")]
     public async Task NativeDecodedArchiveNamesRejectAmbiguityAndUnsafePaths(string name)
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         fixture.ModifyArchive = path =>
         {
             using var zip = ZipFile.Open(path, ZipArchiveMode.Update);
@@ -306,7 +347,7 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
     [DataRow("missing-build-receipt")]
     public async Task MissingConsumerReceiptOrRestoredBytesCannotPass(string defect)
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        using var fixture = Shared();
         if (defect == "different-folder") fixture.ModifyAssets = assets =>
             assets["packageFolders"] =
                 new JsonObject { [fixture.Repo.Directory] = new JsonObject() };

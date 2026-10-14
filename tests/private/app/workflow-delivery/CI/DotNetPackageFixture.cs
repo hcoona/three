@@ -12,7 +12,8 @@ using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
 namespace WorkflowDelivery.Tests.CI;
 
-internal sealed class DotNetPackageFixture(GitFixture repo, string candidate) : IDisposable
+internal sealed class DotNetPackageFixture(GitFixture repo, string candidate,
+    bool ownsRepository = true) : IDisposable
 {
     internal const string Project = "product/product.csproj";
     internal const string Declaration = "product/workflow-delivery.release-unit.yml";
@@ -101,16 +102,22 @@ internal sealed class DotNetPackageFixture(GitFixture repo, string candidate) : 
     internal static async Task<DotNetPackageFixture> CreateAsync(CancellationToken token)
     {
         GitFixture repo = await GitFixture.CreateAsync(token);
-        try
-        {
-            await repo.SetAsync(Project, "<Project />");
-            await repo.SetAsync(Declaration, UnitText);
-            string candidate = await repo.CommitAsync();
-            await repo.GitAsync("reset", "--hard", candidate);
-            return new(repo, candidate);
-        }
+        try { return new(repo, await CommitAsync(repo)); }
         catch { repo.Dispose(); throw; }
     }
+
+    internal static async Task<string> CommitAsync(GitFixture repo)
+    {
+        await repo.SetAsync(Project, "<Project />");
+        await repo.SetAsync(Declaration, UnitText);
+        string candidate = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", candidate);
+        return candidate;
+    }
+
+    // Reads a class-owned committed repository; the row owns only its scratch.
+    internal static DotNetPackageFixture Shared(GitFixture repo, string candidate) =>
+        new(repo, candidate, ownsRepository: false);
 
     internal Task<DotNetPackageRunResult> RunAsync(CancellationToken token, CiPlan? plan = null) =>
         DotNetPackageExecution.RunAsync(plan ?? Plan, Request, ExecuteAsync, token);
@@ -270,5 +277,8 @@ internal sealed class DotNetPackageFixture(GitFixture repo, string candidate) : 
     }
 
     public void Dispose()
-    { Repo.Dispose(); Directory.Delete(Scratch, true); }
+    {
+        if (ownsRepository) Repo.Dispose();
+        Directory.Delete(Scratch, true);
+    }
 }
