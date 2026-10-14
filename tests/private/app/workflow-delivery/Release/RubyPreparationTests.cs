@@ -31,6 +31,49 @@ public sealed class RubyPreparationTests(TestContext context)
         "nbgv",
     ];
 
+    // Rows that only vary the request, native answers or committed recipe directory read one
+    // committed repository; each row still owns fresh scratch and runs the full preparation.
+    private static GitFixture? shared;
+    private static string sharedRevision = "";
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            await Fixture.StageRootAsync(repo, "");
+            await Fixture.StageProductAsync(repo, "product", "");
+            foreach (string defect in RecipeDefects)
+                await Fixture.StageProductAsync(repo, "recipes/" + defect, defect);
+            sharedRevision = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", sharedRevision);
+            shared = repo;
+        }
+        catch
+        {
+            repo.Dispose();
+            throw;
+        }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    private static readonly string[] RecipeDefects =
+    [
+        "declaration",
+        "build",
+        "extra-build",
+        "outputs",
+        "extra-output",
+        "quality",
+        "missing-quality",
+        "entry",
+        "entry-name",
+        "unit",
+    ];
+
     [TestMethod]
     public async Task CompleteOriginalQualifiesRelease()
     {
@@ -212,7 +255,7 @@ public sealed class RubyPreparationTests(TestContext context)
         bool accepted
     )
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Subject = fixture.Subject with
         {
             Channel = channel,
@@ -250,7 +293,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("unit")]
     public async Task UnsupportedCommittedRecipeStopsBeforeNativeWork(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken, defect);
+        using var fixture = Fixture.Shared(shared!, sharedRevision, "recipes/" + defect, defect);
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
         Assert.IsEmpty(result.Commands);
@@ -271,7 +314,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("projection-raw")]
     public async Task NativeIdentityCannotQualifyAnotherRequest(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Subject = fixture.Subject with
         {
             Channel = "official",
@@ -337,7 +380,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("archive-path")]
     public async Task UnsupportedArchiveCannotReachConsumer(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.ArchiveDefect = defect;
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "contents", ReleaseCheckStatus.Failed);
@@ -372,7 +415,7 @@ public sealed class RubyPreparationTests(TestContext context)
         string statusText
     )
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         NativeTermination termination = Enum.Parse<NativeTermination>(terminationText);
         fixture.Override = command =>
             fixture.Phase(command) == phase
@@ -563,7 +606,11 @@ public sealed class RubyPreparationTests(TestContext context)
         Assert.IsNotEmpty(result.Errors);
     }
 
-    private sealed class Fixture(GitFixture repo, ReleaseSubject subject) : IDisposable
+    private sealed class Fixture(
+        GitFixture repo,
+        ReleaseSubject subject,
+        bool ownsRepository = true
+    ) : IDisposable
     {
         internal const string Entry = "product/hcoona-release-smoke-ruby.gemspec";
         private const string HelperPath = "src/private/app/workflow-delivery/Native/Ruby/facts.rb";
@@ -596,94 +643,116 @@ public sealed class RubyPreparationTests(TestContext context)
             GitFixture repo = await GitFixture.CreateAsync(token);
             try
             {
-                if (defect != "entry")
-                    await repo.SetAsync(Entry);
-                if (defect != "helper")
-                    await repo.SetAsync(HelperPath);
-                if (defect != "manifest")
-                    await repo.SetAsync(
-                        ".config/dotnet-tools.json",
-                        """{"tools":{"nbgv":{"version":"3.10.94"}}}"""
-                    );
-                if (defect != "global")
-                    await repo.SetAsync(
-                        "global.json",
-                        """{"sdk":{"version":"10.0.401","rollForward":"disable"}}"""
-                    );
-                if (defect != "missing-quality")
-                    await repo.SetAsync(
-                        "product/workflow-delivery.quality.yml",
-                        """
-                        schema: workflow-delivery/v3/quality-selection
-                        ecosystems:
-                          ruby:
-                            preset: ruby/hcoona-release-smoke-ruby-v1
-                        """.Replace(
-                            "ruby/hcoona-release-smoke-ruby-v1",
-                            defect == "quality"
-                                ? "ruby/unknown-v1"
-                                : "ruby/hcoona-release-smoke-ruby-v1",
-                            StringComparison.Ordinal
-                        )
-                    );
-                const string declaration = "product/workflow-delivery.release-unit.yml";
-                string text = """
-                    schema: workflow-delivery/v3/release-unit
-                    release-unit: product
-                    builds:
-                      - id: gem-build
-                        definition: ruby/gem-v1
-                        entry-point: hcoona-release-smoke-ruby.gemspec
-                        outputs:
-                          - id: gem-output
-                            role: primary-package
-                            kind: ruby-gem
-                    """;
-                text = defect switch
-                {
-                    "build" => text.Replace(
-                        "ruby/gem-v1",
-                        "ruby/unknown-v1",
-                        StringComparison.Ordinal
-                    ),
-                    "outputs" => text.Replace("ruby-gem", "unknown-kind", StringComparison.Ordinal),
-                    "entry-name" => text.Replace(
-                        "hcoona-release-smoke-ruby.gemspec",
-                        "other.gemspec",
-                        StringComparison.Ordinal
-                    ),
-                    "extra-output" => text
-                        + "\n      - id: extra\n        role: source-package"
-                        + "\n        kind: ruby-gem\n",
-                    "extra-build" => text
-                        + "\n  - id: extra\n    definition: ruby/gem-v1"
-                        + "\n    entry-point: hcoona-release-smoke-ruby.gemspec\n    outputs:"
-                        + "\n      - id: extra\n        role: primary-package"
-                        + "\n        kind: ruby-gem\n",
-                    _ => text,
-                };
-                if (defect != "declaration")
-                    await repo.SetAsync(declaration, text);
+                await StageRootAsync(repo, defect);
+                await StageProductAsync(repo, "product", defect);
                 string revision = await repo.CommitAsync();
                 await repo.GitAsync("reset", "--hard", revision);
-                return new(
-                    repo,
-                    new(
-                        revision,
-                        "refs/heads/topic",
-                        defect == "unit" ? "another" : "product",
-                        declaration,
-                        "buddy",
-                        "github-packages-ruby",
-                        false
-                    )
-                );
+                return new(repo, SubjectFor(revision, "product", defect));
             }
             catch
             {
                 repo.Dispose();
                 throw;
             }
+        }
+
+        // Reads a class-owned committed repository; the row owns only its scratch.
+        internal static Fixture Shared(
+            GitFixture repo,
+            string revision,
+            string directory = "product",
+            string defect = ""
+        ) => new(repo, SubjectFor(revision, directory, defect), ownsRepository: false);
+
+        private static ReleaseSubject SubjectFor(
+            string revision,
+            string directory,
+            string defect
+        ) =>
+            new(
+                revision,
+                "refs/heads/topic",
+                defect == "unit" ? "another" : "product",
+                directory + "/workflow-delivery.release-unit.yml",
+                "buddy",
+                "github-packages-ruby",
+                false
+            );
+
+        internal static async Task StageRootAsync(GitFixture repo, string defect)
+        {
+            if (defect != "helper")
+                await repo.SetAsync(HelperPath);
+            if (defect != "manifest")
+                await repo.SetAsync(
+                    ".config/dotnet-tools.json",
+                    """{"tools":{"nbgv":{"version":"3.10.94"}}}"""
+                );
+            if (defect != "global")
+                await repo.SetAsync(
+                    "global.json",
+                    """{"sdk":{"version":"10.0.401","rollForward":"disable"}}"""
+                );
+        }
+
+        // Stages one committed recipe directory; recipe defects are directory-local.
+        internal static async Task StageProductAsync(
+            GitFixture repo,
+            string directory,
+            string defect
+        )
+        {
+            if (defect != "entry")
+                await repo.SetAsync(directory + "/hcoona-release-smoke-ruby.gemspec");
+            if (defect != "missing-quality")
+                await repo.SetAsync(
+                    directory + "/workflow-delivery.quality.yml",
+                    """
+                    schema: workflow-delivery/v3/quality-selection
+                    ecosystems:
+                      ruby:
+                        preset: ruby/hcoona-release-smoke-ruby-v1
+                    """.Replace(
+                        "ruby/hcoona-release-smoke-ruby-v1",
+                        defect == "quality"
+                            ? "ruby/unknown-v1"
+                            : "ruby/hcoona-release-smoke-ruby-v1",
+                        StringComparison.Ordinal
+                    )
+                );
+            string text = """
+                schema: workflow-delivery/v3/release-unit
+                release-unit: product
+                builds:
+                  - id: gem-build
+                    definition: ruby/gem-v1
+                    entry-point: hcoona-release-smoke-ruby.gemspec
+                    outputs:
+                      - id: gem-output
+                        role: primary-package
+                        kind: ruby-gem
+                """;
+            text = defect switch
+            {
+                "build" => text.Replace("ruby/gem-v1", "ruby/unknown-v1", StringComparison.Ordinal),
+                "outputs" => text.Replace("ruby-gem", "unknown-kind", StringComparison.Ordinal),
+                "entry-name" => text.Replace(
+                    "hcoona-release-smoke-ruby.gemspec",
+                    "other.gemspec",
+                    StringComparison.Ordinal
+                ),
+                "extra-output" => text
+                    + "\n      - id: extra\n        role: source-package"
+                    + "\n        kind: ruby-gem\n",
+                "extra-build" => text
+                    + "\n  - id: extra\n    definition: ruby/gem-v1"
+                    + "\n    entry-point: hcoona-release-smoke-ruby.gemspec\n    outputs:"
+                    + "\n      - id: extra\n        role: primary-package"
+                    + "\n        kind: ruby-gem\n",
+                _ => text,
+            };
+            if (defect != "declaration")
+                await repo.SetAsync(directory + "/workflow-delivery.release-unit.yml", text);
         }
 
         internal Task<RubyPreparationResult> RunAsync(CancellationToken token) =>
@@ -875,7 +944,8 @@ public sealed class RubyPreparationTests(TestContext context)
 
         public void Dispose()
         {
-            Repo.Dispose();
+            if (ownsRepository)
+                Repo.Dispose();
             Directory.Delete(Scratch, recursive: true);
         }
     }

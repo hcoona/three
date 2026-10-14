@@ -11,6 +11,27 @@ namespace WorkflowDelivery.Tests.Release;
 public sealed class PythonPreparationTests(TestContext context)
 {
     private static readonly string[] DistributionKinds = ["python-wheel", "python-sdist"];
+
+    // Request and native-answer rows read one committed repository; each row still owns
+    // fresh scratch and runs the complete preparation.
+    private static GitFixture? shared;
+    private static string sharedRevision = "";
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            sharedRevision = await Fixture.CommitAsync(repo, null);
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
     [TestMethod]
     public async Task CompletePairAndConsumersQualifyRelease()
     {
@@ -68,7 +89,7 @@ public sealed class PythonPreparationTests(TestContext context)
     public async Task ChannelRefAndDryRunRemainIndependent(string channel, string destination,
         string selectedRef, bool dryRun, bool accepted)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Subject = fixture.Subject with { Channel = channel, Destination = destination,
             SelectedRef = selectedRef, DryRun = dryRun };
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
@@ -89,7 +110,7 @@ public sealed class PythonPreparationTests(TestContext context)
     [DataRow("public_release", "false")]
     public async Task NativeFactsCannotQualifyAnotherProduct(string field, string value)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Subject = fixture.Subject with { Channel = "official", Destination = "pypi",
             SelectedRef = "refs/heads/main" };
         fixture.ChangeFacts = facts => facts[field] = field switch
@@ -209,7 +230,8 @@ public sealed class PythonPreparationTests(TestContext context)
         Assert.IsEmpty(result.Prepared.Files);
     }
 
-    private sealed class Fixture(GitFixture repo, ReleaseSubject subject) : IDisposable
+    private sealed class Fixture(GitFixture repo, ReleaseSubject subject,
+        bool ownsRepository = true) : IDisposable
     {
         internal GitFixture Repo { get; } = repo;
         internal ReleaseSubject Subject { get; set; } = subject;
@@ -223,44 +245,53 @@ public sealed class PythonPreparationTests(TestContext context)
             string? defect = null)
         {
             GitFixture repo = await GitFixture.CreateAsync(token);
-            try
-            {
-                foreach (string input in new[] { "pyproject.toml", "uv.lock", "mise.toml",
-                    "mise.lock", "global.json", ".config/dotnet-tools.json",
-                    "src/private/app/workflow-delivery/Native/Python/packages.py",
-                    "product/pyproject.toml" })
-                    if (defect != "input" || input != "uv.lock") await repo.SetAsync(input);
-                await repo.SetAsync("product/workflow-delivery.quality.yml", """
-                    schema: workflow-delivery/v3/quality-selection
-                    ecosystems:
-                      python:
-                        preset: python/hcoona-release-smoke-python-v1
-                    """.Replace("python/hcoona-release-smoke-python-v1", defect == "quality"
-                        ? "python/unknown-v1" : "python/hcoona-release-smoke-python-v1",
-                            StringComparison.Ordinal));
-                const string declaration = "product/workflow-delivery.release-unit.yml";
-                await repo.SetAsync(declaration, """
-                    schema: workflow-delivery/v3/release-unit
-                    release-unit: product
-                    builds:
-                      - id: distributions
-                        definition: python/distribution-set-v1
-                        entry-point: pyproject.toml
-                        outputs:
-                          - id: wheel
-                            role: primary-package
-                            kind: python-wheel
-                          - id: source
-                            role: source-package
-                            kind: python-sdist
-                    """.Replace("python-sdist", defect == "outputs" ? "other-kind" :
-                        "python-sdist", StringComparison.Ordinal));
-                string revision = await repo.CommitAsync();
-                await repo.GitAsync("reset", "--hard", revision);
-                return new(repo, new(revision, "refs/heads/development", "product", declaration,
-                    "buddy", "testpypi", false));
-            }
+            try { return new(repo, SubjectFor(await CommitAsync(repo, defect))); }
             catch { repo.Dispose(); throw; }
+        }
+
+        // Reads a class-owned committed repository; the row owns only its scratch.
+        internal static Fixture Shared(GitFixture repo, string revision) =>
+            new(repo, SubjectFor(revision), ownsRepository: false);
+
+        private const string Declaration = "product/workflow-delivery.release-unit.yml";
+
+        private static ReleaseSubject SubjectFor(string revision) => new(revision,
+            "refs/heads/development", "product", Declaration, "buddy", "testpypi", false);
+
+        internal static async Task<string> CommitAsync(GitFixture repo, string? defect)
+        {
+            foreach (string input in new[] { "pyproject.toml", "uv.lock", "mise.toml",
+                "mise.lock", "global.json", ".config/dotnet-tools.json",
+                "src/private/app/workflow-delivery/Native/Python/packages.py",
+                "product/pyproject.toml" })
+                if (defect != "input" || input != "uv.lock") await repo.SetAsync(input);
+            await repo.SetAsync("product/workflow-delivery.quality.yml", """
+                schema: workflow-delivery/v3/quality-selection
+                ecosystems:
+                  python:
+                    preset: python/hcoona-release-smoke-python-v1
+                """.Replace("python/hcoona-release-smoke-python-v1", defect == "quality"
+                    ? "python/unknown-v1" : "python/hcoona-release-smoke-python-v1",
+                        StringComparison.Ordinal));
+            await repo.SetAsync(Declaration, """
+                schema: workflow-delivery/v3/release-unit
+                release-unit: product
+                builds:
+                  - id: distributions
+                    definition: python/distribution-set-v1
+                    entry-point: pyproject.toml
+                    outputs:
+                      - id: wheel
+                        role: primary-package
+                        kind: python-wheel
+                      - id: source
+                        role: source-package
+                        kind: python-sdist
+                """.Replace("python-sdist", defect == "outputs" ? "other-kind" :
+                    "python-sdist", StringComparison.Ordinal));
+            string revision = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", revision);
+            return revision;
         }
 
         internal Task<PythonPreparationResult> RunAsync(CancellationToken token) =>
@@ -317,6 +348,9 @@ public sealed class PythonPreparationTests(TestContext context)
             new(NativeTermination.Exited, 0, stdout, "", 0.1, null);
 
         public void Dispose()
-        { Repo.Dispose(); Directory.Delete(Scratch, recursive: true); }
+        {
+            if (ownsRepository) Repo.Dispose();
+            Directory.Delete(Scratch, recursive: true);
+        }
     }
 }
