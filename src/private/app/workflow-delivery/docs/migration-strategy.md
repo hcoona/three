@@ -677,6 +677,13 @@ removed input; it does not execute a deleted target. Preserve both general .NET
 and AzureAuth owners when applicable and the native control-test resource reasons
 already integrated above.
 
+Retiring a producer preserves its finite association to the basis endpoint's
+actually declared consumers while that source is compared with the replacement.
+The Python mapper retains only the eight retired caller/preparation coordinates
+and former Ruby helper/schema/fixture consumer relationship for this transition.
+Source presence and native target binding govern these associations. They neither
+restore deleted execution nor create a candidate check; unknown inputs still fail.
+
 Record responsibility uses the accepted endpoint's record-family bindings and
 the shared component-aware matcher in `eng/scripts/repository_path_patterns.py`,
 used by both `ci_scope.py` and `check_repository_records.py`. Preserve that small

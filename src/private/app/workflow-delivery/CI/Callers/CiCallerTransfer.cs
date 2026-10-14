@@ -28,6 +28,14 @@ internal static class CiCallerTransfer
             File.AppendAllText(path, key + "=" + value + "\n");
     }
 
+    internal static void OutputArray(string key, string[] values)
+    {
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+            JsonSerializer.Serialize(writer, values, TransferJson.Default.StringArray);
+        Output(key, System.Text.Encoding.UTF8.GetString(buffer.ToArray()));
+    }
+
     internal static string Absolute(string path)
     {
         if (!Path.IsPathFullyQualified(path))
@@ -39,6 +47,13 @@ internal static class CiCallerTransfer
     internal static void External(string root, string directory)
     {
         root = Absolute(root); directory = Absolute(directory);
+        foreach (string path in new[] { root, directory })
+            for (DirectoryInfo? component = new(path); component is not null;
+                 component = component.Parent)
+                if (component.LinkTarget is not null || component.Exists &&
+                    (component.Attributes & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidDataException(
+                        "CI source and state paths must not use linked directories.");
         StringComparison comparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         if (root.Equals(directory, comparison) ||

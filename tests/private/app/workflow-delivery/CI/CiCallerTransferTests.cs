@@ -141,6 +141,55 @@ public sealed class CiCallerTransferTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    [DoNotParallelize]
+    public void ActionsDirectoryArrayIsOneNativeJsonLine(bool empty)
+    {
+        using var files = new CiCallerFiles();
+        string path = Path.Combine(files.Root, "outputs");
+        string? original = Environment.GetEnvironmentVariable("GITHUB_OUTPUT");
+        string[] expected = empty ? [] : ["src/ordinary", "src/with spaces", "quote\"\\\n\r"];
+        try
+        {
+            Environment.SetEnvironmentVariable("GITHUB_OUTPUT", path);
+            CiCallerTransfer.OutputArray("retained_directories", expected);
+            string[] lines = File.ReadAllLines(path);
+            string line = Assert.ContainsSingle(lines);
+            Assert.StartsWith("retained_directories=", line);
+            string[] actual = JsonSerializer.Deserialize(line["retained_directories=".Length..],
+                TransferJson.Default.StringArray)!;
+            CollectionAssert.AreEqual(expected, actual);
+            Assert.ThrowsExactly<InvalidDataException>(() =>
+                CiCallerTransfer.Output("bad", "a\nb"));
+            Assert.HasCount(1, File.ReadAllLines(path));
+        }
+        finally { Environment.SetEnvironmentVariable("GITHUB_OUTPUT", original); }
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void ExternalRejectsLinkedAncestorsBeforeStateCreation(bool linkedSource)
+    {
+        using var files = new CiCallerFiles();
+        string source = Directory.CreateDirectory(Path.Combine(files.Root, "source")).FullName;
+        string alias = Path.Combine(files.Root, "alias");
+        Directory.CreateSymbolicLink(alias, source);
+        try
+        {
+            string state = linkedSource ? Path.Combine(source, "state") :
+                Path.Combine(alias, "missing", "state");
+            Assert.ThrowsExactly<InvalidDataException>(() =>
+                CiCallerTransfer.External(linkedSource ? alias : source, state));
+            Assert.IsFalse(Directory.Exists(state));
+            Assert.AreEqual(alias, CiCallerTransfer.Absolute(alias));
+            CiCallerTransfer.External(source, Path.Combine(files.Root, "outside", "state"));
+        }
+        finally { Directory.Delete(alias); }
+    }
+
+    [TestMethod]
     [DataRow("{\"full\":false}")]
     [DataRow("{\"full\":\"true\"}")]
     [DataRow("[]")]

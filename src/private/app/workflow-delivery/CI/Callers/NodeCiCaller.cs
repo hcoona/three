@@ -56,9 +56,8 @@ internal static class NodeCiCaller
             TransferJson.Default.CiPlan);
         CiCallerTransfer.Output("retained", (group.Retained.Length !=
             0).ToString().ToLowerInvariant());
-        CiCallerTransfer.Output("retained_directories", System.Text.Json.JsonSerializer.Serialize(
-            group.Retained.Select(member => member.Directory).ToArray(),
-                TransferJson.Default.StringArray));
+        CiCallerTransfer.OutputArray("retained_directories",
+            group.Retained.Select(member => member.Directory).ToArray());
         CiCallerTransfer.Output("adopted_directory", group.AdoptedDirectory);
         CiCallerTransfer.Output("selected", (group.Adopted.Checks.Length !=
             0).ToString().ToLowerInvariant());

@@ -25,6 +25,8 @@ internal static class PythonRepositoryInputs
         "Directory.Build.targets", "Directory.Packages.props", "dirs.proj"];
     private static readonly string[] AzureRoots = [
         "src/private/app/azureauth-credprovider", "tests/private/app/azureauth-credprovider"];
+    private static readonly string[] RetiringShared = [
+        "eng/scripts/prepare_ci_control_inputs.py", "eng/scripts/run_python_ci_group.py"];
     internal static PythonInputBinding[] Map(GitRevision revision,
         PythonProjectDependencies[] projects, PythonPytestTargetSet targets,
         ProjectFacts[] packages) => Map(revision, projects, targets, packages,
@@ -95,9 +97,15 @@ internal static class PythonRepositoryInputs
         var inputs = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         foreach (string path in Shared.Concat(Preparation))
             foreach (string owner in owners) Add(path, owner);
+        // Interpret real basis producers during retirement, without restoring their execution.
+        foreach (string path in RetiringShared.Where(entries.ContainsKey))
+            foreach (string owner in owners) Add(path, owner);
         foreach (string path in Pytest)
             foreach (PythonPytestTarget target in targets.Targets)
                 Add(path, "pytest:" + target.Target);
+        if (entries.ContainsKey("eng/scripts/run_python_tests.py"))
+            foreach (PythonPytestTarget target in targets.Targets)
+                Add("eng/scripts/run_python_tests.py", "pytest:" + target.Target);
         foreach (string path in paths.Where(InertControlDocument)) Add(path, null);
         foreach (PythonPytestTarget target in targets.Targets)
         {
@@ -108,7 +116,8 @@ internal static class PythonRepositoryInputs
                     target.Target.StartsWith(AzureRoots[0] + "/", StringComparison.Ordinal))
                     Add(path, owner);
             foreach (string path in paths)
-                if (Special(target.Target, path)) Add(path, owner);
+                if (Special(target.Target, path) || entries.ContainsKey(path) &&
+                    RetiringProducer(target.Target, path)) Add(path, owner);
         }
         return inputs.OrderBy(item => item.Key, StringComparer.Ordinal)
             .Select(item => new PythonInputBinding(item.Key, [],
@@ -145,6 +154,24 @@ internal static class PythonRepositoryInputs
     private static bool Azure(string path) => DotnetInput(path, AzureRoots) ||
         Under(path, "eng/scripts/azureauth-credprovider") ||
         Under(path, "src/public/lib/nbgv-python");
+
+    private static bool RetiringProducer(string target, string path) =>
+        (target == "tests/eng/test_run_node_ci_group.py" &&
+            path == "eng/scripts/run_node_ci_group.py") ||
+        (target == "tests/eng/test_run_ruby_ci_group.py" &&
+            path == "eng/scripts/run_ruby_ci_group.py") ||
+        (target is "tests/eng/test_run_dotnet_ci_group.py" or
+             "tests/eng/test_run_python_ci_group.py" &&
+            path is "eng/scripts/run_dotnet_ci_group.py" or "eng/scripts/run_node_ci_group.py") ||
+        (target == "tests/eng/test_python_release_preparation_gate.py" &&
+            path is "eng/scripts/check_python_release_preparation.py" or
+                "eng/scripts/run_node_ci_group.py") ||
+        (target == "tests/eng/test_ruby_release_preparation_gate.py" &&
+            path is "eng/scripts/check_ruby_release_preparation.py" or
+                "eng/scripts/check_python_release_preparation.py" or
+                "eng/scripts/run_node_ci_group.py") ||
+        (target == "tests/private/app/workflow-delivery/Native/Ruby" &&
+            RubyNativeTestInputs.Consumes(path));
 
     private static bool DotnetInput(string path, string[] roots)
     {

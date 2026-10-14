@@ -177,6 +177,82 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
+    [DataRow("check_python_release_preparation.py",
+        "test_python_release_preparation_gate|test_ruby_release_preparation_gate")]
+    [DataRow("check_ruby_release_preparation.py", "test_ruby_release_preparation_gate")]
+    [DataRow("prepare_ci_control_inputs.py", "shared")]
+    [DataRow("run_dotnet_ci_group.py", "test_run_dotnet_ci_group|test_run_python_ci_group")]
+    [DataRow("run_node_ci_group.py", "test_run_node_ci_group|test_run_dotnet_ci_group|" +
+        "test_run_python_ci_group|test_python_release_preparation_gate|" +
+        "test_ruby_release_preparation_gate")]
+    [DataRow("run_python_ci_group.py", "shared")]
+    [DataRow("run_python_tests.py", "pytest")]
+    [DataRow("run_ruby_ci_group.py", "test_run_ruby_ci_group")]
+    public void RetiredProducerKeepsOnlyActualBasisConsumers(string file, string consumers)
+    {
+        string path = "eng/scripts/" + file;
+        string[] retired = ["test_run_node_ci_group", "test_run_dotnet_ci_group",
+            "test_run_python_ci_group", "test_run_ruby_ci_group",
+            "test_python_release_preparation_gate", "test_ruby_release_preparation_gate"];
+        string[] targets = [.. retired.Select(name => "tests/eng/" + name + ".py"),
+            "tests/unrelated.py"];
+        PythonProjectDependencies[] members = [Member("."), Member("src/pkg")];
+        PythonFactsEndpoint basis = Facts(Endpoint(targets, [path], "before", members),
+            [Package()]);
+        PythonFactsEndpoint candidate = Facts(Endpoint(["tests/unrelated.py"], [], "after",
+            members), [Package()]);
+        string[] expected = consumers switch
+        {
+            "shared" => [.. targets.Select(target => "pytest:" + target), "distribution"],
+            "pytest" => targets.Select(target => "pytest:" + target).ToArray(),
+            _ => consumers.Split('|').Select(name => "pytest:tests/eng/" + name + ".py").ToArray(),
+        };
+        SelectionReason[] reasons = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        CollectionAssert.AreEquivalent(expected.Select(owner =>
+            new SelectionReason(path, "before", owner)).ToArray(), reasons);
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate, [path], false,
+            reasons);
+        CiPlan plan = ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+        CollectionAssert.AreEquivalent(expected.Intersect(
+            ["pytest:tests/unrelated.py", "distribution"])
+            .ToArray(), plan.Checks.Select(check => check.Work.Key.Target).ToArray());
+        Assert.IsFalse(PythonRepositoryInputs.Map(candidate.Revision, candidate.Projects,
+            PythonPytestTargets.Bind(candidate.Configuration, candidate.Revision,
+                candidate.Projects),
+            candidate.Packages).Any(binding => binding.Path == path));
+    }
+
+    [TestMethod]
+    [DataRow("src/private/app/workflow-delivery/Native/Ruby/facts.rb")]
+    [DataRow("src/private/app/workflow-delivery/Native/contracts/ruby-facts-request.schema.json")]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
+        "hcoona-release-smoke-ruby/lib/smoke.rb")]
+    public void RetiredRubyPytestConsumerDoesNotCreateCandidateCheck(string path)
+    {
+        const string target = "tests/private/app/workflow-delivery/Native/Ruby";
+        PythonFactsEndpoint basis = Facts(Endpoint([target, "tests/unrelated.py"], [path],
+            "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint(["tests/unrelated.py"], [path], "after"));
+        SelectionReason[] reasons = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        CollectionAssert.AreEquivalent(new[] {
+            new SelectionReason(path, "before", "pytest:" + target),
+            new SelectionReason(path, "after", "pytest:" + target) }, reasons);
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate, [path], false,
+            reasons);
+        Assert.IsEmpty(ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+    }
+
+    [TestMethod]
+    public void UnknownDeletedProducerStillFailsPlanning()
+    {
+        const string path = "eng/scripts/unknown_producer.py";
+        PythonFactsEndpoint basis = Facts(Endpoint(["tests/unrelated.py"], [path], "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint(["tests/unrelated.py"], [], "after"));
+        Assert.ThrowsExactly<InvalidDataException>(() => PythonFactsAssembler.Assemble(basis,
+            candidate, [path], false, PythonRepositoryInputs.Pair(basis, candidate, [path])));
+    }
+
+    [TestMethod]
     public void SharedInputsReachOnlyActualOwners()
     {
         var endpoint = Endpoint(["src/tableless/tests", "tests/standalone.py"],

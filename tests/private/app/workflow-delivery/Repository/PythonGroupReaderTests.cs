@@ -64,7 +64,8 @@ public sealed class PythonGroupReaderTests(TestContext context)
                         Arguments = ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
                             Convert.ToBase64String(Encoding.Unicode.GetBytes(script))]
                     }, token);
-                    Assert.IsTrue(probe.Succeeded, probe.Stderr);
+                    Assert.IsTrue(probe.Succeeded, JsonSerializer.Serialize(probe,
+                        TransferJson.Default.NativeCommandResult));
                     Assert.AreEqual("|" + transferred.Basis.Environment["HOME"], probe.Stdout);
                     launched = true;
                     // Stop before metadata parsing; this test qualifies the process boundary only.
