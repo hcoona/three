@@ -38,12 +38,24 @@ not justify a separate discovery or scheduler service.
 
 ## Native Helper and Caller Boundaries
 
+Complete .NET, Python and Ruby CI group execution owns its original plan's outcome.
+CLI exit and process receivers use that bound outcome, retaining comparison,
+candidate, scope, raw results and diagnostics. Receivers reject missing or malformed
+outcomes rather than launching the same control to reevaluate its unchanged results.
+Pre-execution plan validation and Node's join across independent runtime results
+remain distinct.
+
 The application owns ordinary Release job inputs, request/producer binding,
 original transfer, phase configuration and required write-state output. Existing
-Ruby/Python workflows invoke `release job-inputs <ecosystem> <operation>` through
+Ruby/Python/npm/NuGet workflows invoke `release job-inputs <ecosystem> <operation>` through
 their already distributed candidate control. They do not carry a separate
 language-specific Release caller implementation. Actions retains job ordering,
-Environment, credentials, concurrency and immutable artifact transfer.
+Environment, credentials, concurrency and immutable artifact transfer. npm's
+single-job Official simulation creates a consumed typed request without unused
+producer records. npm completion consumes the retained initial observation to
+distinguish legitimate no-write completion from missing required publication
+information. NuGet callers forward native process termination; typed completion
+owns consumer/result interpretation, without a shell enum mirror.
 
 Ruby helpers retain RubyGems/Bundler evaluation, native source reads and concrete
 installation/API behavior. Python helpers retain native library bindings and the

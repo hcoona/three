@@ -33,7 +33,7 @@ execution. Native observation, conditional publication, separate clean consumers
 and truthful completion replace the former dynamic admission, approval mirror,
 marker and proof chain. Effective native Environment/identity/destination
 configuration owns publication authorization. Existing external resources and
-publisher registrations are unchanged by source retirement. Ordinary Ruby/Python
+publisher registrations are unchanged by source retirement. Ordinary Ruby/Python/npm/NuGet
 caller inputs now belong to the existing C# CLI; native helpers retain native
 library operations. [Static wire descriptions](../Native/contracts/) are generated
 from consumed serializer types and have no compatibility promise.

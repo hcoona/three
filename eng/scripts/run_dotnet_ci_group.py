@@ -265,19 +265,10 @@ def execute(
     node.write_json(directory / "result.json", readback)
     results_path = directory / "results.json"
     node.write_json(results_path, readback["results"])
-    outcome = json.loads(
-        node.run(
-            root,
-            directory,
-            "collection",
-            "dotnet",
-            str(application),
-            "ci",
-            "result",
-            str(plan_path),
-            str(results_path),
-        )
-    )
+    if readback["candidate"] != after:
+        message = "Native .NET result has a different original candidate"
+        raise ValueError(message)
+    outcome = ci_scope.group_outcome(plan, readback["outcome"])
     node.write_json(directory / "outcome.json", outcome)
     return outcome
 
@@ -319,12 +310,16 @@ def main() -> int:
             options.run_id,
             options.repository_id,
         )
-        execute(
-            root,
-            options.transfer.resolve(),
-            directory,
-            options.basis,
-            options.candidate,
+        return (
+            0
+            if execute(
+                root,
+                options.transfer.resolve(),
+                directory,
+                options.basis,
+                options.candidate,
+            )["satisfied"]
+            else 1
         )
     return 0
 

@@ -70,7 +70,7 @@ public sealed class RubyCliTests
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
-    public void RunUsesOriginalResultsRatherThanSuppliedOutcome(bool missing)
+    public void RunRetainsAggregateOutcomeAndFailedRequiredResults(bool missing)
     {
         using var files = new DriverFiles();
         CiPlan plan = Plan();
@@ -92,13 +92,18 @@ public sealed class RubyCliTests
                     native.Facts.Environment["GEM_HOME"]);
                 CheckResult[] results = missing ? [] :
                     [new(Candidate, received.Checks[0].Work.Key, CheckStatus.Passed)];
-                var claimed = ResultCollector.Collect(plan with { Checks = [] }, []);
-                return Task.FromResult(new RubyGroupRun(results, [], new([], [], [], []), claimed));
+                CiOutcome outcome = ResultCollector.Collect(plan, results);
+                return Task.FromResult(new RubyGroupRun(results, [], new([], [], [], []), outcome));
             });
         Assert.AreEqual(missing ? 1 : 0, exit, error.ToString());
         RubyGroupRun result = JsonSerializer.Deserialize(output.ToString(),
             TransferJson.Default.RubyGroupRun)!;
-        Assert.AreEqual(!missing, ResultCollector.Collect(plan, result.Results).Satisfied);
+        Assert.AreEqual(!missing, result.Outcome.Satisfied);
+        Assert.AreEqual(plan.Comparison, result.Outcome.Comparison);
+        Assert.AreEqual(plan.Candidate, result.Outcome.Candidate);
+        Assert.AreEqual(plan.Scope, result.Outcome.Scope);
+        Assert.AreEqual(missing ? "missing" : "passed",
+            Assert.ContainsSingle(result.Outcome.Checks).Status);
     }
 
     [TestMethod]

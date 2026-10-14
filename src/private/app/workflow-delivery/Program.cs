@@ -79,7 +79,7 @@ internal static class Program
                     CancellationToken.None).GetAwaiter().GetResult();
                 output.WriteLine(JsonSerializer.Serialize(result,
                     TransferJson.Default.RubyGroupRun));
-                return ResultCollector.Collect(plan, result.Results).Satisfied ? 0 : 1;
+                return GroupExit(plan, result.Outcome);
             }
             if (args is ["ci", "prepare-python-group", var preparationPath])
             {
@@ -120,7 +120,7 @@ internal static class Program
                 output.WriteLine(JsonSerializer.Serialize(result,
                     TransferJson.Default.PythonGroupRunResult));
                 return result.Candidate == plan.Candidate &&
-                    ResultCollector.Collect(plan, result.Results).Satisfied ? 0 : 1;
+                    GroupExit(plan, result.Outcome) == 0 ? 0 : 1;
             }
             if (args is ["ci", "run-python-package", var pythonPlanPath, var pythonRequestPath])
             {
@@ -164,7 +164,7 @@ internal static class Program
                 output.WriteLine(JsonSerializer.Serialize(result,
                     TransferJson.Default.DotNetGroupRunResult));
                 return result.Candidate == plan.Candidate &&
-                    ResultCollector.Collect(plan, result.Results).Satisfied ? 0 : 1;
+                    GroupExit(plan, result.Outcome) == 0 ? 0 : 1;
             }
             if (args is ["ci", "comparison", var eventName, var eventPath, var testedCandidate])
             {
@@ -292,6 +292,14 @@ internal static class Program
             return 2;
         }
     }
+    private static int GroupExit(CiPlan plan, CiOutcome outcome)
+    {
+        if (outcome.Comparison != plan.Comparison || outcome.Candidate != plan.Candidate ||
+            outcome.Scope != plan.Scope)
+            throw new InvalidDataException("Group outcome differs from its original plan.");
+        return outcome.Satisfied ? 0 : 1;
+    }
+
 }
 
 [JsonSourceGenerationOptions(

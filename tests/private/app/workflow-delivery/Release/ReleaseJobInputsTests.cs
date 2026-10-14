@@ -14,6 +14,9 @@ public sealed class ReleaseJobInputsTests
     [DataRow("ruby", "rubygems", "official", "rubygems")]
     [DataRow("python", "testpypi", "buddy", "testpypi")]
     [DataRow("python", "pypi", "official", "pypi")]
+    [DataRow("npm", "github-packages-npm", "buddy", "github-packages-npm")]
+    [DataRow("npm", "npmjs", "official", "npmjs")]
+    [DataRow("nuget", "github-packages-nuget", "buddy", "github-packages-nuget")]
     public void RequestRetainsNativeSubjectAndTypedTools(string ecosystem, string destination,
         string channel, string expectedDestination)
     {
@@ -40,7 +43,7 @@ public sealed class ReleaseJobInputsTests
         if (ecosystem == "ruby")
             Assert.AreEqual("selected-ruby", request.RootElement.GetProperty(
                 "tools").GetProperty("ruby").GetString());
-        else
+        else if (ecosystem == "python")
             Assert.AreEqual(fixture.Env["MISE_DATA_DIR"], request.RootElement.GetProperty(
                 "miseDataDirectory").GetString());
     }
@@ -48,6 +51,8 @@ public sealed class ReleaseJobInputsTests
     [TestMethod]
     [DataRow("ruby")]
     [DataRow("python")]
+    [DataRow("npm")]
+    [DataRow("nuget")]
     public void ProducerAndPreparedSubjectSubstitutionFails(string ecosystem)
     {
         using var fixture = new Caller(ecosystem);
@@ -73,6 +78,8 @@ public sealed class ReleaseJobInputsTests
     [TestMethod]
     [DataRow("ruby")]
     [DataRow("python")]
+    [DataRow("npm")]
+    [DataRow("nuget")]
     public void OriginalTransferRetainsBytesAndRejectsEscapingInputs(string ecosystem)
     {
         using var fixture = new Caller(ecosystem);
@@ -98,6 +105,8 @@ public sealed class ReleaseJobInputsTests
     [TestMethod]
     [DataRow("ruby")]
     [DataRow("python")]
+    [DataRow("npm")]
+    [DataRow("nuget")]
     public void InvalidOperationsAndLiveRerunsCreateNoState(string ecosystem)
     {
         using var fixture = new Caller(ecosystem);
@@ -133,6 +142,8 @@ public sealed class ReleaseJobInputsTests
     [OSCondition(OperatingSystems.Linux)]
     [DataRow("ruby")]
     [DataRow("python")]
+    [DataRow("npm")]
+    [DataRow("nuget")]
     public void LinkedOriginalsCannotEscapeOwnedTransfer(string ecosystem)
     {
         using var fixture = new Caller(ecosystem);
@@ -147,6 +158,8 @@ public sealed class ReleaseJobInputsTests
     [TestMethod]
     [DataRow("ruby")]
     [DataRow("python")]
+    [DataRow("npm")]
+    [DataRow("nuget")]
     public void WriteNeededUsesActualObservationAndRejectsSubjectSubstitution(string ecosystem)
     {
         using var fixture = new Caller(ecosystem);
@@ -159,12 +172,19 @@ public sealed class ReleaseJobInputsTests
             var observation = new ReleaseObservation(subject, [new("output", "fixture", "1.0",
                 state, null, null)],
                 ["check"], [new("check", ReleaseCheckStatus.Passed)]);
-            string json = ecosystem == "ruby" ? JsonSerializer.Serialize(
-                new RubyObservationResult(observation,
-                new(RubySourceState.Absent, null, null, [])),
-                    TransferJson.Default.RubyObservationResult) :
-                JsonSerializer.Serialize(new PythonIndexObservationResult(observation, []),
-                    TransferJson.Default.PythonIndexObservationResult);
+            string json = ecosystem switch
+            {
+                "ruby" => JsonSerializer.Serialize(new RubyObservationResult(observation,
+                    new(RubySourceState.Absent, null, null, [])),
+                        TransferJson.Default.RubyObservationResult),
+                "python" => JsonSerializer.Serialize(new PythonIndexObservationResult(
+                    observation, []), TransferJson.Default.PythonIndexObservationResult),
+                "npm" => JsonSerializer.Serialize(new GithubNpmObservationResult(observation,
+                    []), TransferJson.Default.GithubNpmObservationResult),
+                "nuget" => JsonSerializer.Serialize(new GithubNuGetObservationResult(observation,
+                    null, []), TransferJson.Default.GithubNuGetObservationResult),
+                _ => throw new InvalidOperationException(),
+            };
             File.WriteAllText(fixture.At("observation/observation.json"), json);
             fixture.Run("state");
             Assert.EndsWith("write-needed=" + (
@@ -176,6 +196,20 @@ public sealed class ReleaseJobInputsTests
             Assert.AreEqual(original, File.ReadAllText(fixture.At("output")));
             fixture.Env["GITHUB_SHA"] = subject.Revision;
         }
+    }
+
+    [TestMethod]
+    public void OfficialSimulationCreatesOnlyConsumedRequest()
+    {
+        using var fixture = new Caller("npm", "npmjs");
+        fixture.Run("simulation-request");
+        NpmPreparationRequest request = JsonSerializer.Deserialize(File.ReadAllText(
+            fixture.At("prepared/request.json")), TransferJson.Default.NpmPreparationRequest)!;
+        Assert.AreEqual("official", request.Subject.Channel);
+        Assert.AreEqual("npmjs", request.Subject.Destination);
+        Assert.IsTrue(request.Subject.DryRun);
+        Assert.IsFalse(File.Exists(fixture.At("control/producer.json")));
+        Assert.IsFalse(File.Exists(fixture.At("prepared/producer.json")));
     }
 
     private sealed class Caller : IDisposable
@@ -191,7 +225,9 @@ public sealed class ReleaseJobInputsTests
             Env = new()
             {
                 ["RUNNER_TEMP"] = root, ["DESTINATION"] = destination ?? (
-                    ecosystem == "ruby" ? "github-packages" : "testpypi"),
+                    ecosystem switch { "ruby" => "github-packages", "python" => "testpypi",
+                        "npm" => "github-packages-npm", "nuget" => "github-packages-nuget",
+                        _ => throw new InvalidOperationException() }),
                 ["GITHUB_SHA"] = new string('a', 40), ["GITHUB_REF"] = "refs/heads/feature",
                 ["GITHUB_RUN_ID"] = "123", ["GITHUB_RUN_ATTEMPT"] = "2", ["DRY_RUN"] = "true",
                 ["GITHUB_REPOSITORY"] = "hcoona/three", ["GITHUB_WORKSPACE"] = root,
@@ -213,11 +249,18 @@ public sealed class ReleaseJobInputsTests
                 "fixture", "1.0",
                 path, 5, new string('a', 64))], ["check"], [new("check",
                     ReleaseCheckStatus.Passed)]);
-            string json = ecosystem == "ruby" ? JsonSerializer.Serialize(
-                new RubyPreparationResult(prepared,
-                new(), [], []), TransferJson.Default.RubyPreparationResult) :
-                JsonSerializer.Serialize(new PythonPreparationResult(prepared, new(), [], []),
-                    TransferJson.Default.PythonPreparationResult);
+            string json = ecosystem switch
+            {
+                "ruby" => JsonSerializer.Serialize(new RubyPreparationResult(prepared,
+                    new(), [], []), TransferJson.Default.RubyPreparationResult),
+                "python" => JsonSerializer.Serialize(new PythonPreparationResult(prepared,
+                    new(), [], []), TransferJson.Default.PythonPreparationResult),
+                "npm" => JsonSerializer.Serialize(new NpmPreparationResult(prepared, [], []),
+                    TransferJson.Default.NpmPreparationResult),
+                "nuget" => JsonSerializer.Serialize(new NuGetPreparationResult(prepared,
+                    new(), [], []), TransferJson.Default.NuGetPreparationResult),
+                _ => throw new InvalidOperationException(),
+            };
             File.WriteAllText(At("prepared/preparation.json"), json);
         }
         public void Dispose() => Directory.Delete(root, true);

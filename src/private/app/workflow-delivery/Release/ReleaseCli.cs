@@ -130,11 +130,19 @@ internal static class ReleaseCli
             return result.Check.Status == ReleaseCheckStatus.Passed ? 0 : 1;
         }
         if (args is ["release", "complete-github-npm", var completePreparedPath,
-                var completeObservedPath,
+                var completeInitialPath, var completeObservedPath,
                 var completeConsumedPath, var completePublishedPath])
         {
             PreparedRelease prepared = Read(completePreparedPath,
                 TransferJson.Default.NpmPreparationResult).Prepared;
+            GithubNpmObservationResult initial = Read(completeInitialPath,
+                TransferJson.Default.GithubNpmObservationResult);
+            _ = ReleaseCompletion.Evaluate(prepared, initial.Observation, []);
+            if (initial.Observation.RequiredChecks.Any(id => !initial.Observation.Checks.Any(
+                    check => check.Id == id && check.Status == ReleaseCheckStatus.Passed)) ||
+                initial.Observation.Files.Any(file =>
+                    file.State is not (ReleaseFileState.Exact or ReleaseFileState.Absent)))
+                throw new InvalidDataException("Initial npm observation could not proceed.");
             GithubNpmObservationResult observed = Read(completeObservedPath,
                 TransferJson.Default.GithubNpmObservationResult);
             GithubNpmConsumerResult consumer = Read(completeConsumedPath,
@@ -153,6 +161,11 @@ internal static class ReleaseCli
             };
             ReleaseOutcome result = ReleaseCompletion.Evaluate(prepared, final,
                 published?.Uploads ?? []);
+            if (published is null && initial.Observation.Files.Any(file =>
+                    file.State == ReleaseFileState.Absent))
+                result = result with { State = ReleaseBusinessState.Unknown,
+                    Reasons = [.. result.Reasons,
+                        "Required publication result is missing; effects remain unknown."] };
             Write(result, TransferJson.Default.ReleaseOutcome);
             return result.State == ReleaseBusinessState.Satisfied ? 0 : 1;
         }

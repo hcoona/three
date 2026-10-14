@@ -356,7 +356,7 @@ def test_only_successful_planning_finalizes_applicability(
     ("populated", "termination"),
     [(False, "passed"), (True, "passed"), (True, "failed"), (True, "timedOut")],
 )
-def test_original_plan_still_reaches_receiver_and_collector(
+def test_original_plan_retains_execution_owner_outcome(
     tmp_path, monkeypatch, populated, termination
 ):
     """Preserve original work and terminal outcomes under finite budgets."""
@@ -395,6 +395,8 @@ def test_original_plan_still_reaches_receiver_and_collector(
         "candidate": CANDIDATE,
         "scope": SCOPE,
         "satisfied": termination == "passed",
+        "checks": [],
+        "errors": [],
     }
     commands = []
     directory = tmp_path / "execution"
@@ -414,7 +416,11 @@ def test_original_plan_still_reaches_receiver_and_collector(
                 raise subprocess.TimeoutExpired(
                     args, options["timeout"], b"partial", b"deadline"
                 )
-            payload = {"candidate": CANDIDATE, "results": results}
+            payload = {
+                "candidate": CANDIDATE,
+                "results": results,
+                "outcome": outcome,
+            }
         elif label == "collection":
             assert args[4] == str(plan_path)
             assert group.node.read_json(Path(args[5])) == results
@@ -435,29 +441,23 @@ def test_original_plan_still_reaches_receiver_and_collector(
         assert not (directory / "results.json").exists()
         assert (directory / "execution.stdout").read_bytes() == b"partial"
         assert (directory / "execution.stderr").read_bytes() == b"deadline"
-    elif termination == "failed":
-        with pytest.raises(subprocess.CalledProcessError) as captured:
-            group.execute(root, transfer, directory, BASIS, CANDIDATE)
-        assert captured.value.returncode == 1
-        assert json.loads(captured.value.output) == outcome
-        assert captured.value.stderr == b"native diagnostics"
     else:
         assert (
             group.execute(root, transfer, directory, BASIS, CANDIDATE)
             == outcome
         )
         assert group.node.read_json(directory / "outcome.json") == outcome
+        assert group.node.read_json(directory / "results.json") == results
     assert commands == (
         ([("tools", 900), ("restore", 900)] if populated else [])
         + [("execution", 3600)]
-        + ([] if termination == "timedOut" else [("collection", 900)])
     )
     assert (
         group.node.read_json(directory / "request.json")["deadlineSeconds"]
         == 1200
     )
     assert plan_path.read_text(encoding="utf-8") == raw
-    if termination != "passed":
+    if termination == "timedOut":
         assert not (directory / "outcome.json").exists()
 
 

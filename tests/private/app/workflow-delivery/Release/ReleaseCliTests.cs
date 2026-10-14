@@ -11,10 +11,12 @@ namespace WorkflowDelivery.Tests.Release;
 public sealed class ReleaseCliTests
 {
     [TestMethod]
-    [DataRow(true, 0)]
-    [DataRow(false, 1)]
+    [DataRow(true, false, 0)]
+    [DataRow(false, false, 1)]
+    [DataRow(true, true, 1)]
+    [DataRow(false, true, 1)]
     public void ActualGithubCompletionRequiresRemoteConsumerEvenWithExactOriginals(
-        bool consumerPassed, int expectedExit)
+        bool consumerPassed, bool initiallyAbsent, int expectedExit)
     {
         using var files = new Files();
         PreparedRelease prepared = files.Prepared with
@@ -29,6 +31,12 @@ public sealed class ReleaseCliTests
             ["visibility"], [new("visibility", ReleaseCheckStatus.Passed)]), []);
         string observation = files.Write("buddy-observed.json", JsonSerializer.Serialize(observed,
             TransferJson.Default.GithubNpmObservationResult));
+        string initial = files.Write("buddy-initial.json", JsonSerializer.Serialize(observed with
+        { Observation = observed.Observation with { Files = [observed.Observation.Files[0] with
+            { State = initiallyAbsent ? ReleaseFileState.Absent : ReleaseFileState.Exact,
+                Size = initiallyAbsent ? null : file.Size,
+                Sha256 = initiallyAbsent ? null : file.Sha256 }] } },
+            TransferJson.Default.GithubNpmObservationResult));
         string consumer = files.Write("buddy-consumed.json", JsonSerializer.Serialize(
             new GithubNpmConsumerResult(prepared.Subject, new("native-registry-consumer",
                 consumerPassed ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed), [], []),
@@ -37,13 +45,13 @@ public sealed class ReleaseCliTests
         using var error = new StringWriter();
 
         Assert.AreEqual(expectedExit, Program.Run(["release", "complete-github-npm", preparation,
-            observation, consumer, "-"], output, error), error.ToString());
+            initial, observation, consumer, "-"], output, error), error.ToString());
 
         ReleaseOutcome result = JsonSerializer.Deserialize(output.ToString(),
             TransferJson.Default.ReleaseOutcome)!;
         Assert.AreEqual(prepared.Subject, result.Subject);
-        Assert.AreEqual(consumerPassed ? ReleaseBusinessState.Satisfied
-                : ReleaseBusinessState.Unsatisfied,
+        Assert.AreEqual(initiallyAbsent ? ReleaseBusinessState.Unknown : consumerPassed ?
+                ReleaseBusinessState.Satisfied : ReleaseBusinessState.Unsatisfied,
             result.State);
         Assert.IsEmpty(result.Uploads);
     }

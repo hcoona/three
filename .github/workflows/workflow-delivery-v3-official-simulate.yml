@@ -3,6 +3,10 @@ name: Workflow Delivery v3 Official simulation
 on:
   workflow_dispatch:
 
+env:
+  DESTINATION: npmjs
+  DRY_RUN: 'true'
+
 permissions:
   contents: read
 
@@ -27,7 +31,7 @@ jobs:
       - name: Build selected control before product execution
         run: |
           mise exec --locked dotnet -- dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj \
-            -p:RestoreLockedMode=true -o "$RUNNER_TEMP/release-control"
+            -p:RestoreLockedMode=true -o "$RUNNER_TEMP/control"
       - name: Prepare frozen native dependencies without package scripts
         env:
           MISE_EXEC_AUTO_INSTALL: '0'
@@ -47,41 +51,23 @@ jobs:
       - name: Prepare complete selected release
         id: prepare
         run: |
-          mkdir -p "$RUNNER_TEMP/release-originals" "$RUNNER_TEMP/release-results"
           export MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
-          python3 - <<'PYTHON'
-          import json
-          import os
-          from pathlib import Path
-          root = Path(os.environ['RUNNER_TEMP'])
-          request = {
-              'subject': {
-                  'revision': os.environ['GITHUB_SHA'],
-                  'selectedRef': os.environ['GITHUB_REF'],
-                  'unit': 'hcoona-release-smoke-npm',
-                  'declaration': 'tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/workflow-delivery.release-unit.yml',
-                  'channel': 'official', 'destination': 'npmjs', 'dryRun': True,
-              },
-              'checkout': os.environ['GITHUB_WORKSPACE'],
-              'scratch': str(root / 'release-originals'),
-          }
-          (root / 'release-results/request.json').write_text(json.dumps(request) + '\n')
-          PYTHON
-          mise exec --locked dotnet node pnpm -- dotnet "$RUNNER_TEMP/release-control/WorkflowDelivery.dll" \
-            release prepare-npm "$RUNNER_TEMP/release-results/request.json" \
-            > "$RUNNER_TEMP/release-results/preparation.json"
+          mise exec --locked dotnet -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm simulation-request
+          mise exec --locked dotnet node pnpm -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" \
+            release prepare-npm "$RUNNER_TEMP/prepared/request.json" \
+            > "$RUNNER_TEMP/prepared/preparation.json"
       - name: Observe exact public npmjs state without write capability
         if: success()
         run: |
-          mise exec --locked dotnet -- dotnet "$RUNNER_TEMP/release-control/WorkflowDelivery.dll" \
-            release observe-npmjs "$RUNNER_TEMP/release-results/preparation.json" \
-            "$RUNNER_TEMP/release-originals" > "$RUNNER_TEMP/release-results/observation.json"
+          mise exec --locked dotnet -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" \
+            release observe-npmjs "$RUNNER_TEMP/prepared/preparation.json" \
+            "$RUNNER_TEMP/preparation-scratch" > "$RUNNER_TEMP/prepared/observation.json"
       - name: Describe hypothetical work
         if: success()
         run: |
-          mise exec --locked dotnet -- dotnet "$RUNNER_TEMP/release-control/WorkflowDelivery.dll" \
-            release describe-npmjs "$RUNNER_TEMP/release-results/preparation.json" \
-            "$RUNNER_TEMP/release-results/observation.json" > "$RUNNER_TEMP/release-results/dry-run.json"
+          mise exec --locked dotnet -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" \
+            release describe-npmjs "$RUNNER_TEMP/prepared/preparation.json" \
+            "$RUNNER_TEMP/prepared/observation.json" > "$RUNNER_TEMP/prepared/dry-run.json"
       - name: Show qualification and actual observation limits
         if: always()
         run: |
@@ -89,7 +75,7 @@ jobs:
           import json
           import os
           from pathlib import Path
-          root = Path(os.environ['RUNNER_TEMP']) / 'release-results'
+          root = Path(os.environ['RUNNER_TEMP']) / 'prepared'
           with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as summary:
               summary.write('## Official dry run\n\n')
               summary.write('This invocation performs qualification and public reads. It makes no publication or live completion claim.\n\n')
@@ -107,8 +93,8 @@ jobs:
         with:
           name: official-dry-run-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/release-results/*.json
-            ${{ runner.temp }}/release-originals/original/package.tgz
+            ${{ runner.temp }}/prepared/*.json
+            ${{ runner.temp }}/preparation-scratch/original/package.tgz
           if-no-files-found: error
           retention-days: 45
           overwrite: false

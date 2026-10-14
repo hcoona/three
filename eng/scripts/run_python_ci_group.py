@@ -395,9 +395,10 @@ def execute(
         message = "Python execution returned a different candidate"
         raise ValueError(message)
     node.write_json(directory / "result.json", result)
-    node.write_json(directory / "outcome.json", result["outcome"])
-    print(json.dumps(result["outcome"], indent=2))
-    return result["outcome"]
+    outcome = ci_scope.group_outcome(plan_value, result["outcome"])
+    node.write_json(directory / "outcome.json", outcome)
+    print(json.dumps(outcome, indent=2))
+    return outcome
 
 
 def invoke(  # noqa: PLR0913 - Concrete native phase invocation.
