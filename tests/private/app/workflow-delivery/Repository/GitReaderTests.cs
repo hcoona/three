@@ -223,16 +223,17 @@ public sealed class GitReaderTests(TestContext context)
                 System.IO.Directory.CreateDirectory(fixture.Directory);
                 string empty = Path.Combine(fixture.temporary, "empty-template");
                 System.IO.Directory.CreateDirectory(empty);
+                // One template config replaces per-key launches; Git copies it during init.
+                string hooks = empty.Replace('\\', '/');
+                await File.WriteAllTextAsync(Path.Combine(empty, "config"),
+                    "[user]\n\tname = Workflow fixture\n\temail = fixture@example.invalid\n" +
+                    "[commit]\n\tgpgSign = false\n[tag]\n\tgpgSign = false\n" +
+                    "[core]\n\thooksPath = \"" + hooks + "\"\n\tprotectNTFS = false\n", token);
                 await fixture.GitAsync("init", "--quiet", "--initial-branch=fixture",
                     "--object-format=" + format, "--template=" + empty);
-                await fixture.GitAsync("config", "user.name", "Workflow fixture");
-                await fixture.GitAsync("config", "user.email", "fixture@example.invalid");
-                await fixture.GitAsync("config", "commit.gpgSign", "false");
-                await fixture.GitAsync("config", "tag.gpgSign", "false");
-                await fixture.GitAsync("config", "core.hooksPath", empty);
                 // Index-only names exercise committed metadata without OS path restrictions.
+                // Init probes and may write core.ignoreCase, so this override follows it.
                 await fixture.GitAsync("config", "core.ignoreCase", "false");
-                await fixture.GitAsync("config", "core.protectNTFS", "false");
                 return fixture;
             }
             catch
@@ -242,23 +243,34 @@ public sealed class GitReaderTests(TestContext context)
             }
         }
 
-        internal Task<string> GitAsync(params string[] arguments) =>
-            NativeProcess.RunAsync("git", Directory, arguments, token);
+        // Index edits are staged in order and applied before any later Git use, so a
+        // fixture commit costs a few Git launches instead of two per path.
+        private readonly List<(string Path, string? Mode, string? Content, string? Object)>
+            pending = [];
 
-        internal async Task SetAsync(string path, string content = "fixture",
-            string mode = "100644")
+        internal async Task<string> GitAsync(params string[] arguments)
         {
-            string file = Path.Combine(temporary, "content.txt");
-            await File.WriteAllTextAsync(file, content, token);
-            string blob = (await GitAsync("hash-object", "-w", "--", file)).Trim();
-            await GitAsync("update-index", "--add", "--cacheinfo", mode, blob, path);
+            await FlushAsync();
+            return await NativeProcess.RunAsync("git", Directory, arguments, token);
         }
 
-        internal Task<string> LinkAsync(string path, string commit) =>
-            GitAsync("update-index", "--add", "--cacheinfo", "160000", commit, path);
+        internal Task SetAsync(string path, string content = "fixture", string mode = "100644")
+        {
+            pending.Add((path, mode, content, null));
+            return Task.CompletedTask;
+        }
 
-        internal Task<string> RemoveAsync(string path) =>
-            GitAsync("update-index", "--force-remove", "--", path);
+        internal Task LinkAsync(string path, string commit)
+        {
+            pending.Add((path, "160000", null, commit));
+            return Task.CompletedTask;
+        }
+
+        internal Task RemoveAsync(string path)
+        {
+            pending.Add((path, null, null, null));
+            return Task.CompletedTask;
+        }
 
         internal async Task<string> CommitAsync(params string[] parents)
         {
@@ -269,6 +281,77 @@ public sealed class GitReaderTests(TestContext context)
             string commit = (await GitAsync(arguments.ToArray())).Trim();
             await GitAsync("update-ref", "HEAD", commit);
             return commit;
+        }
+
+        // Applies staged index edits now, for scenarios that leave them uncommitted.
+        internal async Task FlushAsync()
+        {
+            if (pending.Count == 0)
+                return;
+            var operations = pending.ToArray();
+            pending.Clear();
+            string content = Path.Combine(temporary, "content");
+            System.IO.Directory.CreateDirectory(content);
+            var files = new List<string>();
+            foreach (var operation in operations.Where(item => item.Content is not null))
+            {
+                string file = Path.Combine(content, files.Count.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture));
+                await File.WriteAllTextAsync(file, operation.Content, token);
+                files.Add(file);
+            }
+            var blobs = new List<string>();
+            foreach (string[] chunk in Chunks(files))
+                blobs.AddRange((await NativeProcess.RunAsync("git", Directory,
+                    ["hash-object", "-w", "--", .. chunk], token)).Split('\n',
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            if (blobs.Count != files.Count)
+                throw new InvalidDataException("Git returned an unexpected blob count.");
+            int blob = 0;
+            // Each run of additions or removals keeps its relative order in one launch.
+            for (int start = 0; start < operations.Length;)
+            {
+                bool remove = operations[start].Mode is null;
+                int end = start;
+                while (end < operations.Length && (operations[end].Mode is null) == remove)
+                    end++;
+                if (remove)
+                    foreach (string[] chunk in Chunks(operations[start..end]
+                        .Select(item => item.Path)))
+                        await NativeProcess.RunAsync("git", Directory,
+                            ["update-index", "--force-remove", "--", .. chunk], token);
+                else
+                {
+                    var entries = new List<string>();
+                    foreach (var operation in operations[start..end])
+                        entries.Add(operation.Mode + "," + (operation.Object ?? blobs[blob++]) +
+                            "," + operation.Path);
+                    foreach (string[] chunk in Chunks(entries))
+                        await NativeProcess.RunAsync("git", Directory, ["update-index", "--add",
+                            .. chunk.SelectMany(entry => new[] { "--cacheinfo", entry })], token);
+                }
+                start = end;
+            }
+        }
+
+        // Keeps each launch well below the Windows command-line limit.
+        private static IEnumerable<string[]> Chunks(IEnumerable<string> values)
+        {
+            var chunk = new List<string>();
+            int length = 0;
+            foreach (string value in values)
+            {
+                if (chunk.Count != 0 && length + value.Length > 16000)
+                {
+                    yield return chunk.ToArray();
+                    chunk.Clear();
+                    length = 0;
+                }
+                chunk.Add(value);
+                length += value.Length + 16;
+            }
+            if (chunk.Count != 0)
+                yield return chunk.ToArray();
         }
 
         public void Dispose()
