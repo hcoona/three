@@ -44,6 +44,8 @@ public sealed class RubyPreparationTests(TestContext context)
         {
             await Fixture.StageRootAsync(repo, "");
             await Fixture.StageProductAsync(repo, "product", "");
+            // A defect-free control at the same depth proves the location itself qualifies.
+            await Fixture.StageProductAsync(repo, "recipes/control", "");
             foreach (string defect in RecipeDefects)
                 await Fixture.StageProductAsync(repo, "recipes/" + defect, defect);
             sharedRevision = await repo.CommitAsync();
@@ -297,6 +299,17 @@ public sealed class RubyPreparationTests(TestContext context)
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
         Assert.IsEmpty(result.Commands);
+    }
+
+    [TestMethod]
+    public async Task RelocatedRecipeControlQualifies()
+    {
+        using var fixture = Fixture.Shared(shared!, sharedRevision, "recipes/control", "");
+        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.IsEmpty(result.Errors);
+        Assert.IsTrue(
+            result.Prepared.Checks.All(check => check.Status == ReleaseCheckStatus.Passed)
+        );
     }
 
     [TestMethod]
