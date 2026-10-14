@@ -1,0 +1,5 @@
+# Typed Caller Contraction Evidence
+
+This evidence-only branch retains independent audit, distinct finding classification, complete source reviews and local qualification for source `fd9cd6450d874441dd828c3bd9b8a1e7875560fd`. It is not a product authority or work authorization. The archive retains original failures, final passing qualification and native test originals; its digest and source identities are in [manifest.json](manifest.json).
+
+Local tests exercised fingerprinted implementation files while the checkout HEAD was accepted base `7be1babcb429c97bc68e3aa7a00f4faa4cccb3bf`; the later source commit preserves those bytes. The final record-check report explicitly binds the committed candidate and retains its known diagnostic. The independent record review preceded that final committed-snapshot rerun; the new report removes the earlier two-file snapshot limitation, with no additional diagnostics. None of these local results establishes Windows hosted execution, destination behavior, publication readiness or performance/P95 acceptance. The finite Python preparation migration candidate remains unresolved and unchanged.
