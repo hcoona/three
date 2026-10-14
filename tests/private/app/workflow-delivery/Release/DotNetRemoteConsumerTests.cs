@@ -26,15 +26,29 @@ public sealed class DotNetSmokeRemoteConsumerTests(TestContext context)
         string root = Directory.CreateTempSubdirectory("nuget-command-termination-").FullName;
         try
         {
-            string package = await PackageAsync(root);
+            string readme = Path.Combine(root, "README.md");
+            await File.WriteAllTextAsync(readme, "Controlled command termination package.",
+                context.CancellationToken);
+            var builder = new PackageBuilder
+            {
+                Id = DotNetSmokeRemoteConsumer.Package, Version = new NuGetVersion(1, 0, 0),
+                Description = "The controlled command terminates before native consumption."
+            };
+            builder.Authors.Add("WorkflowDelivery.Tests");
+            builder.Files.Add(new PhysicalPackageFile
+                { SourcePath = readme, TargetPath = "README.md" });
+            string package = Path.Combine(root, "original.nupkg");
+            using (Stream output = File.Create(package)) builder.Save(output);
             var original = new DotNetOriginalPackage("product", "package", "original",
                 "primary-package", "nuget-package", package, new FileInfo(package).Length,
                 DotNetPackageArchive.Digest(package));
+            using JsonDocument sdk = JsonDocument.Parse(CI.DotNetNativeFixture.SdkSelection);
             var native = new Dictionary<string, string>
             {
                 ["PackageId"] = DotNetSmokeRemoteConsumer.Package,
                 ["NuGetPackageVersion"] = "1.0.0", ["TargetFramework"] = "net10.0",
-                ["NETCoreSdkVersion"] = await SdkAsync(root),
+                ["NETCoreSdkVersion"] = sdk.RootElement.GetProperty("sdk")
+                    .GetProperty("version").GetString()!,
             };
             using var parent = CancellationTokenSource.CreateLinkedTokenSource(
                 context.CancellationToken);
