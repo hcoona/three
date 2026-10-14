@@ -223,7 +223,11 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         }
         if (defect == "options") request = request with
         { Configuration = request.Configuration with { Options = ["--collect-only"] } };
-        if (defect == "dirty") await fixture.Repo.SetAsync("pyproject.toml", "changed");
+        if (defect == "dirty")
+        {
+            await fixture.Repo.SetAsync("pyproject.toml", "changed");
+            await fixture.Repo.FlushAsync();
+        }
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(plan, context.CancellationToken, request));
         Assert.IsEmpty(fixture.Commands);
