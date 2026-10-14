@@ -11,6 +11,39 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     private static readonly string[] RootPackages = ["native-root"];
     private static readonly string[] QualityPackages = ["native-root", "native-a", "native-b"];
     private static readonly string[] QualityTargets = ["tests/root", "pkg-a/tests", "pkg-b/tests"];
+
+    // Membership and candidate-reference rows read one class-owned committed checkout;
+    // each row owns fresh scratch and runs the complete execution entry point.
+    private static GitFixture? shared;
+    private static GitRevision? sharedRevision;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            sharedRevision = await Fixture.CommitAsync(repo, classContext.CancellationToken);
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    [TestMethod]
+    public async Task SharedCheckoutQualifiesEveryTarget()
+    {
+        // Defect-free control: the shared checkout runs every selected target.
+        using var fixture = Fixture.Shared(shared!, sharedRevision!);
+        PythonPytestRunResult result = await fixture.RunAsync(fixture.Plan,
+            context.CancellationToken);
+        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+        Assert.ContainsSingle(fixture.Queries);
+        Assert.HasCount(4, fixture.Commands);
+    }
+
     [TestMethod]
     public async Task RootTargetUsesNativeRootPreparationAndOriginalConfiguration()
     {
@@ -259,7 +292,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     [DataRow(true)]
     public async Task MutableCandidateIsRejectedEvenForEmptyPartition(bool empty)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision!);
         CiPlan plan = (empty ? fixture.Select() : fixture.Plan) with { Candidate = "HEAD" };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(plan, context.CancellationToken));
@@ -272,7 +305,7 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     [DataRow("coordinated")]
     public async Task CandidateMembershipMismatchStopsBeforeProductPreparation(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision!);
         PythonPytestRunRequest request = fixture.Request;
         PythonMetadataMember[] members = request.Members.ToArray();
         if (defect == "unique-name") members[1] = members[1] with { Name = "other-unique" };
@@ -322,8 +355,8 @@ public sealed class PythonPytestExecutionTests(TestContext context)
             argument.StartsWith(prefix, StringComparison.Ordinal)))[prefix.Length..];
     }
 
-    private sealed class Fixture(GitFixture repo, CiPlan plan, PythonPytestRunRequest request)
-        : IDisposable
+    private sealed class Fixture(GitFixture repo, CiPlan plan, PythonPytestRunRequest request,
+        bool ownsRepository = true) : IDisposable
     {
         internal GitFixture Repo { get; } = repo;
         internal CiPlan Plan { get; } = plan;
@@ -341,27 +374,41 @@ public sealed class PythonPytestExecutionTests(TestContext context)
             string scratch = Directory.CreateTempSubdirectory("workflow-pytest-").FullName;
             try
             {
-                await repo.SetAsync("pyproject.toml", """
-                    [project]
-                    name = "native-root"
-                    [tool.pytest.ini_options]
-                    testpaths = ["tests/root", "pkg-a/tests", "pkg-b/tests"]
-                    addopts = ["--import-mode=importlib"]
-                    """);
-                foreach (string path in new[] { "tests/root/test_root.py", "pkg-a/tests/test_a.py",
-                             "pkg-b/tests/test_b.py", "pkg-a/pyproject.toml",
-                             "pkg-b/pyproject.toml",
-                             "input/pyproject.toml" })
-                    await repo.SetAsync(path, "controlled native input");
-                string candidate = await repo.CommitAsync();
-                await repo.GitAsync("reset", "--hard", candidate);
-                GitRevision revision = await new GitReader(repo.Directory).ReadAsync(candidate,
-                    token);
+                GitRevision revision = await CommitAsync(repo, token);
                 (CiPlan plan, PythonPytestRunRequest request, _) =
                     Contract(revision, repo.Directory, scratch);
                 return new(repo, plan, request);
             }
             catch { repo.Dispose(); Directory.Delete(scratch, true); throw; }
+        }
+
+        // Reads a class-owned committed checkout; the row owns only its scratch.
+        internal static Fixture Shared(GitFixture repo, GitRevision revision)
+        {
+            string scratch = Directory.CreateTempSubdirectory("workflow-pytest-").FullName;
+            (CiPlan plan, PythonPytestRunRequest request, _) =
+                Contract(revision, repo.Directory, scratch);
+            return new(repo, plan, request, ownsRepository: false);
+        }
+
+        internal static async Task<GitRevision> CommitAsync(GitFixture repo,
+            CancellationToken token)
+        {
+            await repo.SetAsync("pyproject.toml", """
+                [project]
+                name = "native-root"
+                [tool.pytest.ini_options]
+                testpaths = ["tests/root", "pkg-a/tests", "pkg-b/tests"]
+                addopts = ["--import-mode=importlib"]
+                """);
+            foreach (string path in new[] { "tests/root/test_root.py", "pkg-a/tests/test_a.py",
+                         "pkg-b/tests/test_b.py", "pkg-a/pyproject.toml",
+                         "pkg-b/pyproject.toml",
+                         "input/pyproject.toml" })
+                await repo.SetAsync(path, "controlled native input");
+            string candidate = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", candidate);
+            return await new GitReader(repo.Directory).ReadAsync(candidate, token);
         }
 
         private static readonly string[] Layout = ["pyproject.toml", "tests/root/test_root.py",
@@ -424,6 +471,9 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         }
 
         public void Dispose()
-        { Repo.Dispose(); Directory.Delete(Scratch, true); }
+        {
+            if (ownsRepository) Repo.Dispose();
+            Directory.Delete(Scratch, true);
+        }
     }
 }

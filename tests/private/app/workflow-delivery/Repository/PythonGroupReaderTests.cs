@@ -10,6 +10,36 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class PythonGroupReaderTests(TestContext context)
 {
+    private const string Source = "src/input/source.py";
+
+    // Runtime-substitution and scope-transfer rows read one class-owned committed pair;
+    // each row writes its scope transfer to private scratch.
+    private static GitFixture? shared;
+    private static Fixture.Pair? sharedPair;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        shared = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try { sharedPair = await Fixture.CommitAsync(shared, Source, false); }
+        catch { shared.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    [TestMethod]
+    public async Task SharedEndpointsQualifyPairedSelection()
+    {
+        // Defect-free control: the shared pair itself selects the changed pytest target.
+        using var fixture = await Fixture.SharedAsync(sharedPair!, context.CancellationToken);
+        PythonGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
+        PlannedCheck check = Assert.ContainsSingle(result.Plan.Checks);
+        Assert.Contains(new SelectionReason(Source, fixture.Request.Basis.Checkout.Reference,
+            check.Work.Key.Target), check.Reasons);
+        Assert.HasCount(2, fixture.Collected);
+    }
+
     [TestMethod]
     public async Task TransferredPreparationExcludesNewReceiverEnvironmentAtQueryLaunch()
     {
@@ -190,8 +220,7 @@ public sealed class PythonGroupReaderTests(TestContext context)
     [DataRow("entry-mode")]
     public async Task BadScopeTransferStopsBeforeNativeCollection(string defect)
     {
-        using var fixture = await Fixture.CreateAsync("src/input/source.py", false,
-            context.CancellationToken);
+        using var fixture = await Fixture.SharedAsync(sharedPair!, context.CancellationToken);
         var text = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(
             fixture.Request.ScopePath, context.CancellationToken))!;
         if (defect == "comparison") text["candidate"] = new string('a', 40);
@@ -214,8 +243,7 @@ public sealed class PythonGroupReaderTests(TestContext context)
     [DataRow("operation")]
     public async Task EndpointsCannotSubstituteAnotherControlRuntime(string defect)
     {
-        using var fixture = await Fixture.CreateAsync("src/input/source.py", false,
-            context.CancellationToken);
+        using var fixture = await Fixture.SharedAsync(sharedPair!, context.CancellationToken);
         PythonRepositoryRequest candidate = fixture.Request.Candidate.Collection;
         candidate = defect switch
         {
@@ -263,9 +291,9 @@ public sealed class PythonGroupReaderTests(TestContext context)
             Assert.ContainsSingle(fixture.Collected));
     }
 
-    private sealed class Fixture(GitFixture repository) : IDisposable
+    private sealed class Fixture(GitFixture? repository, string state) : IDisposable
     {
-        private readonly GitFixture repo = repository;
+        private readonly GitFixture? repo = repository;
         internal PythonGroupRequest Request { get; set; } = null!;
         internal PythonRevisionInputs? After { get; private set; }
         internal List<string> Collected { get; } = [];
@@ -274,51 +302,81 @@ public sealed class PythonGroupReaderTests(TestContext context)
         internal string? FailedEndpoint { get; set; }
         internal Action? AfterBasis { get; set; }
 
+        internal sealed record Pair(string Changed, bool Full, string Basis, string BasisRoot,
+            string Candidate, string CandidateRoot);
+
+        // Commits the basis/candidate pair; the basis gets its own worktree.
+        internal static async Task<Pair> CommitAsync(GitFixture repo, string changed, bool full,
+            string target = "src/input/tests")
+        {
+            foreach (string path in (string[])["pyproject.toml", "src/input/pyproject.toml",
+                "src/input/source.py", target + "/test_one.py", changed])
+                await repo.SetAsync(path);
+            string before = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", before);
+            string parent = Path.GetDirectoryName(repo.Directory)!;
+            string beforeDirectory = Path.Combine(parent, "basis");
+            await repo.GitAsync("worktree", "add", "--detach", beforeDirectory, before);
+            await repo.SetAsync(changed, "updated");
+            string after = await repo.CommitAsync(before);
+            await repo.GitAsync("reset", "--hard", after);
+            if (full) { before = after; beforeDirectory = repo.Directory; }
+            return new(changed, full, before, beforeDirectory, after, repo.Directory);
+        }
+
+        // Reads a class-owned pair; the row owns only its scope transfer.
+        internal static async Task<Fixture> SharedAsync(Pair pair, CancellationToken token)
+        {
+            var fixture = new Fixture(null, Directory.CreateTempSubdirectory(
+                "workflow-python-group-").FullName);
+            try
+            {
+                await fixture.RequestAsync(pair, null, token);
+                return fixture;
+            }
+            catch { fixture.Dispose(); throw; }
+        }
+
         internal static async Task<Fixture> CreateAsync(string changed, bool full,
             CancellationToken token, string? owner = null, string target = "src/input/tests")
         {
-            var fixture = new Fixture(await GitFixture.CreateAsync(token));
-            fixture.testTarget = target;
+            GitFixture repo = await GitFixture.CreateAsync(token);
+            var fixture = new Fixture(repo, Path.GetDirectoryName(repo.Directory)!);
             try
             {
-                foreach (string path in (string[])["pyproject.toml", "src/input/pyproject.toml",
-                    "src/input/source.py", target + "/test_one.py", changed])
-                    await repositorySet(path);
-                string before = await fixture.repo.CommitAsync();
-                await fixture.repo.GitAsync("reset", "--hard", before);
-                string parent = Path.GetDirectoryName(fixture.repo.Directory)!;
-                string beforeDirectory = Path.Combine(parent, "basis");
-                await fixture.repo.GitAsync("worktree", "add", "--detach", beforeDirectory,
-                    before);
-                await fixture.repo.SetAsync(changed, "updated");
-                string after = await fixture.repo.CommitAsync(before);
-                await fixture.repo.GitAsync("reset", "--hard", after);
-                if (full) { before = after; beforeDirectory = fixture.repo.Directory; }
-                string scopePath = Path.Combine(parent, "scope.json");
-                object Endpoint(string revision) => new
-                {
-                    revision,
-                    paths = full ? Array.Empty<object>() : new object[] { new
-                    {
-                        path = changed, present = true, mode = "100644",
-                        reasons = owner is null ? Array.Empty<object>() : new object[] { new
-                        { owner, target = changed, rule = "controlled-responsibility",
-                            sources = new[] { "pyproject.toml" } } }
-                    } }
-                };
-                await File.WriteAllTextAsync(scopePath, JsonSerializer.Serialize(new
-                {
-                    @base = before, candidate = after, full,
-                    changed_paths = full ? Array.Empty<string>() : new[] { changed },
-                    endpoint_owners = new { basis = Endpoint(before), candidate = Endpoint(after) }
-                }), token);
-                fixture.Request = new(EndpointRequest(beforeDirectory, before),
-                    EndpointRequest(fixture.repo.Directory, after), full, scopePath);
+                fixture.testTarget = target;
+                await fixture.RequestAsync(await CommitAsync(repo, changed, full, target), owner,
+                    token);
                 return fixture;
-
-                Task repositorySet(string path) => fixture.repo.SetAsync(path);
             }
             catch { fixture.Dispose(); throw; }
+        }
+
+        private async Task RequestAsync(Pair pair, string? owner, CancellationToken token)
+        {
+            string changed = pair.Changed;
+            bool full = pair.Full;
+            string scopePath = Path.Combine(state, "scope.json");
+            object Endpoint(string revision) => new
+            {
+                revision,
+                paths = full ? Array.Empty<object>() : new object[] { new
+                {
+                    path = changed, present = true, mode = "100644",
+                    reasons = owner is null ? Array.Empty<object>() : new object[] { new
+                    { owner, target = changed, rule = "controlled-responsibility",
+                        sources = new[] { "pyproject.toml" } } }
+                } }
+            };
+            await File.WriteAllTextAsync(scopePath, JsonSerializer.Serialize(new
+            {
+                @base = pair.Basis, candidate = pair.Candidate, full,
+                changed_paths = full ? Array.Empty<string>() : new[] { changed },
+                endpoint_owners = new
+                { basis = Endpoint(pair.Basis), candidate = Endpoint(pair.Candidate) }
+            }), token);
+            Request = new(EndpointRequest(pair.BasisRoot, pair.Basis),
+                EndpointRequest(pair.CandidateRoot, pair.Candidate), full, scopePath);
         }
 
         private static PythonGroupEndpoint EndpointRequest(string directory, string commit) =>
@@ -360,6 +418,10 @@ public sealed class PythonGroupReaderTests(TestContext context)
                 return Task.FromResult(result);
             }, token);
 
-        public void Dispose() => repo.Dispose();
+        public void Dispose()
+        {
+            if (repo is null) Directory.Delete(state, recursive: true);
+            else repo.Dispose();
+        }
     }
 }

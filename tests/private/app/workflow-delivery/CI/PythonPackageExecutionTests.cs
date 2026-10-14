@@ -14,6 +14,40 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     private static readonly string[] DistributionKinds = ["python-wheel", "python-sdist"];
     private static readonly string[] ToolGroups = ["dev", "workflow-delivery-python"];
 
+    // Native-answer and candidate-reference rows read one class-owned committed checkout,
+    // including its pre-created mutable branch; each row owns fresh Git-free scratch.
+    private static GitFixture? shared;
+    private static CiPlan? sharedPlan;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            sharedPlan = await Fixture.CommitAsync(repo);
+            await repo.GitAsync("branch", Fixture.MutableBranch, sharedPlan.Candidate);
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    [TestMethod]
+    public async Task SharedCheckoutQualifiesCompleteRecipe()
+    {
+        // Defect-free control: the shared checkout satisfies every package obligation.
+        using var fixture = Fixture.Shared(shared!, sharedPlan!);
+        PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied,
+            string.Join("; ", result.Failures.Select(failure => failure.Error)));
+        Assert.HasCount(2, result.Distributions);
+        Assert.HasCount(2, result.Commands.Where(item => item.Command.Arguments.Contains(
+            "consume")));
+    }
+
     [TestMethod]
     public async Task CompleteRecipeRetainsOriginalsAndBothIndependentConsumers()
     {
@@ -178,7 +212,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     [DataRow("missing-output", "Failed")]
     public async Task FailedNativeBuildPreventsConsumers(string failure, string expectedStatus)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedPlan!);
         CheckStatus expected = Enum.Parse<CheckStatus>(expectedStatus);
         fixture.Failure = failure;
         fixture.Terminal = expected;
@@ -335,11 +369,10 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     public async Task MutableOrAbbreviatedCandidateStopsBeforeNativeEffects(
         string reference, bool emptyPartition)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
-        await fixture.Repo.GitAsync("branch", "package-candidate", fixture.Plan.Candidate);
+        using var fixture = Fixture.Shared(shared!, sharedPlan!);
         string candidate = reference switch
         {
-            "branch" => "package-candidate",
+            "branch" => Fixture.MutableBranch,
             "short" => fixture.Plan.Candidate[..8],
             _ => "HEAD",
         };
@@ -423,8 +456,10 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         }
     }
 
-    private sealed class Fixture(GitFixture repo, CiPlan plan) : IDisposable
+    private sealed class Fixture(GitFixture repo, CiPlan plan, bool ownsRepository = true)
+        : IDisposable
     {
+        internal const string MutableBranch = "package-candidate";
         internal GitFixture Repo { get; } = repo;
         internal CiPlan Plan { get; } = plan;
         internal string Scratch { get; } = Directory.CreateTempSubdirectory(
@@ -437,34 +472,40 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         internal static async Task<Fixture> CreateAsync(CancellationToken token)
         {
             GitFixture repo = await GitFixture.CreateAsync(token);
-            try
-            {
-                await repo.SetAsync("product/pyproject.toml", "fixture native source");
-                await repo.SetAsync(PythonPackageChecksTests.Unit.SourcePath, """
-                    schema: workflow-delivery/v3/release-unit
-                    release-unit: product
-                    builds:
-                      - id: distributions
-                        definition: python/distribution-set-v1
-                        entry-point: pyproject.toml
-                        outputs:
-                          - id: wheel
-                            role: primary-package
-                            kind: python-wheel
-                          - id: source
-                            role: source-package
-                            kind: python-sdist
-                    """);
-                string candidate = await repo.CommitAsync();
-                await repo.GitAsync("reset", "--hard", candidate);
-                CheckSpec[] checks = PythonPackageChecks.Expand(PythonPackageChecksTests.Unit,
-                    PythonPackageChecksTests.Members,
-                    new Dictionary<string, string> { ["product"] = "1.0.0" });
-                return new(repo, new(candidate, candidate, PythonFactsAssembler.Scope,
-                    checks.Select(check => new PlannedCheck(check, [PythonPackageChecks.Preset],
-                        [], [CheckOrigin.Preset])).ToArray()));
-            }
+            try { return new(repo, await CommitAsync(repo)); }
             catch { repo.Dispose(); throw; }
+        }
+
+        // Reads a class-owned committed checkout; the row owns only its scratch.
+        internal static Fixture Shared(GitFixture repo, CiPlan plan) =>
+            new(repo, plan, ownsRepository: false);
+
+        internal static async Task<CiPlan> CommitAsync(GitFixture repo)
+        {
+            await repo.SetAsync("product/pyproject.toml", "fixture native source");
+            await repo.SetAsync(PythonPackageChecksTests.Unit.SourcePath, """
+                schema: workflow-delivery/v3/release-unit
+                release-unit: product
+                builds:
+                  - id: distributions
+                    definition: python/distribution-set-v1
+                    entry-point: pyproject.toml
+                    outputs:
+                      - id: wheel
+                        role: primary-package
+                        kind: python-wheel
+                      - id: source
+                        role: source-package
+                        kind: python-sdist
+                """);
+            string candidate = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", candidate);
+            CheckSpec[] checks = PythonPackageChecks.Expand(PythonPackageChecksTests.Unit,
+                PythonPackageChecksTests.Members,
+                new Dictionary<string, string> { ["product"] = "1.0.0" });
+            return new(candidate, candidate, PythonFactsAssembler.Scope,
+                checks.Select(check => new PlannedCheck(check, [PythonPackageChecks.Preset],
+                    [], [CheckOrigin.Preset])).ToArray());
         }
 
         internal Task<PythonPackageRunResult> RunAsync(CancellationToken token,
@@ -551,7 +592,7 @@ public sealed class PythonPackageExecutionTests(TestContext context)
 
         public void Dispose()
         {
-            Repo.Dispose();
+            if (ownsRepository) Repo.Dispose();
             Directory.Delete(Scratch, recursive: true);
         }
     }

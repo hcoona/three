@@ -10,6 +10,46 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     private static readonly string[] CargoArguments = ["build", "--locked"];
     private static readonly string[] DotnetToolArguments = ["tool", "restore"];
 
+    // Rows that vary only the request, owned scratch or controlled native answers read one
+    // class-owned endpoint pair. Rows that edit or fetch into an endpoint keep private ones.
+    private static GitFixture? sharedBasis;
+    private static GitFixture? sharedCandidate;
+    private static MaterializedEndpoint? sharedBasisEndpoint;
+    private static MaterializedEndpoint? sharedCandidateEndpoint;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        try
+        {
+            sharedBasis = await GitFixture.CreateAsync(classContext.CancellationToken);
+            sharedBasisEndpoint = await Fixture.EndpointAsync(sharedBasis, "basis");
+            sharedCandidate = await GitFixture.CreateAsync(classContext.CancellationToken);
+            sharedCandidateEndpoint = await Fixture.EndpointAsync(sharedCandidate, "candidate");
+        }
+        catch { Cleanup(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup()
+    {
+        sharedCandidate?.Dispose();
+        sharedBasis?.Dispose();
+    }
+
+    [TestMethod]
+    public async Task SharedEndpointsQualifyCompletePreparation()
+    {
+        // Defect-free control: the shared endpoint pair itself prepares completely.
+        using var fixture = Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!);
+        PythonGroupPreparationResult prepared = await fixture.PrepareAsync(
+            context.CancellationToken);
+        Assert.AreEqual(sharedBasisEndpoint, prepared.Request.Basis.Checkout);
+        Assert.AreEqual(sharedCandidateEndpoint, prepared.Request.Candidate.Checkout);
+        Assert.HasCount(6, prepared.Commands);
+        Assert.IsTrue(prepared.Commands.All(item => item.Result.Succeeded));
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
@@ -120,7 +160,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [DataRow("candidate-missing-query")]
     public async Task FailedPreparationCannotReturnACompleteRequest(string phase)
     {
-        using var fixture = await Fixture.CreateAsync(false, context.CancellationToken);
+        using var fixture = Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!);
         fixture.Failure = phase;
         PythonGroupPreparationException failure = await Assert.ThrowsExactlyAsync<
             PythonGroupPreparationException>(() => fixture.PrepareAsync(
@@ -182,7 +222,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [DataRow("deadline")]
     public async Task ReusedOrInvalidOwnedScratchStopsBeforePreparation(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(false, context.CancellationToken);
+        using var fixture = Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!);
         if (defect == "reused")
             File.WriteAllText(Path.Combine(fixture.Request.Scratch, "old-state"), "old");
         else if (defect == "source-overlap") fixture.Request = fixture.Request with
@@ -208,7 +248,10 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [DataRow("candidate", "nonrepository")]
     public async Task InvalidEndpointStopsBeforeNativePreparation(string side, string defect)
     {
-        using var fixture = await Fixture.CreateAsync(false, context.CancellationToken);
+        // Mismatch fetches into and dirty edits the endpoint, so only those rows own one.
+        using var fixture = defect == "nonrepository"
+            ? Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!)
+            : await Fixture.CreateAsync(false, context.CancellationToken);
         MaterializedEndpoint endpoint = side == "basis"
             ? fixture.Request.Basis : fixture.Request.Candidate;
         if (defect == "mismatch")
@@ -285,15 +328,23 @@ public sealed class PythonGroupPreparationTests(TestContext context)
                 return fixture;
             }
             catch { fixture.Dispose(); throw; }
+        }
 
-            static async Task<MaterializedEndpoint> EndpointAsync(GitFixture repository,
-                string content)
-            {
-                await repository.SetAsync("input.txt", content);
-                string revision = await repository.CommitAsync();
-                await repository.GitAsync("checkout", "--force", revision);
-                return new(repository.Directory, revision);
-            }
+        // Reads class-owned endpoints; the row owns only its control sources and scratch.
+        internal static Fixture Shared(MaterializedEndpoint basis, MaterializedEndpoint candidate)
+        {
+            var fixture = new Fixture(false);
+            fixture.Request = fixture.Request with { Basis = basis, Candidate = candidate };
+            return fixture;
+        }
+
+        internal static async Task<MaterializedEndpoint> EndpointAsync(GitFixture repository,
+            string content)
+        {
+            await repository.SetAsync("input.txt", content);
+            string revision = await repository.CommitAsync();
+            await repository.GitAsync("checkout", "--force", revision);
+            return new(repository.Directory, revision);
         }
 
         internal Task<PythonGroupPreparationResult> PrepareAsync(CancellationToken token) =>

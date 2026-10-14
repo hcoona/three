@@ -7,6 +7,50 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class NbgvInputReaderTests(TestContext context)
 {
+    private const string NpmProduct = "src/public/lib/hcoona-release-smoke-npm";
+    private static readonly string[] NpmSharedInputs = ["package.json", "pnpm-workspace.yaml",
+        "pnpm-lock.yaml", "mise.toml", "mise.lock", "global.json", "LICENSE"];
+
+    // The npm fixture rows read one class-owned history: a basis carrying every shared
+    // input, an unrelated child and one sibling commit per changed shared input. NBGV
+    // evaluates each exact commit read-only, so no row moves HEAD or the worktree.
+    private static GitReaderTests.GitFixture? npmShared;
+    private static string npmBasis = "", npmUnrelated = "";
+    private static readonly Dictionary<string, string> NpmAffected = new(StringComparer.Ordinal);
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        CancellationToken token = classContext.CancellationToken;
+        using Stream configuration = typeof(NbgvInputReaderTests).Assembly
+            .GetManifestResourceStream("NpmFixtureVersionConfiguration")!;
+        using var text = new StreamReader(configuration);
+        string options = await text.ReadToEndAsync(token);
+        npmShared = await GitReaderTests.GitFixture.CreateAsync(token);
+        try
+        {
+            await npmShared.GitAsync("symbolic-ref", "HEAD", "refs/heads/main");
+            await npmShared.SetAsync(NpmProduct + "/version.json", options);
+            await npmShared.SetAsync(NpmProduct + "/source.js");
+            foreach (string input in NpmSharedInputs)
+                await npmShared.SetAsync(input, "original shared input");
+            npmBasis = await npmShared.CommitAsync();
+            await npmShared.SetAsync("unrelated/source.js");
+            npmUnrelated = await npmShared.CommitAsync(npmBasis);
+            foreach (string input in NpmSharedInputs)
+            {
+                await npmShared.SetAsync(input, "changed shared input");
+                NpmAffected.Add(input, await npmShared.CommitAsync(npmUnrelated));
+                await npmShared.SetAsync(input, "original shared input");
+            }
+            await npmShared.GitAsync("reset", "--hard", npmUnrelated);
+        }
+        catch { npmShared.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => npmShared?.Dispose();
+
     [TestMethod]
     public async Task ReadBindsCommittedFiltersDespiteDifferentHeadAndWorkingCopy()
     {
@@ -274,28 +318,13 @@ public sealed class NbgvInputReaderTests(TestContext context)
     public async Task NpmFixtureVersionIncludesSharedInputsAndIgnoresUnrelatedCommits(
         string sharedInput)
     {
-        const string product = "src/public/lib/hcoona-release-smoke-npm";
-        using Stream configuration = typeof(NbgvInputReaderTests).Assembly
-            .GetManifestResourceStream("NpmFixtureVersionConfiguration")!;
-        using var text = new StreamReader(configuration);
-        string options = await text.ReadToEndAsync(context.CancellationToken);
-        using var repo = await GitReaderTests.GitFixture.CreateAsync(context.CancellationToken);
-        await repo.GitAsync("symbolic-ref", "HEAD", "refs/heads/main");
-        await repo.SetAsync(product + "/version.json", options);
-        await repo.SetAsync(product + "/source.js");
-        await repo.SetAsync(sharedInput, "original shared input");
-        string basis = await repo.CommitAsync();
-        string before = await VersionAsync(basis);
-
-        await repo.SetAsync("unrelated/source.js");
-        string unrelated = await repo.CommitAsync(basis);
-        string unchanged = await VersionAsync(unrelated);
-        await repo.SetAsync(sharedInput, "changed shared input");
-        string affected = await repo.CommitAsync(unrelated);
-        string after = await VersionAsync(affected);
-        GitRevision revision = await new GitReader(repo.Directory).ReadAsync(affected,
+        string before = Version(npmBasis);
+        string unchanged = Version(npmUnrelated);
+        string affected = NpmAffected[sharedInput];
+        string after = Version(affected);
+        GitRevision revision = await new GitReader(npmShared!.Directory).ReadAsync(affected,
             context.CancellationToken);
-        NbgvInputs inputs = new NbgvInputReader(repo.Directory).Read(revision, product,
+        NbgvInputs inputs = new NbgvInputReader(npmShared.Directory).Read(revision, NpmProduct,
             context.CancellationToken);
 
         Assert.AreEqual(before, unchanged);
@@ -303,12 +332,13 @@ public sealed class NbgvInputReaderTests(TestContext context)
         Assert.Contains(sharedInput, inputs.Paths);
         Assert.DoesNotContain("unrelated/source.js", inputs.Paths);
 
-        async Task<string> VersionAsync(string commit)
+        static string Version(string commit)
         {
-            await repo.GitAsync("reset", "--hard", commit);
-            using GitContext git = GitContext.Create(repo.Directory,
-                engine: GitContext.Engine.ReadOnly);
-            git.RepoRelativeProjectDirectory = product;
+            // The exact commit is evaluated under the main branch head without a checkout.
+            using GitContext git = GitContext.Create(npmShared!.Directory, commit,
+                GitContext.Engine.ReadOnly);
+            Assert.AreEqual("refs/heads/main", git.HeadCanonicalName);
+            git.RepoRelativeProjectDirectory = NpmProduct;
             var oracle = new VersionOracle(git);
             Assert.IsTrue(oracle.PublicRelease);
             return oracle.NpmPackageVersion;

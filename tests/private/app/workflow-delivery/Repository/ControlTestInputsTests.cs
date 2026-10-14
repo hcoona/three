@@ -11,6 +11,32 @@ public sealed class ControlTestInputsTests(TestContext context)
 {
     private const string Resource = "inputs/Version 雪.json";
 
+    // Request-only defects read one class-owned committed comparison with materialized
+    // endpoints. Defects that need different committed revisions keep private repositories.
+    private static readonly string[] RequestDefects = ["missing-basis-directory",
+        "wrong-materialization", "unavailable-basis", "nonexact-comparison",
+        "incoherent-full"];
+    private static GitFixture? shared;
+    private static ControlTestInputRequest? sharedRequest;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            (string basis, string candidate) = await CommitAsync(repo, "");
+            sharedRequest = new(new(basis, candidate, false), repo.Directory,
+                await MaterializeAsync(repo, "basis", basis),
+                await MaterializeAsync(repo, "candidate", candidate));
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
     [TestMethod]
     public async Task NativeReceiptKeepsBothRevisionsAndRemovedAddedResources()
     {
@@ -97,6 +123,19 @@ public sealed class ControlTestInputsTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task SharedComparisonQualifiesNativeReceipt()
+    {
+        // Defect-free control: the shared comparison itself produces successful JSON.
+        (int code, string output, string error) = await RunAsync(sharedRequest!,
+            context.CancellationToken);
+        Assert.AreEqual(0, code, error);
+        ControlTestInputResponse result = JsonSerializer.Deserialize(output,
+            TransferJson.Default.ControlTestInputResponse)!;
+        Assert.AreEqual(sharedRequest!.Comparison, result.Comparison);
+        Assert.AreEqual(Resource, Assert.ContainsSingle(result.Candidate.Inputs));
+    }
+
+    [TestMethod]
     [DataRow("candidate-absent")]
     [DataRow("candidate-link")]
     [DataRow("missing-basis-directory")]
@@ -107,24 +146,25 @@ public sealed class ControlTestInputsTests(TestContext context)
     [DataRow("failed-basis-evaluation")]
     public async Task InvalidNativeInputsDoNotBecomeAbsenceOrSuccessfulJson(string defect)
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        await repo.SetAsync(ControlTestInputs.Project, defect == "failed-basis-evaluation"
-            ? "<Project><Import Project=\"unavailable.props\" /></Project>" : Project(Resource));
-        await repo.SetAsync(Resource);
-        string basis = await repo.CommitAsync();
-        await repo.SetAsync("other.txt");
-        await repo.SetAsync(ControlTestInputs.Project, Project(Resource));
-        if (defect == "candidate-absent") await repo.RemoveAsync(ControlTestInputs.Project);
-        if (defect == "candidate-link")
-            await repo.SetAsync(ControlTestInputs.Project, "other.txt", "120000");
-        string candidate = await repo.CommitAsync(basis);
-        string before = await MaterializeAsync(repo, "basis", basis);
-        string after = defect == "candidate-link" ? repo.Directory
-            : await MaterializeAsync(repo, "candidate", candidate);
-        var request = new ControlTestInputRequest(
-            new(basis, candidate, defect == "incoherent-full"),
-            repo.Directory, defect == "missing-basis-directory" ? null : before,
-            defect == "wrong-materialization" ? before : after);
+        // Defects in committed revisions own a repository; request defects read the shared one.
+        using GitFixture? repo = RequestDefects.Contains(defect) ? null
+            : await GitFixture.CreateAsync(context.CancellationToken);
+        ControlTestInputRequest request;
+        if (repo is null) request = sharedRequest!;
+        else
+        {
+            (string basis, string candidate) = await CommitAsync(repo, defect);
+            string before = await MaterializeAsync(repo, "basis", basis);
+            string after = defect == "candidate-link" ? repo.Directory
+                : await MaterializeAsync(repo, "candidate", candidate);
+            request = new(new(basis, candidate, false), repo.Directory, before, after);
+        }
+        if (defect == "incoherent-full")
+            request = request with { Comparison = request.Comparison with { Full = true } };
+        if (defect == "missing-basis-directory")
+            request = request with { BasisDirectory = null };
+        if (defect == "wrong-materialization")
+            request = request with { CandidateDirectory = request.BasisDirectory! };
         if (defect == "unavailable-basis")
             request = request with
             {
@@ -135,17 +175,46 @@ public sealed class ControlTestInputsTests(TestContext context)
             {
                 Comparison = request.Comparison with { Candidate = "HEAD" }
             };
-        string path = Path.Combine(Path.GetDirectoryName(repo.Directory)!, "request.json");
-        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(request,
-            TransferJson.Default.ControlTestInputRequest), context.CancellationToken);
-        using var output = new StringWriter();
-        using var error = new StringWriter();
 
-        int code = Program.Run(["ci", "control-inputs", path], output, error);
+        (int code, string output, string error) = await RunAsync(request,
+            context.CancellationToken);
 
         Assert.AreEqual(2, code);
-        Assert.AreEqual("", output.ToString());
-        Assert.IsNotEmpty(error.ToString());
+        Assert.AreEqual("", output);
+        Assert.IsNotEmpty(error);
+    }
+
+    private static async Task<(string Basis, string Candidate)> CommitAsync(GitFixture repo,
+        string defect)
+    {
+        await repo.SetAsync(ControlTestInputs.Project, defect == "failed-basis-evaluation"
+            ? "<Project><Import Project=\"unavailable.props\" /></Project>" : Project(Resource));
+        await repo.SetAsync(Resource);
+        string basis = await repo.CommitAsync();
+        await repo.SetAsync("other.txt");
+        await repo.SetAsync(ControlTestInputs.Project, Project(Resource));
+        if (defect == "candidate-absent") await repo.RemoveAsync(ControlTestInputs.Project);
+        if (defect == "candidate-link")
+            await repo.SetAsync(ControlTestInputs.Project, "other.txt", "120000");
+        return (basis, await repo.CommitAsync(basis));
+    }
+
+    // The request transfer file is row-owned scratch outside any checkout.
+    private static async Task<(int Code, string Output, string Error)> RunAsync(
+        ControlTestInputRequest request, CancellationToken token)
+    {
+        string state = Directory.CreateTempSubdirectory("workflow-control-inputs-").FullName;
+        try
+        {
+            string path = Path.Combine(state, "request.json");
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(request,
+                TransferJson.Default.ControlTestInputRequest), token);
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            int code = Program.Run(["ci", "control-inputs", path], output, error);
+            return (code, output.ToString(), error.ToString());
+        }
+        finally { Directory.Delete(state, recursive: true); }
     }
 
     private static string Project(string input) => $$"""

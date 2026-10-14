@@ -12,6 +12,55 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
 {
     private static readonly string[] NativeDirectories = [".", "src/a", "src/b", "src/c"];
     private static readonly string[] ImportOptions = ["--import-mode=importlib"];
+    private static readonly string[] AdoptionDefects = ["missing-quality", "missing-unit",
+        "unsupported-preset", "unsupported-output", "mixed-unit", "foreign-entry",
+        "malformed-unit"];
+
+    // Rows that vary only controlled native answers read one class-owned committed checkout.
+    // Each adoption defect is a separate committed revision in its own read-only worktree.
+    private static GitFixture? shared;
+    private static GitRevision? sharedRevision;
+    private static readonly Dictionary<string, (string Root, GitRevision Revision)>
+        SharedDefects = new(StringComparer.Ordinal);
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        CancellationToken token = classContext.CancellationToken;
+        shared = await GitFixture.CreateAsync(token);
+        try
+        {
+            await Fixture.StageAsync(shared);
+            string basis = await shared.CommitAsync();
+            string parent = Path.GetDirectoryName(shared.Directory)!;
+            foreach (string defect in AdoptionDefects)
+            {
+                await Fixture.StageAdoptionDefectAsync(shared, defect);
+                string commit = await shared.CommitAsync(basis);
+                string root = Path.Combine(parent, defect);
+                await shared.GitAsync("worktree", "add", "--detach", root, commit);
+                SharedDefects.Add(defect, (root,
+                    await new GitReader(root).ReadAsync(commit, token)));
+                await Fixture.StageAsync(shared);
+            }
+            await shared.GitAsync("reset", "--hard", basis);
+            sharedRevision = await new GitReader(shared.Directory).ReadAsync(basis, token);
+        }
+        catch { shared.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    [TestMethod]
+    public async Task SharedCheckoutQualifiesAdoptedDistribution()
+    {
+        // Defect-free control: the shared checkout collects the adopted package obligations.
+        using var fixture = Fixture.Shared(shared!.Directory, sharedRevision!);
+        PythonRevisionInputs inputs = await fixture.ReadAsync(context.CancellationToken);
+        Assert.HasCount(4, Assert.ContainsSingle(inputs.Facts.Packages).Checks);
+        Assert.HasCount(2, fixture.Commands);
+    }
 
     [TestMethod]
     public async Task CollectsNativeTargetsAdoptedDistributionAndInputOnlyProducers()
@@ -80,34 +129,8 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
     [DataRow("malformed-unit")]
     public async Task MissingOrUnsupportedAdoptionCannotEraseDistributionObligations(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
-        string quality = "src/c/workflow-delivery.quality.yml";
-        string unit = "src/c/workflow-delivery.release-unit.yml";
-        if (defect == "missing-quality")
-            await fixture.RemoveAsync(quality, context.CancellationToken);
-        else if (defect == "missing-unit")
-            await fixture.RemoveAsync(unit, context.CancellationToken);
-        else if (defect == "unsupported-preset")
-            await fixture.UpdateAsync(quality, Fixture.Quality.Replace(PythonPackageChecks.Preset,
-                "python/unknown-v1", StringComparison.Ordinal), context.CancellationToken);
-        else await fixture.UpdateAsync(unit, defect switch
-        {
-            "unsupported-output" => Fixture.Unit.Replace("python-sdist", "unknown-output",
-                StringComparison.Ordinal),
-            "mixed-unit" => Fixture.Unit + """
-
-                  - id: foreign
-                    definition: node/foreign
-                    entry-point: package.json
-                    outputs:
-                      - id: foreign
-                        role: primary-package
-                        kind: npm-tgz
-                """,
-            "foreign-entry" => Fixture.Unit.Replace("pyproject.toml", "missing/pyproject.toml",
-                StringComparison.Ordinal),
-            _ => "not a declaration"
-        }, context.CancellationToken);
+        (string root, GitRevision revision) = SharedDefects[defect];
+        using var fixture = Fixture.Shared(root, revision);
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
     }
@@ -120,7 +143,7 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
     [DataRow("empty-version")]
     public async Task NativeIdentityFailureCannotSupplyAnInventedVersion(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!.Directory, sharedRevision!);
         fixture.Identity = defect switch
         {
             "failed" => new(NativeTermination.Exited, 1, "", "", 0, null),
@@ -142,7 +165,7 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
     [DataRow("pytest-foreign-target")]
     public async Task RequiredNativeFactFailureStopsCollection(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!.Directory, sharedRevision!);
         if (defect == "graph-error") fixture.GraphError = true;
         else if (defect == "foreign-root") fixture.Native = fixture.Native with
         { Metadata = fixture.Native.Metadata with { Root = Path.GetTempPath() } };
@@ -173,7 +196,7 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
     public async Task CancellationDuringPytestQueryPreservesCancellationAndStopsIdentity(
         bool successfulResultRace)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!.Directory, sharedRevision!);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         fixture.DuringPytest = cancellation.Cancel;
@@ -241,9 +264,9 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
     private static NativeCommandResult Success(string stdout) =>
         new(NativeTermination.Exited, 0, stdout, "", 0, null);
 
-    private sealed class Fixture(GitFixture repo) : IDisposable
+    private sealed class Fixture(GitFixture? repo, string root) : IDisposable
     {
-        private readonly GitFixture repository = repo;
+        private readonly GitFixture? repository = repo;
         internal const string Quality = """
             schema: workflow-delivery/v3/quality-selection
             ecosystems:
@@ -265,7 +288,7 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
                     role: source-package
                     kind: python-sdist
             """;
-        internal string Root => repository.Directory;
+        internal string Root { get; } = root;
         internal GitRevision Revision { get; private set; } = null!;
         internal PythonNativeGraph Native { get; set; } = null!;
         internal PythonRepositoryRequest Request { get; private set; } = null!;
@@ -282,55 +305,99 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
 
         internal static async Task<Fixture> CreateAsync(CancellationToken token)
         {
-            var fixture = new Fixture(await GitFixture.CreateAsync(token));
+            GitFixture repo = await GitFixture.CreateAsync(token);
+            var fixture = new Fixture(repo, repo.Directory);
             try
             {
-                foreach (string directory in new[] { ".", "src/a", "src/b", "src/c" })
-                    await fixture.repository.SetAsync(directory == "." ? "pyproject.toml" :
-                        directory + "/pyproject.toml", "native fixture");
-                await fixture.repository.SetAsync("src/a/source.py");
-                await fixture.repository.SetAsync("src/c/tests/test_one.py");
-                await fixture.repository.SetAsync("src/c/workflow-delivery.quality.yml", Quality);
-                await fixture.repository.SetAsync("src/c/workflow-delivery.release-unit.yml", Unit);
+                await StageAsync(repo);
                 await fixture.RefreshAsync(token);
-                PythonProjectDependencies[] projects = [new(".", "root", [], []),
-                    new("src/a", "a", [], []), new("src/b", "b", ["src/a"], []),
-                    new("src/c", "c", ["src/b"], [])];
-                var metadata = new PythonMetadata(fixture.Root, "workspace", ">=3.14",
-                    projects.Select(project => new PythonMetadataMember(project.Name,
-                        project.Directory, project.Name)).ToArray(),
-                    new Dictionary<string, PythonMetadataNode>());
-                string interpreter = Path.Combine(fixture.Root, "interpreter");
-                fixture.Native = new(metadata, interpreter, projects.Select(project =>
-                    new PythonPassiveInputs(new(Path.GetFullPath(Path.Combine(fixture.Root,
-                        project.Directory)), null), null)).ToArray(), [], projects,
-                    projects.Select(project => Path.Combine(fixture.Root, project.Directory,
-                        "pyproject.toml")).ToArray());
-                fixture.Request = new(new(fixture.Root, "uv", interpreter, interpreter,
-                    Path.Combine(fixture.Root, "passive.py"), "supplement", "cache",
-                    "bootstrap", "activity"), "pytest_configuration.py", "packages.py",
-                    new("ubuntu-latest", "python-3.14", new()
-                    { ["python"] = "3.14", ["platform"] = "linux" }));
+                fixture.Answer();
                 return fixture;
             }
             catch { fixture.Dispose(); throw; }
         }
 
-        internal async Task UpdateAsync(string path, string content, CancellationToken token)
+        // Reads a class-owned committed checkout; the row owns only its controlled answers.
+        internal static Fixture Shared(string root, GitRevision revision)
         {
-            await repository.SetAsync(path, content);
-            await RefreshAsync(token);
+            var fixture = new Fixture(null, root) { Revision = revision };
+            fixture.Answer();
+            return fixture;
         }
 
-        internal async Task RemoveAsync(string path, CancellationToken token)
+        internal static async Task StageAsync(GitFixture repository)
         {
-            await repository.RemoveAsync(path);
+            foreach (string directory in new[] { ".", "src/a", "src/b", "src/c" })
+                await repository.SetAsync(directory == "." ? "pyproject.toml" :
+                    directory + "/pyproject.toml", "native fixture");
+            await repository.SetAsync("src/a/source.py");
+            await repository.SetAsync("src/c/tests/test_one.py");
+            await repository.SetAsync("src/c/workflow-delivery.quality.yml", Quality);
+            await repository.SetAsync("src/c/workflow-delivery.release-unit.yml", Unit);
+        }
+
+        internal static Task StageAdoptionDefectAsync(GitFixture repository, string defect)
+        {
+            const string quality = "src/c/workflow-delivery.quality.yml";
+            const string unit = "src/c/workflow-delivery.release-unit.yml";
+            return defect switch
+            {
+                "missing-quality" => repository.RemoveAsync(quality),
+                "missing-unit" => repository.RemoveAsync(unit),
+                "unsupported-preset" => repository.SetAsync(quality, Quality.Replace(
+                    PythonPackageChecks.Preset, "python/unknown-v1", StringComparison.Ordinal)),
+                _ => repository.SetAsync(unit, defect switch
+                {
+                    "unsupported-output" => Unit.Replace("python-sdist", "unknown-output",
+                        StringComparison.Ordinal),
+                    "mixed-unit" => Unit + """
+
+                          - id: foreign
+                            definition: node/foreign
+                            entry-point: package.json
+                            outputs:
+                              - id: foreign
+                                role: primary-package
+                                kind: npm-tgz
+                        """,
+                    "foreign-entry" => Unit.Replace("pyproject.toml", "missing/pyproject.toml",
+                        StringComparison.Ordinal),
+                    _ => "not a declaration"
+                })
+            };
+        }
+
+        private void Answer()
+        {
+            PythonProjectDependencies[] projects = [new(".", "root", [], []),
+                new("src/a", "a", [], []), new("src/b", "b", ["src/a"], []),
+                new("src/c", "c", ["src/b"], [])];
+            var metadata = new PythonMetadata(Root, "workspace", ">=3.14",
+                projects.Select(project => new PythonMetadataMember(project.Name,
+                    project.Directory, project.Name)).ToArray(),
+                new Dictionary<string, PythonMetadataNode>());
+            string interpreter = Path.Combine(Root, "interpreter");
+            Native = new(metadata, interpreter, projects.Select(project =>
+                new PythonPassiveInputs(new(Path.GetFullPath(Path.Combine(Root,
+                    project.Directory)), null), null)).ToArray(), [], projects,
+                projects.Select(project => Path.Combine(Root, project.Directory,
+                    "pyproject.toml")).ToArray());
+            Request = new(new(Root, "uv", interpreter, interpreter,
+                Path.Combine(Root, "passive.py"), "supplement", "cache",
+                "bootstrap", "activity"), "pytest_configuration.py", "packages.py",
+                new("ubuntu-latest", "python-3.14", new()
+                { ["python"] = "3.14", ["platform"] = "linux" }));
+        }
+
+        internal async Task UpdateAsync(string path, string content, CancellationToken token)
+        {
+            await repository!.SetAsync(path, content);
             await RefreshAsync(token);
         }
 
         private async Task RefreshAsync(CancellationToken token)
         {
-            string commit = await repository.CommitAsync(Revision is null ? [] :
+            string commit = await repository!.CommitAsync(Revision is null ? [] :
                 [Revision.Commit]);
             await repository.GitAsync("reset", "--hard", commit);
             Revision = await new GitReader(Root).ReadAsync(commit, token);
@@ -368,6 +435,6 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
             }).ReadAsync(Request, new Dictionary<string, string?>(), token);
         }
 
-        public void Dispose() => repository.Dispose();
+        public void Dispose() => repository?.Dispose();
     }
 }
