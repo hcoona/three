@@ -112,15 +112,15 @@ internal static class RubyRepositoryReader
                 throw new InvalidDataException("Bundle-only Ruby quality requires native RSpec.");
             string id = "ruby:" + bundle.Directory;
             string[] paths = checkout.Revision.Entries.Select(entry => entry.Path).Where(path =>
-                path.StartsWith(bundle.Directory + "/", StringComparison.Ordinal)).ToArray();
+                path != bundle.Directory &&
+                RubyFactsAssembler.Governs(bundle.Directory, path, native.Keys)).ToArray();
             owners.Add(new(id, bundle.Directory, [], [], null, selection.Preset,
                 RubyProjectChecks.Expand(selection, bundle.Directory), paths));
             operationInputs.Add(new(selection.SourcePath, [id]));
             // Native evaluated inputs can include files outside the suite directory.
             foreach (RubyBundleConsumption context in inputs.Graph.Bundles.Where(context =>
-                         context.Directory == bundle.Directory ||
-                         context.Directory.StartsWith(bundle.Directory + "/",
-                             StringComparison.Ordinal)))
+                         RubyFactsAssembler.Governs(bundle.Directory, context.Directory,
+                             native.Keys)))
                 foreach (string path in context.Inputs) operationInputs.Add(new(path, [id]));
             if (bundle.Directory == RubyNativeTestInputs.Directory)
                 foreach (string path in checkout.Revision.Entries.Select(entry => entry.Path)

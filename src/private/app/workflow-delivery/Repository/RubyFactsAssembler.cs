@@ -28,9 +28,8 @@ internal static class RubyFactsAssembler
             {
                 Add(owners, owner.Directory, owner.Id);
                 foreach (RubyBundleConsumption bundle in endpoint.Native.Graph.Bundles.Where(
-                             bundle => bundle.Directory == owner.Directory ||
-                                 bundle.Directory.StartsWith(owner.Directory + "/",
-                                     StringComparison.Ordinal)))
+                             bundle => Governs(owner.Directory, bundle.Directory,
+                                 NativeDirectories(endpoint))))
                     foreach (string producer in bundle.Producers)
                         Add(downstream, producer, owner.Directory);
             }
@@ -136,8 +135,9 @@ internal static class RubyFactsAssembler
             ImpactPlanner.ValidateQualityOwner(owner);
             foreach (string path in owner.OwnedPaths ?? []) Require(path);
             string[] paths = endpoint.Revision.Entries.Select(entry => entry.Path)
-                .Where(path => bundleOnly ? path.StartsWith(owner.Directory + "/",
-                    StringComparison.Ordinal) : Nearest(endpoint, path) == owner.Directory)
+                .Where(path => bundleOnly ? path != owner.Directory &&
+                    Governs(owner.Directory, path, NativeDirectories(endpoint)) :
+                    Nearest(endpoint, path) == owner.Directory)
                 .Concat(owner.OwnedPaths ?? []).Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal).ToArray();
             foreach (string path in paths) Require(path);
@@ -171,6 +171,16 @@ internal static class RubyFactsAssembler
             RubyRepositoryInventory.RequireFile(entry);
         }
     }
+
+    // A directory owner governs its subtree up to, but excluding, any nested native gem.
+    internal static bool Governs(string owner, string path, IEnumerable<string> native) =>
+        (path == owner || path.StartsWith(owner + "/", StringComparison.Ordinal)) &&
+        !native.Any(directory => directory != owner &&
+            directory.StartsWith(owner + "/", StringComparison.Ordinal) &&
+            (path == directory || path.StartsWith(directory + "/", StringComparison.Ordinal)));
+
+    private static IEnumerable<string> NativeDirectories(RubyFactsEndpoint endpoint) =>
+        endpoint.Native.Graph.Projects.Select(project => project.Directory);
 
     private static string? Nearest(RubyFactsEndpoint endpoint, string path) =>
         endpoint.Native.Graph.Projects.Select(project => project.Directory)
