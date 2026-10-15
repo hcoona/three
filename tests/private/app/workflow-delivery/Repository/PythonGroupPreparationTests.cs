@@ -45,7 +45,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
             context.CancellationToken);
         Assert.AreEqual(sharedBasisEndpoint, prepared.Request.Basis.Checkout);
         Assert.AreEqual(sharedCandidateEndpoint, prepared.Request.Candidate.Checkout);
-        Assert.HasCount(6, prepared.Commands);
+        Assert.HasCount(4, prepared.Commands);
         Assert.IsTrue(prepared.Commands.All(item => item.Result.Succeeded));
     }
 
