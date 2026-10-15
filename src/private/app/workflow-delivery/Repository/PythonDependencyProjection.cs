@@ -47,11 +47,13 @@ internal static class PythonDependencyProjection
                 workspace.TryGetValue(requirement.Name, out string? shared);
                 if (local is "unsupported" || shared is "unsupported")
                     throw new InvalidDataException("Unsupported Python build requirement source.");
-                // UV exempts a self-reference from workspace lowering; it adds no input.
-                if (requirement.Name == owner.Name) continue;
+                bool workspaceSource = (local ?? shared) == "workspace";
+                // UV exempts only an unsourced self-reference from the workspace-source check;
+                // it stays a registry requirement. A sourced one lowers to the project itself,
+                // so its requested extras still reach their local dependencies.
+                if (requirement.Name == owner.Name && !workspaceSource) continue;
                 bool member = names.TryGetValue(requirement.Name,
                     out PythonMetadataMember? producer);
-                bool workspaceSource = (local ?? shared) == "workspace";
                 if (member != workspaceSource)
                     throw new InvalidDataException(
                         "Python build requirement has no unique workspace owner.");

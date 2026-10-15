@@ -114,13 +114,46 @@ public sealed class PythonDependencyProjectionTests
     }
 
     [TestMethod]
-    public void SelfAndRegistryBuildRequirementsAddNoLocalInput()
+    public void UnsourcedSelfAndRegistryBuildRequirementsAddNoLocalInput()
     {
         PythonMetadata metadata = Metadata();
         PythonPassiveProject[] projects = Contexts(
             [new("consumer", []), new("hatchling", [])], None, None);
 
         Assert.IsEmpty(PythonDependencyProjection.ReadBuildAssociations(metadata, projects));
+    }
+
+    [TestMethod]
+    public void SourcedSelfReferenceKeepsItsExtraBuildInputs()
+    {
+        JsonNode value = PythonMetadataReaderTests.Fixture(Root);
+        string consumer = Path.Combine(Root, "src", "consumer");
+        value["resolution"]!["consumer opaque"]!["dependencies"] = new JsonArray();
+        value["resolution"]!["consumer opaque"]!["optional_dependencies"] = new JsonArray(
+            new JsonObject { ["name"] = "plugins", ["id"] = "consumer plugins" });
+        // Controlled self extra: graph projection input, not an observed UV edge.
+        value["resolution"]!["consumer plugins"] = new JsonObject
+        {
+            ["kind"] = new JsonObject { ["extra"] = "plugins" },
+            ["name"] = "consumer",
+            ["source"] = new JsonObject { ["editable"] = consumer },
+            ["dependencies"] = new JsonArray(
+                new JsonObject { ["id"] = "not-a-path:registry+misleading" }),
+        };
+        PythonMetadata metadata = PythonMetadataReader.Parse(value.ToJsonString(), Root);
+        PythonPassiveProject[] projects = Contexts([new("consumer", ["plugins"])],
+            new Dictionary<string, string> { ["consumer"] = "workspace" }, None);
+
+        PythonBuildAssociation association = Assert.ContainsSingle(
+            PythonDependencyProjection.ReadBuildAssociations(metadata, projects));
+        PythonProjectDependencies[] facts = PythonDependencyProjection.Project(metadata, NoDev,
+            [association]);
+
+        Assert.AreEqual("src/consumer", association.Producer);
+        PythonProjectDependencies result = facts.Single(project =>
+            project.Directory == "src/consumer");
+        Assert.IsEmpty(result.Ordinary);
+        CollectionAssert.AreEqual(Plugin, result.Build);
     }
 
     [TestMethod]

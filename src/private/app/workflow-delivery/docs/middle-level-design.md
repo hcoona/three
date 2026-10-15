@@ -177,9 +177,9 @@ the requirement's `tool.uv.sources` entry in the project table, else in the
 workspace root table, must be absent or exactly `{ workspace = true }`. Any
 other source shape fails planning. A member requirement without that workspace
 source, or a non-member requirement with it, fails, matching UV's own lowering
-errors; a registry requirement adds no local input and a self-reference is
-ignored. Workspace sources with additional fields, which UV accepts, also
-fail. The join is the bounded HLD exception over physical source classes, not
+errors; a registry requirement or an unsourced self-reference adds no local
+input, while a workspace-sourced self-reference keeps its requested extras.
+Workspace sources with additional fields, which UV accepts, also fail. The join is the bounded HLD exception over physical source classes, not
 UV lowering; it admits a subset of UV behavior and fails on everything else.
 Repeat association for every necessary local build-requirement source, combining
 its ordinary local dependencies/requested extras with its build associations.
