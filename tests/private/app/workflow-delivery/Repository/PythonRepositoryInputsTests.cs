@@ -235,6 +235,7 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_general_ci_workflow.py", "tests/eng/ci_workflow_shell.py")]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/workflow_delivery_v3_hk.py")]
+    [DataRow("tests/eng/test_other.py", "eng/scripts/ci_scope.py")]
     [DataRow("tests/eng/test_legacy_release_contract.py", "src/product/three.release.yml")]
     [DataRow("tests/eng/test_legacy_release_contract.py", ".github/workflows/official.yml")]
     [DataRow("tests/eng/test_legacy_release_contract.py",

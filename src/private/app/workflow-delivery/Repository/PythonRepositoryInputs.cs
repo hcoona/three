@@ -135,7 +135,10 @@ internal static class PythonRepositoryInputs
             path == ".github/workflows/workflow-delivery-v3-python-smoke.yml") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
             path is "eng/scripts/sync_python_version.py" or
-                "eng/scripts/workflow_delivery_v3_hk.py");
+                "eng/scripts/workflow_delivery_v3_hk.py" or
+                // Basis-only while this selector's removal is compared; retire with the next
+                // change once no supported basis contains it.
+                "eng/scripts/ci_scope.py");
 
     private static bool Azure(string path) =>
         DotNetInheritedInputs.Consumes(path, AzureRoots) ||
