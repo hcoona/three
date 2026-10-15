@@ -78,7 +78,8 @@ internal static partial class CiScope
             return changed.Order(StringComparer.Ordinal).Select(path =>
                 new ScopeCoordinate(path, false, null, [])).ToArray();
         string? catalog = await checkout.ReadOptionalTextAsync(FamilyCatalog, token);
-        RecordTaskOwner[] tasks = RecordTasks(await miseTasks(checkout.Root, token));
+        RecordTaskOwner[] tasks = RecordTasks(await miseTasks(checkout.Root, token),
+            checkout.Root);
         return Owners(checkout.Revision, changed, resourceInputs,
             catalog is null ? [] : Bindings(catalog), tasks);
     }
@@ -210,8 +211,9 @@ internal static partial class CiScope
         return matcher.Match(path).HasMatches;
     }
 
-    // Native mise task metadata identifies the record checker and regression scripts.
-    internal static RecordTaskOwner[] RecordTasks(string json)
+    // Native mise task metadata identifies the record checker and regression scripts. Only
+    // root-directory tasks are supported, so the script is repository-relative.
+    internal static RecordTaskOwner[] RecordTasks(string json, string root)
     {
         using JsonDocument document = JsonDocument.Parse(json);
         if (document.RootElement.ValueKind != JsonValueKind.Array)
@@ -228,6 +230,12 @@ internal static partial class CiScope
                 _ => null,
             };
             if (rule is null) continue;
+            if (!task.TryGetProperty("dir", out JsonElement dir) ||
+                dir.ValueKind != JsonValueKind.String ||
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(dir.GetString()!)) !=
+                    Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)))
+                throw new InvalidDataException("Unsupported native record task directory: " +
+                    name.GetString());
             Match command = task.TryGetProperty("run", out JsonElement run) &&
                 run.ValueKind == JsonValueKind.Array && run.GetArrayLength() == 1 &&
                 run[0].ValueKind == JsonValueKind.String

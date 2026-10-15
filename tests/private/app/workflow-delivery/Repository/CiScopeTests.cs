@@ -72,20 +72,25 @@ public sealed class CiScopeTests
     public void NativeMiseTasksNameTheRecordScripts()
     {
         RecordTaskOwner[] owners = CiScope.RecordTasks("""
-            [{"name":"//:records:check",
+            [{"name":"//:records:check","dir":"/repo",
               "run":["uv run --script eng/scripts/check_repository_records.py"]},
-             {"name":"//:records:test",
+             {"name":"//:records:test","dir":"/repo/",
               "run":["uv run --script tests/eng/test_repository_records.py"]},
              {"name":"//:other","run":["anything"]}]
-            """);
+            """, "/repo");
         CollectionAssert.AreEqual(new[] {
             new RecordTaskOwner("eng/scripts/check_repository_records.py",
                 "record-control:repository-record-validation"),
             new RecordTaskOwner("tests/eng/test_repository_records.py",
                 "record-regression:records:test") }, owners);
         Assert.ThrowsExactly<InvalidDataException>(() => CiScope.RecordTasks(
-            """[{"name":"//:records:check","run":["python checker.py"]}]"""));
-        Assert.ThrowsExactly<InvalidDataException>(() => CiScope.RecordTasks("{}"));
+            """[{"name":"//:records:check","dir":"/repo","run":["python checker.py"]}]""",
+            "/repo"));
+        Assert.ThrowsExactly<InvalidDataException>(() => CiScope.RecordTasks("""
+            [{"name":"//:records:check","dir":"/repo/tools",
+              "run":["uv run --script eng/record_check.py"]}]
+            """, "/repo"));
+        Assert.ThrowsExactly<InvalidDataException>(() => CiScope.RecordTasks("{}", "/repo"));
     }
 
     [TestMethod]
