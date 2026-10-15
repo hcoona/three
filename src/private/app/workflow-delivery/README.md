@@ -197,12 +197,27 @@ invocation. Fresh remote restore and original-byte comparison run in a separate
 read-only context before marker/API execution. A successful upload alone cannot
 satisfy the request.
 
-The Windows native scenario job retains original archives, DLLs, separate native
-portable PDBs, debug paths, TRX attachments and binlogs. It requires all seven
-current preparation, source/timestamp sensitivity and fresh-recovery cases to be
-discovered, executed and passed. `IncludeSymbols=false` does not promise a PDB
-inside the package. Fixture relocation requires this source's ordinary Windows
-qualification; earlier native observations do not qualify changed source.
+Ordinary CI's Windows `NuGet native preparation (Windows)` job runs the three
+`NuGetNativePreparation` rows (real preparation, original package and clean
+consumer) when the existing .NET/Workflow scope selection selects it, which
+covers any Workflow Delivery source or test change, the fixture product and
+shared .NET/CI inputs; Validate requires its result.
+
+Same-input .NET reproducibility was established once by
+[Issue #948](https://github.com/hcoona/three/issues/948) and [PR #952](https://github.com/hcoona/three/pull/952). By owner decision it is
+build-infrastructure behavior, not per-PR evidence. The
+[NuGet reproducibility workflow](../../../../.github/workflows/workflow-delivery-v3-nuget-reproducibility.yml)
+runs the four `NuGetNativeScenarios` rows (source and timestamp sensitivity,
+two fresh-recovery rows) on owner dispatch and on pushes to `main` that change
+the SDK, shared MSBuild/NuGet/NBGV/Git inputs, NuGet Release/package adapter
+source or the fixture product. The run itself (run ID, source commit and 30-day
+artifact) is the evidence carrier; no additional record is needed. The author of
+the triggering PR, then the repository owner, owns a failed `main` run.
+Concurrency may skip intermediate `main` commits; the next run covers the newer
+state, and a dispatch with `ref` can target a specific commit. Both jobs retain original
+archives, DLLs, separate native portable PDBs, debug paths, TRX attachments and
+binlogs. `IncludeSymbols=false` does not promise a PDB inside the package. A
+run qualifies only its own source.
 
 ### Ordinary Python Release
 
@@ -232,10 +247,11 @@ root workflow contracts live under `tests/eng/`. From the repository root:
 dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj
 ```
 
-The project's native MTP default excludes `NuGetNativeScenarios`; their existing
-Windows CI job owns the seven required cases. To run those cases locally, override
-the default with `--filter 'TestCategory=NuGetNativeScenarios'
---minimum-expected-tests 7`. An explicit filter replaces the default, so an
+The project's native MTP default excludes `NuGetNativePreparation` and
+`NuGetNativeScenarios`; the Windows jobs above own them. To run them locally,
+override the default with `--filter 'TestCategory=NuGetNativePreparation'
+--minimum-expected-tests 3` or `--filter 'TestCategory=NuGetNativeScenarios'
+--minimum-expected-tests 4`. An explicit filter replaces the default, so an
 unrestricted local run uses `--filter 'FullyQualifiedName~WorkflowDelivery'`.
 
 Use complete affected scenario/contract tests, HK, hooks and independent review

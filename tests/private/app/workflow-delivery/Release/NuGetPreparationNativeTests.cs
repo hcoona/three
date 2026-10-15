@@ -15,10 +15,10 @@ using WorkflowDelivery.Repository;
 namespace WorkflowDelivery.Tests.Release;
 
 [TestClass]
-[TestCategory("NuGetNativeScenarios")]
 public sealed class NuGetPreparationNativeTests(TestContext context)
 {
     [TestMethod]
+    [TestCategory("NuGetNativePreparation")]
     [Timeout(600000, CooperativeCancellation = true)]
     [DataRow(false, "refs/heads/development")]
     [DataRow(true, "refs/heads/development")]
@@ -27,106 +27,88 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
         string selectedRef)
     {
         using var fixture = new NativeFixture(context);
-        var preparations = new List<Preparation>();
-        var archives = new List<string>();
-        for (int repetition = 0; repetition < 2; repetition++)
+        Preparation preparation = await fixture.PrepareAsync(0, dryRun, selectedRef);
+        NuGetPreparationResult result = preparation.Result;
+        string revision = result.Prepared.Subject.Revision;
+        string checkout = preparation.Checkout;
+        ReleaseSubject subject = result.Prepared.Subject;
+        Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(new
         {
-            Preparation preparation = await fixture.PrepareAsync(repetition, dryRun, selectedRef);
-            preparations.Add(preparation);
-            NuGetPreparationResult result = preparation.Result;
-            string revision = result.Prepared.Subject.Revision;
-            string checkout = preparation.Checkout;
-            ReleaseSubject subject = result.Prepared.Subject;
-            Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(new
-            {
-                Errors = result.Errors, Revision = revision, SelectedRef = selectedRef,
-                DryRun = dryRun, Repetition = repetition,
-                FailedCommands = result.Commands.Where(command => !command.Result.Succeeded)
-                    .Select(command => new
-                    {
-                        command.Check, command.Command.Executable, command.Command.Arguments,
-                        command.Command.DeadlineSeconds, command.Result.Termination,
-                        command.Result.ExitCode, command.Result.DurationSeconds,
-                        command.Result.Error, command.Result.Stdout, command.Result.Stderr,
-                    }),
-            }));
-            ReleaseCompletion.Validate(result.Prepared);
-            Assert.IsTrue(result.Prepared.Checks.All(check => check.Status ==
-                ReleaseCheckStatus.Passed));
-            ReleaseFile file = Assert.ContainsSingle(result.Prepared.Files);
-            string archive = preparation.Archive;
-            archives.Add(archive);
-            Assert.AreEqual(file.Size, new FileInfo(archive).Length);
-            Assert.AreEqual(file.Sha256, DotNetPackageArchive.Digest(archive));
-            Assert.AreEqual("Hcoona.ReleaseSmoke.GithubPackages", file.Name);
-            Assert.AreEqual(subject, result.Prepared.Subject);
-            Assert.AreEqual(selectedRef == "refs/heads/main",
-                !file.Version.Contains(".g", StringComparison.Ordinal));
-            Assert.IsTrue(result.Commands.All(command =>
-                command.Command.Environment!["GITHUB_REF"] == selectedRef &&
-                command.Command.Environment["GITHUB_SHA"] == revision));
-            Assert.IsFalse(result.Native.ContainsKey("MSBuildProjectFullPath"));
-            Assert.IsFalse(result.Native.Values.Any(value => value.Contains(checkout,
-                StringComparison.Ordinal)));
-            Assert.AreEqual(DotNetPackageConsumer.Marker,
-                result.Commands[^1].Result.Stdout.Trim());
-            Assert.IsTrue(result.Commands.All(command => !command.Command.InheritEnvironment));
-            Assert.IsTrue(result.Commands.All(command => command.Command.Environment is not
-                null &&
-                !command.Command.Environment.ContainsKey("GITHUB_TOKEN") &&
-                !command.Command.Environment.ContainsKey("GH_TOKEN")));
-            if (OperatingSystem.IsWindows())
-                foreach (string name in new[] { "ProgramFiles", "ProgramFiles(x86)" })
+            Errors = result.Errors, Revision = revision, SelectedRef = selectedRef,
+            DryRun = dryRun,
+            FailedCommands = result.Commands.Where(command => !command.Result.Succeeded)
+                .Select(command => new
                 {
-                    if (Environment.GetEnvironmentVariable(name) is { } expected)
-                        foreach (ReleaseCommand command in result.Commands)
-                            Assert.AreEqual(expected, command.Command.Environment![name], name);
-                }
-            foreach (ReleaseCommand command in result.Commands.Where(command =>
-                command.Check is "build" or "pack" ||
-                    command.Command.Arguments.Contains("-target:GetBuildVersion")))
+                    command.Check, command.Command.Executable, command.Command.Arguments,
+                    command.Command.DeadlineSeconds, command.Result.Termination,
+                    command.Result.ExitCode, command.Result.DurationSeconds,
+                    command.Result.Error, command.Result.Stdout, command.Result.Stderr,
+                }),
+        }));
+        ReleaseCompletion.Validate(result.Prepared);
+        Assert.IsTrue(result.Prepared.Checks.All(check => check.Status ==
+            ReleaseCheckStatus.Passed));
+        ReleaseFile file = Assert.ContainsSingle(result.Prepared.Files);
+        string archive = preparation.Archive;
+        Assert.AreEqual(file.Size, new FileInfo(archive).Length);
+        Assert.AreEqual(file.Sha256, DotNetPackageArchive.Digest(archive));
+        Assert.AreEqual("Hcoona.ReleaseSmoke.GithubPackages", file.Name);
+        Assert.AreEqual(subject, result.Prepared.Subject);
+        Assert.AreEqual(selectedRef == "refs/heads/main",
+            !file.Version.Contains(".g", StringComparison.Ordinal));
+        Assert.IsTrue(result.Commands.All(command =>
+            command.Command.Environment!["GITHUB_REF"] == selectedRef &&
+            command.Command.Environment["GITHUB_SHA"] == revision));
+        Assert.IsFalse(result.Native.ContainsKey("MSBuildProjectFullPath"));
+        Assert.IsFalse(result.Native.Values.Any(value => value.Contains(checkout,
+            StringComparison.Ordinal)));
+        Assert.AreEqual(DotNetPackageConsumer.Marker,
+            result.Commands[^1].Result.Stdout.Trim());
+        Assert.IsTrue(result.Commands.All(command => !command.Command.InheritEnvironment));
+        Assert.IsTrue(result.Commands.All(command => command.Command.Environment is not
+            null &&
+            !command.Command.Environment.ContainsKey("GITHUB_TOKEN") &&
+            !command.Command.Environment.ContainsKey("GH_TOKEN")));
+        if (OperatingSystem.IsWindows())
+            foreach (string name in new[] { "ProgramFiles", "ProgramFiles(x86)" })
             {
-                Assert.Contains("-property:Configuration=Release", command.Command.Arguments);
-                Assert.Contains("-property:TargetFramework=net10.0", command.Command.Arguments);
-                Assert.Contains("-property:ContinuousIntegrationBuild=true",
-                    command.Command.Arguments);
-                Assert.IsFalse(command.Command.Arguments.Any(argument =>
-                    argument.Contains("Frozen",
-                    StringComparison.OrdinalIgnoreCase) || argument.Contains("Witness",
-                        StringComparison.OrdinalIgnoreCase)
-                    || argument.Contains("NBGV_CacheMode",
-                        StringComparison.OrdinalIgnoreCase)));
+                if (Environment.GetEnvironmentVariable(name) is { } expected)
+                    foreach (ReleaseCommand command in result.Commands)
+                        Assert.AreEqual(expected, command.Command.Environment![name], name);
             }
-            NativeCommandResult caching = await fixture.DiagnosticAsync(new("dotnet", checkout,
-                ["msbuild", Path.Combine(checkout, NativeFixture.Project), "-nologo",
-                    "-noAutoResponse",
-                    "-property:Configuration=Release", "-getProperty:NBGV_CacheMode"], 60,
-                preparation.ActualCommands[0].Command.Environment, false));
-            Assert.IsTrue(caching.Succeeded, caching.Stderr);
-            Assert.AreEqual("MSBuildTargetCaching", caching.Stdout.Trim());
-        }
-        Assert.HasCount(2, archives);
-        AssertEquivalent(preparations[0], preparations[1]);
-        Assert.AreNotEqual(preparations[0].Checkout.Length, preparations[1].Checkout.Length);
-        Assert.AreNotEqual(preparations[0].SourceMtime, preparations[1].SourceMtime);
-        Assert.AreNotEqual(preparations[0].Cache, preparations[1].Cache);
-        Assert.IsFalse(preparations[0].Cache.StartsWith(preparations[1].Cache,
-            StringComparison.Ordinal));
-        Assert.IsFalse(preparations[1].Cache.StartsWith(preparations[0].Cache,
-            StringComparison.Ordinal));
-        foreach (Preparation preparation in preparations)
+        foreach (ReleaseCommand command in result.Commands.Where(command =>
+            command.Check is "build" or "pack" ||
+                command.Command.Arguments.Contains("-target:GetBuildVersion")))
         {
-            Assert.IsTrue(preparation.ActualCommands.Where(command => command.Check != "consumer")
-                .All(command => command.Command.Environment!["NUGET_PACKAGES"] ==
-                    preparation.Cache));
-            Assert.IsTrue(preparation.ActualCommands.Where(command => command.Check == "consumer")
-                .All(command => command.Command.Environment!["NUGET_PACKAGES"]!
-                    .StartsWith(preparation.Scratch + Path.DirectorySeparatorChar,
-                        StringComparison.Ordinal)));
+            Assert.Contains("-property:Configuration=Release", command.Command.Arguments);
+            Assert.Contains("-property:TargetFramework=net10.0", command.Command.Arguments);
+            Assert.Contains("-property:ContinuousIntegrationBuild=true",
+                command.Command.Arguments);
+            Assert.IsFalse(command.Command.Arguments.Any(argument =>
+                argument.Contains("Frozen",
+                StringComparison.OrdinalIgnoreCase) || argument.Contains("Witness",
+                    StringComparison.OrdinalIgnoreCase)
+                || argument.Contains("NBGV_CacheMode",
+                    StringComparison.OrdinalIgnoreCase)));
         }
+        NativeCommandResult caching = await fixture.DiagnosticAsync(new("dotnet", checkout,
+            ["msbuild", Path.Combine(checkout, NativeFixture.Project), "-nologo",
+                "-noAutoResponse",
+                "-property:Configuration=Release", "-getProperty:NBGV_CacheMode"], 60,
+            preparation.ActualCommands[0].Command.Environment, false));
+        Assert.IsTrue(caching.Succeeded, caching.Stderr);
+        Assert.AreEqual("MSBuildTargetCaching", caching.Stdout.Trim());
+        Assert.IsTrue(preparation.ActualCommands.Where(command => command.Check != "consumer")
+            .All(command => command.Command.Environment!["NUGET_PACKAGES"] ==
+                preparation.Cache));
+        Assert.IsTrue(preparation.ActualCommands.Where(command => command.Check == "consumer")
+            .All(command => command.Command.Environment!["NUGET_PACKAGES"]!
+                .StartsWith(preparation.Scratch + Path.DirectorySeparatorChar,
+                    StringComparison.Ordinal)));
     }
 
     [TestMethod]
+    [TestCategory("NuGetNativeScenarios")]
     [Timeout(600000, CooperativeCancellation = true)]
     public async Task NativeSourceSensitivityChangesOriginalPayload()
     {
@@ -155,6 +137,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
     }
 
     [TestMethod]
+    [TestCategory("NuGetNativeScenarios")]
     [Timeout(600000, CooperativeCancellation = true)]
     public async Task NativeTimestampOverrideChangesOnlyArchiveMetadata()
     {
@@ -183,6 +166,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
     }
 
     [TestMethod]
+    [TestCategory("NuGetNativeScenarios")]
     [Timeout(600000, CooperativeCancellation = true)]
     [DataRow(false)]
     [DataRow(true)]

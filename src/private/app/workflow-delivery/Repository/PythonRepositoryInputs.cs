@@ -129,16 +129,14 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_legacy_release_contract.py" &&
             CiScope.LegacyReleaseInput(path)) ||
         (target == "tests/eng/test_general_ci_workflow.py" &&
-            path == "tests/eng/ci_workflow_shell.py") ||
+            path is "tests/eng/ci_workflow_shell.py" or
+                ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml") ||
         (target == "tests/eng/test_typos_config.py" && path == ".typos.toml") ||
         (target == "tests/eng/test_python_release_caller.py" &&
             path == ".github/workflows/workflow-delivery-v3-python-smoke.yml") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
             path is "eng/scripts/sync_python_version.py" or
-                "eng/scripts/workflow_delivery_v3_hk.py" or
-                // Basis-only while this selector's removal is compared; retire with the next
-                // change once no supported basis contains it.
-                "eng/scripts/ci_scope.py");
+                "eng/scripts/workflow_delivery_v3_hk.py");
 
     private static bool Azure(string path) =>
         DotNetInheritedInputs.Consumes(path, AzureRoots) ||

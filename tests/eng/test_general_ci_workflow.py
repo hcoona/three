@@ -386,7 +386,7 @@ def test_required_general_ci_checks_remain_eligible(
                 [
                     "conformance",
                     "scholarly-tests",
-                    "nuget-reproducibility",
+                    "nuget-native-preparation",
                     "native-preparation-tests",
                 ]
                 if key == "validation"
@@ -1123,7 +1123,7 @@ def test_required_validate_rejects_missing_or_failed_consumers(
     assert job["needs"] == [
         "conformance",
         "scholarly-tests",
-        "nuget-reproducibility",
+        "nuget-native-preparation",
         "native-preparation-tests",
     ]
     assert job["if"] == "always()"
@@ -1133,14 +1133,14 @@ def test_required_validate_rejects_missing_or_failed_consumers(
     successful = {
         "needs.conformance.result": "success",
         "needs.scholarly-tests.result": "success",
-        "needs.nuget-reproducibility.result": "success",
+        "needs.nuget-native-preparation.result": "success",
         "needs.native-preparation-tests.result": "success",
     }
     scenarios = [successful]
     for dependency in (
         "conformance",
         "scholarly-tests",
-        "nuget-reproducibility",
+        "nuget-native-preparation",
         "native-preparation-tests",
     ):
         for result in ("failure", "cancelled", "skipped", ""):
@@ -1485,3 +1485,114 @@ def test_retained_hexo_prepares_only_its_selected_native_bundle(workflow):
         "working-directory": NODE_PACKAGE_DIR,
         "bundler-cache": True,
     }
+
+
+CONTROL_PROJECT = (
+    "tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj"
+)
+
+
+def _step_using(job: dict[str, Any], action: str) -> dict[str, Any]:
+    return next(
+        step for step in job["steps"] if step.get("uses", "").startswith(action)
+    )
+
+
+def _native_test(job: dict[str, Any]) -> str:
+    step = next(
+        step for step in job["steps"] if "dotnet test" in step.get("run", "")
+    )
+    assert step["shell"] == "pwsh"
+    return step["run"]
+
+
+def test_nuget_native_preparation_runs_selected_rows(workflow):
+    """Per-PR CI runs only the three native NuGet preparation rows."""
+    job = workflow["jobs"]["nuget-native-preparation"]
+    assert job["name"] == "NuGet native preparation (Windows)"
+    assert job["runs-on"].startswith("windows-")
+    assert job["steps"][0]["env"]["APPLICABLE"] == (
+        "${{ needs.scope.outputs.nuget_native_preparation }}"
+    )
+    assert workflow["jobs"]["scope"]["outputs"]["nuget_native_preparation"] == (
+        "${{ steps.select.outputs.nuget_native_preparation }}"
+    )
+    assert "nuget-native-preparation" in workflow["jobs"]["validation"]["needs"]
+    checkout = _step_using(job, "actions/checkout@")
+    assert checkout["with"]["persist-credentials"] is False
+    run = _native_test(job)
+    assert CONTROL_PROJECT in run
+    assert "--filter 'TestCategory=NuGetNativePreparation'" in run
+    assert "-- --minimum-expected-tests 3" in run
+    assert "--report-trx" in run
+    assert "native-preparation.binlog" in run
+    assert "exit $LASTEXITCODE" in run
+    upload = _step_using(job, "actions/upload-artifact@")
+    assert upload["if"] == "always() && steps.scope.outputs.run == 'true'"
+    assert upload["with"]["name"] == "nuget-native-preparation-windows"
+    assert upload["with"]["path"] == "artifacts/nuget-native-preparation"
+    assert upload["with"]["if-no-files-found"] == "error"
+    assert upload["with"]["retention-days"] == 30
+
+
+def test_nuget_reproducibility_runs_on_dispatch_and_main_changes(workflow):
+    """Ordinary PRs do not re-prove established .NET reproducibility."""
+    assert "nuget-reproducibility" not in workflow["jobs"]
+    path = (
+        REPO_ROOT
+        / ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml"
+    )
+    repro = yaml.safe_load(path.read_text())
+    triggers = repro.get("on", repro.get(True))
+    assert set(triggers) == {"workflow_dispatch", "push"}
+    assert triggers["push"]["branches"] == ["main"]
+    assert {
+        "global.json",
+        "Directory.Build.props",
+        "Directory.Packages.props",
+        "tests/Directory.Build.props",
+        "nuget.config",
+        "version.json",
+        ".gitattributes",
+        "stylecop.json",
+        ".editorconfig",
+        "src/private/app/workflow-delivery/Release/NuGet*.cs",
+        "src/private/app/workflow-delivery/Destinations/GithubNuGet*.cs",
+        "src/private/app/workflow-delivery/Ecosystems/DotNetSmokeRemoteConsumer.cs",
+        (
+            "tests/private/app/workflow-delivery/fixtures/products/"
+            "hcoona-release-smoke-github-packages/**"
+        ),
+        ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml",
+    } <= set(triggers["push"]["paths"])
+    for pattern in triggers["push"]["paths"]:
+        assert any(REPO_ROOT.glob(pattern)), pattern
+    assert repro["concurrency"]["cancel-in-progress"] is False
+    assert repro["permissions"] == {"contents": "read"}
+    job = repro["jobs"]["nuget-reproducibility"]
+    assert job["runs-on"].startswith("windows-")
+    assert job["timeout-minutes"] == 90
+    checkout = _step_using(job, "actions/checkout@")
+    assert checkout["with"]["ref"] == "${{ inputs.ref || github.sha }}"
+    assert checkout["with"]["fetch-depth"] == 0
+    assert checkout["with"]["persist-credentials"] is False
+    run = _native_test(job)
+    assert CONTROL_PROJECT in run
+    assert "--filter 'TestCategory=NuGetNativeScenarios'" in run
+    assert "-- --minimum-expected-tests 4" in run
+    assert "--report-trx" in run
+    assert "native-scenarios.binlog" in run
+    assert "exit $LASTEXITCODE" in run
+    upload = _step_using(job, "actions/upload-artifact@")
+    assert upload["if"] == "always()"
+    assert upload["with"]["name"] == "nuget-reproducibility-windows"
+    assert upload["with"]["path"] == "artifacts/nuget-reproducibility"
+    assert upload["with"]["if-no-files-found"] == "error"
+    assert upload["with"]["retention-days"] == 30
+    pins = {
+        step["uses"]
+        for workflow_job in workflow["jobs"].values()
+        for step in workflow_job.get("steps", ())
+        if "uses" in step
+    }
+    assert all(step["uses"] in pins for step in job["steps"] if "uses" in step)

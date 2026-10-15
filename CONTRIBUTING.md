@@ -67,10 +67,15 @@ tools prepared, run Workflow Delivery's managed tests from the repository root:
 dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj
 ```
 
-The project's native MTP default excludes `NuGetNativeScenarios`; their existing
-Windows CI job owns the seven required cases. To run those cases locally, override
-the default with `--filter 'TestCategory=NuGetNativeScenarios'
---minimum-expected-tests 7`. An explicit filter replaces the default, so an
+The project's native MTP default excludes `NuGetNativePreparation` and
+`NuGetNativeScenarios`. Ordinary CI runs the three preparation rows when the
+existing .NET/Workflow scope selection selects them. The four sensitivity/recovery rows run through
+`workflow-delivery-v3-nuget-reproducibility.yml` on owner dispatch and on
+`main` build-infrastructure changes, because reproducibility was established
+once ([#948](https://github.com/hcoona/three/issues/948), [#952](https://github.com/hcoona/three/pull/952)). To run them locally, override the
+default with `--filter 'TestCategory=NuGetNativePreparation'
+--minimum-expected-tests 3` or `--filter 'TestCategory=NuGetNativeScenarios'
+--minimum-expected-tests 4`. An explicit filter replaces the default, so an
 unrestricted local run uses `--filter 'FullyQualifiedName~WorkflowDelivery'`.
 
 `mise run test:python` runs the
