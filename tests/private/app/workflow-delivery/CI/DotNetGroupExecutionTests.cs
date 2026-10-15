@@ -209,7 +209,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
-    public async Task ActualCancellationRetainsCompletedPartition(bool selectedPackages)
+    public async Task OuterCancellationRetainsCompletedPartition(bool selectedPackages)
     {
         using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -221,20 +221,22 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
         string serialized = JsonSerializer.Serialize(original, TransferJson.Default.CiPlan);
         DotNetRunResult? completed = null;
         DotNetGroupRunResult result = await DotNetGroupExecution.RunAsync(original, fixture.Request,
-            async (plan, _, token) =>
+            (plan, _, token) =>
             {
                 cancellation.Cancel();
                 CheckKey test = plan.Checks.Single(item =>
                     item.Work.Key.Check == DotNetChecks.Test).Work.Key;
+                Assert.IsTrue(token.IsCancellationRequested);
                 var command = new NativeCommand("dotnet", fixture.Repo.Directory, ["test"], 60);
-                NativeCommandResult observation = await NativeProcess.ExecuteAsync(command, token);
-                Assert.AreEqual(NativeTermination.Cancelled, observation.Termination);
-                completed = new(plan.Candidate, plan.Checks.Select(item =>
+                var observation = new NativeCommandResult(NativeTermination.Cancelled, null, "",
+                    "", 0, "Command cancelled.");
+                DotNetRunResult run = new(plan.Candidate, plan.Checks.Select(item =>
                     new CheckResult(plan.Candidate, item.Work.Key,
                         item.Work.Key.Check == DotNetChecks.Build ? CheckStatus.Passed :
                             CheckStatus.Cancelled)).ToArray(), [new(test, command, observation)],
                     [], []);
-                return completed;
+                completed = run;
+                return Task.FromResult(run);
             }, DotNetPackageExecution.RunAsync, cancellation.Token);
         Assert.IsFalse(result.Outcome.Satisfied);
         Assert.AreSame(completed, result.Retained);

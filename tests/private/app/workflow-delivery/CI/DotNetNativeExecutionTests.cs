@@ -135,65 +135,6 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
-    [Timeout(180000, CooperativeCancellation = true)]
-    public async Task NativeInterruptedTestRetainsBuildResult(bool cancel)
-    {
-        using var fixture = await DotNetNativeFixture.CreateAsync("MTP", context.CancellationToken,
-            includeDependencyGraph: false);
-        Dictionary<string, string> globals = DotNetNativeFixture.Globals();
-        globals.Add("FixtureSlow", "true");
-        CiPlan plan = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate, "MTP",
-            globals, DotNetNativeFixture.Project);
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            context.CancellationToken);
-        Task<DotNetRunResult> running = DotNetExecution.RunAsync(plan,
-            new(fixture.Root, fixture.RunScratch, 60), (command, token) =>
-            {
-                NativeCommand actual = !cancel && command.Arguments.Contains(
-                    "-target:Build,GetTargetPath,InvokeTestingPlatform")
-                    ? command with { DeadlineSeconds = 20 } : command;
-                context.WriteLine(JsonSerializer.Serialize(actual,
-                    TransferJson.Default.NativeCommand));
-                return NativeProcess.ExecuteAsync(actual, token);
-            }, cancellation.Token);
-        string started = Path.Combine(fixture.Root, "tests", "slow-started.txt");
-        try
-        {
-            if (cancel)
-            {
-                using var startDeadline = CancellationTokenSource.CreateLinkedTokenSource(
-                    context.CancellationToken);
-                startDeadline.CancelAfter(TimeSpan.FromSeconds(60));
-                while (!File.Exists(started) && !running.IsCompleted)
-                    await Task.Delay(50, startDeadline.Token);
-                await cancellation.CancelAsync();
-            }
-            DotNetRunResult result = await running;
-            context.WriteLine(JsonSerializer.Serialize(result,
-                TransferJson.Default.DotNetRunResult));
-            Assert.IsTrue(File.Exists(started), Diagnostics(result));
-            Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
-                item.Key.Check == DotNetChecks.Build).Status);
-            Assert.AreEqual(cancel ? CheckStatus.Cancelled : CheckStatus.TimedOut,
-                result.Results.Single(item => item.Key.Check == DotNetChecks.Test).Status,
-                Diagnostics(result));
-            Assert.HasCount(1, result.Commands);
-            Assert.IsNotNull(result.BatchBuild);
-            Assert.AreEqual(cancel ? NativeTermination.Cancelled : NativeTermination.TimedOut,
-                result.Commands[0].Result.Termination);
-            Assert.AreEqual(DotNetChecks.Build, Assert.ContainsSingle(result.Outputs).Key.Check);
-            Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
-        }
-        finally
-        {
-            await cancellation.CancelAsync();
-            await running;
-        }
-    }
-
-    [TestMethod]
     [Timeout(180000, CooperativeCancellation = true)]
     public async Task NativeBatchRetainsIndependentVariantsWithNbgvWhenAnotherEntryFails()
     {

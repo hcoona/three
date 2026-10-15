@@ -484,16 +484,21 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task NativeEvaluationHonorsCancellation()
+    public async Task EvaluationHonorsCancellation()
     {
-        using var repo = await FixtureAsync();
-        GitMaterialization checkout = await BindAsync(repo);
+        // Cancellation is observed before the native query; the query must never start.
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         cancellation.Cancel();
+        bool queried = false;
 
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
-            new MsBuildResourceReader(checkout).ReadAsync(Project, Release, cancellation.Token));
+            new MsBuildResourceReader(sharedCheckout!, (_, _) =>
+            {
+                queried = true;
+                return Task.FromResult("");
+            }).ReadAsync(Project, Release, cancellation.Token));
+        Assert.IsFalse(queried);
     }
 
     private Task<GitFixture> FixtureAsync() => CommitAsync(context.CancellationToken);

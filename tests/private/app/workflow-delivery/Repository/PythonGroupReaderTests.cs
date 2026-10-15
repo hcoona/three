@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -83,23 +82,19 @@ public sealed class PythonGroupReaderTests(TestContext context)
         try
         {
             await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-                PythonGroupReader.ReadAsync(transferred, async (command, token) =>
+                PythonGroupReader.ReadAsync(transferred, (command, _) =>
                 {
+                    // NativeProcessTests covers ProcessStartInfo.Environment once; this row
+                    // qualifies only the command boundary the reader builds.
                     Assert.IsFalse(command.InheritEnvironment);
-                    string script = "[Console]::Out.Write([Environment]::GetEnvironmentVariable('" +
-                        sentinel + "') + '|' + [Environment]::GetEnvironmentVariable('HOME'))";
-                    NativeCommandResult probe = await NativeProcess.ExecuteAsync(command with
-                    {
-                        Executable = "pwsh",
-                        Arguments = ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
-                            Convert.ToBase64String(Encoding.Unicode.GetBytes(script))]
-                    }, token);
-                    Assert.IsTrue(probe.Succeeded, JsonSerializer.Serialize(probe,
-                        TransferJson.Default.NativeCommandResult));
-                    Assert.AreEqual("|" + transferred.Basis.Environment["HOME"], probe.Stdout);
+                    Assert.IsNotNull(command.Environment);
+                    Assert.IsFalse(command.Environment.ContainsKey(sentinel));
+                    Assert.AreEqual(transferred.Basis.Environment["HOME"],
+                        command.Environment["HOME"]);
                     launched = true;
                     // Stop before metadata parsing; this test qualifies the process boundary only.
-                    return new(NativeTermination.Exited, 1, "", "Controlled query stop", 0, null);
+                    return Task.FromResult(new NativeCommandResult(NativeTermination.Exited, 1,
+                        "", "Controlled query stop", 0, null));
                 }, context.CancellationToken));
             Assert.IsTrue(launched);
             Assert.AreEqual("receiver-only-secret", Environment.GetEnvironmentVariable(sentinel));
