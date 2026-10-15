@@ -252,6 +252,21 @@ def test_complete_original_set_retains_native_identity_and_bytes(tmp_path):
         assert Path(output["path"]).read_bytes() == before[output["path"]]
 
 
+def test_output_paths_keep_the_requested_directory_spelling(tmp_path):
+    """Output paths keep the requested directory spelling."""
+    target = tmp_path / "target"
+    target.mkdir()
+    wheel(target)
+    sdist(target)
+    alias = tmp_path / "alias"
+    try:
+        alias.symlink_to(target, target_is_directory=True)
+    except OSError:
+        pytest.skip("Directory links are unavailable on this platform")
+    outputs = packages.inspect_outputs(alias, NAME, VERSION, packages.QUALITY)
+    assert [Path(output["path"]).parent for output in outputs] == [alias, alias]
+
+
 @pytest.mark.parametrize(
     "defect", ["missing", "extra", "wrong-version", "wrong-name"]
 )

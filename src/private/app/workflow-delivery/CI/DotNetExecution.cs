@@ -284,7 +284,7 @@ internal static class DotNetExecution
             throw new InvalidDataException("Invalid native GetTargetPath coordinate.");
         path = Path.GetFullPath(path);
         if (!File.Exists(path))
-            throw new InvalidDataException("Native GetTargetPath is not a regular file.");
+            throw new InvalidDataException("Native GetTargetPath is missing or not a file.");
         return path;
     }
 

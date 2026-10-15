@@ -20,7 +20,8 @@ def read_selected_source(request)
 
   version = Gem::Version.new(request.fetch("version"))
   requirement = Gem::Requirement.new("= #{version}")
-  directory = File.realpath(request.fetch("directory"))
+  directory = File.expand_path(request.fetch("directory"))
+  raise "Missing native Ruby download directory" unless File.directory?(directory)
   Gem.configuration = Gem::ConfigFile.new(["--norc"])
   Gem::DefaultUserInteraction.ui = Gem::SilentUI.new
   uri = URI.parse(host)
@@ -51,7 +52,8 @@ def read_selected_source(request)
   unless spec.name == tuple.name && spec.version == tuple.version && spec.platform.to_s == "ruby"
     raise "Contradictory native Ruby specification"
   end
-  path = File.realpath(source.download(spec, directory))
+  # Keep the caller's directory spelling; the caller compares it lexically.
+  path = File.expand_path(source.download(spec, directory))
   unless path.start_with?(directory + File::SEPARATOR) && File.file?(path)
     raise "Native Ruby download leaves owned state"
   end

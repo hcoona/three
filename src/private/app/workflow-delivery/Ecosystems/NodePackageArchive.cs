@@ -68,7 +68,7 @@ internal static class NodePackageArchive
     internal static void RequireRegularFile(string path)
     {
         if (!File.Exists(path))
-            throw new InvalidDataException("Required npm output is not a regular file: " + path);
+            throw new InvalidDataException("Required npm output is missing or not a file: " + path);
     }
 
     private sealed class BoundedReadStream(Stream input, long limit) : Stream

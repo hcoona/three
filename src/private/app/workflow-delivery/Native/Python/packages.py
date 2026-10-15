@@ -235,7 +235,8 @@ def inspect_archive(
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
     return {
         "kind": kind,
-        "path": str(path.resolve()),
+        # Keep the caller's spelling for its lexical directory comparison.
+        "path": str(path.absolute()),
         "length": path.stat().st_size,
         "sha256": digest,
     }

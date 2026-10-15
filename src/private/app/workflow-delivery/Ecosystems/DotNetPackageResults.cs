@@ -11,7 +11,7 @@ internal static class DotNetPackageResults
     internal static async Task<JsonDocument> ResponseAsync(string path, CancellationToken token)
     {
         if (!File.Exists(path) || new FileInfo(path).Length > 32 * 1024 * 1024)
-            throw new InvalidDataException("Missing regular native package result file.");
+            throw new InvalidDataException("Native package result file is missing or not a file.");
         await using var file = File.OpenRead(path);
         return await JsonDocument.ParseAsync(file, cancellationToken: token);
     }

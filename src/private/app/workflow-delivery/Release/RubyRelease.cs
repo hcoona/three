@@ -1,5 +1,6 @@
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Ecosystems;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Release;
 
@@ -51,8 +52,7 @@ internal static class RubyRelease
         string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
         ReleaseFile file = preparation.Prepared.Files[0];
         string path = Path.GetFullPath(Path.Combine(root, file.Path));
-        if (!path.StartsWith(root + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        if (path == root || !OwnedPath.Within(path, root))
             throw new InvalidDataException("Original Ruby path leaves its transfer root.");
         RubySmokePackageOperations.RequireOriginal(new(path, file.Size, file.Sha256));
     }

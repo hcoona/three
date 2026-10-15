@@ -35,8 +35,7 @@ internal static class RubyPackageExecution
             throw new InvalidDataException("Ruby gem execution requires fresh external scratch.");
         string checkoutRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Checkout));
         string scratchRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Scratch));
-        if (scratchRoot == checkoutRoot || scratchRoot.StartsWith(
-                checkoutRoot + Path.DirectorySeparatorChar, PathComparison))
+        if (OwnedPath.Within(scratchRoot, checkoutRoot))
             throw new InvalidDataException("Gem consumer scratch must be outside the checkout.");
         GitRevision revision = await new GitReader(checkoutRoot).ReadAsync(plan.Candidate, token);
         GitMaterialization checkout = await GitMaterialization.BindAsync(checkoutRoot, revision,
@@ -120,7 +119,4 @@ internal static class RubyPackageExecution
         return new(results.Values.ToArray(), commands.ToArray(), gems.ToArray(),
             failures.ToArray());
     }
-
-    private static StringComparison PathComparison => OperatingSystem.IsWindows()
-        ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 }

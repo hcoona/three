@@ -41,7 +41,7 @@ internal static class GithubNuGetPublisher
         // ReleaseFile.Path crosses the job transfer boundary; keep it inside the originals.
         if (!OwnedPath.Within(path, root) ||
             !File.Exists(path) || !path.EndsWith(".nupkg", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Missing regular original NuGet package.");
+            throw new InvalidDataException("Original NuGet package is missing or not a file.");
         var identity = new PackageIdentity(Package, NuGetVersion.Parse(file.Version));
         if (!PackageIdentityComparer.Default.Equals(identity,
                 new PackageIdentity(file.Name, NuGetVersion.Parse(file.Version))) ||

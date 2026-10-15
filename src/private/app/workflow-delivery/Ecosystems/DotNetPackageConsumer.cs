@@ -105,9 +105,7 @@ internal static class DotNetPackageConsumer
             !Path.IsPathFullyQualified(path.GetString()!))
             throw new InvalidDataException("Missing native consumer GetTargetPath output.");
         string output = Path.GetFullPath(path.GetString()!);
-        if (!output.StartsWith(consumer + Path.DirectorySeparatorChar,
-                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
-                    StringComparison.Ordinal))
+        if (output == consumer || !OwnedPath.Within(output, consumer))
             throw new InvalidDataException(
                 "Native consumer output is outside its owned directory.");
         RequireFile(output);
@@ -197,6 +195,6 @@ internal static class DotNetPackageConsumer
     internal static void RequireFile(string path)
     {
         if (!File.Exists(path))
-            throw new InvalidDataException("Required native output is not a regular file.");
+            throw new InvalidDataException("Required native output is missing or not a file.");
     }
 }

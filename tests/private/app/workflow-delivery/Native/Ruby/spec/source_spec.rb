@@ -11,12 +11,17 @@ module NativeHelpers
     TOKEN = "synthetic token:@/+?%&= punctuation"
     UNSAFE = "unsafe-native-exception-detail"
 
-    def invoke(scenario, host: OFFICIAL, version: "1.2.3", defect: nil)
+    def invoke(scenario, host: OFFICIAL, version: "1.2.3", defect: nil, linked: false)
       @state = @scratch / "native state"
       environment = closed_environment(@state, variables: %w[HOME USERPROFILE XDG_CONFIG_HOME XDG_CACHE_HOME XDG_DATA_HOME GEM_HOME GEM_PATH GEM_SPEC_CACHE TMPDIR TMP TEMP])
       write(Pathname.new(environment["HOME"]) / ".gemrc", "---\n:sources:\n- https://alternate.invalid\n")
       directory = @state / "download"
-      directory.mkpath
+      if linked
+        (@state / "download-target").mkpath
+        File.symlink(@state / "download-target", directory)
+      else
+        directory.mkpath
+      end
       request = {"host" => host, "name" => NAME, "version" => version, "directory" => directory.to_s}
       case defect
       when "host" then request["host"] = "https://unselected.invalid"
@@ -83,7 +88,7 @@ module NativeHelpers
     failures = {
       "load_specs" => %w[fail-released fail-prerelease too-many duplicate],
       "fetch_spec" => %w[fail-spec spec-name spec-version spec-platform],
-      "download" => %w[fail-download outside-original prefix-sibling symlink-outside missing-original directory-original invalid-original empty-original oversized-original]
+      "download" => %w[fail-download outside-original prefix-sibling missing-original directory-original invalid-original empty-original oversized-original]
     }
     failures.each do |last_method, scenarios|
       scenarios.each do |scenario|
@@ -104,6 +109,15 @@ module NativeHelpers
           end
         end
       end
+    end
+
+    it "linked_download_directory_keeps_the_requested_spelling" do
+      result, value, trace, request = invoke("exact", linked: true)
+      expect(result.returncode).to eq(0)
+      assert_queries(trace)
+      expect(value["state"]).to eq("present")
+      expect(File.dirname(value["path"])).to eq(request["directory"])
+      expect(Pathname.new(value["path"]).binread).to eq(ORIGINAL)
     end
 
     it "original_at_size_limit_is_portable_present" do
