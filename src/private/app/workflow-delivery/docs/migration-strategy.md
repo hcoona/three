@@ -224,17 +224,17 @@ remain the package graph. Read both revisions and preserve the following concret
 consumers in the current native group. This table defines ownership and retained
 behavior, not another package or test-target roster.
 
-| Current consumer relation                                 | Replacement association and retained behavior                                                                                                                                                                                                                                      |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native member source and local dependency consumers       | Resolve ownership over all native members, union both revisions' ordinary/build/group/quality relations, then map to actual configured member test or adopted package owners. Preserve removed edges and input-only intermediaries.                                                |
-| Root pytest `testpaths` and direct target inputs          | Query native pytest configuration and bind each explicit committed target to its endpoint. Changes within a configured target select its complete check; standalone repository targets have exact input consumers and no blanket root ownership.                                   |
-| `ALL_INPUTS` and `PYTHON_INPUTS`                          | Retain root CI/toolchain, native workspace/lock/configuration, test configuration and Python preparation-script consumers for the actual retained Python target set. Keep source-input reasons and distinguish helper preparation from product build inputs.                       |
-| Passive Python helper tests                               | Retain native helper source and maintained `nbgv-python` source as inputs to the configured passive test target. This does not turn the helper into a publishable project.                                                                                                         |
-| General CI shell and current control tests                | Retain exact native helper, engineering script, workflow and configuration inputs for the root test owner. The general CI shell contract consumes `tests/eng/ci_workflow_shell.py`; no old public-core test or adapter relation remains.                                           |
-| Azure credential-provider Python tests and `_azure_input` | Retain source, .NET interoperability, engineering script, maintained plugin and Python configuration consumers. Keep its independent special-job ownership.                                                                                                                        |
-| Maintained NBGV plugin tests                              | Retain required .NET tooling/configuration inputs as well as native member-source consumers. Native plugin coordinates and managed NBGV input discovery supply version/template/generated consumers, including absent generated files.                                             |
-| `tests/eng` source associations                           | Retain selector, Python runtime/version projection, HK wrapper and native shell/workflow consumers; retain the exact typo-configuration and legacy-release-contract consumers. Derive target membership from native pytest configuration and retain cross-target script relations. |
-| Adopted Python distribution checks                        | Preserve wheel/sdist build outputs, distribution contents, wheel install/import and Git-free sdist build/install/import, with their complete required variants and actual prerequisites. Keep these obligations separate from root pytest preparation.                             |
+| Current consumer relation                                 | Replacement association and retained behavior                                                                                                                                                                                                                                                               |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native member source and local dependency consumers       | Resolve ownership over all native members, union both revisions' ordinary/build/group/quality relations, then map to actual configured member test or adopted package owners. Preserve removed edges and input-only intermediaries.                                                                         |
+| Root pytest `testpaths` and direct target inputs          | Query native pytest configuration and bind each explicit committed target to its endpoint. Changes within a configured target select its complete check; standalone repository targets have exact input consumers and no blanket root ownership.                                                            |
+| `ALL_INPUTS` and `PYTHON_INPUTS`                          | Retain root CI/toolchain, native workspace/lock/configuration, test configuration and Python preparation-script consumers for the actual retained Python target set. Keep source-input reasons and distinguish helper preparation from product build inputs.                                                |
+| Passive Python helper tests                               | Retain native helper source and maintained `nbgv-python` source as inputs to the configured passive test target. This does not turn the helper into a publishable project.                                                                                                                                  |
+| General CI shell and current control tests                | Retain exact native helper, engineering script, workflow and configuration inputs for the root test owner. The general CI shell contract consumes `tests/eng/ci_workflow_shell.py`; no old public-core test or adapter relation remains.                                                                    |
+| Azure credential-provider Python tests and `_azure_input` | Retain source, .NET interoperability, engineering script, maintained plugin and Python configuration consumers. Keep its independent special-job ownership.                                                                                                                                                 |
+| Maintained NBGV plugin tests                              | Retain required .NET tooling/configuration inputs as well as native member-source consumers. Native plugin coordinates and managed NBGV input discovery supply version/template/generated consumers, including absent generated files.                                                                      |
+| `tests/eng` source associations                           | Retain the removed selector at its basis, Python runtime/version projection, HK wrapper and native shell/workflow consumers; retain the exact typo-configuration and legacy-release-contract consumers. Derive target membership from native pytest configuration and retain cross-target script relations. |
+| Adopted Python distribution checks                        | Preserve wheel/sdist build outputs, distribution contents, wheel install/import and Git-free sdist build/install/import, with their complete required variants and actual prerequisites. Keep these obligations separate from root pytest preparation.                                                      |
 
 Prepare root plus selected quality-member package contexts with native UV group
 answers, retaining the current frozen selected/full preparation behavior. Do not
@@ -627,11 +627,9 @@ native DOTNET_ROOT semantics; candidate tool preparation cannot stand in for a
 different basis declaration. Missing tools or native verification still fail.
 This bounds implicit installation, not tool visibility or all network effects.
 
-Change the Python selector's logical Git-coordinate operations to `PurePosixPath`;
-retain `Path` for filesystem access. Use strict UTF-8 for Git, JSON and text at
-the process boundary, and an explicit compatible workflow shell rather than
-inheriting Windows defaults for the current Bash block. Consume the required
-native response before emitting final applicability and reasons. Preserve all
+The scope caller uses repository-relative POSIX Git coordinates and strict UTF-8
+at the process boundary. It reads the required native response before emitting
+final applicability and reasons. Preserve all
 other source inventories/selectors and the existing successful-scope guards.
 Missing response, malformed/conflicting identities or native errors fail the
 scope job; they cannot appear as non-applicable downstream work.
@@ -712,8 +710,7 @@ consumer remains a planning failure, not a run-everything fallback. Actual
 product/control consumption remains independently native.
 
 The Node group joins native PNPM membership and reasons before final owner
-validation. The Windows selector's `src/` package-manifest heuristic cannot
-establish or reject native Node responsibility. Manifest/catalog reads used to
+validation. Manifest/catalog reads used to
 discover an owner do not themselves make those files product execution inputs.
 Responsibility and actual product/control consumption remain distinct.
 

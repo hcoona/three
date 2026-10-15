@@ -63,6 +63,8 @@ public sealed class CiScopeTests
     [DataRow("bindings: [{id: a, path: b.md}]")]
     [DataRow("bindings: [{id: a, state: current, path: [b.md]}]")]
     [DataRow("bindings: [")]
+    [DataRow("bindings: [{id: a, state: scheduled, path: a/x**y}]")]
+    [DataRow("bindings: [{id: a, state: current, path: 'a**'}]")]
     public void UnreadableBindingsFailInsteadOfDroppingResponsibility(string catalog) =>
         Assert.ThrowsExactly<InvalidDataException>(() => CiScope.Bindings(catalog));
 
@@ -115,9 +117,12 @@ public sealed class CiScopeTests
     [TestMethod]
     [DataRow("docs/unbound/notes.md")]
     [DataRow("src/public/lib/hexo-renderer-asciidoc/index.js")]
+    [DataRow("docs/root-gem.md")]
     public void UnownedPresentCoordinatesStayUnresolvedForNativeConsumers(string path)
     {
-        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+        // A root gemspec is not a retained owner of every repository path.
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(
+            Revision(path, "root.gemspec"), [path], [],
             [("delivery-wave", "docs/delivery-wave.md")], Tasks));
         Assert.IsTrue(row.Present);
         Assert.IsEmpty(row.Reasons);

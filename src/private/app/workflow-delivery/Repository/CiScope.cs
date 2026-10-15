@@ -192,6 +192,10 @@ internal static partial class CiScope
                 !binding.TryGetValue("state", out object? state) || state is not string text ||
                 !binding.TryGetValue("path", out object? path) || path is not string pattern)
                 throw new InvalidDataException("A record binding lacks its id, state or path.");
+            // '**' outside a whole component differs between the two matchers; fail closed.
+            if (pattern.Split('/').Any(part => part.Contains("**", StringComparison.Ordinal) &&
+                    part != "**"))
+                throw new InvalidDataException("Unsupported record binding pattern: " + pattern);
             if (text == "current") bindings.Add((name, pattern));
         }
         return bindings.ToArray();
@@ -239,7 +243,7 @@ internal static partial class CiScope
     }
 
     internal static Task<string> MiseTasksAsync(string directory, CancellationToken token) =>
-        NativeProcess.RunAsync("mise", directory, ["tasks", "ls", "--json"], token);
+        NativeProcess.RunAsync("mise", directory, ["tasks", "ls", "--hidden", "--json"], token);
 
     internal static bool LegacyReleaseInput(string path) =>
         Under(path, ".github/workflows") ||
