@@ -81,7 +81,7 @@ public sealed class RubyPreparationTests(TestContext context)
     {
         using var fixture = await Fixture.CreateAsync(context.CancellationToken);
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsEmpty(result.Errors);
+        Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
         ReleaseCompletion.Validate(result.Prepared);
         Assert.AreEqual(fixture.Subject, result.Prepared.Subject);
         CollectionAssert.AreEqual(Checks, result.Prepared.RequiredChecks);
@@ -269,7 +269,7 @@ public sealed class RubyPreparationTests(TestContext context)
         Assert.AreEqual(fixture.Subject, result.Prepared.Subject);
         if (accepted)
         {
-            Assert.IsEmpty(result.Errors);
+            Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
             Assert.AreEqual("1.2.3", Assert.ContainsSingle(result.Prepared.Files).Version);
             Assert.IsTrue(
                 result.Prepared.Checks.All(check => check.Status == ReleaseCheckStatus.Passed)
@@ -306,7 +306,7 @@ public sealed class RubyPreparationTests(TestContext context)
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision, "recipes/control", "");
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsEmpty(result.Errors);
+        Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
         Assert.IsTrue(
             result.Prepared.Checks.All(check => check.Status == ReleaseCheckStatus.Passed)
         );
@@ -353,7 +353,7 @@ public sealed class RubyPreparationTests(TestContext context)
         };
         fixture.Defect = "public-release";
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsEmpty(result.Errors);
+        Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
         Assert.AreEqual("false", result.Native["public-release"]);
         Assert.AreEqual("1.2.3", Assert.ContainsSingle(result.Prepared.Files).Version);
     }
@@ -487,7 +487,7 @@ public sealed class RubyPreparationTests(TestContext context)
         using var fixture = await Fixture.CreateAsync(context.CancellationToken);
         fixture.Defect = "public-release";
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.IsEmpty(result.Errors);
+        Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
         Assert.AreEqual("false", result.Native["public-release"]);
         Assert.AreEqual("1.2.3", Assert.ContainsSingle(result.Prepared.Files).Version);
     }
