@@ -41,8 +41,11 @@ internal static class PythonPackageExecution
     {
         string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
         string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
+        // Planning queried the native version projection in this owned environment; an
+        // inherited CI ref context would let NBGV select a different public-release projection.
         var tools = new PythonPackageTools(checkout, scratch, request.Uv, request.Interpreter,
-            request.Helper, request.DeadlineSeconds, request.Environment);
+            request.Helper, request.DeadlineSeconds, request.Environment,
+            InheritEnvironment: false);
         PythonSmokePackageOperations.Validate(tools);
         ResultCollector.Collect(plan, []);
         if (plan.Scope != PythonFactsAssembler.Scope)

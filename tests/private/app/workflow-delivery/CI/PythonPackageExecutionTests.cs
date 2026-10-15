@@ -140,6 +140,23 @@ public sealed class PythonPackageExecutionTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task VersionProjectionIgnoresAmbientRunnerRefContext()
+    {
+        // Regression: planning projects the expected NBGV version in the owned environment.
+        // An inherited main-push ref made the execution projection select public-release mode
+        // and drop the local commit part, so every package obligation failed on main.
+        using var fixture = Fixture.Shared(shared!, sharedPlan!);
+        fixture.AmbientVersion = "1.0.0-public";
+        PythonPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied,
+            string.Join("; ", result.Failures.Select(failure => failure.Error)));
+        Assert.IsNotEmpty(result.Commands);
+        foreach (PythonPackageCommand item in result.Commands)
+            Assert.IsFalse(item.Command.InheritEnvironment,
+                string.Join(" ", item.Command.Arguments));
+    }
+
+    [TestMethod]
     [DataRow("Failed")]
     [DataRow("Cancelled")]
     [DataRow("TimedOut")]
@@ -398,6 +415,8 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         internal List<NativeCommand> Commands { get; } = [];
         internal string? Failure { get; set; }
         internal string? ChangedKind { get; set; }
+        // Projection a native query would select from inherited runner ref context.
+        internal string? AmbientVersion { get; set; }
         internal CheckStatus Terminal { get; set; } = CheckStatus.Failed;
 
         internal static async Task<Fixture> CreateAsync(CancellationToken token)
@@ -503,7 +522,9 @@ public sealed class PythonPackageExecutionTests(TestContext context)
                 await File.WriteAllTextAsync(arguments[3], "changed!", token);
             if (arguments.Contains("identity")) stdout = JsonSerializer.Serialize(new
             { name = "hcoona-release-smoke-python",
-                version = Failure == "version" ? "2.0" : "1.0.0" });
+                version = Failure == "version" ? "2.0" :
+                    command.InheritEnvironment && AmbientVersion is not null ? AmbientVersion :
+                        "1.0.0" });
             if (arguments.Contains("outputs"))
             {
                 string directory = arguments[3];
