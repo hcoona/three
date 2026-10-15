@@ -121,22 +121,6 @@ public sealed class DotNetGroupReaderTests(TestContext context)
     }
 
     [TestMethod]
-    public void JoinedOriginMustBeCommitted()
-    {
-        var scenario = new GroupScenario(Fixture + "/index.js");
-        scenario.Native = scenario.Native with
-        {
-            Basis = scenario.Native.Basis with
-            {
-                Entries = scenario.Native.Basis.Entries.Where(entry =>
-                entry.Path != Fixture + "/package.json").ToArray()
-            }
-        };
-        Assert.Contains("committed source", Assert.ThrowsExactly<InvalidDataException>(() =>
-            scenario.Join()).Message);
-    }
-
-    [TestMethod]
     public void OutsideOwnersRemainAndNativeRelationErrorsCannotBeIgnored()
     {
         var scenario = new GroupScenario(Fixture + "/index.js");

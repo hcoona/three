@@ -39,11 +39,11 @@ artifact, ambient fallback or second dependency declaration.
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | `ci comparison`, `ci control-inputs`                                     | Resolve the event comparison and actual control-test resource consumers                           |
 | `ci caller-control prepare`, `ci caller-dotnet/python/ruby/node`         | Compose existing CI requests, original plans and exact transfers                                  |
-| `ci native-preparation-plan`, `ci native-preparation-result`             | Select and qualify the original Linux managed preparation scenarios                               |
+| `ci native-preparation-plan`                                             | Select the original Linux managed preparation scenarios                                           |
 | `ci plan`, `ci plan-node`, `ci plan-node-group`                          | Select declared work from native paired facts and reasons                                         |
 | `ci prepare-python-group`, `ci plan-python-group`, `ci run-python-group` | Prepare, select and execute the original Python plan                                              |
 | `ci prepare-ruby-group`, `ci plan-ruby-group`, `ci run-ruby-group`       | Prepare, select and execute Ruby checks and transfer native Node contributions                    |
-| `ci plan-dotnet-group`, `ci run-dotnet`                                  | Select and execute native managed work                                                            |
+| `ci run-dotnet`                                                          | Execute native managed work                                                                       |
 | `ci run-node`, `ci run-python-package`, `ci result`                      | Execute selected work or collect its candidate-bound results                                      |
 | `release prepare-*`, destination observation/description                 | Independently qualify originals and describe exact, absent, partial, conflicting or unknown state |
 | `release job-inputs ruby/python/npm/nuget <operation>`                   | Prepare existing ordinary Release caller inputs and transfers                                     |

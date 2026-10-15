@@ -4,7 +4,7 @@ using WorkflowDelivery.Platform;
 namespace WorkflowDelivery.Repository;
 
 internal sealed record DotNetGroupRequest(MaterializedEndpoint Basis,
-    MaterializedEndpoint Candidate, bool Full, string ScopePath,
+    MaterializedEndpoint Candidate, bool Full,
     DotNetReadFiles BasisFiles, DotNetReadFiles CandidateFiles,
     DotNetRunRequest Completion);
 internal sealed record DotNetGroupReadback(CiPlan Plan, ScopeCoordinate[] Basis,
@@ -14,19 +14,16 @@ internal sealed record DotNetGroupReadback(CiPlan Plan, ScopeCoordinate[] Basis,
 internal static class DotNetGroupReader
 {
     internal static readonly string[] CallerSources = [".github/workflows/ci.yml",
-        "eng/scripts/ci_scope.py", "eng/scripts/Bootstrap-CiControl.ps1",
+        "eng/scripts/Bootstrap-CiControl.ps1",
         "src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs",
         "src/private/app/workflow-delivery/CI/Callers/NodeCiCaller.cs",
-        "eng/scripts/repository_path_patterns.py", "eng/scripts/workflow_delivery_v3_hk.py",
-        "pyproject.toml", "uv.lock", "uv.toml", ".python-version", ".config/uv/uv.toml",
         ".config/dotnet-tools.json", "src/private/app/workflow-delivery/CI/Callers/CiCallerCli.cs",
         "src/private/app/workflow-delivery/CI/Callers/CiCallerTransfer.cs",
         "src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs",
-        "src/private/app/workflow-delivery/CI/Callers/CiArtifactReceipt.cs",
         "mise.toml", "mise.lock"];
 
     internal static async Task<DotNetGroupReadback> ReadAsync(DotNetGroupRequest request,
-        CancellationToken token)
+        ScopeInputs scope, CancellationToken token)
     {
         GitComparison comparison = await new GitReader(request.Candidate.Directory).CompareAsync(
             request.Basis.Reference, request.Candidate.Reference, token);
@@ -35,8 +32,9 @@ internal static class DotNetGroupReader
         GitMaterialization candidate = await GitMaterialization.BindAsync(
             request.Candidate.Directory,
             comparison.Candidate, token);
-        ScopeInputs scope = ScopeInputs.Read(await File.ReadAllTextAsync(request.ScopePath, token),
-            comparison, request.Full);
+        if (scope.Comparison != new CiComparison(comparison.Basis.Commit,
+                comparison.Candidate.Commit, request.Full))
+            throw new InvalidDataException("Scope has a different native comparison.");
         DotNetRevisionInputs before = await new DotNetRepositoryReader(basis,
             request.BasisFiles).ReadAsync(token);
         DotNetRevisionInputs after = comparison.Basis.Commit == comparison.Candidate.Commit &&

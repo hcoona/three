@@ -145,17 +145,6 @@ internal static class Program
                 return result.Candidate == plan.Candidate &&
                     ResultCollector.Collect(plan, result.Results).Satisfied ? 0 : 1;
             }
-            if (args is ["ci", "plan-dotnet-group", var dotnetGroupPath])
-            {
-                DotNetGroupRequest request = JsonSerializer.Deserialize(
-                    File.ReadAllText(dotnetGroupPath), TransferJson.Default.DotNetGroupRequest
-                ) ?? throw new InvalidDataException("Missing native .NET group request.");
-                DotNetGroupReadback result = DotNetGroupReader.ReadAsync(request,
-                    CancellationToken.None).GetAwaiter().GetResult();
-                output.WriteLine(JsonSerializer.Serialize(result,
-                    TransferJson.Default.DotNetGroupReadback));
-                return 0;
-            }
             if (args is ["ci", "run-dotnet", var dotnetPlanPath, var dotnetRequestPath])
             {
                 CiPlan plan = JsonSerializer.Deserialize(File.ReadAllText(dotnetPlanPath),
@@ -261,7 +250,6 @@ internal static class Program
                     + " | ci control-inputs <request.json>"
                     + " | ci plan-node <request.json>"
                     + " | ci plan-node-group <request.json>"
-                    + " | ci plan-dotnet-group <request.json>"
                     + " | ci plan-python-group <request.json>"
                     + " | ci prepare-python-group <request.json>"
                     + " | ci prepare-ruby-group <request.json>"

@@ -43,8 +43,8 @@ public sealed class NodeGroupReaderTests
     }
 
     [TestMethod]
-    [DataRow("eng/scripts/repository_path_patterns.py")]
-    [DataRow("uv.lock")]
+    [DataRow("eng/scripts/Bootstrap-CiControl.ps1")]
+    [DataRow(".config/dotnet-tools.json")]
     public async Task CallerImportsAndDependencyPreparationSelectConcreteGroupOwners(string path)
     {
         NodeRevisionInputs basis = NodeGroupReader.WithControlInputs(Inputs(NodeScenario.Basis),

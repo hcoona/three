@@ -259,31 +259,6 @@ public sealed class ScopeInputsTests
         Assert.ThrowsExactly<InvalidDataException>(() => scenario.Read());
     }
 
-    [TestMethod]
-    [DataRow("absent")]
-    [DataRow("symlink")]
-    [DataRow("empty")]
-    [DataRow("duplicate")]
-    public void ResponsibilityRequiresCommittedSourceCoordinates(string defect)
-    {
-        var scenario = new Scenario(Unrelated);
-        JsonObject reason = (JsonObject)((JsonArray)scenario.Row("basis")["reasons"]!)[0]!;
-        if (defect == "empty") reason["sources"] = new JsonArray();
-        else if (defect == "duplicate") ((JsonArray)reason["sources"]!).Add(Catalog);
-        else
-            scenario.Native = scenario.Native with
-            {
-                Basis = scenario.Native.Basis with
-                {
-                    Entries = scenario.Native.Basis.Entries.Where(entry => entry.Path != Catalog)
-                    .Concat(defect == "symlink" ? [new GitEntry(Catalog, "120000", "blob")] : [])
-                    .ToArray(),
-                }
-            };
-
-        Assert.ThrowsExactly<InvalidDataException>(() => scenario.Read());
-    }
-
     private static Scenario PlatformScenario(bool basisPresent, bool candidatePresent)
     {
         var scenario = new Scenario(Codeowners);

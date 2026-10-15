@@ -685,14 +685,15 @@ delivery. No local package experiment, historical campaign, Release or publicati
 authority follows from this integration contract.
 
 Finite `CI/Callers` composition assembles the existing .NET, Node, Python and Ruby
-requests and collects their original results. The YAML/catalog parser retains its
-maintained native Python dependency. Actions owns SDK and locked tool setup, the
+requests and collects their original results, including retained-job scope and
+record-catalog responsibility. Actions owns SDK and locked tool setup, the
 initial native control build and immutable artifact transport. Control-resource
 prepare/query remain separate around endpoint SDK setup; the query retains its
 default Debug context. The Linux-only Python and Ruby managed preparation scenarios
 run directly through .NET, independently of pytest. Their selected source/build/
-version/quality triggers, exact required rows, original reports and packages remain
-required; missing, skipped, failed or substituted rows cannot qualify.
+version/quality triggers, original reports and packages remain required. The
+test runner's filter, per-module `--minimum-expected-tests` (which excludes
+skipped rows) and exit code qualify them; missing, skipped or failed rows fail.
 
 ### Native Ruby CI Group
 

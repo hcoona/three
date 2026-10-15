@@ -24,7 +24,6 @@ jobs:
     name: Select affected validation
     runs-on: windows-latest
     env:
-      PYTHONUTF8: '1'
       MISE_EXEC_AUTO_INSTALL: '0'
     defaults:
       run:
@@ -32,10 +31,7 @@ jobs:
     outputs:
       validation: ${{ steps.select.outputs.validation }}
       mise: ${{ steps.select.outputs.mise }}
-      dotnet: ${{ steps.select.outputs.dotnet }}
-      node: ${{ steps.select.outputs.node }}
       azureauth: ${{ steps.select.outputs.azureauth }}
-      ruby: ${{ steps.select.outputs.ruby }}
       scholarly: ${{ steps.select.outputs.scholarly }}
       nuget_reproducibility: ${{ steps.select.outputs.nuget_reproducibility }}
       base: ${{ steps.select.outputs.base }}
@@ -49,14 +45,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
-      - name: Setup selection Python
-        uses: actions/setup-python@v7
-        with:
-          python-version-file: .python-version
-      - name: Setup locked selection dependencies
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-      - name: Prepare existing root selection parser
-        run: uv sync --frozen --only-group dev --no-install-project --no-install-workspace
       - name: Setup candidate control SDK
         uses: actions/setup-dotnet@v6
         with:
@@ -112,23 +100,10 @@ jobs:
         id: select
         env:
           CONTROL_REQUEST: ${{ steps.materialize.outputs.request }}
-          COMPARISON_BASE: ${{ steps.materialize.outputs.basis }}
-          TESTED_CANDIDATE: ${{ steps.materialize.outputs.candidate }}
-          FULL: ${{ steps.materialize.outputs.full }}
         run: |
-          python --version
-          dotnet "${{ steps.control.outputs.application }}" ci control-inputs "$CONTROL_REQUEST" \
-            > "$RUNNER_TEMP/ci-control-inputs/response.json"
-          if [[ "$FULL" == 'true' ]]; then
-            uv run --frozen --no-sync python eng/scripts/ci_scope.py --full --control-inputs "$RUNNER_TEMP/ci-control-inputs/response.json" \
-              --output artifacts/ci-scope.json --application "${{ steps.control.outputs.application }}" \
-              --dotnet-group-request "${{ steps.dotnet-group.outputs.request }}"
-          else
-            uv run --frozen --no-sync python eng/scripts/ci_scope.py --from-ref "$COMPARISON_BASE" \
-              --to-ref "$TESTED_CANDIDATE" --control-inputs "$RUNNER_TEMP/ci-control-inputs/response.json" \
-              --output artifacts/ci-scope.json --application "${{ steps.control.outputs.application }}" \
-              --dotnet-group-request "${{ steps.dotnet-group.outputs.request }}"
-          fi
+          dotnet "${{ steps.control.outputs.application }}" ci caller-dotnet select "$GITHUB_WORKSPACE" \
+            "${{ steps.dotnet-group.outputs.request }}" "$CONTROL_REQUEST" \
+            "${{ steps.control.outputs.transfer }}" artifacts/ci-scope.json
       - name: Retain selection and reasons
         id: retain
         uses: actions/upload-artifact@v7
@@ -409,12 +384,6 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Read native artifact producer and lifetime
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PLAN_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
-        run: gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$PLAN_ARTIFACT_ID" > "$RUNNER_TEMP/dotnet-plan-artifact.json"
 
       - name: Receive exact original plan and complete control distribution
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -426,7 +395,6 @@ jobs:
       - name: Execute and collect the unchanged original native plan
         shell: bash
         env:
-          PLAN_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
           COMPARISON_BASIS: ${{ needs.scope.outputs.base }}
           TESTED_CANDIDATE: ${{ needs.scope.outputs.candidate }}
           TESTINGPLATFORM_DIAGNOSTIC: '1'
@@ -435,8 +403,6 @@ jobs:
           TESTINGPLATFORM_DIAGNOSTIC_OUTPUT_DIRECTORY: ${{ runner.temp }}/dotnet-execution/mtp-diagnostics
         run: |
           control="$RUNNER_TEMP/dotnet-plan-transfer/control/WorkflowDelivery.dll"
-          dotnet "$control" ci caller-artifact "$RUNNER_TEMP/dotnet-plan-artifact.json" \
-            ci-dotnet-plan "$PLAN_ARTIFACT_ID" "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY_ID"
           if [[ $(jq '.checks|length' "$RUNNER_TEMP/dotnet-plan-transfer/dotnet-plan.json") -gt 0 ]]; then
             dotnet tool restore
             dotnet restore dirs.proj -property:Configuration=Debug \
@@ -444,8 +410,7 @@ jobs:
           fi
           dotnet "$control" ci caller-dotnet execute "$GITHUB_WORKSPACE" \
             "$RUNNER_TEMP/dotnet-plan-transfer" "$RUNNER_TEMP/dotnet-execution" \
-            "$RUNNER_TEMP/dotnet-plan-artifact.json" "$PLAN_ARTIFACT_ID" \
-            "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY_ID" "$COMPARISON_BASIS" "$TESTED_CANDIDATE"
+            "$COMPARISON_BASIS" "$TESTED_CANDIDATE"
 
       - name: Retain native planning, execution and collection facts
         if: always()
@@ -644,34 +609,19 @@ jobs:
         with:
           version: '2026.8.10'
           experimental: true
-          install_args: dotnet node pnpm uv python
-      - name: Read native artifact producer and lifetime
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
-        run: gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$SCOPE_ARTIFACT_ID" > "$RUNNER_TEMP/ci-scope-artifact.json"
+          install_args: dotnet node pnpm
       - name: Download the exact scope artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.scope.outputs.artifact_id }}
           path: artifacts/node-scope
           merge-multiple: true
-      - name: Read original Ruby fact producer and lifetime
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUBY_ARTIFACT_ID: ${{ needs.ruby-group.outputs.node_artifact_id }}
-        run: gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$RUBY_ARTIFACT_ID" > "$RUNNER_TEMP/node-ruby-artifact.json"
       - name: Receive exact original Ruby facts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.ruby-group.outputs.node_artifact_id }}
           path: artifacts/node-ruby
           merge-multiple: true
-      - name: Read candidate control producer and lifetime
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CONTROL_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
-        run: gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$CONTROL_ARTIFACT_ID" > "$RUNNER_TEMP/node-control-artifact.json"
       - name: Receive complete candidate control
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -681,21 +631,14 @@ jobs:
       - name: Plan and execute the complete Node group
         id: execute
         env:
-          SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
-          RUBY_ARTIFACT_ID: ${{ needs.ruby-group.outputs.node_artifact_id }}
-          CONTROL_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
           pnpm_config_verify_deps_before_run: 'false'
         run: |
           set -Eeuo pipefail
           control="$RUNNER_TEMP/node-control/control/WorkflowDelivery.dll"
           state="$RUNNER_TEMP/node-group"
           scope="$GITHUB_WORKSPACE/artifacts/node-scope/ci-scope.json"
-          dotnet "$control" ci caller-artifact "$RUNNER_TEMP/node-ruby-artifact.json" \
-            ruby-node-inputs "$RUBY_ARTIFACT_ID" "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY_ID"
           dotnet "$control" ci caller-node materialize "$GITHUB_WORKSPACE" "$scope" \
-            "$RUNNER_TEMP/node-control" "$state" "$RUNNER_TEMP/ci-scope-artifact.json" \
-            "$SCOPE_ARTIFACT_ID" "$RUNNER_TEMP/node-control-artifact.json" \
-            "$CONTROL_ARTIFACT_ID" "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY_ID"
+            "$RUNNER_TEMP/node-control" "$state"
           for endpoint in basis candidate; do
             (
               cd "$state/$endpoint"
@@ -708,10 +651,7 @@ jobs:
               fi
             )
           done
-          uv sync --frozen --only-group dev --no-install-project --no-install-workspace
-          uv run --frozen --no-sync python eng/scripts/ci_scope.py join-record-owners \
-            --scope "$scope" --context "$state/context.json" --output "$state/scope-joined.json"
-          dotnet "$control" ci caller-node plan "$state" "$state/scope-joined.json" \
+          dotnet "$control" ci caller-node plan "$state" "$scope" \
             "$GITHUB_WORKSPACE/artifacts/node-ruby/node-inputs.json"
           status=0
           if [[ $(jq '.adopted.checks|length' "$state/group-plan.json") -gt 0 ]]; then
@@ -913,19 +853,10 @@ jobs:
         run: |
           dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj `
             -p:RestoreLockedMode=true --filter 'TestCategory=NuGetNativeScenarios' `
-            --minimum-expected-tests 7 `
             --report-trx --results-directory "$env:WDV3_NUGET_REPRO_EVIDENCE" `
-            "-bl:$env:WDV3_NUGET_REPRO_EVIDENCE/native-scenarios.binlog"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $reports = @(Get-ChildItem $env:WDV3_NUGET_REPRO_EVIDENCE -Filter *.trx -Recurse)
-          if ($reports.Count -ne 1) { throw 'Expected one native scenario TRX report.' }
-          [xml]$report = Get-Content -Raw $reports[0].FullName
-          $counts = $report.TestRun.ResultSummary.Counters
-          if ([int]$counts.total -ne 7 -or [int]$counts.executed -ne 7 -or
-              [int]$counts.passed -ne 7 -or [int]$counts.failed -ne 0 -or
-              [int]$counts.notExecuted -ne 0) {
-            throw 'The seven native scenarios must all execute and pass.'
-          }
+            "-bl:$env:WDV3_NUGET_REPRO_EVIDENCE/native-scenarios.binlog" `
+            -- --minimum-expected-tests 7
+          exit $LASTEXITCODE
       - name: Retain original archives and native evidence
         if: always() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
@@ -976,14 +907,6 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-      - name: Read native artifact producers and lifetimes
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
-          CONTROL_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$SCOPE_ARTIFACT_ID" > "$RUNNER_TEMP/python-scope-artifact.json"
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$CONTROL_ARTIFACT_ID" > "$RUNNER_TEMP/python-control-artifact.json"
       - name: Receive exact scope
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -998,16 +921,10 @@ jobs:
           merge-multiple: true
       - name: Materialize exact committed endpoints
         id: endpoints
-        env:
-          SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
-          CONTROL_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
         run: |
           dotnet "$RUNNER_TEMP/python-control/control/WorkflowDelivery.dll" ci caller-python materialize \
             "$GITHUB_WORKSPACE" "$RUNNER_TEMP/python-scope/ci-scope.json" \
-            "$RUNNER_TEMP/python-control" "$RUNNER_TEMP/python-group" \
-            "$RUNNER_TEMP/python-scope-artifact.json" "$SCOPE_ARTIFACT_ID" \
-            "$RUNNER_TEMP/python-control-artifact.json" "$CONTROL_ARTIFACT_ID" \
-            "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY_ID"
+            "$RUNNER_TEMP/python-control" "$RUNNER_TEMP/python-group"
       - name: Setup basis NBGV SDK
         uses: actions/setup-dotnet@v6
         with:
@@ -1091,14 +1008,6 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-      - name: Read original artifact producers and lifetimes
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
-          CONTROL_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$SCOPE_ARTIFACT_ID" > "$RUNNER_TEMP/native-scope-artifact.json"
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$CONTROL_ARTIFACT_ID" > "$RUNNER_TEMP/native-control-artifact.json"
       - name: Receive exact scope
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -1113,16 +1022,8 @@ jobs:
           merge-multiple: true
       - name: Select required Linux preparation scenarios
         id: plan
-        env:
-          SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
-          CONTROL_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
         run: |
-          control="$RUNNER_TEMP/native-control/control/WorkflowDelivery.dll"
-          dotnet "$control" ci caller-artifact "$RUNNER_TEMP/native-scope-artifact.json" \
-            ci-scope "$SCOPE_ARTIFACT_ID" "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY_ID"
-          dotnet "$control" ci caller-artifact "$RUNNER_TEMP/native-control-artifact.json" \
-            ci-dotnet-plan "$CONTROL_ARTIFACT_ID" "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY_ID"
-          dotnet "$control" ci native-preparation-plan "$GITHUB_WORKSPACE" \
+          dotnet "$RUNNER_TEMP/native-control/control/WorkflowDelivery.dll" ci native-preparation-plan "$GITHUB_WORKSPACE" \
             "$RUNNER_TEMP/native-scope/ci-scope.json" "$RUNNER_TEMP/native-preparation"
       - name: Setup selected native tools
         if: steps.plan.outputs.python == 'true' || steps.plan.outputs.ruby == 'true'
@@ -1141,10 +1042,8 @@ jobs:
             --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj \
             -property:RestoreLockedMode=true \
             --filter FullyQualifiedName=WorkflowDelivery.Tests.Release.PythonPreparationNativeTests.NativeBranchPreparationBuildsCompleteOriginalPairAndGitFreeConsumer \
-            --minimum-expected-tests 1 --report-trx --report-trx-filename preparation.trx \
-            --results-directory "$RUNNER_TEMP/native-preparation/python"
-          dotnet "$RUNNER_TEMP/native-control/control/WorkflowDelivery.dll" ci native-preparation-result \
-            python "$RUNNER_TEMP/native-preparation/python/preparation.trx"
+            --report-trx --report-trx-filename preparation.trx \
+            --results-directory "$RUNNER_TEMP/native-preparation/python" -- --minimum-expected-tests 1
       - name: Execute all original Ruby preparation rows
         if: ${{ !cancelled() && steps.plan.outputs.ruby == 'true' }}
         run: |
@@ -1152,10 +1051,8 @@ jobs:
             --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj \
             -property:RestoreLockedMode=true \
             --filter FullyQualifiedName=WorkflowDelivery.Tests.Release.RubyPreparationNativeTests.NativePreparationQualifiesCommittedOriginalAndInstalledOrigin \
-            --minimum-expected-tests 3 --report-trx --report-trx-filename preparation.trx \
-            --results-directory "$RUNNER_TEMP/native-preparation/ruby"
-          dotnet "$RUNNER_TEMP/native-control/control/WorkflowDelivery.dll" ci native-preparation-result \
-            ruby "$RUNNER_TEMP/native-preparation/ruby/preparation.trx"
+            --report-trx --report-trx-filename preparation.trx \
+            --results-directory "$RUNNER_TEMP/native-preparation/ruby" -- --minimum-expected-tests 3
       - name: Retain original preparation plans, reports and packages
         if: always()
         uses: actions/upload-artifact@v7
@@ -1202,14 +1099,6 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Read native artifact producers and lifetimes
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
-          CONTROL_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$SCOPE_ARTIFACT_ID" > "$RUNNER_TEMP/ruby-scope-artifact.json"
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$CONTROL_ARTIFACT_ID" > "$RUNNER_TEMP/ruby-control-artifact.json"
       - name: Receive exact scope
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -1232,16 +1121,10 @@ jobs:
           ruby-version: '4.0.7'
       - name: Materialize exact committed endpoints
         id: endpoints
-        env:
-          SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
-          CONTROL_ARTIFACT_ID: ${{ needs.scope.outputs.dotnet_artifact_id }}
         run: |
           dotnet "$RUNNER_TEMP/ruby-control/control/WorkflowDelivery.dll" ci caller-ruby materialize \
             "$GITHUB_WORKSPACE" "$RUNNER_TEMP/ruby-scope/ci-scope.json" \
-            "$RUNNER_TEMP/ruby-control" "$RUNNER_TEMP/ruby-group" \
-            "$RUNNER_TEMP/ruby-scope-artifact.json" "$SCOPE_ARTIFACT_ID" \
-            "$RUNNER_TEMP/ruby-control-artifact.json" "$CONTROL_ARTIFACT_ID" \
-            "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY_ID"
+            "$RUNNER_TEMP/ruby-control" "$RUNNER_TEMP/ruby-group"
       - name: Setup basis NBGV SDK
         uses: actions/setup-dotnet@v6
         with:

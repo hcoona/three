@@ -107,8 +107,6 @@ public sealed class RubyGroupReaderTests(TestContext context)
     [DataRow("src/private/app/workflow-delivery/CI/Callers/RubyCiCaller.cs")]
     [DataRow("src/private/app/workflow-delivery/CI/Callers/NodeCiCaller.cs")]
     [DataRow("src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs")]
-    [DataRow("eng/scripts/ci_scope.py")]
-    [DataRow("eng/scripts/repository_path_patterns.py")]
     [DataRow("src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs")]
     [DataRow("mise.toml")]
     [DataRow("mise.lock")]
