@@ -20,7 +20,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
         """;
 
     internal static async Task<DotNetNativeFixture> CreateAsync(string capability,
-        CancellationToken token, bool nbgv = false, bool includeDependencyGraph = true)
+        CancellationToken token, bool nbgv = false)
     {
         GitFixture repo = await GitFixture.CreateAsync(token);
         try
@@ -87,7 +87,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                     """,
                 ["library/Value.cs"] = "public static class DependencyValue { " +
                     "public static int Answer => 35 + GeneratedValue.Answer; }",
-                ["tests/NativeTests.csproj"] = TestProject(capability, includeDependencyGraph),
+                ["tests/NativeTests.csproj"] = TestProject(capability),
                 ["tests/NativeTests.cs"] = """
                     using Microsoft.VisualStudio.TestTools.UnitTesting;
                     [assembly: DoNotParallelize]
@@ -131,14 +131,6 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                     </TestRunParameters></RunSettings>
                     """,
             };
-            if (!includeDependencyGraph)
-            {
-                foreach (string path in new[] { "analyzer/Generator.csproj",
-                    "analyzer/Generator.cs", "library/Dependency.csproj", "library/Value.cs" })
-                    files.Remove(path);
-                files["tests/NativeTests.cs"] = files["tests/NativeTests.cs"].Replace(
-                    "Assert.AreEqual(42, DependencyValue.Answer);", "", StringComparison.Ordinal);
-            }
             if (nbgv)
             {
                 files["version.json"] = """{"version":"0.1"}""";
@@ -160,10 +152,8 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                 repo.Directory,
                 ["restore", "tests/NativeTests.csproj", "--locked-mode", "--force"], 60), token);
             RequireSuccess(locked, "Fixture locked restore");
-            string[] locks = includeDependencyGraph
-                ? ["tests/packages.lock.json", "library/packages.lock.json",
-                    "analyzer/packages.lock.json"]
-                : ["tests/packages.lock.json"];
+            string[] locks = ["tests/packages.lock.json", "library/packages.lock.json",
+                "analyzer/packages.lock.json"];
             foreach (string path in locks)
                 await repo.SetAsync(path, await File.ReadAllTextAsync(Path.Combine(repo.Directory,
                     path), token));
@@ -206,7 +196,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                 result.ExitCode + "\n" + result.Error + "\n" + result.Stdout + result.Stderr);
     }
 
-    private static string TestProject(string capability, bool includeDependencyGraph)
+    private static string TestProject(string capability)
     {
         string sdk = capability == "MTP" ? "MSTest.Sdk" : "Microsoft.NET.Sdk";
         string packages = capability == "MTP" ? """
@@ -225,12 +215,10 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
         string report = "--report-trx --report-trx-filename native.trx " + results;
         string selected = "--filter FullyQualifiedName~Selected --settings " +
             "\"$(MSBuildProjectDirectory)/native.runsettings\" " + report;
-        string noTests = "--filter FullyQualifiedName~DoesNotExist " +
-            "--minimum-expected-tests 1 " + report;
-        string reference = includeDependencyGraph ? """
+        const string reference = """
             <ProjectReference Include="../library/Dependency.csproj"
               GlobalPropertiesToRemove="UseAppHost" />
-            """ : "";
+            """;
         return $$"""
             <Project Sdk="{{sdk}}"><PropertyGroup>
               <TargetFrameworks>net10.0;net8.0</TargetFrameworks>
@@ -238,17 +226,11 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
               <EnableMSTestRunner>{{(capability == "MTP" ? "true" : "false")}}</EnableMSTestRunner>
               <UseAppHost>true</UseAppHost>
               <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
-              <TestingPlatformCaptureOutput
-                Condition="'$(FixtureNoTests)' == 'true'">false</TestingPlatformCaptureOutput>
               <TestingPlatformCommandLineArguments
                 >{{selected}}</TestingPlatformCommandLineArguments>
-              <TestingPlatformCommandLineArguments Condition="'$(FixtureNoTests)' == 'true'"
-                >{{noTests}}</TestingPlatformCommandLineArguments>
               <RunSettingsFilePath
                 >$(MSBuildProjectDirectory)/native.runsettings</RunSettingsFilePath>
               <VSTestTestCaseFilter>FullyQualifiedName~Selected</VSTestTestCaseFilter>
-              <VSTestTestCaseFilter Condition="'$(FixtureNoTests)' == 'true'"
-                >FullyQualifiedName~DoesNotExist</VSTestTestCaseFilter>
               <VSTestLogger>trx%3BLogFileName=native.trx</VSTestLogger>
               <VSTestResultsDirectory
                 >$(MSBuildProjectDirectory)/receipts/$(TargetFramework)</VSTestResultsDirectory>
