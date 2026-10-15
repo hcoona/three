@@ -10,9 +10,12 @@ internal static class DotNetPackageResults
 {
     internal static async Task<JsonDocument> ResponseAsync(string path, CancellationToken token)
     {
-        if (!File.Exists(path) || new FileInfo(path).Length > 32 * 1024 * 1024)
+        if (!File.Exists(path))
             throw new InvalidDataException("Native package result file is missing or not a file.");
+        // Measure the opened stream: a linked path's own length is not the parsed target's.
         await using var file = File.OpenRead(path);
+        if (file.Length > 32 * 1024 * 1024)
+            throw new InvalidDataException("Native package result file exceeds its limit.");
         return await JsonDocument.ParseAsync(file, cancellationToken: token);
     }
 

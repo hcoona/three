@@ -40,6 +40,8 @@ internal static class CiCallerTransfer
     internal static string Absolute(string path) =>
         OwnedPath.Absolute(path, "CI caller paths must be absolute.");
 
+    // Caller state need not be checked for links here: endpoints are bound under it by
+    // GitMaterialization, which requires a physical (unlinked) checkout root.
     internal static void External(string root, string directory)
     {
         root = Absolute(root); directory = Absolute(directory);
