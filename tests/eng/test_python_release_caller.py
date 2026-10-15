@@ -327,4 +327,4 @@ def test_workflow_selected_control_executable_reaches_caller(
         "job-inputs",
         "python",
     ]
-    assert arguments[4] == ("request" if job_name == "prepare" else "validate")
+    assert arguments[4] == ("request" if job_name == "prepare" else "receive")

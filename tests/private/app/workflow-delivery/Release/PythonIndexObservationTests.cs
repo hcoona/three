@@ -106,7 +106,6 @@ public sealed class PythonIndexObservationTests(TestContext context)
     [DataRow("duplicate")]
     [DataRow("yanked")]
     [DataRow("digest")]
-    [DataRow("size")]
     public async Task ContradictoryNativeMetadataCannotPermitWrites(string defect)
     {
         using var fixture = new Fixture();
@@ -207,19 +206,15 @@ public sealed class PythonIndexObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("checks")]
     [DataRow("destination")]
-    [DataRow("size")]
     [DataRow("kind")]
-    public async Task UnsupportedOrUnqualifiedRequestCannotReadPublicIndex(string defect)
+    public async Task UnsupportedRequestCannotReadPublicIndex(string defect)
     {
         using var fixture = new Fixture();
         PreparedRelease prepared = fixture.Prepared;
-        if (defect == "checks") prepared = prepared with { Checks = [] };
-        else if (defect == "destination") prepared = prepared with
+        if (defect == "destination") prepared = prepared with
         { Subject = prepared.Subject with { Destination = "other" } };
-        else prepared.Files[0] = defect == "size" ? prepared.Files[0] with
-        { Size = 8 * 1024 * 1024 + 1 } : prepared.Files[0] with { Kind = "other" };
+        else prepared.Files[0] = prepared.Files[0] with { Kind = "other" };
         using var handler = new Handler((_, _, _) =>
             throw new AssertFailedException("Unqualified request reached a public destination."));
         using var client = new HttpClient(handler);

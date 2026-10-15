@@ -53,11 +53,9 @@ internal static class RubyPreparation
             bool buddy = subject.Channel == "buddy" &&
                 subject.Destination == "github-packages-ruby";
             bool official = subject.Channel == "official" && subject.Destination == "rubygems";
-            if (!(buddy || official) || string.IsNullOrWhiteSpace(subject.SelectedRef) ||
-                !subject.DryRun && (official ? subject.SelectedRef != "refs/heads/main" :
-                    !subject.SelectedRef.StartsWith("refs/heads/", StringComparison.Ordinal) ||
-                    subject.SelectedRef.Length == "refs/heads/".Length))
+            if (!(buddy || official) || string.IsNullOrWhiteSpace(subject.SelectedRef))
                 throw new InvalidDataException("Unsupported Ruby Release channel or ref.");
+            ReleasePolicy.RequireEligible(subject);
             GitRevision revision = await new GitReader(checkout).ReadAsync(subject.Revision, token);
             if (revision.Commit != subject.Revision)
                 throw new InvalidDataException("Ruby Release requires the exact source revision.");

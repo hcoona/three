@@ -68,7 +68,7 @@ public sealed class RubyReleaseTests(TestContext context)
                 [fixture.Original, fixture.Original with { Output = "extra", Path = "extra.gem",
                 Version = "2.0.0" }] } },
             "size" => result with { Prepared = result.Prepared with { Files = [fixture.Original with
-                { Size = 8 * 1024 * 1024 + 1 }] } },
+                { Size = ReleasePolicy.ReadbackOriginalLimit + 1 }] } },
             _ => result with { Native = new(result.Native) { [defect] = "another-native-value" } },
         };
         Assert.ThrowsExactly<InvalidDataException>(() => RubyRelease.Validate(result));
@@ -76,11 +76,8 @@ public sealed class RubyReleaseTests(TestContext context)
 
     [TestMethod]
     [DataRow("buddy", "github-packages-ruby", "refs/heads/topic", false, false, true)]
-    [DataRow("buddy", "github-packages-ruby", "refs/tags/v1", false, true, false)]
-    [DataRow("buddy", "github-packages-ruby", "refs/heads/", false, true, false)]
     [DataRow("official", "rubygems", "refs/heads/main", false, true, true)]
     [DataRow("official", "rubygems", "refs/heads/main", false, false, false)]
-    [DataRow("official", "rubygems", "refs/heads/topic", false, true, false)]
     [DataRow("official", "rubygems", "refs/tags/preview", true, false, true)]
     [DataRow("buddy", "github-packages-ruby", "refs/tags/preview", true, false, true)]
     [DataRow("buddy", "rubygems", "refs/heads/main", true, true, false)]

@@ -168,7 +168,6 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     [DataRow("wrong-type")]
     [DataRow("unknown")]
     [DataRow("null")]
-    [DataRow("oversized")]
     [DataRow("utf8-oversized")]
     public async Task InvalidSourceAnswersRemainUnknown(string scenario)
     {
@@ -367,11 +366,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     [DataRow("crossed-destination")]
     [DataRow("name")]
     [DataRow("kind")]
-    [DataRow("oversized")]
-    [DataRow("missing-check")]
-    [DataRow("failed-check")]
-    [DataRow("cancelled-check")]
-    public async Task UnsupportedOrUnqualifiedPreparationDoesNotRead(string scenario)
+    public async Task UnsupportedPreparationDoesNotRead(string scenario)
     {
         using var fixture = new Fixture();
         PreparedRelease prepared = fixture.Prepared;
@@ -384,14 +379,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
                 prepared.Subject with { Destination = "rubygems" } },
             "name" => prepared with { Files = [prepared.Files[0] with { Name =
                 "unrelated-package" }] },
-            "kind" => prepared with { Files = [prepared.Files[0] with { Kind = "python-wheel" }] },
-            "oversized" => prepared with { Files = [prepared.Files[0] with { Size =
-                8 * 1024 * 1024 + 1 }] },
-            "missing-check" => prepared with { Checks = [] },
-            "failed-check" => prepared with { Checks = [new("qualified-original",
-                ReleaseCheckStatus.Failed)] },
-            _ => prepared with { Checks = [new("qualified-original",
-                ReleaseCheckStatus.Cancelled)] },
+            _ => prepared with { Files = [prepared.Files[0] with { Kind = "python-wheel" }] },
         };
         int calls = 0;
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>

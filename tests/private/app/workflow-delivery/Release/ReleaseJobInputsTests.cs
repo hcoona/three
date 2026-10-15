@@ -22,18 +22,14 @@ public sealed class ReleaseJobInputsTests
     {
         using var fixture = new Caller(ecosystem, destination);
         fixture.Run("request");
-        ReleaseJobProducer producer = fixture.Producer("prepared");
-        Assert.AreEqual(fixture.Env["GITHUB_SHA"], producer.Subject.Revision);
-        Assert.AreEqual("refs/heads/feature", producer.Subject.SelectedRef);
-        Assert.AreEqual(channel, producer.Subject.Channel);
-        Assert.AreEqual(expectedDestination, producer.Subject.Destination);
-        Assert.IsTrue(producer.Subject.DryRun);
-        Assert.AreEqual("2", producer.Attempt);
-        Assert.AreEqual(producer, fixture.Producer("control"));
-        fixture.Run("phase", "observation");
-        Assert.AreEqual(producer, fixture.Producer("observation"));
-        fixture.Preparation(producer.Subject);
-        fixture.Run("validate", "control", "prepared", "observation");
+        ReleaseSubject subject = fixture.Subject();
+        Assert.AreEqual(fixture.Env["GITHUB_SHA"], subject.Revision);
+        Assert.AreEqual("refs/heads/feature", subject.SelectedRef);
+        Assert.AreEqual(channel, subject.Channel);
+        Assert.AreEqual(expectedDestination, subject.Destination);
+        Assert.IsTrue(subject.DryRun);
+        Assert.IsFalse(File.Exists(fixture.At("control/producer.json")));
+        Assert.IsFalse(File.Exists(fixture.At("prepared/producer.json")));
         using JsonDocument request = JsonDocument.Parse(File.ReadAllText(fixture.At(
             "prepared/request.json")));
         Assert.AreEqual(fixture.Env["GITHUB_WORKSPACE"], request.RootElement.GetProperty(
@@ -53,26 +49,49 @@ public sealed class ReleaseJobInputsTests
     [DataRow("python")]
     [DataRow("npm")]
     [DataRow("nuget")]
-    public void ProducerAndPreparedSubjectSubstitutionFails(string ecosystem)
+    public void ReceivedPreparationBindsRequestSubjectOnce(string ecosystem)
     {
         using var fixture = new Caller(ecosystem);
         fixture.Run("request");
-        ReleaseJobProducer original = fixture.Producer("prepared");
-        fixture.Preparation(original.Subject);
-        foreach (ReleaseJobProducer wrong in new[] { original with { Run = "other" },
-            original with { Attempt = "1" },
-                original with { Subject = original.Subject with { DryRun = false } } })
+        ReleaseSubject subject = fixture.Subject();
+        foreach (ReleaseSubject wrong in new[] { subject with { Revision = new string('b', 40) },
+            subject with { DryRun = false }, subject with { SelectedRef = "refs/heads/other" } })
         {
-            File.WriteAllText(fixture.At("control/producer.json"),
-                JsonSerializer.Serialize(wrong, TransferJson.Default.ReleaseJobProducer));
-            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("validate", "control",
-                "prepared"));
+            fixture.Preparation(wrong);
+            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("receive",
+                "observation"));
+            Assert.IsFalse(Directory.Exists(fixture.At("observation")));
         }
-        File.WriteAllText(fixture.At("control/producer.json"), JsonSerializer.Serialize(original,
-            TransferJson.Default.ReleaseJobProducer));
-        fixture.Preparation(original.Subject with { Revision = new string('b', 40) });
-        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("validate", "control",
-            "prepared"));
+        fixture.Preparation(subject);
+        if (ecosystem == "npm")
+        {
+            fixture.Run("receive", "observation");
+            Assert.IsTrue(Directory.Exists(fixture.At("observation")));
+            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("receive",
+                "observation"));
+        }
+        else
+        {
+            // The same receive also applies the ecosystem's complete preparation check,
+            // which this generic preparation does not satisfy.
+            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("receive",
+                "observation"));
+            Assert.IsFalse(Directory.Exists(fixture.At("observation")));
+        }
+    }
+
+    [TestMethod]
+    [DataRow("ruby")]
+    [DataRow("python")]
+    [DataRow("npm")]
+    [DataRow("nuget")]
+    public void ReceivedUnqualifiedPreparationStopsBeforePhaseOutput(string ecosystem)
+    {
+        using var fixture = new Caller(ecosystem);
+        fixture.Run("request");
+        fixture.Preparation(fixture.Subject(), status: ReleaseCheckStatus.Failed);
+        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("receive", "publication"));
+        Assert.IsFalse(Directory.Exists(fixture.At("publication")));
     }
 
     [TestMethod]
@@ -84,7 +103,7 @@ public sealed class ReleaseJobInputsTests
     {
         using var fixture = new Caller(ecosystem);
         fixture.Run("request");
-        ReleaseSubject subject = fixture.Producer("prepared").Subject;
+        ReleaseSubject subject = fixture.Subject();
         fixture.Preparation(subject);
         Directory.CreateDirectory(fixture.At("preparation-scratch/build"));
         byte[] original = [0, 1, 255, 13, 10];
@@ -110,11 +129,15 @@ public sealed class ReleaseJobInputsTests
     public void InvalidOperationsAndLiveRerunsCreateNoState(string ecosystem)
     {
         using var fixture = new Caller(ecosystem);
-        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("phase", "../escape"));
+        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("receive", "../escape"));
         Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("unsupported"));
+        // A live rerun stops at every job entry, including jobs a partial rerun repeats.
         fixture.Env["DRY_RUN"] = "false";
-        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("request"));
+        foreach (string[] entry in new[] { new[] { "request" }, ["receive", "publication"],
+            ["state"] })
+            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run(entry));
         Assert.IsFalse(Directory.Exists(fixture.At("prepared")));
+        Assert.IsFalse(Directory.Exists(fixture.At("publication")));
         fixture.Env["DRY_RUN"] = "true";
         fixture.Env["GITHUB_REPOSITORY"] = "other/repo";
         Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("request"));
@@ -148,7 +171,7 @@ public sealed class ReleaseJobInputsTests
     {
         using var fixture = new Caller(ecosystem);
         fixture.Run("request");
-        ReleaseSubject subject = fixture.Producer("prepared").Subject;
+        ReleaseSubject subject = fixture.Subject();
         fixture.Preparation(subject, "linked/original");
         Directory.CreateSymbolicLink(fixture.At("preparation-scratch/linked"), fixture.At(
             "control"));
@@ -164,8 +187,8 @@ public sealed class ReleaseJobInputsTests
     {
         using var fixture = new Caller(ecosystem);
         fixture.Run("request");
-        fixture.Run("phase", "observation");
-        ReleaseSubject subject = fixture.Producer("prepared").Subject;
+        ReleaseSubject subject = fixture.Subject();
+        Directory.CreateDirectory(fixture.At("observation"));
         foreach (ReleaseFileState state in new[] { ReleaseFileState.Absent,
             ReleaseFileState.Exact })
         {
@@ -208,8 +231,6 @@ public sealed class ReleaseJobInputsTests
         Assert.AreEqual("official", request.Subject.Channel);
         Assert.AreEqual("npmjs", request.Subject.Destination);
         Assert.IsTrue(request.Subject.DryRun);
-        Assert.IsFalse(File.Exists(fixture.At("control/producer.json")));
-        Assert.IsFalse(File.Exists(fixture.At("prepared/producer.json")));
     }
 
     private sealed class Caller : IDisposable
@@ -240,15 +261,19 @@ public sealed class ReleaseJobInputsTests
         internal string At(string path) => Path.Combine(root, path);
         internal void Run(params string[] args) => Assert.AreEqual(0, ReleaseJobInputs.Run(
             ["release", "job-inputs", ecosystem, .. args], name => Env.GetValueOrDefault(name)));
-        internal ReleaseJobProducer Producer(string phase) => JsonSerializer.Deserialize(
-            File.ReadAllText(At(phase + "/producer.json")),
-                TransferJson.Default.ReleaseJobProducer)!;
-        internal void Preparation(ReleaseSubject subject, string path = "build/original")
+        internal ReleaseSubject Subject()
+        {
+            using JsonDocument request = JsonDocument.Parse(File.ReadAllText(At(
+                "prepared/request.json")));
+            return request.RootElement.GetProperty("subject").Deserialize(
+                TransferJson.Default.ReleaseSubject)!;
+        }
+        internal void Preparation(ReleaseSubject subject, string path = "build/original",
+            ReleaseCheckStatus status = ReleaseCheckStatus.Passed)
         {
             var prepared = new PreparedRelease(subject, [new("build", "output", "package",
                 "fixture", "1.0",
-                path, 5, new string('a', 64))], ["check"], [new("check",
-                    ReleaseCheckStatus.Passed)]);
+                path, 5, new string('a', 64))], ["check"], [new("check", status)]);
             string json = ecosystem switch
             {
                 "ruby" => JsonSerializer.Serialize(new RubyPreparationResult(prepared,

@@ -126,13 +126,9 @@ internal static class PythonReleaseCli
         }
     }
 
-    private static PythonPreparationResult Preparation(string path)
-    {
-        PythonPreparationResult result = ReleaseCli.Read(path,
-            TransferJson.Default.PythonPreparationResult);
-        PythonRelease.Validate(result);
-        return result;
-    }
+    // The caller's job-inputs receive operation validated this preparation for the job.
+    private static PythonPreparationResult Preparation(string path) =>
+        ReleaseCli.Read(path, TransferJson.Default.PythonPreparationResult);
 
     private static PythonIndexObservationResult Observation(string path) =>
         ReleaseCli.Read(path, TransferJson.Default.PythonIndexObservationResult);

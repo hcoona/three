@@ -118,13 +118,9 @@ internal static class RubyReleaseCli
                 prepared, tools, Credential(prepared), token);
     }
 
-    private static RubyPreparationResult Preparation(string path)
-    {
-        RubyPreparationResult result = ReleaseCli.Read(path,
-            TransferJson.Default.RubyPreparationResult);
-        RubyRelease.Validate(result);
-        return result;
-    }
+    // The caller's job-inputs receive operation validated this preparation for the job.
+    private static RubyPreparationResult Preparation(string path) =>
+        ReleaseCli.Read(path, TransferJson.Default.RubyPreparationResult);
 
     private static RubyObservationResult Observation(string path) =>
         ReleaseCli.Read(path, TransferJson.Default.RubyObservationResult);

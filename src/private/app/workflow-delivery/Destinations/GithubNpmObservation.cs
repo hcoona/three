@@ -27,16 +27,11 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
     internal async Task<GithubNpmObservationResult> ObserveAsync(PreparedRelease prepared,
         string credential, CancellationToken token)
     {
-        ReleaseCompletion.Validate(prepared);
         if (prepared.Subject.Channel != "buddy" ||
             prepared.Subject.Destination != "github-packages-npm" || prepared.Files is not
                 [{ Kind: "npm-tarball", Name: Package, Size: <= 25_000_000 }] ||
             credential.Length == 0 || credential.Any(c => c is '\r' or '\n' or '\0'))
             throw new InvalidDataException("Unsupported GitHub npm request or read credential.");
-        if (prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&
-                check.Status == ReleaseCheckStatus.Passed)))
-            throw new InvalidDataException(
-                "GitHub npm reads require complete local qualification.");
         ReleaseFile file = prepared.Files[0];
         var reads = new List<GithubNpmRead>();
         ReleaseCheckStatus control = ReleaseCheckStatus.Missing;
@@ -47,8 +42,8 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
         try
         {
             (int status, byte[] body) = await ReadAsync("package", new(Api), 1_000_000);
-            if (Transient(status)) return Result(ReleaseFileState.Unknown);
-            if (status != 200) return Result(ReleaseFileState.Unprovable);
+            // An unavailable or unreadable package-control response cannot establish state.
+            if (status != 200) return Result(ReleaseFileState.Unknown);
             using (JsonDocument document = JsonDocument.Parse(body))
             {
                 JsonElement package = document.RootElement;
@@ -66,27 +61,26 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
             }
             (status, body) = await ReadAsync("metadata", new(Registry + "/@hcoona%2F"
                 + "hcoona-release-smoke-npm"), 1_000_000);
-            if (Transient(status)) return Result(ReleaseFileState.Unknown);
             // A missing provisioned package response cannot authorize creation.
-            if (status != 200) return Result(ReleaseFileState.Unprovable);
+            if (status != 200) return Result(ReleaseFileState.Unknown);
             using JsonDocument metadata = JsonDocument.Parse(body);
             JsonElement root = metadata.RootElement;
             Unique(root);
+            // Responses that do not describe the requested coordinate establish no state.
             if (Text(root, "name") != file.Name ||
                 root.GetProperty("versions").ValueKind != JsonValueKind.Object)
-                return Result(ReleaseFileState.Unprovable);
+                return Result(ReleaseFileState.Unknown);
             if (!root.GetProperty("versions").TryGetProperty(file.Version, out JsonElement version))
                 return Result(ReleaseFileState.Absent);
             if (Text(version, "name") != file.Name || Text(version, "version") != file.Version ||
                 !Uri.TryCreate(Text(version.GetProperty("dist"), "tarball"),
                     UriKind.Absolute, out Uri? archive))
-                return Result(ReleaseFileState.Unprovable);
+                return Result(ReleaseFileState.Unknown);
             ValidateUri(archive, "tarball");
             tarballUrlSha256 = Convert.ToHexStringLower(SHA256.HashData(
                 System.Text.Encoding.UTF8.GetBytes(archive.AbsoluteUri)));
             (status, body) = await ReadAsync("tarball", archive, 25_000_000);
-            if (Transient(status) || status == 404) return Result(ReleaseFileState.Unknown);
-            if (status != 200) return Result(ReleaseFileState.Unprovable);
+            if (status != 200) return Result(ReleaseFileState.Unknown);
             string digest = Convert.ToHexStringLower(SHA256.HashData(body));
             return Result(body.LongLength == file.Size && digest == file.Sha256
                 ? ReleaseFileState.Exact : ReleaseFileState.Conflict, body.LongLength, digest);
@@ -106,7 +100,7 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
             KeyNotFoundException or InvalidOperationException or UriFormatException)
         {
             reads.Add(new("operation", null, "Unsupported native identity or response."));
-            return Result(ReleaseFileState.Unprovable);
+            return Result(ReleaseFileState.Unknown);
         }
 
         GithubNpmObservationResult Result(ReleaseFileState state, long? size = null,
@@ -181,8 +175,6 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
             }
         }
     }
-
-    private static bool Transient(int status) => status == 429 || status >= 500;
 
     private static string? Text(JsonElement value, string name) =>
         value.GetProperty(name).GetString();

@@ -37,15 +37,12 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
     internal async Task<GithubNuGetObservationResult> ObserveAsync(PreparedRelease prepared,
         string credential, CancellationToken token)
     {
-        ReleaseCompletion.Validate(prepared);
         if (prepared.Subject.Channel != "buddy" ||
             prepared.Subject.Destination != "github-packages-nuget" || prepared.Files is not
                 [{ Kind: "nuget-package", Size: <= ArchiveLimit }] ||
             !StringComparer.OrdinalIgnoreCase.Equals(prepared.Files[0].Name, Package) ||
-            string.IsNullOrEmpty(credential) || credential.Any(c => c is '\r' or '\n' or '\0') ||
-            prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&
-                check.Status == ReleaseCheckStatus.Passed)))
-            throw new InvalidDataException("Unsupported or unqualified GitHub NuGet request.");
+            string.IsNullOrEmpty(credential) || credential.Any(c => c is '\r' or '\n' or '\0'))
+            throw new InvalidDataException("Unsupported GitHub NuGet request.");
         ReleaseFile file = prepared.Files[0];
         var identity = new PackageIdentity(file.Name, NuGetVersion.Parse(file.Version));
         string packageId = identity.Id.ToLowerInvariant();

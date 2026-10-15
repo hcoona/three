@@ -98,7 +98,6 @@ public sealed class PythonRemoteConsumerTests(TestContext context)
     [TestMethod]
     [DataRow("destination")]
     [DataRow("pair")]
-    [DataRow("quality")]
     [DataRow("version")]
     [DataRow("kind")]
     [DataRow("populated")]

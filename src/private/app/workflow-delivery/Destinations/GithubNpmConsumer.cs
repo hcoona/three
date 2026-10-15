@@ -17,7 +17,6 @@ internal static class GithubNpmConsumer
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        ReleaseCompletion.Validate(prepared);
         if (prepared.Subject.Channel != "buddy" || prepared.Subject.Destination !=
                 "github-packages-npm" || prepared.Files is not
                 [{ Name: GithubNpmObservation.Package, Kind: "npm-tarball" }])

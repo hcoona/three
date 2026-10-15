@@ -15,6 +15,8 @@ internal static class PythonRelease
     private const string Package = "hcoona-release-smoke-python";
     private static readonly string[] Formats = ["python-wheel", "python-sdist"];
 
+    // The single check of a received preparation in each job; later operations in that job
+    // rely on it rather than re-admitting preparation internals.
     internal static void Validate(PythonPreparationResult preparation)
     {
         PreparedRelease prepared = preparation.Prepared;
@@ -25,7 +27,8 @@ internal static class PythonRelease
         if (!(buddy || official) || subject.Unit != Package ||
             prepared.Files.Length != 2 || Formats.Any(kind =>
                 prepared.Files.Count(file => file.Kind == kind) != 1) ||
-            prepared.Files.Any(file => file.Name != Package || file.Size > 8 * 1024 * 1024 ||
+            prepared.Files.Any(file => file.Name != Package ||
+                file.Size > ReleasePolicy.ReadbackOriginalLimit ||
                 file.Version != prepared.Files[0].Version) ||
             !prepared.RequiredChecks.SequenceEqual(PythonPreparation.Required) ||
             !Qualified(prepared.RequiredChecks, prepared.Checks) ||
@@ -37,17 +40,13 @@ internal static class PythonRelease
                 version != prepared.Files[0].Version ||
             !preparation.Native.TryGetValue("commit", out string? commit) ||
                 commit != subject.Revision ||
-            !subject.DryRun && (official ? subject.SelectedRef != "refs/heads/main" ||
-                !preparation.Native.TryGetValue("public-release", out string? release) ||
-                release != "true" : !subject.SelectedRef.StartsWith("refs/heads/",
-                    StringComparison.Ordinal) || subject.SelectedRef.Length ==
-                        "refs/heads/".Length))
+            official && !subject.DryRun && (!preparation.Native.TryGetValue("public-release",
+                out string? release) || release != "true"))
             throw new InvalidDataException("Incomplete or unsupported Python preparation.");
     }
 
     internal static void Originals(PythonPreparationResult preparation, string directory)
     {
-        Validate(preparation);
         if (!Path.IsPathFullyQualified(directory))
             throw new InvalidDataException("Original Python directory must be absolute.");
         string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));

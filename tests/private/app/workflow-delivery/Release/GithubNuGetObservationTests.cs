@@ -396,19 +396,6 @@ public sealed class GithubNuGetObservationTests
     }
 
     [TestMethod]
-    public async Task FailedPreparationMakesNoNativeRead()
-    {
-        PreparedRelease prepared = Prepared(Archive()) with
-        { Checks = [new("contents", ReleaseCheckStatus.Failed)] };
-        using var handler = new Handler((_, _) => throw new AssertFailedException());
-        using var client = new HttpClient(handler);
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            new GithubNuGetObservation(client).ObserveAsync(prepared, Credential,
-                CancellationToken.None));
-        Assert.IsEmpty(handler.Requests);
-    }
-
-    [TestMethod]
     public async Task BodyConsumptionSharesThePerReadDeadline()
     {
         var clock = new ManualClock();

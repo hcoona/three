@@ -62,8 +62,8 @@ public sealed class GithubNpmObservationTests
     }
 
     [TestMethod]
-    [DataRow(404, "Unprovable")]
-    [DataRow(401, "Unprovable")]
+    [DataRow(404, "Unknown")]
+    [DataRow(401, "Unknown")]
     [DataRow(429, "Unknown")]
     [DataRow(503, "Unknown")]
     public async Task MissingOrUnreadableContainerNeverPermitsVersionCreation(int status,
@@ -122,7 +122,7 @@ public sealed class GithubNpmObservationTests
         GithubNpmObservationResult result = await new GithubNpmObservation(client)
             .ObserveAsync(Prepared(), Credential, CancellationToken.None);
 
-        Assert.AreEqual(ReleaseFileState.Unprovable,
+        Assert.AreEqual(ReleaseFileState.Unknown,
             Assert.ContainsSingle(result.Observation.Files).State);
         Assert.HasCount(3, handler.Requests);
         Assert.IsFalse(handler.Requests.Any(request => request.Uri.Host == "unrelated.example"));
@@ -195,7 +195,7 @@ public sealed class GithubNpmObservationTests
         GithubNpmObservationResult result = await new GithubNpmObservation(client)
             .ObserveAsync(Prepared(), Credential, CancellationToken.None);
 
-        Assert.AreEqual(ReleaseFileState.Unprovable,
+        Assert.AreEqual(ReleaseFileState.Unknown,
             Assert.ContainsSingle(result.Observation.Files).State);
         Assert.HasCount(2, handler.Requests);
     }

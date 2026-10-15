@@ -262,7 +262,6 @@ public sealed class NuGetReleaseCliTests(TestContext context)
     [TestMethod]
     [DataRow("state")]
     [DataRow("integer-state")]
-    [DataRow("native-null")]
     [DataRow("nested-duplicate")]
     public void DescribeStrictNestedJsonRejectsMalformedTransfer(string defect)
     {

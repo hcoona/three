@@ -14,6 +14,8 @@ internal static class RubyRelease
 {
     private const string Package = "hcoona-release-smoke-ruby";
 
+    // The single check of a received preparation in each job; later operations in that job
+    // rely on it rather than re-admitting preparation internals.
     internal static void Validate(RubyPreparationResult preparation)
     {
         PreparedRelease prepared = preparation.Prepared;
@@ -24,7 +26,7 @@ internal static class RubyRelease
         bool official = subject.Channel == "official" && subject.Destination == "rubygems";
         if (!(buddy || official) || subject.Unit != Package || prepared.Files is not
                 [{ Kind: "ruby-gem", Name: Package }] ||
-            prepared.Files[0].Size > 8 * 1024 * 1024 ||
+            prepared.Files[0].Size > ReleasePolicy.ReadbackOriginalLimit ||
             !prepared.RequiredChecks.SequenceEqual(RubyPreparation.Required) ||
             !Qualified(prepared.RequiredChecks, prepared.Checks) ||
             preparation.Errors.Length != 0 || preparation.Commands.Length == 0 ||
@@ -37,17 +39,13 @@ internal static class RubyRelease
                 platform != "ruby" ||
             !preparation.Native.TryGetValue("commit", out string? commit) ||
                 commit != subject.Revision ||
-            !subject.DryRun && (official ? subject.SelectedRef != "refs/heads/main" ||
-                !preparation.Native.TryGetValue("public-release", out string? release) ||
-                release != "true" : !subject.SelectedRef.StartsWith("refs/heads/",
-                    StringComparison.Ordinal) || subject.SelectedRef.Length ==
-                        "refs/heads/".Length))
+            official && !subject.DryRun && (!preparation.Native.TryGetValue("public-release",
+                out string? release) || release != "true"))
             throw new InvalidDataException("Incomplete or unsupported Ruby preparation.");
     }
 
     internal static void Originals(RubyPreparationResult preparation, string directory)
     {
-        Validate(preparation);
         if (!Path.IsPathFullyQualified(directory))
             throw new InvalidDataException("Original Ruby directory must be absolute.");
         string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));

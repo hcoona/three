@@ -5,8 +5,6 @@ using WorkflowDelivery.Ecosystems;
 
 namespace WorkflowDelivery.Release;
 
-internal sealed record ReleaseJobProducer(ReleaseSubject Subject, string Run, string Attempt);
-
 // Inputs for the existing concrete Actions callers. Actions owns job orchestration.
 internal static class ReleaseJobInputs
 {
@@ -38,8 +36,10 @@ internal static class ReleaseJobInputs
             "tests/private/app/workflow-delivery/fixtures/products/" + unit +
             "/workflow-delivery.release-unit.yml", buddy ? "buddy" : "official",
             ecosystem == "ruby" && buddy ? "github-packages-ruby" : destination, dry == "true");
-        var producer = new ReleaseJobProducer(subject, Env("GITHUB_RUN_ID"), Env(
-            "GITHUB_RUN_ATTEMPT"));
+        // Live reruns are unsupported (WD-OPS-003). A partial rerun skips the preparation
+        // job, so every job entry below applies this one guard rather than workflow YAML.
+        if (!subject.DryRun && Env("GITHUB_RUN_ATTEMPT") != "1")
+            throw new InvalidDataException("Live Release reruns are unsupported.");
         string control = Path.Combine(root, "control"), prepared = Path.Combine(root, "prepared");
         string At(string name)
         {
@@ -70,6 +70,35 @@ internal static class ReleaseJobInputs
                 TransferJson.Default.NuGetPreparationResult).Prepared,
             _ => throw new InvalidDataException("Unsupported Release preparation."),
         };
+        void Receive()
+        {
+            string path = Path.Combine(prepared, "preparation.json");
+            Same(Preparation().Subject);
+            switch (ecosystem)
+            {
+                case "ruby":
+                    RubyPreparationResult ruby = Read(path,
+                        TransferJson.Default.RubyPreparationResult);
+                    RubyRelease.Validate(ruby);
+                    break;
+                case "python":
+                    PythonPreparationResult python = Read(path,
+                        TransferJson.Default.PythonPreparationResult);
+                    PythonRelease.Validate(python);
+                    break;
+                case "nuget":
+                    NuGetPreparationResult nuget = Read(path,
+                        TransferJson.Default.NuGetPreparationResult);
+                    NuGetRelease.Validate(nuget);
+                    break;
+                default:
+                    PreparedRelease release = Read(path,
+                        TransferJson.Default.NpmPreparationResult).Prepared;
+                    ReleaseCompletion.Validate(release);
+                    ReleasePolicy.RequireQualified(release);
+                    break;
+            }
+        }
         void Same(ReleaseSubject actual)
         {
             if (actual != subject) throw new InvalidDataException(
@@ -79,19 +108,10 @@ internal static class ReleaseJobInputs
         {
             case ["request"]:
             case ["simulation-request"] when ecosystem == "npm" && !buddy && subject.DryRun:
-                if (Env("GITHUB_REPOSITORY") != "hcoona/three" ||
-                    !subject.DryRun && producer.Attempt != "1")
-                    throw new InvalidDataException("Unsupported repository or live rerun.");
+                if (Env("GITHUB_REPOSITORY") != "hcoona/three")
+                    throw new InvalidDataException("Unsupported Release repository.");
                 string scratch = Fresh("preparation-scratch");
                 Fresh("prepared");
-                // The single-job Official simulation has no producer transfer consumer.
-                if (operation[0] == "request")
-                {
-                    Write(Path.Combine(control, "producer.json"), producer,
-                        TransferJson.Default.ReleaseJobProducer);
-                    Write(Path.Combine(prepared, "producer.json"), producer,
-                        TransferJson.Default.ReleaseJobProducer);
-                }
                 if (ecosystem == "ruby")
                     Write(Path.Combine(prepared, "request.json"), new RubyPreparationRequest(
                         subject,
@@ -115,7 +135,6 @@ internal static class ReleaseJobInputs
             case ["originals"]:
                 PreparedRelease release = Preparation();
                 Same(release.Subject);
-                ReleaseCompletion.Validate(release);
                 string sourceRoot = At("preparation-scratch");
                 foreach (ReleaseFile file in release.Files)
                 {
@@ -131,18 +150,13 @@ internal static class ReleaseJobInputs
                     File.Copy(source, target, overwrite: false);
                 }
                 break;
-            case ["validate", .. var kinds] when kinds.Length > 0:
-                foreach (string kind in kinds)
-                    if (Read(At(kind + "/producer.json"),
-                        TransferJson.Default.ReleaseJobProducer) != producer)
-                        throw new InvalidDataException("Transferred producer mismatch.");
-                Same(Preparation().Subject);
-                break;
-            case ["phase",
+            // The one check of a downloaded preparation in each later job. Actions binds the
+            // immutable same-run artifact; this binds its subject and qualified content to the
+            // request before the job's own phase output directory exists.
+            case ["receive",
                 var phase] when phase is "observation" or "publication" or "verification":
-                string phaseRoot = Fresh(phase);
-                Write(Path.Combine(phaseRoot, "producer.json"), producer,
-                    TransferJson.Default.ReleaseJobProducer);
+                Receive();
+                Fresh(phase);
                 break;
             case ["state"]:
                 ReleaseObservation observation = ecosystem switch

@@ -18,15 +18,11 @@ internal static partial class GithubNpmPublication
         Func<PreparedRelease, string, CancellationToken, Task<GithubNpmObservationResult>> observe,
         CancellationToken token)
     {
-        ReleaseCompletion.Validate(prepared);
         if (prepared.Subject.DryRun || prepared.Files is not
                 [{ Name: GithubNpmObservation.Package, Kind: "npm-tarball" }] ||
             prepared.Subject.Channel != "buddy" ||
             prepared.Subject.Destination != "github-packages-npm")
             throw new InvalidDataException("Unsupported live GitHub npm request.");
-        if (prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&
-                check.Status == ReleaseCheckStatus.Passed)))
-            throw new InvalidDataException("Publication requires complete original qualification.");
         ReleaseFile file = prepared.Files[0];
         string archive = Path.Combine(originals, file.Path);
         (long size, string digest) = await NpmPackageOperations.OriginalAsync(archive, 25_000_000,

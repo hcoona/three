@@ -125,14 +125,13 @@ jobs:
           } >> "$GITHUB_ENV"
           printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
-      - name: Validate actual transferred request and producer
+      - name: Receive transferred preparation
         run: |-
           set -Eeuo pipefail
-          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby validate control prepared
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby receive observation
       - name: Observe selected native destination and qualified original
         run: |-
           set -Eeuo pipefail
-          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby phase observation
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby source-config initial-observation-scratch
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/observation/observation.json"
       - name: Expose required write and describe dry run
@@ -202,14 +201,13 @@ jobs:
           } >> "$GITHUB_ENV"
           printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
-      - name: Validate actual transferred request and producer
+      - name: Receive transferred preparation
         run: |-
           set -Eeuo pipefail
-          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby validate control prepared observation
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby receive publication
       - name: Refresh state and invoke native RubyGems once
         run: |-
           set -Eeuo pipefail
-          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby phase publication
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby source-config publication-observation-scratch
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby publisher-config publisher-scratch
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/source-tools.json" "$RUNNER_TEMP/publisher-tools.json" > "$RUNNER_TEMP/publication/publication.json"
@@ -275,10 +273,10 @@ jobs:
           } >> "$GITHUB_ENV"
           printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
-      - name: Validate actual transferred request and producer
+      - name: Receive transferred preparation
         run: |-
           set -Eeuo pipefail
-          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby validate control prepared observation
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby receive publication
       - name: Prepare owned unretained credential Action state
         run: |-
           set -Eeuo pipefail
@@ -294,7 +292,6 @@ jobs:
       - name: Refresh state and invoke native RubyGems once
         run: |-
           set -Eeuo pipefail
-          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby phase publication
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby source-config publication-observation-scratch
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby publisher-config publisher-scratch
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/source-tools.json" "$RUNNER_TEMP/publisher-tools.json" > "$RUNNER_TEMP/publication/publication.json"
@@ -367,10 +364,10 @@ jobs:
           } >> "$GITHUB_ENV"
           printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
-      - name: Validate actual transferred request and producer
+      - name: Receive transferred preparation
         run: |-
           set -Eeuo pipefail
-          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby validate control prepared observation
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby receive verification
       - name: Download publication by immutable artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -382,16 +379,9 @@ jobs:
         if:
           needs.publish-ruby-github-packages.outputs.publication-id != '' || needs.publish-ruby-rubygems.outputs.publication-id
           != ''
-      - name: Validate available publication producer
-        run: |-
-          set -Eeuo pipefail
-          if [ -d "$RUNNER_TEMP/publication" ]; then
-            "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby validate publication
-          fi
       - name: Consume fresh selected remote original and complete final native state
         run: |-
           set -Eeuo pipefail
-          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby phase verification
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby consumer-config remote-consumer-scratch
           status=0
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release consume-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/consumer-tools.json" > "$RUNNER_TEMP/verification/consumer.json" || status=$?

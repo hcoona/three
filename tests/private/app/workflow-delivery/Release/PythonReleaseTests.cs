@@ -98,7 +98,6 @@ public sealed class PythonReleaseTests(TestContext context)
     [TestMethod]
     [DataRow("Unknown")]
     [DataRow("Conflict")]
-    [DataRow("Unprovable")]
     public async Task PublishAsyncInitialUnsafeStateRejectsBeforeDelegates(
         string stateName)
     {
@@ -113,7 +112,6 @@ public sealed class PythonReleaseTests(TestContext context)
     [TestMethod]
     [DataRow("Unknown", "Passed", "Unknown")]
     [DataRow("Conflict", "Passed", "Unsatisfied")]
-    [DataRow("Unprovable", "Passed", "Unsatisfied")]
     [DataRow("Absent", "Missing", "Unsatisfied")]
     public async Task PublishAsyncFreshUnsafeStateStopsWithoutWrites(string stateName,
         string qualificationName, string expectedName)

@@ -209,7 +209,8 @@ public sealed class PythonReleaseCliTests
     [DataRow("command-error")]
     [DataRow("errors")]
     [DataRow("destination")]
-    public void InvalidCompletePreparationStopsBeforeObservation(string defect)
+    [DataRow("size")]
+    public void InvalidCompletePreparationFailsReceipt(string defect)
     {
         using var f = new Fixture();
         PythonPreparationResult bad = f.Preparation;
@@ -231,6 +232,8 @@ public sealed class PythonReleaseCliTests
             "errors" => bad with { Errors = ["incomplete preparation"] },
             "destination" => bad with { Prepared = p with { Subject = p.Subject with { Destination =
                 "pypi" } } },
+            "size" => bad with { Prepared = p with { Files = [p.Files[0] with { Size =
+                ReleasePolicy.ReadbackOriginalLimit + 1 }, p.Files[1]] } },
             _ => bad,
         };
         if (defect.StartsWith("native-", StringComparison.Ordinal))
@@ -240,15 +243,28 @@ public sealed class PythonReleaseCliTests
             else native[defect[7..]] = "substituted";
             bad = bad with { Native = native };
         }
-        int reads = 0;
-        using var output = new StringWriter();
-        string path = f.Save(bad, TransferJson.Default.PythonPreparationResult);
-        Assert.ThrowsExactly<InvalidDataException>(() => PythonReleaseCli.Run(
-            ["release", "observe-python", path, f.Root, f.Save(f.IndexTools,
-                TransferJson.Default.PythonIndexTools)],
-            output, observe: (_, _, _) => { reads++; return Task.FromResult(f.Observe()); }));
-        Assert.AreEqual(0, reads);
-        Assert.AreEqual("", output.ToString());
+        // Each job's receive operation applies this one complete preparation check.
+        Assert.ThrowsExactly<InvalidDataException>(() => PythonRelease.Validate(bad));
+    }
+
+    [TestMethod]
+    [DataRow("true", true)]
+    [DataRow("false", false)]
+    [DataRow(null, false)]
+    public void LiveOfficialPreparationRequiresNativePublicRelease(string? release,
+        bool valid)
+    {
+        using var f = new Fixture();
+        var native = new Dictionary<string, string>(f.Preparation.Native);
+        if (release is not null) native["public-release"] = release;
+        PythonPreparationResult official = f.Preparation with
+        {
+            Prepared = f.Prepared with { Subject = f.Prepared.Subject with
+            { Channel = "official", Destination = "pypi", SelectedRef = "refs/heads/main" } },
+            Native = native,
+        };
+        if (valid) PythonRelease.Validate(official);
+        else Assert.ThrowsExactly<InvalidDataException>(() => PythonRelease.Validate(official));
     }
 
     [TestMethod]

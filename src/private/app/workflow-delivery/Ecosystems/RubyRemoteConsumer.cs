@@ -24,13 +24,8 @@ internal static class RubyRemoteConsumer
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        ReleaseCompletion.Validate(prepared);
         if (prepared.Subject.Unit != "hcoona-release-smoke-ruby" ||
             prepared.Files is not [{ Kind: "ruby-gem", Name: "hcoona-release-smoke-ruby" }] ||
-            prepared.Files[0].Size > 8 * 1024 * 1024 ||
-            !prepared.RequiredChecks.SequenceEqual(RubyPreparation.Required) ||
-            prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&
-                check.Status == ReleaseCheckStatus.Passed)) ||
             new[] { tools.Ruby, tools.FactsHelper, tools.SourceHelper, tools.ConsumerHelper,
                 tools.Scratch }.Any(path => !Path.IsPathFullyQualified(path)) ||
             !Directory.Exists(tools.Scratch) ||
