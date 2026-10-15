@@ -28,9 +28,9 @@ internal static class ReleaseCli
         }
         if (args is ["release", "observe-npmjs", var preparationPath, var scratch])
         {
+            // Same-job simulation: prepare-npm validated and qualified this preparation.
             PreparedRelease prepared = Read(preparationPath,
                 TransferJson.Default.NpmPreparationResult).Prepared;
-            ReleaseCompletion.Validate(prepared);
             if (!Path.IsPathFullyQualified(scratch))
                 throw new InvalidDataException("Original release directory must be absolute.");
             foreach (ReleaseFile file in prepared.Files)
@@ -178,9 +178,9 @@ internal static class ReleaseCli
     private static string Credential() => Environment.GetEnvironmentVariable("GITHUB_TOKEN")
         ?? throw new InvalidDataException("Current GitHub read/write credential is unavailable.");
 
+    // The job's receive operation validated the preparation; this checks transferred bytes.
     private static void VerifyOriginals(PreparedRelease prepared, string root)
     {
-        ReleaseCompletion.Validate(prepared);
         if (!Path.IsPathFullyQualified(root))
             throw new InvalidDataException("Original release directory must be absolute.");
         foreach (ReleaseFile file in prepared.Files)

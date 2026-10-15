@@ -93,13 +93,9 @@ internal static class NuGetReleaseCli
             output.WriteLine(JsonSerializer.Serialize(value, type));
     }
 
-    private static NuGetPreparationResult Preparation(string path)
-    {
-        NuGetPreparationResult result = ReleaseCli.Read(path,
-            TransferJson.Default.NuGetPreparationResult);
-        NuGetRelease.Validate(result);
-        return result;
-    }
+    // The caller's job-inputs receive operation validated this preparation for the job.
+    private static NuGetPreparationResult Preparation(string path) =>
+        ReleaseCli.Read(path, TransferJson.Default.NuGetPreparationResult);
 
     private static GithubNuGetObservationResult Observation(string path) =>
         ReleaseCli.Read(path, TransferJson.Default.GithubNuGetObservationResult);

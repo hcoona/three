@@ -209,7 +209,7 @@ public sealed class PythonReleaseCliTests
     [DataRow("command-error")]
     [DataRow("errors")]
     [DataRow("destination")]
-    public void InvalidCompletePreparationStopsBeforeObservation(string defect)
+    public void InvalidCompletePreparationFailsReceipt(string defect)
     {
         using var f = new Fixture();
         PythonPreparationResult bad = f.Preparation;
@@ -240,15 +240,8 @@ public sealed class PythonReleaseCliTests
             else native[defect[7..]] = "substituted";
             bad = bad with { Native = native };
         }
-        int reads = 0;
-        using var output = new StringWriter();
-        string path = f.Save(bad, TransferJson.Default.PythonPreparationResult);
-        Assert.ThrowsExactly<InvalidDataException>(() => PythonReleaseCli.Run(
-            ["release", "observe-python", path, f.Root, f.Save(f.IndexTools,
-                TransferJson.Default.PythonIndexTools)],
-            output, observe: (_, _, _) => { reads++; return Task.FromResult(f.Observe()); }));
-        Assert.AreEqual(0, reads);
-        Assert.AreEqual("", output.ToString());
+        // Each job's receive operation applies this one complete preparation check.
+        Assert.ThrowsExactly<InvalidDataException>(() => PythonRelease.Validate(bad));
     }
 
     [TestMethod]

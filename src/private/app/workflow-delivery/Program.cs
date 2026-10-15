@@ -332,7 +332,6 @@ internal static class Program
 [JsonSerializable(typeof(PythonCiCallerReadback))]
 [JsonSerializable(typeof(RubyCiCallerReadback))]
 [JsonSerializable(typeof(GithubNpmToolSelection))]
-[JsonSerializable(typeof(ReleaseJobProducer))]
 [JsonSerializable(typeof(PlanRequest))]
 [JsonSerializable(typeof(NpmPreparationRequest))]
 [JsonSerializable(typeof(NpmPreparationResult))]

@@ -13,7 +13,7 @@ internal sealed record ReleaseCheck(string Id, ReleaseCheckStatus Status);
 internal sealed record PreparedRelease(ReleaseSubject Subject, ReleaseFile[] Files,
     string[] RequiredChecks, ReleaseCheck[] Checks);
 
-internal enum ReleaseFileState { Absent, Exact, Conflict, Unknown, Unprovable }
+internal enum ReleaseFileState { Absent, Exact, Conflict, Unknown }
 internal sealed record ReleaseFileObservation(string Output, string Name, string Version,
     ReleaseFileState State, long? Size, string? Sha256);
 internal sealed record ReleaseObservation(ReleaseSubject Subject,
@@ -25,6 +25,32 @@ internal sealed record ReleaseOutcome(ReleaseSubject Subject, ReleaseBusinessSta
     ReleaseUpload[] Uploads, string[] Reasons);
 internal sealed record ReleaseDryRun(ReleaseSubject Subject, bool Ready,
     string[] HypotheticalWrites, string[] Reasons);
+
+// Application-owned Release request policy. Live ref eligibility is checked where the
+// request is formed and again by the privileged publisher; dry runs have no write capability.
+internal static class ReleasePolicy
+{
+    internal const string OfficialRef = "refs/heads/main";
+    // Bounds a Python/Ruby original that observation reads back in full for byte comparison.
+    internal const int ReadbackOriginalLimit = 8 * 1024 * 1024;
+    private const string Branches = "refs/heads/";
+
+    internal static void RequireEligible(ReleaseSubject subject)
+    {
+        if (subject.DryRun) return;
+        if (!(subject.Channel == "official" ? subject.SelectedRef == OfficialRef :
+                subject.SelectedRef.StartsWith(Branches, StringComparison.Ordinal) &&
+                    subject.SelectedRef.Length > Branches.Length))
+            throw new InvalidDataException("Unsupported live Release channel ref.");
+    }
+
+    internal static void RequireQualified(PreparedRelease prepared)
+    {
+        if (prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&
+                check.Status == ReleaseCheckStatus.Passed)))
+            throw new InvalidDataException("Release preparation is not qualified.");
+    }
+}
 
 // Destination adapters supply their supported missing operations; the core never
 // infers a multi-file transaction or a missing-file recovery capability.
@@ -134,7 +160,6 @@ internal static class ReleaseCompletion
                     reasons.Add($"Destination state is unknown for {file.Output}.");
                     break;
                 case ReleaseFileState.Conflict:
-                case ReleaseFileState.Unprovable:
                     reasons.Add($"Destination state is {actual.State} for {file.Output}.");
                     break;
             }

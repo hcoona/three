@@ -20,7 +20,6 @@ internal static class NuGetRelease
     internal static DotNetOriginalPackage Original(NuGetPreparationResult preparation,
         string directory)
     {
-        Validate(preparation);
         if (!Path.IsPathFullyQualified(directory))
             throw new InvalidDataException("Original NuGet directory must be absolute.");
         PreparedRelease prepared = preparation.Prepared;
@@ -35,6 +34,7 @@ internal static class NuGetRelease
         return original;
     }
 
+    // The single check of a received preparation in each job.
     internal static void Validate(NuGetPreparationResult preparation)
     {
         PreparedRelease prepared = preparation.Prepared;

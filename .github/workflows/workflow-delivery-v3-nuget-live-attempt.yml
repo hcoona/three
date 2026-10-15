@@ -34,7 +34,6 @@ jobs:
         run: |
           if ($env:GITHUB_REPOSITORY -cne 'hcoona/three' -or $env:SELECTED_REVISION -cne $env:GITHUB_SHA -or
               $env:SELECTED_REF -cne $env:GITHUB_REF) { throw 'Selected Buddy source mismatch' }
-          if ($env:DRY_RUN -ne 'true' -and $env:GITHUB_RUN_ATTEMPT -ne '1') { throw 'Live rerun is unavailable' }
       - name: Check out exact selected source and control
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -114,16 +113,14 @@ jobs:
         run: |
           mise install --yes dotnet@10.0.401
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Validate transferred source, mode and producer
+      - name: Receive transferred preparation
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget validate control prepared
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget receive observation
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Observe native destination and original bytes
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget phase observation
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/observation/observation.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Describe native state and dry-run writes
@@ -185,16 +182,14 @@ jobs:
         run: |
           mise install --yes dotnet@10.0.401
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Validate transferred source, mode and producer
+      - name: Receive transferred preparation
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget validate control prepared
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget receive publication
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Refresh and invoke official NuGet publisher once
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget phase publication
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/publication/publication.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain actual publication results
@@ -244,9 +239,9 @@ jobs:
         run: |
           mise install --yes dotnet@10.0.401
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Validate transferred source, mode and producer
+      - name: Receive transferred preparation
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget validate control prepared
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget receive verification
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Download observation by immutable artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
@@ -261,21 +256,11 @@ jobs:
           artifact-ids: ${{ needs.publish.outputs.publication-id }}
           path: ${{ runner.temp }}/publication
           digest-mismatch: error
-      - name: Validate observation and available publication producer
-        env:
-          WRITE_NEEDED: ${{ needs.observe.outputs.write-needed }}
-        run: |
-          $kinds = @('control', 'prepared', 'observation')
-          if ($env:WRITE_NEEDED -eq 'true') { $kinds += 'publication' }
-          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget validate @kinds
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify original remote bytes and native scoped consumer
         env:
           GITHUB_TOKEN: ${{ github.token }}
           WRITE_NEEDED: ${{ needs.observe.outputs.write-needed }}
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget phase verification
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/consumer-runtime" | Out-Null
           mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/verification/before-consumer.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

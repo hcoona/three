@@ -24,13 +24,9 @@ internal sealed class NpmjsObservation(HttpClient client, TimeProvider? timeProv
     internal async Task<NpmjsObservationResult> ObserveAsync(PreparedRelease prepared,
         CancellationToken token)
     {
-        ReleaseCompletion.Validate(prepared);
         if (prepared.Subject.Destination != "npmjs" || prepared.Files is not
             [{ Kind: "npm-tarball", Size: <= 25_000_000 }])
             throw new InvalidDataException("Unsupported complete public npmjs request.");
-        if (prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&
-            check.Status == ReleaseCheckStatus.Passed)))
-            throw new InvalidDataException("npmjs reads require complete local qualification.");
         ReleaseFile file = prepared.Files[0];
         var reads = new List<NpmjsRead>();
         using var operationTimer = new CancellationTokenSource(TimeSpan.FromSeconds(60),
@@ -45,21 +41,19 @@ internal sealed class NpmjsObservation(HttpClient client, TimeProvider? timeProv
                 + Uri.EscapeDataString(file.Version));
             (int status, byte[] body) = await ReadAsync("metadata", uri, 1_000_000);
             if (status == 404) return Result(ReleaseFileState.Absent);
-            if (status == 429 || status >= 500) return Result(ReleaseFileState.Unknown);
-            if (status != 200) return Result(ReleaseFileState.Unprovable);
+            if (status != 200) return Result(ReleaseFileState.Unknown);
             using JsonDocument document = JsonDocument.Parse(body);
             RequireUnique(document.RootElement);
             JsonElement metadata = document.RootElement;
+            // Responses that do not describe the requested coordinate establish no state.
             if (metadata.GetProperty("name").GetString() != file.Name ||
                 metadata.GetProperty("version").GetString() != file.Version ||
                 !Uri.TryCreate(metadata.GetProperty("dist").GetProperty("tarball").GetString(),
                     UriKind.Absolute, out Uri? tarball))
-                return Result(ReleaseFileState.Unprovable);
+                return Result(ReleaseFileState.Unknown);
             ValidateUri(tarball);
             (status, body) = await ReadAsync("tarball", tarball, 25_000_000);
-            if (status == 404 || status == 429 || status >= 500)
-                return Result(ReleaseFileState.Unknown);
-            if (status != 200) return Result(ReleaseFileState.Unprovable);
+            if (status != 200) return Result(ReleaseFileState.Unknown);
             string sha256 = Convert.ToHexStringLower(SHA256.HashData(body));
             return Result(body.LongLength == file.Size && sha256 == file.Sha256
                 ? ReleaseFileState.Exact : ReleaseFileState.Conflict, body.LongLength, sha256);
@@ -79,7 +73,7 @@ internal sealed class NpmjsObservation(HttpClient client, TimeProvider? timeProv
             KeyNotFoundException or InvalidOperationException or UriFormatException)
         {
             reads.Add(new("operation", "", null, "Unsupported native metadata or response."));
-            return Result(ReleaseFileState.Unprovable);
+            return Result(ReleaseFileState.Unknown);
         }
 
         NpmjsObservationResult Result(ReleaseFileState state, long? size = null,

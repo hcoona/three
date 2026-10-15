@@ -27,12 +27,9 @@ internal static class GithubNuGetPublisher
         string originals, string endpoint, string credential, CancellationToken cancellation,
         HttpMessageHandler? controlledTransport = null)
     {
-        ReleaseCompletion.Validate(prepared);
         if (prepared.Subject.DryRun || prepared.Subject.Channel != "buddy" ||
             prepared.Subject.Destination != "github-packages-nuget" || endpoint != Endpoint ||
             prepared.Files is not [{ Kind: "nuget-package", Size: <= 25 * 1024 * 1024 }] ||
-            prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check =>
-                check.Id == id && check.Status == ReleaseCheckStatus.Passed)) ||
             string.IsNullOrEmpty(credential) || credential.Any(c => c is '\r' or '\n' or '\0') ||
             !Path.IsPathFullyQualified(originals))
             throw new InvalidDataException("Unsupported or unqualified native NuGet upload.");

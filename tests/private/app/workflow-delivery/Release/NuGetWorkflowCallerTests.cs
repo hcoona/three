@@ -50,6 +50,8 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         environment["WRITE_NEEDED"] = "false";
         environment["CONTROLLED_CONSUMER_EXIT"] = expectedExit.ToString(
             System.Globalization.CultureInfo.InvariantCulture);
+        Assert.IsTrue((await Step(fixture, "verify-result", "Receive transferred preparation",
+            environment)).Succeeded);
 
         NativeCommandResult result = await Step(fixture, "verify-result",
             "Verify original remote bytes and native scoped consumer", environment);

@@ -28,18 +28,15 @@ internal static class PythonRemoteConsumer
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        ReleaseCompletion.Validate(prepared);
         PythonSmokePackageOperations.Validate(tools);
         if (kind is not ("python-wheel" or "python-sdist") ||
             prepared.Subject.Unit != Package || prepared.Files.Length != 2 ||
             prepared.Files.Count(file => file.Kind == "python-wheel") != 1 ||
             prepared.Files.Count(file => file.Kind == "python-sdist") != 1 ||
-            prepared.Files.Any(file => file.Name != Package || file.Size > 8 * 1024 * 1024 ||
+            prepared.Files.Any(file => file.Name != Package ||
                 file.Version != prepared.Files[0].Version || file.Version.Length > 256 ||
                 file.Version.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not
                     ('.' or '-' or '+' or '!'))) ||
-            prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&
-                check.Status == ReleaseCheckStatus.Passed)) ||
             !Path.IsPathFullyQualified(tools.Uv))
             throw new InvalidDataException("Unsupported or unqualified remote Python consumer.");
         string index = (prepared.Subject.Channel, prepared.Subject.Destination) switch

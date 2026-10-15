@@ -40,7 +40,6 @@ public sealed class ReleaseStateTests
     [TestMethod]
     [DataRow("Absent", "Unsatisfied")]
     [DataRow("Conflict", "Unsatisfied")]
-    [DataRow("Unprovable", "Unsatisfied")]
     [DataRow("Unknown", "Unknown")]
     public void SuccessfulUploadCannotReplaceCompleteDestinationState(string stateName,
         string expectedName)
@@ -145,7 +144,6 @@ public sealed class ReleaseStateTests
     [DataRow("Absent", true, 1)]
     [DataRow("Conflict", false, 0)]
     [DataRow("Unknown", false, 0)]
-    [DataRow("Unprovable", false, 0)]
     public void DevelopmentDryRunOnlyDescribesSupportedHypotheticalWrites(
         string stateName, bool ready, int writes)
     {
@@ -176,6 +174,25 @@ public sealed class ReleaseStateTests
         Assert.IsFalse(result.Ready);
         Assert.IsEmpty(result.HypotheticalWrites);
         Assert.Contains("missing set", Assert.ContainsSingle(result.Reasons));
+    }
+
+    [TestMethod]
+    [DataRow("buddy", "refs/heads/feature", false, true)]
+    [DataRow("buddy", "refs/heads/", false, false)]
+    [DataRow("buddy", "refs/tags/v1", false, false)]
+    [DataRow("official", "refs/heads/main", false, true)]
+    [DataRow("official", "refs/heads/feature", false, false)]
+    [DataRow("official", "refs/tags/v1", false, false)]
+    [DataRow("official", "refs/tags/v1", true, true)]
+    [DataRow("buddy", "refs/tags/v1", true, true)]
+    public void LiveRefEligibilityHasOneDefinition(string channel, string selectedRef,
+        bool dryRun, bool eligible)
+    {
+        ReleaseSubject subject = Prepare().Subject with
+        { Channel = channel, SelectedRef = selectedRef, DryRun = dryRun };
+        if (eligible) ReleasePolicy.RequireEligible(subject);
+        else Assert.ThrowsExactly<InvalidDataException>(() =>
+            ReleasePolicy.RequireEligible(subject));
     }
 
     private static PreparedRelease Prepare() => new(

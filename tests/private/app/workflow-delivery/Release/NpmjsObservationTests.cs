@@ -40,7 +40,7 @@ public sealed class NpmjsObservationTests(TestContext context)
     [DataRow(404, "Absent")]
     [DataRow(429, "Unknown")]
     [DataRow(503, "Unknown")]
-    [DataRow(403, "Unprovable")]
+    [DataRow(403, "Unknown")]
     public async Task MetadataStatusDefinesReadOnlyStateWithoutTarballRequest(int status,
         string state)
     {
@@ -96,7 +96,7 @@ public sealed class NpmjsObservationTests(TestContext context)
     [DataRow("version")]
     [DataRow("origin")]
     [DataRow("encoding")]
-    public async Task UnprovableMetadataStopsBeforeFurtherRequests(string defect)
+    public async Task UnsupportedMetadataStopsBeforeFurtherRequests(string defect)
     {
         string metadata = defect switch
         {
@@ -119,7 +119,7 @@ public sealed class NpmjsObservationTests(TestContext context)
         NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
             Prepare([1, 2, 3]), context.CancellationToken);
 
-        Assert.AreEqual(ReleaseFileState.Unprovable,
+        Assert.AreEqual(ReleaseFileState.Unknown,
             Assert.ContainsSingle(result.Observation.Files).State);
         Assert.HasCount(1, handler.Requests);
     }
@@ -143,7 +143,7 @@ public sealed class NpmjsObservationTests(TestContext context)
         NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
             Prepare([1, 2, 3]), context.CancellationToken);
 
-        Assert.AreEqual(ReleaseFileState.Unprovable,
+        Assert.AreEqual(ReleaseFileState.Unknown,
             Assert.ContainsSingle(result.Observation.Files).State);
         Assert.HasCount(1, handler.Requests);
     }
@@ -162,7 +162,7 @@ public sealed class NpmjsObservationTests(TestContext context)
         NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
             Prepare([1, 2, 3]), context.CancellationToken);
 
-        Assert.AreEqual(ReleaseFileState.Unprovable,
+        Assert.AreEqual(ReleaseFileState.Unknown,
             Assert.ContainsSingle(result.Observation.Files).State);
         Assert.HasCount(6, handler.Requests);
     }

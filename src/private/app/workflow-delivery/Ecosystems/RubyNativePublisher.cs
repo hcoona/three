@@ -22,35 +22,17 @@ internal static class RubyNativePublisher
         CancellationToken token)
     {
         PreparedRelease prepared = preparation.Prepared;
-        ReleaseCompletion.Validate(prepared);
         if (prepared.Subject.DryRun || prepared.Subject.Unit != "hcoona-release-smoke-ruby" ||
-            prepared.Files is not [{ Kind: "ruby-gem", Name: "hcoona-release-smoke-ruby" }] ||
-            prepared.Files[0].Size > 8 * 1024 * 1024 || preparation.Errors.Length != 0 ||
-            !prepared.RequiredChecks.SequenceEqual(RubyPreparation.Required) ||
-            prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&
-                check.Status == ReleaseCheckStatus.Passed)) ||
-            preparation.Commands.Length == 0 || preparation.Commands.Any(command =>
-                !command.Result.Succeeded || command.Result.Error is not null) ||
-            !preparation.Native.TryGetValue("name", out string? name) ||
-                name != prepared.Files[0].Name ||
-            !preparation.Native.TryGetValue("version", out string? version) ||
-                version != prepared.Files[0].Version ||
-            !preparation.Native.TryGetValue("platform", out string? nativePlatform) ||
-                nativePlatform != "ruby" ||
-            !preparation.Native.TryGetValue("commit", out string? revision) ||
-                revision != prepared.Subject.Revision)
-            throw new InvalidDataException("Native Ruby push requires complete qualified state.");
+            prepared.Files is not [{ Kind: "ruby-gem", Name: "hcoona-release-smoke-ruby" }])
+            throw new InvalidDataException("Native Ruby push requires a supported request.");
         bool buddy = prepared.Subject.Channel == "buddy" &&
             prepared.Subject.Destination == "github-packages-ruby";
         bool official = prepared.Subject.Channel == "official" &&
             prepared.Subject.Destination == "rubygems";
-        if (!(buddy || official) || (official ?
-                prepared.Subject.SelectedRef != "refs/heads/main" ||
-                    !preparation.Native.TryGetValue("public-release", out string? release) ||
-                    release != "true" :
-                !prepared.Subject.SelectedRef.StartsWith("refs/heads/", StringComparison.Ordinal)
-                    || prepared.Subject.SelectedRef.Length == "refs/heads/".Length))
+        if (!(buddy || official))
             throw new InvalidDataException("Unsupported native Ruby live channel or ref.");
+        // The effect boundary repeats the request's live ref eligibility.
+        ReleasePolicy.RequireEligible(prepared.Subject);
         if (new[] { originals, tools.Ruby, tools.Gem, tools.Scratch }.Any(path =>
                 !Path.IsPathFullyQualified(path)) || !Directory.Exists(tools.Scratch) ||
             Directory.EnumerateFileSystemEntries(tools.Scratch).Any())

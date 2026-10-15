@@ -18,12 +18,8 @@ internal static class RubyDestinationObservation
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        ReleaseCompletion.Validate(prepared);
-        if (prepared.Files is not [{ Kind: "ruby-gem", Name: "hcoona-release-smoke-ruby" }] ||
-            prepared.Files[0].Size > 8 * 1024 * 1024 ||
-            prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&
-                check.Status == ReleaseCheckStatus.Passed)))
-            throw new InvalidDataException("Native Ruby observation needs a qualified original.");
+        if (prepared.Files is not [{ Kind: "ruby-gem", Name: "hcoona-release-smoke-ruby" }])
+            throw new InvalidDataException("Native Ruby observation needs a supported original.");
         string host = (prepared.Subject.Channel, prepared.Subject.Destination) switch
         {
             ("buddy", "github-packages-ruby") => "https://rubygems.pkg.github.com/hcoona",

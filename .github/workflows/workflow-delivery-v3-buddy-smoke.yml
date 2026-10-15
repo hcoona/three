@@ -30,10 +30,6 @@ jobs:
       control-id: ${{ steps.control.outputs.artifact-id }}
       preparation-id: ${{ steps.originals.outputs.artifact-id }}
     steps:
-      - name: Reject unsupported live rerun
-        env:
-          DRY_RUN: ${{ inputs.dry-run }}
-        run: test "$DRY_RUN" = true || test "$GITHUB_RUN_ATTEMPT" = 1
       - name: Check out selected source and control
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -120,14 +116,13 @@ jobs:
           artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
           path: ${{ runner.temp }}/prepared
           digest-mismatch: error
-      - name: Validate transferred subject and producer
+      - name: Receive transferred preparation
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm validate control prepared
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm receive observation
       - name: Observe native package and original bytes
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm phase observation
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-npm \
             "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/observation/observation.json"
       - name: Describe native state
@@ -200,9 +195,9 @@ jobs:
           artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
           path: ${{ runner.temp }}/prepared
           digest-mismatch: error
-      - name: Validate transferred subject and producer
+      - name: Receive transferred preparation
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm validate control prepared
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm receive publication
       - name: Prepare qualified native npm toolchain
         working-directory: ${{ runner.temp }}
         run: |
@@ -223,7 +218,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/publisher-runtime"
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm phase publication
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-github-npm \
             "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" \
             "$RUNNER_TEMP/publisher-runtime" "$RUNNER_TEMP/npm-tools/bin" \
@@ -271,9 +265,9 @@ jobs:
           artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
           path: ${{ runner.temp }}/prepared
           digest-mismatch: error
-      - name: Validate transferred subject and producer
+      - name: Receive transferred preparation
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm validate control prepared
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm receive verification
       - name: Prepare qualified native npm toolchain
         working-directory: ${{ runner.temp }}
         run: |
@@ -307,10 +301,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           WRITE_NEEDED: ${{ needs.observe.outputs.write-needed }}
         run: |
-          kinds=(control prepared observation)
-          if test "$WRITE_NEEDED" = true; then kinds+=(publication); fi
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm validate "${kinds[@]}"
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm phase verification
           mkdir -p "$RUNNER_TEMP/consumer-runtime"
           control="$RUNNER_TEMP/control/WorkflowDelivery.dll"
           prepared="$RUNNER_TEMP/prepared/preparation.json"

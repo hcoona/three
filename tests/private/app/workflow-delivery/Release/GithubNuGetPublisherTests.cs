@@ -136,7 +136,6 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
     [DataRow("dry-run")]
     [DataRow("endpoint")]
     [DataRow("changed-bytes")]
-    [DataRow("missing-check")]
     public async Task UnqualifiedRequestMakesNoNativeSend(string change)
     {
         using var fixture = new Fixture();

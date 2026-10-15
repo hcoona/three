@@ -18,7 +18,6 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
 {
     private const string Package = "hcoona-release-smoke-python";
     private const int MetadataLimit = 2 * 1024 * 1024;
-    private const int ArchiveLimit = 8 * 1024 * 1024;
 
     internal static HttpClient CreateClient() => new(new HttpClientHandler
     {
@@ -37,15 +36,12 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        ReleaseCompletion.Validate(prepared);
         if (prepared.Files.Length != 2 ||
             prepared.Files.Count(file => file.Kind == "python-wheel") != 1 ||
             prepared.Files.Count(file => file.Kind == "python-sdist") != 1 ||
-            prepared.Files.Any(file => file.Name != Package || file.Size > ArchiveLimit ||
-                file.Version != prepared.Files[0].Version) ||
-            prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&
-                check.Status == ReleaseCheckStatus.Passed)))
-            throw new InvalidDataException("Unsupported or unqualified Python original pair.");
+            prepared.Files.Any(file => file.Name != Package ||
+                file.Version != prepared.Files[0].Version))
+            throw new InvalidDataException("Unsupported Python original pair.");
         string origin = (prepared.Subject.Channel, prepared.Subject.Destination) switch
         {
             ("buddy", "testpypi") => "test.pypi.org",
@@ -118,7 +114,8 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
                 }
                 var archive = new Uri(indexUri, metadata.GetProperty("url").GetString());
                 ValidateUri(archive, storage);
-                (status, body) = await ReadAsync(original.Output, archive, storage, ArchiveLimit);
+                (status, body) = await ReadAsync(original.Output, archive, storage,
+                    ReleasePolicy.ReadbackOriginalLimit);
                 if (status != 200) continue;
                 string digest = Convert.ToHexStringLower(SHA256.HashData(body));
                 files[i] = new(original.Output, original.Name, original.Version,

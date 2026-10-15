@@ -364,19 +364,14 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                     ["GITHUB_RUN_ATTEMPT"] = "1",
                     ["GITHUB_OUTPUT"] = outputPath,
                 };
+                // The observation job receives the actual retained preparation once.
+                Directory.CreateDirectory(Path.Combine(phase, "prepared"));
+                File.Copy(Path.Combine(retained, "preparation.json"),
+                    Path.Combine(phase, "prepared", "preparation.json"));
                 Assert.AreEqual(0, ReleaseJobInputs.Run(["release", "job-inputs", "ruby",
-                    "phase", "observation"],
+                    "receive", "observation"],
                     name => environment.GetValueOrDefault(name)));
-                string producerPath = Path.Combine(phase, "observation", "producer.json");
-                string producerJson = await File.ReadAllTextAsync(producerPath);
-                await RetainAsync($"{state}-producer.json", producerJson);
-                using (JsonDocument producer = JsonDocument.Parse(producerJson))
-                {
-                    Assert.AreEqual(subject, producer.RootElement.GetProperty("subject")
-                        .Deserialize(TransferJson.Default.ReleaseSubject));
-                    Assert.AreEqual(run, producer.RootElement.GetProperty("run").GetString());
-                    Assert.AreEqual("1", producer.RootElement.GetProperty("attempt").GetString());
-                }
+                Assert.IsTrue(Directory.Exists(Path.Combine(phase, "observation")));
                 var tools = new RubySourceTools(ruby,
                     Path.Combine(checkout,
                         "src/private/app/workflow-delivery/Native/Ruby/source.rb"),

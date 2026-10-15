@@ -55,7 +55,11 @@ metadata. Managed tests check regeneration; native helper tests use the static
 schemas directly. Native identity and business checks remain separate.
 
 Ordinary Release callers use typed `job-inputs` operations for `request`, `originals`,
-`validate <phase...>`, `phase <phase>` and `state`. Native tool-config operations
+`receive <phase>` and `state`. `receive` is the one check of the downloaded
+preparation in each later job: it binds its subject to the request and applies the
+ecosystem's complete preparation check before creating the phase output directory.
+Every `job-inputs` entry rejects a live run attempt other than 1, so partial
+reruns of later jobs stop too. Native tool-config operations
 remain ecosystem-specific. npm Official simulation uses `simulation-request` in
 its single job. `complete-github-npm` takes preparation, initial observation,
 final observation, consumer and publication (`-` only when omitted) paths. Missing

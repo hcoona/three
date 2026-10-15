@@ -228,20 +228,11 @@ public sealed class RubyNativePublisherTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("errors")]
-    [DataRow("no-commands")]
     [DataRow("no-files")]
     [DataRow("extra-file")]
     [DataRow("wrong-unit")]
     [DataRow("wrong-name")]
     [DataRow("wrong-kind")]
-    [DataRow("empty-output")]
-    [DataRow("empty-build")]
-    [DataRow("invalid-revision")]
-    [DataRow("invalid-declaration")]
-    [DataRow("no-required-checks")]
-    [DataRow("reordered-required-checks")]
-    [DataRow("subset-required-checks")]
     public async Task QualifiedStateDefectsStopBeforeNativeInvocation(string defect)
     {
         using var fixture = new Fixture();
@@ -322,101 +313,6 @@ public sealed class RubyNativePublisherTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("name", false)]
-    [DataRow("name", true)]
-    [DataRow("version", false)]
-    [DataRow("version", true)]
-    [DataRow("platform", false)]
-    [DataRow("platform", true)]
-    [DataRow("commit", false)]
-    [DataRow("commit", true)]
-    public async Task NativeIdentityMismatchStopsBeforeNativeInvocation(string fact, bool missing)
-    {
-        using var fixture = new Fixture();
-        if (missing)
-            fixture.Preparation.Native.Remove(fact);
-        else
-            fixture.Preparation.Native[fact] = fact == "commit" ? new string('b', 40) : "other";
-        await AssertRejectedAsync(fixture.Preparation, fixture);
-    }
-
-    [TestMethod]
-    [DataRow("native-input", "Failed")]
-    [DataRow("build", "Failed")]
-    [DataRow("contents", "Failed")]
-    [DataRow("consumer", "Failed")]
-    [DataRow("original-bytes", "Failed")]
-    [DataRow("consumer", "absent")]
-    [DataRow("consumer", "Missing")]
-    [DataRow("consumer", "Skipped")]
-    [DataRow("consumer", "Cancelled")]
-    [DataRow("consumer", "TimedOut")]
-    public async Task RequiredCheckFailuresStopBeforeNativeInvocation(string id, string status)
-    {
-        using var fixture = new Fixture();
-        PreparedRelease prepared = fixture.Preparation.Prepared;
-        ReleaseCheck[] checks =
-            status == "absent"
-                ? prepared.Checks.Where(check => check.Id != id).ToArray()
-                : prepared
-                    .Checks.Select(check =>
-                        check.Id == id
-                            ? check with
-                            {
-                                Status = Enum.Parse<ReleaseCheckStatus>(status),
-                            }
-                            : check
-                    )
-                    .ToArray();
-        await AssertRejectedAsync(
-            fixture.Preparation with
-            {
-                Prepared = prepared with { Checks = checks },
-            },
-            fixture
-        );
-    }
-
-    [TestMethod]
-    [DataRow(nameof(NativeTermination.Exited), 0, true)]
-    [DataRow(nameof(NativeTermination.Exited), 17, false)]
-    [DataRow(nameof(NativeTermination.Cancelled), 0, false)]
-    [DataRow(nameof(NativeTermination.TimedOut), -1, false)]
-    [DataRow(nameof(NativeTermination.InvalidOutput), 0, false)]
-    [DataRow(nameof(NativeTermination.CleanupFailed), 0, false)]
-    [DataRow(nameof(NativeTermination.StartFailed), -1, false)]
-    [DataRow(nameof(NativeTermination.InputFailed), 0, false)]
-    public async Task PreparationCommandFailuresStopBeforeNativeInvocation(
-        string terminationName,
-        int exit,
-        bool error
-    )
-    {
-        using var fixture = new Fixture();
-        NativeTermination termination = Enum.Parse<NativeTermination>(terminationName);
-        RubyPreparationResult preparation = fixture.Preparation;
-        // Passed business checks cannot replace actual reached preparation command success.
-        ReleaseCommand failed = preparation.Commands[1] with
-        {
-            Result = new(
-                termination,
-                exit < 0 ? null : exit,
-                "",
-                "",
-                2.75,
-                error ? "controlled preparation error" : null
-            ),
-        };
-        await AssertRejectedAsync(
-            preparation with
-            {
-                Commands = [preparation.Commands[0], failed],
-            },
-            fixture
-        );
-    }
-
-    [TestMethod]
     [DataRow("buddy", "github-packages-ruby", "refs/tags/v1", "true")]
     [DataRow("buddy", "github-packages-ruby", "refs/heads/", "true")]
     [DataRow("buddy", "rubygems", "refs/heads/development", "true")]
@@ -424,9 +320,6 @@ public sealed class RubyNativePublisherTests(TestContext context)
     [DataRow("unsupported", "rubygems", "refs/heads/main", "true")]
     [DataRow("official", "rubygems", "refs/heads/development", "true")]
     [DataRow("official", "rubygems", "refs/tags/v1", "true")]
-    [DataRow("official", "rubygems", "refs/heads/main", "false")]
-    [DataRow("official", "rubygems", "refs/heads/main", "True")]
-    [DataRow("official", "rubygems", "refs/heads/main", "missing")]
     public async Task UnsupportedChannelsAndRefsStopBeforeNativeInvocation(
         string channel,
         string destination,
@@ -489,7 +382,6 @@ public sealed class RubyNativePublisherTests(TestContext context)
     [DataRow("wrong-digest")]
     [DataRow("wrong-size")]
     [DataRow("parent-path")]
-    [DataRow("absolute-path")]
     [DataRow("relative-originals")]
     [DataRow("relative-ruby")]
     [DataRow("relative-gem")]
@@ -553,51 +445,6 @@ public sealed class RubyNativePublisherTests(TestContext context)
         }
         preparation = preparation with { Prepared = preparation.Prepared with { Files = [file] } };
         await AssertRejectedAsync(preparation, fixture, originals, tools);
-    }
-
-    [TestMethod]
-    [DataRow(8 * 1024 * 1024, true)]
-    [DataRow(8 * 1024 * 1024 + 1, false)]
-    public async Task OriginalSizeLimitIsInclusive(int length, bool allowed)
-    {
-        using var fixture = new Fixture();
-        byte[] bytes = new byte[length];
-        File.WriteAllBytes(fixture.OriginalPath, bytes);
-        RubyPreparationResult preparation = fixture.Preparation with
-        {
-            Prepared = fixture.Preparation.Prepared with
-            {
-                Files =
-                [
-                    fixture.Preparation.Prepared.Files[0] with
-                    {
-                        Size = bytes.Length,
-                        Sha256 = Digest(bytes),
-                    },
-                ],
-            },
-        };
-        if (!allowed)
-        {
-            await AssertRejectedAsync(preparation, fixture);
-            return;
-        }
-        int calls = 0;
-        RubyPublishResult result = await RubyNativePublisher.PublishAsync(
-            preparation,
-            fixture.Originals,
-            fixture.Tools,
-            fixture.Platform,
-            (_, _) =>
-            {
-                calls++;
-                return Task.FromResult(Success());
-            },
-            context.CancellationToken
-        );
-        Assert.AreEqual(1, calls);
-        Assert.AreEqual("selected-gem", result.Upload.Output);
-        Assert.AreEqual(0, result.Upload.Command.ExitCode);
     }
 
     [TestMethod]

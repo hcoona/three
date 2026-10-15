@@ -55,12 +55,9 @@ internal static class PythonPreparation
             ReleaseSubject subject = request.Subject;
             bool buddy = subject.Channel == "buddy" && subject.Destination == "testpypi";
             bool official = subject.Channel == "official" && subject.Destination == "pypi";
-            if (!(buddy || official) || string.IsNullOrWhiteSpace(subject.SelectedRef) ||
-                !subject.DryRun &&
-                (official ? subject.SelectedRef != "refs/heads/main" :
-                    !subject.SelectedRef.StartsWith("refs/heads/", StringComparison.Ordinal) ||
-                        subject.SelectedRef.Length == "refs/heads/".Length))
+            if (!(buddy || official) || string.IsNullOrWhiteSpace(subject.SelectedRef))
                 throw new InvalidDataException("Unsupported Python Release channel or ref.");
+            ReleasePolicy.RequireEligible(subject);
             GitRevision revision = await new GitReader(checkout).ReadAsync(subject.Revision, token);
             if (revision.Commit != subject.Revision)
                 throw new InvalidDataException(

@@ -30,7 +30,6 @@ internal static class PythonNativePublisher
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        ReleaseCompletion.Validate(prepared);
         string upload = (prepared.Subject.Channel, prepared.Subject.Destination) switch
         {
             ("buddy", "testpypi") => "https://test.pypi.org/legacy/",
@@ -41,15 +40,10 @@ internal static class PythonNativePublisher
             prepared.Files.Length != 2 ||
             prepared.Files.Count(file => file.Kind == "python-wheel") != 1 ||
             prepared.Files.Count(file => file.Kind == "python-sdist") != 1 ||
-            prepared.Files.Any(file => file.Name != Package || file.Size > 8 * 1024 * 1024 ||
-                file.Version != prepared.Files[0].Version) ||
-            prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&
-                check.Status == ReleaseCheckStatus.Passed)) ||
-            (prepared.Subject.Channel == "official"
-                ? prepared.Subject.SelectedRef != "refs/heads/main"
-                : !prepared.Subject.SelectedRef.StartsWith("refs/heads/", StringComparison.Ordinal)
-                    || prepared.Subject.SelectedRef.Length == "refs/heads/".Length))
-            throw new InvalidDataException("Unsupported or unqualified Python publication.");
+            prepared.Files.Any(file => file.Name != Package))
+            throw new InvalidDataException("Unsupported Python publication.");
+        // The effect boundary repeats the request's live ref eligibility.
+        ReleasePolicy.RequireEligible(prepared.Subject);
         string root = Absolute(originals), scratch = Absolute(tools.Scratch);
         if (!Directory.Exists(root) || !Directory.Exists(scratch) ||
             Directory.EnumerateFileSystemEntries(scratch).Any() ||

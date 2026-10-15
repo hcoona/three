@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using WorkflowDelivery.Platform;
+using WorkflowDelivery.Release;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Ecosystems;
@@ -91,7 +92,8 @@ internal static class RubySourceReader
                         !Path.GetFullPath(path).StartsWith(download + Path.DirectorySeparatorChar,
                             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
                                 StringComparison.Ordinal) ||
-                        size <= 0 || size > 8 * 1024 * 1024 || !File.Exists(path) ||
+                        size <= 0 || size > ReleasePolicy.ReadbackOriginalLimit ||
+                        !File.Exists(path) ||
                         new FileInfo(path).Length != size ||
                         Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))) !=
                             digest)

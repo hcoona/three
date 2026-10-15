@@ -46,7 +46,6 @@ public sealed class RubyReleaseTests(TestContext context)
     [DataRow("platform")]
     [DataRow("commit")]
     [DataRow("extra-file")]
-    [DataRow("size")]
     public void ValidateIncompletePreparationCannotQualify(string defect)
     {
         using var fixture = new RubyCallerFixture();
@@ -76,11 +75,8 @@ public sealed class RubyReleaseTests(TestContext context)
 
     [TestMethod]
     [DataRow("buddy", "github-packages-ruby", "refs/heads/topic", false, false, true)]
-    [DataRow("buddy", "github-packages-ruby", "refs/tags/v1", false, true, false)]
-    [DataRow("buddy", "github-packages-ruby", "refs/heads/", false, true, false)]
     [DataRow("official", "rubygems", "refs/heads/main", false, true, true)]
     [DataRow("official", "rubygems", "refs/heads/main", false, false, false)]
-    [DataRow("official", "rubygems", "refs/heads/topic", false, true, false)]
     [DataRow("official", "rubygems", "refs/tags/preview", true, false, true)]
     [DataRow("buddy", "github-packages-ruby", "refs/tags/preview", true, false, true)]
     [DataRow("buddy", "rubygems", "refs/heads/main", true, true, false)]
