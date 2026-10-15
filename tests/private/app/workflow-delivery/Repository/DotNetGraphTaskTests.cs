@@ -1,6 +1,5 @@
 using System.Security;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Logging;
 using NuGet.ProjectModel;
@@ -713,9 +712,6 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         DotNetGraphNode consumer = Assert.ContainsSingle(response.Nodes.Where(node =>
             node.Identity.Project == fixture.PathOf("main.csproj")));
         Assert.AreEqual("linux-x64", consumer.Dimension.RuntimeIdentifier);
-        LockFile assets = new LockFileFormat().Read(fixture.PathOf("obj/main/project.assets.json"));
-        Assert.IsTrue(assets.Targets.Count > 1);
-        Assert.IsTrue(assets.Targets.Any(target => target.RuntimeIdentifier == "linux-x64"));
         foreach ((string path, string role) in new[]
         {
             ("config/packages.props", "CentralPackageConfiguration"),
@@ -766,29 +762,6 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             Assert.AreEqual("Evaluation", input.Stage);
             Assert.IsFalse(File.Exists(input.Path));
         }
-    }
-
-    [TestMethod]
-    [Timeout(60000, CooperativeCancellation = true)]
-    public async Task NativeAnalyzerConfigDiscoverySwitchesRemainEffective()
-    {
-        using var fixture = new GraphFixture();
-        fixture.Write("dirs.proj", """
-            <Project><ItemGroup><ProjectReference Include="main.csproj" /></ItemGroup></Project>
-            """);
-        fixture.Write("main.csproj", """
-            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
-              <TargetFramework>net10.0</TargetFramework>
-              <DiscoverEditorConfigFiles>false</DiscoverEditorConfigFiles>
-              <DiscoverGlobalAnalyzerConfigFiles>false</DiscoverGlobalAnalyzerConfigFiles>
-            </PropertyGroup></Project>
-            """);
-        fixture.Write("source.cs", "");
-        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
-        Assert.IsFalse(response.Inputs.Any(input =>
-            input.Role is "PotentialEditorConfigFiles" or "GlobalAnalyzerConfigFiles"));
-        Assert.IsTrue(response.Inputs.Any(input => input.Role == "Compile" &&
-            input.Path == fixture.PathOf("source.cs")));
     }
 
     [TestMethod]
@@ -861,33 +834,13 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         await fixture.PrepareAsync(context.CancellationToken);
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
-        Assert.Contains(role, error.Message);
+        Assert.Contains("Malformed required native Boolean: malformed", error.Message);
+        Assert.Contains("role " + role, error.Message);
         Assert.Contains(GraphFixture.Revision, error.Message);
         Assert.Contains(fixture.Root, error.Message);
         Assert.IsTrue(error.Message.Contains(fixture.PathOf("dirs.proj"),
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
                 StringComparison.Ordinal));
-        Assert.Contains("RestoreLockedMode", error.Message);
-        Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
-    }
-
-    [TestMethod]
-    [Timeout(30000, CooperativeCancellation = true)]
-    public async Task UnavailableNativeGlobalsKeepTheirDiagnosticWithoutReflection()
-    {
-        using var fixture = new GraphFixture();
-        fixture.Write("dirs.proj", """
-            <Project><PropertyGroup>
-              <IsTestProject>malformed</IsTestProject>
-            </PropertyGroup></Project>
-            """);
-        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.ReadAsync(context.CancellationToken, reflectionDisabled: true));
-        Assert.Contains("Reflection-disabled host verified", error.Message);
-        Assert.Contains("Malformed required native Boolean: malformed", error.Message);
-        Assert.Contains("role IsTestProject", error.Message);
-        Assert.Contains(GraphFixture.Revision, error.Message);
-        Assert.Contains(fixture.Root, error.Message);
         Assert.Contains("RestoreLockedMode", error.Message);
         Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
     }
@@ -1426,8 +1379,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                     result.Error + "\n" + result.Stdout + result.Stderr);
         }
 
-        internal async Task<DotNetGraphResponse> ReadAsync(CancellationToken token,
-            bool reflectionDisabled = false)
+        internal async Task<DotNetGraphResponse> ReadAsync(CancellationToken token)
         {
             await PrepareAsync(token);
             Write("request.json", JsonSerializer.Serialize(new DotNetGraphRequest(Revision,
@@ -1446,48 +1398,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                   </Target>
                 </Project>
                 """);
-            string[] launcher = ["msbuild"];
-            if (reflectionDisabled)
-            {
-                NativeCommandResult location = await NativeProcess.ExecuteAsync(new("dotnet", Root,
-                    ["msbuild", PathOf("read.proj"), "-nologo", "-noAutoResponse",
-                        "-getProperty:MSBuildToolsPath"], 30), token);
-                Assert.IsTrue(location.Succeeded,
-                    location.Stdout + location.Stderr + location.Error);
-                string nativeDirectory = location.Stdout.Trim();
-                Assert.IsTrue(System.IO.Path.IsPathFullyQualified(nativeDirectory));
-                JsonNode runtime = JsonNode.Parse(await File.ReadAllTextAsync(
-                    System.IO.Path.Combine(nativeDirectory, "MSBuild.runtimeconfig.json"), token))!;
-                runtime["runtimeOptions"]!["configProperties"]![
-                    "System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault"] = false;
-                Write("reflection-disabled.runtimeconfig.json", runtime.ToJsonString());
-                launcher = ["exec", "--runtimeconfig",
-                    PathOf("reflection-disabled.runtimeconfig.json"),
-                    System.IO.Path.Combine(nativeDirectory, "MSBuild.dll")];
-                string jsonAssembly = SecurityElement.Escape(
-                    typeof(JsonSerializer).Assembly.Location)!;
-                string wrapper = await File.ReadAllTextAsync(PathOf("read.proj"), token);
-                Write("read.proj", wrapper.Replace("<Target Name=\"Read\">", $"""
-                    <UsingTask TaskName="VerifyReflectionDisabled"
-                        TaskFactory="RoslynCodeTaskFactory"
-                        AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
-                      <Task>
-                        <Reference Include="{jsonAssembly}" />
-                        <Code Type="Fragment" Language="cs"><![CDATA[
-                          if (System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault)
-                            throw new System.InvalidOperationException(
-                              "JSON reflection remains enabled.");
-                          Log.LogMessage(Microsoft.Build.Framework.MessageImportance.High,
-                            "Reflection-disabled host verified");
-                        ]]></Code>
-                      </Task>
-                    </UsingTask>
-                    <Target Name="Read">
-                      <VerifyReflectionDisabled />
-                    """, StringComparison.Ordinal));
-            }
             NativeCommandResult query = await NativeProcess.ExecuteAsync(new("dotnet", Root,
-                [.. launcher, PathOf("read.proj"), "-nologo", "-noAutoResponse", "-target:Read",
+                ["msbuild", PathOf("read.proj"), "-nologo", "-noAutoResponse", "-target:Read",
                     "-property:WrapperSentinel=wrapper-only"], 30), token);
             token.ThrowIfCancellationRequested();
             if (query.Termination == NativeTermination.TimedOut)

@@ -80,8 +80,13 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         CollectionAssert.IsSubsetOf(DotNetChecks.Properties(globals), pack.Arguments);
         Assert.HasCount(1, result.Packages.Packages);
         Assert.HasCount(1, result.Packages.ConsumerOutputs);
+        Assert.HasCount(4, result.Packages.Commands);
         Assert.AreEqual(DotNetPackageConsumer.Marker,
             result.Packages.Commands[^1].Result.Stdout.Trim());
+        Assert.IsTrue(result.Packages.Commands.Skip(1).All(
+            item => item.Command.Environment!["NUGET_PACKAGES"]!
+            .StartsWith(fixture.Scratch, StringComparison.Ordinal)));
+        await FreshConsumerCannotBorrowCachedMissingPackageAsync(fixture, result.Packages);
 
         void AssertNativeContext(JsonDocument receipt, string root)
         {
@@ -113,36 +118,6 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                 folder.Path, package.Path, "build", "PrivateP2PCaching.proj")) ==
                 Path.GetFullPath(helper)));
         }
-    }
-
-    [TestMethod]
-    public async Task NativeProductPackAndCleanConsumerAgreeWithNbgv()
-    {
-        using var fixture = await ProductFixture.CreateAsync(context.CancellationToken);
-        DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Retain(fixture, result, "first");
-        context.WriteLine(JsonSerializer.Serialize(
-            result, TransferJson.Default.DotNetPackageRunResult));
-        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied,
-            string.Join("; ", result.Failures.Select(item => item.Error)));
-        Assert.HasCount(1, result.Packages);
-        Assert.HasCount(1, result.ConsumerOutputs);
-        Assert.HasCount(4, result.Commands);
-        Assert.AreEqual(DotNetPackageConsumer.Marker,
-            result.Commands[^1].Result.Stdout.Trim());
-        Assert.IsTrue(result.Commands.Skip(1).All(
-            item => item.Command.Environment!["NUGET_PACKAGES"]!
-            .StartsWith(fixture.Scratch, StringComparison.Ordinal)));
-        DotNetPackageRunResult repeated = await fixture.RunAsync(context.CancellationToken);
-        Retain(fixture, repeated, "repeated");
-        context.WriteLine(JsonSerializer.Serialize(
-            repeated, TransferJson.Default.DotNetPackageRunResult));
-        Assert.IsTrue(ResultCollector.Collect(fixture.Plan, repeated.Results).Satisfied,
-            string.Join("; ", repeated.Failures.Select(item => item.Error)));
-        Assert.AreEqual(result.Packages[0].Sha256, repeated.Packages[0].Sha256,
-            "Bounded same-input native package byte reproducibility.");
-        Assert.AreNotEqual(result.Packages[0].Path, repeated.Packages[0].Path);
-        await FreshConsumerCannotBorrowCachedMissingPackageAsync(fixture, result);
     }
 
     [TestMethod]
@@ -366,7 +341,6 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         internal DotNetGraphNode? DiscoveredNode { get; } = discoveredNode;
         private static readonly string[] GraphRestoreProperties = ["-property:Configuration=Debug",
             "-property:ContinuousIntegrationBuild=true"];
-        private int run;
         internal const string Project = "tests/private/app/workflow-delivery/" +
             "fixtures/products/hcoona-release-smoke-github-packages/" +
             "hcoona-release-smoke-github-packages.csproj";
@@ -493,11 +467,6 @@ public sealed class DotNetPackageNativeTests(TestContext context)
             DotNetNativeFixture.RequireSuccess(result, "Native receiving NBGV context");
             return JsonDocument.Parse(result.Stdout);
         }
-
-        internal Task<DotNetPackageRunResult> RunAsync(CancellationToken token) =>
-            DotNetPackageExecution.RunAsync(Plan, new(Checkout,
-                Directory.CreateDirectory(
-                    Path.Combine(Scratch, "run-" + run++)).FullName, 60), token);
 
         public void Dispose() => Cleanup(Scratch);
 

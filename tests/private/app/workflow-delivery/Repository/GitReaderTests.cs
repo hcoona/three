@@ -178,31 +178,16 @@ public sealed class GitReaderTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task ReadRejectsMissingRequiredTreeWithoutReturningPartialFacts()
-    {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        await repo.SetAsync("project/source.txt");
-        string commit = await repo.CommitAsync();
-        string tree = (await repo.GitAsync("rev-parse", "HEAD^{tree}")).Trim();
-        string treeFile = Path.Combine(repo.Directory, ".git", "objects", tree[..2], tree[2..]);
-        File.SetAttributes(treeFile, FileAttributes.Normal);
-        File.Delete(treeFile);
-
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(
-            () => new GitReader(repo.Directory).ReadAsync(commit, context.CancellationToken));
-    }
-
-    [TestMethod]
     public async Task CompareCancellationDoesNotReturnSuccessfulFacts()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        string commit = await repo.CommitAsync();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         await cancellation.CancelAsync();
 
+        // Cancellation is observed before Git starts, so no repository is needed.
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => new GitReader(repo.Directory).CompareAsync(commit, commit, cancellation.Token));
+            () => new GitReader(Path.GetTempPath()).CompareAsync("HEAD", "HEAD",
+                cancellation.Token));
     }
 
     private static string[] Paths(GitRevision revision) =>

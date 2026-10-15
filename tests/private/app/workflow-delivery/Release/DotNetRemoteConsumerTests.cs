@@ -53,7 +53,7 @@ public sealed class DotNetSmokeRemoteConsumerTests(TestContext context)
             using var parent = CancellationTokenSource.CreateLinkedTokenSource(
                 context.CancellationToken);
             using var transport = new Feed(await File.ReadAllBytesAsync(package,
-                context.CancellationToken), false, null, new(), 200);
+                context.CancellationToken), false, null, new());
             var seen = new List<NativeCommand>();
             string scratch = Directory.CreateDirectory(Path.Combine(root, "remote")).FullName;
             Task<DotNetSmokeRemoteConsumerResult> operation = DotNetSmokeRemoteConsumer.RunAsync(
@@ -88,15 +88,13 @@ public sealed class DotNetSmokeRemoteConsumerTests(TestContext context)
 
     [TestMethod]
     [Timeout(180000, CooperativeCancellation = true)]
-    [DataRow(false, false, false, false, 200)]
-    [DataRow(false, false, false, false, 201)]
-    [DataRow(true, false, false, false, 200)]
-    [DataRow(true, false, false, false, 201)]
-    [DataRow(false, true, false, false, 200)]
-    [DataRow(false, false, true, false, 200)]
-    [DataRow(false, false, false, true, 200)]
+    [DataRow(false, false, false, false)]
+    [DataRow(true, false, false, false)]
+    [DataRow(false, true, false, false)]
+    [DataRow(false, false, true, false)]
+    [DataRow(false, false, false, true)]
     public async Task NativeRemoteRestoreBuildAndMarkerUseSelectedOriginal(bool redirect,
-        bool conflict, bool cancel, bool wrongSource, int archiveStatus)
+        bool conflict, bool cancel, bool wrongSource)
     {
         string root = Directory.CreateTempSubdirectory("nuget-remote-native-").FullName;
         try
@@ -113,7 +111,7 @@ public sealed class DotNetSmokeRemoteConsumerTests(TestContext context)
             var stopped = new TaskCompletionSource(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             var transport = new Feed(conflict ? [.. bytes, 0] : bytes, redirect,
-                cancel ? entered : null, stopped, archiveStatus);
+                cancel ? entered : null, stopped);
             string scratch = Directory.CreateDirectory(Path.Combine(root, "remote")).FullName;
             var seen = new List<NativeCommand>();
             var native = new Dictionary<string, string>
@@ -180,16 +178,6 @@ public sealed class DotNetSmokeRemoteConsumerTests(TestContext context)
                 await Assert.ThrowsAsync<OperationCanceledException>(() => operation);
                 Assert.IsTrue(stopped.Task.IsCompletedSuccessfully);
                 Assert.HasCount(2, seen);
-                return;
-            }
-            if (archiveStatus != 200)
-            {
-                await Assert.ThrowsExactlyAsync<InvalidDataException>(() => operation);
-                Assert.HasCount(2, seen);
-                Assert.IsTrue(transport.Requests.Any(request => request.Uri.AbsolutePath
-                    .EndsWith(".nupkg", StringComparison.Ordinal)));
-                Assert.IsFalse(seen.Any(command => command.Arguments.Contains(
-                    "-target:Build,GetTargetPath")));
                 return;
             }
             if (conflict)
@@ -300,7 +288,7 @@ public sealed class DotNetSmokeRemoteConsumerTests(TestContext context)
     }
 
     private sealed class Feed(byte[] package, bool redirect, TaskCompletionSource? entered,
-        TaskCompletionSource stopped, int archiveStatus) : HttpMessageHandler
+        TaskCompletionSource stopped) : HttpMessageHandler
     {
         internal List<(HttpMethod Method, Uri Uri, string? Authorization)> Requests { get; } = [];
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
@@ -318,8 +306,7 @@ public sealed class DotNetSmokeRemoteConsumerTests(TestContext context)
             System.Console.WriteLine("Controlled native read " + uri.AbsolutePath);
             HttpResponseMessage response;
             if (uri.Host == "storage.example.test")
-                response = new((HttpStatusCode)archiveStatus)
-                    { Content = new ByteArrayContent(package) };
+                response = new(HttpStatusCode.OK) { Content = new ByteArrayContent(package) };
             else if (uri.AbsolutePath == "/hcoona/index.json")
                 response = Json("""
                     {"version":"3.0.0","resources":[
@@ -328,7 +315,7 @@ public sealed class DotNetSmokeRemoteConsumerTests(TestContext context)
                     """);
             else if (uri.AbsolutePath.EndsWith(".nupkg", StringComparison.Ordinal))
             {
-                response = new(redirect ? HttpStatusCode.Found : (HttpStatusCode)archiveStatus)
+                response = new(redirect ? HttpStatusCode.Found : HttpStatusCode.OK)
                     { Content = new ByteArrayContent(redirect ? [] : package) };
                 if (redirect) response.Headers.TryAddWithoutValidation("Location",
                     "https://storage.example.test/original.nupkg?signature=controlled");

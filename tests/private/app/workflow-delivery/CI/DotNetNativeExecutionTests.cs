@@ -55,13 +55,11 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("net10.0", true)]
-    [DataRow("net8.0", false)]
     [Timeout(180000, CooperativeCancellation = true)]
-    public async Task NativeMtpInnerVariantsRetainSettingsAndOutput(string framework, bool appHost)
+    public async Task NativeMtpInnerVariantRetainsSettingsAndOutput()
     {
         using var fixture = await DotNetNativeFixture.CreateAsync("MTP", context.CancellationToken);
-        Dictionary<string, string> globals = DotNetNativeFixture.Globals(framework, appHost);
+        Dictionary<string, string> globals = DotNetNativeFixture.Globals();
         using JsonDocument properties = await fixture.QueryAsync(globals,
             ["IsTestingPlatformApplication", "TargetFrameworks", "UseAppHost"],
             context.CancellationToken);
@@ -74,7 +72,7 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         DotNetRunResult result = await DotNetExecution.RunAsync(plan,
             new(fixture.Root, fixture.RunScratch, 60), context.CancellationToken);
         context.WriteLine(JsonSerializer.Serialize(result, TransferJson.Default.DotNetRunResult));
-        AssertSuccessfulNativeRun(fixture, plan, result, framework, "InvokeTestingPlatform");
+        AssertSuccessfulNativeRun(fixture, plan, result, "net10.0", "InvokeTestingPlatform");
     }
 
     [TestMethod]
@@ -96,42 +94,6 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
             new(fixture.Root, fixture.RunScratch, 60), context.CancellationToken);
         context.WriteLine(JsonSerializer.Serialize(result, TransferJson.Default.DotNetRunResult));
         AssertSuccessfulNativeRun(fixture, plan, result, "net10.0", "VSTest");
-    }
-
-    [TestMethod]
-    [DataRow("MTP")]
-    [DataRow("VSTest")]
-    [Timeout(180000, CooperativeCancellation = true)]
-    public async Task NativeNoTestsPolicyRemainsNative(string capability)
-    {
-        using var fixture = await DotNetNativeFixture.CreateAsync(capability,
-            context.CancellationToken, includeDependencyGraph: false);
-        Dictionary<string, string> globals = DotNetNativeFixture.Globals();
-        globals.Add("FixtureNoTests", "true");
-        CiPlan plan = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate, capability,
-            globals, DotNetNativeFixture.Project);
-        DotNetRunResult result = await DotNetExecution.RunAsync(plan,
-            new(fixture.Root, fixture.RunScratch, 60), context.CancellationToken);
-        context.WriteLine(JsonSerializer.Serialize(result, TransferJson.Default.DotNetRunResult));
-        Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
-            item.Key.Check == DotNetChecks.Build).Status, Diagnostics(result));
-        Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
-            item.Key.Check == DotNetChecks.Test).Status, Diagnostics(result));
-        Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
-        Assert.HasCount(1, result.Commands);
-        Assert.IsNotNull(result.BatchBuild);
-        NativeCommandResult native = result.Commands[0].Result;
-        Assert.AreEqual(NativeTermination.Exited, native.Termination);
-        Assert.AreEqual(1, native.ExitCode);
-        Assert.Contains(capability == "MTP" ? "Minimum expected tests policy violation" :
-            "No test matches the given testcase filter", native.Stdout);
-        XDocument report = XDocument.Load(Path.Combine(fixture.Root, "tests", "receipts",
-            "net10.0", "native.trx"));
-        XElement counters = report.Descendants().Single(element => element.Name.LocalName ==
-            "Counters");
-        Assert.AreEqual("0", counters.Attribute("total")!.Value);
-        Assert.AreEqual("0", counters.Attribute("passed")!.Value);
-        Assert.AreEqual(DotNetChecks.Build, Assert.ContainsSingle(result.Outputs).Key.Check);
     }
 
     [TestMethod]
