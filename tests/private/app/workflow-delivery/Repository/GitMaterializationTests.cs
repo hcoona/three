@@ -184,8 +184,9 @@ public sealed class GitMaterializationTests(TestContext context)
 
     [TestMethod]
     [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]
-    public async Task BindAcceptsLinkedCheckoutAliasWithItsSpelling()
+    public async Task BindNamesLinkedCheckoutAliasAsUnsupported()
     {
+        // Native tools report physical paths, so a checkout is bound at its physical root.
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
         await repo.SetAsync("content.txt", "content");
         string commit = await repo.CommitAsync();
@@ -197,12 +198,9 @@ public sealed class GitMaterializationTests(TestContext context)
         Directory.CreateSymbolicLink(alias, repo.Directory);
         try
         {
-            GitMaterialization bound = await GitMaterialization.BindAsync(alias, revision,
-                context.CancellationToken);
-
-            Assert.AreEqual(alias, bound.Root);
-            Assert.AreEqual("content", await bound.ReadOptionalTextAsync("content.txt",
-                context.CancellationToken));
+            InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+                () => GitMaterialization.BindAsync(alias, revision, context.CancellationToken));
+            Assert.Contains("physical (unlinked) checkout root", error.Message);
         }
         finally { Directory.Delete(alias); }
     }

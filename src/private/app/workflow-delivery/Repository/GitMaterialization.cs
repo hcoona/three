@@ -22,11 +22,13 @@ internal sealed class GitMaterialization
         GitRevision revision, CancellationToken token)
     {
         string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
-        // An empty path to the top level keeps the caller's (possibly linked) root spelling.
-        string toTop = await NativeProcess.RunAsync("git", root,
-            ["--no-lazy-fetch", "--no-replace-objects", "rev-parse", "--show-cdup"], token);
-        if (toTop.TrimEnd('\r', '\n').Length != 0)
-            throw new InvalidDataException("A materialization must be its checkout root.");
+        string nativeRoot = await NativeProcess.RunAsync("git", root,
+            ["--no-lazy-fetch", "--no-replace-objects", "rev-parse", "--show-toplevel"], token);
+        if (!string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(
+                nativeRoot.TrimEnd('\r', '\n'))), root, OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            throw new InvalidDataException(
+                "A materialization must be its physical (unlinked) checkout root.");
         GitRevision head = await new GitReader(root).ReadAsync("HEAD", token);
         if (head.Commit != revision.Commit)
             throw new InvalidDataException("The checkout HEAD is not the requested revision.");
