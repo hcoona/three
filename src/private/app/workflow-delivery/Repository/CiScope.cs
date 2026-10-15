@@ -294,8 +294,9 @@ internal static partial class CiScope
 
     private static string Name(string path) => path[(path.LastIndexOf('/') + 1)..];
 
-    private static bool Under(string path, string directory) => directory.Length == 0 ||
-        path == directory || path.StartsWith(directory + "/", StringComparison.Ordinal);
+    // A root manifest (empty directory) does not own every repository path.
+    private static bool Under(string path, string directory) => directory.Length != 0 &&
+        (path == directory || path.StartsWith(directory + "/", StringComparison.Ordinal));
 
     [GeneratedRegex(@"^uv run --script ([A-Za-z0-9_./-]+\.py)$")]
     private static partial Regex UvScript();
