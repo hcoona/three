@@ -6,7 +6,7 @@ Read this page before Workflow Delivery work. It routes the current internal
 application and retained operation limits; it is not a second specification.
 The [portal](README.md) identifies the owning records. Read
 [requirements](requirements.md), [HLD](high-level-design.md),
-[MLD](middle-level-design.md) and [integration/retirement plan](migration-strategy.md)
+[MLD](middle-level-design.md) and [integration contract](migration-strategy.md)
 before affected design, implementation or caller changes. Use the current
 [application interface](../README.md) and actual native sources for operations.
 

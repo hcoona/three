@@ -10,16 +10,12 @@ publication behavior or permission to reopen a completed campaign.
 
 The [middle-level design](middle-level-design.md) owns the component,
 selection, execution, transfer and outcome contracts for this architecture.
-The [implementation plan](migration-strategy.md) maps concrete projects/callers,
-integration contracts and retirement dependencies.
-The [Wave](../../../../../docs/delivery-wave.md) owns current work authorization;
-the [handoff](agent-handoff.md) retains operational limits. The
-[pinned former MLDs and migration plan](README.md#normative-hierarchy),
-old glossary and ecosystem LLDs describe the historical
-implementation for its retained evidence consumers under the
-[requirements transition](requirements.md#requirements-and-implementation-transition).
-Their aggregate models and record chains are not contracts for this replacement.
-The [previous HLD][previous-hld] remains available for those historical readers.
+The [integration contract](migration-strategy.md) maps concrete projects,
+callers and integration contracts. The
+[Wave](../../../../../docs/delivery-wave.md) owns current work authorization;
+the [handoff](agent-handoff.md) retains operational limits. Historical records
+keep their original scope under the
+[historical source rule](README.md#historical-source-rule).
 
 ## Architecture and Responsibilities
 
@@ -228,13 +224,11 @@ witness. Configure and inspect the chosen carrier; availability is not automatic
 Provenance does not replace required destination byte/state comparison.
 Different-commit packages may differ despite equal versions.
 
-The [feasibility record](research/contraction-feasibility.md) retains unadmitted
-local author observations separately from accepted assumptions. Those observations
-do not supply admitted empirical justification for this owner-selected design.
-The owner chose to skip a separate Windows
-feasibility run and proceed assuming native NBGV and the combined helpers are
-viable there. This is not a passed Windows observation or a deferred experiment
-gate. Actual failures in ordinary implementation or CI still require correction
+The owner chose to proceed assuming native NBGV and the combined helpers are
+viable on Windows, without a separate feasibility run. The
+[feasibility record](research/contraction-feasibility.md) keeps its unadmitted
+local observations apart from that assumption; they are not a passed Windows
+observation. Ordinary implementation and CI failures still require correction
 or explicit disposition.
 
 ## Execution and Permission Boundaries
@@ -286,9 +280,11 @@ independent CI record genealogy.
 
 Buddy, Official and dry run share preparation and qualification code. Buddy can
 publish from allowed development refs. Official live publication requires an
-eligible reviewed official branch/tag, such as configured `release/*` refs.
-Dry run can use development revisions and their release code without write
-capability; live ref restrictions do not block it.
+eligible reviewed official ref; the
+[Official channel scope](migration-strategy.md#official-channel-scope) states
+the refs and destinations the implemented callers support. Dry run can use
+development revisions and their release code without write capability; live
+ref restrictions do not block it.
 
 1. Resolve one immutable source/control revision, unit, destination and mode.
    Select its native version, complete outputs and quality obligations. Reject
@@ -460,10 +456,8 @@ not new frameworks or automatic owner questions.
 New behavior, trust-boundary or material scope/cost conflicts return for owner
 disposition.
 
-The Windows assumption is accepted for proceeding; no separate feasibility
-campaign is scheduled. Normal changed-code validation remains. Completed live
-campaigns stay closed, and documentation grants no new publication, credential,
-Environment or account operations.
+Completed live campaigns stay closed, and documentation grants no new
+publication, credential, Environment or account operations.
 
 ## Requirement Coverage
 
@@ -477,5 +471,3 @@ Environment or account operations.
 | WD-EVD, WD-RET  | Consumer-specific data, required retention and uncertainty                                   |
 | WD-CON          | Static Actions phases and registry/package concurrency within native guarantees              |
 | WD-NFR          | Scenario validation, explainable results, explicit integration cost and selective CI latency |
-
-[previous-hld]: https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md

@@ -2,57 +2,20 @@
 
 ## Status
 
-This page defines the requirements for the repository-internal V3 application.
-It owns intended product behavior and scope, including the requirements changes
-accepted for the contraction. Architecture and implementation alignment follow
-these requirements; their completion is not a prerequisite for agreeing them.
+This page defines the required behavior and scope of the repository-internal
+Workflow Delivery application. The [HLD](high-level-design.md),
+[middle-level design](middle-level-design.md) and
+[integration contract](migration-strategy.md) realize it; the
+[application README](../README.md) owns the implemented interface. The
+[Delivery Wave](../../../../../docs/delivery-wave.md) owns work authorization,
+and the [handoff](agent-handoff.md) owns operating entry points and retained
+limits. Historical records and evidence keep their original scope under the
+[historical source rule](README.md#historical-source-rule).
 
-The [Delivery Wave](../../../../../docs/delivery-wave.md) owns work authorization.
-The [handoff](agent-handoff.md) owns operating entry points and retained limits.
-Requirement identifiers remain stable; retired identifiers below are navigation
-markers, not continuing obligations.
-
-## Requirements and Implementation Transition
-
-These requirements govern the current internal application. The
-[HLD](high-level-design.md) defines its architecture and responsibilities;
-the [middle-level design](middle-level-design.md) defines its component,
-selection, execution, transfer and outcome contracts. The
-[implementation plan](migration-strategy.md) maps their concrete callers and
-validation dependencies. The [application interface](../README.md) and
-[handoff](agent-handoff.md) route the implemented CLI and ordinary callers.
-The former public Python control runtime and its obsolete callers are retired;
-historical readers use their [actual pinned producer source](validation/historical-readers.md).
-The existing glossary, ecosystem LLDs and pinned former migration plan, together with the
-[pinned former MLDs](README.md#normative-hierarchy), describe the pre-contraction
-implementation and retained evidence contracts for their actual consumers.
-They do not prescribe the
-replacement or reinstate retired requirements. Their references to confirmed
-requirements and architecture refer to that baseline; affected HLD references
-use its pinned historical version.
-
-For interpreting existing code and historical evidence, use the
-[pinned pre-contraction requirements][implementation-requirements] with those
-implementation records. That historical text is not a second authority for new
-product requirements. Do not change original evidence or reclassify terminal
-outcomes to match the new completion or authorization semantics.
-
-All npm, NuGet, Python and Ruby proving campaigns are complete and stopped.
-Neither this requirements change nor the contraction work grant reopens a
-campaign, restores a spent slot, changes native permissions or authorizes a
-publication. Existing operation protocols continue to bound their historical
-readers and any separately authorized operation; future operations require their
-own concrete authorization and applicable protocol.
-
-For later changes, confirm the affected requirements first, reconcile the HLD
-and necessary contracts next, then implement and validate before switching its
-callers. Update the relevant implementation-baseline notice when that scope is
-aligned. Any feasibility conflict returns to an explicit requirement decision.
-Changed-source qualification remains necessary; prior success does not qualify
-a different implementation or environment. Removed mechanisms do not become
-new design obligations.
-
-[implementation-requirements]: https://github.com/hcoona/three/blob/f1c3ec1039625464d76cf09a06bd2363fdaaf056/src/public/lib/three-workflow-delivery-v3/docs/requirements.md
+A requirement change is confirmed first; architecture, contracts,
+implementation and validation then follow before callers switch. A feasibility
+conflict returns to an explicit requirement decision. Prior success does not
+qualify a different implementation or environment.
 
 ## Mission
 
@@ -246,8 +209,9 @@ application must not claim isolation beyond that scope.
   behavior and is not a smoke-only exception. Channel isolation need not change
   the canonical product-version string and must reflect actual token reach.
 - **WD-CHN-002:** Official publication uses the canonical NBGV version and its
-  correct native projection from an eligible official branch or tag, such as the
-  configured `release/*` refs. NBGV can give different repository commits the
+  correct native projection from an eligible, reviewed official ref. The
+  [current Official scope](migration-strategy.md#official-channel-scope) states
+  the implemented set. NBGV can give different repository commits the
   same public product version when relevant version inputs are unchanged. A
   version label alone does not identify exact package bytes or prove two release
   requests equivalent.
@@ -447,17 +411,12 @@ initial support matrices, proving order, finite operation budgets and spent
 authorizations belong to project descriptions, adapter/support designs and
 operation or evidence records. They confer no special publication trust.
 
-## Retired Requirement References
+## Retired Requirement Identifiers
 
-The markers below preserve existing identifiers and section links. Their target
-requirements own the retained general behavior. Removed mechanisms do not remain
-obligatory through these markers. The [implementation transition](#requirements-and-implementation-transition)
-and pinned historical requirements preserve the interpretation of existing code
-and evidence without carrying slice ceremonies into the new product contract.
-
-### Retired Cross-Cutting Requirements
-
-CI coexistence and cutover details remain in the [implementation migration record](migration-strategy.md). Dynamic admission, approval mirrors, smoke-reference admission and general resource-set coordination are retired as product requirements.
+These nonnormative markers keep established identifiers and the section anchors
+cited by retained evidence. The named authority owns any retained behavior. The
+[pre-contraction requirements][pre-contraction-requirements] hold the original
+text for historical readers.
 
 - **WD-SYS-003:** Retired - current authority: WD-SYS-001
 - **WD-CI-009:** Retired - current authority: WD-CI-011
@@ -470,11 +429,6 @@ CI coexistence and cutover details remain in the [implementation migration recor
 - **WD-SEC-005:** Retired - current authority: WD-REL-008
 - **WD-OPS-002A:** Retired - current authority: WD-OPS-002
 - **WD-CON-005:** Retired - current authority: WD-OPS-008
-
-### First-Slice Buddy Accepted Risk Exception
-
-Buddy now follows ordinary channel and trust requirements. The [npm LLD](hcoona-release-smoke-npm-lld.md) and [retained evidence](validation/native-and-normal-live-evidence.md) preserve concrete existing support, token reach and completed campaign limits.
-
 - **WD-SLICE-001:** Retired - current authority: WD-AUTH-001
 - **WD-SLICE-002:** Retired - current authority: WD-REL-007
 - **WD-SLICE-003:** Retired - current authority: WD-REL-008
@@ -490,8 +444,6 @@ Buddy now follows ordinary channel and trust requirements. The [npm LLD](hcoona-
 
 ### NuGet Second Slice
 
-The [NuGet LLD](hcoona-release-smoke-github-packages-lld.md) retains the existing package, Windows runner and native identity/support details. [Completion evidence](validation/nuget-normal-live-evidence.md) retains the bounded native and publication observations; their scope is not widened here.
-
 - **WD-NUGET-001:** Retired - current authority: WD-REL-001
 - **WD-NUGET-002:** Retired - current authority: WD-REL-005
 - **WD-NUGET-003:** Retired - current authority: WD-SEC-001
@@ -502,8 +454,6 @@ The [NuGet LLD](hcoona-release-smoke-github-packages-lld.md) retains the existin
 - **WD-NUGET-008:** Retired - current authority: WD-SYS-004
 
 ### Python Smoke Slice
-
-The [Python LLD](hcoona-release-smoke-python-lld.md) retains native version, wheel/sdist, consumer and supported subset-recovery details. [Bootstrap](validation/python-bootstrap.md), [recovery](validation/python-hosted-recovery.md) and [normal publication evidence](validation/python-normal-live-evidence.md) retain the spent operation limits and original outcomes.
 
 - **WD-PY-001:** Retired - current authority: WD-REL-001
 - **WD-PY-002:** Retired - current authority: WD-REL-005
@@ -517,8 +467,6 @@ The [Python LLD](hcoona-release-smoke-python-lld.md) retains native version, whe
 
 ### Ruby Smoke Slice
 
-The [Ruby LLD](hcoona-release-smoke-ruby-lld.md) retains the existing gem, native version and runner support. The [operation protocol](ruby-operation-protocol.md) and [completion evidence](validation/ruby-normal-live-evidence.md) preserve stopped destinations, spent slots and historical replay. No bootstrap or native operation is reopened.
-
 - **WD-RUBY-001:** Retired - current authority: WD-REL-001
 - **WD-RUBY-002:** Retired - current authority: WD-REL-005
 - **WD-RUBY-003:** Retired - current authority: WD-REL-006
@@ -526,6 +474,8 @@ The [Ruby LLD](hcoona-release-smoke-ruby-lld.md) retains the existing gem, nativ
 - **WD-RUBY-005:** Retired - current authority: WD-OPS-002
 - **WD-RUBY-006:** Retired - current authority: WD-SYS-004
 - **WD-RUBY-007:** Retired - current authority: WD-SEC-004
+
+[pre-contraction-requirements]: https://github.com/hcoona/three/blob/f1c3ec1039625464d76cf09a06bd2363fdaaf056/src/public/lib/three-workflow-delivery-v3/docs/requirements.md
 
 ## Requirement Change Review
 
