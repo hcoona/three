@@ -101,6 +101,16 @@ public sealed class RubyRSpecResultTests
     }
 
     [TestMethod]
+    public void RequiredRunWithoutExamplesFailsEvenWhenCommandReportsZeroExit()
+    {
+        RubyRSpecReport report = RubyRSpecResult.Read(Report([]));
+
+        Assert.AreEqual(0, report.ExampleCount);
+        Assert.AreEqual(0, report.ErrorsOutsideExamples);
+        Assert.AreEqual(CheckStatus.Failed, RubyRSpecResult.Status(Command(), report));
+    }
+
+    [TestMethod]
     public void FailedExampleCannotPassEvenWhenCommandReportsZeroExit()
     {
         RubyRSpecReport report = RubyRSpecResult.Read(Report(["passed", "failed"]));

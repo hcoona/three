@@ -14,11 +14,16 @@ internal sealed record DotNetGroupReadback(CiPlan Plan, ScopeCoordinate[] Basis,
 internal static class DotNetGroupReader
 {
     internal static readonly string[] CallerSources = [".github/workflows/ci.yml",
-        "eng/scripts/ci_scope.py", "eng/scripts/prepare_ci_control_inputs.py",
-        "eng/scripts/run_dotnet_ci_group.py", "eng/scripts/run_node_ci_group.py",
+        "eng/scripts/ci_scope.py", "eng/scripts/Bootstrap-CiControl.ps1",
+        "src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs",
+        "src/private/app/workflow-delivery/CI/Callers/NodeCiCaller.cs",
         "eng/scripts/repository_path_patterns.py", "eng/scripts/workflow_delivery_v3_hk.py",
         "pyproject.toml", "uv.lock", "uv.toml", ".python-version", ".config/uv/uv.toml",
-        ".config/dotnet-tools.json", "mise.toml", "mise.lock"];
+        ".config/dotnet-tools.json", "src/private/app/workflow-delivery/CI/Callers/CiCallerCli.cs",
+        "src/private/app/workflow-delivery/CI/Callers/CiCallerTransfer.cs",
+        "src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs",
+        "src/private/app/workflow-delivery/CI/Callers/CiArtifactReceipt.cs",
+        "mise.toml", "mise.lock"];
 
     internal static async Task<DotNetGroupReadback> ReadAsync(DotNetGroupRequest request,
         CancellationToken token)

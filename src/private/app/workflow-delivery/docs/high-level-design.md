@@ -178,6 +178,15 @@ not universal ecosystem qualification promises. Application orchestration belong
 in the C# use cases; native-language helpers exist only for required native
 library bindings. Actions retains job/permission orchestration.
 
+The same boundary governs CI callers: the existing C# application assembles typed
+requests and owns plan binding and result interpretation. Native shell/Actions
+build the initial control distribution and prepare tools from maintained native
+configuration. A helper's behavior is tested in its own language; managed tests
+protect the C# counterpart and concrete cross-language integration. A different
+language must supply a real native capability to justify an intervening layer.
+Temporary fixture creation remains scenario code; fixed tool/dependency recipes
+belong to native configuration rather than another application setup registry.
+
 | Ecosystem | Build and qualification                                    | Destination consequence                                                                                         |
 | --------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | npm       | Native NBGV projection, original archive and clean install | Exact version state; tags are routing metadata; no lifecycle scripts with publication capability                |

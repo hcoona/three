@@ -115,6 +115,47 @@ public sealed class RubyNodeInputConsumersTests
     }
 
     [TestMethod]
+    public async Task StandaloneRubySuiteAndNestedContextKeepRealSharedNodeConsumption()
+    {
+        (NodeRevisionInputs node, RubyFactsEndpoint ruby) = Endpoint(NodeScenario.Candidate);
+        const string suite = "tests/native-ruby";
+        const string nested = suite + "/contexts/bundler";
+        string[] paths = [suite + "/Gemfile", suite + "/Gemfile.lock",
+            nested + "/Gemfile", nested + "/Gemfile.lock"];
+        ruby = ruby with
+        {
+            Revision = ruby.Revision with
+            { Entries = [.. ruby.Revision.Entries, .. paths.Select(NodeScenario.File)] },
+            Native = ruby.Native with
+            {
+                Graph = ruby.Native.Graph with
+                {
+                    Bundles = [.. ruby.Native.Graph.Bundles,
+                        new(suite + "/Gemfile", suite, paths[..2], []),
+                        new(nested + "/Gemfile", nested, paths[2..], [])]
+                }
+            },
+            Owners = [new("ruby:" + suite, suite, [], [], null, RubyProjectChecks.Preset,
+                [new(new(suite, RubyProjectChecks.RSpec, "default"),
+                    [], "ubuntu-latest", true, [])], paths)]
+        };
+        node = node with { Revision = ruby.Revision };
+        NodeRevisionInputs joined = RubyNodeInputConsumers.Join(node, ruby);
+        Assert.IsFalse(joined.OperationInputs.Any(input => paths.Contains(input.Path)));
+        Assert.Contains(Consumer, joined.OperationInputs.Single(input =>
+            input.Path == Producer + "/lib.rb").Consumers);
+        NodeGroupPlan selected = await Plan(joined with
+        {
+            Revision = joined.Revision with { Commit = NodeScenario.Basis },
+            Versions = joined.Versions.Select(version =>
+                version with { Commit = NodeScenario.Basis }).ToArray()
+        }, joined,
+            Producer + "/lib.rb");
+        Assert.HasCount(2, selected.Adopted.Checks);
+        Assert.AreEqual(Dependent, Assert.ContainsSingle(selected.Retained).Directory);
+    }
+
+    [TestMethod]
     [DataRow("revision")]
     [DataRow("consumer")]
     [DataRow("producer")]

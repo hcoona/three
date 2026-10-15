@@ -8,7 +8,6 @@ import os
 import re
 import subprocess
 import sys
-from importlib import import_module
 from pathlib import Path
 
 import pytest
@@ -25,7 +24,6 @@ sys.path.insert(0, str(SCRIPTS))
 try:
     scope = importlib.util.module_from_spec(SPEC)
     SPEC.loader.exec_module(scope)
-    preparation = import_module("prepare_ci_control_inputs")
 finally:
     sys.path.remove(str(SCRIPTS))
 
@@ -390,111 +388,6 @@ def test_confirmed_base_owner_absence_is_explicit_and_candidate_is_required(
     assert not (root / "outputs").exists()
 
 
-@pytest.mark.parametrize("full", [False, True])
-def test_native_prepare_preserves_endpoints_and_locked_context(
-    comparison, monkeypatch, tmp_path_factory, full
-):
-    """Native preparation uses exact Git endpoints and locked contexts."""
-    root, basis, candidate = comparison
-    if full:
-        basis = candidate
-    native_comparison = {"basis": basis, "candidate": candidate, "full": full}
-    restored = []
-    original = preparation.run
-    response = _control_response(basis, candidate, full=full)
-
-    def native(directory, *arguments):
-        if arguments[0] == "git":
-            return original(directory, *arguments)
-        if arguments[1] == "restore":
-            restored.append((directory, arguments))
-            return "Locked fixture preparation\n"
-        if "comparison" in arguments:
-            return json.dumps(native_comparison)
-        assert "control-inputs" in arguments
-        return json.dumps(response)
-
-    monkeypatch.setattr(preparation, "run", native)
-    scratch = tmp_path_factory.mktemp("control-inputs") / "endpoints"
-    request = preparation.prepare(
-        root,
-        scratch,
-        root / "control.dll",
-        ("pull_request", root / "event.json", candidate),
-    )
-    before = Path(request["basisDirectory"])
-    after = Path(request["candidateDirectory"])
-    assert not before.is_relative_to(root)
-    assert not after.is_relative_to(root)
-    assert _git(before, "rev-parse", "HEAD") == basis
-    assert _git(after, "rev-parse", "HEAD") == candidate
-    assert (before == after) is full
-    assert (
-        json.loads((scratch / "request.json").read_text(encoding="utf-8"))
-        == request
-    )
-    result = preparation.evaluate(
-        root,
-        root / "control.dll",
-        scratch / "request.json",
-        scratch / "response.json",
-    )
-    assert result == response
-    assert not restored
-    assert (
-        json.loads((scratch / "response.json").read_text(encoding="utf-8"))
-        == response
-    )
-
-
-def test_native_prepare_failure_does_not_write_facts(comparison, monkeypatch):
-    """Failed required native operations never write successful facts."""
-    root, basis, candidate = comparison
-    scratch = root.parent / (root.name + "-failed-endpoints")
-    request = {
-        "comparison": {"basis": basis, "candidate": candidate, "full": False},
-        "repository": str(root),
-        "basisDirectory": str(scratch / "basis"),
-        "candidateDirectory": str(scratch / "candidate"),
-    }
-    scratch.mkdir()
-    request_path = scratch / "request.json"
-    request_path.write_text(json.dumps(request), encoding="utf-8")
-
-    def unavailable(*_arguments):
-        raise subprocess.CalledProcessError(1, ["dotnet", "restore"])
-
-    monkeypatch.setattr(preparation, "run", unavailable)
-    with pytest.raises(subprocess.CalledProcessError):
-        preparation.evaluate(
-            root, root / "control.dll", request_path, scratch / "response.json"
-        )
-    assert not (scratch / "response.json").exists()
-    with pytest.raises(subprocess.CalledProcessError):
-        preparation.prepare(
-            root,
-            scratch / "not-created",
-            root / "control.dll",
-            ("push", root / "event.json", candidate),
-        )
-    assert not (scratch / "not-created").exists()
-
-
-def test_native_prepare_rejects_source_subdirectories(
-    comparison,
-):
-    """Temporary checkouts cannot pollute the candidate source inventory."""
-    root, _, candidate = comparison
-    with pytest.raises(ValueError, match="outside"):
-        preparation.prepare(
-            root,
-            root / "generated",
-            root / "control.dll",
-            ("push", root / "event.json", candidate),
-        )
-    assert not (root / "generated").exists()
-
-
 def _owner_rows(result, name):
     return {
         row["path"]: row for row in result["endpoint_owners"][name]["paths"]
@@ -711,24 +604,6 @@ def test_hk_configuration_keeps_exact_conformance_responsibility(
         )
 
 
-def test_control_preparation_remains_available_without_endpoint_parser():
-    """System-Python bootstrap must not require the UV endpoint parser."""
-    result = subprocess.run(  # noqa: S603 - Exact interpreter and repository help command.
-        [
-            sys.executable,
-            "-S",
-            str(SCRIPTS / "prepare_ci_control_inputs.py"),
-            "--help",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "prepare" in result.stdout
-    assert "evaluate" in result.stdout
-
-
 @pytest.mark.parametrize("transition", ["change", "add", "delete"])
 @pytest.mark.parametrize(
     "path",
@@ -824,6 +699,85 @@ def test_conformance_script_neighbors_still_require_python_resolution(
             "sources": ["pyproject.toml"],
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("path", "python"),
+    [
+        (
+            "src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs",
+            False,
+        ),
+        (
+            "tests/private/app/workflow-delivery/CI/CiCallerControlTests.cs",
+            False,
+        ),
+        ("src/private/app/workflow-delivery/packages.lock.json", False),
+        ("src/private/app/workflow-delivery/Native/Ruby/facts.rb", False),
+        (
+            "src/private/app/workflow-delivery/Native/contracts/ruby-facts.schema.json",
+            False,
+        ),
+        (
+            "tests/private/app/workflow-delivery/Native/Ruby/spec/facts_spec.rb",
+            False,
+        ),
+        (
+            (
+                "tests/private/app/workflow-delivery/fixtures/products/"
+                "hcoona-release-smoke-ruby/lib/smoke.rb"
+            ),
+            False,
+        ),
+        (
+            "src/private/app/workflow-delivery/Native/Python/uv/src/main.rs",
+            False,
+        ),
+        ("src/private/app/workflow-delivery/Native/Python/passive.py", True),
+        (
+            "tests/private/app/workflow-delivery/Native/Python/test_passive.py",
+            True,
+        ),
+        ("eng/scripts/test-python.sh", True),
+    ],
+)
+def test_native_test_migration_removes_only_retired_python_responsibility(
+    comparison, path, python
+):
+    """Native facts explain moved checks without inventing Python consumers."""
+    root, _, _ = comparison
+    source = root / path
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("before\n", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Native owner basis")
+    base = _git(root, "rev-parse", "HEAD")
+    source.write_text("after\n", encoding="utf-8")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "Native owner change")
+    candidate = _git(root, "rev-parse", "HEAD")
+    result = _select_cli(
+        root,
+        "--from-ref",
+        base,
+        receipt=_control_response(
+            base, candidate, before=(path,), after=(path,)
+        ),
+    )
+    assert result.returncode == 0, result.stderr
+    selected = json.loads(result.stdout)
+    assert selected["changed_paths"] == [path]
+    for endpoint in ("basis", "candidate"):
+        row = _owner_rows(selected, endpoint)[path]
+        assert row["present"] is True
+        reasons = row["reasons"]
+        assert any(reason["owner"] == "python" for reason in reasons) is python
+        assert {
+            "owner": "dotnet",
+            "target": scope.CONTROL_PROJECT,
+            "rule": "native-embedded-resource",
+            "sources": [scope.CONTROL_PROJECT],
+        } in reasons
 
 
 def test_endpoint_owners_preserve_changed_coordinate_identity(comparison):
@@ -1506,7 +1460,10 @@ def test_endpoint_owners_keep_nonregular_git_modes_distinct(comparison):
             "src/private/lib/scholarly-publication/tests/test_assemble_print.py",
             {"scholarly"},
         ),
-        ("eng/scripts/run_python_ci_group.py", set()),
+        (
+            "src/private/app/workflow-delivery/CI/Callers/PythonCiCaller.cs",
+            {"dotnet"},
+        ),
     ],
 )
 def test_scope_retains_other_jobs_without_python_selection(path, jobs):

@@ -27,8 +27,8 @@ invalid input, failed planning or unsupported usage. Release preserves actual
 command outcomes independently of business satisfaction. Redirect stdout when
 a receiving process needs a file.
 
-Use the checked-in ordinary workflows and `eng/scripts/run_*_ci_group.py`
-callers to compose their native preparation and typed requests. The
+Use the checked-in ordinary workflows and the finite typed
+[CI callers](CI/Callers/CiCallerCli.cs) to compose native preparation and requests. The
 [CLI](Program.cs), source-generated transfer serialization and
 [Release CLI](Release/ReleaseCli.cs) define current internal command signatures
 and types; internal formats have no compatibility promise. A request must supply
@@ -38,6 +38,8 @@ artifact, ambient fallback or second dependency declaration.
 | Interface                                                                | Purpose                                                                                           |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | `ci comparison`, `ci control-inputs`                                     | Resolve the event comparison and actual control-test resource consumers                           |
+| `ci caller-control prepare`, `ci caller-dotnet/python/ruby/node`         | Compose existing CI requests, original plans and exact transfers                                  |
+| `ci native-preparation-plan`, `ci native-preparation-result`             | Select and qualify the original Linux managed preparation scenarios                               |
 | `ci plan`, `ci plan-node`, `ci plan-node-group`                          | Select declared work from native paired facts and reasons                                         |
 | `ci prepare-python-group`, `ci plan-python-group`, `ci run-python-group` | Prepare, select and execute the original Python plan                                              |
 | `ci prepare-ruby-group`, `ci plan-ruby-group`, `ci run-ruby-group`       | Prepare, select and execute Ruby checks and transfer native Node contributions                    |
@@ -116,7 +118,9 @@ UV workspace/metadata and the pinned native supplement supply Python facts.
 Preparation materializes committed endpoints, freezes native tool and build
 inputs and performs one paired selection. Root CI executes the original mixed
 plan and retains its native preparation, commands and results. The native
-Python and Ruby helper suites remain actual consumers. Legacy V3-only adapter
+Python helper suite remains a native Python consumer; Ruby helper behavior belongs
+to its [native RSpec carrier](../../../../tests/private/app/workflow-delivery/Native/Ruby/README.md).
+Legacy V3-only adapter
 preparation and static-reference scanning are removed.
 
 For explicit full validation of committed HEAD:
@@ -127,6 +131,12 @@ mise run test:python
 
 This uses the same native group and does not validate uncommitted source by
 substituting a worktree snapshot.
+The current local full entry supports Linux. Its native launcher builds the exact
+committed control once; `ci caller-local-python` composes the explicit full group.
+Static tools and dependencies come from MISE and native manifests/locks. The
+launcher accepts `--repository`, `--directory` and `--mise-data-directory`;
+state must be fresh and outside the source checkout. It prints the source and
+retained result location before execution.
 
 ### Native Ruby CI Caller
 

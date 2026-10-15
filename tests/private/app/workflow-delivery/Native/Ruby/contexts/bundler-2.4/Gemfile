@@ -1,0 +1,3 @@
+# frozen_string_literal: true
+# A conventional second bundle preserves the supported native library context.
+eval_gemfile "../../Gemfile"

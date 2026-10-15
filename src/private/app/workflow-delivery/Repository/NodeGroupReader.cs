@@ -18,7 +18,11 @@ internal static class NodeGroupReader
         "src/private/app/workflow-delivery/WorkflowDelivery.csproj";
     internal const string FixtureName = NodeRepositoryReader.FixtureName;
     internal static readonly string[] CallerSources = [".github/workflows/ci.yml",
-        "eng/scripts/ci_scope.py", "eng/scripts/run_node_ci_group.py",
+        "eng/scripts/ci_scope.py", "src/private/app/workflow-delivery/CI/Callers/NodeCiCaller.cs",
+        "src/private/app/workflow-delivery/CI/Callers/CiCallerCli.cs",
+        "src/private/app/workflow-delivery/CI/Callers/CiCallerTransfer.cs",
+        "src/private/app/workflow-delivery/CI/Callers/CiArtifactReceipt.cs",
+        "eng/scripts/Bootstrap-CiControl.ps1",
         "eng/scripts/repository_path_patterns.py", "eng/scripts/workflow_delivery_v3_hk.py",
         "pyproject.toml", "uv.lock", "uv.toml", ".python-version", ".config/uv/uv.toml",
         ".config/dotnet-tools.json"];

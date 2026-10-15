@@ -94,7 +94,7 @@ run = "python eng/scripts/sync_python_version.py"
 
 [tasks."test:python"]
 description = "Run the native Python group in explicit full mode at committed HEAD"
-run = "python eng/scripts/run_python_tests.py"
+run = "bash eng/scripts/test-python.sh"
 
 [tasks."bootstrap:pwsh"]
 description = "Bootstrap the PowerShell modules"

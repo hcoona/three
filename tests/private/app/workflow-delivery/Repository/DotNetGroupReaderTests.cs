@@ -177,7 +177,7 @@ public sealed class DotNetGroupReaderTests(TestContext context)
     {
         using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
         const string source = "control/Source.cs";
-        const string caller = "eng/scripts/run_dotnet_ci_group.py";
+        const string caller = "src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs";
         await fixture.Repo.SetAsync(NodeGroupReader.ControlProject, "<Project />");
         await fixture.Repo.SetAsync(source);
         await fixture.Repo.SetAsync(caller);

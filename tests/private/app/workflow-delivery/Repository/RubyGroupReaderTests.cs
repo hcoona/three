@@ -64,12 +64,12 @@ public sealed class RubyGroupReaderTests(TestContext context)
 
     [TestMethod]
     [DataRow(".github/workflows/ci.yml")]
-    [DataRow("eng/scripts/run_ruby_ci_group.py")]
-    [DataRow("eng/scripts/run_node_ci_group.py")]
-    [DataRow("eng/scripts/run_dotnet_ci_group.py")]
+    [DataRow("src/private/app/workflow-delivery/CI/Callers/RubyCiCaller.cs")]
+    [DataRow("src/private/app/workflow-delivery/CI/Callers/NodeCiCaller.cs")]
+    [DataRow("src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs")]
     [DataRow("eng/scripts/ci_scope.py")]
     [DataRow("eng/scripts/repository_path_patterns.py")]
-    [DataRow("eng/scripts/prepare_ci_control_inputs.py")]
+    [DataRow("src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs")]
     [DataRow("mise.toml")]
     [DataRow("mise.lock")]
     public async Task ActualCallerInputsSelectAdoptedChecksAcrossBothEndpoints(string path)
@@ -200,7 +200,9 @@ public sealed class RubyGroupReaderTests(TestContext context)
                 };
                 await File.WriteAllTextAsync(scope, JsonSerializer.Serialize(new
                 {
-                    @base = before, candidate = after, full,
+                    @base = before,
+                    candidate = after,
+                    full,
                     changed_paths = full ? Array.Empty<string>() : new[] { changed },
                     endpoint_owners = new { basis = Endpoint(before), candidate = Endpoint(after) }
                 }), token);
@@ -239,13 +241,23 @@ public sealed class RubyGroupReaderTests(TestContext context)
                                 string? operation = input.RootElement.GetProperty("operation")
                                     .GetString();
                                 value = operation ==
-                                    "version" ? (object)new { gemspec, raw = "1.2.3+original",
-                                        version = "1.2.3", literal = "\"1.2.3\"" } :
-                                    new { gemspec, name = "asciidoctor-latexmath",
+                                    "version" ? (object)new
+                                    {
+                                        gemspec,
+                                        raw = "1.2.3+original",
                                         version = "1.2.3",
-                                        platform = "ruby", require_paths = Array.Empty<string>(),
+                                        literal = "\"1.2.3\""
+                                    } :
+                                    new
+                                    {
+                                        gemspec,
+                                        name = "asciidoctor-latexmath",
+                                        version = "1.2.3",
+                                        platform = "ruby",
+                                        require_paths = Array.Empty<string>(),
                                         files = Array.Empty<string>(),
-                                        runtime_dependencies = Array.Empty<object>() };
+                                        runtime_dependencies = Array.Empty<object>()
+                                    };
                             }
                             return new WorkflowDelivery.Platform.NativeCommandResult(
                                 WorkflowDelivery.Platform.NativeTermination.Exited, 0,

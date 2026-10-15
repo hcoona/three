@@ -47,7 +47,7 @@ internal static class ControlTestInputs
         return new(request.Comparison, before, after);
     }
 
-    private static bool RequireOwner(GitRevision revision, bool allowAbsent)
+    internal static bool RequireOwner(GitRevision revision, bool allowAbsent)
     {
         GitEntry? entry = revision.Entries.SingleOrDefault(entry => entry.Path == Project);
         if (entry is null && allowAbsent)
