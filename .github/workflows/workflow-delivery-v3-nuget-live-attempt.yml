@@ -262,7 +262,8 @@ jobs:
           WRITE_NEEDED: ${{ needs.observe.outputs.write-needed }}
         run: |
           mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/verification/final.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # A handled conflicting or unknown observation remains typed completion input.
+          if ($LASTEXITCODE -notin @(0, 1)) { exit $LASTEXITCODE }
 
           $publication = '-'
           if ($env:WRITE_NEEDED -eq 'true') { $publication = "$env:RUNNER_TEMP/publication/publication.json" }

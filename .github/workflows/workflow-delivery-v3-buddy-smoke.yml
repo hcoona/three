@@ -288,8 +288,11 @@ jobs:
         run: |
           control="$RUNNER_TEMP/control/WorkflowDelivery.dll"
           prepared="$RUNNER_TEMP/prepared/preparation.json"
+          # A handled conflicting or unknown observation remains typed completion input.
+          status=0
           mise exec dotnet@10.0.401 -- dotnet "$control" release observe-github-npm \
-            "$prepared" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/verification/final.json"
+            "$prepared" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/verification/final.json" || status=$?
+          if [ "$status" -gt 1 ]; then exit "$status"; fi
           publication=-
           if test "$WRITE_NEEDED" = true; then publication="$RUNNER_TEMP/publication/publication.json"; fi
           mise exec dotnet@10.0.401 -- dotnet "$control" release complete-github-npm \

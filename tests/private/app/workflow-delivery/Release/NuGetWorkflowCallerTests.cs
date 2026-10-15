@@ -51,6 +51,8 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         environment["WRITE_NEEDED"] = "false";
         environment["CONTROLLED_OBSERVATION"] = Path.Combine(fixture.Root,
             "controlled-final.json");
+        // The actual observe command exits 1 for a handled conflict or unknown state.
+        environment["CONTROLLED_OBSERVATION_EXIT"] = state == "Exact" ? "0" : "1";
         Assert.IsTrue((await Step(fixture, "verify-result", "Receive transferred preparation",
             environment)).Succeeded);
 
@@ -95,6 +97,9 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
                   if ($env:CONTROLLED_OBSERVATION) { $observed = $env:CONTROLLED_OBSERVATION }
                   Get-Content -LiteralPath $observed -Raw
                   $global:LASTEXITCODE = 0
+                  if ($env:CONTROLLED_OBSERVATION_EXIT) {
+                    $global:LASTEXITCODE = [int]$env:CONTROLLED_OBSERVATION_EXIT
+                  }
                 }
                 default {
                   & $env:WORKFLOW_DOTNET $env:WORKFLOW_APP @operation
