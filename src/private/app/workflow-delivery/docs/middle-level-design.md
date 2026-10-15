@@ -155,7 +155,9 @@ above the workspace root, is unsupported rather than ignored. The child process
 is credential-free, with owned HOME/XDG/cache/temp roots, an explicit
 interpreter, downloads disabled, `UV_NO_SYSTEM_CONFIG` set, no inherited
 UV/PIP/index/credential settings and an owned absent `UV_PROJECT_ENVIRONMENT`.
-Unexpected environment facts fail the request.
+Unexpected environment facts fail the request. Bind project configuration and
+version-file inputs; do not port private CLI precedence or suppress
+configuration/sources.
 
 UV metadata stubs build nodes, so build requirements come from
 `ProjectBuilder.build_system_requires` for named package contexts with explicit
@@ -180,14 +182,16 @@ interpreters and platforms can only add consumers. Groups follow UV's default
 `dev-dependencies` and `dependency-groups`. Root pytest preparation includes
 root plus selected quality owners; no-dev operations and build-requirement
 ordinary legs select no groups. Operation extras start empty; build-requirement
-extras select producer extra entry IDs. Native conflicts must be empty. Preserve
+extras select producer extra entry IDs. Unknown necessary group/extra selection and nonempty native conflicts fail
+planning. Preserve
 endpoint, interpreter/platform, groups/extras and check/build variant before
 markerless `ProjectFacts.Dependencies`, and union both endpoints so removed or
 renamed producers retain consumers. `uv sync --frozen --python <interpreter>`
 during preparation enforces `requires-python` for the operation interpreter.
 
 Adapt into existing RepositoryFacts/ProjectFacts/SharedInput/CheckSpec and
-impact closure, keeping quality consumers separate from build inputs. Managed
+impact closure, keeping quality consumers separate from build inputs and root ownership
+explicit. Managed
 NBGV and passive plugin coordinates supply project-scoped version/generated
 input consumers. Missing or ambiguous ownership, native errors or unmodeled
 necessary scope fail planning; there is no reduced completeness, parser
@@ -1035,16 +1039,17 @@ contract without requiring a permanent application record store.
 
 ### Behavioral Validation Basis
 
-| Contract   | Required cases                                                                                                          | Primary validation boundary                                       |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Impact     | Unrelated source; transitive consumers; shared input; deletion/rename; changed dependency edge; unknown scope           | Selection scenarios and native fact integration                   |
-| Quality    | Nearest matching ecosystem; explicit stronger-preset adoption; required missing/advisory failed results                 | Policy resolution and CI scenarios                                |
-| Execution  | Complete selected variants/checks; shared prerequisites; runner mismatch; failed/missing execution                      | Work planning and real workflow transfers                         |
-| Package    | Required native version agreement; complete outputs; clean consumers; same-input reproducibility                        | Ecosystem integration and package scenarios                       |
-| Isolation  | Prepared selected control; no product execution with write capability; exact qualified inputs                           | Actual job/process and artifact boundaries                        |
-| Completion | Initially exact; absent; supported subset; conflict; delayed visibility; upload error with complete/incomplete readback | Destination contract and Release state scenarios                  |
-| Recovery   | Interruption; unknown effects; fresh original-revision rebuild; only supported missing-file writes                      | End-to-end use-case scenarios with bounded dependency substitutes |
-| Retention  | Missing/expired required transfer; optional telemetry failure; historical outcomes remain unchanged                     | Transfer/result scenarios and evidence review                     |
+| Contract   | Required cases                                                                                                                               | Primary validation boundary                                       |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Impact     | Unrelated source; transitive consumers; shared input; deletion/rename; changed dependency edge; unknown scope                                | Selection scenarios and native fact integration                   |
+| Quality    | Nearest matching ecosystem; explicit stronger-preset adoption; required missing/advisory failed results                                      | Policy resolution and CI scenarios                                |
+| Execution  | Complete selected variants/checks; shared prerequisites; runner mismatch; failed/missing execution                                           | Work planning and real workflow transfers                         |
+| Package    | Required native version agreement; complete outputs; clean consumers; same-input reproducibility                                             | Ecosystem integration and package scenarios                       |
+| Isolation  | Prepared selected control; no product execution with write capability; exact qualified inputs                                                | Actual job/process and artifact boundaries                        |
+| Completion | Initially exact; absent; supported subset; conflict; delayed visibility; upload error with complete/incomplete readback                      | Destination contract and Release state scenarios                  |
+| Recovery   | Interruption; unknown effects; fresh original-revision rebuild; only supported missing-file writes                                           | End-to-end use-case scenarios with bounded dependency substitutes |
+| Channel    | Buddy development branch ref; Official ref outside scope rejected at preparation and publisher; dry run from a development ref with no write | Release state and preparation/publisher scenarios                 |
+| Retention  | Missing/expired required transfer; optional telemetry failure; historical outcomes remain unchanged                                          | Transfer/result scenarios and evidence review                     |
 
 Use focused unit tests for selection and outcome algorithms, scenario tests for
 journeys and contract tests for actual transfers. Exercise native integrations

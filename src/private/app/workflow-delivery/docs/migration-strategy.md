@@ -1,4 +1,4 @@
-# Workflow Delivery v3 Integration and Retirement Contract
+# Workflow Delivery v3 Integration Contract
 
 ## Purpose and Baseline
 
@@ -884,8 +884,10 @@ and missing read authorization, and never enters a write gate.
 
 ### Official Channel Scope
 
-WD-CHN-002 permits any eligible reviewed official branch or tag. The implemented
-callers configure a narrower set, which this table owns:
+WD-CHN-002 requires an eligible reviewed official ref. The implemented Workflow
+Delivery callers support a narrower set, which this table owns. The retained v1
+Official stack ([legacy boundary](research/legacy-workflow-boundary.md)) is
+outside this table.
 
 | Ecosystem | Official destination | Implemented Official scope                       |
 | --------- | -------------------- | ------------------------------------------------ |
@@ -895,7 +897,7 @@ callers configure a narrower set, which this table owns:
 | NuGet     | None                 | No Official channel; GitHub Packages Buddy only  |
 
 `ReleasePolicy.RequireEligible` is the one application check. Python and Ruby
-apply it where the request is formed and again in the privileged publisher; live
+apply it during preparation and again in the privileged publisher; live
 Buddy there requires a branch ref under `refs/heads/`. The npm and NuGet Buddy
 requests carry the dispatched ref in their subject without a ref-class check. Dry run needs no live
 ref eligibility. Native Environment branch policies may constrain a channel

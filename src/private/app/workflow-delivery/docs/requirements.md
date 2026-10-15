@@ -209,10 +209,9 @@ application must not claim isolation beyond that scope.
   behavior and is not a smoke-only exception. Channel isolation need not change
   the canonical product-version string and must reflect actual token reach.
 - **WD-CHN-002:** Official publication uses the canonical NBGV version and its
-  correct native projection from an eligible, reviewed official ref. Each caller
-  configures its eligible refs; the
+  correct native projection from an eligible, reviewed official ref. The
   [current Official scope](migration-strategy.md#official-channel-scope) states
-  the implemented callers' narrower set. NBGV can give different repository commits the
+  the implemented set. NBGV can give different repository commits the
   same public product version when relevant version inputs are unchanged. A
   version label alone does not identify exact package bytes or prove two release
   requests equivalent.
