@@ -35,20 +35,16 @@ internal static class DotNetGroupReader
         return await ReadAsync(request, scope, comparison, basis, candidate, token);
     }
 
-    private static bool SameRoot(GitMaterialization bound, string directory) =>
-        bound.Root.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)),
-            Platform.OwnedPath.Comparison);
-
     // The caller has already compared and bound both request endpoints in this invocation.
     internal static async Task<DotNetGroupReadback> ReadAsync(DotNetGroupRequest request,
         ScopeInputs scope, GitComparison comparison, GitMaterialization basis,
         GitMaterialization candidate, CancellationToken token)
     {
-        if (basis.Revision.Commit != comparison.Basis.Commit ||
-            candidate.Revision.Commit != comparison.Candidate.Commit ||
-            !SameRoot(basis, request.Basis.Directory) ||
-            !SameRoot(candidate, request.Candidate.Directory))
-            throw new InvalidDataException("Bound endpoints differ from the .NET group request.");
+        // Earlier native queries may have changed tracked files; re-check before evaluation.
+        basis = await GitMaterialization.ReuseOrBindAsync(basis, request.Basis.Directory,
+            comparison.Basis.Commit, token);
+        candidate = await GitMaterialization.ReuseOrBindAsync(candidate,
+            request.Candidate.Directory, comparison.Candidate.Commit, token);
         if (scope.Comparison != new CiComparison(comparison.Basis.Commit,
                 comparison.Candidate.Commit, request.Full))
             throw new InvalidDataException("Scope has a different native comparison.");
