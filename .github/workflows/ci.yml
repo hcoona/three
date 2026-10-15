@@ -50,7 +50,7 @@ jobs:
         with:
           global-json-file: global.json
       - name: Setup native endpoint tools
-        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           # Preserve the existing Java vendor semantics at both endpoints.
           version: '2026.8.10'
@@ -177,7 +177,7 @@ jobs:
 
       - name: Set up mise
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: '2026.8.10'
           experimental: true
@@ -264,7 +264,7 @@ jobs:
 
       - name: Set up Ruby
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+        uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1.329.0
         with:
           ruby-version: '4.0.7'
           bundler-cache: true
@@ -301,7 +301,7 @@ jobs:
 
       - name: Mise Install Tools
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: '2026.8.10'
           experimental: true
@@ -605,7 +605,7 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Setup native tools
-        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: '2026.8.10'
           experimental: true
@@ -750,7 +750,7 @@ jobs:
 
       - name: Prepare selected Hexo native bundle
         if: success() && !cancelled() && steps.scope.outputs.run == 'true' && contains(fromJSON(needs.node-group.outputs.retained_directories), 'src/public/lib/hexo-renderer-asciidoc')
-        uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+        uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1.329.0
         with:
           ruby-version: '4.0.7'
           working-directory: src/public/lib/hexo-renderer-asciidoc
@@ -947,7 +947,7 @@ jobs:
             "$(command -v uv)" "$(command -v python)" "$(command -v dotnet)"
       - name: Setup selected MISE adapters
         if: steps.plan.outputs.native_node == 'true'
-        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         env:
           MISE_DATA_DIR: ${{ runner.temp }}/python-auxiliary-mise
         with:
@@ -1027,7 +1027,7 @@ jobs:
             "$RUNNER_TEMP/native-scope/ci-scope.json" "$RUNNER_TEMP/native-preparation"
       - name: Setup selected native tools
         if: steps.plan.outputs.python == 'true' || steps.plan.outputs.ruby == 'true'
-        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: '2026.8.10'
           experimental: true
@@ -1116,7 +1116,7 @@ jobs:
         with:
           global-json-file: global.json
       - name: Setup native Ruby
-        uses: ruby/setup-ruby@e81a8fa391b11a595c1b7ed84177cc0fe02faf83 # v1.328.0
+        uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1.329.0
         with:
           ruby-version: '4.0.7'
       - name: Materialize exact committed endpoints
@@ -1228,7 +1228,7 @@ jobs:
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       - name: Set up mise
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: '2026.8.10'
           experimental: true
