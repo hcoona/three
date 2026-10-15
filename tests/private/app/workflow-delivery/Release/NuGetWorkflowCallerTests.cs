@@ -68,6 +68,30 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         Assert.IsFalse(outcome.MutationAttempted);
     }
 
+    [TestMethod]
+    public async Task ActualVerificationStepStopsOnUnhandledObservationFailure()
+    {
+        using var fixture = new NuGetReleaseTestFixture();
+        foreach (string phase in new[] { "prepared", "observation" })
+            Directory.CreateDirectory(Path.Combine(fixture.Root, phase));
+        fixture.Write("prepared/preparation.json", fixture.Preparation,
+            TransferJson.Default.NuGetPreparationResult);
+        fixture.Write("observation/observation.json", fixture.Observe(ReleaseFileState.Exact),
+            TransferJson.Default.GithubNuGetObservationResult);
+        var environment = Environment(fixture);
+        environment["WRITE_NEEDED"] = "false";
+        // Exit 2 is an unhandled native failure, not a typed destination state.
+        environment["CONTROLLED_OBSERVATION_EXIT"] = "2";
+        Assert.IsTrue((await Step(fixture, "verify-result", "Receive transferred preparation",
+            environment)).Succeeded);
+
+        NativeCommandResult result = await Step(fixture, "verify-result",
+            "Verify registry coordinate and original bytes", environment);
+
+        Assert.AreEqual(2, result.ExitCode, result.Stderr);
+        Assert.IsFalse(File.Exists(Path.Combine(fixture.Root, "verification/outcome.json")));
+    }
+
     private static Dictionary<string, string?> Environment(NuGetReleaseTestFixture fixture) => new()
     {
         ["RUNNER_TEMP"] = fixture.Root,
