@@ -36,12 +36,11 @@ internal static class NuGetPreparation
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
         lifetime.CancelAfter(TimeSpan.FromMinutes(15));
         token = lifetime.Token;
-        string checkout = Absolute(request.Checkout);
-        string scratch = Absolute(request.Scratch);
+        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
+        string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
         if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            Within(scratch, checkout) || Within(checkout, scratch) ||
-            Linked(checkout) || Linked(scratch) ||
-                Directory.EnumerateFileSystemEntries(scratch).Any())
+            OwnedPath.Overlap(scratch, checkout) ||
+            Directory.EnumerateFileSystemEntries(scratch).Any())
             throw new InvalidDataException("NuGet Release requires fresh external scratch.");
         var checks = new List<ReleaseCheck>();
         var commands = new List<ReleaseCommand>();
@@ -253,19 +252,5 @@ internal static class NuGetPreparation
         return values;
     }
 
-    private static string Absolute(string path) => Path.IsPathFullyQualified(path)
-        ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)) :
-        throw new InvalidDataException("NuGet Release paths must be absolute.");
-    private static bool Within(string path, string parent) => path.Equals(parent,
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
-            StringComparison.Ordinal) ||
-        path.StartsWith(parent + Path.DirectorySeparatorChar, OperatingSystem.IsWindows() ?
-            StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-    private static bool Linked(string path)
-    {
-        for (DirectoryInfo? directory = new(path); directory is not null; directory =
-            directory.Parent)
-            if ((directory.Attributes & FileAttributes.ReparsePoint) != 0) return true;
-        return false;
-    }
+    private const string PathMessage = "NuGet Release paths must be absolute.";
 }

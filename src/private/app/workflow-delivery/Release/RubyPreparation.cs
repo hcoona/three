@@ -32,7 +32,7 @@ internal static class RubyPreparation
         foreach (string path in new[] { request.Tools.Ruby, request.Tools.Gem,
                      request.Tools.Dotnet }) _ = Absolute(path);
         if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            Within(scratch, checkout) || Within(checkout, scratch) ||
+            OwnedPath.Overlap(scratch, checkout) ||
             Directory.EnumerateFileSystemEntries(scratch).Any())
             throw new InvalidDataException("Ruby Release requires fresh external state.");
         var commands = new List<ReleaseCommand>();
@@ -241,12 +241,6 @@ internal static class RubyPreparation
         return values;
     }
 
-    private static string Absolute(string path) => Path.IsPathFullyQualified(path)
-        ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)) :
-        throw new InvalidDataException("Ruby Release requires absolute prepared paths.");
-    private static bool Within(string child, string parent) => child.Equals(parent,
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
-            StringComparison.Ordinal) || child.StartsWith(parent + Path.DirectorySeparatorChar,
-                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
-                    StringComparison.Ordinal);
+    private static string Absolute(string path) =>
+        OwnedPath.Absolute(path, "Ruby Release requires absolute prepared paths.");
 }

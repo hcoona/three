@@ -42,11 +42,10 @@ internal static class NodeExecution
     {
         ArgumentNullException.ThrowIfNull(request);
         CiPlan selected = SelectRuntime(plan, request.Runtime);
-        string checkout = Absolute(request.Checkout);
-        string scratch = Absolute(request.Scratch);
+        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
+        string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
         if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            scratch == checkout || Within(scratch, checkout) || Within(checkout, scratch) ||
-            HasLinkedAncestor(checkout) || HasLinkedAncestor(scratch) ||
+            OwnedPath.Overlap(scratch, checkout) ||
             Directory.EnumerateFileSystemEntries(scratch).Any())
             throw new InvalidDataException("Node execution requires fresh external scratch.");
         if (scratch.Contains("%s", StringComparison.Ordinal) ||
@@ -285,24 +284,5 @@ internal static class NodeExecution
         return value;
     }
 
-    private static string Absolute(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
-            throw new InvalidDataException("Node execution paths must be absolute.");
-        return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-    }
-
-    private static bool Within(string path, string directory) =>
-        path.StartsWith(Path.EndsInDirectorySeparator(directory)
-            ? directory : directory + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-
-    private static bool HasLinkedAncestor(string path)
-    {
-        for (DirectoryInfo? directory = new(path); directory is not null;
-            directory = directory.Parent)
-            if ((directory.Attributes & FileAttributes.ReparsePoint) != 0)
-                return true;
-        return false;
-    }
+    private const string PathMessage = "Node execution paths must be absolute.";
 }

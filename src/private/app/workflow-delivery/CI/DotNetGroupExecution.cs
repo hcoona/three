@@ -1,4 +1,5 @@
 using WorkflowDelivery.Repository;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.CI;
 
@@ -41,14 +42,10 @@ internal static class DotNetGroupExecution
         ResultCollector.Collect(packagePlan, []);
         string checkout = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Checkout));
         string scratch = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Scratch));
-        StringComparison paths = OperatingSystem.IsWindows() ?
-            StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         if (!Path.IsPathFullyQualified(request.Checkout) ||
             !Path.IsPathFullyQualified(request.Scratch) || request.DeadlineSeconds <= 0 ||
             !Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
-            scratch.Equals(checkout, paths) ||
-            scratch.StartsWith(checkout + Path.DirectorySeparatorChar, paths) ||
-            checkout.StartsWith(scratch + Path.DirectorySeparatorChar, paths))
+            OwnedPath.Overlap(scratch, checkout))
             throw new InvalidDataException(
                 "Native group execution requires fresh external scratch.");
         GitRevision revision = await new GitReader(checkout).ReadAsync(plan.Candidate, token);

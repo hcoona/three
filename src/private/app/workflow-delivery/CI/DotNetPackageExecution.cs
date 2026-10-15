@@ -26,10 +26,10 @@ internal static class DotNetPackageExecution
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        string checkout = Absolute(request.Checkout);
-        string scratch = Absolute(request.Scratch);
+        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
+        string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
         if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            Within(scratch, checkout) || Within(checkout, scratch) ||
+            OwnedPath.Overlap(scratch, checkout) ||
             Directory.EnumerateFileSystemEntries(scratch).Any() || request.DeadlineSeconds <= 0)
             throw new InvalidDataException(
                 "Native package execution requires fresh external scratch.");
@@ -184,13 +184,5 @@ internal static class DotNetPackageExecution
         Exception(message)
     { internal CheckStatus Status { get; } = status; }
 
-    private static string Absolute(string path) => Path.IsPathFullyQualified(path)
-        ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)) :
-        throw new InvalidDataException("Native package paths must be absolute.");
-
-    private static bool Within(string child, string parent) => child.Equals(parent,
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
-            ||
-        child.StartsWith(parent + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    private const string PathMessage = "Native package paths must be absolute.";
 }

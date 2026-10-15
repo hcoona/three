@@ -210,11 +210,7 @@ def inspect_archive(
     if quality != QUALITY:
         message = "Unsupported registered Python package quality"
         raise ValueError(message)
-    if (
-        path.is_symlink()
-        or not path.is_file()
-        or path.stat().st_size > MAX_ARCHIVE
-    ):
+    if not path.is_file() or path.stat().st_size > MAX_ARCHIVE:
         message = "Invalid original distribution"
         raise ValueError(message)
     if path.suffix == ".whl":

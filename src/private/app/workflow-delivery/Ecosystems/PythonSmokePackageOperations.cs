@@ -33,8 +33,7 @@ internal sealed class PythonSmokePackageOperations(PythonPackageTools tools, str
         _ = Absolute(tools.Interpreter);
         _ = Absolute(tools.Helper);
         if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            HasLinkedAncestor(checkout) || HasLinkedAncestor(scratch) ||
-            Within(scratch, checkout) || Within(checkout, scratch) ||
+            OwnedPath.Overlap(scratch, checkout) ||
             Directory.EnumerateFileSystemEntries(scratch).Any() || tools.DeadlineSeconds <= 0)
             throw new InvalidDataException(
                 "Python package execution requires fresh external scratch.");
@@ -167,7 +166,7 @@ internal sealed class PythonSmokePackageOperations(PythonPackageTools tools, str
     internal static void RequireOriginal(PythonDistribution original)
     {
         var info = new FileInfo(original.Path);
-        if (!info.Exists || info.LinkTarget is not null || info.Length != original.Length)
+        if (!info.Exists || info.Length != original.Length)
             throw new InvalidDataException("Original Python distribution changed.");
         using FileStream stream = info.OpenRead();
         if (Convert.ToHexStringLower(SHA256.HashData(stream)) != original.Sha256)
@@ -181,17 +180,6 @@ internal sealed class PythonSmokePackageOperations(PythonPackageTools tools, str
             environment, tools.InheritEnvironment);
     private static string Python(string venv) => Path.Combine(venv,
         OperatingSystem.IsWindows() ? "Scripts/python.exe" : "bin/python");
-    private static string Absolute(string path) => Path.IsPathFullyQualified(path)
-        ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path))
-        : throw new InvalidDataException("Python package paths must be absolute.");
-    private static bool HasLinkedAncestor(string path)
-    {
-        for (DirectoryInfo? directory = new(path); directory is not null;
-            directory = directory.Parent)
-            if ((directory.Attributes & FileAttributes.ReparsePoint) != 0) return true;
-        return false;
-    }
-    private static bool Within(string child, string parent) => child == parent ||
-        child.StartsWith(parent + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    private static string Absolute(string path) =>
+        OwnedPath.Absolute(path, "Python package paths must be absolute.");
 }

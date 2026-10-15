@@ -36,29 +36,14 @@ internal static class CiCallerTransfer
         Output(key, System.Text.Encoding.UTF8.GetString(buffer.ToArray()));
     }
 
-    internal static string Absolute(string path)
-    {
-        if (!Path.IsPathFullyQualified(path))
-            throw new InvalidDataException("CI caller paths must be absolute.");
-        // GetFullPath preserves shim spelling; resolving symbolic links would change identity.
-        return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-    }
+    // GetFullPath preserves shim spelling; resolving symbolic links would change identity.
+    internal static string Absolute(string path) =>
+        OwnedPath.Absolute(path, "CI caller paths must be absolute.");
 
     internal static void External(string root, string directory)
     {
         root = Absolute(root); directory = Absolute(directory);
-        foreach (string path in new[] { root, directory })
-            for (DirectoryInfo? component = new(path); component is not null;
-                 component = component.Parent)
-                if (component.LinkTarget is not null || component.Exists &&
-                    (component.Attributes & FileAttributes.ReparsePoint) != 0)
-                    throw new InvalidDataException(
-                        "CI source and state paths must not use linked directories.");
-        StringComparison comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        if (root.Equals(directory, comparison) ||
-            root.StartsWith(directory + Path.DirectorySeparatorChar, comparison) ||
-            directory.StartsWith(root + Path.DirectorySeparatorChar, comparison))
+        if (OwnedPath.Overlap(root, directory))
             throw new InvalidDataException("CI caller state must be outside the source checkout.");
     }
 

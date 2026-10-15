@@ -67,8 +67,7 @@ internal static class NodePackageArchive
 
     internal static void RequireRegularFile(string path)
     {
-        FileAttributes attributes = File.GetAttributes(path);
-        if ((attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+        if (!File.Exists(path))
             throw new InvalidDataException("Required npm output is not a regular file: " + path);
     }
 

@@ -9,6 +9,7 @@ using NuGet.Protocol;
 using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
 using WorkflowDelivery.Ecosystems;
+using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
@@ -34,17 +35,13 @@ internal static class GithubNuGetPublisher
             !Path.IsPathFullyQualified(originals))
             throw new InvalidDataException("Unsupported or unqualified native NuGet upload.");
         ReleaseFile file = prepared.Files[0];
-        string path = Path.GetFullPath(Path.Combine(originals, file.Path));
-        string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(originals));
-        StringComparison comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        if (!path.StartsWith(root + Path.DirectorySeparatorChar, comparison) ||
+        string root = OwnedPath.Absolute(originals,
+            "Unsupported or unqualified native NuGet upload.");
+        string path = Path.GetFullPath(Path.Combine(root, file.Path));
+        // ReleaseFile.Path crosses the job transfer boundary; keep it inside the originals.
+        if (!OwnedPath.Within(path, root) ||
             !File.Exists(path) || !path.EndsWith(".nupkg", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Missing regular original NuGet package.");
-        for (FileSystemInfo? item = new FileInfo(path); item is not null; item = item switch
-            { FileInfo value => value.Directory, DirectoryInfo value => value.Parent, _ => null })
-            if ((item.Attributes & FileAttributes.ReparsePoint) != 0)
-                throw new InvalidDataException("Linked original NuGet package path.");
         var identity = new PackageIdentity(Package, NuGetVersion.Parse(file.Version));
         if (!PackageIdentityComparer.Default.Equals(identity,
                 new PackageIdentity(file.Name, NuGetVersion.Parse(file.Version))) ||

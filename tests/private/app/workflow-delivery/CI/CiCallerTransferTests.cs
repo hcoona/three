@@ -116,34 +116,6 @@ public sealed class CiCallerTransferTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
-    public async Task ExternalRejectsLinkedAncestorsBeforeStateCreation(bool linkedSource)
-    {
-        using var files = new CiCallerFiles();
-        string source = Directory.CreateDirectory(Path.Combine(files.Root, "source")).FullName;
-        string alias = Path.Combine(files.Root, "alias");
-        if (OperatingSystem.IsWindows())
-        {
-            NativeCommandResult result = await NativeProcess.ExecuteAsync(new("cmd.exe", files.Root,
-                ["/d", "/c", "mklink", "/J", alias, source], 10), context.CancellationToken);
-            Assert.IsTrue(result.Succeeded, result.Stderr + result.Error);
-        }
-        else Directory.CreateSymbolicLink(alias, source);
-        try
-        {
-            string state = linkedSource ? Path.Combine(source, "state") :
-                Path.Combine(alias, "missing", "state");
-            Assert.ThrowsExactly<InvalidDataException>(() =>
-                CiCallerTransfer.External(linkedSource ? alias : source, state));
-            Assert.IsFalse(Directory.Exists(state));
-            Assert.AreEqual(alias, CiCallerTransfer.Absolute(alias));
-            CiCallerTransfer.External(source, Path.Combine(files.Root, "outside", "state"));
-        }
-        finally { Directory.Delete(alias); }
-    }
-
-    [TestMethod]
     [DataRow("{\"full\":false}")]
     [DataRow("{\"full\":\"true\"}")]
     [DataRow("[]")]

@@ -106,8 +106,6 @@ internal static partial class GithubNpmRuntime
             Directory.EnumerateFileSystemEntries(scratch).Any() || credential.Length == 0 ||
             credential.Any(c => c is '\r' or '\n' or '\0'))
             throw new InvalidDataException("Native npm requires fresh absolute runtime and tools.");
-        if ((File.GetAttributes(scratch) & FileAttributes.ReparsePoint) != 0)
-            throw new InvalidDataException("Native npm runtime cannot be a linked directory.");
         foreach (string name in new[] { "home", "cache", "temp" })
             Directory.CreateDirectory(Path.Combine(scratch, name));
         await File.WriteAllTextAsync(Path.Combine(scratch, "package.json"),

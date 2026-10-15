@@ -47,7 +47,7 @@ internal static class PythonNativePublisher
         string root = Absolute(originals), scratch = Absolute(tools.Scratch);
         if (!Directory.Exists(root) || !Directory.Exists(scratch) ||
             Directory.EnumerateFileSystemEntries(scratch).Any() ||
-            Within(root, scratch) || Within(scratch, root))
+            OwnedPath.Overlap(root, scratch))
             throw new InvalidDataException("Publication requires separate owned empty scratch.");
         string uv = Absolute(tools.Uv);
         ReleaseFile selected = prepared.Files.SingleOrDefault(file => file.Output == output)
@@ -57,7 +57,7 @@ internal static class PythonNativePublisher
         foreach (ReleaseFile file in prepared.Files)
         {
             string path = Path.GetFullPath(Path.Combine(root, file.Path));
-            if (!Within(path, root) || path == root)
+            if (!OwnedPath.Within(path, root) || path == root)
                 throw new InvalidDataException("Original Python path leaves its root.");
             PythonSmokePackageOperations.RequireOriginal(new(file.Kind, path, file.Size,
                 file.Sha256));
@@ -111,10 +111,6 @@ internal static class PythonNativePublisher
         }
     }
 
-    private static string Absolute(string path) => Path.IsPathFullyQualified(path)
-        ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path))
-        : throw new InvalidDataException("Native publication paths must be absolute.");
-    private static bool Within(string child, string parent) => child == parent ||
-        child.StartsWith(parent + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    private static string Absolute(string path) =>
+        OwnedPath.Absolute(path, "Native publication paths must be absolute.");
 }

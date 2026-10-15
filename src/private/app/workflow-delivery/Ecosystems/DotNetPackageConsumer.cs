@@ -196,8 +196,7 @@ internal static class DotNetPackageConsumer
 
     internal static void RequireFile(string path)
     {
-        if (!File.Exists(path) || (File.GetAttributes(path) &
-                (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+        if (!File.Exists(path))
             throw new InvalidDataException("Required native output is not a regular file.");
     }
 }

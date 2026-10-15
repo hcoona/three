@@ -30,11 +30,10 @@ internal static class NpmPreparation
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
         lifetime.CancelAfter(TimeSpan.FromMinutes(15));
         token = lifetime.Token;
-        string checkout = FullPath(request.Checkout);
-        string scratch = FullPath(request.Scratch);
+        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
+        string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
         if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            Within(scratch, checkout) || Within(checkout, scratch) ||
-            HasLinkedAncestor(checkout) || HasLinkedAncestor(scratch) ||
+            OwnedPath.Overlap(scratch, checkout) ||
             Directory.EnumerateFileSystemEntries(scratch).Any())
             throw new InvalidDataException("Release requires fresh external scratch.");
         if (scratch.Contains("%s", StringComparison.Ordinal) ||
@@ -226,19 +225,5 @@ internal static class NpmPreparation
         }
     }
 
-    private static string FullPath(string path) => Path.IsPathFullyQualified(path)
-        ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path))
-        : throw new InvalidDataException("Release execution paths must be absolute.");
-
-    private static bool Within(string path, string parent) => path == parent ||
-        path.StartsWith(parent + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-
-    private static bool HasLinkedAncestor(string path)
-    {
-        for (DirectoryInfo? directory = new(path); directory is not null;
-            directory = directory.Parent)
-            if ((directory.Attributes & FileAttributes.ReparsePoint) != 0) return true;
-        return false;
-    }
+    private const string PathMessage = "Release execution paths must be absolute.";
 }
