@@ -7,7 +7,6 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class PythonGroupPreparationTests(TestContext context)
 {
-    private static readonly string[] CargoArguments = ["build", "--locked"];
     private static readonly string[] DotnetToolArguments = ["tool", "restore"];
 
     // Rows that vary only the request, owned scratch or controlled native answers read one
@@ -64,16 +63,10 @@ public sealed class PythonGroupPreparationTests(TestContext context)
         Assert.AreEqual(fixture.Request.Candidate, result.Candidate.Checkout);
         Assert.AreEqual(full, result.Full);
         Assert.AreEqual(fixture.Request.ScopePath, result.ScopePath);
-        Assert.AreEqual(result.Basis.Collection.Graph.SupplementExecutable,
-            result.Candidate.Collection.Graph.SupplementExecutable);
+        Assert.AreEqual(result.Basis.Collection.Graph.PassiveScript,
+            result.Candidate.Collection.Graph.PassiveScript);
         Assert.AreNotEqual(result.Basis.Collection.Graph.HelperPython,
             result.Candidate.Collection.Graph.HelperPython);
-        NativeCommand compilation = Assert.ContainsSingle(prepared.Commands.Where(item =>
-            item.Command.Executable == fixture.Request.Tools.Cargo)).Command;
-        CollectionAssert.AreEqual(CargoArguments, compilation.Arguments);
-        Assert.AreEqual(Path.Combine(fixture.Request.ControlSources, "uv"), compilation.Directory);
-        Assert.AreEqual(Path.Combine(fixture.Request.Scratch, "native", "output"),
-            compilation.Environment!["CARGO_TARGET_DIR"]);
         foreach (PythonGroupEndpoint endpoint in new[] { result.Basis, result.Candidate })
         {
             PythonGraphRequest graph = endpoint.Collection.Graph;
@@ -88,12 +81,9 @@ public sealed class PythonGroupPreparationTests(TestContext context)
             Assert.AreEqual(Path.Combine(fixture.Request.ControlSources, "pytest_configuration.py"),
                 endpoint.Collection.PytestHelper);
             Assert.IsTrue(File.Exists(graph.HelperPython));
-            Assert.IsTrue(File.Exists(graph.SupplementExecutable));
-            Assert.AreNotEqual(graph.BootstrapScratch, graph.ActivityScratch);
-            Assert.IsEmpty(Directory.EnumerateFileSystemEntries(graph.BootstrapScratch));
-            Assert.IsEmpty(Directory.EnumerateFileSystemEntries(graph.ActivityScratch));
             Assert.IsFalse(Path.Exists(endpoint.Environment["UV_PROJECT_ENVIRONMENT"]));
-            Assert.AreEqual(graph.Cache, endpoint.Environment["UV_CACHE_DIR"]);
+            Assert.IsTrue(endpoint.Environment["UV_CACHE_DIR"]!.StartsWith(
+                fixture.Request.Scratch, StringComparison.Ordinal));
         }
         NativeCommand[] installations = prepared.Commands.Select(item => item.Command)
             .Where(command => command.Executable == fixture.Request.Tools.Uv).ToArray();
@@ -141,6 +131,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
                     Assert.Contains(Path.GetDirectoryName(fixture.Request.Tools.Dotnet)!,
                         environment["PATH"]!.Split(Path.PathSeparator));
                     Assert.AreEqual("never", environment["UV_PYTHON_DOWNLOADS"]);
+                    Assert.AreEqual("1", environment["UV_NO_SYSTEM_CONFIG"]);
                 }
                 Assert.IsTrue(commands.All(item => !item.Command.InheritEnvironment));
             }
@@ -149,13 +140,10 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("rustup")]
-    [DataRow("rust")]
     [DataRow("restore")]
     [DataRow("sync")]
     [DataRow("candidate-restore")]
     [DataRow("candidate-sync")]
-    [DataRow("missing-supplement")]
     [DataRow("missing-query")]
     [DataRow("candidate-missing-query")]
     public async Task FailedPreparationCannotReturnACompleteRequest(string phase)
@@ -175,8 +163,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
             Assert.IsTrue(failure.Commands.All(item => item.Result.Succeeded));
             Assert.IsTrue(failure.Commands.All(item =>
                 item.Result.Stdout == "Controlled preparation"));
-            Assert.Contains(phase == "missing-supplement" ? "supplement" : "interpreter",
-                failure.Message);
+            Assert.Contains("interpreter", failure.Message);
             Assert.DoesNotContain("Controlled preparation", failure.Message);
         }
         else
@@ -295,8 +282,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
             foreach (string path in new[] { basis, candidate, sources, scratch })
                 Directory.CreateDirectory(path);
             foreach (string source in new[] { "passive.py", "pytest_configuration.py",
-                "packages.py",
-                "uv/Cargo.toml", "uv/Cargo.lock", "uv/rust-toolchain.toml" })
+                "packages.py" })
             {
                 string path = Path.Combine(sources, source);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -306,7 +292,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
             Request = new(new(basis, new string('a', 40)),
                 new(candidate, new string(full ? 'a' : 'b', 40)),
                 full, Path.Combine(directory, "scope.json"), sources, scratch,
-                new(Tool("uv"), Tool("python"), Tool("dotnet"), Tool("rustup"), Tool("cargo")),
+                new(Tool("uv"), Tool("python"), Tool("dotnet")),
                 new("ubuntu-latest", "python-3.14", new()
                     { ["python"] = "3.14", ["platform"] = "linux" }), 600);
         }
@@ -355,15 +341,10 @@ public sealed class PythonGroupPreparationTests(TestContext context)
         {
             token.ThrowIfCancellationRequested();
             Commands.Add(command);
-            string phase = command.Executable == Request.Tools.Rustup ? "rustup" :
-                command.Executable == Request.Tools.Cargo ? "rust" :
-                command.Executable == Request.Tools.Dotnet ? "restore" : "sync";
+            string phase = command.Executable == Request.Tools.Dotnet ? "restore" : "sync";
             if (Failure == phase || Failure == "candidate-" + phase &&
                 command.Directory == Request.Candidate.Directory)
                 return new(NativeTermination.Exited, 1, "", "Controlled failure", 0, null);
-            if (phase == "rust" && Failure != "missing-supplement")
-                Create(Path.Combine(command.Environment!["CARGO_TARGET_DIR"]!, "debug",
-                    "workflow-python-native-facts" + (OperatingSystem.IsWindows() ? ".exe" : "")));
             if (phase == "sync" && Failure != "missing-query" &&
                 !(Failure == "candidate-missing-query" &&
                     command.Directory == Request.Candidate.Directory))

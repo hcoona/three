@@ -9,8 +9,8 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class PythonNativeGraphReaderTests(TestContext context)
 {
-    private static readonly string[] BuildStrings =
-        ["producer[feature]; python_version >= '3.13'"];
+    private static readonly PythonBuildRequirement[] BuildRequirements =
+        [new("producer", ["feature"]), new("hatchling", [])];
     private static readonly string[] ProducerPaths = ["src/plugin"];
     private static readonly string[] Feature = ["feature"];
     private static readonly string[] BaseDirectories = [".", "src/consumer", "src/plugin"];
@@ -31,8 +31,8 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
             fixture.Root).Project.BuildRequirements);
         PythonPassiveInputs consumer = graph.Passive.Single(input =>
             input.Project.Directory == fixture.Consumer);
-        CollectionAssert.AreEqual(BuildStrings,
-            consumer.Project.BuildRequirements);
+        Assert.AreEqual(BuildRequirements.Length, consumer.Project.BuildRequirements!.Length);
+        Assert.AreEqual("workspace", consumer.Project.Sources!["producer"]);
         Assert.AreEqual(new PythonNbgvCoordinates(fixture.Root,
             Path.Combine(fixture.Consumer, "generated", "version.py")), consumer.Nbgv);
         Assert.HasCount(3, graph.Projects);
@@ -44,42 +44,16 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
         CollectionAssert.AreEquivalent(new[] { fixture.Parent, fixture.Root, fixture.Consumer,
             fixture.Producer }.Select(dir => Path.Combine(dir, "pyproject.toml")).ToArray(),
             graph.ConfigurationInputs);
-        Assert.HasCount(2, fixture.Requests);
-        PythonSupplementRequest bootstrap = fixture.Requests[0];
-        Assert.IsEmpty(bootstrap.Markers);
-        Assert.IsEmpty(bootstrap.GroupOperations);
-        Assert.IsEmpty(bootstrap.PythonConstraints);
-        PythonSupplementRequest activity = fixture.Requests[1];
-        Assert.AreEqual(fixture.Request.Interpreter, activity.Interpreter);
-        Assert.AreEqual(fixture.Request.Cache, activity.Cache);
-        Assert.HasCount(fixture.Operations.Length, activity.GroupOperations);
-        for (int index = 0; index < activity.GroupOperations.Length; index++)
-        {
-            PythonGroupOperation expected = fixture.Operations[index];
-            PythonGroupOperation actual = activity.GroupOperations[index];
-            Assert.AreEqual(expected.Id, actual.Id);
-            Assert.AreEqual(expected.Directory, actual.Directory);
-            Assert.AreEqual(expected.NoDev, actual.NoDev);
-            CollectionAssert.AreEqual(expected.Packages, actual.Packages);
-        }
-        CollectionAssert.AreEquivalent(new[] { fixture.Root, fixture.Consumer,
-            fixture.Producer }, activity.Projects.Select(item => item.Directory).ToArray());
-        Assert.ContainsSingle(activity.Markers.Where(item => item.Extras.Length == 1 &&
-            item.Extras[0] == "feature"));
-        Assert.ContainsSingle(activity.Markers.Where(item => item.Expression ==
-            "python_version >= '3.13'" && item.Extras.Length == 0));
         foreach (NativeCommand command in fixture.Commands)
         {
             Assert.IsNotNull(command.Environment);
             CollectionAssert.AreEquivalent(fixture.Environment.ToArray(),
                 command.Environment.ToArray());
         }
-        CollectionAssert.AreEqual(new[]
-        {
-            Path.Combine(fixture.Bootstrap, "python-supplement-request.json"),
-            Path.Combine(fixture.Activity, "python-supplement-request.json")
-        }, fixture.Commands.Where(command => command.Executable == "native-supplement")
-            .Select(command => command.Arguments.Single()).ToArray());
+        CollectionAssert.AreEqual(new[] { "passive-script", "--configuration-only",
+            fixture.Parent, fixture.Root, fixture.Consumer, fixture.Producer },
+            fixture.Commands[1].Arguments);
+        Assert.HasCount(5, fixture.Commands);
         Assert.AreEqual(fixture.Root, fixture.Commands[0].Directory);
         CollectionAssert.AreEqual(new[] { "workspace", "metadata", "--frozen", "--python",
             fixture.Request.Interpreter }, fixture.Commands[0].Arguments);
@@ -101,41 +75,24 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(false, true, true)]
-    [DataRow(true, false, true)]
-    [DataRow(true, true, false)]
-    public async Task NativeFalseAnswersExcludeOnlyTheirDependencyLeg(bool ordinary,
-        bool build, bool supportsPython)
+    public async Task UnsupportedBuildSourceFailsTheGraph()
     {
-        using var fixture = new Fixture
-        {
-            OrdinaryActive = ordinary,
-            BuildActive = build,
-            SupportsPython = supportsPython
-        };
-        if (!supportsPython)
-        {
-            await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-                fixture.ReadAsync(context.CancellationToken));
-            Assert.HasCount(2, fixture.Requests);
-            return;
-        }
-        PythonNativeGraph graph = await fixture.ReadAsync(context.CancellationToken);
-        PythonProjectDependencies consumer = graph.Projects.Single(item =>
-            item.Directory == "src/consumer");
-        CollectionAssert.AreEqual(ordinary ? ProducerPaths : [], consumer.Ordinary);
-        CollectionAssert.AreEqual(build ? ProducerPaths : [], consumer.Build);
-        Assert.HasCount(3, graph.Projects);
+        using var fixture = new Fixture { UnsupportedSource = true };
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(context.CancellationToken));
+        Assert.HasCount(5, fixture.Commands);
     }
 
     [TestMethod]
-    public async Task ScratchCollisionFailsBeforeNativeWork()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ProjectUvTomlFailsBeforePassiveExtraction(bool ancestor)
     {
         using var fixture = new Fixture();
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => fixture.ReadAsync(
-            context.CancellationToken,
-            fixture.Request with { ActivityScratch = fixture.Bootstrap }));
-        Assert.IsEmpty(fixture.Commands);
+        File.WriteAllText(Path.Combine(ancestor ? fixture.Parent : fixture.Root, "uv.toml"), "");
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(context.CancellationToken));
+        Assert.HasCount(1, fixture.Commands);
     }
 
     [TestMethod]
@@ -144,9 +101,6 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
     [DataRow(3)]
     [DataRow(4)]
     [DataRow(5)]
-    [DataRow(6)]
-    [DataRow(7)]
-    [DataRow(8)]
     public async Task FailedStageStopsCollection(int stage)
     {
         using var fixture = new Fixture { FailAt = stage };
@@ -162,9 +116,6 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
     [DataRow(3)]
     [DataRow(4)]
     [DataRow(5)]
-    [DataRow(6)]
-    [DataRow(7)]
-    [DataRow(8)]
     public async Task CancellationStopsBeforeFollowingStage(int stage)
     {
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -182,9 +133,6 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
     [DataRow(3)]
     [DataRow(4)]
     [DataRow(5)]
-    [DataRow(6)]
-    [DataRow(7)]
-    [DataRow(8)]
     public async Task CancelledNativeResultStopsBeforeFollowingStage(int stage)
     {
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -199,30 +147,13 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
             () => fixture.ReadAsync(cancellation.Token));
         Assert.AreEqual(cancellation.Token, failure.CancellationToken);
         Assert.HasCount(stage, fixture.Commands);
-        Assert.HasCount(stage < 6 ? 0 : stage < 8 ? 1 : 2, fixture.Requests);
         Assert.AreEqual(stage == 1 ? 0 : 1, fixture.FactoryCalls);
-    }
-
-    [TestMethod]
-    [DataRow("bootstrap-members")]
-    [DataRow("bootstrap-builds")]
-    [DataRow("activity-markers")]
-    [DataRow("activity-groups")]
-    [DataRow("activity-root")]
-    [DataRow("activity-interpreter")]
-    public async Task ChangedNativeAnswersCannotReturnGraph(string fault)
-    {
-        using var fixture = new Fixture { Fault = fault };
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.ReadAsync(context.CancellationToken));
-        Assert.HasCount(fault.StartsWith("bootstrap", StringComparison.Ordinal) ? 1 : 2,
-            fixture.Requests);
     }
 
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
-    public async Task ChangedOperationContextsFailBeforeActivityQuery(bool outside)
+    public async Task ChangedOperationContextsFailGroupSelection(bool outside)
     {
         using var fixture = new Fixture();
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
@@ -232,7 +163,7 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
                 return outside ? [.. operations, new("outside", fixture.Parent, [], false)] :
                     operations[1..];
             }));
-        Assert.HasCount(1, fixture.Requests);
+        Assert.HasCount(5, fixture.Commands);
     }
 
     [TestMethod]
@@ -256,7 +187,6 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
         Assert.AreEqual(1, fixture.FactoryCalls);
         Assert.ContainsSingle(fixture.Commands.Where(command => command.Executable == "uv"));
         AssertOperations(expected, graph.Operations);
-        AssertOperations(expected, fixture.Requests[1].GroupOperations);
         CollectionAssert.AreEquivalent(new[] { fixture.Root, fixture.Consumer,
             fixture.Producer }, graph.Operations.Select(operation => operation.Directory)
                 .Distinct(StringComparer.Ordinal).ToArray());
@@ -301,7 +231,6 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
         Assert.AreSame(failure, actual);
         Assert.AreEqual(1, fixture.FactoryCalls);
         Assert.HasCount(1, fixture.Commands);
-        Assert.IsEmpty(fixture.Requests);
     }
 
     [TestMethod]
@@ -318,7 +247,6 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
             }));
         Assert.AreEqual(1, fixture.FactoryCalls);
         Assert.HasCount(1, fixture.Commands);
-        Assert.IsEmpty(fixture.Requests);
     }
 
     [TestMethod]
@@ -334,43 +262,6 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
             cancellation.Token));
         Assert.AreEqual(0, fixture.FactoryCalls);
         Assert.HasCount(stage, fixture.Commands);
-        Assert.IsEmpty(fixture.Requests);
-    }
-
-    [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task ScratchAliasesFailBeforeNativeWork(bool trailingSeparator)
-    {
-        using var fixture = new Fixture();
-        string alias = trailingSeparator ? fixture.Bootstrap + Path.DirectorySeparatorChar :
-            Path.Combine(fixture.Bootstrap, ".");
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => fixture.ReadAsync(
-            context.CancellationToken, fixture.Request with { ActivityScratch = alias }));
-        Assert.AreEqual(0, fixture.FactoryCalls);
-        Assert.IsEmpty(fixture.Commands);
-    }
-
-    [TestMethod]
-    public async Task CaseOnlyScratchAliasUsesPlatformSemantics()
-    {
-        using var fixture = new Fixture();
-        string alias = Path.Combine(fixture.Parent, "BOOTSTRAP");
-        Directory.CreateDirectory(alias);
-        PythonGraphRequest request = fixture.Request with { ActivityScratch = alias };
-        if (OperatingSystem.IsWindows())
-        {
-            await Assert.ThrowsExactlyAsync<InvalidDataException>(() => fixture.ReadAsync(
-                context.CancellationToken, request));
-            Assert.AreEqual(0, fixture.FactoryCalls);
-            Assert.IsEmpty(fixture.Commands);
-        }
-        else
-        {
-            PythonNativeGraph graph = await fixture.ReadAsync(context.CancellationToken, request);
-            Assert.HasCount(3, graph.Projects);
-            Assert.HasCount(2, fixture.Requests);
-        }
     }
 
     private static PythonGroupOperation[] CreateOperations(PythonMetadata metadata) =>
@@ -400,10 +291,7 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
         internal string Consumer => Path.Combine(Root, "src", "consumer");
         internal string Producer => Path.Combine(Root, "src", "plugin");
         internal string InputOnly => Path.Combine(Root, "src", "input-only");
-        internal string Bootstrap => Path.Combine(Parent, "bootstrap");
-        internal string Activity => Path.Combine(Parent, "activity");
         internal List<NativeCommand> Commands { get; } = [];
-        internal List<PythonSupplementRequest> Requests { get; } = [];
         internal Dictionary<string, string?> Environment { get; } = new(StringComparer.Ordinal)
         {
             ["UV_PYTHON_DOWNLOADS"] = "never",
@@ -411,27 +299,22 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
         };
         internal bool NamedRoot { get; init; }
         internal bool InputOnlyMember { get; init; }
-        internal bool OrdinaryActive { get; init; } = true;
-        internal bool BuildActive { get; init; } = true;
-        internal bool SupportsPython { get; init; } = true;
+        internal bool UnsupportedSource { get; init; }
         internal int FailAt { get; init; }
         internal int CancelAt { get; init; }
         internal bool ReturnCancelledResult { get; init; }
         internal CancellationTokenSource? Cancellation { get; init; }
-        internal string? Fault { get; init; }
         private PythonGraphRequest? request;
         internal PythonGraphRequest Request => request ??= new(Root, "uv",
-            Path.Combine(Parent, "python"),
-            "helper-python", "passive-script", "native-supplement", Path.Combine(Parent, "cache"),
-            Bootstrap, Activity);
+            Path.Combine(Parent, "python"), "helper-python", "passive-script");
         internal PythonGroupOperation[] Operations { get; private set; } = [];
         internal PythonMetadata? Metadata { get; private set; }
         internal int FactoryCalls { get; private set; }
 
         internal Fixture()
         {
-            foreach (string directory in new[] { Parent, Root, Consumer, Producer,
-                Bootstrap, Activity, InputOnly }) Directory.CreateDirectory(directory);
+            foreach (string directory in new[] { Parent, Root, Consumer, Producer, InputOnly })
+                Directory.CreateDirectory(directory);
             foreach (string directory in new[] { Parent, Root, Consumer, Producer, InputOnly })
                 File.WriteAllText(Path.Combine(directory, "pyproject.toml"), "");
         }
@@ -515,8 +398,13 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
                 return JsonSerializer.Serialize(new
                 {
                     directory,
-                    build_requirements = directory == Consumer
-                        ? BuildStrings : null,
+                    build_requirements = directory == Consumer ? BuildRequirements.Select(
+                        requirement => new { name = requirement.Name,
+                            extras = requirement.Extras }).ToArray() : null,
+                    sources = directory == Consumer ? new Dictionary<string, string>
+                    {
+                        ["producer"] = UnsupportedSource ? "unsupported" : "workspace"
+                    } : [],
                     nbgv = directory == Consumer ? new
                     {
                         working_directory = Root,
@@ -524,52 +412,7 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
                     } : null
                 });
             }
-            PythonSupplementRequest request = JsonSerializer.Deserialize(
-                File.ReadAllText(command.Arguments.Single()),
-                PythonSupplementJson.Default.PythonSupplementRequest)!;
-            Requests.Add(request);
-            bool bootstrap = Requests.Count == 1;
-            JsonNode response = JsonSerializer.SerializeToNode(new
-            {
-                workspace_root = Root,
-                interpreter = Request.Interpreter,
-                members = new[]
-                {
-                    new { directory = Consumer, name = "consumer" },
-                    new { directory = Producer, name = "producer" }
-                }.Concat(NamedRoot ? [new { directory = Root, name = "root-package" }] : [])
-                    .Concat(InputOnlyMember ? [new { directory = InputOnly,
-                        name = "input-only" }] : []),
-                build_requirements = new[]
-                {
-                    new { directory = Consumer, requirements = new[]
-                    {
-                        new { name = "producer", editable = Producer, extras = Feature,
-                            marker = "python_version >= '3.13'" }
-                    } }
-                },
-                group_operations = request.GroupOperations.Select(operation => new
-                { id = operation.Id, groups = Array.Empty<string>() }),
-                markers = request.Markers.Select(marker => new
-                {
-                    id = marker.Id,
-                    active = marker.Expression == "python_version >= '3.13'"
-                        ? BuildActive : OrdinaryActive
-                }),
-                python_constraints = request.PythonConstraints.Select(constraint => new
-                { id = constraint.Id, active = SupportsPython })
-            })!;
-            if (bootstrap && Fault == "bootstrap-members") response["members"] = new JsonArray();
-            if (bootstrap && Fault == "bootstrap-builds")
-                response["build_requirements"] = new JsonArray();
-            if (!bootstrap)
-            {
-                if (Fault == "activity-markers") response["markers"] = new JsonArray();
-                if (Fault == "activity-groups") response["group_operations"] = new JsonArray();
-                if (Fault == "activity-root") response["workspace_root"] = Parent;
-                if (Fault == "activity-interpreter") response["interpreter"] = "foreign-python";
-            }
-            return response.ToJsonString();
+            throw new AssertFailedException("Unexpected native command.");
         }
 
         public void Dispose() => Directory.Delete(Parent, recursive: true);

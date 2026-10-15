@@ -1,4 +1,4 @@
-"""Project passive native build strings and plugin input coordinates."""
+"""Project passive native build requirements and plugin input coordinates."""
 
 from __future__ import annotations
 
@@ -29,6 +29,52 @@ def _guard_uv_configuration(document: dict) -> None:
         raise UnsupportedContextError(message)
 
 
+def _source_kinds(document: dict) -> dict[str, str]:
+    """Classify each declared source as the admitted workspace shape or not."""
+    from packaging.utils import canonicalize_name  # noqa: PLC0415
+
+    sources = document.get("tool", {}).get("uv", {}).get("sources", {})
+    if not isinstance(sources, dict):
+        message = "The UV sources must be a table."
+        raise UnsupportedContextError(message)
+    kinds: dict[str, str] = {}
+    for name, source in sources.items():
+        canonical = canonicalize_name(name)
+        if canonical in kinds:
+            message = "UV source names must be distinct."
+            raise UnsupportedContextError(message)
+        # Build planning admits only an exact local workspace reference.
+        workspace = (
+            isinstance(source, dict)
+            and set(source) == {"workspace"}
+            and source["workspace"] is True
+        )
+        kinds[canonical] = "workspace" if workspace else "unsupported"
+    return kinds
+
+
+def _parse_build_requirements(strings: set[str]) -> list[dict[str, object]]:
+    """Parse PEP 508 strings with PyPA packaging and reject URL forms."""
+    from packaging.requirements import Requirement  # noqa: PLC0415
+    from packaging.utils import canonicalize_name  # noqa: PLC0415
+
+    requirements = []
+    for value in sorted(strings):
+        requirement = Requirement(value)
+        if requirement.url is not None:
+            message = "Direct URL build requirements are unsupported."
+            raise UnsupportedContextError(message)
+        requirements.append(
+            {
+                "name": canonicalize_name(requirement.name),
+                "extras": sorted(
+                    {canonicalize_name(extra) for extra in requirement.extras}
+                ),
+            }
+        )
+    return requirements
+
+
 def inspect_configuration(directories: list[Path]) -> dict[str, object]:
     """Preflight supplied contexts without native extraction."""
     inputs = []
@@ -45,11 +91,12 @@ def inspect_configuration(directories: list[Path]) -> dict[str, object]:
 
 
 def inspect_project(directory: Path) -> dict[str, object]:
-    """Keep native strings opaque without backend or generator execution."""
+    """Extract build requirements without backend or generator hooks."""
     root = directory.resolve(strict=True)
     with (root / "pyproject.toml").open("rb") as stream:
         document = tomllib.load(stream)
     _guard_uv_configuration(document)
+    sources = _source_kinds(document)
     tool = document.get("tool", {})
 
     requirements = None
@@ -68,7 +115,9 @@ def inspect_project(directory: Path) -> dict[str, object]:
             raise UnsupportedContextError(message)
         from build import ProjectBuilder  # noqa: PLC0415
 
-        requirements = sorted(ProjectBuilder(root).build_system_requires)
+        requirements = _parse_build_requirements(
+            ProjectBuilder(root).build_system_requires
+        )
 
     coordinates = None
     hatch = tool.get("hatch", {})
@@ -90,6 +139,7 @@ def inspect_project(directory: Path) -> dict[str, object]:
     return {
         "directory": str(root),
         "build_requirements": requirements,
+        "sources": sources,
         "nbgv": coordinates,
     }
 

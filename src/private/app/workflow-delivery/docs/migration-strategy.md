@@ -62,8 +62,8 @@ information. NuGet callers forward native process termination; typed completion
 owns consumer/result interpretation, without a shell enum mirror.
 
 Ruby helpers retain RubyGems/Bundler evaluation, native source reads and concrete
-installation/API behavior. Python helpers retain native library bindings and the
-pinned UV supplement; .NET and Node use their supported native process interfaces.
+installation/API behavior. Python helpers retain PyPA/NBGV library bindings over
+the pinned UV CLI; .NET and Node use their supported native process interfaces.
 A helper is justified by a required library interface, not by the language label.
 Adding a distinct product can require a concrete recipe; no generic plugin or
 automatic adoption capability is implied by these four implemented products.
@@ -71,8 +71,8 @@ automatic adoption capability is implied by these four implemented products.
 [Native wire schemas](../Native/contracts/) are generated from the actual
 application serializer metadata by `native-message-schemas <directory>`.
 They describe retained Ruby fact/source/consumer messages with independent
-native consumers. The existing Python supplement request is tested by its
-managed producer and Rust consumer; no unused schema export is retained. Managed tests require regeneration equivalence; native Ruby
+native consumers. Python helper responses are tested by their managed consumers;
+no unused schema export is retained. Managed tests require regeneration equivalence; native Ruby
 tests consume the static descriptions without building the application. These
 are shape descriptions, not a schema registry, runtime admission policy,
 upstream PNPM/MSBuild format mirror or compatibility lifecycle. Semantic native
@@ -692,7 +692,7 @@ Retired pytest preparation gates and the former Ruby pytest carrier do not give
 the control application, managed test tree or Ruby fixture blanket Python
 responsibility. Their actual native managed/Ruby and record consumers explain
 those coordinates. Existing Python helper and caller bindings still select real
-Python consumers, including the Rust supplement, even when another native owner
+Python consumers, including the passive extraction helper, even when another native owner
 also consumes the input. A missing native responsibility or unresolved Python
 claim remains a planning failure.
 

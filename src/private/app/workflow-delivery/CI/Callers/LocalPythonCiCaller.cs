@@ -10,12 +10,12 @@ internal static class LocalPythonCiCaller
     {
         if (args is not ["ci", "caller-local-python", var root, var directory, var transfer,
                 var workingDirectory,
-                var data, var uv, var python, var dotnet, var rustup, var cargo, var mise,
+                var data, var uv, var python, var dotnet, var mise,
                 var node, var pwsh]) return null;
         if (!OperatingSystem.IsLinux())
             throw new InvalidDataException("The current local Python group supports Linux.");
         return ExecuteAsync(root, directory, transfer, workingDirectory, data == "-" ? null : data,
-            new(uv, python, dotnet, rustup, cargo), mise, node, pwsh, output,
+            new(uv, python, dotnet), mise, node, pwsh, output,
             CancellationToken.None).GetAwaiter().GetResult();
     }
 

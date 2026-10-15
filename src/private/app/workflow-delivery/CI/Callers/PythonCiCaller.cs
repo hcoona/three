@@ -10,7 +10,7 @@ internal sealed record PythonCiCallerContext(MaterializedEndpoint Basis,
 internal sealed record PythonCiCallerReadback(PythonMetadataMember[] Members, string Interpreter,
     PythonPytestConfiguration Configuration, PythonPytestTargetSet Targets,
         PythonPytestOperation Operation);
-internal sealed record PythonCiAuxiliary(bool NativeHelper, bool NativeNode, bool AzureBundle);
+internal sealed record PythonCiAuxiliary(bool NativeNode, bool AzureBundle);
 
 internal static class PythonCiCaller
 {
@@ -78,8 +78,6 @@ internal static class PythonCiCaller
         PythonCiAuxiliary auxiliary = Auxiliary(readback.Plan);
         CiCallerTransfer.Output("selected", (readback.Plan.Checks.Length !=
             0).ToString().ToLowerInvariant());
-        CiCallerTransfer.Output("native_helper",
-            auxiliary.NativeHelper.ToString().ToLowerInvariant());
         CiCallerTransfer.Output("native_node", auxiliary.NativeNode.ToString().ToLowerInvariant());
         return readback;
     }
@@ -89,8 +87,7 @@ internal static class PythonCiCaller
         string[] targets = plan.Checks.Where(item => item.Work.Key.Check == "python/pytest-v1")
             .Select(item => item.Work.Dimensions.TryGetValue("testPath", out string? path) ? path :
                 throw new InvalidDataException("Selected pytest check has no target.")).ToArray();
-        return new(targets.Contains("tests/private/app/workflow-delivery/Native/Python"),
-            targets.Contains("tests/eng/test_legacy_release_contract.py"),
+        return new(targets.Contains("tests/eng/test_legacy_release_contract.py"),
             targets.Contains("src/private/app/azureauth-credprovider/python/tests"));
     }
 
@@ -137,8 +134,6 @@ internal static class PythonCiCaller
                 ["trust", Path.Combine(context.Candidate.Directory, "mise.toml")], 30,
                 environment, InheritEnvironment: false), directory, "mise-trust", token);
         }
-        await CargoGateAsync(selected, preparation.Commands, directory,
-            NativeProcess.ExecuteAsync, token);
         environment["PYTHONSAFEPATH"] = null;
         PythonRepositoryRequest collection = candidate.Collection;
         var request = new PythonGroupRunRequest(new(context.Candidate.Directory,
@@ -159,25 +154,6 @@ internal static class PythonCiCaller
         CiCallerTransfer.Write(Path.Combine(directory, "outcome.json"), outcome,
             TransferJson.Default.CiOutcome);
         return outcome;
-    }
-
-    internal static async Task CargoGateAsync(PythonCiAuxiliary selected,
-        PythonPreparationCommand[] commands, string directory,
-        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        CancellationToken token)
-    {
-        if (!selected.NativeHelper) return;
-        NativeCommand compilation = commands.Single(row =>
-            row.Command.Arguments.SequenceEqual(["build", "--locked"])).Command;
-        foreach ((string label, string[] arguments) in new (string, string[])[]
-                 {
-                     ("format", ["fmt", "--all", "--", "--check"]),
-                     ("test", ["test", "--locked", "--all-targets", "--jobs", "4"]),
-                     ("clippy", ["clippy", "--locked", "--all-targets", "--jobs", "4", "--",
-                         "-D", "warnings"]),
-                 })
-            await CiCallerTransfer.RunAsync(compilation with { Arguments = arguments }, directory,
-                "native-helper-" + label, token, execute);
     }
 
     private static void Prepend(Dictionary<string, string?> environment, string? executable)

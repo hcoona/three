@@ -1027,8 +1027,7 @@ jobs:
         run: |
           dotnet "$RUNNER_TEMP/python-control/control/WorkflowDelivery.dll" ci caller-python plan \
             "$RUNNER_TEMP/python-group" "$RUNNER_TEMP/python-scope/ci-scope.json" \
-            "$(command -v uv)" "$(command -v python)" "$(command -v dotnet)" \
-            "$(command -v rustup)" "$(command -v cargo)"
+            "$(command -v uv)" "$(command -v python)" "$(command -v dotnet)"
       - name: Setup selected MISE adapters
         if: steps.plan.outputs.native_node == 'true'
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1

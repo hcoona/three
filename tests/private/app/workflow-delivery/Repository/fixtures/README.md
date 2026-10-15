@@ -29,8 +29,14 @@ different-commit assembly.
 
 `python-passive-contexts.json` retains the `projects` array of that original
 candidate request, with the same typed path substitution. PyPA requirement
-strings remain unchanged. The adapter uses these extractor answers to reject
-omitted build contexts or requirement results, without interpreting the strings.
+strings remain unchanged.
+
+`python-passive-projects.json` derives the current passive response from those
+retained strings: PyPA `packaging` canonical names and extras, plus the
+`tool.uv.sources` classes declared by the four manifests that carried a workspace
+source at that commit. It is a controlled derivation, not another native
+observation. Tests join it to the recorded metadata and compare the result with
+the retained UV lowering in `python-build-associations.json`.
 
 ## PNPM
 

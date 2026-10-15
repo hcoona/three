@@ -16,6 +16,10 @@ public sealed class PythonDependencyProjectionTests
     private static readonly string[] BuildClosure = ["src/plugin", "src/producer"];
     private static readonly string[] PluginBuildClosure = ["src/consumer", "src/producer"];
     private static readonly string[] Feature = ["feature"];
+    private static readonly string[] Dev = ["dev"];
+    private static readonly Dictionary<string, string> None = [];
+    private static readonly Dictionary<string, string> Workspace = new()
+        { ["producer"] = "workspace" };
     private static readonly string[] NativeBuildConsumers =
     [
         "src/lab/azure-document-intelligence-lab", "src/private/app/azureauth-credprovider/python",
@@ -23,106 +27,155 @@ public sealed class PythonDependencyProjectionTests
     ];
 
     [TestMethod]
-    public void RecordedNativeBuildSourcesJoinMembersWithoutNameOrIdHeuristics()
+    public void GuardedNameJoinMatchesRecordedNativeLowering()
     {
         JsonNode metadataValue = Recorded("python-metadata.json");
-        JsonNode buildValue = Recorded("python-build-associations.json");
+        JsonNode lowered = Recorded("python-build-associations.json");
         PythonMetadataReaderTests.Reroot(metadataValue, Root);
-        PythonMetadataReaderTests.Reroot(buildValue, Root);
+        PythonMetadataReaderTests.Reroot(lowered, Root);
         PythonMetadata metadata = PythonMetadataReader.Parse(metadataValue.ToJsonString(), Root);
-        using JsonDocument document = JsonDocument.Parse(buildValue.ToJsonString());
 
         PythonBuildAssociation[] associations = PythonDependencyProjection.ReadBuildAssociations(
-            metadata, new(document.RootElement.Clone(), []), PassiveContexts());
+            metadata, PassiveProjects());
 
-        Assert.HasCount(4, associations);
+        // The retained UV lowering emitted a local install path only for these joins.
+        string[] native = lowered["build_requirements"]!.AsArray().SelectMany(build =>
+            build!["requirements"]!.AsArray().Where(requirement =>
+                requirement!["editable"] is not null).Select(requirement =>
+                PythonMetadataReader.Relative(Root, build["directory"]!.GetValue<string>()) +
+                    "->" + PythonMetadataReader.Relative(Root,
+                        requirement!["editable"]!.GetValue<string>()))).ToArray();
+        CollectionAssert.AreEquivalent(native, associations.Select(association =>
+            association.Consumer + "->" + association.Producer).ToArray());
         CollectionAssert.AreEquivalent(NativeBuildConsumers,
             associations.Select(association => association.Consumer).ToArray());
-        Assert.IsTrue(associations.All(association =>
-            association.Producer == "src/public/lib/nbgv-python"));
-        Assert.IsTrue(associations.All(association => association.Extras.Length == 0 &&
-            association.Marker is null));
+        Assert.IsTrue(associations.All(association => association.Extras.Length == 0));
     }
 
     [TestMethod]
-    public void LoweredBuildExtraAndMarkerRemainNativeStrings()
+    [DataRow("project")]
+    [DataRow("root")]
+    public void ExactWorkspaceSourceInEitherTableAdmitsTheMemberProducer(string table)
     {
-        JsonNode metadataValue = Recorded("python-metadata.json");
-        JsonNode value = Recorded("python-build-associations.json");
-        PythonMetadataReaderTests.Reroot(metadataValue, Root);
-        PythonMetadataReaderTests.Reroot(value, Root);
-        // Controlled transfer modification; this does not claim another native observation.
-        JsonNode requirement = value["build_requirements"]![0]!["requirements"]![1]!;
-        requirement["extras"] = new JsonArray("native-normalized-feature");
-        requirement["marker"] = "python_full_version >= '3.14'";
-        using JsonDocument document = JsonDocument.Parse(value.ToJsonString());
-        PythonMetadata metadata = PythonMetadataReader.Parse(metadataValue.ToJsonString(), Root);
+        PythonMetadata metadata = Metadata();
+        PythonPassiveProject[] projects = Contexts(
+            [new("producer", ["feature"]), new("hatchling", [])],
+            table == "project" ? Workspace : None, table == "root" ? Workspace : None);
 
-        PythonBuildAssociation[] associations = PythonDependencyProjection.ReadBuildAssociations(
-            metadata, new(document.RootElement.Clone(), []), PassiveContexts());
+        PythonBuildAssociation association = Assert.ContainsSingle(
+            PythonDependencyProjection.ReadBuildAssociations(metadata, projects));
 
-        PythonBuildAssociation association = associations.Single(item => item.Consumer ==
-            "src/lab/azure-document-intelligence-lab");
-        Assert.ContainsSingle(association.Extras);
-        Assert.AreEqual("native-normalized-feature", association.Extras.Single());
-        Assert.AreEqual("python_full_version >= '3.14'", association.Marker);
+        Assert.AreEqual("src/consumer", association.Consumer);
+        Assert.AreEqual("src/plugin", association.Producer);
+        CollectionAssert.AreEqual(Feature, association.Extras);
     }
 
     [TestMethod]
-    [DataRow("endpoint")]
-    [DataRow("missing-member")]
-    [DataRow("wrong-name")]
-    [DataRow("unowned-path")]
-    [DataRow("url")]
-    [DataRow("unknown-field")]
+    [DataRow("no-source")]
+    [DataRow("project-unsupported")]
+    [DataRow("root-unsupported")]
+    [DataRow("registry-workspace-source")]
+    [DataRow("duplicate-extra")]
+    [DataRow("missing-context")]
     [DataRow("duplicate-context")]
-    [DataRow("missing-build-context")]
-    [DataRow("missing-requirement")]
-    public void NativeBuildJoinRejectsUnresolvedSourcesAndInventory(string failure)
+    [DataRow("context-outside-members")]
+    public void GuardedBuildJoinRejectsUnsupportedSourcesAndInventory(string failure)
     {
-        JsonNode value = Recorded("python-build-associations.json");
-        JsonNode metadataValue = Recorded("python-metadata.json");
-        PythonMetadataReaderTests.Reroot(value, Root);
-        PythonMetadataReaderTests.Reroot(metadataValue, Root);
-        JsonNode requirement = value["build_requirements"]![0]!["requirements"]![1]!;
-        switch (failure)
+        PythonMetadata metadata = Metadata();
+        PythonBuildRequirement[] requirements = failure switch
         {
-            case "endpoint": value["workspace_root"] = Path.GetDirectoryName(Root); break;
-            case "missing-member": value["members"]!.AsArray().RemoveAt(0); break;
-            case "wrong-name": requirement["name"] = "wrong"; break;
-            case "unowned-path": requirement["editable"] = Path.Combine(Root, "missing"); break;
-            case "url": requirement["url"] = "https://example.invalid/plugin.whl"; break;
-            case "unknown-field": requirement["future"] = true; break;
-            case "duplicate-context":
-                value["build_requirements"]!.AsArray().Add(
-                value["build_requirements"]![0]!.DeepClone()); break;
-            case "missing-build-context": value["build_requirements"]!.AsArray().RemoveAt(0); break;
-            case "missing-requirement":
-                value["build_requirements"]![0]!["requirements"]!.AsArray().RemoveAt(1); break;
-        }
-        using JsonDocument document = JsonDocument.Parse(value.ToJsonString());
-        PythonMetadata metadata = PythonMetadataReader.Parse(metadataValue.ToJsonString(), Root);
+            "registry-workspace-source" => [new("hatchling", [])],
+            "duplicate-extra" => [new("producer", ["feature", "feature"])],
+            _ => [new("producer", [])],
+        };
+        IReadOnlyDictionary<string, string> project = failure switch
+        {
+            "project-unsupported" => new Dictionary<string, string>
+                { ["producer"] = "unsupported" },
+            "registry-workspace-source" => new Dictionary<string, string>
+                { ["hatchling"] = "workspace" },
+            "no-source" => None,
+            _ => Workspace,
+        };
+        IReadOnlyDictionary<string, string> root = failure == "root-unsupported"
+            ? new Dictionary<string, string> { ["producer"] = "unsupported" } : None;
+        PythonPassiveProject[] projects = Contexts(requirements, project, root);
+        projects = failure switch
+        {
+            "missing-context" => projects[1..],
+            "duplicate-context" => [.. projects, projects[1]],
+            "context-outside-members" => [.. projects,
+                new(Path.Combine(Root, "src", "other"), null)],
+            _ => projects,
+        };
 
         Assert.ThrowsExactly<InvalidDataException>(() =>
-            PythonDependencyProjection.ReadBuildAssociations(metadata,
-                new(document.RootElement.Clone(), []), PassiveContexts()));
+            PythonDependencyProjection.ReadBuildAssociations(metadata, projects));
     }
 
     [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
-    public void NativeActivityControlsOrdinaryExtraGraphWithoutParsingMarkers(bool enabled)
+    public void SelfAndRegistryBuildRequirementsAddNoLocalInput()
+    {
+        PythonMetadata metadata = Metadata();
+        PythonPassiveProject[] projects = Contexts(
+            [new("consumer", []), new("hatchling", [])], None, None);
+
+        Assert.IsEmpty(PythonDependencyProjection.ReadBuildAssociations(metadata, projects));
+    }
+
+    [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    public void DefaultGroupSelectionFollowsDeclaredDevAndNoDev(bool noDev, bool packageOwner)
+    {
+        PythonMetadata metadata = Metadata();
+        PythonGroupOperation[] operations = [.. Operations(metadata), new("selected",
+            Root, packageOwner ? ["consumer"] : [], noDev)];
+
+        PythonOperationGroups[] groups = PythonDependencyProjection.SelectGroups(metadata,
+            operations);
+
+        string owner = packageOwner ? "src/consumer" : ".";
+        PythonOperationGroups selected = groups[^1];
+        Assert.AreEqual(owner, selected.Directory);
+        CollectionAssert.AreEqual(noDev ? Array.Empty<string>() : Dev, selected.Groups);
+        // A member without a declared dev group selects no graph entry.
+        Assert.IsTrue(groups.Where(group => group.Directory == "src/plugin")
+            .All(group => group.Groups.Length == 0));
+    }
+
+    [TestMethod]
+    [DataRow("missing-context")]
+    [DataRow("unknown-package")]
+    [DataRow("multiple-packages")]
+    [DataRow("duplicate-id")]
+    public void GroupSelectionRejectsUnresolvedOperations(string failure)
+    {
+        PythonMetadata metadata = Metadata();
+        PythonGroupOperation[] operations = Operations(metadata);
+        operations = failure switch
+        {
+            "missing-context" => operations[1..],
+            "unknown-package" => [.. operations, new("selected", Root, ["unknown"], false)],
+            "multiple-packages" => [.. operations,
+                new("selected", Root, ["consumer", "producer"], false)],
+            _ => [.. operations, operations[0]],
+        };
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            PythonDependencyProjection.SelectGroups(metadata, operations));
+    }
+
+    [TestMethod]
+    public void MarkedEdgesAreActiveForEveryPlatformAndInterpreter()
     {
         PythonMetadata metadata = Metadata();
         PythonProjectDependencies[] facts = PythonDependencyProjection.Project(metadata, NoDev,
-            [], (expression, extras) =>
-            {
-                Assert.AreEqual("python_version >= '3.14'", expression);
-                Assert.IsEmpty(extras);
-                return enabled;
-            }, true);
+            []);
 
-        CollectionAssert.AreEqual(enabled ? Plugin : [],
+        // The fixture edge is marked; the finite union keeps it without evaluation.
+        CollectionAssert.AreEqual(Plugin,
             facts.Single(project => project.Directory == "src/consumer").Ordinary);
         Assert.IsEmpty(facts.Single(project => project.Directory == "src/plugin").Ordinary);
         Assert.IsEmpty(facts.Single(project => project.Directory == ".").Build);
@@ -140,18 +193,8 @@ public sealed class PythonDependencyProjectionTests
         PythonMetadata metadata = PythonMetadataReader.Parse(value.ToJsonString(), Root);
         PythonProjectDependencies[] facts = PythonDependencyProjection.Project(metadata,
             [.. NoDev, new("src/producer", [])],
-            [new("src/consumer", "src/plugin", ["feature"], "native build marker"),
-                new("src/plugin", "src/producer", [], null)], (expression, extras) =>
-            {
-                if (expression == "extra == 'feature'")
-                    CollectionAssert.AreEqual(Feature, extras);
-                else
-                {
-                    Assert.AreEqual("native build marker", expression);
-                    Assert.IsEmpty(extras);
-                }
-                return true;
-            }, true);
+            [new("src/consumer", "src/plugin", ["feature"]),
+                new("src/plugin", "src/producer", [])]);
 
         PythonProjectDependencies consumer = facts.Single(project =>
             project.Directory == "src/consumer");
@@ -171,31 +214,14 @@ public sealed class PythonDependencyProjectionTests
             new JsonObject { ["id"] = "not-a-path:registry+misleading" });
         PythonMetadata metadata = PythonMetadataReader.Parse(value.ToJsonString(), Root);
         PythonProjectDependencies[] withDev = PythonDependencyProjection.Project(metadata,
-            [.. NoDev, new("src/consumer", ["dev"])], [], NeverEvaluate, true);
+            [.. NoDev, new("src/consumer", ["dev"])], []);
         PythonProjectDependencies[] withoutDev = PythonDependencyProjection.Project(metadata,
-            NoDev, [], NeverEvaluate, true);
+            NoDev, []);
 
         CollectionAssert.AreEqual(Plugin,
             withDev.Single(project => project.Directory == "src/consumer").Ordinary);
         Assert.IsEmpty(withoutDev.Single(project => project.Directory == "src/consumer").Ordinary);
         Assert.IsEmpty(withDev.Single(project => project.Directory == "src/plugin").Ordinary);
-    }
-
-    [TestMethod]
-    public void InactiveBuildMarkerCannotIntroducePluginInputs()
-    {
-        JsonNode value = PythonMetadataReaderTests.Fixture(Root);
-        value["resolution"]!["consumer opaque"]!["dependencies"] = new JsonArray();
-        PythonProjectDependencies[] facts = PythonDependencyProjection.Project(
-            PythonMetadataReader.Parse(value.ToJsonString(), Root), NoDev,
-            [new("src/consumer", "src/plugin", [], "native false")], (expression, extras) =>
-            {
-                Assert.AreEqual("native false", expression);
-                Assert.IsEmpty(extras);
-                return false;
-            }, true);
-
-        Assert.IsEmpty(facts.Single(project => project.Directory == "src/consumer").Build);
     }
 
     [TestMethod]
@@ -209,9 +235,9 @@ public sealed class PythonDependencyProjectionTests
 
         PythonProjectDependencies[] facts = PythonDependencyProjection.Project(metadata,
             [.. NoDev, new("src/producer", [])],
-            [new("src/consumer", "src/plugin", [], null),
-                new("src/plugin", "src/producer", [], null),
-                new("src/producer", "src/plugin", [], null)], (_, _) => true, true);
+            [new("src/consumer", "src/plugin", []),
+                new("src/plugin", "src/producer", []),
+                new("src/producer", "src/plugin", [])]);
 
         PythonProjectDependencies consumer = facts.Single(project =>
             project.Directory == "src/consumer");
@@ -242,7 +268,7 @@ public sealed class PythonDependencyProjectionTests
 
         PythonProjectDependencies[] facts = PythonDependencyProjection.Project(metadata,
             [.. NoDev, new("src/plugin", ["dev"]), new("src/producer", [])],
-            [new("src/consumer", "src/plugin", [], null)], NeverEvaluate, true);
+            [new("src/consumer", "src/plugin", [])]);
 
         CollectionAssert.AreEqual(Plugin,
             facts.Single(project => project.Directory == "src/consumer").Build);
@@ -253,35 +279,29 @@ public sealed class PythonDependencyProjectionTests
     }
 
     [TestMethod]
-    [DataRow("constraint")]
     [DataRow("missing-context")]
     [DataRow("unknown-group")]
     [DataRow("unknown-producer")]
     [DataRow("unknown-extra")]
-    [DataRow("missing-activity")]
     [DataRow("unowned-local")]
-    public void NecessaryUnresolvedActivityOrOwnershipCannotCertifyExclusion(string failure)
+    public void NecessaryUnresolvedOwnershipCannotCertifyExclusion(string failure)
     {
         JsonNode value = PythonMetadataReaderTests.Fixture(Root);
         PythonOperationGroups[] operations = NoDev;
         PythonBuildAssociation[] builds = [];
-        bool supported = true;
         switch (failure)
         {
-            case "constraint": supported = false; break;
             case "missing-context": operations = NoDev[1..]; break;
             case "unknown-group": operations = [.. NoDev, new("src/plugin", ["unknown"])]; break;
-            case "unknown-producer": builds = [new("src/consumer", "src/missing", [], null)]; break;
+            case "unknown-producer": builds = [new("src/consumer", "src/missing", [])]; break;
             case "unknown-extra":
-                builds = [new("src/consumer", "src/plugin", ["unknown"], null)]; break;
+                builds = [new("src/consumer", "src/plugin", ["unknown"])]; break;
             case "unowned-local":
                 value["members"]!.AsArray().RemoveAt(1); operations = NoDev[..2]; break;
         }
         PythonMetadata metadata = PythonMetadataReader.Parse(value.ToJsonString(), Root);
         Assert.ThrowsExactly<InvalidDataException>(() => PythonDependencyProjection.Project(
-            metadata, operations, builds, (expression, _) => failure == "missing-activity"
-                ? throw new InvalidDataException("Missing native marker result.") : true,
-            supported));
+            metadata, operations, builds));
     }
 
     private static PythonMetadata Metadata() =>
@@ -294,17 +314,33 @@ public sealed class PythonDependencyProjectionTests
         return JsonNode.Parse(stream)!;
     }
 
-    private static PythonPassiveProject[] PassiveContexts()
+    private static PythonPassiveProject[] PassiveProjects()
     {
-        JsonNode value = Recorded("python-passive-contexts.json");
+        JsonNode value = Recorded("python-passive-projects.json");
         PythonMetadataReaderTests.Reroot(value, Root);
         return value.AsArray().Select(project => new PythonPassiveProject(
             project!["directory"]!.GetValue<string>(), project["build_requirements"]?.AsArray()
-                .Select(requirement => requirement!.GetValue<string>()).ToArray())).ToArray();
+                .Select(requirement => new PythonBuildRequirement(
+                    requirement!["name"]!.GetValue<string>(), requirement["extras"]!.AsArray()
+                        .Select(extra => extra!.GetValue<string>()).ToArray())).ToArray(),
+            project["sources"]!.AsObject().ToDictionary(source => source.Key,
+                source => source.Value!.GetValue<string>()))).ToArray();
     }
 
-    private static bool NeverEvaluate(string expression, string[] extras) =>
-        throw new InvalidOperationException("No native marker was requested.");
+    // Root, consumer and plugin contexts over the controlled metadata fixture.
+    private static PythonPassiveProject[] Contexts(PythonBuildRequirement[] consumer,
+        IReadOnlyDictionary<string, string> consumerSources,
+        IReadOnlyDictionary<string, string> rootSources) =>
+    [
+        new(Root, null, rootSources),
+        new(Path.Combine(Root, "src", "consumer"), consumer, consumerSources),
+        new(Path.Combine(Root, "src", "plugin"), [], None),
+    ];
+
+    private static PythonGroupOperation[] Operations(PythonMetadata metadata) =>
+        metadata.Members.Select(member => member.Directory).Append(".").Select(directory =>
+            new PythonGroupOperation(directory, Path.GetFullPath(Path.Combine(Root, directory)),
+                [], false)).ToArray();
 
     private static void AddProducer(JsonNode value)
     {

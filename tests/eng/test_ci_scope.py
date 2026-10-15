@@ -729,10 +729,6 @@ def test_conformance_script_neighbors_still_require_python_resolution(
             ),
             False,
         ),
-        (
-            "src/private/app/workflow-delivery/Native/Python/uv/src/main.rs",
-            False,
-        ),
         ("src/private/app/workflow-delivery/Native/Python/passive.py", True),
         (
             "tests/private/app/workflow-delivery/Native/Python/test_passive.py",

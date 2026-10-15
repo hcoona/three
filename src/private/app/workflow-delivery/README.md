@@ -118,7 +118,7 @@ The current managed recipe's runner/configuration limits follow the
 
 ### Native Python CI Caller
 
-UV workspace/metadata and the pinned native supplement supply Python facts.
+UV workspace metadata and PyPA passive extraction supply Python facts.
 Preparation materializes committed endpoints, freezes native tool and build
 inputs and performs one paired selection. Root CI executes the original mixed
 plan and retains its native preparation, commands and results. The native

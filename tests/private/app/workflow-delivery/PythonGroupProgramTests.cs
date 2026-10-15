@@ -39,7 +39,7 @@ public sealed class PythonGroupProgramTests(TestContext context)
             var endpoint = new MaterializedEndpoint(repository.Directory, revision);
             var request = new PythonGroupPreparationRequest(endpoint, endpoint, true,
                 Path.Combine(directory, "scope.json"), source, scratch,
-                new(Tool("uv"), Tool("python"), Tool("dotnet"), Tool("rustup"), Tool("cargo")),
+                new(Tool("uv"), Tool("python"), Tool("dotnet")),
                 Request(true).Candidate.Collection.Operation, 600);
             string path = Path.Combine(directory, "request.json");
             await File.WriteAllTextAsync(path, JsonSerializer.Serialize(request,
@@ -61,8 +61,6 @@ public sealed class PythonGroupProgramTests(TestContext context)
     [TestMethod]
     [DataRow(false, null)]
     [DataRow(true, null)]
-    [DataRow(false, "missing native supplement")]
-    [DataRow(true, "missing native supplement")]
     [DataRow(false, "missing candidate helper interpreter")]
     [DataRow(true, "missing candidate helper interpreter")]
     public void FailedPreparationRetainsPrivateDiagnosticsWithoutCompletion(bool existingFile,
@@ -76,14 +74,12 @@ public sealed class PythonGroupProgramTests(TestContext context)
             PythonGroupRequest prepared = Request(false);
             var request = new PythonGroupPreparationRequest(prepared.Basis.Checkout,
                 prepared.Candidate.Checkout, false, prepared.ScopePath, "/control", directory,
-                new("/tools/uv", "/runtime/python", "/tools/dotnet", "/tools/rustup",
-                    "/tools/cargo"), prepared.Candidate.Collection.Operation, 600);
+                new("/tools/uv", "/runtime/python", "/tools/dotnet"),
+                prepared.Candidate.Collection.Operation, 600);
             string path = Path.Combine(directory, "request.json");
             File.WriteAllText(path, JsonSerializer.Serialize(request,
                 TransferJson.Default.PythonGroupPreparationRequest));
-            bool supplement = missingOutput == "missing native supplement";
-            NativeCommand command = new(supplement ? "/tools/cargo" : "/tools/uv", "/endpoint",
-                supplement ? ["build", "--locked"] : ["sync", "--frozen"], 600,
+            NativeCommand command = new("/tools/uv", "/endpoint", ["sync", "--frozen"], 600,
                 new Dictionary<string, string?> { ["HOME"] = "/owned/home" }, false);
             NativeCommandResult result = new(NativeTermination.Exited,
                 missingOutput is null ? 7 : 0, "private native stdout", "private native stderr",
@@ -132,8 +128,8 @@ public sealed class PythonGroupProgramTests(TestContext context)
         PythonGroupRequest prepared = Request(full);
         var request = new PythonGroupPreparationRequest(prepared.Basis.Checkout,
             prepared.Candidate.Checkout, full, prepared.ScopePath, "/control/python sources",
-            "/state/preparation", new("/tools/uv", "/runtime/python", "/tools/dotnet",
-                "/tools/rustup", "/tools/cargo"), prepared.Candidate.Collection.Operation, 600);
+            "/state/preparation", new("/tools/uv", "/runtime/python", "/tools/dotnet"),
+            prepared.Candidate.Collection.Operation, 600);
         string directory = Path.Combine(Path.GetTempPath(), "python preparation transfer " +
             Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -185,8 +181,7 @@ public sealed class PythonGroupProgramTests(TestContext context)
             PythonGroupRequest prepared = Request(false);
             var request = new PythonGroupPreparationRequest(prepared.Basis.Checkout,
                 prepared.Candidate.Checkout, false, prepared.ScopePath, "/control", "/state",
-                new("/tools/uv", "/runtime/python", "/tools/dotnet", "/tools/rustup",
-                    "/tools/cargo"),
+                new("/tools/uv", "/runtime/python", "/tools/dotnet"),
                 prepared.Candidate.Collection.Operation, 600);
             File.WriteAllText(path, defect switch
             {
@@ -308,8 +303,7 @@ public sealed class PythonGroupProgramTests(TestContext context)
 
         static PythonGroupEndpoint Endpoint(string root, string revision) => new(
             new(root, revision), new(new(root, "uv", "/runtime/python", root + "/tools/python",
-                "/control/passive.py", "/control/supplement", root + "/cache",
-                root + "/bootstrap", root + "/activity"), "/control/pytest_configuration.py",
+                "/control/passive.py"), "/control/pytest_configuration.py",
                 "/control/packages.py", new("ubuntu-latest", "python-3.14", new()
                 { ["python"] = "3.14", ["platform"] = "linux" })),
             new Dictionary<string, string?> { ["UV_PROJECT_ENVIRONMENT"] = root + "/environment" });
