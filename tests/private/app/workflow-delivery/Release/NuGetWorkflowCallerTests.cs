@@ -31,9 +31,10 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Passed", 0, "Satisfied")]
-    [DataRow("Failed", 1, "Unsatisfied")]
-    public async Task ActualVerificationStepRetainsTypedConsumerOutcome(string status,
+    [DataRow("Exact", 0, "Satisfied")]
+    [DataRow("Conflict", 1, "Unsatisfied")]
+    [DataRow("Unknown", 1, "Unknown")]
+    public async Task ActualVerificationStepRetainsTypedRegistryOutcome(string state,
         int expectedExit, string expectedState)
     {
         using var fixture = new NuGetReleaseTestFixture();
@@ -43,18 +44,20 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
             TransferJson.Default.NuGetPreparationResult);
         fixture.Write("observation/observation.json", fixture.Observe(ReleaseFileState.Exact),
             TransferJson.Default.GithubNuGetObservationResult);
-        fixture.Write("controlled-consumer.json", fixture.Consumer(
-            Enum.Parse<ReleaseCheckStatus>(status)),
-            TransferJson.Default.GithubNuGetConsumerResult);
+        fixture.Write("controlled-final.json", fixture.Observe(
+            Enum.Parse<ReleaseFileState>(state)),
+            TransferJson.Default.GithubNuGetObservationResult);
         var environment = Environment(fixture);
         environment["WRITE_NEEDED"] = "false";
-        environment["CONTROLLED_CONSUMER_EXIT"] = expectedExit.ToString(
-            System.Globalization.CultureInfo.InvariantCulture);
+        environment["CONTROLLED_OBSERVATION"] = Path.Combine(fixture.Root,
+            "controlled-final.json");
+        // The actual observe command exits 1 for a handled conflict or unknown state.
+        environment["CONTROLLED_OBSERVATION_EXIT"] = state == "Exact" ? "0" : "1";
         Assert.IsTrue((await Step(fixture, "verify-result", "Receive transferred preparation",
             environment)).Succeeded);
 
         NativeCommandResult result = await Step(fixture, "verify-result",
-            "Verify original remote bytes and native scoped consumer", environment);
+            "Verify registry coordinate and original bytes", environment);
 
         Assert.AreEqual(expectedExit, result.ExitCode, result.Stderr);
         GithubNuGetCompletionResult outcome = JsonSerializer.Deserialize(File.ReadAllText(
@@ -63,6 +66,30 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expectedState), outcome.Outcome.State);
         Assert.AreEqual(fixture.Prepared.Subject, outcome.Outcome.Subject);
         Assert.IsFalse(outcome.MutationAttempted);
+    }
+
+    [TestMethod]
+    public async Task ActualVerificationStepStopsOnUnhandledObservationFailure()
+    {
+        using var fixture = new NuGetReleaseTestFixture();
+        foreach (string phase in new[] { "prepared", "observation" })
+            Directory.CreateDirectory(Path.Combine(fixture.Root, phase));
+        fixture.Write("prepared/preparation.json", fixture.Preparation,
+            TransferJson.Default.NuGetPreparationResult);
+        fixture.Write("observation/observation.json", fixture.Observe(ReleaseFileState.Exact),
+            TransferJson.Default.GithubNuGetObservationResult);
+        var environment = Environment(fixture);
+        environment["WRITE_NEEDED"] = "false";
+        // Exit 2 is an unhandled native failure, not a typed destination state.
+        environment["CONTROLLED_OBSERVATION_EXIT"] = "2";
+        Assert.IsTrue((await Step(fixture, "verify-result", "Receive transferred preparation",
+            environment)).Succeeded);
+
+        NativeCommandResult result = await Step(fixture, "verify-result",
+            "Verify registry coordinate and original bytes", environment);
+
+        Assert.AreEqual(2, result.ExitCode, result.Stderr);
+        Assert.IsFalse(File.Exists(Path.Combine(fixture.Root, "verification/outcome.json")));
     }
 
     private static Dictionary<string, string?> Environment(NuGetReleaseTestFixture fixture) => new()
@@ -82,7 +109,7 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
     private Task<NativeCommandResult> Step(NuGetReleaseTestFixture fixture, string job,
         string name, Dictionary<string, string?> environment)
     {
-        // Only the native destination/consumer operations are controlled. The actual workflow
+        // Only the native destination observation is controlled. The actual workflow
         // shell and typed application state/phase/completion commands run unchanged.
         const string shim = """
             $ErrorActionPreference = 'Stop'
@@ -90,12 +117,13 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
               $operation = @($args | Select-Object -Skip 4)
               switch ($operation[1]) {
                 'observe-github-nuget' {
-                  Get-Content -LiteralPath "$env:RUNNER_TEMP/observation/observation.json" -Raw
+                  $observed = "$env:RUNNER_TEMP/observation/observation.json"
+                  if ($env:CONTROLLED_OBSERVATION) { $observed = $env:CONTROLLED_OBSERVATION }
+                  Get-Content -LiteralPath $observed -Raw
                   $global:LASTEXITCODE = 0
-                }
-                'consume-github-nuget' {
-                  Get-Content -LiteralPath "$env:RUNNER_TEMP/controlled-consumer.json" -Raw
-                  $global:LASTEXITCODE = [int]$env:CONTROLLED_CONSUMER_EXIT
+                  if ($env:CONTROLLED_OBSERVATION_EXIT) {
+                    $global:LASTEXITCODE = [int]$env:CONTROLLED_OBSERVATION_EXIT
+                  }
                 }
                 default {
                   & $env:WORKFLOW_DOTNET $env:WORKFLOW_APP @operation

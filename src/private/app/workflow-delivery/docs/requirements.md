@@ -181,10 +181,13 @@ application must not claim isolation beyond that scope.
   distinct. Record success, failure or ambiguity of the actual command accurately.
   While an execution remains active, bounded authoritative verification may
   establish completion despite a lost or unsuccessful upload response, but only
-  if the complete intended state and all required qualification, artifact,
-  destination and applicable consumer conditions are established. Version-label
-  equality or a successful command alone is insufficient. Completion by observed
-  state must not claim that this invocation created the remote objects.
+  if the complete intended state and all required qualification, artifact and
+  destination conditions are established. Post-publication completion is the
+  authoritative registry or platform observation of each exact intended
+  coordinate together with downloaded served bytes equal to the qualified
+  originals. Version-label equality or a successful command alone is
+  insufficient. Completion by observed state must not claim that this invocation
+  created the remote objects.
 - **WD-REL-009A:** Report whether the request is satisfied, whether mutation was
   attempted, the command outcome and any unresolved effects. Do not convert a
   terminal failure into success retrospectively or invent missing publication
@@ -199,7 +202,11 @@ application must not claim isolation beyond that scope.
   the complete release set. A project-reference substitute, populated consumer
   cache or source checkout must not hide missing package contents or undeclared
   consumer prerequisites. Concrete checks and supported runners follow the
-  project's selected quality contract and ecosystem semantics.
+  project's selected quality contract and ecosystem semantics. Release
+  preparation satisfies this requirement by clean local consumption of the
+  qualified originals before publication. Post-publication completion does not
+  repeat native consumption; byte equality with those originals carries the
+  qualification to the published state.
 
 ### Buddy and Official Channels
 

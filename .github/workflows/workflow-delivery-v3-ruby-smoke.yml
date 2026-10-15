@@ -59,7 +59,7 @@ jobs:
         run: |-
           set -Eeuo pipefail
           mise exec --locked dotnet -- dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj -p:RestoreLockedMode=true -o "$RUNNER_TEMP/control"
-          cp src/private/app/workflow-delivery/Native/Ruby/{facts.rb,source.rb,consumer.rb} "$RUNNER_TEMP/control/"
+          cp src/private/app/workflow-delivery/Native/Ruby/{facts.rb,source.rb} "$RUNNER_TEMP/control/"
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby request
       - name: Retain actual control results
         id: control
@@ -379,18 +379,14 @@ jobs:
         if:
           needs.publish-ruby-github-packages.outputs.publication-id != '' || needs.publish-ruby-rubygems.outputs.publication-id
           != ''
-      - name: Consume fresh selected remote original and complete final native state
+      - name: Verify native source original and complete final native state
         run: |-
           set -Eeuo pipefail
-          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby consumer-config remote-consumer-scratch
-          status=0
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release consume-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/consumer-tools.json" > "$RUNNER_TEMP/verification/consumer.json" || status=$?
-          if [ "$status" -gt 1 ]; then exit "$status"; fi
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby source-config final-observation-scratch
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/verification/final.json" || true
           publication=-
           if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$RUNNER_TEMP/verification/consumer.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
       - name: Show actual available business result
         run: |-
           set -Eeuo pipefail

@@ -259,23 +259,6 @@ def inspect_outputs(
     return sorted(outputs, key=lambda output: output["kind"])
 
 
-def consumer_absent(name: str, quality: str) -> dict:
-    """Require a native venv without the product before remote installation."""
-    if (
-        quality != QUALITY
-        or name != "hcoona-release-smoke-python"
-        or sys.prefix == sys.base_prefix
-    ):
-        message = "Unsupported remote consumer environment"
-        raise ValueError(message)
-    try:
-        importlib.metadata.distribution(name)
-    except importlib.metadata.PackageNotFoundError:
-        return {"name": name, "absent": True}
-    message = "Product is already installed in remote consumer environment"
-    raise ValueError(message)
-
-
 def consume_smoke(name: str, version: str, quality: str) -> dict:
     """Check native installed metadata and the registered API from this venv."""
     if quality != QUALITY or name != "hcoona-release-smoke-python":
@@ -365,7 +348,7 @@ def index_facts(path: Path, name: str, version: str) -> dict:
     return {"matches_name": matches_name, "files": selected}
 
 
-def _dispatch() -> dict | list:  # noqa: PLR0911 -- Match the closed native operation shapes.
+def _dispatch() -> dict | list:
     match sys.argv[1:]:
         case ["identity", project]:
             return native_identity(Path(project))
@@ -379,8 +362,6 @@ def _dispatch() -> dict | list:  # noqa: PLR0911 -- Match the closed native oper
             return consume_smoke(name, version, quality)
         case ["index-facts", path, name, version]:
             return index_facts(Path(path), name, version)
-        case ["consumer-absent", name, quality]:
-            return consumer_absent(name, quality)
         case _:
             message = "Invalid package helper request"
             raise ValueError(message)

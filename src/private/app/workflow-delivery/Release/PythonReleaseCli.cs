@@ -13,9 +13,7 @@ internal static class PythonReleaseCli
         Func<PreparedRelease, PythonIndexTools, CancellationToken,
             Task<PythonIndexObservationResult>>? observe = null,
         Func<PreparedRelease, string, string, PythonPublisherTools, CancellationToken,
-            Task<PythonPublishResult>>? publish = null,
-        Func<PreparedRelease, string, PythonPackageTools, CancellationToken,
-            Task<PythonRemoteConsumerResult>>? consume = null)
+            Task<PythonPublishResult>>? publish = null)
     {
         if (args is ["release", "prepare-python-index-tools", var toolRequest])
         {
@@ -84,30 +82,12 @@ internal static class PythonReleaseCli
             // The required separate verification retains actual abnormal invocations.
             return result.Errors.Length == 0 ? 0 : 1;
         }
-        if (args is ["release", "consume-python", var consumePreparation,
-                var consumeOriginals, var kind, var packageToolsPath])
-        {
-            PythonPreparationResult preparation = Preparation(consumePreparation);
-            PythonRelease.Originals(preparation, consumeOriginals);
-            PythonPackageTools tools = ReleaseCli.Read(packageToolsPath,
-                TransferJson.Default.PythonPackageTools);
-            PythonRemoteConsumerResult result = (consume ?? PythonRemoteConsumer.RunAsync)(
-                preparation.Prepared, kind, tools, CancellationToken.None)
-                .GetAwaiter().GetResult();
-            Write(result, TransferJson.Default.PythonRemoteConsumerResult);
-            return result.Check.Status == ReleaseCheckStatus.Passed ? 0 : 1;
-        }
         if (args is ["release", "complete-python", var completePreparation,
-                var initialObservation, var finalObservation, var wheelPath, var sdistPath,
-                var publicationPath])
+                var initialObservation, var finalObservation, var publicationPath])
         {
-            var consumers = new List<PythonRemoteConsumerResult>();
-            foreach (string path in new[] { wheelPath, sdistPath })
-                if (path != "-") consumers.Add(ReleaseCli.Read(path,
-                    TransferJson.Default.PythonRemoteConsumerResult));
             PythonCompletionResult result = PythonRelease.Complete(
                 Preparation(completePreparation).Prepared, Observation(initialObservation),
-                Observation(finalObservation), [.. consumers], publicationPath == "-" ? null :
+                Observation(finalObservation), publicationPath == "-" ? null :
                     ReleaseCli.Read(publicationPath, TransferJson.Default.PythonPublicationResult));
             Write(result, TransferJson.Default.PythonCompletionResult);
             return result.Outcome.State == ReleaseBusinessState.Satisfied ? 0 : 1;

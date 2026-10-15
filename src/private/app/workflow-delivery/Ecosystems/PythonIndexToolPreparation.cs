@@ -2,10 +2,12 @@ using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Ecosystems;
 
+internal sealed record PythonIndexToolCommand(string Stage, NativeCommand Command,
+    NativeCommandResult Result);
 internal sealed record PythonIndexToolRequest(string Uv, string Interpreter,
     string Requirements, string Scratch);
 internal sealed record PythonIndexToolResult(string Interpreter,
-    PythonRemoteCommand[] Commands, string[] Errors);
+    PythonIndexToolCommand[] Commands, string[] Errors);
 
 // The producer exports the synchronized native lock before product execution.
 // Receiving jobs install that immutable registry-only recipe, never product code.
@@ -26,7 +28,7 @@ internal static class PythonIndexToolPreparation
             Directory.EnumerateFileSystemEntries(request.Scratch).Any() ||
             !File.Exists(request.Requirements))
             throw new InvalidDataException("Python index tools need a recipe and fresh scratch.");
-        var commands = new List<PythonRemoteCommand>();
+        var commands = new List<PythonIndexToolCommand>();
         var errors = new List<string>();
         string venv = Path.Combine(request.Scratch, "venv");
         string python = Path.Combine(venv, OperatingSystem.IsWindows()

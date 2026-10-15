@@ -842,26 +842,25 @@ Local clean consumers use the complete original package set without source-tree
 references or populated consumer caches masking omissions. Release performs its
 own build and qualification; it does not promote CI artifacts or results.
 
-### Remote Consumer Conditions
+### Post-Publication Completion
 
-Ordinary Release requires local package qualification plus authoritative remote
-metadata/visibility and original-byte verification. A clean remote native consumer
-is additionally required when the destination/product contract needs it to prove
-a distinct property, such as actual feed resolution. It runs without publication
-capability and contributes a required result in the same active request.
+Ordinary Release requires local package qualification, including clean local
+consumption of the qualified originals, plus authoritative remote verification.
+For every destination, post-publication completion is the registry or platform
+API observation of each exact intended coordinate, its required metadata and
+visibility, and the actual served original downloaded and compared by size and
+SHA-256 with the qualified original. Metadata or listing digests alone are not
+sufficient. No remote native install, restore or import runs after publication.
 
-For each destination integration, enumerate the completion conditions and identify
-which are established by local consumption, remote readback or a remote native
-consumer. No applicable consumer condition may disappear merely because the common
-flow is smaller. Byte equality does not prove credentials, feed routing or native
-resolution work. Conversely, a completed proving campaign does not automatically
-create a generic remote-install step for every future release.
+Byte equality carries the pre-publication qualification to the published state.
+It does not prove that a stock client's credentials, feed or index routing,
+source mapping or dependency resolution select and install the published
+package; Release does not claim those properties. The observation remains
+bounded, and unknown or conflicting state blocks completion.
 
-This choice avoids redundant recurring installation where it adds no required
-property, while accepting less uniform end-to-end exercise than always reinstalling
-every remote output. Historical campaigns retain all their original consumer
-requirements, evidence and terminal outcomes. A later consumer audit cannot rewrite
-an already terminal request.
+Historical campaigns retain all their original consumer requirements, evidence
+and terminal outcomes. A later change of completion conditions cannot rewrite an
+already terminal request.
 
 ## Release Operations and State
 
@@ -869,7 +868,7 @@ an already terminal request.
 
 A request contains one immutable source/control revision, Release Unit, channel,
 destination and live/dry-run mode. Resolve the native version, complete output set
-and applicable quality/consumer conditions before execution. Live Official checks
+and applicable quality conditions before execution. Live Official checks
 its eligible official ref under the
 [Official channel scope](migration-strategy.md#official-channel-scope); Buddy
 permits configured development refs. Dry run
@@ -942,9 +941,9 @@ missing-file completion. Successful acknowledged uploads can continue in their
 declared order only after the required intermediate verification.
 
 An initially exact request and a newly published request use the same completion
-predicate. There is no separate exact-satisfaction certificate. Required metadata,
-file bytes and applicable consumer results must all be established; a version
-label or successful upload alone is insufficient.
+predicate. There is no separate exact-satisfaction certificate. Required metadata
+and downloaded original file bytes must be established; a version label or
+successful upload alone is insufficient.
 
 ### Result and Exit Behavior
 
@@ -996,13 +995,13 @@ job with the union of every destination's privileges.
 
 Logical phases are prepare/qualify, observe/describe, gated publication when needed,
 and verification/result. Combine or split them according to actual runner,
-credential, product-execution and transfer boundaries. Verification consumers run
+credential, product-execution and transfer boundaries. Verification readback runs
 outside the privileged publisher. Exact-state and dry-run paths do not enter a
 write gate; dry run reports hypothetical operations and actual validation limits.
 
 Serialize this repository's publication operation by physical registry and normalized
 package, including required read-before-write and verification. If that operation
-spans publisher and unprivileged consumer jobs, use a containing native workflow
+spans publisher and unprivileged verification jobs, use a containing native workflow
 serialization boundary that covers them rather than releasing a job lock early.
 Do not partition colliding resources solely by channel or version, automatically
 cancel an active publication, or promise FIFO/lossless queue behavior. External

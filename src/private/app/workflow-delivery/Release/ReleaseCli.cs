@@ -113,25 +113,8 @@ internal static class ReleaseCli
             Write(result, TransferJson.Default.ReleaseDryRun);
             return result.Ready ? 0 : 1;
         }
-        if (args is ["release", "consume-github-npm", var consumePreparedPath,
-                var consumeObservedPath,
-                var consumeOriginals, var consumeScratch, var consumeToolchain])
-        {
-            PreparedRelease prepared = Read(consumePreparedPath,
-                TransferJson.Default.NpmPreparationResult).Prepared;
-            GithubNpmObservationResult observation = Read(consumeObservedPath,
-                TransferJson.Default.GithubNpmObservationResult);
-            VerifyOriginals(prepared, consumeOriginals);
-            GithubNpmConsumerResult result = GithubNpmConsumer.ConsumeAsync(prepared, observation,
-                consumeOriginals, consumeScratch, consumeToolchain, Credential(),
-                Platform.NativeProcess.ExecuteAsync, CancellationToken.None)
-                .GetAwaiter().GetResult();
-            Write(result, TransferJson.Default.GithubNpmConsumerResult);
-            return result.Check.Status == ReleaseCheckStatus.Passed ? 0 : 1;
-        }
         if (args is ["release", "complete-github-npm", var completePreparedPath,
-                var completeInitialPath, var completeObservedPath,
-                var completeConsumedPath, var completePublishedPath])
+                var completeInitialPath, var completeObservedPath, var completePublishedPath])
         {
             PreparedRelease prepared = Read(completePreparedPath,
                 TransferJson.Default.NpmPreparationResult).Prepared;
@@ -145,21 +128,12 @@ internal static class ReleaseCli
                 throw new InvalidDataException("Initial npm observation could not proceed.");
             GithubNpmObservationResult observed = Read(completeObservedPath,
                 TransferJson.Default.GithubNpmObservationResult);
-            GithubNpmConsumerResult consumer = Read(completeConsumedPath,
-                TransferJson.Default.GithubNpmConsumerResult);
-            if (consumer.Subject != prepared.Subject ||
-                consumer.Check.Id != "native-registry-consumer")
-                throw new InvalidDataException("Mismatched required native consumer result.");
             GithubNpmPublicationResult? published = completePublishedPath == "-" ? null
                 : Read(completePublishedPath, TransferJson.Default.GithubNpmPublicationResult);
             if (published is not null && published.Subject != prepared.Subject)
                 throw new InvalidDataException("Mismatched publication result.");
-            ReleaseObservation final = observed.Observation with
-            {
-                RequiredChecks = [.. observed.Observation.RequiredChecks, consumer.Check.Id],
-                Checks = [.. observed.Observation.Checks, consumer.Check],
-            };
-            ReleaseOutcome result = ReleaseCompletion.Evaluate(prepared, final,
+            // Completion is the registry observation of the exact coordinate and original bytes.
+            ReleaseOutcome result = ReleaseCompletion.Evaluate(prepared, observed.Observation,
                 published?.Uploads ?? []);
             if (published is null && initial.Observation.Files.Any(file =>
                     file.State == ReleaseFileState.Absent))

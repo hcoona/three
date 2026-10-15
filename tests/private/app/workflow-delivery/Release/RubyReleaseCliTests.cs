@@ -175,50 +175,12 @@ public sealed class RubyReleaseCliTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Passed", 0)]
-    [DataRow("Cancelled", 1)]
-    public void ConsumeTypedJsonRetainsSeparateRequiredResult(string statusName, int expectedExit)
-    {
-        using var fixture = new RubyCallerFixture("official");
-        var tools = new RubyRemoteConsumerTools(Path.Combine(fixture.Root, "ruby"),
-            Path.Combine(fixture.Root, "facts.rb"), Path.Combine(fixture.Root, "source.rb"),
-            Path.Combine(fixture.Root, "consumer.rb"), fixture.Directory("consumer"));
-        RubyRemoteConsumerResult actual =
-            fixture.Consumer(Enum.Parse<ReleaseCheckStatus>(statusName));
-        if (statusName == "Cancelled") actual = actual with { Commands = [new("remote-original",
-            RubyCallerFixture.Command(NativeTermination.Cancelled, 17))] };
-        int calls = 0;
-        using var output = new StringWriter();
-        int? exit = RubyReleaseCli.Run(["release", "consume-ruby", Preparation(fixture),
-            fixture.Root, fixture.Write("consumer-tools.json", tools,
-            TransferJson.Default.RubyRemoteConsumerTools)], output,
-            consume: (prepared, captured, credential, _) =>
-            {
-                calls++;
-                Assert.AreEqual(fixture.Prepared.Subject, prepared.Subject);
-                Assert.AreEqual(tools, captured);
-                Assert.IsNull(credential);
-                return Task.FromResult(actual);
-            });
-        Assert.AreEqual(expectedExit, exit);
-        Assert.AreEqual(1, calls);
-        context.WriteLine("consume-ruby receipt: " + output.ToString());
-        RubyRemoteConsumerResult result = JsonSerializer.Deserialize(output.ToString(),
-            TransferJson.Default.RubyRemoteConsumerResult)!;
-        Assert.AreEqual(fixture.Prepared.Subject, result.Subject);
-        Assert.AreEqual(fixture.Original, result.Original);
-        Assert.AreEqual("https://rubygems.org", result.Source);
-        Assert.AreEqual(actual.Check, result.Check);
-        CollectionAssert.AreEqual(actual.Commands, result.Commands);
-        CollectionAssert.AreEqual(actual.Errors, result.Errors);
-    }
-
-    [TestMethod]
     [DataRow("exact", 0, "Satisfied")]
     [DataRow("write", 0, "Satisfied")]
     [DataRow("failed-after-effect", 0, "Satisfied")]
     [DataRow("missing-publication", 1, "Unknown")]
-    [DataRow("missing-consumer", 1, "Unsatisfied")]
+    [DataRow("final-absent", 1, "Unsatisfied")]
+    [DataRow("final-unknown", 1, "Unknown")]
     public void CompleteTypedJsonSeparatesEffectsCommandsAndSatisfaction(string journey, int
         expectedExit, string business)
     {
@@ -226,9 +188,12 @@ public sealed class RubyReleaseCliTests(TestContext context)
         bool initiallyAbsent = journey is "write" or "failed-after-effect" or "missing-publication";
         string initial = Observation(fixture, "initial.json", initiallyAbsent ?
             ReleaseFileState.Absent : ReleaseFileState.Exact);
-        string final = Observation(fixture, "final.json", ReleaseFileState.Exact);
-        string consumer = journey == "missing-consumer" ? "-" : fixture.Write("consumer.json",
-            fixture.Consumer(), TransferJson.Default.RubyRemoteConsumerResult);
+        string final = Observation(fixture, "final.json", journey switch
+        {
+            "final-absent" => ReleaseFileState.Absent,
+            "final-unknown" => ReleaseFileState.Unknown,
+            _ => ReleaseFileState.Exact,
+        });
         string publisher = "-";
         NativeCommandResult? native = null;
         if (journey is "write" or "failed-after-effect")
@@ -244,7 +209,7 @@ public sealed class RubyReleaseCliTests(TestContext context)
         using var output = new StringWriter();
         using var error = new StringWriter();
         int exit = Program.Run(["release", "complete-ruby", Preparation(fixture), initial, final,
-            consumer, publisher], output, error);
+            publisher], output, error);
         Assert.AreEqual("", error.ToString());
         Assert.AreEqual(expectedExit, exit);
         context.WriteLine("complete-ruby receipt: " + output.ToString());
@@ -267,15 +232,13 @@ public sealed class RubyReleaseCliTests(TestContext context)
     [TestMethod]
     [DataRow("preparation", "missing-file")]
     [DataRow("observation", "missing-file")]
-    [DataRow("consumer", "missing-file")]
     [DataRow("publication", "missing-file")]
     [DataRow("preparation", "corrupt")]
     [DataRow("observation", "corrupt")]
-    [DataRow("consumer", "corrupt")]
     [DataRow("publication", "corrupt")]
     [DataRow("preparation", "null")]
     [DataRow("observation", "duplicate")]
-    [DataRow("consumer", "unknown")]
+    [DataRow("observation", "unknown")]
     [DataRow("publication", "missing-property")]
     public void CompleteDamagedTransferCannotReportSuccess(string target, string defect)
     {
@@ -284,8 +247,6 @@ public sealed class RubyReleaseCliTests(TestContext context)
         {
             ["preparation"] = Preparation(fixture),
             ["observation"] = Observation(fixture, "final.json", ReleaseFileState.Exact),
-            ["consumer"] = fixture.Write("consumer.json", fixture.Consumer(),
-                TransferJson.Default.RubyRemoteConsumerResult),
             ["publication"] = fixture.Write("publication.json", new
                 RubyPublicationResult(fixture.Prepared.Subject,
                 fixture.Observe(ReleaseFileState.Absent),
@@ -310,7 +271,7 @@ public sealed class RubyReleaseCliTests(TestContext context)
         using var output = new StringWriter();
         void Run() => RubyReleaseCli.Run(["release", "complete-ruby", paths["preparation"],
             Observation(fixture, "initial.json", ReleaseFileState.Absent), paths["observation"],
-            paths["consumer"], paths["publication"]], output);
+            paths["publication"]], output);
         if (defect == "missing-file") Assert.ThrowsExactly<FileNotFoundException>(Run);
         else if (defect is "null" or "duplicate") Assert.ThrowsExactly<InvalidDataException>(Run);
         else Assert.Throws<JsonException>(Run);
@@ -319,7 +280,6 @@ public sealed class RubyReleaseCliTests(TestContext context)
 
     [TestMethod]
     [DataRow("observation")]
-    [DataRow("consumer")]
     [DataRow("publication")]
     public void CompleteMismatchedTransferRejectsAnotherRequest(string target)
     {
@@ -328,8 +288,6 @@ public sealed class RubyReleaseCliTests(TestContext context)
         RubyObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
         RubyObservationResult final = target == "observation" ? exact with { Observation =
             exact.Observation with { Subject = other } } : exact;
-        RubyRemoteConsumerResult consumer = fixture.Consumer();
-        if (target == "consumer") consumer = consumer with { Subject = other };
         var publication = new RubyPublicationResult(target == "publication" ? other :
             fixture.Prepared.Subject, fixture.Observe(ReleaseFileState.Absent),
             fixture.Publish(RubyCallerFixture.Command()), exact, []);
@@ -337,8 +295,7 @@ public sealed class RubyReleaseCliTests(TestContext context)
         Assert.ThrowsExactly<InvalidDataException>(() => RubyReleaseCli.Run(["release",
             "complete-ruby", Preparation(fixture), Observation(fixture, "initial.json",
             ReleaseFileState.Absent), fixture.Write("final.json", final,
-            TransferJson.Default.RubyObservationResult), fixture.Write("consumer.json", consumer,
-            TransferJson.Default.RubyRemoteConsumerResult), fixture.Write("publication.json",
+            TransferJson.Default.RubyObservationResult), fixture.Write("publication.json",
             publication, TransferJson.Default.RubyPublicationResult)], output));
         Assert.AreEqual("", output.ToString());
     }

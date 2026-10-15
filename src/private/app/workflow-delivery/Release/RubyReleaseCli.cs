@@ -14,9 +14,7 @@ internal static class RubyReleaseCli
             Task<RubyObservationResult>>? observe = null,
         Func<RubyPreparationResult, string, RubyPublisherTools,
             IReadOnlyDictionary<string, string?>, CancellationToken,
-            Task<RubyPublishResult>>? publish = null,
-        Func<PreparedRelease, RubyRemoteConsumerTools, RubyReadCredential?, CancellationToken,
-            Task<RubyRemoteConsumerResult>>? consume = null)
+            Task<RubyPublishResult>>? publish = null)
     {
         if (args is ["release", "prepare-ruby", var requestPath])
         {
@@ -82,28 +80,12 @@ internal static class RubyReleaseCli
             // Separate final verification retains the actual invocation outcome.
             return result.Errors.Length == 0 ? 0 : 1;
         }
-        if (args is ["release", "consume-ruby", var consumePreparation,
-                var consumeOriginals, var consumerToolsPath])
-        {
-            RubyPreparationResult preparation = Preparation(consumePreparation);
-            RubyRelease.Originals(preparation, consumeOriginals);
-            RubyRemoteConsumerTools tools = ReleaseCli.Read(consumerToolsPath,
-                TransferJson.Default.RubyRemoteConsumerTools);
-            RubyRemoteConsumerResult result = (consume ?? RubyRemoteConsumer.RunAsync)(
-                preparation.Prepared, tools, Credential(preparation.Prepared),
-                CancellationToken.None).GetAwaiter().GetResult();
-            Write(result, TransferJson.Default.RubyRemoteConsumerResult);
-            return result.Check.Status == ReleaseCheckStatus.Passed ? 0 : 1;
-        }
         if (args is ["release", "complete-ruby", var completePreparation,
-                var initialObservation, var finalObservation, var consumerPath,
-                var publicationPath])
+                var initialObservation, var finalObservation, var publicationPath])
         {
             RubyCompletionResult result = RubyRelease.Complete(
                 Preparation(completePreparation).Prepared, Observation(initialObservation),
-                Observation(finalObservation), consumerPath == "-" ? null :
-                    ReleaseCli.Read(consumerPath, TransferJson.Default.RubyRemoteConsumerResult),
-                publicationPath == "-" ? null :
+                Observation(finalObservation), publicationPath == "-" ? null :
                     ReleaseCli.Read(publicationPath, TransferJson.Default.RubyPublicationResult));
             Write(result, TransferJson.Default.RubyCompletionResult);
             return result.Outcome.State == ReleaseBusinessState.Satisfied ? 0 : 1;

@@ -189,12 +189,12 @@ language must supply a real native capability to justify an intervening layer.
 Temporary fixture creation remains scenario code; fixed tool/dependency recipes
 belong to native configuration rather than another application setup registry.
 
-| Ecosystem | Build and qualification                                    | Destination consequence                                                                                         |
-| --------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| npm       | Native NBGV projection, original archive and clean install | Exact version state; tags are routing metadata; no lifecycle scripts with publication capability                |
-| NuGet     | MSBuild/NBGV, original nupkg and clean restore/consumer    | Native package identity and archive state; no npm tag assumptions                                               |
-| Python    | nbgv-python, wheel and sdist, clean consumers of both      | Complete two-file set; verified exact subsets may permit missing-file completion under the destination contract |
-| Ruby      | Native version/gem build, metadata and installed consumer  | Evaluate gemspecs unprivileged; destination-specific original-gem observation and upload                        |
+| Ecosystem | Build and qualification                                     | Destination consequence                                                                                         |
+| --------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| npm       | Native NBGV projection, original archive and clean install  | Exact version state; tags are routing metadata; no lifecycle scripts with publication capability                |
+| NuGet     | MSBuild/NBGV, original nupkg and local clean consumer       | Native package identity and archive state; no npm tag assumptions                                               |
+| Python    | nbgv-python, wheel and sdist, local clean consumer of both  | Complete two-file set; verified exact subsets may permit missing-file completion under the destination contract |
+| Ruby      | Native version/gem build, metadata and local clean consumer | Evaluate gemspecs unprivileged; destination-specific original-gem observation and upload                        |
 
 Each destination contract states normalization, required files, native
 non-overwrite behavior, readback, visibility/time bounds, credential scope and
@@ -295,7 +295,7 @@ ref restrictions do not block it.
    qualified files with native state and classify intended work. Dry run reports
    hypothetical operations and its actual validation boundary, then stops with
    no mutation or live-completion claim.
-4. If exact complete state and applicable verification/consumer conditions hold,
+4. If exact complete state and required verification conditions hold,
    report satisfaction without a write gate. If a write remains, retain and
    expose target, native coordinate, complete outputs, destination and intended
    operations before the native gate.
@@ -308,9 +308,10 @@ ref restrictions do not block it.
    failure, ambiguity or interruption of an invocation stops further
    application mutation. One invocation does not promise one network write.
    No separate pre-mutation marker or marker readback is required.
-6. While execution is active, perform bounded required verification. Report
-   command outcomes, business completion and uncertainty separately. Package
-   consumers run outside the privileged publisher context. Missing required
+6. While execution is active, perform bounded registry readback outside the
+   privileged publisher context: observe each exact coordinate and compare the
+   downloaded served bytes with the qualified originals. Report command
+   outcomes, business completion and uncertainty separately. Missing required
    verification prevents a satisfaction claim.
 
 ```mermaid
@@ -329,14 +330,14 @@ sequenceDiagram
         Prep-->>Operator: Simulation and hypothetical operations
     else Exact complete state
         Prep->>Verify: Qualified request and current observation; no write
-        Verify->>Registry: Required verification / unprivileged consumers
+        Verify->>Registry: Required coordinate and original-byte readback
         Verify-->>Operator: Satisfaction and known effects
     else Supported write remains
         Prep->>Gate: Qualified request and intended operations
         Gate->>Publisher: Native authorization permits job
         Publisher->>Registry: Reobserve; perform only still-needed writes
         Publisher->>Verify: Actual command outcomes and known effects
-        Verify->>Registry: Required bounded readback / unprivileged consumers
+        Verify->>Registry: Required bounded coordinate and original-byte readback
         Verify-->>Operator: Satisfaction, command results and uncertainty
     else Conflict, unknown or unsupported partial state
         Prep-->>Operator: Blocked request and reason
@@ -348,7 +349,7 @@ sequenceDiagram
 | Observation in the active request                                            | Business result and next action                                                                                         |
 | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Complete exact state and every required check satisfied                      | Satisfied; distinguish acknowledged upload from completion established by observation                                   |
-| Upload success but missing required state/consumer verification              | Unsatisfied or unknown; retain the successful command result                                                            |
+| Upload success but missing required state verification                       | Unsatisfied or unknown; retain the successful command result                                                            |
 | Upload failed/lost response but complete authoritative verification succeeds | Satisfied by observed state; preserve command failure/ambiguity and do not claim this invocation created the objects    |
 | Verified exact subset and adapter supports completion                        | Only missing files may be planned in a fresh recovery request; no generic partial-release repair                        |
 | Conflicting bytes or unknown required state                                  | No further mutation; explain uncertainty and supported operator action                                                  |

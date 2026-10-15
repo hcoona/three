@@ -11,12 +11,12 @@ namespace WorkflowDelivery.Tests.Release;
 public sealed class ReleaseCliTests
 {
     [TestMethod]
-    [DataRow(true, false, 0)]
-    [DataRow(false, false, 1)]
-    [DataRow(true, true, 1)]
-    [DataRow(false, true, 1)]
-    public void ActualGithubCompletionRequiresRemoteConsumerEvenWithExactOriginals(
-        bool consumerPassed, bool initiallyAbsent, int expectedExit)
+    [DataRow("Exact", false, 0, "Satisfied")]
+    [DataRow("Conflict", false, 1, "Unsatisfied")]
+    [DataRow("Unknown", false, 1, "Unknown")]
+    [DataRow("Exact", true, 1, "Unknown")]
+    public void ActualGithubCompletionUsesFinalRegistryObservationOfOriginalBytes(
+        string finalState, bool initiallyAbsent, int expectedExit, string expectedState)
     {
         using var files = new Files();
         PreparedRelease prepared = files.Prepared with
@@ -25,34 +25,32 @@ public sealed class ReleaseCliTests
         ReleaseFile file = prepared.Files[0];
         string preparation = files.Write("buddy-prepared.json", JsonSerializer.Serialize(
             new NpmPreparationResult(prepared, [], []), TransferJson.Default.NpmPreparationResult));
-        var observed = new GithubNpmObservationResult(new(prepared.Subject,
+        var exact = new GithubNpmObservationResult(new(prepared.Subject,
             [new(file.Output, file.Name, file.Version, ReleaseFileState.Exact,
                 file.Size, file.Sha256)],
             ["visibility"], [new("visibility", ReleaseCheckStatus.Passed)]), []);
-        string observation = files.Write("buddy-observed.json", JsonSerializer.Serialize(observed,
+        ReleaseFileState state = Enum.Parse<ReleaseFileState>(finalState);
+        string observation = files.Write("buddy-observed.json", JsonSerializer.Serialize(exact with
+        { Observation = exact.Observation with { Files = [exact.Observation.Files[0] with
+            { State = state, Size = state == ReleaseFileState.Exact ? file.Size : null,
+                Sha256 = state == ReleaseFileState.Exact ? file.Sha256 : null }] } },
             TransferJson.Default.GithubNpmObservationResult));
-        string initial = files.Write("buddy-initial.json", JsonSerializer.Serialize(observed with
-        { Observation = observed.Observation with { Files = [observed.Observation.Files[0] with
+        string initial = files.Write("buddy-initial.json", JsonSerializer.Serialize(exact with
+        { Observation = exact.Observation with { Files = [exact.Observation.Files[0] with
             { State = initiallyAbsent ? ReleaseFileState.Absent : ReleaseFileState.Exact,
                 Size = initiallyAbsent ? null : file.Size,
                 Sha256 = initiallyAbsent ? null : file.Sha256 }] } },
             TransferJson.Default.GithubNpmObservationResult));
-        string consumer = files.Write("buddy-consumed.json", JsonSerializer.Serialize(
-            new GithubNpmConsumerResult(prepared.Subject, new("native-registry-consumer",
-                consumerPassed ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed), [], []),
-            TransferJson.Default.GithubNpmConsumerResult));
         using var output = new StringWriter();
         using var error = new StringWriter();
 
         Assert.AreEqual(expectedExit, Program.Run(["release", "complete-github-npm", preparation,
-            initial, observation, consumer, "-"], output, error), error.ToString());
+            initial, observation, "-"], output, error), error.ToString());
 
         ReleaseOutcome result = JsonSerializer.Deserialize(output.ToString(),
             TransferJson.Default.ReleaseOutcome)!;
         Assert.AreEqual(prepared.Subject, result.Subject);
-        Assert.AreEqual(initiallyAbsent ? ReleaseBusinessState.Unknown : consumerPassed ?
-                ReleaseBusinessState.Satisfied : ReleaseBusinessState.Unsatisfied,
-            result.State);
+        Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expectedState), result.State);
         Assert.IsEmpty(result.Uploads);
     }
 

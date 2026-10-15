@@ -31,8 +31,8 @@ build-infrastructure changes; reproducibility is not per-PR evidence.
 
 Ordinary npm Buddy, Official npm simulation, NuGet Buddy, Python and Ruby
 callers compose the implemented internal CLI. Control precedes project
-execution. Native observation, conditional publication, separate clean consumers
-and truthful completion replace the former dynamic admission, approval mirror,
+execution. Native observation, conditional publication, separate registry readback
+of exact coordinates and original bytes, and truthful completion replace the former dynamic admission, approval mirror,
 marker and proof chain. Effective native Environment/identity/destination
 configuration owns publication authorization. Existing external resources and
 publisher registrations are unchanged by source retirement. Ordinary Ruby/Python/npm/NuGet
