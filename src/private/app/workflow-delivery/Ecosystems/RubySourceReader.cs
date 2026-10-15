@@ -93,7 +93,7 @@ internal static class RubySourceReader
                         !OwnedPath.Within(Path.GetFullPath(path), download) ||
                         size <= 0 || size > ReleasePolicy.ReadbackOriginalLimit ||
                         !File.Exists(path) ||
-                        new FileInfo(path).Length != size ||
+                        OwnedFile.Length(path) != size ||
                         Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))) !=
                             digest)
                         return Unknown("Native Ruby original or identity is inconsistent.");

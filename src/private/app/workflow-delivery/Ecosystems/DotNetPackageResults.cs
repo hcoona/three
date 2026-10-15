@@ -135,6 +135,6 @@ internal static class DotNetPackageResults
         string archive = archives.Single();
         DotNetPackageArchive.RequireIdentity(DotNetPackageArchive.Identity(archive), expected);
         return new(unit, build, output, role, kind, archive,
-            new FileInfo(archive).Length, DotNetPackageArchive.Digest(archive));
+            OwnedFile.Length(archive), DotNetPackageArchive.Digest(archive));
     }
 }

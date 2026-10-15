@@ -33,4 +33,25 @@ public sealed class DotNetPackageResultsTests(TestContext context)
         }
         finally { Directory.Delete(root, true); }
     }
+
+    [TestMethod]
+    public void LinkedOriginalIsComparedByItsTargetBytes()
+    {
+        string root = Directory.CreateTempSubdirectory("dotnet-linked-original-").FullName;
+        try
+        {
+            string target = Path.Combine(root, "original.nupkg");
+            File.WriteAllBytes(target, [1, 2, 3, 4, 5]);
+            string path = Path.Combine(root, "linked.nupkg");
+            try { File.CreateSymbolicLink(path, target); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                Assert.Inconclusive("The platform cannot create a file link.");
+            }
+
+            DotNetPackageArchive.RequireOriginal(new("unit", "build", "output", "role",
+                "nuget-package", path, 5, DotNetPackageArchive.Digest(target)));
+        }
+        finally { Directory.Delete(root, true); }
+    }
 }

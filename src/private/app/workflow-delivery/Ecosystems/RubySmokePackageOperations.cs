@@ -27,7 +27,7 @@ internal sealed class RubySmokePackageOperations(RubyFactTools tools, string gem
             CloseStandardInput: true), execute, token);
         if (!File.Exists(archive))
             throw new InvalidDataException("Native gem build omitted its output.");
-        var original = new RubyGemArchive(archive, new FileInfo(archive).Length,
+        var original = new RubyGemArchive(archive, OwnedFile.Length(archive),
             Convert.ToHexStringLower(SHA256.HashData(
                 await File.ReadAllBytesAsync(archive, token))));
         await InspectAsync(original, version, execute, token);
@@ -124,7 +124,7 @@ internal sealed class RubySmokePackageOperations(RubyFactTools tools, string gem
 
     internal static void RequireOriginal(RubyGemArchive original)
     {
-        if (!File.Exists(original.Path) || new FileInfo(original.Path).Length != original.Length ||
+        if (!File.Exists(original.Path) || OwnedFile.Length(original.Path) != original.Length ||
             Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(original.Path))) !=
             original.Sha256)
             throw new InvalidDataException("Original gem changed between required checks.");

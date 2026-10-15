@@ -173,7 +173,7 @@ internal static class DotNetPackageConsumer
         string installed = new VersionFolderPathResolver(folder.Path)
             .GetPackageFilePath(identity.Id, identity.Version);
         RequireFile(installed);
-        if (new FileInfo(installed).Length != original.Size ||
+        if (OwnedFile.Length(installed) != original.Size ||
             DotNetPackageArchive.Digest(installed) != original.Sha256)
             throw new InvalidDataException(
                 "The restored package bytes differ from the original archive.");

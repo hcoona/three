@@ -45,7 +45,7 @@ internal static class GithubNuGetPublisher
         var identity = new PackageIdentity(Package, NuGetVersion.Parse(file.Version));
         if (!PackageIdentityComparer.Default.Equals(identity,
                 new PackageIdentity(file.Name, NuGetVersion.Parse(file.Version))) ||
-            new FileInfo(path).Length != file.Size || DotNetPackageArchive.Digest(path) !=
+            OwnedFile.Length(path) != file.Size || DotNetPackageArchive.Digest(path) !=
                 file.Sha256 || !PackageIdentityComparer.Default.Equals(identity,
                 DotNetPackageArchive.Identity(path)))
             throw new InvalidDataException("Original NuGet package identity or bytes changed.");

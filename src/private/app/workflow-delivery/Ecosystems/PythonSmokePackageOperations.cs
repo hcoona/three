@@ -165,10 +165,11 @@ internal sealed class PythonSmokePackageOperations(PythonPackageTools tools, str
 
     internal static void RequireOriginal(PythonDistribution original)
     {
-        var info = new FileInfo(original.Path);
-        if (!info.Exists || info.Length != original.Length)
+        if (!File.Exists(original.Path))
             throw new InvalidDataException("Original Python distribution changed.");
-        using FileStream stream = info.OpenRead();
+        using FileStream stream = File.OpenRead(original.Path);
+        if (stream.Length != original.Length)
+            throw new InvalidDataException("Original Python distribution changed.");
         if (Convert.ToHexStringLower(SHA256.HashData(stream)) != original.Sha256)
             throw new InvalidDataException("Original Python distribution bytes changed.");
     }
