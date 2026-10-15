@@ -1284,6 +1284,7 @@ dev = [
 workflow-delivery-python = [
     { name = "build" },
     { name = "nbgv-python" },
+    { name = "packaging" },
 ]
 
 [package.metadata]
@@ -1300,6 +1301,7 @@ dev = [
 workflow-delivery-python = [
     { name = "build", specifier = "==1.6.1" },
     { name = "nbgv-python", editable = "src/public/lib/nbgv-python" },
+    { name = "packaging", specifier = "==26.3" },
 ]
 
 [[package]]

@@ -34,6 +34,8 @@ internal sealed class PythonNativeGraphReader
         Func<PythonMetadata, PythonGroupOperation[]> createOperations,
         IReadOnlyDictionary<string, string?> environment, CancellationToken token)
     {
+        // Metadata does not reject an interpreter outside requires-python. The caller's
+        // `uv sync --frozen --python` preparation enforces it before this read.
         token.ThrowIfCancellationRequested();
         PythonMetadata metadata = await metadataReader.ReadAsync(request.Root, request.Uv,
             request.Interpreter, environment, token);

@@ -131,8 +131,9 @@ Source findings:
 - UV [lowering][uv-013-lowering] takes a requirement's project
   `tool.uv.sources` entry before the workspace entry. A workspace-member
   requirement without a source, or with a non-workspace source, is an error;
-  only `{ workspace = true }` lowers to the member. The supplement already
-  rejected every other source shape before calling this code.
+  a `{ workspace = true }` source lowers to the member. The supplement already
+  rejected non-workspace source shapes before calling this code; it still
+  admitted workspace sources with additional fields.
 - [Settings discovery][uv-013-from-directory] reads a directory's `uv.toml` before
   its `pyproject.toml`, and the [documented][uv-013-config-files] search walks to
   the nearest parent. [`UV_NO_SYSTEM_CONFIG`][uv-013-system] disables system
@@ -145,7 +146,7 @@ Inference: under the existing guards, a canonical name join from PyPA-parsed
 build requirements to metadata members, admitted only when the effective
 source is absent or exactly `{ workspace = true }`, yields the same
 associations as the former lowering for every admitted shape and fails on the
-rest. It is an application rule, not UV lowering. Treating every marker as
+rest. The admission is a strict subset of the former one. It is an application rule, not UV lowering. Treating every marker as
 active yields a finite union that can only add consumers. The operation's
 `requires-python` check is already enforced by `uv sync --frozen --python` during
 preparation.
@@ -155,16 +156,20 @@ supplement built from its committed lock, and the replacement reader, produced
 byte-identical projections: 15 projects, 664 input bindings, the same four
 `nbgv-python` build associations, 15 full-selection checks and identical
 single-path selections for all 394 bound inputs. Of 40 marked metadata edges,
-none reaches a local workspace node. The comparison is retained in the
-implementing pull request.
+none reaches a local workspace node. The implementing pull request records the
+summary and output digest; the throwaway probe and JSON were not retained. The
+committed `GuardedNameJoinMatchesRecordedNativeLowering` replay test compares
+the join with the retained PR #1063 lowering.
 
 Limits: future marker-gated local edges are over-selected rather than
 platform-exact. Admitting other source shapes, default-group settings or a
 project `uv.toml` requires a new explicit rule. This recheck does not establish
 Windows behavior or different-commit renamed producers; the paired union
-consumes the same association records. Recheck these findings when the UV pin
-changes or metadata gains build nodes; the author checks the cited interfaces
-and an independent evidence reviewer evaluates the result.
+consumes the same association records. Recheck these findings when the UV pin,
+the PyPA `packaging` or `build` pin changes, or metadata gains build nodes. The
+author of that pin change checks the cited interfaces and reruns the replay test;
+an independent evidence reviewer evaluates the result. If the recheck fails or is
+skipped, the join is no longer admitted and the gap returns to the owner.
 
 ## Pytest Configuration Source Basis
 

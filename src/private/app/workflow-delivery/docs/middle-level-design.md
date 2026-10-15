@@ -172,13 +172,14 @@ override, obtain declared strings from `ProjectBuilder.build_system_requires` an
 parse them with PyPA `packaging.requirements.Requirement`. Transfer canonical
 names and extras; reject direct URL requirements. UV metadata stubs build nodes,
 so no UV CLI exposes this relation. Join a build requirement to a workspace member
-by canonical name under the same finite admission that the former UV lowering
-used: the requirement's `tool.uv.sources` entry in the project table, else in the
+by canonical name under a strict subset of the former UV lowering admission:
+the requirement's `tool.uv.sources` entry in the project table, else in the
 workspace root table, must be absent or exactly `{ workspace = true }`. Any
 other source shape fails planning. A member requirement without that workspace
 source, or a non-member requirement with it, fails, matching UV's own lowering
 errors; a registry requirement adds no local input and a self-reference is
-ignored. The join is an application rule over physical source classes, not
+ignored. Workspace sources with additional fields, which UV accepts, also
+fail. The join is the bounded HLD exception over physical source classes, not
 UV lowering; it admits a subset of UV behavior and fails on everything else.
 Repeat association for every necessary local build-requirement source, combining
 its ordinary local dependencies/requested extras with its build associations.
@@ -586,8 +587,8 @@ The Windows scope job transfers the exact event comparison and explicit
 full/incremental mode, together with the complete candidate control distribution.
 The existing Linux Python job performs the first Python selection: it materializes
 both exact endpoints and collects their native facts for its actual Linux product
-interpreter and supported operation dimensions. Windows interpreter activity
-cannot substitute for Linux marker answers. The selected control distribution
+interpreter and supported operation dimensions. Windows interpreter facts
+cannot substitute for that Linux context. The selected control distribution
 and native query tools must run in that context; unavailable necessary capability
 fails analysis rather than introducing platform emulation.
 
@@ -603,7 +604,7 @@ declared plugin may be built as a query-tool dependency without making unrelated
 workspace members product or quality owners. Passive query execution remains
 distinct from this tool installation. Keep the installed helper environment
 separate from product/test/package environments and from the owned absent
-`UV_PROJECT_ENVIRONMENT` required by native metadata/activity queries.
+`UV_PROJECT_ENVIRONMENT` required by native metadata queries.
 
 Supply the candidate control version's `Native/Python` helper sources from the
 transferred candidate control sources. Bind helper source and runtime identities
