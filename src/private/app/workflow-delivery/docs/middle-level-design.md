@@ -179,8 +179,9 @@ other source shape fails planning. A member requirement without that workspace
 source, or a non-member requirement with it, fails, matching UV's own lowering
 errors; a registry requirement or an unsourced self-reference adds no local
 input, while a workspace-sourced self-reference keeps its requested extras.
-Workspace sources with additional fields, which UV accepts, also fail. The join is the bounded HLD exception over physical source classes, not
-UV lowering; it admits a subset of UV behavior and fails on everything else.
+Workspace sources with additional fields, which UV accepts, also fail. The
+join is the bounded HLD exception over physical source classes, not UV
+lowering; it admits a subset of UV behavior and fails on everything else.
 Repeat association for every necessary local build-requirement source, combining
 its ordinary local dependencies/requested extras with its build associations.
 Workflow computes transitive/reverse closure and cycles. Such sources can be
