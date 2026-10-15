@@ -4,17 +4,14 @@
 
 This design refines the [replacement HLD](high-level-design.md) into module,
 selection, execution, transfer and outcome contracts for the internal C# CLI.
-It implements the [requirements](requirements.md) and the owner's contraction
-decisions. Implementers and reviewers use it to determine what must survive the
-implementation and where the old mechanisms end. Source/native/hosted
+It implements the [requirements](requirements.md). Implementers and reviewers
+use it to determine the contracts the implementation must keep. Source/native/hosted
 qualification retains its actual scope; this design grants no publication
 authority.
 
-The [transition](requirements.md#requirements-and-implementation-transition)
-scopes historical code, ecosystem LLDs and completed campaigns. The five former
-MLDs remain available at their [pinned source](README.md#normative-hierarchy)
-for those historical consumers. Their record chains, smoke-specific constraints
-and hypothetical extension frameworks are not requirements for the new core.
+Former MLDs, ecosystem LLDs and completed campaigns keep their original scope
+under the [historical source rule](README.md#historical-source-rule); their
+record chains and extension frameworks are not requirements for this design.
 
 This document owns the common middle-level contracts. Concrete native extraction
 coverage, destination read limits and workflow wiring are reviewed with their
@@ -133,85 +130,68 @@ closure; it need not evaluate unrelated projects.
 
 ### Native Python Planning Facts
 
-Within the existing private app's `Native/Python`, use the repository-pinned UV
-metadata and synchronization CLI, passive PyPA build-requirement extraction and
-the bounded build-association join below. The
-[source assessment](research/python-native-planning.md) retains the evidence for
-these choices. Standard tomllib supplies physical key/shape guards only. UV owns
-resolution, the resolved graph, workspace membership and `requires-python`
-enforcement; PyPA owns build-requirement strings and PEP 508 parsing; NBGV owns
-its semantics. No embedded UV crate, settings interpreter, resolver, record chain
-or compatibility promise.
+`Native/Python` uses the repository-pinned UV metadata and synchronization CLI,
+passive PyPA build-requirement extraction and the bounded build association
+below. The [source assessment](research/python-native-planning.md) retains the
+evidence and recheck triggers. UV owns resolution, the resolved graph, workspace
+membership and `requires-python` enforcement; PyPA owns build-requirement
+strings and PEP 508 parsing; NBGV owns its semantics. Standard tomllib supplies
+physical key/shape guards only. There is no embedded UV library, settings
+interpreter, resolver or compatibility promise.
 
-For each exact basis/candidate checkout, bind revision, workspace root, interpreter/tool
-identity and operation dimensions. Invoke `uv workspace metadata --frozen --python <interpreter>` at that workspace root, without sync/active/script mode. Consume each endpoint's committed lock under the existing synchronized-lock guarantee;
-frozen does not revalidate freshness. Consume pinned
-preview schema, native member paths/names, structured sources, opaque graph IDs, ordinary
-edges, group/extra entry IDs and `requires_python`. Never decode IDs or guess owners
-from URLs, prefixes or caches; the only name join is the guarded build association below.
+For each exact basis/candidate checkout, bind revision, workspace root,
+interpreter/tool identity and operation dimensions, then invoke
+`uv workspace metadata --frozen --python <interpreter>` at the workspace root
+without sync/active/script mode. The committed lock is consumed under the
+existing synchronized-lock guarantee; frozen mode does not revalidate it.
+Consume the pinned preview schema's member paths/names, structured sources,
+opaque graph IDs, ordinary edges, group/extra entry IDs and `requires_python`.
+Never decode IDs or infer owners from URLs, prefixes or caches.
 
-Admit the current explicit default-index, source-enabled request. Every manifest
-in a native context or above the workspace root may configure `tool.uv` only with
-`workspace` and `sources`; other settings are unsupported until a native
-adaptation exists, not ignored. A project `uv.toml` at or above the workspace
-root is unsupported, because UV settings discovery would read it first.
-Malformed manifests remain errors. Do not port private CLI precedence or suppress
-configuration/sources.
+The request uses the default index with sources enabled. A manifest in a native
+context or above the workspace root may configure `tool.uv` only with
+`workspace` and `sources`; any other setting, or a project `uv.toml` at or
+above the workspace root, is unsupported rather than ignored. The child process
+is credential-free, with owned HOME/XDG/cache/temp roots, an explicit
+interpreter, downloads disabled, `UV_NO_SYSTEM_CONFIG` set, no inherited
+UV/PIP/index/credential settings and an owned absent `UV_PROJECT_ENVIRONMENT`.
+Unexpected environment facts fail the request.
 
-Construct a credential-free child request with owned HOME/XDG/cache/temp roots,
-explicit interpreter, downloads disabled, `UV_NO_SYSTEM_CONFIG` set and no inherited
-UV/PIP/index/credential settings. The owned XDG root holds no user configuration and
-UV's documented switch excludes system configuration, so ambient settings cannot
-enter this request. Bind project configuration and version-file inputs. Select an
-owned absent UV_PROJECT_ENVIRONMENT: metadata can inspect/lock existing
-environments, so unexpected environment facts fail this request. No new
-cache/proof service.
+UV metadata stubs build nodes, so build requirements come from
+`ProjectBuilder.build_system_requires` for named package contexts with explicit
+Hatchling build tables and no backend-path/package override, parsed with PyPA
+`packaging.requirements.Requirement`; direct URL requirements are rejected. A
+requirement joins a workspace member by canonical name only when its
+`tool.uv.sources` entry (project table, else workspace root table) is absent or
+exactly `{ workspace = true }`. Every other source shape, a member requirement
+without that source and a non-member requirement with it fail planning. A
+registry requirement or an unsourced self-reference adds no local input; a
+workspace-sourced self-reference keeps its requested extras. This is
+the bounded HLD exception, a strict subset of UV lowering. Repeat the
+association for every necessary local build-requirement source; Workflow
+computes transitive/reverse closure and cycles. Association does not prove
+version satisfaction or build success. Tableless native quality/group contexts
+remain; forced package builds, default backends and undeclared dynamic inputs
+are unsupported. Malformed manifests remain errors.
 
-For named package contexts with explicit Hatchling build tables, no backend-path/package
-override, obtain declared strings from `ProjectBuilder.build_system_requires` and
-parse them with PyPA `packaging.requirements.Requirement`. Transfer canonical
-names and extras; reject direct URL requirements. UV metadata stubs build nodes,
-so no UV CLI exposes this relation. Join a build requirement to a workspace member
-by canonical name under a strict subset of the former UV lowering admission:
-the requirement's `tool.uv.sources` entry in the project table, else in the
-workspace root table, must be absent or exactly `{ workspace = true }`. Any
-other source shape fails planning. A member requirement without that workspace
-source, or a non-member requirement with it, fails, matching UV's own lowering
-errors; a registry requirement or an unsourced self-reference adds no local
-input, while a workspace-sourced self-reference keeps its requested extras.
-Workspace sources with additional fields, which UV accepts, also fail. The
-join is the bounded HLD exception over physical source classes, not UV
-lowering; it admits a subset of UV behavior and fails on everything else.
-Repeat association for every necessary local build-requirement source, combining
-its ordinary local dependencies/requested extras with its build associations.
-Workflow computes transitive/reverse closure and cycles. Such sources can be
-plugins: nbgv-python is a build requirement/Hatch version-source plugin;
-Hatchling remains the backend. Association does not prove isolated version
-satisfaction or build success. Tableless native quality/group contexts remain;
-necessary forced package builds, default backends or undeclared dynamic inputs
-are unsupported.
+Treat every edge and build-requirement marker as active: the finite union over
+interpreters and platforms can only add consumers. Groups follow UV's default
+`dev` group unless no-dev is requested; the guard rejects `default-groups`,
+`dev-dependencies` and `dependency-groups`. Root pytest preparation includes
+root plus selected quality owners; no-dev operations and build-requirement
+ordinary legs select no groups. Operation extras start empty; build-requirement
+extras select producer extra entry IDs. Native conflicts must be empty. Preserve
+endpoint, interpreter/platform, groups/extras and check/build variant before
+markerless `ProjectFacts.Dependencies`, and union both endpoints so removed or
+renamed producers retain consumers. `uv sync --frozen --python <interpreter>`
+during preparation enforces `requires-python` for the operation interpreter.
 
-Treat every edge and build-requirement marker as active. The projection is the
-finite union over interpreters and platforms; it can only add consumers, which
-is the safe direction for impact selection. Select groups by UV's documented
-default: the owner's `dev` group unless no-dev is requested. The passive guard
-rejects `default-groups`, `dev-dependencies` and `dependency-groups` settings, so
-no other default applies; an undeclared or empty group has no graph entry.
-`uv sync --frozen --python <interpreter>` during preparation enforces the workspace
-`requires-python` constraint for the operation interpreter.
-Root pytest preparation includes root plus selected quality owners;
-no-dev operations select no groups; build-requirement ordinary legs use no development groups.
-Initial operation-selected extras are empty; build-requirement extras select
-producer extra entry IDs. Require native conflicts empty; necessary unknown
-group/extra/conflict selection fails. Preserve endpoint, interpreter/platform,
-groups/extras and check/build variant before markerless ProjectFacts.Dependencies.
-Union both endpoints so removed/renamed producers retain consumers.
-
-Adapt into existing RepositoryFacts/ProjectFacts/SharedInput/CheckSpec and impact closure;
-keep quality consumers separate from build inputs and root ownership explicit. Managed NBGV
-and passive plugin coordinates supply project-scoped version/generated input consumers.
-Missing/ambiguous ownership, native errors or unmodeled necessary scope fail planning;
-no reduced completeness, parser fallback or all-run.
+Adapt into existing RepositoryFacts/ProjectFacts/SharedInput/CheckSpec and
+impact closure, keeping quality consumers separate from build inputs. Managed
+NBGV and passive plugin coordinates supply project-scoped version/generated
+input consumers. Missing or ambiguous ownership, native errors or unmodeled
+necessary scope fail planning; there is no reduced completeness, parser
+fallback or all-run.
 
 ### Python Quality Owners and Input-Only Members
 
@@ -886,7 +866,9 @@ an already terminal request.
 A request contains one immutable source/control revision, Release Unit, channel,
 destination and live/dry-run mode. Resolve the native version, complete output set
 and applicable quality/consumer conditions before execution. Live Official checks
-its eligible official ref/tag; Buddy permits configured development refs. Dry run
+its eligible official ref under the
+[Official channel scope](migration-strategy.md#official-channel-scope); Buddy
+permits configured development refs. Dry run
 can use development control code and has no write capability. Unsupported live job
 reruns are rejected; ordinary recovery uses a fresh dispatch.
 
@@ -1049,7 +1031,7 @@ settings, reviewed with their caller. Expired required inputs block that operati
 Fresh same-revision recovery may use current native state under its destination
 contract without requiring a permanent application record store.
 
-## Validation and Implementation Transition
+## Validation and Integration
 
 ### Behavioral Validation Basis
 
@@ -1076,37 +1058,10 @@ Local/controlled results do not establish live platform acceptance. The owner's
 remains accepted without a separate experiment gate. Completed campaigns remain
 closed; no implementation validation can silently consume a spent external grant.
 
-### Source Basis and Migration Groups
+### Integration Mapping
 
-Static inspection at [the pre-cutover source][source-base] found that the
-[Node Provider][node-provider] rejects workspace closure, the
-[.NET Provider][dotnet-provider] rejects project references and additional
-framework/RID scope, and the [Python Provider][python-provider] validates a literal
-smoke shape. At that basis, the [Node CI][node-ci] had four fixed lanes;
-Python/Ruby used fixed check lists. [Python][python-publication] and
-[Ruby][ruby-publication] normal post-upload reads followed successful upload only.
-These are source findings, not empirical evidence of replacement feasibility.
-
-Consequently the replacement requires supported native ownership/dependency
-coverage and observation-based completion. The internal application implements
-these responsibilities without the obsolete proof machinery; a literal
-class-for-class language port would have preserved the former limitations.
-
-The [implementation plan](migration-strategy.md) owns the concrete project and
-CLI/workflow caller inventory, integration payloads, destination conditions,
-behavior/evidence mapping and dependency-ordered transitions. Keep that mapping
-with actual caller changes; do not maintain a second inventory here.
-
-Old records or code survive only for actual consumers. Historical readers use
-pinned producer source, preserving original outcomes and provenance after the
-public control runtime's retirement. The five former MLD files are immutable
-historical sources; retained ecosystem LLDs serve their actual evidence-interpretation
-consumers, not the current runtime. The project portal routes those readers.
-
-[source-base]: https://github.com/hcoona/three/tree/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3
-[node-provider]: https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/repository/node_provider.py#L1264
-[dotnet-provider]: https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/repository/dotnet_provider.py#L973
-[python-provider]: https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/repository/python_provider.py#L192
-[node-ci]: https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/ci/rules.py#L13
-[python-publication]: https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/python_publication.py#L735
-[ruby-publication]: https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/ruby_execution.py#L264
+The [integration contract](migration-strategy.md) owns the concrete project and
+CLI/workflow caller inventory, integration payloads and destination conditions.
+Keep that mapping with actual caller changes; do not maintain a second inventory
+here. Historical readers use pinned producer source through the
+[project portal](README.md#historical-source-rule).

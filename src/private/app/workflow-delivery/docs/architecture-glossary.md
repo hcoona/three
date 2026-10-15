@@ -10,9 +10,8 @@ or execution authorization. Recover actual original producers through
 last-source navigation link as a producer binding.
 
 > **Implementation baseline:** This record describes the pre-contraction
-> implementation. Its authority for existing code and retained evidence, and the
-> requirements-first order for replacement work, are defined by the
-> [requirements transition](requirements.md#requirements-and-implementation-transition).
+> implementation. Its authority for retained evidence is defined by the
+> [historical source rule](README.md#historical-source-rule).
 > New architecture, terminology and cutover direction are owned by the
 > [replacement HLD](high-level-design.md) and
 > [middle-level design](middle-level-design.md). This record remains only for its

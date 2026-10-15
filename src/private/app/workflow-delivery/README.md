@@ -124,8 +124,6 @@ inputs and performs one paired selection. Root CI executes the original mixed
 plan and retains its native preparation, commands and results. The native
 Python helper suite remains a native Python consumer; Ruby helper behavior belongs
 to its [native RSpec carrier](../../../../tests/private/app/workflow-delivery/Native/Ruby/README.md).
-Legacy V3-only adapter
-preparation and static-reference scanning are removed.
 
 For explicit full validation of committed HEAD:
 

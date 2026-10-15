@@ -11,9 +11,9 @@ second authority or a support/operation grant. The
 | Concern                                                           | Current authority                                                                                                                   |
 | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Required behavior and non-goals                                   | [Requirements](requirements.md)                                                                                                     |
-| Architecture, trust and implementation order                      | [High-level design](high-level-design.md)                                                                                           |
+| Architecture and trust boundaries                                 | [High-level design](high-level-design.md)                                                                                           |
 | Selection, execution, quality, transfers and outcomes             | [Middle-level design](middle-level-design.md)                                                                                       |
-| Concrete ecosystem interfaces and atomic caller/retirement groups | [Integration and retirement plan](migration-strategy.md)                                                                            |
+| Concrete ecosystem interfaces, callers and Official channel scope | [Integration contract](migration-strategy.md)                                                                                       |
 | Current positive work authorization                               | [Repository Delivery Wave](../../../../../docs/delivery-wave.md)                                                                    |
 | Repository review and record lifecycle                            | [Governance](../../../../../docs/governance/governance-system.md), [record policy](../../../../../docs/governance/record-system.md) |
 

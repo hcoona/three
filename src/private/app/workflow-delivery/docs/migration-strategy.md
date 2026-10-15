@@ -98,7 +98,7 @@ The application does not retain the old public Python control package, exclusive
 provider/authority/consumer projects, dependency scanner, runtime admission files
 or closed campaign operators as compatibility services.
 
-## Workflow and Action Cutover Groups
+## Workflow Caller Boundaries
 
 | Caller                                                  | Required atomic boundary                                                                                                                             |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -178,7 +178,7 @@ Use Ubuntu runners for the Node/Python/Ruby groups and Windows for general
 Tool versions come from `global.json`, `mise.toml`/`mise.lock` and native locks;
 do not introduce a second toolchain authority in this plan.
 
-### Python Planning Integration and Later Caller Cutover
+### Python Planning Integration
 
 The private application's auxiliary code follows the finite planning-fact contract.
 Planning extraction is separate from Python preparation/build/check execution. It selects source
@@ -204,16 +204,8 @@ excluded from CI qualification.
 The [primitive native observation](research/python-native-planning.md#primitive-native-observation)
 is independently accepted and stopped; both unused diagnostic reserves expired.
 It qualifies the pinned helper composition on its recorded Linux host, not complete
-fact assembly or caller integration. Do not repeat that campaign.
-
-Before later native qualification of complete fact assembly and callers, bind reviewed
-helper/tool/field/source identities and concrete runtime preparation, then accept a separate
-exact experiment protocol covering commands, isolation,
-configuration/environment/cache/download effects, finite time/state, observations, stop and owned
-cleanup/evidence. No later executable helper hash or protocol is selected here.
-Keep a finite diagnostic buffer and stop at the first independently accepted success
-or the exhausted/unsafe bounds. Repetitions within the accepted protocol need no
-repeated owner approval.
+fact assembly or caller integration. Do not repeat that campaign; a later native
+experiment needs its own accepted protocol.
 
 #### Python Quality and Caller Mapping
 
@@ -888,9 +880,28 @@ for package comparison. These checks bind actual consumers, not approvals or a
 chain of internal facts. A receiving consumer validates the actual download.
 
 Dry run executes qualification and supported reads, reports hypothetical writes
-and missing read authorization, and never enters a write gate. Official live ref
-eligibility remains explicit; Buddy and development dry run may use development
-refs. Do not preserve the old smoke-only `main` checks as the channel contract.
+and missing read authorization, and never enters a write gate.
+
+### Official Channel Scope
+
+WD-CHN-002 permits any eligible reviewed official branch or tag. The implemented
+callers configure a narrower set, which this table owns:
+
+| Ecosystem | Official destination | Implemented Official scope                       |
+| --------- | -------------------- | ------------------------------------------------ |
+| Python    | PyPI                 | Live publication only from `refs/heads/main`     |
+| Ruby      | RubyGems.org         | Live publication only from `refs/heads/main`     |
+| npm       | npmjs                | Dry-run simulation only; no live Official caller |
+| NuGet     | None                 | No Official channel; GitHub Packages Buddy only  |
+
+`ReleasePolicy.RequireEligible` is the one application check. Python and Ruby
+apply it where the request is formed and again in the privileged publisher; live
+Buddy there requires a branch ref under `refs/heads/`. The npm and NuGet Buddy
+requests carry the dispatched ref in their subject without a ref-class check. Dry run needs no live
+ref eligibility. Native Environment branch policies may constrain a channel
+further; they do not replace this check. Adding another Official ref, a live
+npm Official caller or a NuGet Official destination is a caller change that
+updates this table and its tests together.
 
 ### Destination Completion and Remaining Native Limits
 
@@ -1075,11 +1086,9 @@ Preparation reads the exact committed release declaration, project entry and
 quality selection using existing Git/declaration readers. Unsupported builds,
 outputs, quality recipes or required tests remain unavailable. Resolve native
 metadata through the maintained backend and `nbgv-python`; use the selected
-CPython/UV and the synchronized root lock. Live Official requires the selected
-official ref and the native public-release projection. This existing Official
-caller selects `refs/heads/main`; the native Environment may constrain it
-further. Buddy accepts repository branch refs; dry run does not require live ref
-eligibility. The Buddy Environment `workflow-delivery-v3-python-testpypi` allows
+CPython/UV and the synchronized root lock. Live Official requires the native public-release
+projection; ref eligibility follows the [Official channel scope](#official-channel-scope).
+The Buddy Environment `workflow-delivery-v3-python-testpypi` allows
 every branch (`**`) and keeps its required reviewer; the Official
 Environment remains limited to `main`. Keep one
 source/control revision throughout; do not inject versions or a target witness.
@@ -1229,12 +1238,10 @@ Read the exact committed declaration, native gemspec and quality selection
 through existing repository readers. Support the declared dependency-free
 `ruby`-platform gem with no extensions. Another dependency/build/quality shape
 needs a concrete adapter, rather than a generic resolver or task framework.
-Buddy accepts repository branch refs; this Official caller selects
-`refs/heads/main`, with any further eligibility enforced by the native
-Environment. The Buddy Environment `workflow-delivery-v3-ruby-github-packages`
+Ref eligibility follows the [Official channel scope](#official-channel-scope).
+The Buddy Environment `workflow-delivery-v3-ruby-github-packages`
 allows every branch (`**`) and keeps its required reviewer; the Official
-Environment remains limited to `main`. Dry run does not require live ref
-eligibility. Keep one faithful
+Environment remains limited to `main`. Keep one faithful
 source/control revision and selected native ref context; missing history or
 unsupported native facts block the request. Use the existing NBGV `SemVer2` and
 maintained RubyGems version projection, without an application suffix stripper,
@@ -1360,34 +1367,6 @@ checks. These checks do not establish current token/publisher configuration or
 a new live feed/publication. Historical readers and spent campaigns remain
 intact; no runtime schema compatibility alias is added.
 
-## Behavior and Evidence Compatibility
-
-Tests preserve retained behavior rather than old class, record-fixture or
-chronology-named file layouts. Paths in the second column identify historical
-scenario sources at the [former implementation][baseline], not current test
-entry points. The current managed/native test owners establish replacement
-behavior; historical passing suites do not qualify it.
-
-| Required journey or failure                 | Existing scenario/evidence input                                                                          | Replacement acceptance                                                                                                                                       |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Meaningful CI selection                     | `repository/`, `ci/`, `tests/eng/test_ci_scope.py` at repository root                                     | Base/candidate ownership, local/transitive edges, shared inputs, deletion/rename and unknown scope; add graph scenarios that old smoke-only providers reject |
-| Project quality and complete variants       | `ci/test_{rules,planner,scenarios,python,ruby}.py`                                                        | Required/advisory selection, explicit preset adoption, all selected variants and failed/missing/skipped results                                              |
-| Native version and reproducibility          | `adapters/test_{node,dotnet,python,ruby}.py`, `release/test_nuget_native_recovery.py`                     | Correct native projections and same-input original bytes; no mandatory single NBGV invocation or cross-commit equality                                       |
-| Complete packages and clean consumers       | Adapter and `release/test_*qualification.py` scenarios; native consumer tests                             | Native content/dependency rules and isolated complete-set consumption without witness/file-layout generalization                                             |
-| Development dry run and channel eligibility | `release/test_eligibility.py`, simulation/live scenarios                                                  | Ordinary development refs for Buddy/dry run, eligible Official live refs, no dry-run write capability                                                        |
-| Approval and input isolation                | Existing live qualification/publication and workflow scenarios                                            | Prepared intended control code, actual artifact binding and no product execution with publication capability; no replay of platform approval                 |
-| Initially exact, absent, subset, conflict   | `release/test_exact_satisfied.py`, destination/observation/readback and Python partial-recovery scenarios | Same complete-state predicate; no approval when no write; only supported missing-file completion in a fresh request                                          |
-| Lost response or upload error               | `release/test_{publication,python_publication,ruby_execution}.py`                                         | Add complete/incomplete readback cases; a handled command error may yield observed satisfaction, but stops all later writes                                  |
-| Cancellation, missing result and recovery   | Attempt/finalizer/native recovery scenarios                                                               | Native failure remains visible, missing data does not prove non-start, fresh original-revision build/current authorization, terminal history unchanged       |
-| Real transfers and retention                | Workflow/transport tests and retained validation records                                                  | Missing/substituted/expired required files block the operation; optional telemetry does not undo established satisfaction                                    |
-
-No old passing suite proves the new graph or observation-based completion logic.
-Use focused algorithm tests, journey scenarios and actual boundary integrations
-as assigned by the MLD. Source comparison is useful only for retained semantics;
-retired proof contracts are expected to differ. Windows remains the accepted
-assumption, with ordinary changed-code validation rather than a new feasibility
-gate. Local tests and fixture success are not new live destination acceptance.
-
 ## Current Integration Boundaries
 
 The final private CLI/test projects own native facts, meaningful impact selection,
@@ -1406,5 +1385,4 @@ record routing and complete affected validation together. Their source acceptanc
 does not qualify new live destination behavior or reopen a stopped campaign;
 work and operation authorization remain with the accepted Wave and domain gates.
 
-[baseline]: https://github.com/hcoona/three/tree/67f294cfd864a6376c14bee4a9f2ed0b92af9552
 [former-plan]: https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md

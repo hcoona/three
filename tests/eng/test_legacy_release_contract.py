@@ -14,41 +14,8 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO_ROOT / ".github/workflows"
-LEGACY_ENTRY_PATHS = (
-    ".github/workflows/buddy.yml",
-    ".github/workflows/release-buddy.yml",
-)
 FORBIDDEN_COMPATIBILITY_BASENAMES = frozenset(
     {"buddy.yml", "release-buddy.yml", "legacy-buddy.yml"}
-)
-OBSOLETE_PRE_V3_PATHS = (
-    ".github/actionlint.yaml",
-    ".github/workflows/release-build-dotnet.yml",
-    "eng/release",
-    "eng/scripts/verify_python_distribution_exactness.py",
-    "eng/scripts/workflow_release_acceptance_gate.py",
-    "eng/scripts/workflow_release_control.py",
-    "src/public/lib/hcoona-release-smoke",
-    "src/public/lib/hcoona-release-smoke-dotnet-executable",
-    "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/three.release.yml",
-    "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/three.quality.yml",
-    "src/public/lib/hcoona-release-smoke-github-release",
-    "src/public/lib/hcoona-release-smoke-inno",
-    "src/public/lib/hcoona-release-smoke-npm-dual",
-    "src/public/lib/hcoona-release-smoke-nuget",
-    "src/public/lib/hcoona-release-smoke-pypi",
-    "src/public/lib/hcoona-release-smoke-rubygems",
-    "src/public/lib/hcoona-release-smoke-wxt",
-    "src/public/lib/three-workflow-release-authoring",
-    "src/public/lib/three-workflow-release-build",
-    "src/public/lib/three-workflow-release-contracts",
-    "src/public/lib/three-workflow-release-metadata",
-    "src/public/lib/three-workflow-release-planner",
-    "src/public/lib/three-workflow-release-proof",
-    "src/public/lib/three-workflow-release-publish",
-    "tests/fixtures/workflow-release-acceptance-matrix.json",
-    "tests/fixtures/workflow-release-ci-validation-acceptance-matrix.json",
-    "tests/test_workflow_release_control.py",
 )
 
 
@@ -127,14 +94,6 @@ def _write_workflow(root: Path, name: str, content: str) -> None:
     path = root / name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-
-
-def test_legacy_buddy_entry_files_are_exactly_retired() -> None:
-    """Require legacy entries and the compatibility alias to be absent."""
-    assert all(not (REPO_ROOT / path).exists() for path in LEGACY_ENTRY_PATHS)
-    assert not (WORKFLOWS / "legacy-buddy.yml").exists()
-    assert (WORKFLOWS / "official.yml").is_file()
-    assert (WORKFLOWS / "ci.yml").is_file()
 
 
 @pytest.mark.parametrize(
@@ -334,30 +293,3 @@ def test_v3_buddy_workflow_remains_dedicated() -> None:
     document = yaml.safe_load(buddy.read_text(encoding="utf-8"))
     assert "workflow_dispatch" in _triggers(document)
     assert _legacy_buddy_routes(WORKFLOWS) == ()
-
-
-def test_pre_v3_control_plane_and_legacy_descriptors_are_absent() -> None:
-    """Keep inherited projects, tests, and descriptors out of the tree."""
-    assert all(
-        not (REPO_ROOT / relative_path).exists()
-        for relative_path in OBSOLETE_PRE_V3_PATHS
-    )
-    assert not tuple((REPO_ROOT / "src").glob("**/three.release.yml"))
-
-
-def test_temporary_acceptance_workflows_are_retired() -> None:
-    """Retire every temporary destination-acceptance workflow source."""
-    temporary_workflows = tuple(
-        sorted(
-            (
-                *WORKFLOWS.glob(
-                    "workflow-delivery-v3-buddy-smoke-acceptance*.yml"
-                ),
-                *WORKFLOWS.glob(
-                    "workflow-delivery-v3-buddy-smoke-acceptance*.yaml"
-                ),
-            )
-        )
-    )
-
-    assert temporary_workflows == ()
