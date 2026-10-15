@@ -63,13 +63,20 @@ public sealed class NativeProcessTests
     public async Task ExecuteWithoutInheritedEnvironmentPassesOnlyCommandEnvironment()
     {
         // The app's own Environment.Clear wrapper line; ambient variables are only read.
-        string ambientName = OperatingSystem.IsWindows() ? "USERNAME" : "USER";
-        Assert.IsNotNull(Environment.GetEnvironmentVariable(ambientName));
-        string pwsh = (Environment.GetEnvironmentVariable("PATH") ?? "")
-            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+        // PATH is always present in the test host and is deliberately not passed below.
+        // pwsh itself adds its own directory to PATH, so only the other host entries count.
+        const string ambientName = "PATH";
+        string[] hostPath = (Environment.GetEnvironmentVariable(ambientName) ?? "")
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+        string pwsh = hostPath
             .Select(directory => Path.Combine(directory,
                 OperatingSystem.IsWindows() ? "pwsh.exe" : "pwsh"))
             .First(File.Exists);
+        string pwshDirectory = Path.GetDirectoryName(pwsh)!;
+        string[] ambientEntries = [.. hostPath.Where(directory =>
+            !string.Equals(directory.TrimEnd(Path.DirectorySeparatorChar), pwshDirectory,
+                StringComparison.OrdinalIgnoreCase))];
+        Assert.IsNotEmpty(ambientEntries);
         string marker = "WORKFLOW_PROCESS_PROBE_" + Guid.NewGuid().ToString("N");
         var environment = new Dictionary<string, string?> { [marker] = "kept" };
         foreach (string name in (string[])(OperatingSystem.IsWindows() ?
@@ -87,7 +94,12 @@ public sealed class NativeProcessTests
             TestContext.CancellationToken);
 
         Assert.IsTrue(result.Succeeded, result.Stderr);
-        Assert.AreEqual("kept|", result.Stdout);
+        string[] observed = result.Stdout.Split('|', 2);
+        Assert.AreEqual("kept", observed[0]);
+        string[] childPath = observed[1].Split(Path.PathSeparator,
+            StringSplitOptions.RemoveEmptyEntries);
+        foreach (string entry in ambientEntries)
+            Assert.DoesNotContain(entry, childPath, "Ambient PATH entry leaked: " + entry);
     }
 
     [TestMethod]
@@ -156,7 +168,13 @@ public sealed class NativeProcessTests
         string script = "$path = [Text.Encoding]::UTF8.GetString(" +
             "[Convert]::FromBase64String('" + encodedPath + "')); " +
             "$staging = $path + '.tmp'; " +
-            "[System.IO.File]::WriteAllText($staging, [string]$PID); " +
+            "$start = [Diagnostics.ProcessStartInfo]::new([Environment]::ProcessPath); " +
+            "foreach ($argument in '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', " +
+            "'Start-Sleep -Seconds 60') { $start.ArgumentList.Add($argument) }; " +
+            "$start.RedirectStandardInput = $true; $start.RedirectStandardOutput = $true; " +
+            "$start.RedirectStandardError = $true; " +
+            "$descendant = [Diagnostics.Process]::Start($start); " +
+            "[System.IO.File]::WriteAllText($staging, [string]$PID + ' ' + $descendant.Id); " +
             "[System.IO.File]::Move($staging, $path); Start-Sleep -Seconds 60";
         string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -166,6 +184,7 @@ public sealed class NativeProcessTests
             ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
             cancellation.Token);
         Exception? failure = null;
+        Process? descendant = null;
         try
         {
             string? pidText = null;
@@ -182,14 +201,27 @@ public sealed class NativeProcessTests
             }
             Assert.IsNotNull(pidText,
                 "The child process must start before cancellation.");
-            int pid = int.Parse(pidText,
-                System.Globalization.CultureInfo.InvariantCulture);
-            using Process child = Process.GetProcessById(pid);
+            string[] pids = pidText.Split(' ');
+            using Process child = Process.GetProcessById(int.Parse(pids[0],
+                System.Globalization.CultureInfo.InvariantCulture));
+            // Open the descendant handle before interruption so its exit stays observable.
+            descendant = Process.GetProcessById(int.Parse(pids[1],
+                System.Globalization.CultureInfo.InvariantCulture));
 
             await cancellation.CancelAsync();
             await Assert.ThrowsAsync<OperationCanceledException>(() => query);
 
             Assert.IsTrue(child.HasExited, "The owned root must exit before RunAsync returns.");
+            // Tree kill is asynchronous and RunAsync waits only for the root.
+            using var descendantExit = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await descendant.WaitForExitAsync(descendantExit.Token);
+            }
+            catch (OperationCanceledException) when (descendantExit.IsCancellationRequested)
+            {
+                Assert.Fail("The owned descendant must exit after cancellation.");
+            }
         }
         catch (Exception exception)
         {
@@ -213,6 +245,19 @@ public sealed class NativeProcessTests
             catch (Exception exception)
             {
                 failure = failure is null ? exception : new AggregateException(failure, exception);
+            }
+            if (descendant is not null)
+            {
+                try
+                {
+                    if (!descendant.HasExited) descendant.Kill();
+                }
+                catch (Exception exception)
+                {
+                    failure = failure is null ? exception
+                        : new AggregateException(failure, exception);
+                }
+                descendant.Dispose();
             }
             foreach (string path in new[] { pidPath, pidPath + ".tmp" })
             {
