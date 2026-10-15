@@ -129,7 +129,8 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_legacy_release_contract.py" &&
             CiScope.LegacyReleaseInput(path)) ||
         (target == "tests/eng/test_general_ci_workflow.py" &&
-            path == "tests/eng/ci_workflow_shell.py") ||
+            path is "tests/eng/ci_workflow_shell.py" or
+                ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml") ||
         (target == "tests/eng/test_typos_config.py" && path == ".typos.toml") ||
         (target == "tests/eng/test_python_release_caller.py" &&
             path == ".github/workflows/workflow-delivery-v3-python-smoke.yml") ||

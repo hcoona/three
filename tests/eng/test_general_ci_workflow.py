@@ -1560,6 +1560,7 @@ def test_nuget_reproducibility_runs_on_dispatch_and_main_changes(workflow):
         ".editorconfig",
         "src/private/app/workflow-delivery/Release/NuGet*.cs",
         "src/private/app/workflow-delivery/Destinations/GithubNuGet*.cs",
+        "src/private/app/workflow-delivery/Ecosystems/DotNetSmokeRemoteConsumer.cs",
         (
             "tests/private/app/workflow-delivery/fixtures/products/"
             "hcoona-release-smoke-github-packages/**"

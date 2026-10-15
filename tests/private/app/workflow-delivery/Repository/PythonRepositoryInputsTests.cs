@@ -233,6 +233,8 @@ public sealed class PythonRepositoryInputsTests
         "src/private/Directory.Packages.props")]
     [DataRow("src/public/lib/nbgv-python/tests", "global.json")]
     [DataRow("tests/eng/test_general_ci_workflow.py", "tests/eng/ci_workflow_shell.py")]
+    [DataRow("tests/eng/test_general_ci_workflow.py",
+        ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml")]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/workflow_delivery_v3_hk.py")]
     [DataRow("tests/eng/test_legacy_release_contract.py", "src/product/three.release.yml")]
@@ -250,6 +252,8 @@ public sealed class PythonRepositoryInputsTests
 
     [TestMethod]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml.backup")]
+    [DataRow("tests/eng/test_general_ci_workflow.py",
+        ".github/workflows/workflow-delivery-v3-nuget-buddy-smoke.yml")]
     [DataRow("tests/private/app/workflow-delivery/Native/Python",
         "src/public/lib/nbgv-python-other/source.py")]
     [DataRow("src/private/app/azureauth-credprovider/tests", "src/other/Directory.Build.props")]
