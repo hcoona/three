@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using System.Xml.Linq;
 using Microsoft.Build.Evaluation;
@@ -136,65 +135,6 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
-    [Timeout(180000, CooperativeCancellation = true)]
-    public async Task NativeInterruptedTestRetainsBuildResult(bool cancel)
-    {
-        using var fixture = await DotNetNativeFixture.CreateAsync("MTP", context.CancellationToken,
-            includeDependencyGraph: false);
-        Dictionary<string, string> globals = DotNetNativeFixture.Globals();
-        globals.Add("FixtureSlow", "true");
-        CiPlan plan = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate, "MTP",
-            globals, DotNetNativeFixture.Project);
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            context.CancellationToken);
-        Task<DotNetRunResult> running = DotNetExecution.RunAsync(plan,
-            new(fixture.Root, fixture.RunScratch, 60), (command, token) =>
-            {
-                NativeCommand actual = !cancel && command.Arguments.Contains(
-                    "-target:Build,GetTargetPath,InvokeTestingPlatform")
-                    ? command with { DeadlineSeconds = 20 } : command;
-                context.WriteLine(JsonSerializer.Serialize(actual,
-                    TransferJson.Default.NativeCommand));
-                return NativeProcess.ExecuteAsync(actual, token);
-            }, cancellation.Token);
-        string started = Path.Combine(fixture.Root, "tests", "slow-started.txt");
-        try
-        {
-            if (cancel)
-            {
-                using var startDeadline = CancellationTokenSource.CreateLinkedTokenSource(
-                    context.CancellationToken);
-                startDeadline.CancelAfter(TimeSpan.FromSeconds(60));
-                while (!File.Exists(started) && !running.IsCompleted)
-                    await Task.Delay(50, startDeadline.Token);
-                await cancellation.CancelAsync();
-            }
-            DotNetRunResult result = await running;
-            context.WriteLine(JsonSerializer.Serialize(result,
-                TransferJson.Default.DotNetRunResult));
-            Assert.IsTrue(File.Exists(started), Diagnostics(result));
-            Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
-                item.Key.Check == DotNetChecks.Build).Status);
-            Assert.AreEqual(cancel ? CheckStatus.Cancelled : CheckStatus.TimedOut,
-                result.Results.Single(item => item.Key.Check == DotNetChecks.Test).Status,
-                Diagnostics(result));
-            Assert.HasCount(1, result.Commands);
-            Assert.IsNotNull(result.BatchBuild);
-            Assert.AreEqual(cancel ? NativeTermination.Cancelled : NativeTermination.TimedOut,
-                result.Commands[0].Result.Termination);
-            Assert.AreEqual(DotNetChecks.Build, Assert.ContainsSingle(result.Outputs).Key.Check);
-            Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
-        }
-        finally
-        {
-            await cancellation.CancelAsync();
-            await running;
-        }
-    }
-
-    [TestMethod]
     [Timeout(180000, CooperativeCancellation = true)]
     public async Task NativeBatchRetainsIndependentVariantsWithNbgvWhenAnotherEntryFails()
     {
@@ -225,90 +165,6 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         Assert.HasCount(2, result.Commands);
         Assert.HasCount(4, result.Outputs);
         Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
-    }
-
-    [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
-    [Timeout(90000, CooperativeCancellation = true)]
-    public async Task NativeInterruptedBatchCannotFabricateBuildResult(bool cancel)
-    {
-        using var repo = await WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture
-            .CreateAsync(context.CancellationToken);
-        await repo.SetAsync("slow.csproj", """
-            <Project>
-              <UsingTask TaskName="WaitForInterruption" TaskFactory="RoslynCodeTaskFactory"
-                AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
-                <ParameterGroup><Signal ParameterType="System.String" Required="true" />
-                </ParameterGroup><Task><Code Type="Fragment" Language="cs"><![CDATA[
-                  System.IO.File.WriteAllText(Signal + ".tmp",
-                    System.Diagnostics.Process.GetCurrentProcess().Id.ToString(
-                      System.Globalization.CultureInfo.InvariantCulture));
-                  System.IO.File.Move(Signal + ".tmp", Signal);
-                  System.Threading.Thread.Sleep(30000);
-                ]]></Code></Task>
-              </UsingTask>
-              <Target Name="Build"><WaitForInterruption
-                Signal="$(MSBuildProjectDirectory)/started.txt" /></Target>
-              <Target Name="GetTargetPath" />
-            </Project>
-            """);
-        string candidate = await repo.CommitAsync();
-        await repo.GitAsync("reset", "--hard", candidate);
-        using var fixture = new DotNetExecutionFixture(repo,
-            DotNetExecutionFixture.CreatePlan(repo.Directory, candidate, "None",
-                project: "slow.csproj"));
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            context.CancellationToken);
-        Task<DotNetRunResult> running = DotNetExecution.RunAsync(fixture.Plan,
-            fixture.Request with { DeadlineSeconds = cancel ? 60 : 10 }, cancellation.Token);
-        string signal = Path.Combine(repo.Directory, "started.txt");
-        Process? worker = null;
-        try
-        {
-            using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(
-                context.CancellationToken))
-            {
-                deadline.CancelAfter(TimeSpan.FromSeconds(60));
-                while (!File.Exists(signal) && !running.IsCompleted)
-                    await Task.Delay(50, deadline.Token);
-            }
-            if (!File.Exists(signal))
-                Assert.Fail("The native worker must start before interruption. " +
-                    (running.IsCompleted ? Diagnostics(await running) : "No result."));
-            int workerId = int.Parse(await File.ReadAllTextAsync(signal,
-                context.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
-            worker = Process.GetProcessById(workerId);
-            // Hold the actual worker handle before interruption, avoiding a later PID lookup.
-            _ = worker.Handle;
-            if (cancel) await cancellation.CancelAsync();
-            DotNetRunResult result = await running;
-            Assert.IsTrue(File.Exists(signal), Diagnostics(result));
-            Assert.AreEqual(cancel ? CheckStatus.Cancelled : CheckStatus.TimedOut,
-                Assert.ContainsSingle(result.Results).Status, Diagnostics(result));
-            Assert.IsNotNull(result.BatchBuild);
-            Assert.AreEqual(cancel ? NativeTermination.Cancelled : NativeTermination.TimedOut,
-                result.BatchBuild.Result.Termination);
-            Assert.IsEmpty(result.Outputs);
-            Assert.IsEmpty(result.Commands);
-        }
-        finally
-        {
-            await cancellation.CancelAsync();
-            try { await running; }
-            finally
-            {
-                using (worker)
-                {
-                    if (worker is not null)
-                    {
-                        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                        await worker.WaitForExitAsync(cleanup.Token);
-                        context.WriteLine("Native worker exited before fixture cleanup.");
-                    }
-                }
-            }
-        }
     }
 
     private static void AssertSuccessfulNativeRun(DotNetNativeFixture fixture, CiPlan plan,

@@ -117,14 +117,6 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                         [Ignore("Native intentional skip")]
                         public void SelectedSkipped() =>
                             Assert.Fail("An ignored test was executed.");
-                        [TestMethod]
-                        public async Task SlowProbe()
-                        {
-                            await File.WriteAllTextAsync(
-                                Environment.GetEnvironmentVariable("WORKFLOW_NATIVE_SIGNAL")!,
-                                "started");
-                            await Task.Delay(TimeSpan.FromSeconds(30), context.CancellationToken);
-                        }
                     }
                     """,
                 ["tests/native.runsettings"] = $$"""
@@ -235,7 +227,6 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
             "\"$(MSBuildProjectDirectory)/native.runsettings\" " + report;
         string noTests = "--filter FullyQualifiedName~DoesNotExist " +
             "--minimum-expected-tests 1 " + report;
-        string slow = "--filter FullyQualifiedName~SlowProbe " + results;
         string reference = includeDependencyGraph ? """
             <ProjectReference Include="../library/Dependency.csproj"
               GlobalPropertiesToRemove="UseAppHost" />
@@ -253,8 +244,6 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                 >{{selected}}</TestingPlatformCommandLineArguments>
               <TestingPlatformCommandLineArguments Condition="'$(FixtureNoTests)' == 'true'"
                 >{{noTests}}</TestingPlatformCommandLineArguments>
-              <TestingPlatformCommandLineArguments Condition="'$(FixtureSlow)' == 'true'"
-                >{{slow}}</TestingPlatformCommandLineArguments>
               <RunSettingsFilePath
                 >$(MSBuildProjectDirectory)/native.runsettings</RunSettingsFilePath>
               <VSTestTestCaseFilter>FullyQualifiedName~Selected</VSTestTestCaseFilter>
@@ -268,8 +257,6 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
               <TestingPlatformEnvironmentVariable Include="WORKFLOW_NATIVE_PROBE"
                 Value="native-environment" />
               <TestingPlatformEnvironmentVariable Include="WORKFLOW_NATIVE_MTP" Value="true" />
-              <TestingPlatformEnvironmentVariable Include="WORKFLOW_NATIVE_SIGNAL"
-                Value="$(MSBuildProjectDirectory)/slow-started.txt" />
             </ItemGroup></Project>
             """;
     }

@@ -19,6 +19,45 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
         ["shared/Version 雪.json", "tests/Control/Resources/kept.txt"];
     private static readonly string[] DebugNativeInputs = ["tests/Control/Resources/kept.txt"];
 
+    // Rows that vary only the request or native answers read one committed checkout.
+    private static GitFixture? shared;
+    private static GitMaterialization? sharedCheckout;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await CommitAsync(classContext.CancellationToken);
+        try
+        {
+            sharedCheckout = await BindAsync(repo, classContext.CancellationToken);
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    [TestMethod]
+    public async Task SharedCheckoutControlQualifies()
+    {
+        GitMaterialization checkout = sharedCheckout!;
+        const string resource = "shared/Version 雪.json";
+        var reader = new MsBuildResourceReader(checkout, (_, _) =>
+            Task.FromResult(Output(checkout, Release, resource)));
+        MsBuildResources result = await reader.ReadAsync(Project, Release,
+            context.CancellationToken);
+        Assert.AreEqual(checkout.Revision.Commit, result.Revision);
+        CollectionAssert.AreEqual(VersionOnlyInputs, result.Inputs);
+        JsonNode native = JsonNode.Parse(Output(checkout, new("Debug", "net10.0")))!;
+        native["Properties"]!["TargetFrameworks"] = "";
+        native["Properties"]!["RuntimeIdentifiers"] = "";
+        MsBuildResources fallback = await new MsBuildResourceReader(checkout, (_, _) =>
+            Task.FromResult(native.ToJsonString())).ReadDefaultAsync(Project, "Debug",
+                context.CancellationToken);
+        Assert.AreEqual(new MsBuildDimension("Debug", "net10.0"), fallback.Dimension);
+    }
+
     [TestMethod]
     public async Task DefaultQueryPreservesNativeDimensionWithoutOverrides()
     {
@@ -59,8 +98,7 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
     [DataRow("rid-list")]
     public async Task DefaultQueryRejectsUnsupportedRequiredShapes(string defect)
     {
-        using var repo = await FixtureAsync();
-        GitMaterialization checkout = await BindAsync(repo);
+        GitMaterialization checkout = sharedCheckout!;
         JsonNode native = JsonNode.Parse(Output(checkout, new("Debug", "net10.0")))!;
         JsonObject properties = native["Properties"]!.AsObject();
         properties["TargetFrameworks"] = defect == "frameworks" ? "net9.0;net10.0" : "";
@@ -231,8 +269,9 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
     [DataRow("directory")]
     public async Task ReadRejectsUnavailableResourceCoordinates(string defect)
     {
-        using var repo = await FixtureAsync();
-        GitMaterialization checkout = await BindAsync(repo);
+        // Rows that change the checkout keep a private repository.
+        using GitFixture? repo = defect is "untracked" or "missing" ? await FixtureAsync() : null;
+        GitMaterialization checkout = repo is null ? sharedCheckout! : await BindAsync(repo);
         if (defect == "untracked")
             await File.WriteAllTextAsync(Path.Combine(checkout.Root, "extra.txt"), "untracked",
                 context.CancellationToken);
@@ -291,8 +330,7 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
     [DataRow("rid-control")]
     public async Task ReadRejectsUnsupportedRequestsBeforeNativeQuery(string defect)
     {
-        using var repo = await FixtureAsync();
-        GitMaterialization checkout = await BindAsync(repo);
+        GitMaterialization checkout = sharedCheckout!;
         string project = defect switch
         {
             "project-parent" => "../Control.csproj",
@@ -446,21 +484,28 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task NativeEvaluationHonorsCancellation()
+    public async Task EvaluationHonorsCancellation()
     {
-        using var repo = await FixtureAsync();
-        GitMaterialization checkout = await BindAsync(repo);
+        // Cancellation is observed before the native query; the query must never start.
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         cancellation.Cancel();
+        bool queried = false;
 
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
-            new MsBuildResourceReader(checkout).ReadAsync(Project, Release, cancellation.Token));
+            new MsBuildResourceReader(sharedCheckout!, (_, _) =>
+            {
+                queried = true;
+                return Task.FromResult("");
+            }).ReadAsync(Project, Release, cancellation.Token));
+        Assert.IsFalse(queried);
     }
 
-    private async Task<GitFixture> FixtureAsync()
+    private Task<GitFixture> FixtureAsync() => CommitAsync(context.CancellationToken);
+
+    private static async Task<GitFixture> CommitAsync(CancellationToken token)
     {
-        GitFixture repo = await GitFixture.CreateAsync(context.CancellationToken);
+        GitFixture repo = await GitFixture.CreateAsync(token);
         try
         {
             await repo.SetAsync(Project, "<Project />");
@@ -477,10 +522,13 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
         }
     }
 
-    private async Task<GitMaterialization> BindAsync(GitFixture repo) =>
+    private Task<GitMaterialization> BindAsync(GitFixture repo) =>
+        BindAsync(repo, context.CancellationToken);
+
+    private static async Task<GitMaterialization> BindAsync(GitFixture repo,
+        CancellationToken token) =>
         await GitMaterialization.BindAsync(repo.Directory,
-            await new GitReader(repo.Directory).ReadAsync("HEAD", context.CancellationToken),
-            context.CancellationToken);
+            await new GitReader(repo.Directory).ReadAsync("HEAD", token), token);
 
     private static string Output(GitMaterialization checkout, MsBuildDimension dimension,
         params string[] resources) => JsonSerializer.Serialize(new

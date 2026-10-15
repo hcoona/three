@@ -2,12 +2,48 @@ using System.Text.Json;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
+using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
 namespace WorkflowDelivery.Tests.CI;
 
 [TestClass]
 public sealed class DotNetGroupExecutionTests(TestContext context)
 {
+    // Transferred-projection rows read one committed repository and one detached receiver
+    // worktree created here; each row still owns fresh scratch for every native effect.
+    private static GitFixture? shared;
+    private static string sharedCandidate = "";
+    private static string sharedReceiver = "";
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            sharedCandidate = await DotNetPackageFixture.CommitAsync(repo);
+            // A sibling of the repository is removed with the fixture's temporary root.
+            sharedReceiver = Path.Combine(Path.GetDirectoryName(repo.Directory)!, "receiver");
+            await repo.GitAsync("worktree", "add", "--detach", sharedReceiver, sharedCandidate);
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    [TestMethod]
+    public async Task TransferredPackageControlQualifies()
+    {
+        DotNetGroupRunResult result = await RunTransferredAsync(null);
+        Assert.IsTrue(result.Outcome.Satisfied, string.Join("; ",
+            result.Packages.Failures.Select(failure => failure.Error)));
+        Assert.HasCount(3, result.Results);
+        Assert.HasCount(1, result.Packages.Packages);
+        Assert.HasCount(1, result.Packages.ConsumerOutputs);
+    }
+
     [TestMethod]
     [DataRow("MSBuildProjectFullPath")]
     [DataRow("PackageId")]
@@ -18,16 +54,33 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
     [DataRow("AssemblyInformationalVersion")]
     public async Task TransferredPackageRejectsDifferentNativeProjection(string property)
     {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
+        DotNetGroupRunResult result = await RunTransferredAsync(property);
+        Assert.IsFalse(result.Outcome.Satisfied);
+        Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
+            item.Key.Check == DotNetPackageChecks.Pack).Status);
+        Assert.IsTrue(result.Results.Where(item => item.Key.Check != DotNetPackageChecks.Pack)
+            .All(item => item.Status == CheckStatus.Skipped));
+        Assert.HasCount(3, result.Results);
+        Assert.IsEmpty(result.Packages.Packages);
+        Assert.IsEmpty(result.Packages.ConsumerOutputs);
+        Assert.IsEmpty(result.Retained.Commands);
+        string failure = Assert.ContainsSingle(result.Packages.Failures).Error;
+        Assert.Contains(property == "MSBuildProjectFullPath" ? "project identity" :
+            "NBGV expectations", failure);
+    }
+
+    private async Task<DotNetGroupRunResult> RunTransferredAsync(string? property)
+    {
+        using var fixture = DotNetPackageFixture.Shared(shared!, sharedCandidate);
         string original = JsonSerializer.Serialize(fixture.Plan, TransferJson.Default.CiPlan);
         CiPlan transferred = JsonSerializer.Deserialize(original, TransferJson.Default.CiPlan)!;
-        string receiver = Path.Combine(fixture.Scratch, "receiver");
-        await fixture.Repo.GitAsync("worktree", "add", "--detach", receiver, fixture.Candidate);
+        string receiver = sharedReceiver;
         fixture.ModifyPack = document =>
         {
             var values = document["Properties"]!.AsObject();
             values["MSBuildProjectFullPath"] =
                 Path.GetFullPath(Path.Combine(receiver, DotNetPackageFixture.Project));
+            if (property is null) return;
             if (property == "MSBuildProjectFullPath")
                 values[property] = fixture.Node.Identity.Project;
             else if (property is "NuGetPackageVersion" or "PackageVersion")
@@ -48,21 +101,11 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
             new(receiver, execution, 60), DotNetExecution.RunAsync,
             (plan, request, token) => DotNetPackageExecution.RunAsync(plan, request,
                 fixture.ExecuteAsync, token), context.CancellationToken);
-        Assert.IsFalse(result.Outcome.Satisfied);
-        Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
-            item.Key.Check == DotNetPackageChecks.Pack).Status);
-        Assert.IsTrue(result.Results.Where(item => item.Key.Check != DotNetPackageChecks.Pack)
-            .All(item => item.Status == CheckStatus.Skipped));
-        Assert.HasCount(3, result.Results);
-        Assert.IsEmpty(result.Packages.Packages);
-        Assert.IsEmpty(result.Packages.ConsumerOutputs);
-        Assert.IsEmpty(result.Retained.Commands);
-        Assert.AreEqual(receiver, Assert.ContainsSingle(fixture.Commands).Directory);
+        if (property is not null)
+            Assert.AreEqual(receiver, Assert.ContainsSingle(fixture.Commands).Directory);
         Assert.AreEqual(original, JsonSerializer.Serialize(transferred,
             TransferJson.Default.CiPlan));
-        string failure = Assert.ContainsSingle(result.Packages.Failures).Error;
-        Assert.Contains(property == "MSBuildProjectFullPath" ? "project identity" :
-            "NBGV expectations", failure);
+        return result;
     }
 
     [TestMethod]
@@ -166,7 +209,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
-    public async Task ActualCancellationRetainsCompletedPartition(bool selectedPackages)
+    public async Task OuterCancellationRetainsCompletedPartition(bool selectedPackages)
     {
         using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -178,20 +221,22 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
         string serialized = JsonSerializer.Serialize(original, TransferJson.Default.CiPlan);
         DotNetRunResult? completed = null;
         DotNetGroupRunResult result = await DotNetGroupExecution.RunAsync(original, fixture.Request,
-            async (plan, _, token) =>
+            (plan, _, token) =>
             {
                 cancellation.Cancel();
                 CheckKey test = plan.Checks.Single(item =>
                     item.Work.Key.Check == DotNetChecks.Test).Work.Key;
+                Assert.IsTrue(token.IsCancellationRequested);
                 var command = new NativeCommand("dotnet", fixture.Repo.Directory, ["test"], 60);
-                NativeCommandResult observation = await NativeProcess.ExecuteAsync(command, token);
-                Assert.AreEqual(NativeTermination.Cancelled, observation.Termination);
-                completed = new(plan.Candidate, plan.Checks.Select(item =>
+                var observation = new NativeCommandResult(NativeTermination.Cancelled, null, "",
+                    "", 0, "Command cancelled.");
+                DotNetRunResult run = new(plan.Candidate, plan.Checks.Select(item =>
                     new CheckResult(plan.Candidate, item.Work.Key,
                         item.Work.Key.Check == DotNetChecks.Build ? CheckStatus.Passed :
                             CheckStatus.Cancelled)).ToArray(), [new(test, command, observation)],
                     [], []);
-                return completed;
+                completed = run;
+                return Task.FromResult(run);
             }, DotNetPackageExecution.RunAsync, cancellation.Token);
         Assert.IsFalse(result.Outcome.Satisfied);
         Assert.AreSame(completed, result.Retained);

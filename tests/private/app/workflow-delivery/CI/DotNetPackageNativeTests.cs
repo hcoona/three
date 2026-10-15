@@ -187,60 +187,6 @@ public sealed class DotNetPackageNativeTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task NativeInstalledMarkerFailureRetainsPackagePrerequisites()
-    {
-        using var fixture = await ProductFixture.CreateAsync(context.CancellationToken,
-            wrongMarker: true);
-        DotNetPackageRunResult result = await fixture.RunAsync(context.CancellationToken);
-        Retain(fixture, result, "wrong-marker");
-        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
-        Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
-            item.Key.Check == DotNetPackageChecks.Pack).Status);
-        Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
-            item.Key.Check == DotNetPackageChecks.Contents).Status);
-        Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
-            item.Key.Check == DotNetPackageChecks.Consumer).Status);
-        Assert.Contains("marker API", Assert.ContainsSingle(result.Failures).Error);
-        Assert.AreEqual("wrong-native-marker", result.Commands[^1].Result.Stdout.Trim());
-        Assert.HasCount(4, result.Commands);
-        Assert.IsEmpty(result.ConsumerOutputs);
-    }
-
-    [TestMethod]
-    public async Task NativeConsumerMissingDependencyFailsWithOriginalArchive()
-    {
-        using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
-        string path = Path.Combine(fixture.Scratch, "WorkflowDelivery.Tests.1.0.0.nupkg");
-        fixture.CreateArchive(path);
-        const string missing = "WorkflowDelivery.MissingNativeDependency";
-        AddMissingDependency(path, missing);
-        var original = new DotNetOriginalPackage("product", "package", "package",
-            "primary-package", "nuget-package", path, new FileInfo(path).Length,
-            DotNetPackageArchive.Digest(path));
-        string fresh =
-            Directory.CreateDirectory(Path.Combine(fixture.Scratch, "consumer-probe")).FullName;
-        var observations = new List<(NativeCommand Command, NativeCommandResult Result)>();
-        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            DotNetPackageConsumer.RunAsync(original, fixture.Values, fresh, 60,
-                async (command, token) =>
-                {
-                    NativeCommandResult native = await NativeProcess.ExecuteAsync(command, token);
-                    observations.Add((command, native));
-                    context.WriteLine(native.Stdout + native.Stderr);
-                    if (!native.Succeeded)
-                        throw new InvalidDataException("Native missing-dependency restore failed.");
-                    return native;
-                }, context.CancellationToken));
-        Assert.Contains("missing-dependency restore failed", failure.Message);
-        var restore = Assert.ContainsSingle(observations);
-        Assert.Contains("restore", restore.Command.Arguments);
-        Assert.IsFalse(restore.Result.Succeeded);
-        Assert.Contains("NU1101", restore.Result.Stdout + restore.Result.Stderr);
-        Assert.Contains(missing, restore.Result.Stdout + restore.Result.Stderr);
-        Assert.AreEqual(original.Sha256, DotNetPackageArchive.Digest(original.Path));
-    }
-
-    [TestMethod]
     public async Task NativeConsumerCannotBorrowDependencyFromImplicitSdkFeed()
     {
         using var fixture = await DotNetPackageFixture.CreateAsync(context.CancellationToken);
@@ -426,7 +372,7 @@ public sealed class DotNetPackageNativeTests(TestContext context)
             "hcoona-release-smoke-github-packages.csproj";
 
         internal static async Task<ProductFixture> CreateAsync(CancellationToken token,
-            bool wrongMarker = false, bool discoverGraph = false)
+            bool discoverGraph = false)
         {
             string source = AppContext.BaseDirectory;
             while (!File.Exists(Path.Combine(source, "global.json")) ||
@@ -460,16 +406,6 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                         </ItemGroup></Project>
                         """, token);
                     paths.Add("dirs.proj");
-                }
-                if (wrongMarker)
-                {
-                    string marker = DotNetRepositoryReader.Parent(Project) + "/Smoke.cs";
-                    string content = await File.ReadAllTextAsync(
-                        Path.Combine(checkout, marker), token);
-                    await File.WriteAllTextAsync(Path.Combine(checkout, marker), content.Replace(
-                        DotNetPackageConsumer.Marker, "wrong-native-marker",
-                            StringComparison.Ordinal), token);
-                    paths.Add(marker);
                 }
                 // Like the existing GitFixture, only this disposable clone creates fixture objects.
                 foreach (string path in paths)

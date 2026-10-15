@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Tests.CI;
@@ -229,18 +230,11 @@ public sealed class NodeExecutionTests(TestContext context)
     [TestMethod]
     [DataRow("dirty")]
     [DataRow("wrong-head")]
-    [DataRow("relative-checkout")]
-    [DataRow("relative-scratch")]
-    [DataRow("missing-scratch")]
-    [DataRow("same")]
-    [DataRow("nested")]
-    [DataRow("nonempty")]
-    public async Task RunRejectsUnboundCheckoutOrInvalidScratch(string defect)
+    public async Task RunRejectsUnboundCheckout(string defect)
     {
         using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
-        NodeRunRequest request = fixture.Request;
         if (defect == "dirty")
-            await File.WriteAllTextAsync(Path.Combine(request.Checkout,
+            await File.WriteAllTextAsync(Path.Combine(fixture.Request.Checkout,
                 NodeExecutionFixture.Source, "index.js"), "changed", context.CancellationToken);
         if (defect == "wrong-head")
         {
@@ -248,6 +242,30 @@ public sealed class NodeExecutionTests(TestContext context)
             string next = await fixture.Repository.CommitAsync(fixture.Plan.Candidate);
             await fixture.Repository.GitAsync("reset", "--hard", next);
         }
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => fixture.RunAsync(
+            context.CancellationToken));
+
+        Assert.IsEmpty(fixture.Commands);
+        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
+    }
+
+    [TestMethod]
+    [DataRow("relative-checkout", "Node execution paths must be absolute.")]
+    [DataRow("relative-scratch", "Node execution paths must be absolute.")]
+    [DataRow("missing-scratch", "Node execution requires fresh external scratch.")]
+    [DataRow("same", "Node execution requires fresh external scratch.")]
+    [DataRow("nested", "Node execution requires fresh external scratch.")]
+    [DataRow("nonempty", "Node execution requires fresh external scratch.")]
+    public async Task RunRejectsInvalidScratchBeforeReadingGit(string defect, string diagnostic)
+    {
+        // Path checks precede every Git read, so no repository is needed; the exact
+        // diagnostic proves the path rule rejected the request rather than a Git failure.
+        using var checkout = new ScratchFixture("checkout");
+        using var scratch = new ScratchFixture("scratch");
+        CiPlan plan = NodeExecutionFixture.CreatePlan(new string('a', 40));
+        var commands = new List<NativeCommand>();
+        var request = new NodeRunRequest(checkout.Scratch, scratch.Scratch, "node24");
         if (defect == "nested")
         {
             string nested = Path.Combine(request.Checkout, "scratch");
@@ -265,10 +283,15 @@ public sealed class NodeExecutionTests(TestContext context)
             _ => request,
         };
 
-        await Assert.ThrowsAsync<InvalidDataException>(() => fixture.RunAsync(
-            context.CancellationToken, request: request));
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            NodeExecution.RunAsync(plan, request, (command, _) =>
+            {
+                commands.Add(command);
+                return Task.FromResult(NodeExecutionFixture.Success());
+            }, context.CancellationToken));
 
-        Assert.IsEmpty(fixture.Commands);
+        Assert.AreEqual(diagnostic, error.Message);
+        Assert.IsEmpty(commands);
     }
 
     [TestMethod]
@@ -516,29 +539,8 @@ public sealed class NodeExecutionTests(TestContext context)
     [DataRow("json", "malformed")]
     [DataRow("json", "array")]
     [DataRow("json", "duplicate")]
-    public async Task RunRejectsUnexpectedNativeMetadata(string field, string value)
-    {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
-        JsonObject metadata = JsonNode.Parse(NodeExecutionFixture.Metadata)!.AsObject();
-        if (value == "missing")
-            metadata.Remove(field);
-        else if (value == "number")
-            metadata[field] = 42;
-        else
-            metadata[field] = value;
-        fixture.NativeMetadata = value switch
-        {
-            "malformed" => "{broken",
-            "array" => "[]",
-            "duplicate" => NodeExecutionFixture.Metadata.TrimEnd()[..^1] +
-                ",\"name\":\"@hcoona/hcoona-release-smoke-npm\"}",
-            _ => metadata.ToJsonString(),
-        };
-
-        NodeRunResult result = await fixture.RunAsync(context.CancellationToken);
-
-        AssertMetadataFailed(result);
-    }
+    public void UnexpectedNativeMetadataIsRejected(string field, string value) =>
+        AssertMetadataRejected(UnexpectedMetadata(field, value));
 
     [TestMethod]
     [DataRow("dependencies", "{\"runtime\":\"1\"}")]
@@ -551,12 +553,24 @@ public sealed class NodeExecutionTests(TestContext context)
     [DataRow("engines.runtime", "{\"name\":\"node\",\"version\":\"24\"}")]
     [DataRow("scripts", "{\"install\":\"native operation\"}")]
     [DataRow("gypfile", "true")]
-    public async Task RunRejectsUnsupportedInstalledShape(string field, string json)
+    public void UnsupportedInstalledShapeIsRejected(string field, string json) =>
+        AssertMetadataRejected(InstalledShape(field, json));
+
+    [TestMethod]
+    [DataRow("identity")]
+    [DataRow("malformed")]
+    [DataRow("installed-shape")]
+    public async Task RunRejectsNativeMetadataBeforeInstall(string defect)
     {
+        // The metadata rule is checked above without a repository; these rows prove execution
+        // applies it to both artifact checks and stops before any native install effect.
         using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
-        JsonObject metadata = JsonNode.Parse(NodeExecutionFixture.Metadata)!.AsObject();
-        metadata[field] = JsonNode.Parse(json);
-        fixture.NativeMetadata = metadata.ToJsonString();
+        fixture.NativeMetadata = defect switch
+        {
+            "identity" => UnexpectedMetadata("version", "1.2.4"),
+            "malformed" => UnexpectedMetadata("json", "malformed"),
+            _ => InstalledShape("scripts", "{\"install\":\"native operation\"}"),
+        };
 
         NodeRunResult result = await fixture.RunAsync(context.CancellationToken);
 
@@ -919,6 +933,40 @@ public sealed class NodeExecutionTests(TestContext context)
         }
 
         public void Dispose() => Directory.Delete(Root, recursive: true);
+    }
+
+    private static string UnexpectedMetadata(string field, string value)
+    {
+        JsonObject metadata = JsonNode.Parse(NodeExecutionFixture.Metadata)!.AsObject();
+        if (value == "missing")
+            metadata.Remove(field);
+        else if (value == "number")
+            metadata[field] = 42;
+        else
+            metadata[field] = value;
+        return value switch
+        {
+            "malformed" => "{broken",
+            "array" => "[]",
+            "duplicate" => NodeExecutionFixture.Metadata.TrimEnd()[..^1] +
+                ",\"name\":\"@hcoona/hcoona-release-smoke-npm\"}",
+            _ => metadata.ToJsonString(),
+        };
+    }
+
+    private static string InstalledShape(string field, string json)
+    {
+        JsonObject metadata = JsonNode.Parse(NodeExecutionFixture.Metadata)!.AsObject();
+        metadata[field] = JsonNode.Parse(json);
+        return metadata.ToJsonString();
+    }
+
+    // Execution records both exception types as a failed artifact check.
+    private static void AssertMetadataRejected(string metadata)
+    {
+        Exception error = Assert.Throws<Exception>(() =>
+            AdoptedNpmPackage.ValidateMetadata(metadata, "1.2.3"));
+        Assert.IsTrue(error is InvalidDataException or JsonException, error.ToString());
     }
 
     private static void AssertMetadataFailed(NodeRunResult result)

@@ -7,13 +7,18 @@ using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
 namespace WorkflowDelivery.Tests.CI;
 
-internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan) : IDisposable
+internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan,
+    bool ownsRepository = true) : IDisposable
 {
     internal GitFixture Repo { get; } = repo;
     internal CiPlan Plan { get; } = plan;
     internal string Scratch { get; } =
         Directory.CreateTempSubdirectory("workflow-dotnet-run-").FullName;
-    internal string Output => Path.Combine(Repo.Directory, "native-output", "product.bin");
+    // A row reading a shared repository writes its simulated native output privately.
+    private readonly string? outputRoot = ownsRepository ? null :
+        Directory.CreateTempSubdirectory("workflow-dotnet-output-").FullName;
+    internal string Output => Path.Combine(outputRoot ?? Repo.Directory, "native-output",
+        "product.bin");
     internal List<NativeCommand> Commands { get; } = [];
     internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
     internal Action<JsonObject>? ModifyResponse { get; set; }
@@ -26,13 +31,24 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan) : IDi
         GitFixture repo = await GitFixture.CreateAsync(token);
         try
         {
-            await repo.SetAsync("product.csproj", "<Project />");
-            string commit = await repo.CommitAsync();
-            await repo.GitAsync("reset", "--hard", commit);
+            string commit = await CommitAsync(repo);
             return new(repo, CreatePlan(repo.Directory, commit, capability));
         }
         catch { repo.Dispose(); throw; }
     }
+
+    internal static async Task<string> CommitAsync(GitFixture repo)
+    {
+        await repo.SetAsync("product.csproj", "<Project />");
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+        return commit;
+    }
+
+    // Reads a class-owned committed repository; the row owns only its scratch and output.
+    internal static DotNetExecutionFixture Shared(GitFixture repo, string commit,
+        string capability = "MTP") =>
+        new(repo, CreatePlan(repo.Directory, commit, capability), ownsRepository: false);
 
     internal static CiPlan CreatePlan(string root, string candidate, string capability,
         Dictionary<string, string>? globals = null, string project = "product.csproj")
@@ -111,7 +127,8 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan) : IDi
 
     public void Dispose()
     {
-        Repo.Dispose();
+        if (ownsRepository) Repo.Dispose();
+        if (outputRoot is not null) Directory.Delete(outputRoot, true);
         Directory.Delete(Scratch, true);
     }
 }

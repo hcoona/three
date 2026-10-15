@@ -11,6 +11,43 @@ namespace WorkflowDelivery.Tests.Release;
 [TestClass]
 public sealed class NuGetPreparationTests(TestContext context)
 {
+    // Rows that vary only native answers read one committed repository; each row still
+    // owns fresh scratch and runs the complete preparation.
+    private static GitFixture? shared;
+    private static string sharedRevision = "";
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            sharedRevision = await Fixture.CommitAsync(repo, NuGetPreparation.Preset);
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    [TestMethod]
+    public async Task SharedRepositoryControlReachesOriginalArchiveCheck()
+    {
+        // The fake Pack produces no archive, so the furthest defect-free stage is the
+        // original archive check; every earlier stage must qualify from the shared input.
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
+        NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.AreEqual(ReleaseCheckStatus.Passed, result.Prepared.Checks.Single(item =>
+            item.Id == "native-input").Status);
+        Assert.AreEqual(ReleaseCheckStatus.Passed, result.Prepared.Checks.Single(item =>
+            item.Id == "build").Status);
+        Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks.Single(item =>
+            item.Id == "pack").Status);
+        Assert.Contains("original native archive set", string.Join(";", result.Errors));
+        Assert.IsTrue(result.Commands.All(item => item.Result.Succeeded));
+    }
+
     [TestMethod]
     [DataRow("restore", "Exited", "Failed")]
     [DataRow("restore", "Cancelled", "Cancelled")]
@@ -26,7 +63,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     {
         NativeTermination termination = Enum.Parse<NativeTermination>(terminationText);
         ReleaseCheckStatus expected = Enum.Parse<ReleaseCheckStatus>(expectedText);
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Override = command => command.Arguments.Contains(phase) ||
             command.Arguments.Contains("-target:" + phase) ?
                 new(termination, termination == NativeTermination.Exited ? 1 : null,
@@ -34,10 +71,13 @@ public sealed class NuGetPreparationTests(TestContext context)
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         string check = phase == "restore" ? "native-input" : phase == "Build" ? "build" : "pack";
         Assert.AreEqual(expected, result.Prepared.Checks.Single(item => item.Id == check).Status);
+        Assert.IsTrue(result.Prepared.Checks.TakeWhile(item => item.Id != check)
+            .All(item => item.Status == ReleaseCheckStatus.Passed));
         Assert.IsEmpty(result.Prepared.Files);
         Assert.IsNotEmpty(result.Errors);
         ReleaseCommand failed = Assert.ContainsSingle(result.Commands.Where(item =>
             !item.Result.Succeeded));
+        Assert.AreEqual(check, failed.Check);
         Assert.AreEqual(termination, failed.Result.Termination);
         Assert.AreEqual("partial native output", failed.Result.Stdout);
         Assert.IsTrue(result.Prepared.Checks.SkipWhile(item => item.Id != check).Skip(1)
@@ -46,22 +86,33 @@ public sealed class NuGetPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Build", "NuGetPackageVersion", "2.0.0")]
-    [DataRow("Build", "AssemblyVersion", "2.0.0.0")]
-    [DataRow("Pack,_GetOutputItemsFromPack", "AssemblyInformationalVersion", "changed")]
-    [DataRow("GetBuildVersion", "RuntimeIdentifier", "linux-x64")]
-    [DataRow("GetBuildVersion", "NETCoreSdkVersion", "10.0.402")]
+    [DataRow("Build", "NuGetPackageVersion", "2.0.0", "build",
+        "inconsistent native package projections")]
+    [DataRow("Build", "AssemblyVersion", "2.0.0.0", "build", "recomputation differs")]
+    [DataRow("Pack,_GetOutputItemsFromPack", "AssemblyInformationalVersion", "changed", "pack",
+        "recomputation differs")]
+    [DataRow("GetBuildVersion", "RuntimeIdentifier", "linux-x64", "native-input",
+        "inconsistent native package projections")]
+    [DataRow("GetBuildVersion", "NETCoreSdkVersion", "10.0.402", "native-input",
+        "Unsupported native NuGet product or SDK")]
     public async Task NativeProjectionMismatchCannotQualifyRelease(string target,
-        string property, string value)
+        string property, string value, string check, string reason)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Modify = (phase, document) =>
         { if (phase == target) document["Properties"]![property] = value; };
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
-        Assert.IsNotEmpty(result.Errors);
-        Assert.Contains(ReleaseCheckStatus.Failed, result.Prepared.Checks.Select(item =>
-            item.Status).ToArray());
+        // The defect-free shared control fails at pack for a missing archive, so each row
+        // must fail at its own check for its own reason, after every earlier check passed.
+        Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks.Single(item =>
+            item.Id == check).Status);
+        Assert.IsTrue(result.Prepared.Checks.TakeWhile(item => item.Id != check)
+            .All(item => item.Status == ReleaseCheckStatus.Passed));
+        string errors = string.Join(";", result.Errors);
+        Assert.Contains(reason, errors);
+        Assert.DoesNotContain("original native archive set", errors);
+        Assert.IsTrue(result.Commands.All(item => item.Result.Succeeded));
         Assert.DoesNotContain("consumer", result.Commands.Select(item => item.Check).ToArray());
     }
 
@@ -71,7 +122,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     [DataRow("Pack,_GetOutputItemsFromPack")]
     public async Task SuccessfulCommandWithoutRequiredTargetResultCannotPass(string target)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Modify = (phase, document) =>
         { if (phase == target) document["TargetResults"]!.AsObject().Clear(); };
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
@@ -83,6 +134,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     [TestMethod]
     public async Task UnknownQualitySelectionIsUnavailableBeforeNativeBuild()
     {
+        // Private repository: the unknown preset requires a different committed revision.
         using var fixture = await Fixture.CreateAsync(context.CancellationToken,
             "dotnet/unknown-v1");
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
@@ -100,7 +152,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     public async Task UnavailableNativeVariantOrRequiredTestCannotBeDropped(string property,
         string value)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Shape[property] = value;
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
@@ -112,7 +164,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     [TestMethod]
     public async Task MissingOriginalOutputDoesNotBecomeEmptySuccessfulRelease()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks.Single(item => item.Id
             == "pack").Status);
@@ -126,7 +178,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     [TestMethod]
     public async Task CancellationBeforePreparationProducesCompleteUnsatisfiedChecks()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
         NuGetPreparationResult result = await fixture.RunAsync(cancellation.Token);
@@ -139,7 +191,7 @@ public sealed class NuGetPreparationTests(TestContext context)
     [TestMethod]
     public async Task EveryNativeCommandUsesSelectedVersionContextAndOwnedVariableOutput()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsNotEmpty(result.Commands);
         foreach (ReleaseCommand command in result.Commands)
@@ -158,7 +210,8 @@ public sealed class NuGetPreparationTests(TestContext context)
         }
     }
 
-    private sealed class Fixture(GitFixture repo, string revision) : IDisposable
+    private sealed class Fixture(GitFixture repo, string revision,
+        bool ownsRepository = true) : IDisposable
     {
         internal GitFixture Repo { get; } = repo;
         private readonly string scratch =
@@ -178,25 +231,31 @@ public sealed class NuGetPreparationTests(TestContext context)
             string preset = NuGetPreparation.Preset)
         {
             GitFixture repo = await GitFixture.CreateAsync(token);
-            try
-            {
-                await repo.SetAsync(DotNetPackageFixture.Project, "<Project />");
-                await repo.SetAsync(DotNetPackageFixture.Declaration,
-                    DotNetPackageFixture.UnitText);
-                await repo.SetAsync("product/workflow-delivery.quality.yml", $"""
-                    schema: workflow-delivery/v3/quality-selection
-                    ecosystems:
-                      dotnet:
-                        preset: {preset}
-                    """);
-                await repo.SetAsync("global.json", """
-                    {"sdk":{"version":"10.0.401","rollForward":"disable"}}
-                    """);
-                string revision = await repo.CommitAsync();
-                await repo.GitAsync("reset", "--hard", revision);
-                return new(repo, revision);
-            }
+            try { return new(repo, await CommitAsync(repo, preset)); }
             catch { repo.Dispose(); throw; }
+        }
+
+        // Reads a class-owned committed repository; the row owns only its scratch.
+        internal static Fixture Shared(GitFixture repo, string revision) =>
+            new(repo, revision, ownsRepository: false);
+
+        internal static async Task<string> CommitAsync(GitFixture repo, string preset)
+        {
+            await repo.SetAsync(DotNetPackageFixture.Project, "<Project />");
+            await repo.SetAsync(DotNetPackageFixture.Declaration,
+                DotNetPackageFixture.UnitText);
+            await repo.SetAsync("product/workflow-delivery.quality.yml", $"""
+                schema: workflow-delivery/v3/quality-selection
+                ecosystems:
+                  dotnet:
+                    preset: {preset}
+                """);
+            await repo.SetAsync("global.json", """
+                {"sdk":{"version":"10.0.401","rollForward":"disable"}}
+                """);
+            string revision = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", revision);
+            return revision;
         }
         internal Task<NuGetPreparationResult> RunAsync(CancellationToken token) =>
             NuGetPreparation.PrepareAsync(new(new(revision, "refs/heads/development", "product",
@@ -252,6 +311,10 @@ public sealed class NuGetPreparationTests(TestContext context)
             }
             return new(NativeTermination.Exited, 0, "", "", 0.1, null);
         }
-        public void Dispose() { Repo.Dispose(); Directory.Delete(scratch, true); }
+        public void Dispose()
+        {
+            if (ownsRepository) Repo.Dispose();
+            Directory.Delete(scratch, true);
+        }
     }
 }
