@@ -33,7 +33,7 @@ jobs:
       mise: ${{ steps.select.outputs.mise }}
       azureauth: ${{ steps.select.outputs.azureauth }}
       scholarly: ${{ steps.select.outputs.scholarly }}
-      nuget_reproducibility: ${{ steps.select.outputs.nuget_reproducibility }}
+      nuget_native_preparation: ${{ steps.select.outputs.nuget_native_preparation }}
       base: ${{ steps.select.outputs.base }}
       candidate: ${{ steps.select.outputs.candidate }}
       full: ${{ steps.select.outputs.full }}
@@ -124,7 +124,7 @@ jobs:
   validation:
     name: Validate
     runs-on: ubuntu-latest
-    needs: [conformance, scholarly-tests, nuget-reproducibility, native-preparation-tests]
+    needs: [conformance, scholarly-tests, nuget-native-preparation, native-preparation-tests]
     if: always()
     steps:
       - name: Require complete validation results
@@ -132,11 +132,11 @@ jobs:
         env:
           CONFORMANCE_RESULT: ${{ needs.conformance.result }}
           SCHOLARLY_RESULT: ${{ needs.scholarly-tests.result }}
-          NUGET_REPRO_RESULT: ${{ needs.nuget-reproducibility.result }}
+          NUGET_PREPARATION_RESULT: ${{ needs.nuget-native-preparation.result }}
           PREPARATION_RESULT: ${{ needs.native-preparation-tests.result }}
         run: |
-          if [[ "$CONFORMANCE_RESULT" != 'success' || "$SCHOLARLY_RESULT" != 'success' || "$NUGET_REPRO_RESULT" != 'success' || "$PREPARATION_RESULT" != 'success' ]]; then
-            echo "Required validation did not complete: source=$CONFORMANCE_RESULT, scholarly=$SCHOLARLY_RESULT, nuget=$NUGET_REPRO_RESULT, preparation=$PREPARATION_RESULT." >&2
+          if [[ "$CONFORMANCE_RESULT" != 'success' || "$SCHOLARLY_RESULT" != 'success' || "$NUGET_PREPARATION_RESULT" != 'success' || "$PREPARATION_RESULT" != 'success' ]]; then
+            echo "Required validation did not complete: source=$CONFORMANCE_RESULT, scholarly=$SCHOLARLY_RESULT, nuget=$NUGET_PREPARATION_RESULT, preparation=$PREPARATION_RESULT." >&2
             exit 1
           fi
       - name: Reject canceled validation
@@ -807,20 +807,20 @@ jobs:
           echo 'Validation was canceled before a complete result.' >&2
           exit 1
 
-  nuget-reproducibility:
-    name: NuGet reproducible build (Windows)
+  nuget-native-preparation:
+    name: NuGet native preparation (Windows)
     runs-on: windows-latest
     needs: scope
     if: ${{ !cancelled() }}
     env:
-      WDV3_NUGET_REPRO_EVIDENCE: ${{ github.workspace }}/artifacts/nuget-reproducibility
+      WDV3_NUGET_PREPARATION_EVIDENCE: ${{ github.workspace }}/artifacts/nuget-native-preparation
     steps:
       - name: Require successful scope selection
         id: scope
         shell: bash
         env:
           SELECTION_RESULT: ${{ needs.scope.result }}
-          APPLICABLE: ${{ needs.scope.outputs.nuget_reproducibility }}
+          APPLICABLE: ${{ needs.scope.outputs.nuget_native_preparation }}
         run: |
           case "$SELECTION_RESULT:$APPLICABLE" in
             success:true) echo 'run=true' >> "$GITHUB_OUTPUT" ;;
@@ -842,27 +842,27 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path $env:WDV3_NUGET_REPRO_EVIDENCE | Out-Null
+          New-Item -ItemType Directory -Force -Path $env:WDV3_NUGET_PREPARATION_EVIDENCE | Out-Null
           dotnet restore tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/hcoona-release-smoke-github-packages.csproj `
             -p:RestoreLockedMode=true `
-            "-bl:$env:WDV3_NUGET_REPRO_EVIDENCE/product-restore.binlog"
+            "-bl:$env:WDV3_NUGET_PREPARATION_EVIDENCE/product-restore.binlog"
           exit $LASTEXITCODE
-      - name: Verify native originals, sensitivity and fresh recovery
+      - name: Verify native release preparation and clean consumer
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: pwsh
         run: |
           dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj `
-            -p:RestoreLockedMode=true --filter 'TestCategory=NuGetNativeScenarios' `
-            --report-trx --results-directory "$env:WDV3_NUGET_REPRO_EVIDENCE" `
-            "-bl:$env:WDV3_NUGET_REPRO_EVIDENCE/native-scenarios.binlog" `
-            -- --minimum-expected-tests 7
+            -p:RestoreLockedMode=true --filter 'TestCategory=NuGetNativePreparation' `
+            --report-trx --results-directory "$env:WDV3_NUGET_PREPARATION_EVIDENCE" `
+            "-bl:$env:WDV3_NUGET_PREPARATION_EVIDENCE/native-preparation.binlog" `
+            -- --minimum-expected-tests 3
           exit $LASTEXITCODE
       - name: Retain original archives and native evidence
         if: always() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: nuget-reproducibility-windows
-          path: artifacts/nuget-reproducibility
+          name: nuget-native-preparation-windows
+          path: artifacts/nuget-native-preparation
           if-no-files-found: error
           retention-days: 30
       - name: Reject canceled validation

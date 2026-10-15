@@ -181,12 +181,12 @@ public sealed class CiScopeTests
     [DataRow("pyproject.toml", false)]
     [DataRow("docs/README.md", false)]
     [DataRow("eng/native-resource.json", true)]
-    public void NuGetReproducibilityFollowsItsManagedAndProductInputs(string path,
+    public void NuGetNativePreparationFollowsItsManagedAndProductInputs(string path,
         bool selected)
     {
         Assert.AreEqual(selected, CiScope.Select([path], Comparison(path), false,
-            ["eng/native-resource.json"]).NuGetReproducibility);
-        Assert.IsTrue(CiScope.Select([], Comparison(), true, []).NuGetReproducibility);
+            ["eng/native-resource.json"]).NuGetNativePreparation);
+        Assert.IsTrue(CiScope.Select([], Comparison(), true, []).NuGetNativePreparation);
     }
 
     private static readonly RecordTaskOwner[] Tasks = [

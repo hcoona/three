@@ -122,7 +122,7 @@ internal static class DotNetCiCaller
                 ["azureauth"] = retained.AzureAuth,
                 ["scholarly"] = retained.Scholarly,
             },
-            ["nuget_reproducibility"] = retained.NuGetReproducibility,
+            ["nuget_native_preparation"] = retained.NuGetNativePreparation,
             ["reasons"] = reasons,
         };
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
@@ -131,7 +131,7 @@ internal static class DotNetCiCaller
         foreach ((string key, bool value) in new[] { ("validation", true),
                      ("mise", retained.Mise), ("azureauth", retained.AzureAuth),
                      ("scholarly", retained.Scholarly),
-                     ("nuget_reproducibility", retained.NuGetReproducibility),
+                     ("nuget_native_preparation", retained.NuGetNativePreparation),
                      ("full", request.Full) })
             CiCallerTransfer.Output(key, value ? "true" : "false");
         CiCallerTransfer.Output("base", request.Basis.Reference);

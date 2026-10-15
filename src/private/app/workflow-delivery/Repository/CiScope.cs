@@ -10,7 +10,7 @@ namespace WorkflowDelivery.Repository;
 
 internal sealed record RecordTaskOwner(string Script, string Rule);
 internal sealed record CiScopeApplicability(bool Mise, bool AzureAuth, bool Scholarly,
-    bool NuGetReproducibility, SortedDictionary<string, string[]> Reasons);
+    bool NuGetNativePreparation, SortedDictionary<string, string[]> Reasons);
 
 // Finite retained-job applicability and repository responsibility for changed coordinates.
 // Native .NET/PNPM/Python/Ruby facts still own product consumption; a present coordinate
@@ -30,7 +30,7 @@ internal static partial class CiScope
     private static readonly string[] PythonInputs = ["pyproject.toml", "uv.lock", "uv.toml",
         ".python-version", ".config/uv/uv.toml", "conftest.py", "pytest.ini",
         "eng/scripts/sync_python_version.py", "eng/scripts/test-python.sh"];
-    private static readonly string[] NuGetScenarioRoots = ["src/private/app/workflow-delivery",
+    private static readonly string[] NuGetPreparationRoots = ["src/private/app/workflow-delivery",
         "tests/private/app/workflow-delivery", NuGetProduct];
     private static readonly string[] RubyInputs = ["Gemfile", "Gemfile.lock", ".ruby-version"];
     // Release scripts and workflow sources read by tests/eng/test_legacy_release_contract.py.
@@ -58,7 +58,7 @@ internal static partial class CiScope
             foreach (string job in Jobs(path, gems).Where(reasons.ContainsKey))
                 reasons[job].Add(path);
             nuget |= AllInputs.Contains(path, StringComparer.Ordinal) ||
-                path == "stylecop.json" || NuGetScenarioInput(path) ||
+                path == "stylecop.json" || NuGetPreparationInput(path) ||
                 resourceInputs.Contains(path, StringComparer.Ordinal);
         }
         if (full)
@@ -279,10 +279,10 @@ internal static partial class CiScope
         Under(path, "src/public/lib/nbgv-python") ||
         PythonInputs.Contains(path, StringComparer.Ordinal);
 
-    private static bool NuGetScenarioInput(string path) =>
+    private static bool NuGetPreparationInput(string path) =>
         Under(path, Products) && !Under(path, NuGetProduct)
             ? DotNetInheritedInputs.Consumes(path, [NuGetProduct])
-            : DotNetInheritedInputs.Consumes(path, NuGetScenarioRoots);
+            : DotNetInheritedInputs.Consumes(path, NuGetPreparationRoots);
 
     private static bool PythonResponsibility(string path) =>
         (path.EndsWith(".py", StringComparison.Ordinal) && path is not

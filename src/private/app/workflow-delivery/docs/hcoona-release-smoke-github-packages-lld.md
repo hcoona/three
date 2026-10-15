@@ -567,8 +567,17 @@ regression and preserve the historical native service evidence. Run affected
 Provider, qualification, consumer, contract and cross-ecosystem regressions.
 Production integration acceptance needs independent technical/evidence review;
 this procedure permits no registry probe, publication or release dispatch.
-Ordinary Windows CI may supply build-only evidence. Any additional hosted
-experiment requires a separately bounded reviewed protocol under the Wave.
+[Issue #948](https://github.com/hcoona/three/issues/948) and [PR #952](https://github.com/hcoona/three/pull/952) established this once; by owner
+decision reproducibility is build-infrastructure behavior, not per-PR evidence.
+Ordinary CI runs only the native preparation/clean-consumer rows when the
+existing .NET/Workflow scope selection selects them. The Windows reproducibility workflow supplies
+build-only sensitivity and fresh-recovery evidence on owner dispatch and on
+`main` pushes changing the SDK, shared MSBuild/NuGet/NBGV/Git inputs, the
+NuGet Release/package Adapter source or the fixture product. That run (run ID,
+source commit and 30-day artifact) is the evidence carrier. The triggering PR's
+author, then the repository owner, owns a failed run; skipped intermediate
+commits are covered by the next run or a targeted dispatch. Any additional hosted experiment requires a separately
+bounded reviewed protocol under the Wave.
 
 ## Delivery Units and Validation
 

@@ -1,0 +1,83 @@
+name: Workflow Delivery v3 NuGet Reproducibility
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: >-
+          Repository branch, tag or commit SHA to qualify, such as a release
+          candidate or an earlier main commit; empty uses the dispatching ref
+        type: string
+        required: false
+        default: ''
+  push:
+    branches:
+      - main
+    paths:
+      - global.json
+      - Directory.Build.props
+      - Directory.Packages.props
+      - tests/Directory.Build.props
+      - nuget.config
+      - version.json
+      - .gitattributes
+      - stylecop.json
+      - .editorconfig
+      - src/private/app/workflow-delivery/Release/NuGet*.cs
+      - src/private/app/workflow-delivery/Ecosystems/DotNetPackage*.cs
+      - src/private/app/workflow-delivery/Ecosystems/NuGet*.cs
+      - src/private/app/workflow-delivery/Destinations/GithubNuGet*.cs
+      - tests/private/app/workflow-delivery/Release/NuGetPreparationNativeTests.cs
+      - tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/**
+      - .github/workflows/workflow-delivery-v3-nuget-reproducibility.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-delivery-v3-nuget-reproducibility-${{ inputs.ref || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  nuget-reproducibility:
+    name: NuGet reproducible build (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      WDV3_NUGET_REPRO_EVIDENCE: ${{ github.workspace }}/artifacts/nuget-reproducibility
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Prepare pinned native product dependencies
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:WDV3_NUGET_REPRO_EVIDENCE | Out-Null
+          dotnet restore tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/hcoona-release-smoke-github-packages.csproj `
+            -p:RestoreLockedMode=true `
+            "-bl:$env:WDV3_NUGET_REPRO_EVIDENCE/product-restore.binlog"
+          exit $LASTEXITCODE
+      - name: Verify source/timestamp sensitivity and fresh recovery
+        shell: pwsh
+        run: |
+          dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj `
+            -p:RestoreLockedMode=true --filter 'TestCategory=NuGetNativeScenarios' `
+            --report-trx --results-directory "$env:WDV3_NUGET_REPRO_EVIDENCE" `
+            "-bl:$env:WDV3_NUGET_REPRO_EVIDENCE/native-scenarios.binlog" `
+            -- --minimum-expected-tests 4
+          exit $LASTEXITCODE
+      - name: Retain original archives and native evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nuget-reproducibility-windows
+          path: artifacts/nuget-reproducibility
+          if-no-files-found: error
+          retention-days: 30

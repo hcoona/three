@@ -15,10 +15,10 @@ using WorkflowDelivery.Repository;
 namespace WorkflowDelivery.Tests.Release;
 
 [TestClass]
-[TestCategory("NuGetNativeScenarios")]
 public sealed class NuGetPreparationNativeTests(TestContext context)
 {
     [TestMethod]
+    [TestCategory("NuGetNativePreparation")]
     [Timeout(600000, CooperativeCancellation = true)]
     [DataRow(false, "refs/heads/development")]
     [DataRow(true, "refs/heads/development")]
@@ -127,6 +127,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
     }
 
     [TestMethod]
+    [TestCategory("NuGetNativeScenarios")]
     [Timeout(600000, CooperativeCancellation = true)]
     public async Task NativeSourceSensitivityChangesOriginalPayload()
     {
@@ -155,6 +156,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
     }
 
     [TestMethod]
+    [TestCategory("NuGetNativeScenarios")]
     [Timeout(600000, CooperativeCancellation = true)]
     public async Task NativeTimestampOverrideChangesOnlyArchiveMetadata()
     {
@@ -183,6 +185,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
     }
 
     [TestMethod]
+    [TestCategory("NuGetNativeScenarios")]
     [Timeout(600000, CooperativeCancellation = true)]
     [DataRow(false)]
     [DataRow(true)]

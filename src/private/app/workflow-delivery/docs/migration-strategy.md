@@ -100,15 +100,15 @@ or closed campaign operators as compatibility services.
 
 ## Workflow and Action Cutover Groups
 
-| Caller                                                  | Required atomic boundary                                                                                                                             |
-| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/ci.yml` and the CI scope caller      | Actual native ownership, control preparation, group selection, complete results and retained originals                                               |
-| Native Node, .NET, Python and Ruby group wrappers       | Paired endpoint facts, selected work, effective quality, original tool outputs and terminal process facts                                            |
-| Existing Windows NuGet scenario job                     | All seven preparation/sensitivity/recovery rows executed and passed, with original packages, separate PDBs, native diagnostics and failure retention |
-| Ordinary npm, NuGet, Python and Ruby release workflows  | Selected control/product revision, prepared artifact bindings, native authorization, upload-once behavior and separate no-write verification/results |
-| Remaining platform-specific CI and independent projects | Preserve their own ownership, runners, preparations and required checks                                                                              |
+| Caller                                                     | Required atomic boundary                                                                                                                                                                            |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/ci.yml` and the CI scope caller         | Actual native ownership, control preparation, group selection, complete results and retained originals                                                                                              |
+| Native Node, .NET, Python and Ruby group wrappers          | Paired endpoint facts, selected work, effective quality, original tool outputs and terminal process facts                                                                                           |
+| Windows NuGet preparation job and reproducibility workflow | Three preparation rows in CI and four sensitivity/recovery rows on dispatch or `main` changes, executed and passed, with original packages, separate PDBs, native diagnostics and failure retention |
+| Ordinary npm, NuGet, Python and Ruby release workflows     | Selected control/product revision, prepared artifact bindings, native authorization, upload-once behavior and separate no-write verification/results                                                |
+| Remaining platform-specific CI and independent projects    | Preserve their own ownership, runners, preparations and required checks                                                                                                                             |
 
-The native Windows job's success cannot substitute for the complete ordinary CI
+The Windows NuGet jobs' success cannot substitute for the complete ordinary CI
 gate. General C# checks use Windows; Python and Ruby callers use their supported
 Linux runner. Fixture and local successes do not establish live destination,
 authentication or publisher configuration. Closed bootstrap/acceptance workflows
@@ -244,8 +244,9 @@ recomputing impact or changing native target selection. No legacy selection or
 preparation fallback remains. The [concrete native caller](../README.md#native-python-ci-caller)
 uses the finite C# Python caller for root CI and committed local full; Windows scope
 retains only comparison, other-job responsibility and the independent NuGet
-reproducibility mapping. The ordinary fixture's PR checks use its adopted native
-distribution preset; manual Release and historical readers have separate owners.
+native preparation mapping. The ordinary fixture's PR
+checks use its adopted native distribution preset; manual Release and historical
+readers have separate owners.
 
 The group inside the private app follows the
 [native Python CI group contract](middle-level-design.md#native-python-ci-group).
@@ -572,11 +573,22 @@ required checks, collected against the original plan and candidate. Exit zero
 cannot satisfy absent, skipped or failed obligations.
 
 The Workflow Delivery test project's native MTP configuration excludes the
-`NuGetNativeScenarios` category by default. The existing Windows scenario job
-owns those seven mandatory cases and overrides that default through MTP's
-ordinary command-line filter. Its independent applicability and result consumer
-remain required. Explicit local filters also override the default; this is
-project-owned test configuration, not a Workflow filter interpreter.
+`NuGetNativePreparation` and `NuGetNativeScenarios` categories by default.
+The Windows CI preparation job owns the three preparation rows; its
+applicability follows the existing .NET/Workflow scope selection and its result
+consumer remains required. Same-input .NET
+reproducibility was established once ([Issue #948](https://github.com/hcoona/three/issues/948),
+[PR #952](https://github.com/hcoona/three/pull/952)); by owner decision it is build-infrastructure behavior, not
+per-PR evidence. The Windows reproducibility workflow runs the four
+sensitivity/recovery rows on owner dispatch and on `main` pushes changing the
+SDK, shared MSBuild/NuGet/NBGV/Git inputs, NuGet Release/package adapter source
+or the fixture product; its run ID, source commit and 30-day artifact are the
+evidence carrier. The triggering PR's author, then the repository owner, owns a
+failed `main` run. Skipped intermediate `main` commits are acceptable because
+the next run covers the newer state; dispatch can target a specific commit.
+Both override the default through MTP's ordinary command-line filter. Explicit
+local filters also override the default; this is project-owned test
+configuration, not a Workflow filter interpreter.
 Native graph-test fixtures may batch restore their disposable projects through
 an ordinary solution. Seed fixture locks and still validate the locked restore;
 do not share mutable fixture state or introduce a Workflow restore cache.
