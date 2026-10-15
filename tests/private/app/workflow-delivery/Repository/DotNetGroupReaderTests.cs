@@ -137,6 +137,35 @@ public sealed class DotNetGroupReaderTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task ReusedEndpointsMustStillBeCleanBeforeNativeEvaluation()
+    {
+        using var repo = await WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture
+            .CreateAsync(context.CancellationToken);
+        await repo.SetAsync("content.txt", "committed");
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+        GitComparison comparison = await new GitReader(repo.Directory).CompareAsync(commit,
+            commit, context.CancellationToken);
+        GitMaterialization bound = await GitMaterialization.BindAsync(repo.Directory, commit,
+            context.CancellationToken);
+        var endpoint = new MaterializedEndpoint(repo.Directory, commit);
+        var files = new DotNetReadFiles("", "", "", "", 1);
+        var request = new DotNetGroupRequest(endpoint, endpoint, false, files, files,
+            new DotNetRunRequest(repo.Directory, repo.Directory, 1));
+        var scope = new ScopeInputs(new WorkflowDelivery.Platform.CiComparison(commit, commit,
+            false), [], [], []);
+        // A native query after binding changes a tracked file.
+        await File.WriteAllTextAsync(Path.Combine(repo.Directory, "content.txt"), "changed",
+            context.CancellationToken);
+
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            DotNetGroupReader.ReadAsync(request, scope, comparison, bound, bound,
+                context.CancellationToken));
+
+        Assert.Contains("clean tracked checkout", error.Message);
+    }
+
+    [TestMethod]
     public async Task BoundSelectionPreservesNativeVariantsAndKnownOutsideChanges()
     {
         using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);

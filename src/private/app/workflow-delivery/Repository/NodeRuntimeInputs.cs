@@ -79,11 +79,42 @@ internal sealed class NodeRuntimeReader
     internal async Task<NodeRuntimeInputs> ReadAsync(CancellationToken token)
     {
         string? workflow = await checkout.ReadOptionalTextAsync(Workflow, token);
-        foreach (string path in new[] { "mise.toml", "mise.lock" })
-            if (await checkout.ReadOptionalTextAsync(path, token) is null)
-                throw new InvalidDataException("Missing committed runtime authority: " + path);
+        string? mise = await checkout.ReadOptionalTextAsync("mise.toml", token);
+        string? miseLock = await checkout.ReadOptionalTextAsync("mise.lock", token);
+        // Committed rules are checked before each native query, as the pure core repeats.
+        RequireDeclarations(workflow, mise, miseLock);
+        _ = Matrix(workflow!);
+        string node = await query(["ls", "--json", "--current", "--locked", "node"], token);
+        token.ThrowIfCancellationRequested();
+        _ = Tool(checkout.Root, node, "node", false);
+        string pnpm = await query(["ls", "--json", "--current", "--locked", "pnpm"], token);
+        token.ThrowIfCancellationRequested();
+        return Read(checkout.Revision, checkout.Root, workflow, mise, miseLock, node, pnpm);
+    }
+
+    // Pure runtime rules over committed declarations and the native mise answers.
+    internal static NodeRuntimeInputs Read(GitRevision revision, string root, string? workflow,
+        string? mise, string? miseLock, string nodeJson, string pnpmJson)
+    {
+        RequireDeclarations(workflow, mise, miseLock);
+        object? matrix = Matrix(workflow!);
+        string node = Tool(root, nodeJson, "node", false);
+        string pnpm = Tool(root, pnpmJson, "pnpm", true);
+        return Read(revision, (List<object?>)Field(matrix, "node-version")!, node, pnpm);
+    }
+
+    private static void RequireDeclarations(string? workflow, string? mise, string? miseLock)
+    {
+        if (mise is null)
+            throw new InvalidDataException("Missing committed runtime authority: mise.toml");
+        if (miseLock is null)
+            throw new InvalidDataException("Missing committed runtime authority: mise.lock");
         if (workflow is null)
             throw new InvalidDataException("Missing committed Node runtime workflow.");
+    }
+
+    private static object? Matrix(string workflow)
+    {
         object? yaml;
         try
         {
@@ -104,8 +135,12 @@ internal sealed class NodeRuntimeReader
                 value, "^[1-9][0-9]*\\.x$",
                     System.Text.RegularExpressions.RegexOptions.CultureInvariant)))
             throw new InvalidDataException("Unsupported complete Node runtime matrix.");
-        string node = await ToolAsync("node", false, token);
-        string pnpm = await ToolAsync("pnpm", true, token);
+        return matrix;
+    }
+
+    private static NodeRuntimeInputs Read(GitRevision revision, List<object?> values,
+        string node, string pnpm)
+    {
         string packagingSelector = System.Version.Parse(node).Major + ".x";
         if (!values.Contains(packagingSelector))
             throw new InvalidDataException(
@@ -113,16 +148,13 @@ internal sealed class NodeRuntimeReader
         NodeRuntimeVariant[] variants = values.Cast<string>().Select(selector =>
             new NodeRuntimeVariant("node" + selector[..^2], selector,
                 selector == packagingSelector ? node : null)).ToArray();
-        return new(checkout.Revision.Commit, variants, pnpm,
+        return new(revision.Commit, variants, pnpm,
             [Workflow, "mise.toml", "mise.lock"], "node" + packagingSelector[..^2]);
     }
 
-    private async Task<string> ToolAsync(string tool, bool pinned,
-        CancellationToken token)
+    private static string Tool(string root, string answer, string tool, bool pinned)
     {
-        using JsonDocument json = JsonDocument.Parse(await query(
-            ["ls", "--json", "--current", "--locked", tool], token));
-        token.ThrowIfCancellationRequested();
+        using JsonDocument json = JsonDocument.Parse(answer);
         if (json.RootElement.ValueKind != JsonValueKind.Array ||
             json.RootElement.GetArrayLength() != 1)
             throw new InvalidDataException("Unresolved native runtime tool: " + tool);
@@ -136,7 +168,7 @@ internal sealed class NodeRuntimeReader
                     System.Globalization.CultureInfo.InvariantCulture)) ||
             value.GetProperty("active").ValueKind != JsonValueKind.True ||
             Text(source, "type") != "mise.toml" ||
-            Text(source, "path") != Path.Combine(checkout.Root, "mise.toml"))
+            Text(source, "path") != Path.Combine(root, "mise.toml"))
             throw new InvalidDataException("Native runtime tool is outside committed authority.");
         return version;
     }

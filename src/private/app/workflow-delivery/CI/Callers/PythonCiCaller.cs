@@ -44,11 +44,8 @@ internal static class PythonCiCaller
         PythonQueryTools tools, CancellationToken token)
     {
         PythonCiCallerContext context = Context(directory);
-        GitRevision revision = await new GitReader(context.Candidate.Directory).ReadAsync(
-            context.Candidate.Reference, token);
-        GitMaterialization candidate = await
-            GitMaterialization.BindAsync(context.Candidate.Directory,
-            revision, token);
+        GitMaterialization candidate = await GitMaterialization.BindAsync(
+            context.Candidate.Directory, context.Candidate.Reference, token);
         string version = (await candidate.ReadOptionalTextAsync(".python-version", token)
             ?? throw new
                 InvalidDataException("Missing committed Python runtime selection.")).Trim();

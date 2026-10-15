@@ -53,9 +53,7 @@ internal static class PythonGroupPreparation
         foreach (MaterializedEndpoint endpoint in new[] { request.Basis, request.Candidate }
                      .Distinct())
         {
-            GitRevision revision = await new GitReader(endpoint.Directory).ReadAsync(
-                endpoint.Reference, token);
-            await GitMaterialization.BindAsync(endpoint.Directory, revision, token);
+            await GitMaterialization.BindAsync(endpoint.Directory, endpoint.Reference, token);
         }
         var commands = new List<PythonPreparationCommand>();
         PythonGroupEndpoint basis = await EndpointAsync(request.Basis, "basis");

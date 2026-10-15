@@ -20,7 +20,13 @@ internal static class RubyPackageExecution
     internal static Task<RubyPackageRun> RunAsync(CiPlan plan, RubyPackageRequest request,
         CancellationToken token) => RunAsync(plan, request, NativeProcess.ExecuteAsync, token);
 
+    internal static Task<RubyPackageRun> RunAsync(CiPlan plan, RubyPackageRequest request,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token) => RunAsync(plan, request, null, execute, token);
+
+    // The group may pass its binding of this exact checkout for the original plan.
     internal static async Task<RubyPackageRun> RunAsync(CiPlan plan, RubyPackageRequest request,
+        GitMaterialization? bound,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
@@ -37,11 +43,10 @@ internal static class RubyPackageExecution
         string scratchRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Scratch));
         if (OwnedPath.Within(scratchRoot, checkoutRoot))
             throw new InvalidDataException("Gem consumer scratch must be outside the checkout.");
-        GitRevision revision = await new GitReader(checkoutRoot).ReadAsync(plan.Candidate, token);
-        GitMaterialization checkout = await GitMaterialization.BindAsync(checkoutRoot, revision,
-            token);
-        if (revision.Commit != plan.Candidate)
+        if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Ruby gem plan requires its complete native candidate.");
+        GitMaterialization checkout = await GitMaterialization.ReuseOrBindAsync(bound,
+            checkoutRoot, plan.Candidate, token);
         CheckSpec[] checks = plan.Checks.Where(check => RubyPackageChecks.Kinds.Contains(
             check.Work.Key.Check, StringComparer.Ordinal)).Select(check => check.Work).ToArray();
         foreach (CheckSpec check in checks)

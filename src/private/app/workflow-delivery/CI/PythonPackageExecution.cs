@@ -24,8 +24,18 @@ internal static class PythonPackageExecution
         PythonPackageRunRequest request, CancellationToken token) =>
         RunAsync(plan, request, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<PythonPackageRunResult> RunAsync(CiPlan plan,
+    internal static Task<PythonPackageRunResult> RunAsync(CiPlan plan,
         PythonPackageRunRequest request,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token) => RunAsync(plan, request, null, execute, token);
+
+    // The group has already bound this exact checkout for the original plan.
+    internal static Task<PythonPackageRunResult> RunBoundAsync(CiPlan plan,
+        PythonPackageRunRequest request, GitMaterialization bound, CancellationToken token) =>
+        RunAsync(plan, request, bound, NativeProcess.ExecuteAsync, token);
+
+    private static async Task<PythonPackageRunResult> RunAsync(CiPlan plan,
+        PythonPackageRunRequest request, GitMaterialization? bound,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
@@ -40,12 +50,11 @@ internal static class PythonPackageExecution
         ResultCollector.Collect(plan, []);
         if (plan.Scope != PythonFactsAssembler.Scope)
             throw new InvalidDataException("Unsupported Python package execution scope.");
-        GitRevision revision = await new GitReader(checkout).ReadAsync(plan.Candidate, token);
-        if (revision.Commit != plan.Candidate)
+        if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException(
                 "Python package candidate must be a full commit identity.");
-        GitMaterialization materialization = await GitMaterialization.BindAsync(checkout,
-            revision, token);
+        GitMaterialization materialization = await GitMaterialization.ReuseOrBindAsync(bound,
+            checkout, plan.Candidate, token);
         await ReadChecksAsync(plan, request.Members, materialization, token);
         var results = new Dictionary<CheckKey, CheckResult>();
         var commands = new List<PythonPackageCommand>();

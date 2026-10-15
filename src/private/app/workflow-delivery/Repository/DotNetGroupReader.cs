@@ -32,6 +32,19 @@ internal static class DotNetGroupReader
         GitMaterialization candidate = await GitMaterialization.BindAsync(
             request.Candidate.Directory,
             comparison.Candidate, token);
+        return await ReadAsync(request, scope, comparison, basis, candidate, token);
+    }
+
+    // The caller has already compared and bound both request endpoints in this invocation.
+    internal static async Task<DotNetGroupReadback> ReadAsync(DotNetGroupRequest request,
+        ScopeInputs scope, GitComparison comparison, GitMaterialization basis,
+        GitMaterialization candidate, CancellationToken token)
+    {
+        // Earlier native queries may have changed tracked files; re-check before evaluation.
+        basis = await GitMaterialization.ReuseOrBindAsync(basis, request.Basis.Directory,
+            comparison.Basis.Commit, token);
+        candidate = await GitMaterialization.ReuseOrBindAsync(candidate,
+            request.Candidate.Directory, comparison.Candidate.Commit, token);
         if (scope.Comparison != new CiComparison(comparison.Basis.Commit,
                 comparison.Candidate.Commit, request.Full))
             throw new InvalidDataException("Scope has a different native comparison.");

@@ -255,7 +255,6 @@ internal static partial class CiScope
 
     internal static bool LegacyReleaseInput(string path) =>
         Under(path, ".github/workflows") ||
-        path.EndsWith("/three.release.yml", StringComparison.Ordinal) ||
         LegacyReleaseScripts.Contains(path, StringComparer.Ordinal);
 
     private static string[] Jobs(string path, string[] gems)

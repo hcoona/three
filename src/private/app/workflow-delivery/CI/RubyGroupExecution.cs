@@ -32,10 +32,10 @@ internal static class RubyGroupExecution
         if (!Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
             OwnedPath.Within(scratch, checkout))
             throw new InvalidDataException("Ruby execution requires fresh external scratch.");
-        GitRevision revision = await new GitReader(checkout).ReadAsync(plan.Candidate, token);
-        _ = await GitMaterialization.BindAsync(checkout, revision, token);
-        if (revision.Commit != plan.Candidate)
+        if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Ruby execution requires the exact original plan.");
+        GitMaterialization bound = await GitMaterialization.BindAsync(checkout, plan.Candidate,
+            token);
         var suites = new List<(PlannedCheck Check, RubyBundleFacts Bundle)>();
         var packages = new List<PlannedCheck>();
         foreach (PlannedCheck check in plan.Checks)
@@ -100,7 +100,7 @@ internal static class RubyGroupExecution
             [], [], []);
         else gem = await RubyPackageExecution.RunAsync(plan with { Checks = packages.ToArray() },
             new(checkout, Directory.CreateDirectory(Path.Combine(scratch, "packages")).FullName,
-                request.Facts, request.Gem, request.Nbgv), execute, token);
+                request.Facts, request.Gem, request.Nbgv), bound, execute, token);
         results.AddRange(gem.Results);
         CheckResult[] observed = results.ToArray();
         return new(observed, runs.ToArray(), gem, ResultCollector.Collect(plan, observed));

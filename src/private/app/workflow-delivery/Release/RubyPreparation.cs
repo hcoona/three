@@ -8,6 +8,7 @@ namespace WorkflowDelivery.Release;
 internal sealed record RubyPreparationTools(string Ruby, string Gem, string Dotnet);
 internal sealed record RubyPreparationRequest(ReleaseSubject Subject, string Checkout,
     string Scratch, RubyPreparationTools Tools);
+internal sealed record RubyReleaseRecipe(ReleaseBuild Build, string Entry, string Directory);
 internal sealed record RubyPreparationResult(PreparedRelease Prepared,
     Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors);
 
@@ -50,35 +51,11 @@ internal static class RubyPreparation
         await CheckAsync("native-input", async () =>
         {
             ReleaseSubject subject = request.Subject;
-            bool buddy = subject.Channel == "buddy" &&
-                subject.Destination == "github-packages-ruby";
-            bool official = subject.Channel == "official" && subject.Destination == "rubygems";
-            if (!(buddy || official) || string.IsNullOrWhiteSpace(subject.SelectedRef))
-                throw new InvalidDataException("Unsupported Ruby Release channel or ref.");
-            ReleasePolicy.RequireEligible(subject);
-            GitRevision revision = await new GitReader(checkout).ReadAsync(subject.Revision, token);
-            if (revision.Commit != subject.Revision)
-                throw new InvalidDataException("Ruby Release requires the exact source revision.");
-            bound = await GitMaterialization.BindAsync(checkout, revision, token);
-            ReleaseUnitDeclaration unit = ReleaseUnitDeclarationReader.Read(
-                await bound.ReadOptionalTextAsync(subject.Declaration, token) ??
-                    throw new InvalidDataException("Missing committed Ruby release declaration."),
-                subject.Declaration);
-            if (unit.Id != subject.Unit || unit.Builds is not
-                [{ Definition: "ruby/gem-v1", Outputs:
-                    [{ Role: "primary-package", Kind: "ruby-gem" }] }])
-                throw new InvalidDataException("Unsupported complete Ruby Release recipe.");
-            build = unit.Builds[0];
-            string parent = Path.GetDirectoryName(subject.Declaration)!.Replace('\\', '/');
-            entry = parent.Length == 0 ? build.EntryPoint : parent + "/" + build.EntryPoint;
-            directory = Path.GetDirectoryName(entry)!.Replace('\\', '/');
-            if (Path.GetFileName(entry) != "hcoona-release-smoke-ruby.gemspec" ||
-                await bound.ReadOptionalTextAsync(entry, token) is null)
-                throw new InvalidDataException("Missing committed adopted Ruby entry.");
-            QualitySelection? quality = await new QualitySelectionReader(checkout,
-                bound.ReadOptionalTextAsync).ReadAsync(directory, "ruby", token);
-            if (quality?.Preset != Preset)
-                throw new InvalidDataException("Unsupported complete Ruby quality selection.");
+            bool official = Admit(subject);
+            bound = await GitMaterialization.BindAsync(checkout, subject.Revision, token);
+            RubyReleaseRecipe recipe = await ReadRecipeAsync(subject, bound.Root,
+                bound.ReadOptionalTextAsync, token);
+            (build, entry, directory) = (recipe.Build, recipe.Entry, recipe.Directory);
             if ((await RunAsync(new("git", checkout,
                 ["rev-parse", "--is-shallow-repository"], 30))).Stdout.Trim() != "false")
                 throw new InvalidDataException("Native versioning requires complete Git history.");
@@ -123,12 +100,8 @@ internal static class RubyPreparation
             using JsonDocument projection = JsonDocument.Parse((await RunAsync(new(nbgv,
                 Path.Combine(checkout, directory), ["get-version", "--format", "json"], 180)))
                 .Stdout);
-            JsonElement value = projection.RootElement;
-            string raw = value.GetProperty("SemVer2").GetString()!;
-            bool publicRelease = value.GetProperty("PublicRelease").GetBoolean();
-            if (value.GetProperty("GitCommitId").GetString() != subject.Revision ||
-                !subject.DryRun && official && !publicRelease)
-                throw new InvalidDataException("Native Ruby source/ref projection differs.");
+            (string raw, bool publicRelease) = QualifyNative(subject, official,
+                projection.RootElement);
             version = (await new RubyNativeFactCollector(facts, ExecuteAsync)
                 .VersionAsync(Path.Combine(checkout, entry), raw, token)).Version;
             RubySourceGemFacts source = await RubySourceCollector.ReadSourceAsync(bound, entry,
@@ -205,6 +178,58 @@ internal static class RubyPreparation
                 InvalidOperationException or ArgumentException or FormatException)
             { checks.Add(new(id, ReleaseCheckStatus.Failed)); errors.Add(failure.Message); }
         }
+    }
+
+    // Pure subject admission, before any Git or native work. Returns whether it is Official.
+    internal static bool Admit(ReleaseSubject subject)
+    {
+        bool buddy = subject.Channel == "buddy" && subject.Destination == "github-packages-ruby";
+        bool official = subject.Channel == "official" && subject.Destination == "rubygems";
+        if (!(buddy || official) || string.IsNullOrWhiteSpace(subject.SelectedRef))
+            throw new InvalidDataException("Unsupported Ruby Release channel or ref.");
+        ReleasePolicy.RequireEligible(subject);
+        if (!GitReader.IsCommitId(subject.Revision))
+            throw new InvalidDataException("Ruby Release requires the exact source revision.");
+        return official;
+    }
+
+    // The complete committed recipe, read through a revision-bound reader.
+    internal static async Task<RubyReleaseRecipe> ReadRecipeAsync(ReleaseSubject subject,
+        string root, Func<string, CancellationToken, Task<string?>> read,
+        CancellationToken token)
+    {
+        ReleaseUnitDeclaration unit = ReleaseUnitDeclarationReader.Read(
+            await read(subject.Declaration, token) ??
+                throw new InvalidDataException("Missing committed Ruby release declaration."),
+            subject.Declaration);
+        if (unit.Id != subject.Unit || unit.Builds is not
+            [{ Definition: "ruby/gem-v1", Outputs:
+                [{ Role: "primary-package", Kind: "ruby-gem" }] }])
+            throw new InvalidDataException("Unsupported complete Ruby Release recipe.");
+        ReleaseBuild build = unit.Builds[0];
+        string parent = Path.GetDirectoryName(subject.Declaration)!.Replace('\\', '/');
+        string entry = parent.Length == 0 ? build.EntryPoint : parent + "/" + build.EntryPoint;
+        string directory = Path.GetDirectoryName(entry)!.Replace('\\', '/');
+        if (Path.GetFileName(entry) != "hcoona-release-smoke-ruby.gemspec" ||
+            await read(entry, token) is null)
+            throw new InvalidDataException("Missing committed adopted Ruby entry.");
+        QualitySelection? quality = await new QualitySelectionReader(root, read)
+            .ReadAsync(directory, "ruby", token);
+        if (quality?.Preset != Preset)
+            throw new InvalidDataException("Unsupported complete Ruby quality selection.");
+        return new(build, entry, directory);
+    }
+
+    // Pure check of the native NBGV projection against the admitted subject.
+    internal static (string Raw, bool PublicRelease) QualifyNative(ReleaseSubject subject,
+        bool official, JsonElement projection)
+    {
+        string raw = projection.GetProperty("SemVer2").GetString()!;
+        bool publicRelease = projection.GetProperty("PublicRelease").GetBoolean();
+        if (projection.GetProperty("GitCommitId").GetString() != subject.Revision ||
+            !subject.DryRun && official && !publicRelease)
+            throw new InvalidDataException("Native Ruby source/ref projection differs.");
+        return (raw, publicRelease);
     }
 
     private static Dictionary<string, string?> EnvironmentFor(string scratch,

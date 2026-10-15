@@ -11,21 +11,34 @@ internal sealed record MsBuildResources(string Revision, string Project,
 // MSBuild owns evaluation. This projects only resources for one native project/dimension.
 internal sealed class MsBuildResourceReader
 {
-    private readonly GitMaterialization checkout;
+    private readonly GitRevision revision;
+    private readonly string root;
     private readonly Func<string[], CancellationToken, Task<string>> query;
     private readonly Dictionary<string, GitEntry> entries;
 
     internal MsBuildResourceReader(GitMaterialization checkout, string executable = "dotnet")
-        : this(checkout, (arguments, token) => NativeProcess.RunAsync(executable,
-            checkout.Root, arguments, token))
+        : this(checkout.Revision, checkout.Root, executable)
     { }
 
     internal MsBuildResourceReader(GitMaterialization checkout,
         Func<string[], CancellationToken, Task<string>> query)
+        : this(checkout.Revision, checkout.Root, query)
+    { }
+
+    // The caller supplies an already-bound committed revision and its checkout root.
+    internal MsBuildResourceReader(GitRevision revision, string root,
+        string executable = "dotnet")
+        : this(revision, root, (arguments, token) => NativeProcess.RunAsync(executable, root,
+            arguments, token))
+    { }
+
+    internal MsBuildResourceReader(GitRevision revision, string root,
+        Func<string[], CancellationToken, Task<string>> query)
     {
-        this.checkout = checkout;
+        this.revision = revision;
+        this.root = root;
         this.query = query;
-        entries = checkout.Revision.Entries.ToDictionary(entry => entry.Path,
+        entries = revision.Entries.ToDictionary(entry => entry.Path,
             OperatingSystem.IsWindows()
                 ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     }
@@ -39,7 +52,7 @@ internal sealed class MsBuildResourceReader
         RequireLiteral(dimension.Configuration, false);
         RequireLiteral(dimension.TargetFramework, false);
         RequireLiteral(dimension.RuntimeIdentifier, true);
-        string output = await query(["msbuild", Path.Combine(checkout.Root, committedProject),
+        string output = await query(["msbuild", Path.Combine(root, committedProject),
             "-nologo", "-noAutoResponse",
             "-getProperty:MSBuildProjectFullPath,Configuration,TargetFramework,RuntimeIdentifier",
             "-getItem:EmbeddedResource", "-property:Configuration=" + dimension.Configuration,
@@ -55,7 +68,7 @@ internal sealed class MsBuildResourceReader
         RequireCoordinate(project);
         string committedProject = RequireFile(project);
         RequireLiteral(configuration, false);
-        string output = await query(["msbuild", Path.Combine(checkout.Root, committedProject),
+        string output = await query(["msbuild", Path.Combine(root, committedProject),
             "-nologo", "-noAutoResponse",
             "-getProperty:MSBuildProjectFullPath,Configuration,TargetFramework,TargetFrameworks,"
                 + "RuntimeIdentifier,RuntimeIdentifiers",
@@ -95,7 +108,7 @@ internal sealed class MsBuildResourceReader
             token.ThrowIfCancellationRequested();
             inputs.Add(SourcePath(Text(Property(item, "FullPath"))));
         }
-        return new(checkout.Revision.Commit, committedProject, effective,
+        return new(revision.Commit, committedProject, effective,
             inputs.Order(StringComparer.Ordinal).ToArray());
     }
 
@@ -103,7 +116,7 @@ internal sealed class MsBuildResourceReader
     {
         if (!Path.IsPathFullyQualified(nativePath))
             throw new InvalidDataException("MSBuild must return an absolute source path.");
-        string relative = Path.GetRelativePath(checkout.Root, Path.GetFullPath(nativePath))
+        string relative = Path.GetRelativePath(root, Path.GetFullPath(nativePath))
             .Replace(Path.DirectorySeparatorChar, '/');
         RequireCoordinate(relative);
         return RequireFile(relative);
@@ -113,7 +126,7 @@ internal sealed class MsBuildResourceReader
     {
         if (!entries.TryGetValue(path, out GitEntry? entry) || entry.ObjectType != "blob" ||
             entry.Mode is not ("100644" or "100755") ||
-            !File.Exists(Path.Combine(checkout.Root, entry.Path)))
+            !File.Exists(Path.Combine(root, entry.Path)))
             throw new InvalidDataException("MSBuild requires a committed regular source file: "
                 + path);
         return entry.Path;

@@ -38,12 +38,11 @@ internal static class LocalPythonCiCaller
         TextWriter output, CancellationToken token)
     {
         CiCallerTransfer.External(root, directory);
-        GitRevision head = await new GitReader(root).ReadAsync("HEAD", token);
-        _ = await GitMaterialization.BindAsync(root, head, token);
+        GitRevision head = (await GitMaterialization.BindHeadAsync(root, token)).Revision;
         CiCallerControl control = CiCallerTransfer.Read(Path.Combine(directory,
             "control-build", "control.json"), TransferJson.Default.CiCallerControl);
-        GitRevision source = await new GitReader(control.Root).ReadAsync("HEAD", token);
-        _ = await GitMaterialization.BindAsync(control.Root, source, token);
+        GitRevision source = (await GitMaterialization.BindHeadAsync(control.Root, token))
+            .Revision;
         if (source.Commit != head.Commit || control.Transfer != transfer ||
             control.Application != CiCallerTransfer.Application(transfer))
             throw new InvalidDataException("Local control differs from committed full source.");

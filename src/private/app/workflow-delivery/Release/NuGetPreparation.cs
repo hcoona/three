@@ -59,13 +59,11 @@ internal static class NuGetPreparation
             if (request.Subject.Channel != "buddy" ||
                 request.Subject.Destination != "github-packages-nuget")
                 throw new InvalidDataException("Unsupported NuGet Release channel or destination.");
-            GitRevision revision = await new GitReader(checkout).ReadAsync(request.Subject.Revision,
-                token);
-            if (revision.Commit != request.Subject.Revision)
+            if (!GitReader.IsCommitId(request.Subject.Revision))
                 throw new InvalidDataException(
                     "NuGet Release requires the exact selected revision.");
-            GitMaterialization bound = await GitMaterialization.BindAsync(checkout, revision,
-                token);
+            GitMaterialization bound = await GitMaterialization.BindAsync(checkout,
+                request.Subject.Revision, token);
             unit = ReleaseUnitDeclarationReader.Read(await bound.ReadOptionalTextAsync(
                 request.Subject.Declaration, token) ??
                 throw new InvalidDataException("Missing committed NuGet release declaration."),

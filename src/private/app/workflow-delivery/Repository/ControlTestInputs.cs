@@ -20,10 +20,10 @@ internal static class ControlTestInputs
     {
         GitComparison comparison = await new GitReader(request.Repository).CompareAsync(
             request.Comparison.Basis, request.Comparison.Candidate, token);
-        GitRevision head = await new GitReader(request.Repository).ReadAsync("HEAD", token);
+        string head = await new GitReader(request.Repository).ResolveAsync("HEAD", token);
         if (comparison.Basis.Commit != request.Comparison.Basis ||
             comparison.Candidate.Commit != request.Comparison.Candidate ||
-            head.Commit != comparison.Candidate.Commit ||
+            head != comparison.Candidate.Commit ||
             (request.Comparison.Full && comparison.Basis.Commit != comparison.Candidate.Commit))
             throw new InvalidDataException(
                 "Control inputs require the exact checked-out comparison.");

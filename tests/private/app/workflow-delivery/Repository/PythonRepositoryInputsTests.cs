@@ -237,7 +237,6 @@ public sealed class PythonRepositoryInputsTests
         ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml")]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/workflow_delivery_v3_hk.py")]
-    [DataRow("tests/eng/test_legacy_release_contract.py", "src/product/three.release.yml")]
     [DataRow("tests/eng/test_legacy_release_contract.py", ".github/workflows/official.yml")]
     [DataRow("tests/eng/test_legacy_release_contract.py",
         "eng/scripts/publish_node_npmjs_idempotent.sh")]
@@ -257,6 +256,7 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/private/app/workflow-delivery/Native/Python",
         "src/public/lib/nbgv-python-other/source.py")]
     [DataRow("src/private/app/azureauth-credprovider/tests", "src/other/Directory.Build.props")]
+    [DataRow("tests/eng/test_legacy_release_contract.py", "src/product/three.release.yml")]
     [DataRow("tests/eng/test_legacy_release_contract.py", "src/product/three.release.yaml")]
     [DataRow("tests/eng/test_legacy_release_contract.py",
         "eng/scripts/workflow_release_control.py")]
@@ -409,14 +409,14 @@ public sealed class PythonRepositoryInputsTests
     public void PairedDeletedInputRetainsOriginalRevisionAndSurvivingOwner()
     {
         var basis = Endpoint(["tests/eng/test_legacy_release_contract.py"],
-            ["src/removed/three.release.yml"], "before");
+            [".github/workflows/removed.yml"], "before");
         var candidate = Endpoint(["tests/eng/test_legacy_release_contract.py"], [], "after");
         PythonFactAssembly assembly = PythonFactsAssembler.Assemble(Facts(basis), Facts(candidate),
-            ["src/removed/three.release.yml"], false);
+            [".github/workflows/removed.yml"], false);
         PlannedCheck check = Assert.ContainsSingle(ImpactPlanner.Plan(assembly.Request,
             assembly.PairedReasons).Checks);
         Assert.AreEqual("pytest:tests/eng/test_legacy_release_contract.py", check.Work.Key.Target);
-        Assert.AreEqual(new SelectionReason("src/removed/three.release.yml", "before",
+        Assert.AreEqual(new SelectionReason(".github/workflows/removed.yml", "before",
             "pytest:tests/eng/test_legacy_release_contract.py"),
             Assert.ContainsSingle(check.Reasons));
         Assert.IsEmpty(assembly.Request.Basis.UnaffectedPaths);
@@ -430,7 +430,7 @@ public sealed class PythonRepositoryInputsTests
     public void PairedSpecialInputsReachOppositeEndpointOwners(bool plugin, bool inputAtBasis)
     {
         string path = plugin ? "src/public/lib/nbgv-python/src/removed.py" :
-            "src/removed/three.release.yml";
+            ".github/workflows/removed.yml";
         string target = plugin ? "tests/private/app/workflow-delivery/Native/Python" :
             "tests/eng/test_legacy_release_contract.py";
         PythonProjectDependencies[] members = plugin ?
