@@ -32,6 +32,8 @@ internal static class ReleasePolicy
 {
     internal const string OfficialRef = "refs/heads/main";
     // Bounds a Python/Ruby original that observation reads back in full for byte comparison.
+    // Received-preparation checks enforce it before any write, so an original that could
+    // never be verified exact is never published.
     internal const int ReadbackOriginalLimit = 8 * 1024 * 1024;
     private const string Branches = "refs/heads/";
 

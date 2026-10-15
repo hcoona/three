@@ -28,6 +28,7 @@ internal static class PythonRelease
             prepared.Files.Length != 2 || Formats.Any(kind =>
                 prepared.Files.Count(file => file.Kind == kind) != 1) ||
             prepared.Files.Any(file => file.Name != Package ||
+                file.Size > ReleasePolicy.ReadbackOriginalLimit ||
                 file.Version != prepared.Files[0].Version) ||
             !prepared.RequiredChecks.SequenceEqual(PythonPreparation.Required) ||
             !Qualified(prepared.RequiredChecks, prepared.Checks) ||

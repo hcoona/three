@@ -46,6 +46,7 @@ public sealed class RubyReleaseTests(TestContext context)
     [DataRow("platform")]
     [DataRow("commit")]
     [DataRow("extra-file")]
+    [DataRow("size")]
     public void ValidateIncompletePreparationCannotQualify(string defect)
     {
         using var fixture = new RubyCallerFixture();
@@ -67,7 +68,7 @@ public sealed class RubyReleaseTests(TestContext context)
                 [fixture.Original, fixture.Original with { Output = "extra", Path = "extra.gem",
                 Version = "2.0.0" }] } },
             "size" => result with { Prepared = result.Prepared with { Files = [fixture.Original with
-                { Size = 8 * 1024 * 1024 + 1 }] } },
+                { Size = ReleasePolicy.ReadbackOriginalLimit + 1 }] } },
             _ => result with { Native = new(result.Native) { [defect] = "another-native-value" } },
         };
         Assert.ThrowsExactly<InvalidDataException>(() => RubyRelease.Validate(result));

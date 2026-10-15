@@ -26,6 +26,7 @@ internal static class RubyRelease
         bool official = subject.Channel == "official" && subject.Destination == "rubygems";
         if (!(buddy || official) || subject.Unit != Package || prepared.Files is not
                 [{ Kind: "ruby-gem", Name: Package }] ||
+            prepared.Files[0].Size > ReleasePolicy.ReadbackOriginalLimit ||
             !prepared.RequiredChecks.SequenceEqual(RubyPreparation.Required) ||
             !Qualified(prepared.RequiredChecks, prepared.Checks) ||
             preparation.Errors.Length != 0 || preparation.Commands.Length == 0 ||
