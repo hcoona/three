@@ -122,11 +122,6 @@
         "resolved": "10.0.8",
         "contentHash": "vLyZVpxmduO2jx+76ggqnsA3m81kwMY3NkWciNTj5E+Nvqb0VihqCvQP89QsGONWp0AJwMZG+u9GzaCjDdFGNw=="
       },
-      "Microsoft.Extensions.FileSystemGlobbing": {
-        "type": "Transitive",
-        "resolved": "6.0.0",
-        "contentHash": "ip8jnL1aPiaPeKINCqaTEbvBFDmVx9dXQEBZ2HOBRXPD1eabGNqP/bKlsIcp7U2lGxiXd5xIhoFcmY8nM4Hdiw=="
-      },
       "Microsoft.SourceLink.Common": {
         "type": "Transitive",
         "resolved": "10.0.401",
@@ -213,6 +208,7 @@
       "workflowdelivery": {
         "type": "Project",
         "dependencies": {
+          "Microsoft.Extensions.FileSystemGlobbing": "[10.0.12, )",
           "Newtonsoft.Json": "[13.0.4, )",
           "NuGet.Commands": "[7.9.0, )",
           "NuGet.Configuration": "[7.9.0, )",
@@ -224,6 +220,12 @@
           "System.Security.Cryptography.ProtectedData": "[10.0.12, )",
           "YamlDotNet": "[18.1.0, )"
         }
+      },
+      "Microsoft.Extensions.FileSystemGlobbing": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "45cV+UeI0chPAIXrx9Wv7K4PJXuuIR2pnOur5MOAo6kOFclBHSLLDrvGAxMfWRMtUvpv/kQZkxlgaUN56jwzSQ=="
       },
       "Microsoft.Testing.Platform.MSBuild": {
         "type": "CentralTransitive",

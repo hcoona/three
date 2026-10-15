@@ -1,0 +1,207 @@
+using WorkflowDelivery.Platform;
+using WorkflowDelivery.Repository;
+
+namespace WorkflowDelivery.Tests.Repository;
+
+[TestClass]
+public sealed class CiScopeTests
+{
+    private const string Basis = "1111111111111111111111111111111111111111";
+
+    // Pinned against eng/scripts/repository_path_patterns.py over every current binding.
+    [TestMethod]
+    [DataRow("README.md", "README.md", true)]
+    [DataRow("x/README.md", "README.md", false)]
+    [DataRow("README.md/x", "README.md", false)]
+    [DataRow("docs/engineering/agent-execution.md", "docs/engineering/*.md", true)]
+    [DataRow("docs/engineering/x/y.md", "docs/engineering/*.md", false)]
+    [DataRow("docs/engineering/.md", "docs/engineering/*.md", true)]
+    [DataRow("docs/README.MD", "docs/README.md", false)]
+    [DataRow("src/private/app/workflow-delivery/docs/a.md",
+        "src/private/app/workflow-delivery/docs/**/*.md", true)]
+    [DataRow("src/private/app/workflow-delivery/docs/research/x/y.md",
+        "src/private/app/workflow-delivery/docs/**/*.md", true)]
+    [DataRow("src/private/app/workflow-delivery/docs/.hidden.md",
+        "src/private/app/workflow-delivery/docs/**/*.md", true)]
+    [DataRow("src/private/app/workflow-delivery/docs/a.txt",
+        "src/private/app/workflow-delivery/docs/**/*.md", false)]
+    [DataRow("src/private/app/workflow-delivery/README.md",
+        "src/private/app/workflow-delivery/docs/**/*.md", false)]
+    [DataRow(".apm/skills/migrate-xunit-to-mstest/a/b.md",
+        ".apm/skills/migrate-xunit-to-mstest/**/*.md", true)]
+    [DataRow("src/private/app/im-acp-gateway/poc/a/README.md",
+        "src/private/app/im-acp-gateway/poc/*/README.md", true)]
+    [DataRow("src/private/app/im-acp-gateway/poc/a/b/README.md",
+        "src/private/app/im-acp-gateway/poc/*/README.md", false)]
+    [DataRow("src/public/app/markdown-hybrid-search-mcp/.AGENTS/DESIGN/CLARIFY-1.md",
+        "src/public/app/markdown-hybrid-search-mcp/.AGENTS/DESIGN/CLARIFY*.md", true)]
+    [DataRow("schemas/governance/record.schema.json", "schemas/governance/*.schema.json", true)]
+    [DataRow("schemas/governance/record.json", "schemas/governance/*.schema.json", false)]
+    public void RecordMatcherUsesComponentAwareStars(string path, string pattern, bool expected) =>
+        Assert.AreEqual(expected, CiScope.Matches(path, pattern));
+
+    [TestMethod]
+    public void CurrentCatalogBindingsAreReadWithoutSchemaAdmission()
+    {
+        string catalog = File.ReadAllText(Path.Combine(Root(), CiScope.FamilyCatalog));
+        (string Id, string Pattern)[] bindings = CiScope.Bindings(catalog);
+        Assert.IsNotEmpty(bindings);
+        Assert.Contains(("agent-interface", "AGENTS.md"), bindings);
+        (string Id, string Pattern)[] read = CiScope.Bindings("""
+            schema_version: 99
+            unknown: ignored
+            bindings:
+              - {id: kept, state: current, path: "a/*.md", extra: ignored}
+              - {id: later, state: scheduled, path: b.md}
+            """);
+        CollectionAssert.AreEqual(new[] { ("kept", "a/*.md") }, read);
+    }
+
+    [TestMethod]
+    [DataRow("{}")]
+    [DataRow("bindings: {}")]
+    [DataRow("bindings: [{id: a, path: b.md}]")]
+    [DataRow("bindings: [{id: a, state: current, path: [b.md]}]")]
+    [DataRow("bindings: [")]
+    public void UnreadableBindingsFailInsteadOfDroppingResponsibility(string catalog) =>
+        Assert.ThrowsExactly<InvalidDataException>(() => CiScope.Bindings(catalog));
+
+    [TestMethod]
+    public void NativeMiseTasksNameTheRecordScripts()
+    {
+        RecordTaskOwner[] owners = CiScope.RecordTasks("""
+            [{"name":"//:records:check",
+              "run":["uv run --script eng/scripts/check_repository_records.py"]},
+             {"name":"//:records:test",
+              "run":["uv run --script tests/eng/test_repository_records.py"]},
+             {"name":"//:other","run":["anything"]}]
+            """);
+        CollectionAssert.AreEqual(new[] {
+            new RecordTaskOwner("eng/scripts/check_repository_records.py",
+                "record-control:repository-record-validation"),
+            new RecordTaskOwner("tests/eng/test_repository_records.py",
+                "record-regression:records:test") }, owners);
+        Assert.ThrowsExactly<InvalidDataException>(() => CiScope.RecordTasks(
+            """[{"name":"//:records:check","run":["python checker.py"]}]"""));
+        Assert.ThrowsExactly<InvalidDataException>(() => CiScope.RecordTasks("{}"));
+    }
+
+    [TestMethod]
+    [DataRow("docs/delivery-wave.md", "record-system", "record-binding:delivery-wave")]
+    [DataRow("eng/scripts/check_repository_records.py", "record-system",
+        "record-control:repository-record-validation")]
+    [DataRow(CiScope.RecordMatcher, "record-system",
+        "record-control:repository-record-validation")]
+    [DataRow("tests/eng/test_repository_records.py", "record-system",
+        "record-regression:records:test")]
+    [DataRow(".github/CODEOWNERS", "github", "native-codeowners-routing")]
+    [DataRow("hk.pkl", "conformance", "native-hk-configuration")]
+    [DataRow("renovate.json", "python", "configured-python-runtime-input")]
+    [DataRow("mise.lock", "mise", "retained-special-job-input")]
+    [DataRow("eng/native-resource.json", "dotnet", "native-embedded-resource")]
+    [DataRow("src/private/lib/scholarly-publication/x.py", "scholarly",
+        "retained-special-job-input")]
+    [DataRow("src/lib/gem/lib/a.rb", "ruby", "retained-gem-input")]
+    public void PresentCoordinatesReceiveTheirFiniteResponsibility(string path, string owner,
+        string rule)
+    {
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path],
+            ["eng/native-resource.json"], [("delivery-wave", "docs/delivery-wave.md")], Tasks));
+        Assert.IsTrue(row.Present);
+        Assert.IsTrue(row.Reasons.Any(reason => reason.Owner == owner && reason.Rule == rule),
+            string.Join(", ", row.Reasons.Select(reason => reason.Owner + ":" + reason.Rule)));
+    }
+
+    [TestMethod]
+    [DataRow("docs/unbound/notes.md")]
+    [DataRow("src/public/lib/hexo-renderer-asciidoc/index.js")]
+    public void UnownedPresentCoordinatesStayUnresolvedForNativeConsumers(string path)
+    {
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [("delivery-wave", "docs/delivery-wave.md")], Tasks));
+        Assert.IsTrue(row.Present);
+        Assert.IsEmpty(row.Reasons);
+    }
+
+    [TestMethod]
+    public void AbsentCoordinatesAreConfirmedAbsenceWithoutReasons()
+    {
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(),
+            ["docs/delivery-wave.md"], [], [("delivery-wave", "docs/delivery-wave.md")], Tasks));
+        Assert.IsFalse(row.Present);
+        Assert.IsNull(row.Mode);
+        Assert.IsEmpty(row.Reasons);
+    }
+
+    [TestMethod]
+    [DataRow("docs/README.md", false, false, false)]
+    [DataRow("mise.toml", true, true, true)]
+    [DataRow("src/mise.toml", true, false, false)]
+    [DataRow("eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1", false, true,
+        false)]
+    [DataRow("src/public/lib/nbgv-python/src/nbgv_python/cli.py", false, true, false)]
+    [DataRow("uv.lock", false, true, false)]
+    [DataRow("src/private/lib/scholarly-publication/tests/test_x.py", false, false, true)]
+    [DataRow("apm.lock.yaml", false, false, true)]
+    public void RetainedJobsFollowTheirFiniteInputs(string path, bool mise, bool azure,
+        bool scholarly)
+    {
+        CiScopeApplicability result = CiScope.Select([path], Comparison(path), false, []);
+        Assert.AreEqual(mise, result.Mise);
+        Assert.AreEqual(azure, result.AzureAuth);
+        Assert.AreEqual(scholarly, result.Scholarly);
+        Assert.AreEqual("source conformance", Assert.ContainsSingle(result.Reasons["validation"]));
+    }
+
+    [TestMethod]
+    [DataRow("src/private/app/workflow-delivery/Release/NuGetPreparation.cs", true)]
+    [DataRow("tests/private/app/workflow-delivery/Release/NuGetPreparationNativeTests.cs", true)]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
+        "hcoona-release-smoke-github-packages/Smoke.cs", true)]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/Directory.Build.props",
+        true)]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/shared.cs", false)]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
+        "hcoona-release-smoke-ruby/.gitattributes", false)]
+    [DataRow("src/private/Directory.Build.targets", true)]
+    [DataRow("src/public/.gitattributes", false)]
+    [DataRow("global.json", true)]
+    [DataRow("stylecop.json", true)]
+    [DataRow(".github/workflows/ci.yml", true)]
+    [DataRow("pyproject.toml", false)]
+    [DataRow("docs/README.md", false)]
+    [DataRow("eng/native-resource.json", true)]
+    public void NuGetReproducibilityFollowsItsManagedAndProductInputs(string path,
+        bool selected)
+    {
+        Assert.AreEqual(selected, CiScope.Select([path], Comparison(path), false,
+            ["eng/native-resource.json"]).NuGetReproducibility);
+        Assert.IsTrue(CiScope.Select([], Comparison(), true, []).NuGetReproducibility);
+    }
+
+    private static readonly RecordTaskOwner[] Tasks = [
+        new("eng/scripts/check_repository_records.py",
+            "record-control:repository-record-validation"),
+        new("tests/eng/test_repository_records.py", "record-regression:records:test")];
+
+    private static GitRevision Revision(params string[] paths) => new(Basis,
+        [.. new[] { ".github/workflows/ci.yml", "hk.pkl", "mise.toml", "pyproject.toml",
+                "tests/eng/test_python_runtime.py", "Gemfile", "src/lib/gem/gem.gemspec",
+                "dirs.proj", "apm.yml", ControlTestInputs.Project,
+                "src/private/lib/scholarly-publication/pyproject.toml",
+                CiScope.FamilyCatalog }
+            .Concat(paths).Distinct(StringComparer.Ordinal)
+            .Select(path => new GitEntry(path, "100644", "blob"))]);
+
+    private static GitComparison Comparison(params string[] paths) =>
+        new(Revision(paths), Revision(paths), paths);
+
+    private static string Root()
+    {
+        string directory = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(directory, "global.json")))
+            directory = Path.GetDirectoryName(directory) ??
+                throw new InvalidDataException("Missing source root.");
+        return directory;
+    }
+}

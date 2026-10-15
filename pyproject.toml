@@ -200,7 +200,6 @@ addopts = "--import-mode=importlib"
 tmp_path_retention_policy = "failed"
 testpaths = [
   "tests/private/app/workflow-delivery/Native/Python",
-  "tests/eng/test_ci_scope.py",
   "tests/eng/test_python_release_caller.py",
   "tests/eng/test_general_ci_workflow.py",
   "tests/eng/test_python_runtime.py",

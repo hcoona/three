@@ -39,11 +39,11 @@ library operations. [Static wire descriptions](../Native/contracts/) are generat
 from consumed serializer types and have no compatibility promise.
 
 Finite CI callers also live in the existing C# application. Actions/native shell
-owns first control build, configured tools and artifact transfer; the retained
-Python YAML/catalog parser supplies its actual native capability. Ruby helper
+owns first control build, configured tools and artifact transfer; the C# scope
+caller reads record-catalog bindings and native task metadata. Ruby helper
 behavior runs in the quality-adopted native RSpec carrier. Linux managed Python/
-Ruby preparation scenarios run directly through .NET with exact report qualification
-and required Validate ownership; pytest is not their admission wrapper.
+Ruby preparation scenarios run directly through .NET with native runner minimum
+counts and required Validate ownership; pytest is not their admission wrapper.
 
 Control input selection uses native source/configuration/reference facts without
 a fresh basis build or task-log interpreter. The separate default Debug
