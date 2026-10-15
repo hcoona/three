@@ -7,16 +7,12 @@ namespace WorkflowDelivery.Release;
 internal sealed record GithubNuGetPublicationResult(ReleaseSubject Subject,
     GithubNuGetObservationResult Before, NuGetPushResult? Invocation,
     GithubNuGetObservationResult After, string[] Errors);
-internal sealed record GithubNuGetConsumerResult(ReleaseSubject Subject, ReleaseCheck Check,
-    int? Reads, NativeCommandResult[] Commands, string[] Errors);
 internal sealed record GithubNuGetCompletionResult(ReleaseOutcome Outcome,
     bool? MutationAttempted, NuGetPushResult? Invocation);
 
 // These values cross ordinary NuGet jobs; official library calls remain library results.
 internal static class NuGetRelease
 {
-    internal const string ConsumerCheck = "native-registry-consumer";
-
     internal static DotNetOriginalPackage Original(NuGetPreparationResult preparation,
         string directory)
     {
@@ -88,64 +84,14 @@ internal static class NuGetRelease
         return new(prepared.Subject, before, invocation, after, []);
     }
 
-    internal static async Task<GithubNuGetConsumerResult> ConsumeAsync(
-        NuGetPreparationResult preparation, GithubNuGetObservationResult observation,
-        string originals, string scratch, string credential,
-        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        CancellationToken token)
-    {
-        DotNetOriginalPackage original = Original(preparation, originals);
-        PreparedRelease prepared = preparation.Prepared;
-        ValidateObservation(prepared, observation);
-        if (prepared.Subject.DryRun || observation.Observation.Files[0].State !=
-                ReleaseFileState.Exact || !Qualified(observation.Observation))
-            throw new InvalidDataException("Remote consumption requires exact live NuGet state.");
-        var commands = new List<NativeCommandResult>();
-        try
-        {
-            DotNetSmokeRemoteConsumerResult result = await DotNetSmokeRemoteConsumer.RunAsync(
-                original,
-                preparation.Native, scratch, credential, token, execute: async (command, cancel) =>
-                {
-                    NativeCommandResult actual = await execute(command, cancel);
-                    commands.Add(actual);
-                    return actual;
-                });
-            return new(prepared.Subject, new(ConsumerCheck, ReleaseCheckStatus.Passed),
-                result.Reads, [.. commands], []);
-        }
-        catch (OperationCanceledException)
-        { return Failed(ReleaseCheckStatus.Cancelled, "Native NuGet consumer cancelled."); }
-        catch (TimeoutException)
-        { return Failed(ReleaseCheckStatus.TimedOut, "Native NuGet consumer timed out."); }
-        catch (Exception error) when (error is IOException or InvalidDataException or
-            UnauthorizedAccessException or ArgumentException or InvalidOperationException or
-            System.Text.Json.JsonException or System.Xml.XmlException)
-        { return Failed(ReleaseCheckStatus.Failed, "Native NuGet consumer failed: " +
-            error.GetType().Name + "."); }
-
-        GithubNuGetConsumerResult Failed(ReleaseCheckStatus status, string error) =>
-            new(prepared.Subject, new(ConsumerCheck, status), null, [.. commands], [error]);
-    }
-
     internal static GithubNuGetCompletionResult Complete(PreparedRelease prepared,
         GithubNuGetObservationResult initial, GithubNuGetObservationResult final,
-        GithubNuGetConsumerResult consumer, GithubNuGetPublicationResult? published)
+        GithubNuGetPublicationResult? published)
     {
         ValidateObservation(prepared, initial);
         ValidateObservation(prepared, final);
-        if (consumer.Subject != prepared.Subject || consumer.Check.Id != ConsumerCheck ||
-            consumer.Check.Status == ReleaseCheckStatus.Passed &&
-                (consumer.Reads is not > 0 || consumer.Commands.Length == 0 ||
-                    consumer.Commands.Any(command => !command.Succeeded) ||
-                    consumer.Errors.Length != 0))
-            throw new InvalidDataException("Incomplete or mismatched native NuGet consumer.");
-        ReleaseObservation complete = final.Observation with
-        {
-            RequiredChecks = [.. final.Observation.RequiredChecks, ConsumerCheck],
-            Checks = [.. final.Observation.Checks, consumer.Check],
-        };
-        ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, complete, []);
+        // Completion is the registry observation of the exact coordinate and original bytes.
+        ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, final.Observation, []);
         if (!Qualified(initial.Observation) || initial.Observation.Files[0].State is not
                 (ReleaseFileState.Exact or ReleaseFileState.Absent))
             throw new InvalidDataException("Initial NuGet observation could not proceed.");

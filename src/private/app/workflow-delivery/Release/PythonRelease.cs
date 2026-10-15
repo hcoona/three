@@ -146,46 +146,18 @@ internal static class PythonRelease
 
     internal static PythonCompletionResult Complete(PreparedRelease prepared,
         PythonIndexObservationResult initial, PythonIndexObservationResult final,
-        PythonRemoteConsumerResult[] consumers, PythonPublicationResult? publication)
+        PythonPublicationResult? publication)
     {
         ValidateObservation(prepared, initial);
         ValidateObservation(prepared, final);
         string[] initialMissing = Missing(prepared, initial);
         if (prepared.Subject.DryRun)
             throw new InvalidDataException("Dry run cannot produce Python completion.");
-        var checks = new List<ReleaseCheck>();
-        if (consumers.Length > 2 || consumers.Select(value => value.Original.Kind)
-                .Distinct(StringComparer.Ordinal).Count() != consumers.Length)
-            throw new InvalidDataException("Ambiguous remote Python format results.");
-        string index = prepared.Subject.Destination == "testpypi"
-            ? "https://test.pypi.org/simple/" : "https://pypi.org/simple/";
-        foreach (PythonRemoteConsumerResult consumer in consumers)
-        {
-            ReleaseFile file = prepared.Files.SingleOrDefault(value =>
-                value.Kind == consumer.Original.Kind) ??
-                throw new InvalidDataException("Unsupported remote Python format.");
-            if (consumer.Subject != prepared.Subject || consumer.Original != file ||
-                consumer.Index != index || consumer.Check.Id != ConsumerCheck(file) ||
-                !Enum.IsDefined(consumer.Check.Status) ||
-                consumer.Check.Status == ReleaseCheckStatus.Passed &&
-                    (consumer.Errors.Length != 0 || consumer.Commands.Length == 0 ||
-                        consumer.Commands.Any(command => !command.Result.Succeeded ||
-                            command.Result.Error is not null) ||
-                        !consumer.Commands.Any(command => command.Stage == "install") ||
-                        !consumer.Commands.Any(command => command.Stage == "consume")))
-                throw new InvalidDataException("Incomplete or mismatched remote Python result.");
-            checks.Add(consumer.Check);
-        }
-        ReleaseObservation complete = final.Observation with
-        {
-            RequiredChecks = [.. final.Observation.RequiredChecks,
-                .. prepared.Files.Select(ConsumerCheck)],
-            Checks = [.. final.Observation.Checks, .. checks],
-        };
         ReleaseUpload[] uploads = publication?.Invocations.Select(value => value.Upload)
             .ToArray() ?? [];
         if (publication is not null) ValidatePublication(prepared, initialMissing, publication);
-        ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, complete, uploads);
+        // Completion is the index observation of each exact file and its original bytes.
+        ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, final.Observation, uploads);
         if (publication is null && initialMissing.Length != 0)
             return new(outcome with { State = ReleaseBusinessState.Unknown,
                 Reasons = [.. outcome.Reasons,
@@ -228,9 +200,6 @@ internal static class PythonRelease
     private static bool Acknowledged(PythonPublishResult result) =>
         result.Upload.Command.Succeeded && result.Upload.Command.Error is null &&
             !result.MaskForwardingFailed;
-
-    private static string ConsumerCheck(ReleaseFile file) =>
-        "remote-" + file.Output + "-consumer";
 
     private static bool Qualified(string[] required, ReleaseCheck[] results) =>
         required.All(id => results.Any(check => check.Id == id &&

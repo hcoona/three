@@ -40,8 +40,6 @@ internal sealed record RubyBundleMessage(string Gemfile, string Lockfile, string
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow)]
 [JsonSerializable(typeof(RubySourceRequest))]
 [JsonSerializable(typeof(RubySourceAnswer))]
-[JsonSerializable(typeof(RubyConsumerRequest))]
-[JsonSerializable(typeof(RubyConsumerAnswer))]
 [JsonSerializable(typeof(RubySourceMessage))]
 [JsonSerializable(typeof(RubyArchiveMessage))]
 [JsonSerializable(typeof(RubyContextMessage))]
@@ -53,6 +51,3 @@ internal sealed record RubySourceRequest(string Host, string Name, string Versio
     string Directory);
 internal sealed record RubySourceAnswer(string State, string? Name = null, string? Version = null,
     string? Platform = null, string? Path = null, long? Size = null, string? Sha256 = null);
-internal sealed record RubyConsumerRequest(string Operation, string Original, string Version,
-    string Sha256, string InstallDir);
-internal sealed record RubyConsumerAnswer(string Name, string Version, bool Passed);

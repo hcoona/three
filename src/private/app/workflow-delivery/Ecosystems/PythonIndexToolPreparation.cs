@@ -2,6 +2,8 @@ using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Ecosystems;
 
+internal sealed record PythonRemoteCommand(string Stage, NativeCommand Command,
+    NativeCommandResult Result);
 internal sealed record PythonIndexToolRequest(string Uv, string Interpreter,
     string Requirements, string Scratch);
 internal sealed record PythonIndexToolResult(string Interpreter,

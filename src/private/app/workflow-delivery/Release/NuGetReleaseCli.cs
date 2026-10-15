@@ -64,24 +64,12 @@ internal static class NuGetReleaseCli
             // Handled official upload failure is data; independent verification owns completion.
             return result.Errors.Length == 0 ? 0 : 1;
         }
-        if (args is ["release", "consume-github-nuget", var consumePreparation,
-                var consumeObservation, var consumeOriginals, var scratch])
-        {
-            NuGetPreparationResult preparation = Preparation(consumePreparation);
-            GithubNuGetConsumerResult result = NuGetRelease.ConsumeAsync(preparation,
-                Observation(consumeObservation), consumeOriginals, scratch, Credential(),
-                NativeProcess.ExecuteAsync, CancellationToken.None).GetAwaiter().GetResult();
-            Write(result, TransferJson.Default.GithubNuGetConsumerResult);
-            return result.Check.Status == ReleaseCheckStatus.Passed ? 0 : 1;
-        }
         if (args is ["release", "complete-github-nuget", var completePreparation,
-                var initialObservation, var finalObservation, var consumerPath,
-                var publisherPath])
+                var initialObservation, var finalObservation, var publisherPath])
         {
             GithubNuGetCompletionResult result = NuGetRelease.Complete(
                 Preparation(completePreparation).Prepared, Observation(initialObservation),
-                Observation(finalObservation), ReleaseCli.Read(consumerPath,
-                    TransferJson.Default.GithubNuGetConsumerResult), publisherPath == "-" ? null
+                Observation(finalObservation), publisherPath == "-" ? null
                     : ReleaseCli.Read(publisherPath,
                         TransferJson.Default.GithubNuGetPublicationResult));
             Write(result, TransferJson.Default.GithubNuGetCompletionResult);

@@ -59,10 +59,10 @@ applied where the request is formed and again by the privileged publisher.
 npm completion consumes the retained initial observation to
 distinguish legitimate no-write completion from missing required publication
 information. NuGet callers forward native process termination; typed completion
-owns consumer/result interpretation, without a shell enum mirror.
+owns result interpretation, without a shell enum mirror.
 
-Ruby helpers retain RubyGems/Bundler evaluation, native source reads and concrete
-installation/API behavior. Python helpers retain PyPA/NBGV library bindings over
+Ruby helpers retain RubyGems/Bundler evaluation and native source reads; local
+installation/API qualification uses the native gem and Ruby commands. Python helpers retain PyPA/NBGV library bindings over
 the pinned UV CLI; .NET and Node use their supported native process interfaces.
 A helper is justified by a required library interface, not by the language label.
 Adding a distinct product can require a concrete recipe; no generic plugin or
@@ -70,7 +70,7 @@ automatic adoption capability is implied by these four implemented products.
 
 [Native wire schemas](../Native/contracts/) are generated from the actual
 application serializer metadata by `native-message-schemas <directory>`.
-They describe retained Ruby fact/source/consumer messages with independent
+They describe retained Ruby fact/source messages with independent
 native consumers. Python helper responses are tested by their managed consumers;
 no unused schema export is retained. Managed tests require regeneration equivalence; native Ruby
 tests consume the static descriptions without building the application. These
@@ -84,14 +84,14 @@ native command-argument interfaces need no invented JSON envelope.
 The [application README](../README.md) owns current commands and supported
 options. The internal CLI has no historical Python command or record aliases.
 
-| Consumer                      | Native input/output boundary                                                                                        |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Root CI planning              | Exact event candidate/comparison, native paired facts, quality declarations and selected required work              |
-| Ecosystem CI group wrappers   | Prepared current control, complete selected checks/variants and candidate-bound command/results                     |
-| Ordinary Release preparation  | Selected revision, one release unit/channel/destination/mode, complete original package set and clean qualification |
-| Observation and publisher     | Bound preparation/original files, native destination state, upload-once command facts and required verification     |
-| Separate consumer/result jobs | No-write native consumption and business completion, retaining command abnormalities and unresolved effects         |
-| Historical auditors           | Original producer-qualified Git source and retained evidence; no current campaign/replay entry point                |
+| Consumer                     | Native input/output boundary                                                                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Root CI planning             | Exact event candidate/comparison, native paired facts, quality declarations and selected required work                                             |
+| Ecosystem CI group wrappers  | Prepared current control, complete selected checks/variants and candidate-bound command/results                                                    |
+| Ordinary Release preparation | Selected revision, one release unit/channel/destination/mode, complete original package set and clean qualification                                |
+| Observation and publisher    | Bound preparation/original files, native destination state, upload-once command facts and required verification                                    |
+| Separate verification jobs   | No-write registry readback of exact coordinates and original bytes and business completion, retaining command abnormalities and unresolved effects |
+| Historical auditors          | Original producer-qualified Git source and retained evidence; no current campaign/replay entry point                                               |
 
 Native PNPM, MSBuild/NuGet, UV/Python and RubyGems/Bundler own ecosystem semantics.
 The application does not retain the old public Python control package, exclusive
@@ -869,18 +869,18 @@ JSON files only at actual process/job boundaries. Changes to field spelling
 update producers and consumers together.
 Do not build an envelope registry or independent schema version service.
 
-| Command and caller                                          | Required inputs                                                                                         | Output consumed at the next real boundary                                                                                                                            |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci comparison` in root CI planning                         | Native event name/payload and platform-tested candidate                                                 | Comparison basis, candidate and explicit full flag for native checkout/plan preparation                                                                              |
-| `repository facts` on a required native runner              | Candidate or comparison revision, ecosystem, evaluation roots and dimensions                            | Revision, project ownership, local/shared-input relations, native dimensions, explicit coverage/errors                                                               |
-| `ci plan` in root CI planning                               | Candidate/comparison identities, changed paths and necessary native facts, supported group              | Selected project/target/check/dimensions, reasons, required/advisory flags, runner, prerequisites and unresolved scope                                               |
-| `ci run` in a selected executor                             | Selected work, candidate and required native inputs                                                     | Check/target/dimensions, actual status, native command result and output identities where consumed                                                                   |
-| `ci result` in collection                                   | Expected work and available candidate-bound results/native job conclusions                              | Required-check result and missing/failed/unknown reasons; no success from absent work                                                                                |
-| `release prepare` before write capability                   | Source/control revision, unit, channel, destination, live/dry-run mode                                  | Complete qualified original files with native coordinates/version, qualification results, applicable completion checks and maximum intended writes                   |
-| `release observe` without product execution                 | Prepared request/files and scoped read access where needed                                              | Per-file absent/exact/conflict/unknown, native metadata/visibility, remaining required checks and proposed missing writes                                            |
-| `release publish` in the gated publisher                    | Prepared selected-control artifact, qualified input identities, maximum writes and native authorization | Fresh observation, one native invocation per needed operation, raw command outcomes and bounded readback; stop application writes after invocation failure/ambiguity |
-| `release verify` in unprivileged verification/consumer jobs | Prepared request/files, destination read access where required and selected native consumer checks      | Required remote observations and consumer results for the complete intended set                                                                                      |
-| `release result` in collection                              | Request, publisher/native execution facts, readback and applicable consumer results                     | Satisfied/unsatisfied/unknown with command abnormality and unresolved effects kept distinct                                                                          |
+| Command and caller                                 | Required inputs                                                                                         | Output consumed at the next real boundary                                                                                                                            |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci comparison` in root CI planning                | Native event name/payload and platform-tested candidate                                                 | Comparison basis, candidate and explicit full flag for native checkout/plan preparation                                                                              |
+| `repository facts` on a required native runner     | Candidate or comparison revision, ecosystem, evaluation roots and dimensions                            | Revision, project ownership, local/shared-input relations, native dimensions, explicit coverage/errors                                                               |
+| `ci plan` in root CI planning                      | Candidate/comparison identities, changed paths and necessary native facts, supported group              | Selected project/target/check/dimensions, reasons, required/advisory flags, runner, prerequisites and unresolved scope                                               |
+| `ci run` in a selected executor                    | Selected work, candidate and required native inputs                                                     | Check/target/dimensions, actual status, native command result and output identities where consumed                                                                   |
+| `ci result` in collection                          | Expected work and available candidate-bound results/native job conclusions                              | Required-check result and missing/failed/unknown reasons; no success from absent work                                                                                |
+| `release prepare` before write capability          | Source/control revision, unit, channel, destination, live/dry-run mode                                  | Complete qualified original files with native coordinates/version, qualification results, applicable completion checks and maximum intended writes                   |
+| `release observe` without product execution        | Prepared request/files and scoped read access where needed                                              | Per-file absent/exact/conflict/unknown, native metadata/visibility, remaining required checks and proposed missing writes                                            |
+| `release publish` in the gated publisher           | Prepared selected-control artifact, qualified input identities, maximum writes and native authorization | Fresh observation, one native invocation per needed operation, raw command outcomes and bounded readback; stop application writes after invocation failure/ambiguity |
+| `release verify` in unprivileged verification jobs | Prepared request/files and destination read access where required                                       | Required remote coordinate observations and downloaded original-byte comparisons for the complete intended set                                                       |
+| `release result` in collection                     | Request, publisher/native execution facts and final readback                                            | Satisfied/unsatisfied/unknown with command abnormality and unresolved effects kept distinct                                                                          |
 
 In-process callers use the same typed operations without serializing each row.
 The finite [GitHub comparison mapping](middle-level-design.md#github-event-comparison)
@@ -920,31 +920,34 @@ updates this table and its tests together.
 ### Destination Completion and Remaining Native Limits
 
 All destinations require complete native identity/version, required metadata and
-visibility, original-byte comparison and local clean consumption. The following
-properties determine additional remote consumer work. Exact-state and newly
-published requests have the same applicable completion conditions.
+visibility, original-byte comparison of the downloaded served artifact and, before
+publication, local clean consumption of the qualified originals. Post-publication
+completion is that registry observation alone; no remote native install, restore
+or import runs after publication. Exact-state and newly published requests have
+the same completion conditions.
 
-| Existing destination/use         | Native completion conditions to preserve                                                                                                                          | Consumer integration                                                                                                                                                                             |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GitHub Packages npm Buddy        | Scoped package/version, intended repository association/access and original tarball; native non-overwrite/duplicate semantics                                     | Clean registry-qualified npm install/import where scoped registry/authentication routing is part of the request; local tarball installation cannot establish that routing                        |
-| npmjs Official simulation        | Exact public package/version metadata and original tarball or authoritative absence; this caller selects no routing tag                                           | Report read/qualification/hypothetical result only; no new live publication caller or remote-install claim is inferred from simulation                                                           |
-| GitHub Packages NuGet Buddy      | Normalized package/version, intended owner/feed/repository and visibility, exact `.nupkg`                                                                         | Clean restore/build/invoke against the selected feed with isolated caches; preserve source mapping/read credentials needed to prove resolution                                                   |
-| TestPyPI Buddy and PyPI Official | Complete intended wheel/sdist set, normalized version, index file/metadata identity, both original files and required visibility; supported exact-subset recovery | Keep native wheel and Git-free sdist clean consumption. Add index-based remote resolution when needed to prove file selection/index routing; readback-by-URL alone cannot satisfy that condition |
-| GitHub Packages Ruby Buddy       | Owner feed, native gem name/version/platform, index visibility and exact original `.gem`; safe signed storage redirect behavior                                   | Clean feed-qualified install/require where authenticated owner-feed resolution is required; do not use local `.gem` installation as its evidence                                                 |
-| RubyGems.org Official            | Native gem name/version/platform, native index/API metadata, visibility and exact original `.gem`                                                                 | Keep local install/require; require remote native consumption for an explicitly selected index/resolution condition rather than to repeat package-content validation                             |
+| Existing destination/use         | Native completion conditions to preserve                                                                                                                          | Post-publication observation                                                                                                   |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| GitHub Packages npm Buddy        | Scoped package/version, intended repository association/access and original tarball; native non-overwrite/duplicate semantics                                     | Package control, version manifest naming the exact version, downloaded tarball size/SHA-256 equal to the original              |
+| npmjs Official simulation        | Exact public package/version metadata and original tarball or authoritative absence; this caller selects no routing tag                                           | Report read/qualification/hypothetical result only; no live publication caller or completion claim is inferred from simulation |
+| GitHub Packages NuGet Buddy      | Normalized package/version, intended owner/feed/repository and visibility, exact `.nupkg`                                                                         | Package control, GitHub and flat-container version sets containing the version, downloaded `.nupkg` bytes and native identity  |
+| TestPyPI Buddy and PyPI Official | Complete intended wheel/sdist set, normalized version, index file/metadata identity, both original files and required visibility; supported exact-subset recovery | Each intended file listed in the selected index with matching hashes and not yanked, and its downloaded bytes equal            |
+| GitHub Packages Ruby Buddy       | Owner feed, native gem name/version/platform, index visibility and exact original `.gem`; safe signed storage redirect behavior                                   | Native selected-source specification for name/version/platform and downloaded `.gem` size/SHA-256 equal to the original        |
+| RubyGems.org Official            | Native gem name/version/platform, native index/API metadata, visibility and exact original `.gem`                                                                 | Native selected-source specification for name/version/platform and downloaded `.gem` size/SHA-256 equal to the original        |
 
-Before changing each Release caller, name its concrete required consumer checks
-and native limits in the integration change. Existing applicable consumer work
-cannot be removed by classifying it as redundant without establishing which
-property the remaining checks cover. Historical audits keep their original tests.
+Byte equality carries the pre-publication qualification to the published state.
+It does not establish that a stock client's credentials, scoped-registry, feed or
+index routing, source mapping or dependency resolution install the published
+package, and these integrations make no such claim. Historical audits keep their
+original consumer tests.
 The table distinguishes the current mechanisms and required properties; it does
 not assert new platform guarantees or itself enable any remote operation.
 
 The [npm Buddy integration](../README.md#npm-buddy-release)
 owns complete selected preparation,
 native package-control/exact original-byte reads, Environment on the actual
-publisher, one standard native upload, separate scoped native install/import
-and complete common result. Its source-only validation does not qualify a new
+publisher, one standard native upload, separate no-write registry readback and
+complete common result. Its source-only validation does not qualify a new
 hosted Live invocation. Historical acceptance readers retain their actual pinned
 native producer source; they do not authorize replay.
 
@@ -966,8 +969,8 @@ This is a workflow default, not a new policy expiry or platform-retention proof.
 If required inputs expire or the effective platform limit cannot cover the chosen
 operation, that operation cannot continue. Optional diagnostics may expire sooner.
 A fresh original-revision recovery rebuilds; it does not need a permanent ledger.
-Keep registry/package serialization over required verification, including remote
-consumer jobs, with native concurrency and without automatic live cancellation.
+Keep registry/package serialization over required verification jobs, with native
+concurrency and without automatic live cancellation.
 
 ### Concrete NuGet Buddy Integration
 
@@ -1049,23 +1052,11 @@ may run. Refresh observation immediately before publication: exact removes the
 write, absent permits it, conflict or unknown stops it. A handled invocation
 failure still permits bounded readback but no further application write.
 
-Separate remote consumption uses a no-write job, exact native VersionRange,
-`net10.0`, `UseAppHost=false`, no inherited Directory.Build/CPM/fallback or extra
-sources, fresh external package/HTTP/plugin/profile/CLI directories and an
-explicit cleared NuGet.Config mapping the selected package to the selected feed.
-Generate the native restore graph and use official RestoreRunner with
-DependencyGraphSpecRequestProvider and a supported source-local HTTP resource
-provider. The owned read handler supplies origin-bound Basic authentication,
-strips credentials at the one archive redirect and bounds downloads. NuGet owns
-dependency interpretation. Check actual LockFile identity, source, configuration,
-package folder and installed original size/digest, then native Build/GetTargetPath
-and the marker API invocation. No witness, started ledger or graph proof record
-is required.
-
-Required completion covers destination control, coordinate, original bytes and
-remote restore/build/invoke. Common result evaluation may report satisfaction
-after a handled upload error only with complete fresh observations and consumer
-results, preserving the command abnormality. Missing or malformed subject, file,
+Required completion covers destination control, coordinate and the downloaded
+original bytes, observed again in a separate no-write verification job; no
+remote restore, build or invocation runs after publication. Common result
+evaluation may report satisfaction after a handled upload error only with a
+complete fresh observation, preserving the command abnormality. Missing or malformed subject, file,
 digest or required result cannot satisfy the request.
 
 The ordinary NuGet Buddy entry and reusable live caller use four concrete jobs:
@@ -1080,7 +1071,7 @@ there is no compatibility alias for old runtime schemas.
 
 Changes preserve this contract and its governing native-invocation boundary,
 with independent review before implementation. Validate application journeys, authentication separation, cancellation,
-redirects, transfer/result completeness and official-client binding with controlled
+observation redirects, transfer/result completeness and official-client binding with controlled
 contract tests and real credential-free local native package/consumer tests.
 Complete affected managed/Python suites, HK, records, independent engineering/OCR
 and record/research reviews, and ordinary Windows CI before caller delivery.
@@ -1200,20 +1191,13 @@ actual command abnormality and do not attribute insertion. A fresh same-revision
 request can consider supported exact-subset completion after rebuilding and
 qualifying its own pair. No automatic resend, rerun recovery or compensation.
 
-Required remote consumers run in a separate no-write job for either initial
-exact state or new publication. Resolve each format from only the selected
-index with native UV and a generated exact-version/hash requirement. Force
-wheel or sdist respectively; reject local-file/source substitution, fallback
-indexes and populated caches. The original archive hash binds native resolution
-to the qualified output; installed version equality alone is insufficient.
-Use fresh external environments with no checkout import path. Prepare the
-sdist's noneditable backend/plugin tools through the same frozen native recipe
-outside publication capability, then consume in a Git-free directory with
-shared build mode. Build prerequisites and the smoke's destination remain
-separate native inputs. Check installed native metadata, import origin and
-the selected project's API. Missing native selection/hash evidence or required
-consumer results blocks completion; local-original install cannot establish
-remote index routing. No witness comparison is required.
+A separate no-write job observes the selected index again for either initial
+exact state or new publication. Each intended file must be listed for the exact
+version with matching index hashes, not yanked, and its downloaded bytes must
+equal the qualified original. No remote UV install or import runs after
+publication; local wheel and Git-free sdist consumption before publication
+carries qualification. This observation does not claim index routing or
+resolver file selection. Missing or unknown observation blocks completion.
 
 The ordinary Python entry and actual Release caller compose qualified components.
 They use prepare, observe, gated publish and separate
@@ -1329,8 +1313,8 @@ upload, supported retry and native response handling. Do not patch private
 sign-in, OTP or scope methods. Native generic auxiliary requests remain subject
 to the documented selected token/platform profile; no account mutation is
 authorized. No application resend, compensation or rerun recovery follows a
-failure or interruption. Complete fresh observation and required consumers may
-still satisfy the request; preserve the actual command abnormality and unknown
+failure or interruption. Complete fresh observation may still satisfy the
+request; preserve the actual command abnormality and unknown
 effects without attributing unique insertion.
 
 Suppress unsafe publisher/read diagnostics before persistence, including
@@ -1344,21 +1328,13 @@ claiming those files are never read. Own `HOME`, gem/spec/cache/temp roots and
 exclude inherited proxy, Gem/Bundler credentials, `RUBYOPT` and `RUBYLIB`.
 Load only prepared maintained tools; product code is absent from the publisher.
 
-Required remote consumption runs in a separate no-write job on both initial
+A separate no-write job observes the selected source again on both initial
 exact state and new publication. Native selected-source inventory/spec/download
-must produce a fresh remote original; a prebuilt local-original install is not
-remote routing proof. End the read-credential process, validate the actual
-remote original digest/identity/contents and dependency/extension constraints,
-then install that fetched original in a credential-free child using public
-`Gem::Installer.at` with fresh `install_dir`, `only_install_dir: true`,
-`force: false`, `ignore_dependencies: false` and no development dependencies.
-Keep native dependency/runtime/platform validation. Compare native installed
-name/version/platform and cached original digest, then require the selected API
-and import origin in a clean credential-free child outside the checkout.
-Post-install version/digest checks alone cannot justify installing unqualified
-remote code with a read token. This sequence delegates source routing,
-downloading, archive semantics and installation to RubyGems; it implements no
-second resolver. Missing routing, original or consumer results block completion.
+must produce the exact name/version/platform and a fresh remote original whose
+size and SHA-256 equal the qualified original. No remote install or require runs
+after publication; local install/require before publication carries
+qualification. This observation does not claim client source routing or
+dependency resolution. Missing or unknown observation blocks completion.
 
 The ordinary Ruby entry and actual caller compose qualified components.
 They use prepare, observe, gated publish and separate verify/result
@@ -1374,9 +1350,8 @@ command outcomes, observed state and required business satisfaction.
 Before implementing affected changes, review this contract with independent
 engineering/OCR and record/research review. Controlled credential-free component
 tests and ordinary Linux CI must qualify native command/configuration/output
-boundaries, original build/inspection/consumption, hash-before-install routing,
-failure-after-effect, cancellation, missing transfers and complete results on
-the final subject. Run complete affected suites and repository HK/hooks/record
+boundaries, original build/inspection/consumption, failure-after-effect,
+cancellation, missing transfers and complete results on the final subject. Run complete affected suites and repository HK/hooks/record
 checks. These checks do not establish current token/publisher configuration or
 a new live feed/publication. Historical readers and spent campaigns remain
 intact; no runtime schema compatibility alias is added.
@@ -1386,7 +1361,7 @@ intact; no runtime schema compatibility alias is added.
 The final private CLI/test projects own native facts, meaningful impact selection,
 complete selected CI checks and common Release behavior. Node, .NET, Python and
 Ruby groups use their native contracts and original candidate-bound plans.
-Ordinary destination callers retain their actual permission, transfer, consumer
+Ordinary destination callers retain their actual permission, transfer, readback
 and result boundaries. The fixtures, native helpers, root tooling and project
 records use their current private locations. Independently useful public
 components retain their own consumers.

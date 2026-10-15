@@ -119,7 +119,7 @@ internal static class RubyRelease
 
     internal static RubyCompletionResult Complete(PreparedRelease prepared,
         RubyObservationResult initial, RubyObservationResult final,
-        RubyRemoteConsumerResult? consumer, RubyPublicationResult? publication)
+        RubyPublicationResult? publication)
     {
         ValidateObservation(prepared, initial);
         ValidateObservation(prepared, final);
@@ -127,23 +127,6 @@ internal static class RubyRelease
         if (prepared.Subject.DryRun)
             throw new InvalidDataException("Dry run cannot produce Ruby completion.");
         ReleaseFile original = prepared.Files[0];
-        string check = "remote-" + original.Output + "-consumer";
-        string source = prepared.Subject.Destination == "github-packages-ruby"
-            ? "https://rubygems.pkg.github.com/hcoona" : "https://rubygems.org";
-        if (consumer is not null && (consumer.Subject != prepared.Subject ||
-            consumer.Original != original || consumer.Source != source ||
-            consumer.Check.Id != check || !Enum.IsDefined(consumer.Check.Status) ||
-            consumer.Check.Status == ReleaseCheckStatus.Passed &&
-                (consumer.Errors.Length != 0 || consumer.Read?.State != RubySourceState.Present ||
-                    consumer.Read.Original is not { Platform: "ruby" } remote ||
-                    remote.Name != original.Name || remote.Version != original.Version ||
-                    remote.Size != original.Size || remote.Sha256 != original.Sha256 ||
-                    consumer.Commands.Any(command => !command.Result.Succeeded ||
-                        command.Result.Error is not null) ||
-                    !consumer.Commands.Any(command => command.Stage == "remote-original") ||
-                    !consumer.Commands.Any(command => command.Stage == "remote-install") ||
-                    !consumer.Commands.Any(command => command.Stage == "remote-consume"))))
-            throw new InvalidDataException("Incomplete or mismatched remote Ruby result.");
         if (publication is not null)
         {
             if (publication.Subject != prepared.Subject || !initiallyMissing)
@@ -162,14 +145,9 @@ internal static class RubyRelease
                 ValidateObservation(prepared, publication.Readback);
             }
         }
-        ReleaseObservation complete = final.Observation with
-        {
-            RequiredChecks = [.. final.Observation.RequiredChecks, check],
-            Checks = consumer is null ? final.Observation.Checks :
-                [.. final.Observation.Checks, consumer.Check],
-        };
         ReleaseUpload[] uploads = publication?.Invocation is { } attempt ? [attempt.Upload] : [];
-        ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, complete, uploads);
+        // Completion is the native source observation of the exact gem and its original bytes.
+        ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, final.Observation, uploads);
         if (publication is null && initiallyMissing)
             return new(outcome with { State = ReleaseBusinessState.Unknown,
                 Reasons = [.. outcome.Reasons,

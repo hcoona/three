@@ -145,9 +145,8 @@ def test_workflow_verification_runs_after_handled_failure_or_missing_result(
     assert not condition(
         job["if"], {**values, "needs.observe.result": "failure"}
     )
-    assert "consume-python" in scripts(job)
-    assert "python-wheel" in scripts(job)
-    assert "python-sdist" in scripts(job)
+    assert "consume-python" not in scripts(job)
+    assert "observe-python" in scripts(job)
     assert "complete-python" in scripts(job)
     assert "continue-on-error" not in job
 

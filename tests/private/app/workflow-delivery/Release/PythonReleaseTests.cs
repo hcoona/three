@@ -363,51 +363,30 @@ public sealed class PythonReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("both")]
-    [DataRow("wheel-missing")]
-    [DataRow("sdist-missing")]
-    [DataRow("both-missing")]
-    [DataRow("wheel-failed")]
-    [DataRow("sdist-failed")]
-    [DataRow("wheel-cancelled")]
-    [DataRow("sdist-cancelled")]
-    public void CompleteExactSetRequiresBothFormatConsumers(string defect)
+    [DataRow("Exact", "Exact", "Satisfied")]
+    [DataRow("Absent", "Exact", "Unsatisfied")]
+    [DataRow("Exact", "Absent", "Unsatisfied")]
+    [DataRow("Conflict", "Exact", "Unsatisfied")]
+    [DataRow("Exact", "Unknown", "Unknown")]
+    public void CompleteRequiresEveryFinalIndexFileWithOriginalBytes(string wheel, string sdist,
+        string expected)
     {
         using var fixture = new Fixture();
-        PythonRemoteConsumerResult[] consumers = fixture.Consumers();
-        if (defect == "both-missing") consumers = [];
-        else if (defect.EndsWith("missing", StringComparison.Ordinal))
-            consumers = consumers.Where(value => !defect.StartsWith(value.Original.Output,
-                StringComparison.Ordinal)).ToArray();
-        else if (defect != "both")
-        {
-            int index = defect.StartsWith("wheel", StringComparison.Ordinal) ? 0 : 1;
-            consumers[index] = consumers[index] with
-            {
-                Check = consumers[index].Check with
-                {
-                    Status = defect.EndsWith("failed",
-                    StringComparison.Ordinal) ? ReleaseCheckStatus.Failed :
-                        ReleaseCheckStatus.Cancelled
-                },
-            };
-        }
 
-        PythonCompletionResult result = fixture.Complete(fixture.Exact(), fixture.Exact(), null,
-            consumers);
+        PythonCompletionResult result = fixture.Complete(fixture.Exact(), fixture.Observe(
+            Enum.Parse<ReleaseFileState>(wheel), Enum.Parse<ReleaseFileState>(sdist)), null);
 
-        Assert.AreEqual(defect == "both" ? ReleaseBusinessState.Satisfied :
-            ReleaseBusinessState.Unsatisfied, result.Outcome.State);
+        Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expected), result.Outcome.State);
         Assert.AreEqual(false, result.MutationAttempted);
         Assert.IsEmpty(result.Outcome.Uploads);
-        if (defect == "both") Assert.IsEmpty(result.Outcome.Reasons);
-        else Assert.Contains("consumer", string.Join(";", result.Outcome.Reasons));
+        if (expected == "Satisfied") Assert.IsEmpty(result.Outcome.Reasons);
+        else Assert.IsNotEmpty(result.Outcome.Reasons);
     }
 
     [TestMethod]
     [DataRow("wheel")]
     [DataRow("sdist")]
-    public async Task CompleteAfterPublicationRequiresBothFormatConsumers(string omitted)
+    public async Task CompleteAfterPublicationRequiresBothFinalIndexFiles(string omitted)
     {
         using var fixture = new Fixture();
         PythonIndexObservationResult initial = fixture.Observe();
@@ -416,45 +395,15 @@ public sealed class PythonReleaseTests(TestContext context)
         PythonPublicationResult publication = await fixture.PublishAsync(initial,
             context.CancellationToken);
 
-        PythonCompletionResult result = fixture.Complete(initial, fixture.Exact(), publication,
-            fixture.Consumers().Where(value => value.Original.Output != omitted).ToArray());
+        PythonCompletionResult result = fixture.Complete(initial, fixture.Observe(
+            omitted == "wheel" ? ReleaseFileState.Absent : ReleaseFileState.Exact,
+            omitted == "sdist" ? ReleaseFileState.Absent : ReleaseFileState.Exact), publication);
 
         AssertSequence(["wheel"], fixture.Writes);
         Assert.AreEqual(ReleaseBusinessState.Unsatisfied, result.Outcome.State);
         Assert.AreEqual(true, result.MutationAttempted);
-        Assert.Contains("remote-" + omitted + "-consumer", string.Join(";",
+        Assert.Contains("Required destination file is absent: " + omitted, string.Join(";",
             result.Outcome.Reasons));
-    }
-
-    [TestMethod]
-    [DataRow("commands")]
-    [DataRow("install")]
-    [DataRow("consume")]
-    [DataRow("failed-command")]
-    [DataRow("command-error")]
-    [DataRow("errors")]
-    public void CompletePassedConsumerWithoutNativeEvidenceRejects(string defect)
-    {
-        using var fixture = new Fixture();
-        PythonRemoteConsumerResult[] consumers = fixture.Consumers();
-        PythonRemoteConsumerResult consumer = consumers[0];
-        consumers[0] = defect switch
-        {
-            "commands" => consumer with { Commands = [] },
-            "install" or "consume" => consumer with
-            { Commands = consumer.Commands.Where(value => value.Stage != defect).ToArray() },
-            "errors" => consumer with { Errors = ["Controlled missing evidence."] },
-            _ => consumer with
-            {
-                Commands = [consumer.Commands[0] with
-                { Result = Fixture.Success with { ExitCode = defect == "failed-command" ? 17 : 0,
-                    Error = defect == "command-error" ? "cleanup failed" : null } },
-                consumer.Commands[1]]
-            },
-        };
-
-        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Complete(fixture.Exact(),
-            fixture.Exact(), null, consumers));
     }
 
     [TestMethod]
@@ -501,11 +450,6 @@ public sealed class PythonReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("consumer-subject")]
-    [DataRow("consumer-original")]
-    [DataRow("consumer-index")]
-    [DataRow("consumer-check")]
-    [DataRow("duplicate-consumer")]
     [DataRow("final-subject")]
     [DataRow("final-bytes")]
     [DataRow("publication-subject")]
@@ -514,22 +458,10 @@ public sealed class PythonReleaseTests(TestContext context)
         using var fixture = new Fixture();
         PythonIndexObservationResult initial = fixture.Exact();
         PythonIndexObservationResult final = fixture.Exact();
-        PythonRemoteConsumerResult[] consumers = fixture.Consumers();
         PythonPublicationResult? publication = null;
         ReleaseSubject other = fixture.Prepared.Subject with { Revision = new string('d', 40) };
         switch (defect)
         {
-            case "consumer-subject": consumers[0] = consumers[0] with { Subject = other }; break;
-            case "consumer-original":
-                consumers[0] = consumers[0] with
-                { Original = consumers[0].Original with { Sha256 = new string('e', 64) } }; break;
-            case "consumer-index":
-                consumers[0] = consumers[0] with
-                { Index = "https://pypi.org/simple/" }; break;
-            case "consumer-check":
-                consumers[0] = consumers[0] with
-                { Check = new("remote-sdist-consumer", ReleaseCheckStatus.Passed) }; break;
-            case "duplicate-consumer": consumers[1] = consumers[0]; break;
             case "final-subject":
                 final = final with
                 { Observation = final.Observation with { Subject = other } }; break;
@@ -543,7 +475,7 @@ public sealed class PythonReleaseTests(TestContext context)
         }
 
         Assert.ThrowsExactly<InvalidDataException>(() => fixture.Complete(initial, final,
-            publication, consumers));
+            publication));
     }
 
     [TestMethod]
@@ -672,16 +604,9 @@ public sealed class PythonReleaseTests(TestContext context)
                 "Controlled result; no native publication."));
         }
 
-        internal PythonRemoteConsumerResult[] Consumers() => Prepared.Files.Select(file =>
-            new PythonRemoteConsumerResult(Prepared.Subject, file, "https://test.pypi.org/simple/",
-                new("remote-" + file.Output + "-consumer", ReleaseCheckStatus.Passed),
-                [new("install", Command(), Success), new("consume", Command(), Success)],
-                    [])).ToArray();
-
         internal PythonCompletionResult Complete(PythonIndexObservationResult initial,
-            PythonIndexObservationResult final, PythonPublicationResult? publication,
-            PythonRemoteConsumerResult[]? consumers = null) => PythonRelease.Complete(Prepared,
-                initial, final, consumers ?? Consumers(), publication);
+            PythonIndexObservationResult final, PythonPublicationResult? publication) =>
+            PythonRelease.Complete(Prepared, initial, final, publication);
 
         internal void SubstituteOriginal()
         {

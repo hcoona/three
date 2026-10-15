@@ -185,12 +185,6 @@ internal static class ReleaseJobInputs
                     Env("GEM_EXECUTABLE"), Fresh(directory)),
                         TransferJson.Default.RubyPublisherTools);
                 break;
-            case ["consumer-config", var directory] when ecosystem == "ruby":
-                Write(At("consumer-tools.json"), new RubyRemoteConsumerTools(Env("RUBY_EXECUTABLE"),
-                    Path.Combine(control, "facts.rb"), Path.Combine(control, "source.rb"),
-                    Path.Combine(control, "consumer.rb"), Fresh(directory)),
-                        TransferJson.Default.RubyRemoteConsumerTools);
-                break;
             case ["tool-request"] when ecosystem == "python":
                 Write(At("index-tool-request.json"), new PythonIndexToolRequest(Env(
                     "UV_EXECUTABLE"),
@@ -207,16 +201,6 @@ internal static class ReleaseJobInputs
             case ["publisher-config"] when ecosystem == "python":
                 Write(At("publisher-tools.json"), new PythonPublisherTools(Env("UV_EXECUTABLE"),
                     Fresh("publisher-scratch")), TransferJson.Default.PythonPublisherTools);
-                break;
-            case ["consumer-config", var kind] when ecosystem == "python" &&
-                kind is "python-wheel" or "python-sdist":
-                var selectedEnvironment = new Dictionary<string, string?>();
-                foreach (string name in new[] { "PATH", "DOTNET_ROOT" })
-                    if (environment(name) is { } value) selectedEnvironment.Add(name, value);
-                Write(At(kind + "-tools.json"), new PythonPackageTools(Env("GITHUB_WORKSPACE"),
-                    Fresh(kind + "-scratch"), Env("UV_EXECUTABLE"), Env("PYTHON_EXECUTABLE"),
-                    Path.Combine(control, "packages.py"), 180, selectedEnvironment, false),
-                    TransferJson.Default.PythonPackageTools);
                 break;
             default:
                 throw new InvalidDataException("Unsupported ordinary Release caller operation.");

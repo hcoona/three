@@ -79,8 +79,6 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         ReleaseFileState state = Enum.Parse<ReleaseFileState>(stateName);
         string initial = Observation(fixture, "initial.json", state);
         string final = Observation(fixture, "final.json", ReleaseFileState.Exact);
-        string consumer = fixture.Write("consumer.json", fixture.Consumer(),
-            TransferJson.Default.GithubNuGetConsumerResult);
         string publisher = "-";
         NuGetPushResult? invocation = null;
         if (state == ReleaseFileState.Absent)
@@ -100,7 +98,7 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         using var output = new StringWriter();
 
         int? exit = NuGetReleaseCli.Run(["release", "complete-github-nuget", Preparation(fixture),
-            initial, final, consumer, publisher], output);
+            initial, final, publisher], output);
 
         Assert.AreEqual(0, exit);
         GithubNuGetCompletionResult result = JsonSerializer.Deserialize(output.ToString(),
@@ -114,40 +112,15 @@ public sealed class NuGetReleaseCliTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Failed")]
-    [DataRow("Missing")]
-    public void CompleteRequiredConsumerNotPassedFails(string statusName)
-    {
-        using var fixture = new NuGetReleaseTestFixture();
-        string exact = Observation(fixture, "exact.json", ReleaseFileState.Exact);
-        string consumer = fixture.Write("consumer.json",
-            fixture.Consumer(Enum.Parse<ReleaseCheckStatus>(statusName)),
-            TransferJson.Default.GithubNuGetConsumerResult);
-        using var output = new StringWriter();
-
-        int? exit = NuGetReleaseCli.Run(["release", "complete-github-nuget", Preparation(fixture),
-            exact, exact, consumer, "-"], output);
-
-        Assert.AreEqual(1, exit);
-        GithubNuGetCompletionResult result = JsonSerializer.Deserialize(output.ToString(),
-            TransferJson.Default.GithubNuGetCompletionResult)!;
-        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, result.Outcome.State);
-        Assert.AreEqual(false, result.MutationAttempted);
-        Assert.Contains(NuGetRelease.ConsumerCheck, string.Join(";", result.Outcome.Reasons));
-    }
-
-    [TestMethod]
     public void CompleteMissingPublisherRemainsUnknown()
     {
         using var fixture = new NuGetReleaseTestFixture();
         string initial = Observation(fixture, "initial.json", ReleaseFileState.Absent);
         string final = Observation(fixture, "final.json", ReleaseFileState.Exact);
-        string consumer = fixture.Write("consumer.json", fixture.Consumer(),
-            TransferJson.Default.GithubNuGetConsumerResult);
         using var output = new StringWriter();
 
         int? exit = NuGetReleaseCli.Run(["release", "complete-github-nuget", Preparation(fixture),
-            initial, final, consumer, "-"], output);
+            initial, final, "-"], output);
 
         Assert.AreEqual(1, exit);
         GithubNuGetCompletionResult result = JsonSerializer.Deserialize(output.ToString(),
@@ -165,8 +138,6 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         using var fixture = new NuGetReleaseTestFixture();
         string initial = Observation(fixture, "initial.json", ReleaseFileState.Absent);
         string final = Observation(fixture, "final.json", ReleaseFileState.Exact);
-        string consumer = fixture.Write("consumer.json", fixture.Consumer(),
-            TransferJson.Default.GithubNuGetConsumerResult);
         string publisher = fixture.Write("publisher.json", new GithubNuGetPublicationResult(
             fixture.Prepared.Subject, fixture.Observe(ReleaseFileState.Exact), null,
             fixture.Observe(ReleaseFileState.Exact), []),
@@ -174,7 +145,7 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         using var output = new StringWriter();
 
         int? exit = NuGetReleaseCli.Run(["release", "complete-github-nuget", Preparation(fixture),
-            initial, final, consumer, publisher], output);
+            initial, final, publisher], output);
 
         Assert.AreEqual(0, exit);
         GithubNuGetCompletionResult result = JsonSerializer.Deserialize(output.ToString(),
@@ -186,15 +157,15 @@ public sealed class NuGetReleaseCliTests(TestContext context)
     }
 
     [TestMethod]
-    public void CompleteMissingConsumerFileCannotReportCompletion()
+    public void CompleteMissingFinalObservationFileCannotReportCompletion()
     {
         using var fixture = new NuGetReleaseTestFixture();
         string exact = Observation(fixture, "exact.json", ReleaseFileState.Exact);
         using var output = new StringWriter();
 
         Assert.ThrowsExactly<FileNotFoundException>(() => NuGetReleaseCli.Run(
-            ["release", "complete-github-nuget", Preparation(fixture), exact, exact,
-                Path.Combine(fixture.Root, "missing-consumer.json"), "-"], output));
+            ["release", "complete-github-nuget", Preparation(fixture), exact,
+                Path.Combine(fixture.Root, "missing-final.json"), "-"], output));
 
         Assert.AreEqual("", output.ToString());
     }
@@ -210,11 +181,6 @@ public sealed class NuGetReleaseCliTests(TestContext context)
     [DataRow("observation", "missing")]
     [DataRow("observation", "unknown")]
     [DataRow("observation", "duplicate")]
-    [DataRow("consumer", "root-null")]
-    [DataRow("consumer", "null")]
-    [DataRow("consumer", "missing")]
-    [DataRow("consumer", "unknown")]
-    [DataRow("consumer", "duplicate")]
     [DataRow("publisher", "root-null")]
     [DataRow("publisher", "null")]
     [DataRow("publisher", "missing")]
@@ -225,8 +191,6 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         using var fixture = new NuGetReleaseTestFixture();
         string preparation = Preparation(fixture);
         string exact = Observation(fixture, "exact.json", ReleaseFileState.Exact);
-        string consumer = fixture.Write("consumer.json", fixture.Consumer(),
-            TransferJson.Default.GithubNuGetConsumerResult);
         // A fresh-exact publisher result legitimately contains no library invocation.
         string publisher = fixture.Write("publisher.json", new GithubNuGetPublicationResult(
             fixture.Prepared.Subject, fixture.Observe(ReleaseFileState.Exact), null,
@@ -236,14 +200,12 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         {
             "preparation" => preparation,
             "observation" => exact,
-            "consumer" => consumer,
             _ => publisher,
         };
         string property = transfer switch
         {
             "preparation" => "prepared",
             "observation" => "observation",
-            "consumer" => "check",
             _ => "before",
         };
         File.WriteAllText(target, Malformed(File.ReadAllText(target), property, defect));
@@ -251,7 +213,7 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         using var output = new StringWriter();
 
         void Run() => NuGetReleaseCli.Run(["release", "complete-github-nuget", preparation,
-            initial, exact, consumer, publisher], output);
+            initial, exact, publisher], output);
 
         if (defect is "root-null" or "duplicate")
             Assert.ThrowsExactly<InvalidDataException>(Run);
@@ -339,13 +301,11 @@ public sealed class NuGetReleaseCliTests(TestContext context)
     {
         using var fixture = new NuGetReleaseTestFixture(dryRun: true);
         string exact = Observation(fixture, "exact.json", ReleaseFileState.Exact);
-        string consumer = fixture.Write("consumer.json", fixture.Consumer(),
-            TransferJson.Default.GithubNuGetConsumerResult);
         using var output = new StringWriter();
 
         Assert.ThrowsExactly<InvalidDataException>(() => NuGetReleaseCli.Run(
-            ["release", "complete-github-nuget", Preparation(fixture), exact, exact, consumer,
-                "-"], output));
+            ["release", "complete-github-nuget", Preparation(fixture), exact, exact, "-"],
+            output));
         Assert.AreEqual("", output.ToString());
     }
 

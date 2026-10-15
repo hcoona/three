@@ -71,13 +71,6 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
             new("https://nuget.pkg.github.com/hcoona/flat/", GithubNuGetPublisher.Endpoint), []);
     }
 
-    internal GithubNuGetConsumerResult Consumer(ReleaseCheckStatus status =
-        ReleaseCheckStatus.Passed) => new(Prepared.Subject, new(NuGetRelease.ConsumerCheck,
-            status), status == ReleaseCheckStatus.Passed ? 1 : null,
-        status == ReleaseCheckStatus.Passed
-            ? [new(NativeTermination.Exited, 0, DotNetPackageConsumer.Marker, "", 0.1, null)]
-            : [], status == ReleaseCheckStatus.Passed ? [] : ["Controlled consumer failure."]);
-
     internal string Write<T>(string name, T value, JsonTypeInfo<T> type) =>
         WriteText(name, JsonSerializer.Serialize(value, type));
 

@@ -268,21 +268,6 @@ jobs:
       - name: Receive transferred preparation
         run: |
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm receive verification
-      - name: Prepare qualified native npm toolchain
-        working-directory: ${{ runner.temp }}
-        run: |
-          mise install --yes "node@$RELEASE_NODE_VERSION"
-          node_root="$(mise where "node@$RELEASE_NODE_VERSION")"
-          toolchain="$RUNNER_TEMP/npm-tools"
-          mkdir -p "$toolchain/bin" "$toolchain/home"
-          ln -s "$node_root/bin/node" "$toolchain/bin/node"
-          jq -n --arg node "$RELEASE_NODE_VERSION" --arg npm "$RELEASE_NPM_VERSION" \
-            '{node: $node, npm: $npm}' > "$toolchain/bin/selected-tools.json"
-          touch "$toolchain/user.npmrc" "$toolchain/global.npmrc"
-          env -i PATH="$toolchain/bin:/usr/bin:/bin" HOME="$toolchain/home" \
-            NPM_CONFIG_USERCONFIG="$toolchain/user.npmrc" NPM_CONFIG_GLOBALCONFIG="$toolchain/global.npmrc" \
-            "$node_root/bin/npm" install --global --prefix "$toolchain" \
-            --ignore-scripts --registry=https://registry.npmjs.org "npm@$RELEASE_NPM_VERSION"
       - name: Download initial observation by immutable artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -296,26 +281,20 @@ jobs:
           artifact-ids: ${{ needs.publish.outputs.publication-id }}
           path: ${{ runner.temp }}/publication
           digest-mismatch: error
-      - name: Verify original remote bytes and native scoped consumer
+      - name: Verify registry coordinate and original bytes
         env:
           GITHUB_TOKEN: ${{ github.token }}
           WRITE_NEEDED: ${{ needs.observe.outputs.write-needed }}
         run: |
-          mkdir -p "$RUNNER_TEMP/consumer-runtime"
           control="$RUNNER_TEMP/control/WorkflowDelivery.dll"
           prepared="$RUNNER_TEMP/prepared/preparation.json"
           mise exec dotnet@10.0.401 -- dotnet "$control" release observe-github-npm \
-            "$prepared" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/verification/before-consumer.json"
-          mise exec dotnet@10.0.401 -- dotnet "$control" release consume-github-npm \
-            "$prepared" "$RUNNER_TEMP/verification/before-consumer.json" "$RUNNER_TEMP/prepared" \
-            "$RUNNER_TEMP/consumer-runtime" "$RUNNER_TEMP/npm-tools/bin" > "$RUNNER_TEMP/verification/consumer.json"
-          mise exec dotnet@10.0.401 -- dotnet "$control" release observe-github-npm \
-            "$prepared" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/verification/after-consumer.json"
+            "$prepared" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/verification/final.json"
           publication=-
           if test "$WRITE_NEEDED" = true; then publication="$RUNNER_TEMP/publication/publication.json"; fi
           mise exec dotnet@10.0.401 -- dotnet "$control" release complete-github-npm \
-            "$prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/after-consumer.json" \
-            "$RUNNER_TEMP/verification/consumer.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
+            "$prepared" "$RUNNER_TEMP/observation/observation.json" \
+            "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
       - name: Show actual available business results
         if: always()
         run: |
@@ -326,7 +305,7 @@ jobs:
           root = Path(os.environ['RUNNER_TEMP']) / 'verification'
           with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as summary:
               summary.write('## npm Buddy result\n\n')
-              for name in ('consumer', 'outcome'):
+              for name in ('final', 'outcome'):
                   path = root / (name + '.json')
                   if not path.exists() or not path.stat().st_size:
                       summary.write(name + ': required result unavailable.\n\n')

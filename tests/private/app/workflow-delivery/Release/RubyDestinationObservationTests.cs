@@ -428,18 +428,19 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task ExactObservationCannotCompleteWithMissingRequiredConsumer()
+    public async Task ExactObservationCannotCompleteWithMissingRequiredCheck()
     {
         using var fixture = new Fixture();
         RubyObservationResult result = await fixture.ObserveAsync(command =>
             Success(fixture.Present(command, Fixture.Original)), context.CancellationToken);
         AssertObservation(fixture.Prepared, result, ReleaseFileState.Exact,
             ReleaseCheckStatus.Passed);
-        ReleaseObservation awaitingConsumer = result.Observation with
-        { RequiredChecks = [.. result.Observation.RequiredChecks, "required-remote-consumer"] };
-        ReleaseOutcome outcome = ReleaseCompletion.Evaluate(fixture.Prepared, awaitingConsumer, []);
+        ReleaseObservation awaitingCheck = result.Observation with
+        { RequiredChecks = [.. result.Observation.RequiredChecks, "required-additional-check"] };
+        ReleaseOutcome outcome = ReleaseCompletion.Evaluate(fixture.Prepared, awaitingCheck, []);
         Assert.AreEqual(ReleaseBusinessState.Unsatisfied, outcome.State);
-        Assert.Contains("Required check is not passed: required-remote-consumer.", outcome.Reasons);
+        Assert.Contains("Required check is not passed: required-additional-check.",
+            outcome.Reasons);
         Assert.IsEmpty(outcome.Uploads);
         Assert.AreEqual(fixture.Prepared.Subject, outcome.Subject);
     }

@@ -145,20 +145,16 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
-    [DataRow("ruby", "source-config", "source-tools.json")]
-    [DataRow("ruby", "publisher-config", "publisher-tools.json")]
-    [DataRow("ruby", "consumer-config", "consumer-tools.json")]
-    [DataRow("python", "consumer-config", "python-wheel-tools.json")]
-    public void ConcreteConfigsUseSelectedToolsAndFreshScratch(string ecosystem,
-        string operation, string file)
+    [DataRow("source-config", "source-tools.json")]
+    [DataRow("publisher-config", "publisher-tools.json")]
+    public void ConcreteConfigsUseSelectedToolsAndFreshScratch(string operation, string file)
     {
-        using var fixture = new Caller(ecosystem);
-        string scratch = ecosystem == "python" ? "python-wheel" : "selected-scratch";
-        fixture.Run(operation, scratch);
+        using var fixture = new Caller("ruby");
+        fixture.Run(operation, "selected-scratch");
         using JsonDocument config = JsonDocument.Parse(File.ReadAllText(fixture.At(file)));
-        Assert.AreEqual(ecosystem == "ruby" ? "selected-ruby" : "selected-uv",
-            config.RootElement.GetProperty(ecosystem == "ruby" ? "ruby" : "uv").GetString());
-        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run(operation, scratch));
+        Assert.AreEqual("selected-ruby", config.RootElement.GetProperty("ruby").GetString());
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            fixture.Run(operation, "selected-scratch"));
     }
 
     [TestMethod]

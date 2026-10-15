@@ -28,7 +28,7 @@ public sealed class NuGetReleaseTests(TestContext context)
                 prepared, originals, endpoint, credential, token, transport),
             context.CancellationToken);
         GithubNuGetCompletionResult result = NuGetRelease.Complete(fixture.Prepared, initial,
-            exact, fixture.Consumer(), expectedMutation ? publication : null);
+            exact, expectedMutation ? publication : null);
 
         Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
         Assert.AreEqual((bool?)expectedMutation, result.MutationAttempted);
@@ -54,7 +54,7 @@ public sealed class NuGetReleaseTests(TestContext context)
             { pushes++; throw new AssertFailedException("Exact state must not invoke upload."); },
             context.CancellationToken);
         GithubNuGetCompletionResult result = NuGetRelease.Complete(fixture.Prepared, initial,
-            fresh, fixture.Consumer(), publication);
+            fresh, publication);
 
         Assert.AreEqual(0, pushes);
         Assert.IsNull(publication.Invocation);
@@ -117,7 +117,7 @@ public sealed class NuGetReleaseTests(TestContext context)
                 return captured;
             }, context.CancellationToken);
         GithubNuGetCompletionResult result = NuGetRelease.Complete(fixture.Prepared, absent,
-            final, fixture.Consumer(), publication);
+            final, publication);
 
         Assert.AreEqual(1, invocations);
         Assert.AreEqual(1, transport.Sends);
@@ -140,7 +140,7 @@ public sealed class NuGetReleaseTests(TestContext context)
         using var fixture = new NuGetReleaseTestFixture();
         GithubNuGetCompletionResult result = NuGetRelease.Complete(fixture.Prepared,
             fixture.Observe(ReleaseFileState.Absent), fixture.Observe(ReleaseFileState.Exact),
-            fixture.Consumer(), null);
+            null);
 
         Assert.AreEqual(ReleaseBusinessState.Unknown, result.Outcome.State);
         Assert.IsNull(result.MutationAttempted);
@@ -152,70 +152,35 @@ public sealed class NuGetReleaseTests(TestContext context)
     [TestMethod]
     [DataRow("Failed")]
     [DataRow("Missing")]
-    public void CompleteRequiredConsumerNotPassedIsUnsatisfied(string statusName)
+    public void CompleteFinalRegistryCheckNotPassedIsUnsatisfied(string statusName)
     {
         using var fixture = new NuGetReleaseTestFixture();
         GithubNuGetObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
+        GithubNuGetObservationResult final = exact with
+        {
+            Observation = exact.Observation with
+            {
+                Checks = [exact.Observation.Checks[0], new("native-metadata-visibility",
+                    Enum.Parse<ReleaseCheckStatus>(statusName))],
+            },
+        };
         GithubNuGetCompletionResult result = NuGetRelease.Complete(fixture.Prepared, exact,
-            exact, fixture.Consumer(Enum.Parse<ReleaseCheckStatus>(statusName)), null);
+            final, null);
 
         Assert.AreEqual(ReleaseBusinessState.Unsatisfied, result.Outcome.State);
-        Assert.Contains(NuGetRelease.ConsumerCheck, string.Join(";", result.Outcome.Reasons));
+        Assert.Contains("native-metadata-visibility", string.Join(";", result.Outcome.Reasons));
         Assert.AreEqual(false, result.MutationAttempted);
     }
 
     [TestMethod]
-    [DataRow("reads")]
-    [DataRow("commands")]
-    [DataRow("errors")]
-    public void CompletePassedConsumerWithoutRequiredEvidenceIsRejected(string missing)
+    public void CompleteFinalUnknownRegistryStateRemainsUnknown()
     {
         using var fixture = new NuGetReleaseTestFixture();
-        GithubNuGetObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
-        GithubNuGetConsumerResult consumer = fixture.Consumer();
-        consumer = missing switch
-        {
-            "reads" => consumer with { Reads = null },
-            "commands" => consumer with { Commands = [] },
-            _ => consumer with { Errors = ["Incomplete verification."] },
-        };
+        GithubNuGetCompletionResult result = NuGetRelease.Complete(fixture.Prepared,
+            fixture.Observe(ReleaseFileState.Exact), fixture.Observe(ReleaseFileState.Unknown),
+            null);
 
-        Assert.ThrowsExactly<InvalidDataException>(() => NuGetRelease.Complete(
-            fixture.Prepared, exact, exact, consumer, null));
-    }
-
-    [TestMethod]
-    [DataRow("Cancelled", "Cancelled")]
-    [DataRow("TimedOut", "TimedOut")]
-    [DataRow("CleanupFailed", "Failed")]
-    public async Task ConsumeAsyncNativeTerminationRetainsActualCommandResult(
-        string terminationName, string statusName)
-    {
-        using var fixture = new NuGetReleaseTestFixture();
-        string scratch = Directory.CreateDirectory(Path.Combine(fixture.Root, "consumer-scratch"))
-            .FullName;
-        var captured = new NativeCommandResult(Enum.Parse<NativeTermination>(terminationName),
-            17, "partial output", "captured diagnostic", 0.125, "Controlled interruption.");
-        int executions = 0;
-
-        GithubNuGetConsumerResult result = await NuGetRelease.ConsumeAsync(fixture.Preparation,
-            fixture.Observe(ReleaseFileState.Exact), fixture.Root, scratch,
-            "controlled-read-capability", (command, _) =>
-            {
-                executions++;
-                Assert.AreEqual("--version", Assert.ContainsSingle(command.Arguments));
-                Assert.IsFalse(command.InheritEnvironment);
-                Assert.IsFalse(command.Environment!.ContainsKey("GITHUB_TOKEN"));
-                return Task.FromResult(captured);
-            }, context.CancellationToken);
-
-        Assert.AreEqual(1, executions);
-        Assert.AreEqual(Enum.Parse<ReleaseCheckStatus>(statusName), result.Check.Status);
-        Assert.AreEqual(NuGetRelease.ConsumerCheck, result.Check.Id);
-        Assert.AreSame(captured, Assert.ContainsSingle(result.Commands));
-        Assert.IsNull(result.Reads);
-        Assert.IsNotEmpty(result.Errors);
-        Assert.IsFalse(File.Exists(Path.Combine(scratch, "consumer", "graph.json")));
+        Assert.AreEqual(ReleaseBusinessState.Unknown, result.Outcome.State);
     }
 
     [TestMethod]
@@ -255,7 +220,7 @@ public sealed class NuGetReleaseTests(TestContext context)
             context.CancellationToken));
         GithubNuGetObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
         Assert.ThrowsExactly<InvalidDataException>(() => NuGetRelease.Complete(fixture.Prepared,
-            exact, exact, fixture.Consumer(), null));
+            exact, exact, null));
         Assert.AreEqual(0, calls);
     }
 }

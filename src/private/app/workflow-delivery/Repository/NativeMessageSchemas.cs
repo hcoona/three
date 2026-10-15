@@ -14,8 +14,6 @@ internal static class NativeMessageSchemas
         ["ruby-fact-request"] = Schema(TransferJson.Default.RubyFactRequest),
         ["ruby-source-request"] = Schema(RubyFactJson.Default.RubySourceRequest),
         ["ruby-source-answer"] = Schema(RubyFactJson.Default.RubySourceAnswer),
-        ["ruby-consumer-request"] = Schema(RubyFactJson.Default.RubyConsumerRequest),
-        ["ruby-consumer-answer"] = Schema(RubyFactJson.Default.RubyConsumerAnswer),
         ["ruby-source"] = Schema(RubyFactJson.Default.RubySourceMessage),
         ["ruby-archive"] = Schema(RubyFactJson.Default.RubyArchiveMessage),
         ["ruby-context"] = Schema(RubyFactJson.Default.RubyContextMessage),

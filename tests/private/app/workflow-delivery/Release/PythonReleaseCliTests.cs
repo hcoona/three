@@ -47,13 +47,11 @@ public sealed class PythonReleaseCliTests
         Assert.IsEmpty(result.Errors);
         f.RoundTrip(f.IndexTools, TransferJson.Default.PythonIndexTools);
         f.RoundTrip(f.PublisherTools, TransferJson.Default.PythonPublisherTools);
-        f.RoundTrip(f.PackageTools, TransferJson.Default.PythonPackageTools);
         f.RoundTrip(new PythonIndexToolRequest(f.PackageTools.Uv, f.PackageTools.Interpreter,
             path, f.Root), TransferJson.Default.PythonIndexToolRequest);
         f.RoundTrip(new PythonIndexToolResult(f.PackageTools.Interpreter, [], []),
             TransferJson.Default.PythonIndexToolResult);
         f.RoundTrip(f.Observe(), TransferJson.Default.PythonIndexObservationResult);
-        f.RoundTrip(f.Consumer("python-wheel"), TransferJson.Default.PythonRemoteConsumerResult);
         f.RoundTrip(new PythonPublicationResult(f.Prepared.Subject, f.Observe(),
             [f.PublishResult("wheel")], [f.Observe(ReleaseFileState.Exact)], []),
             TransferJson.Default.PythonPublicationResult);
@@ -76,8 +74,6 @@ public sealed class PythonReleaseCliTests
                 "helper"); break;
             case "publisher-tools": Reject(f.PublisherTools,
                 TransferJson.Default.PythonPublisherTools, "uv"); break;
-            case "consumer-tools": Reject(f.PackageTools, TransferJson.Default.PythonPackageTools,
-                "deadlineSeconds"); break;
             case "index-tool-request":
                 Reject(new PythonIndexToolRequest(f.PublisherTools.Uv, f.IndexTools.Interpreter,
                     f.Root, f.Root),
@@ -85,8 +81,6 @@ public sealed class PythonReleaseCliTests
                 break;
             case "observation": Reject(f.Observe(),
                 TransferJson.Default.PythonIndexObservationResult, "observation"); break;
-            case "consumer": Reject(f.Consumer("python-wheel"),
-                TransferJson.Default.PythonRemoteConsumerResult, "original"); break;
             case "publication":
                 Reject(new PythonPublicationResult(f.Prepared.Subject, f.Observe(), [], [], []),
                     TransferJson.Default.PythonPublicationResult, "invocations");
@@ -104,8 +98,7 @@ public sealed class PythonReleaseCliTests
     }
 
     private static readonly string[] TransferKinds = ["request", "preparation", "index-tools",
-        "publisher-tools", "consumer-tools", "index-tool-request", "observation", "consumer",
-            "publication"];
+        "publisher-tools", "index-tool-request", "observation", "publication"];
     private static readonly string[] TransferDefects = ["duplicate", "missing", "extra"];
 
     public static IEnumerable<object[]> MalformedTransferCases =>
@@ -421,51 +414,11 @@ public sealed class PythonReleaseCliTests
     }
 
     [TestMethod]
-    [DataRow("python-wheel", "Passed", 0)]
-    [DataRow("python-sdist", "Passed", 0)]
-    [DataRow("python-wheel", "Failed", 1)]
-    [DataRow("python-sdist", "Cancelled", 1)]
-    public void ConsumeReturnsActualFormatResult(string kind, string status, int expectedExit)
-    {
-        using var f = new Fixture();
-        var actual = f.Consumer(kind, Enum.Parse<ReleaseCheckStatus>(status));
-        int calls = 0;
-        using var output = new StringWriter();
-        Assert.AreEqual(expectedExit, PythonReleaseCli.Run(["release", "consume-python",
-            f.Save(f.Preparation, TransferJson.Default.PythonPreparationResult), f.Root, kind,
-            f.Save(f.PackageTools, TransferJson.Default.PythonPackageTools)], output,
-            consume: (prepared, requested, tools, _) =>
-            {
-                Assert.AreEqual(f.Prepared.Subject, prepared.Subject);
-                Assert.AreEqual(kind, requested);
-                Assert.AreEqual(f.PackageTools.Scratch, tools.Scratch);
-                Assert.AreEqual(f.PackageTools.Uv, tools.Uv);
-                Assert.AreEqual(f.PackageTools.Helper, tools.Helper);
-                Assert.AreEqual(f.PackageTools.Interpreter, tools.Interpreter);
-                Assert.AreEqual(f.PackageTools.Checkout, tools.Checkout);
-                Assert.AreEqual(180, tools.DeadlineSeconds);
-                Assert.IsEmpty(tools.Environment!);
-                Assert.IsFalse(tools.InheritEnvironment);
-                calls++;
-                return Task.FromResult(actual);
-            }));
-        var result = Fixture.Parse(output, TransferJson.Default.PythonRemoteConsumerResult);
-        Assert.AreEqual(1, calls);
-        Assert.AreEqual(actual.Subject, result.Subject);
-        Assert.AreEqual(actual.Original, result.Original);
-        Assert.AreEqual(actual.Index, result.Index);
-        Assert.AreEqual(actual.Check, result.Check);
-        CollectionAssert.AreEqual(actual.Errors, result.Errors);
-        CollectionAssert.AreEqual(actual.Commands.Select(v => v.Result).ToArray(),
-            result.Commands.Select(v => v.Result).ToArray());
-    }
-
-    [TestMethod]
-    [DataRow("Passed", "Satisfied", 0)]
-    [DataRow("Failed", "Unsatisfied", 1)]
-    [DataRow("Cancelled", "Unsatisfied", 1)]
-    public void CompleteRetainsBothConsumersAndActualFailedPublish(string sdistStatus, string
-        business, int exit)
+    [DataRow("Exact", "Satisfied", 0)]
+    [DataRow("Absent", "Unsatisfied", 1)]
+    [DataRow("Unknown", "Unknown", 1)]
+    public void CompleteUsesFinalIndexStateAndRetainsActualFailedPublish(string sdistState,
+        string business, int exit)
     {
         using var f = new Fixture();
         var failed = Fixture.Success with
@@ -489,8 +442,8 @@ public sealed class PythonReleaseCliTests
         string publication = f.SaveText(published.ToString());
         using var output = new StringWriter();
         Assert.AreEqual(exit, PythonReleaseCli.Run(f.CompleteArgs(f.Observe(),
-            f.Consumer("python-sdist", Enum.Parse<ReleaseCheckStatus>(sdistStatus)), publication),
-                output));
+            f.Observe(ReleaseFileState.Exact, Enum.Parse<ReleaseFileState>(sdistState)),
+            publication), output));
         var result = Fixture.Parse(output, TransferJson.Default.PythonCompletionResult);
         Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(business), result.Outcome.State);
         Assert.AreEqual(true, result.MutationAttempted);
@@ -500,7 +453,7 @@ public sealed class PythonReleaseCliTests
             Assert.ContainsSingle(result.Publication.Invocations).Upload.Command);
         Assert.AreEqual(f.Prepared.Subject, result.Outcome.Subject);
         if (exit == 0) Assert.IsEmpty(result.Outcome.Reasons);
-        else Assert.Contains("remote-sdist-consumer", string.Join(";", result.Outcome.Reasons));
+        else Assert.Contains("sdist", string.Join(";", result.Outcome.Reasons));
         f.RoundTrip(result, TransferJson.Default.PythonCompletionResult);
     }
 
@@ -510,7 +463,7 @@ public sealed class PythonReleaseCliTests
         using var f = new Fixture();
         using var output = new StringWriter();
         Assert.AreEqual(1, PythonReleaseCli.Run(f.CompleteArgs(f.Observe(),
-            f.Consumer("python-sdist"), "-"), output));
+            f.Observe(ReleaseFileState.Exact, ReleaseFileState.Exact), "-"), output));
         var result = Fixture.Parse(output, TransferJson.Default.PythonCompletionResult);
         Assert.AreEqual(ReleaseBusinessState.Unknown, result.Outcome.State);
         Assert.IsNull(result.MutationAttempted);
@@ -522,19 +475,19 @@ public sealed class PythonReleaseCliTests
     [TestMethod]
     [DataRow("wheel")]
     [DataRow("sdist")]
-    public void CompleteRequiresBothConsumerTransfers(string missing)
+    public void CompleteRequiresBothFinalIndexFiles(string missing)
     {
         using var f = new Fixture();
         string[] args = f.CompleteArgs(f.Observe(ReleaseFileState.Exact, ReleaseFileState.Exact),
-            f.Consumer("python-sdist"), "-");
-        args[missing == "wheel" ? 5 : 6] = "-";
+            f.Observe(missing == "wheel" ? ReleaseFileState.Absent : ReleaseFileState.Exact,
+                missing == "sdist" ? ReleaseFileState.Absent : ReleaseFileState.Exact), "-");
         using var output = new StringWriter();
         Assert.AreEqual(1, PythonReleaseCli.Run(args, output));
         var result = Fixture.Parse(output, TransferJson.Default.PythonCompletionResult);
         Assert.AreEqual(ReleaseBusinessState.Unsatisfied, result.Outcome.State);
         Assert.AreEqual(false, result.MutationAttempted);
         Assert.IsEmpty(result.Outcome.Uploads);
-        Assert.Contains("remote-" + missing + "-consumer", string.Join(";",
+        Assert.Contains("Required destination file is absent: " + missing, string.Join(";",
             result.Outcome.Reasons));
     }
 
@@ -634,23 +587,6 @@ public sealed class PythonReleaseCliTests
             Assert.Contains(output, Prepared.Files.Select(file => file.Output).ToArray());
             return new(new(output, command ?? Success), false, "controlled publisher");
         }
-        internal PythonRemoteConsumerResult Consumer(string kind, ReleaseCheckStatus status =
-            ReleaseCheckStatus.Passed)
-        {
-            ReleaseFile file = Prepared.Files.Single(v => v.Kind == kind);
-            NativeCommandResult actual = status == ReleaseCheckStatus.Passed ? Success : Success
-                with
-            {
-                Termination = status == ReleaseCheckStatus.Cancelled ? NativeTermination.Cancelled :
-                    NativeTermination.Exited,
-                ExitCode = 23,
-                Error = "controlled consumer failure"
-            };
-            return new(Prepared.Subject, file, "https://test.pypi.org/simple/",
-                new("remote-" + file.Output + "-consumer", status), [new("install", Command(),
-                    Success), new("consume", Command(), actual)],
-                status == ReleaseCheckStatus.Passed ? [] : ["controlled consumer failure"]);
-        }
         internal string Save<T>(T value, JsonTypeInfo<T> type) =>
             SaveText(JsonSerializer.Serialize(value, type));
         internal string SaveText(string json)
@@ -677,14 +613,11 @@ public sealed class PythonReleaseCliTests
             TransferJson.Default.PythonIndexTools), Save(PublisherTools,
             TransferJson.Default.PythonPublisherTools)];
         internal string[] CompleteArgs(PythonIndexObservationResult initial,
-            PythonRemoteConsumerResult sdist, string publication) =>
+            PythonIndexObservationResult final, string publication) =>
             ["release", "complete-python", Save(Preparation,
                 TransferJson.Default.PythonPreparationResult), Save(initial,
                 TransferJson.Default.PythonIndexObservationResult),
-                Save(Observe(ReleaseFileState.Exact, ReleaseFileState.Exact),
-                    TransferJson.Default.PythonIndexObservationResult),
-                Save(Consumer("python-wheel"), TransferJson.Default.PythonRemoteConsumerResult),
-                    Save(sdist, TransferJson.Default.PythonRemoteConsumerResult), publication];
+                Save(final, TransferJson.Default.PythonIndexObservationResult), publication];
         internal static void Corrupt(string path, string defect, string field, string nested, string
             nestedField)
         {

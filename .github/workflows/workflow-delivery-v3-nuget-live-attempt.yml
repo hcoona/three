@@ -256,31 +256,23 @@ jobs:
           artifact-ids: ${{ needs.publish.outputs.publication-id }}
           path: ${{ runner.temp }}/publication
           digest-mismatch: error
-      - name: Verify original remote bytes and native scoped consumer
+      - name: Verify registry coordinate and original bytes
         env:
           GITHUB_TOKEN: ${{ github.token }}
           WRITE_NEEDED: ${{ needs.observe.outputs.write-needed }}
         run: |
-          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/consumer-runtime" | Out-Null
-          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/verification/before-consumer.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release consume-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/verification/before-consumer.json" "$env:RUNNER_TEMP/prepared" "$env:RUNNER_TEMP/consumer-runtime" > "$env:RUNNER_TEMP/verification/consumer.json"
-
-          $consumerStatus = $LASTEXITCODE
-          # A handled consumer failure remains a required failed result for completion.
-          if ($consumerStatus -notin @(0, 1)) { exit $consumerStatus }
-          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/verification/after-consumer.json"
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/verification/final.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $publication = '-'
           if ($env:WRITE_NEEDED -eq 'true') { $publication = "$env:RUNNER_TEMP/publication/publication.json" }
-          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/observation/observation.json" "$env:RUNNER_TEMP/verification/after-consumer.json" "$env:RUNNER_TEMP/verification/consumer.json" $publication > "$env:RUNNER_TEMP/verification/outcome.json"
+          mise exec dotnet@10.0.401 -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-github-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/observation/observation.json" "$env:RUNNER_TEMP/verification/final.json" $publication > "$env:RUNNER_TEMP/verification/outcome.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Show actual available business results
         if: always()
         run: |
           '## NuGet Buddy result' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
-          foreach ($name in @('consumer', 'outcome')) {
+          foreach ($name in @('final', 'outcome')) {
             $path = "$env:RUNNER_TEMP/verification/$name.json"
             if ((Test-Path -LiteralPath $path) -and (Get-Item -LiteralPath $path).Length -gt 0) {
               Get-Content -LiteralPath $path | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8

@@ -48,7 +48,7 @@ artifact, ambient fallback or second dependency declaration.
 | `release prepare-*`, destination observation/description                 | Independently qualify originals and describe exact, absent, partial, conflicting or unknown state |
 | `release job-inputs ruby/python/npm/nuget <operation>`                   | Prepare existing ordinary Release caller inputs and transfers                                     |
 | `native-message-schemas <directory>`                                     | Regenerate static descriptions of maintained native helper messages                               |
-| Destination publication, consumption and completion commands             | Invoke the native publisher, require separate consumers and report truthful business results      |
+| Destination publication and completion commands                          | Invoke the native publisher, require separate registry readback and report truthful results       |
 
 The [static native helper contracts](Native/contracts/) come from actual serializer
 metadata. Managed tests check regeneration; native helper tests use the static
@@ -61,8 +61,8 @@ ecosystem's complete preparation check before creating the phase output director
 Every `job-inputs` entry rejects a live run attempt other than 1, so partial
 reruns of later jobs stop too. Native tool-config operations
 remain ecosystem-specific. npm Official simulation uses `simulation-request` in
-its single job. `complete-github-npm` takes preparation, initial observation,
-final observation, consumer and publication (`-` only when omitted) paths. Missing
+its single job. Each `complete-*` command takes preparation, initial observation,
+final observation and publication (`-` only when omitted) paths. Missing
 required publication information remains unknown even when final bytes match.
 
 ## Implemented Scope
@@ -150,7 +150,7 @@ identities remain distinct. Unknown dynamic input relationships are unsupported.
 
 ## Release
 
-Preparation, project code and clean consumers have no publication capability.
+Preparation, project code and local clean consumers have no publication capability.
 Control is built and transferred before product execution. An isolated publisher
 receives bound qualified originals and uses the actual destination's native
 permission policy. Effective Environment configuration owns approval; the
@@ -159,9 +159,11 @@ application does not mirror reviewers or re-prove platform approval.
 The publisher reobserves exact state and performs only still-needed supported
 native invocations. Failure, ambiguity or interruption stops later application
 mutation. Native transport retries retain their documented bounds; the
-application adds no retry or administrative repair loop. Exact byte/state and
-required consumer verification establish satisfaction separately from upload
-acknowledgement. An absent result cannot prove publication never started.
+application adds no retry or administrative repair loop. A separate no-write
+registry observation of each exact coordinate, with the downloaded served bytes
+equal to the qualified originals, establishes satisfaction separately from upload
+acknowledgement. No remote install or restore runs after publication; clean local
+consumption during preparation qualifies the originals. An absent result cannot prove publication never started.
 
 Ordinary recovery is a fresh request at the original source/control revision,
 with rebuilt qualification, fresh observation and current native authorization.
@@ -182,8 +184,8 @@ capability. Its description is hypothetical and never claims live completion.
 The existing Buddy workflow accepts allowed development refs and transfers
 selected source/control, originals and qualification by immutable artifact IDs.
 GitHub package association and exact archive state are checked natively. The
-actual publisher gate precedes the write-capable invocation; a separate scoped
-native consumer and common result component establish completion. Tags remain
+actual publisher gate precedes the write-capable invocation; a separate no-write
+registry readback and common result component establish completion. Tags remain
 routing metadata, not original-package authority.
 
 ### NuGet Buddy Release
@@ -191,9 +193,9 @@ routing metadata, not original-package authority.
 The existing entry and reusable caller use native MSBuild/NBGV Build/Pack,
 original nupkg inspection and a clean local consumer. Bounded observation uses
 maintained NuGet interpretation; the publisher uses the official native upload
-invocation. Fresh remote restore and original-byte comparison run in a separate
-read-only context before marker/API execution. A successful upload alone cannot
-satisfy the request.
+invocation. A fresh registry observation and original-byte comparison run in a
+separate read-only verification job. A successful upload alone cannot satisfy
+the request.
 
 Ordinary CI's Windows `NuGet native preparation (Windows)` job runs the three
 `NuGetNativePreparation` rows (real preparation, original package and clean
@@ -225,7 +227,7 @@ installed metadata interpretation retain selected-index origins and original
 hashes. UV owns publication. A supported fresh request may upload only missing
 files after exact subset observation; no atomic two-file publication is promised.
 Uncertain reads, unsupported partial state or conflicting files block mutation.
-Consumers and completion remain required when state is already exact.
+Final index readback and completion remain required when state is already exact.
 
 ### Ordinary Ruby Release
 
@@ -233,7 +235,7 @@ The existing caller qualifies one original gem through native gemspec evaluation
 archive inspection and clean installed API consumption. GitHub Packages and
 RubyGems retain their separate observation, authorization and publisher
 contracts. The native publisher invocation, command outcome and required
-read-only consumer remain distinct from business satisfaction. Closed bootstrap
+read-only source readback remain distinct from business satisfaction. Closed bootstrap
 and native campaigns are not alternate operational entries.
 
 ## Validation and Evidence Limits

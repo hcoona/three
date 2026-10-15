@@ -202,7 +202,7 @@ public sealed class RubyReleaseTests(TestContext context)
         if (satisfied)
         {
             RubyCompletionResult result = RubyRelease.Complete(fixture.Prepared, initial, fresh,
-                fixture.Consumer(), publication);
+                publication);
             Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
             Assert.AreEqual(false, result.MutationAttempted);
             Assert.IsEmpty(result.Outcome.Uploads);
@@ -233,7 +233,7 @@ public sealed class RubyReleaseTests(TestContext context)
                 Assert.AreEqual(fixture.Root, originals); Assert.AreEqual(1, reads); return
                 Task.FromResult(fixture.Publish(command)); }, context.CancellationToken);
         RubyCompletionResult result = RubyRelease.Complete(fixture.Prepared, absent, final,
-            fixture.Consumer(), publication);
+            publication);
         context.WriteLine("publication receipt: " + JsonSerializer.Serialize(publication,
             TransferJson.Default.RubyPublicationResult));
         Assert.AreEqual(1, writes);
@@ -276,7 +276,7 @@ public sealed class RubyReleaseTests(TestContext context)
         Assert.IsNull(publication.Readback);
         Assert.Contains("attempted effects retained", Assert.ContainsSingle(publication.Errors));
         RubyCompletionResult complete = RubyRelease.Complete(fixture.Prepared, absent,
-            fixture.Observe(ReleaseFileState.Exact), fixture.Consumer(), publication);
+            fixture.Observe(ReleaseFileState.Exact), publication);
         Assert.AreEqual(ReleaseBusinessState.Satisfied, complete.Outcome.State);
         Assert.AreEqual(true, complete.MutationAttempted);
         Assert.AreSame(attempt.Upload, Assert.ContainsSingle(complete.Outcome.Uploads));
@@ -285,65 +285,19 @@ public sealed class RubyReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("missing")]
-    [DataRow("Failed")]
-    [DataRow("Cancelled")]
-    [DataRow("TimedOut")]
-    public void CompleteRequiresSeparateConsumer(string status)
+    [DataRow("Absent", "Unsatisfied")]
+    [DataRow("Conflict", "Unsatisfied")]
+    [DataRow("Unknown", "Unknown")]
+    public void CompleteRequiresFinalNativeSourceOriginal(string state, string expected)
     {
         using var fixture = new RubyCallerFixture();
-        RubyObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
-        RubyRemoteConsumerResult? consumer = status == "missing" ? null :
-            fixture.Consumer(Enum.Parse<ReleaseCheckStatus>(status));
-        RubyCompletionResult result = RubyRelease.Complete(fixture.Prepared, exact, exact, consumer,
-            null);
-        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, result.Outcome.State);
+        RubyCompletionResult result = RubyRelease.Complete(fixture.Prepared,
+            fixture.Observe(ReleaseFileState.Exact),
+            fixture.Observe(Enum.Parse<ReleaseFileState>(state)), null);
+        Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expected), result.Outcome.State);
         Assert.AreEqual(false, result.MutationAttempted);
-        Assert.Contains("remote-gem-output-consumer", string.Join(';', result.Outcome.Reasons));
+        Assert.IsNotEmpty(result.Outcome.Reasons);
         Assert.IsEmpty(result.Outcome.Uploads);
-    }
-
-    [TestMethod]
-    [DataRow("subject")]
-    [DataRow("original")]
-    [DataRow("source")]
-    [DataRow("check")]
-    [DataRow("read")]
-    [DataRow("digest")]
-    [DataRow("commands")]
-    [DataRow("install")]
-    [DataRow("consume")]
-    [DataRow("abnormal")]
-    [DataRow("errors")]
-    public void CompleteRejectsUnscopedOrIncompletePassedConsumer(string defect)
-    {
-        using var fixture = new RubyCallerFixture();
-        RubyRemoteConsumerResult consumer = fixture.Consumer();
-        consumer = defect switch
-        {
-            "subject" => consumer with { Subject = consumer.Subject with { Revision = new('b', 40) }
-                },
-            "original" => consumer with { Original = consumer.Original with { Sha256 = new('b', 64)
-                } },
-            "source" => consumer with { Source = "https://another.invalid" },
-            "check" => consumer with { Check = consumer.Check with { Id =
-                "different-output-consumer" } },
-            "read" => consumer with { Read = null },
-            "digest" => consumer with { Read = consumer.Read! with { Original =
-                consumer.Read.Original! with { Sha256 = new('b', 64) } } },
-            "commands" => consumer with { Commands = [] },
-            "install" => consumer with { Commands = consumer.Commands.Where(c => c.Stage !=
-                "remote-install").ToArray() },
-            "consume" => consumer with { Commands = consumer.Commands.Where(c => c.Stage !=
-                "remote-consume").ToArray() },
-            "abnormal" => consumer with { Commands = [consumer.Commands[0] with { Result =
-                RubyCallerFixture.Command(NativeTermination.Cancelled, 17) }, ..
-                consumer.Commands[1..]] },
-            _ => consumer with { Errors = ["Controlled failure"] },
-        };
-        RubyObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
-        Assert.ThrowsExactly<InvalidDataException>(() => RubyRelease.Complete(fixture.Prepared,
-            exact, exact, consumer, null));
     }
 
     [TestMethod]
@@ -352,7 +306,7 @@ public sealed class RubyReleaseTests(TestContext context)
         using var fixture = new RubyCallerFixture();
         RubyCompletionResult result = RubyRelease.Complete(fixture.Prepared,
             fixture.Observe(ReleaseFileState.Absent), fixture.Observe(ReleaseFileState.Exact),
-            fixture.Consumer(), null);
+            null);
         Assert.AreEqual(ReleaseBusinessState.Unknown, result.Outcome.State);
         Assert.IsNull(result.MutationAttempted);
         Assert.IsNull(result.Publication);
@@ -417,7 +371,7 @@ public sealed class RubyReleaseTests(TestContext context)
                 DurationSeconds = double.NaN }) },
         };
         Assert.ThrowsExactly<InvalidDataException>(() => RubyRelease.Complete(fixture.Prepared,
-            absent, exact, fixture.Consumer(), publication));
+            absent, exact, publication));
     }
 
     [TestMethod]
@@ -507,7 +461,7 @@ public sealed class RubyReleaseTests(TestContext context)
                 context.CancellationToken));
         RubyObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
         Assert.ThrowsExactly<InvalidDataException>(() => RubyRelease.Complete(fixture.Prepared,
-            exact, exact, fixture.Consumer(), null));
+            exact, exact, null));
         Assert.AreEqual(0, calls);
     }
 }
@@ -553,15 +507,6 @@ internal sealed class RubyCallerFixture : IDisposable
             ReleaseFileState.Exact ? RemoteOriginal() : null, Command(), []));
     internal RubySourceOriginal RemoteOriginal() => new(Path.Combine(Root, "remote.gem"),
         Original.Name, Original.Version, "ruby", Original.Size, Original.Sha256);
-    internal RubyRemoteConsumerResult Consumer(ReleaseCheckStatus status =
-        ReleaseCheckStatus.Passed) => new(Prepared.Subject, Original,
-        Prepared.Subject.Destination == "rubygems" ? "https://rubygems.org" :
-            "https://rubygems.pkg.github.com/hcoona",
-        new(RubySourceState.Present, RemoteOriginal(), Command(), []), new("remote-" +
-            Original.Output + "-consumer", status),
-        [new("remote-original", Command()), new("remote-install", Command()), new("remote-consume",
-            Command())], status == ReleaseCheckStatus.Passed ? [] :
-            ["Controlled consumer did not pass"]);
     internal RubyPublishResult Publish(NativeCommandResult command) => new(Prepared.Subject,
         new(Original.Output, command));
     internal string Directory(string name) => System.IO.Directory.CreateDirectory(Path.Combine(Root,

@@ -249,12 +249,6 @@ jobs:
           path: ${{ runner.temp }}/publication
           digest-mismatch: error
         if: needs.publish.outputs.publication-id != ''
-      - name: Check out exact source without credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
       - name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
@@ -281,21 +275,14 @@ jobs:
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python tool-request
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
-      - name: Verify both required remote formats and complete final public state
+      - name: Verify both index files and original bytes in final public state
         run: |
           set -Eeuo pipefail
-          mise exec dotnet@10.0.401 -- dotnet tool restore
-          for kind in python-wheel python-sdist; do
-            "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python consumer-config "$kind"
-            status=0
-            mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release consume-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$kind" "$RUNNER_TEMP/$kind-tools.json" > "$RUNNER_TEMP/verification/$kind.json" || status=$?
-            if [ "$status" -gt 1 ]; then exit "$status"; fi
-          done
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python index-config final-observation-scratch
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/index-tools.json" > "$RUNNER_TEMP/verification/final.json" || true
           publication=-
           if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$RUNNER_TEMP/verification/python-wheel.json" "$RUNNER_TEMP/verification/python-sdist.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
       - name: Show actual available business result
         run: |
           set -Eeuo pipefail

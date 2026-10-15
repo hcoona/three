@@ -1,7 +1,7 @@
 # Native Ruby helper tests
 
-This bundle-only RSpec carrier exercises the actual `facts.rb`, `source.rb` and
-`consumer.rb` subprocesses. It uses the committed native wire descriptions and
+This bundle-only RSpec carrier exercises the actual `facts.rb` and `source.rb`
+subprocesses. It uses the committed native wire descriptions and
 `json_schemer` (Draft 2020-12, including schema validation). It requires no C#
 build, product gemspec, registry access or credentials. Source tests substitute
 only the public RubyGems Source methods in `spec/support/public_source_answers.rb`;

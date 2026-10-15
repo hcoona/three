@@ -180,10 +180,8 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
         GithubNuGetObservationResult absent = await new GithubNuGetObservation(absentClient)
             .ObserveAsync(first.Result.Prepared, "controlled-read", context.CancellationToken);
         Assert.AreEqual(ReleaseFileState.Absent, absent.Observation.Files[0].State);
-        var missingConsumer = new GithubNuGetConsumerResult(first.Result.Prepared.Subject,
-            new(NuGetRelease.ConsumerCheck, ReleaseCheckStatus.Missing), null, [], []);
         GithubNuGetCompletionResult missing = NuGetRelease.Complete(first.Result.Prepared,
-            absent, absent, missingConsumer, null);
+            absent, absent, null);
         Assert.AreEqual(ReleaseBusinessState.Unknown, missing.Outcome.State);
         Assert.IsNull(missing.MutationAttempted);
         Assert.IsNull(missing.Invocation);
@@ -194,66 +192,36 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
         AssertEquivalent(first, fresh);
         Assert.AreNotEqual(first.Scratch, fresh.Scratch);
         Assert.AreNotEqual(first.Cache, fresh.Cache);
-        string remoteRoot = Directory.CreateDirectory(Path.Combine(fixture.Root, "fresh-remote"))
-            .FullName;
-        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(remoteRoot));
         using var feed = new Feed(fresh.Result.Prepared.Files[0].Version,
             conflict ? [.. firstBytes, 0] : firstBytes);
         using var client = new HttpClient(feed);
         var observer = new GithubNuGetObservation(client);
         int writes = 0;
-        GithubNuGetPublicationResult publication = await NuGetRelease.PublishAsync(fresh.Result,
-            fresh.Scratch, "controlled-read", observer.ObserveAsync, (_, _, _, _, _) =>
-            { writes++; throw new AssertFailedException("Recovery must not call the publisher."); },
-            context.CancellationToken);
-        fixture.Attach("fresh-publication.json", publication);
-        Assert.AreEqual(0, writes);
-        Assert.IsNull(publication.Invocation);
-        Assert.AreEqual(conflict ? ReleaseFileState.Conflict : ReleaseFileState.Exact,
-            publication.Before.Observation.Files[0].State);
-        var actualCommands = new List<ReleaseCommand>();
         try
         {
-            if (conflict)
-            {
-                Assert.AreEqual(ReleaseBusinessState.Unsatisfied,
-                    ReleaseCompletion.Evaluate(fresh.Result.Prepared,
-                        publication.After.Observation, []).State);
-                // Native restore also enforces original bytes before consumer Build/API.
-                InvalidDataException failure =
-                    await Assert.ThrowsExactlyAsync<InvalidDataException>(
-                    () => DotNetSmokeRemoteConsumer.RunAsync(NuGetRelease.Original(fresh.Result,
-                        fresh.Scratch), fresh.Result.Native, remoteRoot, "controlled-read",
-                        context.CancellationToken, feed, ExecuteAsync));
-                Assert.Contains("Installed remote original bytes differ", failure.Message);
-                Assert.HasCount(2, actualCommands);
-                Assert.IsFalse(actualCommands.Any(command => command.Command.Arguments
-                    .Contains("-target:Build,GetTargetPath")));
-                Assert.IsFalse(File.Exists(Path.Combine(remoteRoot, "consumer", "build.json")));
-            }
-            else
-            {
-                DotNetSmokeRemoteConsumerResult result = await DotNetSmokeRemoteConsumer.RunAsync(
-                    NuGetRelease.Original(fresh.Result, fresh.Scratch), fresh.Result.Native,
-                    remoteRoot, "controlled-read", context.CancellationToken, feed, ExecuteAsync);
-                var consumer = new GithubNuGetConsumerResult(fresh.Result.Prepared.Subject,
-                    new(NuGetRelease.ConsumerCheck, ReleaseCheckStatus.Passed), result.Reads,
-                    result.Commands, []);
-                fixture.Attach("fresh-consumer.json", consumer);
-                GithubNuGetCompletionResult complete = NuGetRelease.Complete(fresh.Result.Prepared,
-                    absent, publication.After, consumer, publication);
-                fixture.Attach("fresh-completion.json", complete);
-                Assert.AreEqual(ReleaseBusinessState.Satisfied, complete.Outcome.State);
-                Assert.AreEqual(false, complete.MutationAttempted);
-                Assert.HasCount(4, actualCommands);
-                Assert.AreEqual(DotNetPackageConsumer.Marker, result.Commands[^1].Stdout.Trim());
-                Assert.IsTrue(result.Commands.All(command => command.Succeeded));
-                Assert.IsTrue(File.Exists(result.Output));
-                Assert.IsGreaterThan(0, result.Reads);
-                string installed = Assert.ContainsSingle(Directory.EnumerateFiles(
-                    Path.Combine(remoteRoot, "packages"), "*.nupkg", SearchOption.AllDirectories));
-                CollectionAssert.AreEqual(firstBytes, File.ReadAllBytes(installed));
-            }
+            GithubNuGetPublicationResult publication = await NuGetRelease.PublishAsync(
+                fresh.Result, fresh.Scratch, "controlled-read", observer.ObserveAsync,
+                (_, _, _, _, _) =>
+                {
+                    writes++;
+                    throw new AssertFailedException("Recovery must not call the publisher.");
+                }, context.CancellationToken);
+            fixture.Attach("fresh-publication.json", publication);
+            Assert.AreEqual(0, writes);
+            Assert.IsNull(publication.Invocation);
+            Assert.AreEqual(conflict ? ReleaseFileState.Conflict : ReleaseFileState.Exact,
+                publication.Before.Observation.Files[0].State);
+            // Completion is the independent registry readback of the served original bytes.
+            GithubNuGetObservationResult final = await observer.ObserveAsync(
+                fresh.Result.Prepared, "controlled-read", context.CancellationToken);
+            GithubNuGetCompletionResult complete = NuGetRelease.Complete(fresh.Result.Prepared,
+                absent, final, publication);
+            fixture.Attach("fresh-completion.json", complete);
+            Assert.AreEqual(conflict ? ReleaseBusinessState.Unsatisfied :
+                ReleaseBusinessState.Satisfied, complete.Outcome.State);
+            Assert.AreEqual(false, complete.MutationAttempted);
+            Assert.IsTrue(feed.Requests.Any(request => request.Uri.EndsWith(".nupkg",
+                StringComparison.Ordinal)));
             Assert.IsTrue(feed.Requests.All(request => request.Method == "GET"));
             Assert.IsTrue(absentFeed.Requests.All(request => request.Method == "GET"));
             CollectionAssert.AreEqual(originalResultBytes, File.ReadAllBytes(originalResult));
@@ -266,31 +234,11 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             });
             Assert.AreEqual(ReleaseBusinessState.Unknown, missing.Outcome.State);
             Assert.IsNull(missing.MutationAttempted);
-            foreach (ReleaseCommand command in actualCommands)
-            {
-                Assert.IsFalse(command.Command.InheritEnvironment);
-                Assert.IsFalse(command.Command.Environment!.Values.Any(value =>
-                    value?.Contains("controlled-read", StringComparison.Ordinal) == true));
-                Assert.AreEqual(Path.Combine(remoteRoot, "packages"),
-                    command.Command.Environment["NUGET_PACKAGES"]);
-                Assert.AreNotEqual(fresh.Cache, command.Command.Environment["NUGET_PACKAGES"]);
-            }
         }
         finally
         {
-            fixture.Attach("remote-commands.json", actualCommands);
-            fixture.Attach("remote-reads.json", feed.Requests);
+            fixture.Attach("fresh-reads.json", feed.Requests);
             fixture.Attach("initial-reads.json", absentFeed.Requests);
-            fixture.RetainTree(remoteRoot, "remote");
-        }
-
-        async Task<NativeCommandResult> ExecuteAsync(NativeCommand command, CancellationToken token)
-        {
-            NativeCommand actual = NativeFixture.WithBinlog(command, remoteRoot,
-                actualCommands.Count);
-            NativeCommandResult result = await NativeProcess.ExecuteAsync(actual, token);
-            actualCommands.Add(new("remote", actual, result));
-            return result;
         }
     }
 
@@ -658,7 +606,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             Assert.AreEqual(HttpMethod.Get, request.Method);
             Uri uri = request.RequestUri!;
             HttpResponseMessage response;
-            if (uri == new Uri(DotNetSmokeRemoteConsumer.ServiceIndex))
+            if (uri == new Uri(GithubNuGetObservation.ServiceIndex))
                 response = Json("""
                     {"version":"3.0.0","resources":[
                       {"@id":"https://nuget.pkg.github.com/hcoona/flat/",
