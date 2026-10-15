@@ -96,7 +96,7 @@ internal static class DotNetSmokeRemoteConsumer
                 ProjectCollection.Escape(graphPath), "-property:RestoreConfigFile=" +
                 ProjectCollection.Escape(config)], 60);
         DotNetPackageConsumer.RequireFile(graphPath);
-        if (new FileInfo(graphPath).Length > 2 * 1024 * 1024)
+        if (OwnedFile.Length(graphPath) > 2 * 1024 * 1024)
             throw new InvalidDataException("Native consumer graph exceeds its limit.");
         DependencyGraphSpec graph = DependencyGraphSpec.Load(graphPath);
         RequireGraph(graph, project, config, packages, identity);
@@ -241,7 +241,7 @@ internal static class DotNetSmokeRemoteConsumer
         string archive = new VersionFolderPathResolver(packages)
             .GetPackageFilePath(identity.Id, identity.Version);
         DotNetPackageConsumer.RequireFile(archive);
-        if (new FileInfo(archive).Length != original.Size || DotNetPackageArchive.Digest(archive) !=
+        if (OwnedFile.Length(archive) != original.Size || DotNetPackageArchive.Digest(archive) !=
                 original.Sha256)
             throw new InvalidDataException("Installed remote original bytes differ from request.");
     }

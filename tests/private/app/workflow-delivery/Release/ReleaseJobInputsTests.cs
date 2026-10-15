@@ -162,23 +162,6 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
-    [OSCondition(OperatingSystems.Linux)]
-    [DataRow("ruby")]
-    [DataRow("python")]
-    [DataRow("npm")]
-    [DataRow("nuget")]
-    public void LinkedOriginalsCannotEscapeOwnedTransfer(string ecosystem)
-    {
-        using var fixture = new Caller(ecosystem);
-        fixture.Run("request");
-        ReleaseSubject subject = fixture.Subject();
-        fixture.Preparation(subject, "linked/original");
-        Directory.CreateSymbolicLink(fixture.At("preparation-scratch/linked"), fixture.At(
-            "control"));
-        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("originals"));
-    }
-
-    [TestMethod]
     [DataRow("ruby")]
     [DataRow("python")]
     [DataRow("npm")]

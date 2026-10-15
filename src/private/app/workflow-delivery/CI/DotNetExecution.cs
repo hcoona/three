@@ -29,10 +29,10 @@ internal static class DotNetExecution
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        string checkout = Absolute(request.Checkout);
-        string scratch = Absolute(request.Scratch);
+        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
+        string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
         if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
-            Within(scratch, checkout) || Within(checkout, scratch) ||
+            OwnedPath.Overlap(scratch, checkout) ||
             Directory.EnumerateFileSystemEntries(scratch).Any() || request.DeadlineSeconds <= 0)
             throw new InvalidDataException(
                 "Native .NET execution requires fresh external scratch.");
@@ -283,19 +283,10 @@ internal static class DotNetExecution
         if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
             throw new InvalidDataException("Invalid native GetTargetPath coordinate.");
         path = Path.GetFullPath(path);
-        if (!File.Exists(path) || (File.GetAttributes(path) &
-            (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
-            throw new InvalidDataException("Native GetTargetPath is not a regular file.");
+        if (!File.Exists(path))
+            throw new InvalidDataException("Native GetTargetPath is missing or not a file.");
         return path;
     }
 
-    private static string Absolute(string path) => Path.IsPathFullyQualified(path)
-        ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)) :
-        throw new InvalidDataException("Native .NET paths must be absolute.");
-
-    private static bool Within(string child, string parent) => child.Equals(parent,
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
-            StringComparison.Ordinal) ||
-        child.StartsWith(parent + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    private const string PathMessage = "Native .NET paths must be absolute.";
 }

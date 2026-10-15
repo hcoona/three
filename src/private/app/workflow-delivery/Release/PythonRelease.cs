@@ -1,5 +1,6 @@
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Ecosystems;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Release;
 
@@ -53,8 +54,7 @@ internal static class PythonRelease
         foreach (ReleaseFile file in preparation.Prepared.Files)
         {
             string path = Path.GetFullPath(Path.Combine(root, file.Path));
-            if (!path.StartsWith(root + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
-                    ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            if (path == root || !OwnedPath.Within(path, root))
                 throw new InvalidDataException("Original Python path leaves its transfer root.");
             PythonSmokePackageOperations.RequireOriginal(new(file.Kind, path, file.Size,
                 file.Sha256));

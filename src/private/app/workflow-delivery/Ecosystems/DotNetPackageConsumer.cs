@@ -105,9 +105,7 @@ internal static class DotNetPackageConsumer
             !Path.IsPathFullyQualified(path.GetString()!))
             throw new InvalidDataException("Missing native consumer GetTargetPath output.");
         string output = Path.GetFullPath(path.GetString()!);
-        if (!output.StartsWith(consumer + Path.DirectorySeparatorChar,
-                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
-                    StringComparison.Ordinal))
+        if (output == consumer || !OwnedPath.Within(output, consumer))
             throw new InvalidDataException(
                 "Native consumer output is outside its owned directory.");
         RequireFile(output);
@@ -175,7 +173,7 @@ internal static class DotNetPackageConsumer
         string installed = new VersionFolderPathResolver(folder.Path)
             .GetPackageFilePath(identity.Id, identity.Version);
         RequireFile(installed);
-        if (new FileInfo(installed).Length != original.Size ||
+        if (OwnedFile.Length(installed) != original.Size ||
             DotNetPackageArchive.Digest(installed) != original.Sha256)
             throw new InvalidDataException(
                 "The restored package bytes differ from the original archive.");
@@ -196,8 +194,7 @@ internal static class DotNetPackageConsumer
 
     internal static void RequireFile(string path)
     {
-        if (!File.Exists(path) || (File.GetAttributes(path) &
-                (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
-            throw new InvalidDataException("Required native output is not a regular file.");
+        if (!File.Exists(path))
+            throw new InvalidDataException("Required native output is missing or not a file.");
     }
 }

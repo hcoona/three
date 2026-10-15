@@ -30,9 +30,7 @@ internal static class RubyGroupExecution
         string scratch = Path.GetFullPath(request.Scratch);
         string checkout = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Checkout));
         if (!Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
-            scratch == checkout || scratch.StartsWith(checkout + Path.DirectorySeparatorChar,
-                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
-                    StringComparison.Ordinal))
+            OwnedPath.Within(scratch, checkout))
             throw new InvalidDataException("Ruby execution requires fresh external scratch.");
         GitRevision revision = await new GitReader(checkout).ReadAsync(plan.Candidate, token);
         _ = await GitMaterialization.BindAsync(checkout, revision, token);

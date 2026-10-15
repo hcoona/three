@@ -17,12 +17,13 @@ internal static class NodePackageArchive
         CancellationToken token)
     {
         RequireRegularFile(archive);
-        if (new FileInfo(archive).Length is <= 0 or > CompressedLimit)
-            throw new InvalidDataException("Native npm archive exceeds its compressed size bound.");
         if (!Directory.Exists(metadataDirectory) ||
             Directory.EnumerateFileSystemEntries(metadataDirectory).Any())
             throw new InvalidDataException("Packed metadata requires a fresh empty directory.");
+        // Bound the opened stream: a linked path's own length is not the archive read.
         using var input = File.OpenRead(archive);
+        if (input.Length is <= 0 or > CompressedLimit)
+            throw new InvalidDataException("Native npm archive exceeds its compressed size bound.");
         using var gzip = new GZipStream(input, CompressionMode.Decompress);
         using var bounded = new BoundedReadStream(gzip, ExpandedLimit);
         using var tar = new TarReader(bounded, leaveOpen: true);
@@ -67,9 +68,8 @@ internal static class NodePackageArchive
 
     internal static void RequireRegularFile(string path)
     {
-        FileAttributes attributes = File.GetAttributes(path);
-        if ((attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
-            throw new InvalidDataException("Required npm output is not a regular file: " + path);
+        if (!File.Exists(path))
+            throw new InvalidDataException("Required npm output is missing or not a file: " + path);
     }
 
     private sealed class BoundedReadStream(Stream input, long limit) : Stream

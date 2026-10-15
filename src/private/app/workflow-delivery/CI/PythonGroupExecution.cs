@@ -40,18 +40,16 @@ internal static class PythonGroupExecution
         ResultCollector.Collect(packagePlan, []);
 
         PythonPytestRunRequest native = request.Native;
-        string checkout = Absolute(native.Checkout), scratch = Absolute(native.Scratch);
-        _ = Absolute(native.Interpreter);
-        StringComparison paths = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        string checkout = OwnedPath.Absolute(native.Checkout, PathMessage);
+        string scratch = OwnedPath.Absolute(native.Scratch, PathMessage);
+        _ = OwnedPath.Absolute(native.Interpreter, PathMessage);
         if (native.DeadlineSeconds <= 0 || !Directory.Exists(checkout) ||
             !Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
-            Linked(checkout) || Linked(scratch) || Within(scratch, checkout) ||
-            Within(checkout, scratch))
+            OwnedPath.Overlap(scratch, checkout))
             throw new InvalidDataException("Python group requires fresh external scratch.");
         if (packagePlan.Checks.Length != 0)
         {
-            _ = Absolute(request.PackageHelper);
+            _ = OwnedPath.Absolute(request.PackageHelper, PathMessage);
             // Apply the archive consumer's boundary before either partition can execute.
             for (DirectoryInfo? parent = new(scratch); parent is not null; parent = parent.Parent)
                 if (File.Exists(Path.Combine(parent.FullName, ".git")) ||
@@ -101,18 +99,7 @@ internal static class PythonGroupExecution
 
         CheckResult[] Cancelled(CiPlan partition) => partition.Checks.Select(item =>
             new CheckResult(plan.Candidate, item.Work.Key, CheckStatus.Cancelled)).ToArray();
-        bool Within(string child, string parent) => child.Equals(parent, paths) ||
-            child.StartsWith(parent + Path.DirectorySeparatorChar, paths);
     }
 
-    private static string Absolute(string path) => Path.IsPathFullyQualified(path)
-        ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path))
-        : throw new InvalidDataException("Python group paths must be absolute.");
-    private static bool Linked(string path)
-    {
-        for (DirectoryInfo? directory = new(path); directory is not null;
-             directory = directory.Parent)
-            if ((directory.Attributes & FileAttributes.ReparsePoint) != 0) return true;
-        return false;
-    }
+    private const string PathMessage = "Python group paths must be absolute.";
 }

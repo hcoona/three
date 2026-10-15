@@ -89,12 +89,11 @@ internal static class RubySourceReader
                         value.Version != version ||
                         value.Platform != "ruby" ||
                         !Path.IsPathFullyQualified(path) ||
-                        !Path.GetFullPath(path).StartsWith(download + Path.DirectorySeparatorChar,
-                            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
-                                StringComparison.Ordinal) ||
+                        // The directory itself fails the regular-file check below.
+                        !OwnedPath.Within(Path.GetFullPath(path), download) ||
                         size <= 0 || size > ReleasePolicy.ReadbackOriginalLimit ||
                         !File.Exists(path) ||
-                        new FileInfo(path).Length != size ||
+                        OwnedFile.Length(path) != size ||
                         Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))) !=
                             digest)
                         return Unknown("Native Ruby original or identity is inconsistent.");

@@ -101,6 +101,25 @@ public sealed class NodePackageArchiveTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task ReadBoundsTheLinkedArchiveTarget()
+    {
+        using var files = new ArchiveFiles();
+        string target = Path.Combine(files.Root, "target.tgz");
+        using (var sparse = File.Create(target))
+            sparse.SetLength(NodePackageArchive.CompressedLimit + 1);
+        try { File.CreateSymbolicLink(files.Archive, target); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            Assert.Inconclusive("The platform cannot create a file link.");
+        }
+
+        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            NodePackageArchive.ReadAsync(files.Archive, files.Metadata, context.CancellationToken));
+
+        Assert.Contains("compressed", failure.Message);
+    }
+
+    [TestMethod]
     [DataRow("Pax")]
     [DataRow("Ustar")]
     [DataRow("V7")]

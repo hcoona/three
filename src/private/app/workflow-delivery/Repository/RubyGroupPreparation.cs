@@ -30,9 +30,8 @@ internal static class RubyGroupPreparation
         if (request.DeadlineSeconds <= 0 ||
             string.IsNullOrWhiteSpace(request.BundlerProbeVersion) ||
             !Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
-            Within(scratch, request.Basis.Directory) || Within(request.Basis.Directory, scratch) ||
-            Within(scratch, request.Candidate.Directory) ||
-            Within(request.Candidate.Directory, scratch) ||
+            OwnedPath.Overlap(scratch, request.Basis.Directory) ||
+            OwnedPath.Overlap(scratch, request.Candidate.Directory) ||
             request.Full && request.Basis.Reference != request.Candidate.Reference)
             throw new InvalidDataException("Ruby preparation requires fresh external state.");
         GitComparison comparison = await new GitReader(request.Candidate.Directory).CompareAsync(
@@ -142,10 +141,4 @@ internal static class RubyGroupPreparation
     private static string Absolute(string path) => Path.IsPathFullyQualified(path) &&
         Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)) == path ? path :
         throw new InvalidDataException("Ruby preparation requires canonical absolute paths.");
-
-    private static bool Within(string child, string parent) => child.Equals(parent,
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
-            StringComparison.Ordinal) || child.StartsWith(parent + Path.DirectorySeparatorChar,
-                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
-                    StringComparison.Ordinal);
 }

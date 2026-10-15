@@ -1,6 +1,7 @@
 using System.Text.Json;
 using NuGet.Packaging.Core;
 using NuGet.Versioning;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Ecosystems;
 
@@ -9,11 +10,12 @@ internal static class DotNetPackageResults
 {
     internal static async Task<JsonDocument> ResponseAsync(string path, CancellationToken token)
     {
-        if (!File.Exists(path) || (File.GetAttributes(path) &
-                (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0 ||
-            new FileInfo(path).Length > 32 * 1024 * 1024)
-            throw new InvalidDataException("Missing regular native package result file.");
+        if (!File.Exists(path))
+            throw new InvalidDataException("Native package result file is missing or not a file.");
+        // Measure the opened stream: a linked path's own length is not the parsed target's.
         await using var file = File.OpenRead(path);
+        if (file.Length > 32 * 1024 * 1024)
+            throw new InvalidDataException("Native package result file exceeds its limit.");
         return await JsonDocument.ParseAsync(file, cancellationToken: token);
     }
 
@@ -115,7 +117,7 @@ internal static class DotNetPackageResults
             string extension = Path.GetExtension(path);
             if (extension.Equals(".nuspec", StringComparison.OrdinalIgnoreCase)) continue;
             if (!extension.Equals(".nupkg", StringComparison.OrdinalIgnoreCase) ||
-                !Within(path, destination) || !archives.Add(path))
+                !OwnedPath.Within(path, destination) || !archives.Add(path))
                 throw new InvalidDataException("Undeclared or ambiguous native package output.");
             DotNetPackageConsumer.RequireFile(path);
         }
@@ -133,12 +135,6 @@ internal static class DotNetPackageResults
         string archive = archives.Single();
         DotNetPackageArchive.RequireIdentity(DotNetPackageArchive.Identity(archive), expected);
         return new(unit, build, output, role, kind, archive,
-            new FileInfo(archive).Length, DotNetPackageArchive.Digest(archive));
+            OwnedFile.Length(archive), DotNetPackageArchive.Digest(archive));
     }
-
-    private static bool Within(string child, string parent) => child.Equals(parent,
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
-            ||
-        child.StartsWith(parent + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 }

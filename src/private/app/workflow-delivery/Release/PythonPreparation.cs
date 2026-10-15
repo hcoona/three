@@ -250,7 +250,6 @@ internal static class PythonPreparation
         return values;
     }
 
-    private static string Absolute(string path) => Path.IsPathFullyQualified(path)
-        ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)) :
-        throw new InvalidDataException("Python Release paths must be absolute.");
+    private static string Absolute(string path) =>
+        OwnedPath.Absolute(path, "Python Release paths must be absolute.");
 }

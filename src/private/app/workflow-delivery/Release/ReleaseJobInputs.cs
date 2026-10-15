@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Ecosystems;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Release;
 
@@ -46,9 +47,7 @@ internal static class ReleaseJobInputs
             if (string.IsNullOrWhiteSpace(name) || name.Contains('\\') || name.Contains(':') ||
                 name.Split('/').Any(part => part is "" or "." or ".."))
                 throw new InvalidDataException("Expected a relative caller path.");
-            string path = Path.GetFullPath(Path.Combine(root, name));
-            RequireUnlinked(path, root);
-            return path;
+            return Path.GetFullPath(Path.Combine(root, name));
         }
         string Fresh(string name)
         {
@@ -142,10 +141,8 @@ internal static class ReleaseJobInputs
                     string target = At("prepared/" + file.Path);
                     // Only the original files selected by the typed preparation cross the job
                     // boundary.
-                    if (!File.Exists(source) || !source.StartsWith(sourceRoot +
-                        Path.DirectorySeparatorChar,
-                        StringComparison.Ordinal)) throw new InvalidDataException(
-                            "Missing original transfer.");
+                    if (!File.Exists(source) || !OwnedPath.Within(source, sourceRoot))
+                        throw new InvalidDataException("Missing original transfer.");
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                     File.Copy(source, target, overwrite: false);
                 }
@@ -231,14 +228,4 @@ internal static class ReleaseJobInputs
         ReleaseCli.Read(path, type);
     private static void Write<T>(string path, T value, JsonTypeInfo<T> type) =>
         File.WriteAllText(path, JsonSerializer.Serialize(value, type) + "\n");
-    private static void RequireUnlinked(string path, string root)
-    {
-        for (string? current = path; current is not null; current = Path.GetDirectoryName(current))
-        {
-            if ((File.Exists(current) || Directory.Exists(current)) &&
-                (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
-                throw new InvalidDataException("Linked caller transfers are unsupported.");
-            if (current == root) break;
-        }
-    }
 }

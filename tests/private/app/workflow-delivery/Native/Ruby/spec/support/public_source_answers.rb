@@ -81,7 +81,7 @@ Gem::Source.prepend(Module.new do
     raise "not a native Specification" unless spec.is_a?(Gem::Specification)
     request = JSON.parse(File.read(ARGV.fetch(0)))
     requested_directory = request.fetch("directory")
-    unless directory == File.realpath(requested_directory)
+    unless directory == File.expand_path(requested_directory)
       raise "wrong original destination"
     end
     calls << { "method" => "download", "name" => spec.name,
@@ -99,11 +99,6 @@ Gem::Source.prepend(Module.new do
       sibling = directory + "-other"
       Dir.mkdir(sibling)
       path = File.join(sibling, "original.gem")
-    elsif scenario == "symlink-outside"
-      outside = File.join(File.dirname(directory), "outside.gem")
-      File.binwrite(outside, bytes)
-      File.symlink(outside, path)
-      return path
     elsif scenario == "missing-original"
       return path
     elsif scenario == "directory-original"

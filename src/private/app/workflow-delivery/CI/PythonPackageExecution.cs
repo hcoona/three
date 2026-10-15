@@ -29,7 +29,8 @@ internal static class PythonPackageExecution
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        string checkout = Absolute(request.Checkout), scratch = Absolute(request.Scratch);
+        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
+        string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
         var tools = new PythonPackageTools(checkout, scratch, request.Uv, request.Interpreter,
             request.Helper, request.DeadlineSeconds, request.Environment);
         PythonSmokePackageOperations.Validate(tools);
@@ -163,7 +164,5 @@ internal static class PythonPackageExecution
     private sealed class PackageCommandFailure(CheckStatus status,
         string message) : Exception(message)
     { internal CheckStatus Status { get; } = status; }
-    private static string Absolute(string path) => Path.IsPathFullyQualified(path)
-        ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path))
-        : throw new InvalidDataException("Python package paths must be absolute.");
+    private const string PathMessage = "Python package paths must be absolute.";
 }

@@ -1,4 +1,5 @@
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Repository;
 
@@ -32,14 +33,10 @@ internal static class DotNetFactsAssembler
         }, token);
         string checkout = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Checkout));
         string scratch = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Scratch));
-        StringComparison paths = OperatingSystem.IsWindows() ?
-            StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         if (!Path.IsPathFullyQualified(request.Checkout) ||
             !Path.IsPathFullyQualified(request.Scratch) || request.DeadlineSeconds <= 0 ||
             !Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
-            scratch.Equals(checkout, paths) ||
-            scratch.StartsWith(checkout + Path.DirectorySeparatorChar, paths) ||
-            checkout.StartsWith(scratch + Path.DirectorySeparatorChar, paths))
+            OwnedPath.Overlap(scratch, checkout))
             throw new InvalidDataException("Native projection requires fresh external scratch.");
         GitRevision revision = await new GitReader(checkout).ReadAsync(
             selection.Request.Candidate.Revision, token);

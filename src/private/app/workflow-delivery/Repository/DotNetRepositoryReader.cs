@@ -370,9 +370,8 @@ internal sealed class DotNetRepositoryReader
         "PotentialEditorConfigFiles" or "SdkConfigurationCandidate" or
         "ConfigurationCandidate" or "RestoreLockCandidate";
 
-    private static string Absolute(string path) => !Path.IsPathFullyQualified(path)
-        ? throw new InvalidDataException("Native endpoint coordinates must be absolute.")
-        : Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+    private static string Absolute(string path) =>
+        OwnedPath.Absolute(path, "Native endpoint coordinates must be absolute.");
 
     internal static string Parent(string path) => path.LastIndexOf('/') is int separator &&
         separator >= 0 ? path[..separator] : ".";

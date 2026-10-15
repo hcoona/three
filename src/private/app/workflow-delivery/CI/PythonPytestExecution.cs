@@ -36,14 +36,12 @@ internal static class PythonPytestExecution
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         bool membershipBound, CancellationToken token)
     {
-        string checkout = Absolute(request.Checkout), scratch = Absolute(request.Scratch);
-        _ = Absolute(request.Interpreter);
-        StringComparison paths = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
+        string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
+        _ = OwnedPath.Absolute(request.Interpreter, PathMessage);
         if (request.DeadlineSeconds <= 0 || !Directory.Exists(checkout) ||
             !Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
-            Linked(checkout) || Linked(scratch) || Within(scratch, checkout) ||
-            Within(checkout, scratch))
+            OwnedPath.Overlap(scratch, checkout))
             throw new InvalidDataException("Pytest execution requires fresh external scratch.");
         GitRevision revision = await new GitReader(checkout).ReadAsync(plan.Candidate, token);
         if (revision.Commit != plan.Candidate)
@@ -140,9 +138,6 @@ internal static class PythonPytestExecution
         }
         PythonPytestRunResult Finish() => new(plan.Candidate, results.ToArray(),
             commands.ToArray(), failures.ToArray());
-
-        bool Within(string child, string parent) => child.Equals(parent, paths) ||
-            child.StartsWith(parent + Path.DirectorySeparatorChar, paths);
     }
 
     internal static async Task<PythonPytestRunRequest> BindMembershipAsync(
@@ -235,14 +230,5 @@ internal static class PythonPytestExecution
         }
     }
 
-    private static string Absolute(string path) => Path.IsPathFullyQualified(path)
-        ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path))
-        : throw new InvalidDataException("Pytest execution paths must be absolute.");
-    private static bool Linked(string path)
-    {
-        for (DirectoryInfo? directory = new(path); directory is not null;
-             directory = directory.Parent)
-            if ((directory.Attributes & FileAttributes.ReparsePoint) != 0) return true;
-        return false;
-    }
+    private const string PathMessage = "Pytest execution paths must be absolute.";
 }

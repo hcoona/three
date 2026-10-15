@@ -6,6 +6,7 @@ using NuGet.Frameworks;
 using NuGet.Packaging;
 using NuGet.Packaging.Core;
 using NuGet.Versioning;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Ecosystems;
 
@@ -88,7 +89,7 @@ internal static class DotNetPackageArchive
 
     internal static void RequireOriginal(DotNetOriginalPackage original)
     {
-        if (!File.Exists(original.Path) || new FileInfo(original.Path).Length != original.Size ||
+        if (!File.Exists(original.Path) || OwnedFile.Length(original.Path) != original.Size ||
             Digest(original.Path) != original.Sha256)
             throw new InvalidDataException("The original native package bytes are unavailable.");
     }

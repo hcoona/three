@@ -183,6 +183,29 @@ public sealed class GitMaterializationTests(TestContext context)
     }
 
     [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]
+    public async Task BindNamesLinkedCheckoutAliasAsUnsupported()
+    {
+        // Native tools report physical paths, so a checkout is bound at its physical root.
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        await repo.SetAsync("content.txt", "content");
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+        GitRevision revision = await new GitReader(repo.Directory).ReadAsync(commit,
+            context.CancellationToken);
+        string alias = Path.Combine(Path.GetTempPath(),
+            "git-alias-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateSymbolicLink(alias, repo.Directory);
+        try
+        {
+            InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+                () => GitMaterialization.BindAsync(alias, revision, context.CancellationToken));
+            Assert.Contains("physical (unlinked) checkout root", error.Message);
+        }
+        finally { Directory.Delete(alias); }
+    }
+
+    [TestMethod]
     [OSCondition(OperatingSystems.Windows)]
     public async Task BindAcceptsRootCaseDifference()
     {

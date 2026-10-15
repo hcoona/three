@@ -40,8 +40,7 @@ internal static class RubyNativePublisher
         string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(originals));
         ReleaseFile original = prepared.Files[0];
         string path = Path.GetFullPath(Path.Combine(root, original.Path));
-        if (!path.StartsWith(root + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        if (path == root || !OwnedPath.Within(path, root))
             throw new InvalidDataException("Ruby original leaves its transfer root.");
         RubySmokePackageOperations.RequireOriginal(new(path, original.Size, original.Sha256));
 

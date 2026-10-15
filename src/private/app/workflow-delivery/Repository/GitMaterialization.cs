@@ -27,7 +27,8 @@ internal sealed class GitMaterialization
         if (!string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(
                 nativeRoot.TrimEnd('\r', '\n'))), root, OperatingSystem.IsWindows()
                 ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
-            throw new InvalidDataException("A materialization must be its checkout root.");
+            throw new InvalidDataException(
+                "A materialization must be its physical (unlinked) checkout root.");
         GitRevision head = await new GitReader(root).ReadAsync("HEAD", token);
         if (head.Commit != revision.Commit)
             throw new InvalidDataException("The checkout HEAD is not the requested revision.");

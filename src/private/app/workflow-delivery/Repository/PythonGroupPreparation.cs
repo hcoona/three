@@ -45,8 +45,8 @@ internal static class PythonGroupPreparation
         if (request.DeadlineSeconds <= 0 || !Directory.Exists(sources) ||
             !Directory.Exists(before) || !Directory.Exists(after) ||
             !Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
-            Within(scratch, before) || Within(scratch, after) || Within(scratch, sources) ||
-            Within(before, scratch) || Within(after, scratch) || Within(sources, scratch) ||
+            OwnedPath.Overlap(scratch, before) || OwnedPath.Overlap(scratch, after) ||
+            OwnedPath.Overlap(scratch, sources) ||
             request.Full && request.Basis.Reference != request.Candidate.Reference)
             throw new InvalidDataException(
                 "Python preparation requires exact endpoints and fresh external state.");
@@ -142,10 +142,4 @@ internal static class PythonGroupPreparation
         Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)) == path ? path :
         throw new InvalidDataException(
             "Python preparation paths must be canonical absolute paths.");
-
-    private static bool Within(string child, string parent) => child.Equals(parent,
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
-            StringComparison.Ordinal) ||
-        child.StartsWith(parent + Path.DirectorySeparatorChar, OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 }
