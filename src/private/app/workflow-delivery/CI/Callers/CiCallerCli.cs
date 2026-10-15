@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using WorkflowDelivery.Repository;
@@ -16,33 +15,23 @@ internal static class CiCallerCli
         CancellationToken token = CancellationToken.None;
         switch (args)
         {
-            case ["ci", "caller-artifact", var metadata, var name, var artifact, var run, var
-                repository]
-                when name is "ci-scope" or "ci-dotnet-plan" or "ruby-node-inputs":
-                Receipt(metadata, name, artifact, run, repository);
-                return 0;
             case ["ci", "caller-dotnet", "bootstrap", var root, var directory, var transfer]:
                 DotNetCiCaller.Bootstrap(root, directory, transfer);
                 return 0;
             case ["ci", "caller-dotnet", "prepare", var root, var directory, var endpoints]:
                 output.WriteLine(DotNetCiCaller.Prepare(root, directory, endpoints));
                 return 0;
-            case ["ci", "caller-dotnet", "finish", var root, var scope, var request, var transfer]:
-                Write(DotNetCiCaller.FinishAsync(root, scope, request, transfer,
-                    token).GetAwaiter().GetResult(),
-                    TransferJson.Default.JsonElement);
+            case ["ci", "caller-dotnet", "select", var root, var request, var control,
+                var transfer, var scope]:
+                output.WriteLine(DotNetCiCaller.SelectAsync(root, request, control, transfer,
+                    scope, token).GetAwaiter().GetResult().ToJsonString());
                 return 0;
             case ["ci", "caller-dotnet", "execute", var root, var transfer, var directory,
-                var metadata, var artifact, var run, var repository, var basis, var candidate]:
-                Receipt(metadata, "ci-dotnet-plan", artifact, run, repository);
+                var basis, var candidate]:
                 return Outcome(DotNetCiCaller.ExecuteAsync(root, transfer, directory, basis,
                     candidate, token).GetAwaiter().GetResult());
-            case ["ci", var caller, "materialize", var root, var scope, var transfer, var directory,
-                var scopeMetadata, var scopeArtifact, var controlMetadata, var controlArtifact,
-                var run, var repository] when caller is "caller-python" or "caller-ruby" or
-                    "caller-node":
-                Receipt(scopeMetadata, "ci-scope", scopeArtifact, run, repository);
-                Receipt(controlMetadata, "ci-dotnet-plan", controlArtifact, run, repository);
+            case ["ci", var caller, "materialize", var root, var scope, var transfer, var directory]
+                when caller is "caller-python" or "caller-ruby" or "caller-node":
                 Materialize(caller, root, scope, transfer, directory);
                 return 0;
             // Credential-free local full follows the same exact source/plan path without an
@@ -125,13 +114,5 @@ internal static class CiCallerCli
             output.WriteLine(JsonSerializer.Serialize(value, type));
         static string? Optional(string path) => path == "-" ? null :
             CiCallerTransfer.Absolute(path);
-        static void Receipt(string path, string name, string artifact, string run, string
-            repository)
-            => CiArtifactReceipt.Validate(path, name, Id(artifact), Id(run), Id(repository));
-        static long Id(string value) => long.TryParse(value, NumberStyles.None,
-            CultureInfo.InvariantCulture,
-            out long result) && result > 0 ? result :
-            throw new
-                InvalidDataException("CI caller requires a positive native artifact context.");
     }
 }

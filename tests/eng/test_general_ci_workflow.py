@@ -347,13 +347,13 @@ def test_required_general_ci_checks_remain_eligible(
     assert group["env"]["MISE_EXEC_AUTO_INSTALL"] == "0"
     assert set(
         _action(group, "jdx/mise-action")["with"]["install_args"].split()
-    ) == {"dotnet", "node", "pnpm", "uv", "python"}
+    ) == {"dotnet", "node", "pnpm"}
     entry = next(
         step["run"] for step in group["steps"] if step.get("id") == "execute"
     )
-    assert "eng/scripts/ci_scope.py join-record-owners" in entry
-    assert "uv run --frozen --no-sync python" in entry
-    assert "ci caller-node plan" in entry
+    assert "uv " not in entry
+    assert "python" not in entry
+    assert 'ci caller-node plan "$state" "$scope"' in entry
     contexts = {job["name"]: key for key, job in jobs.items()}
     node = jobs["node-tests"]
     for version in node["strategy"]["matrix"]["node-version"]:
@@ -637,11 +637,9 @@ def test_node_group_requires_received_immutable_scope(
     assert checkout["with"]["persist-credentials"] is False
     assert checkout["with"]["fetch-depth"] == 0
     assert job["permissions"] == {"contents": "read", "actions": "read"}
-    token_steps = [
+    assert not [
         step for step in job["steps"] if "GH_TOKEN" in step.get("env", {})
     ]
-    assert len(token_steps) == 3
-    assert all("gh api" in step["run"] for step in token_steps)
 
 
 def test_python_check_has_consumed_toolchain_prerequisites(workflow):
@@ -751,10 +749,6 @@ def _dotnet_commands(tmp_path: Path) -> dict[str, str]:
         GITHUB_REPOSITORY="hcoona/three",
         GITHUB_REPOSITORY_ID="12345",
         GITHUB_RUN_ID="67890",
-    )
-    executable(
-        Path(env["PATH"]) / "gh",
-        COMMAND_RECORDER + "\nprint('fixture-artifact-metadata')\n",
     )
     executable(Path(env["PATH"]) / "jq", COMMAND_RECORDER + "\nprint(0)\n")
     return env
@@ -943,9 +937,7 @@ def test_scope_unwritable_endpoint_scratch_blocks_all_preparation(
     assert _observations(env) == []
 
 
-def _dotnet_receiver_command(
-    tmp_path: Path, artifact: str = "1054"
-) -> list[str]:
+def _dotnet_receiver_command(tmp_path: Path) -> list[str]:
     temporary = tmp_path / "runner-state"
     return [
         "dotnet",
@@ -956,10 +948,6 @@ def _dotnet_receiver_command(
         str(tmp_path),
         str(temporary / "dotnet-plan-transfer"),
         str(temporary / "dotnet-execution"),
-        str(temporary / "dotnet-plan-artifact.json"),
-        artifact,
-        "67890",
-        "12345",
         "a" * 40,
         "d" * 40,
     ]
@@ -1002,62 +990,33 @@ def test_dotnet_check_receives_original_plan_and_complete_control(
         "path": "${{ runner.temp }}/dotnet-plan-transfer",
         "merge-multiple": True,
     }
-    metadata = next(
+    assert not [
         step for step in job["steps"] if "GH_TOKEN" in step.get("env", {})
-    )
-    expression = "${{ github.token }}"
-    assert metadata["env"]["GH_TOKEN"] == expression
+    ]
     execute = next(
         step for step in job["steps"] if " execute " in step.get("run", "")
     )
     assert scope["steps"].index(producer) < scope["steps"].index(upload)
-    assert (
-        job["steps"].index(metadata)
-        < job["steps"].index(download)
-        < job["steps"].index(execute)
-    )
+    assert job["steps"].index(download) < job["steps"].index(execute)
     env = _dotnet_commands(tmp_path)
     result = _run_dotnet(workflow, tmp_path, env)
     assert result.returncode == 0, result.stderr
     calls = [item["command"] for item in _observations(env)]
-    assert calls[0] == [
-        "gh",
-        "api",
-        "repos/hcoona/three/actions/artifacts/1054",
-    ]
     assert calls[-1] == _dotnet_receiver_command(tmp_path)
-    assert "caller-artifact" in calls[1]
-    assert (
-        tmp_path / "runner-state/dotnet-plan-artifact.json"
-    ).read_text() == ("fixture-artifact-metadata\n")
+    assert not any("caller-artifact" in call for call in calls)
 
 
-@pytest.mark.parametrize("failure", ["metadata", "execute"])
 def test_dotnet_check_propagates_required_command_failure(
     workflow: dict[str, Any],
     tmp_path: Path,
-    failure: str,
 ) -> None:
-    """Propagate required metadata and receiver failures."""
+    """Propagate the receiver's failure."""
     env = _dotnet_commands(tmp_path)
-    command = (
-        ["gh", "api", "repos/hcoona/three/actions/artifacts/1054"]
-        if failure == "metadata"
-        else _dotnet_receiver_command(tmp_path)
-    )
-    env["FAIL_COMMAND"] = json.dumps(command)
+    env["FAIL_COMMAND"] = json.dumps(_dotnet_receiver_command(tmp_path))
     result = _run_dotnet(workflow, tmp_path, env)
     assert result.returncode == CHILD_FAILURE, result.stderr
     calls = [item["command"] for item in _observations(env)]
-    assert calls[0] == [
-        "gh",
-        "api",
-        "repos/hcoona/three/actions/artifacts/1054",
-    ]
-    if failure == "metadata":
-        assert len(calls) == 1
-    else:
-        assert calls[-1] == _dotnet_receiver_command(tmp_path)
+    assert calls[-1] == _dotnet_receiver_command(tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -1093,17 +1052,9 @@ def test_dotnet_group_requires_received_original_plan(
     assert (result.returncode == 0) is succeeds, result.stderr
     if not succeeds:
         assert _observations(env) == []
-        assert not (
-            tmp_path / "runner-state/dotnet-plan-artifact.json"
-        ).exists()
     else:
         calls = [item["command"] for item in _observations(env)]
-        assert calls[0] == [
-            "gh",
-            "api",
-            f"repos/hcoona/three/actions/artifacts/{artifact}",
-        ]
-        assert calls[-1] == _dotnet_receiver_command(tmp_path, artifact)
+        assert calls[-1] == _dotnet_receiver_command(tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -1271,90 +1222,51 @@ def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
         assert "canceled before a complete result" in result.stderr
 
 
-@pytest.mark.parametrize("full", ["false", "true"])
-@pytest.mark.parametrize("failure", [None, "evaluate", "select"])
-def test_scope_selection_uses_project_python_and_tested_comparison(
-    workflow, tmp_path, full, failure
+@pytest.mark.parametrize("failure", [False, True])
+def test_scope_selection_runs_once_in_the_control_application(
+    workflow, tmp_path, failure
 ):
-    """Select from evaluated endpoint inputs and propagate command failures."""
+    """Select from native facts in one process and propagate its failure."""
     job = workflow["jobs"]["scope"]
-    setup = _action(job, "actions/setup-python")
-    select = next(step for step in job["steps"] if step.get("id") == "select")
-    assert setup["with"]["python-version-file"] == ".python-version"
-    assert job["steps"].index(setup) < job["steps"].index(select)
-    parser_setup = _action(job, "astral-sh/setup-uv")
-    parser = next(
-        step
+    assert not any(
+        step.get("uses", "").startswith(
+            ("actions/setup-python@", "astral-sh/setup-uv@")
+        )
         for step in job["steps"]
-        if step["name"] == "Prepare existing root selection parser"
     )
-    assert job["steps"].index(parser_setup) < job["steps"].index(parser)
-    assert job["steps"].index(parser) < job["steps"].index(select)
-    assert parser["run"].strip() == (
-        "uv sync --frozen --only-group dev "
-        "--no-install-project --no-install-workspace"
+    assert "PYTHONUTF8" not in job.get("env", {})
+    assert not any(
+        "python" in step.get("run", "") or "uv " in step.get("run", "")
+        for step in job["steps"]
     )
+    select = next(step for step in job["steps"] if step.get("id") == "select")
     env = _commands(tmp_path)
-    runner_temp = tmp_path / "runner temp"
-    request = str(runner_temp / "ci-control-inputs/request.json")
-    response = str(runner_temp / "ci-control-inputs/response.json")
-    env["RUNNER_TEMP"] = str(runner_temp)
-    Path(response).parent.mkdir(parents=True)
-    evaluate = [
+    request = str(tmp_path / "runner temp/ci-control-inputs/request.json")
+    selector = [
         "dotnet",
         _bindings(tmp_path)["steps.control.outputs.application"],
         "ci",
-        "control-inputs",
-        request,
-    ]
-    selector = [
-        "uv",
-        "run",
-        "--frozen",
-        "--no-sync",
-        "python",
-        "eng/scripts/ci_scope.py",
-        *(
-            ["--full"]
-            if full == "true"
-            else ["--from-ref", "a" * 40, "--to-ref", "d" * 40]
-        ),
-        "--control-inputs",
-        response,
-        "--output",
-        "artifacts/ci-scope.json",
-        "--application",
-        _bindings(tmp_path)["steps.control.outputs.application"],
-        "--dotnet-group-request",
+        "caller-dotnet",
+        "select",
+        str(tmp_path),
         _bindings(tmp_path)["steps.dotnet-group.outputs.request"],
+        request,
+        _bindings(tmp_path)["steps.control.outputs.transfer"],
+        "artifacts/ci-scope.json",
     ]
-    if failure is not None:
-        env["FAIL_COMMAND"] = json.dumps(
-            evaluate if failure == "evaluate" else selector
-        )
+    if failure:
+        env["FAIL_COMMAND"] = json.dumps(selector)
     result = run_step(
         select,
         cwd=tmp_path,
         env=env,
         bindings=_bindings(tmp_path)
-        | {
-            "steps.materialize.outputs.request": request,
-            "steps.materialize.outputs.basis": ("d" if full == "true" else "a")
-            * 40,
-            "steps.materialize.outputs.candidate": "d" * 40,
-            "steps.materialize.outputs.full": full,
-        },
+        | {"steps.materialize.outputs.request": request},
         workflow=workflow,
         job=job,
     )
-    assert result.returncode == (0 if failure is None else CHILD_FAILURE), (
-        result.stderr
-    )
-    assert [item["command"] for item in _observations(env)] == [
-        ["python", "--version"],
-        evaluate,
-        *([] if failure == "evaluate" else [selector]),
-    ]
+    assert result.returncode == (CHILD_FAILURE if failure else 0), result.stderr
+    assert [item["command"] for item in _observations(env)] == [selector]
 
 
 @pytest.mark.parametrize(
@@ -1466,15 +1378,8 @@ def test_native_ruby_transfers_original_control_and_complete_plan(workflow):
     entry = [run for run in runs if "ci caller-ruby" in run]
     assert len(entry) == 3
     assert " materialize " in entry[0]
-    for binding in (
-        "SCOPE_ARTIFACT_ID",
-        "CONTROL_ARTIFACT_ID",
-        "GITHUB_RUN_ID",
-        "GITHUB_REPOSITORY_ID",
-        "ruby-scope-artifact.json",
-        "ruby-control-artifact.json",
-    ):
-        assert binding in entry[0]
+    assert "artifact.json" not in json.dumps(job)
+    assert "gh api" not in json.dumps(job)
     assert " plan " in entry[1]
     assert " execute " in entry[2]
     assert all('"$RUNNER_TEMP/ruby-group"' in run for run in entry)
@@ -1551,8 +1456,7 @@ def test_node_receives_only_successful_original_ruby_artifact(
         step["run"] for step in node["steps"] if step.get("id") == "execute"
     )
     assert '"$GITHUB_WORKSPACE/artifacts/node-ruby/node-inputs.json"' in entry
-    assert "ruby-node-inputs" in entry
-    assert "node-ruby-artifact.json" in entry
+    assert "caller-artifact" not in entry
     assert "run_ruby_ci_group.py" not in json.dumps(node)
     result = run_step(
         node["steps"][0],

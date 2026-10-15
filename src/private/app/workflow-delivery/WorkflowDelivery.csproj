@@ -10,6 +10,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
     <PackageReference Include="YamlDotNet" />
+    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" />
     <PackageReference Include="NuGet.Protocol" />
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" />

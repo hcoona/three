@@ -9,8 +9,7 @@
     ":/global.json",
     ":/src/public/lib/nbgv-python",
     ":/pyproject.toml",
-    ":/uv.lock",
-    ":/src/private/app/workflow-delivery/Native/Python"
+    ":/uv.lock"
   ],
   "gitCommitIdShortFixedLength": 7,
   "gitCommitIdShortAutoMinimum": 7,

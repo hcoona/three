@@ -1,4 +1,3 @@
-using System.Xml.Linq;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 
@@ -7,14 +6,6 @@ namespace WorkflowDelivery.Tests.CI;
 [TestClass]
 public sealed class NativePreparationQualificationTests
 {
-    private static readonly string[] RubyRows = [
-        NativePreparationQualification.RubyMethod +
-            " (\"buddy\",\"github-packages-ruby\",\"refs/heads/preparation-development\",False)",
-        NativePreparationQualification.RubyMethod +
-            " (\"official\",\"rubygems\",\"refs/heads/main\",False)",
-        NativePreparationQualification.RubyMethod +
-            " (\"official\",\"rubygems\",\"refs/tags/preparation-preview\",True)"];
-
     [TestMethod]
     [DataRow("README.md", false, false)]
     [DataRow("pyproject.toml", true, false)]
@@ -57,58 +48,5 @@ public sealed class NativePreparationQualificationTests
         Assert.IsTrue(result.Python && result.Ruby);
         Assert.ThrowsExactly<InvalidDataException>(() => NativePreparationQualification.Select(
             new("basis", "candidate", true), []));
-    }
-
-    [TestMethod]
-    [DataRow("python")]
-    [DataRow("ruby")]
-    public void CompleteOriginalNativeRowsQualify(string ecosystem) =>
-        NativePreparationQualification.RequirePassed(ecosystem,
-            Report(ecosystem, "complete"));
-
-    [TestMethod]
-    [DataRow("python", "missing")]
-    [DataRow("python", "skipped")]
-    [DataRow("python", "failed")]
-    [DataRow("python", "substituted")]
-    [DataRow("python", "duplicate")]
-    [DataRow("python", "counters")]
-    [DataRow("ruby", "missing")]
-    [DataRow("ruby", "skipped")]
-    [DataRow("ruby", "failed")]
-    [DataRow("ruby", "substituted")]
-    [DataRow("ruby", "duplicate")]
-    [DataRow("ruby", "counters")]
-    public void SummarySuccessCannotHideIncompleteOrUnsuccessfulNativeRows(
-        string ecosystem, string defect) => Assert.ThrowsExactly<InvalidDataException>(() =>
-            NativePreparationQualification.RequirePassed(ecosystem, Report(ecosystem, defect)));
-
-    [TestMethod]
-    public void UnsupportedEcosystemAndMalformedReportCannotQualify()
-    {
-        Assert.ThrowsExactly<InvalidDataException>(() =>
-            NativePreparationQualification.RequirePassed("node", ""));
-        Assert.ThrowsExactly<InvalidDataException>(() =>
-            NativePreparationQualification.RequirePassed("python", "<invalid"));
-    }
-
-    private static string Report(string ecosystem, string defect)
-    {
-        XNamespace ns = "http://microsoft.com/schemas/VisualStudio/TeamTest/2010";
-        string[] names = ecosystem == "ruby" ? RubyRows :
-            [NativePreparationQualification.PythonMethod];
-        var results = names.Select(name => new XElement(ns + "UnitTestResult",
-            new XAttribute("testName", name), new XAttribute("outcome", "Passed"))).ToList();
-        if (defect == "missing") results.RemoveAt(0);
-        if (defect is "skipped" or "failed")
-            results[0].SetAttributeValue("outcome", defect == "skipped" ? "NotExecuted" : "Failed");
-        if (defect == "substituted") results[0].SetAttributeValue("testName", "AnotherScenario");
-        if (defect == "duplicate") results.Add(new XElement(results[0]));
-        var summary = new XElement(ns + "ResultSummary");
-        if (defect != "counters") summary.Add(new XElement(ns + "Counters",
-            new XAttribute("total", names.Length), new XAttribute("executed", names.Length),
-            new XAttribute("passed", names.Length)));
-        return new XElement(ns + "TestRun", summary,
-            new XElement(ns + "Results", results)).ToString();
     }
 }

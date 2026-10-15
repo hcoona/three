@@ -15,12 +15,11 @@ internal static class RubyRepositoryReader
     internal static readonly string[] CallerSources = [".github/workflows/ci.yml",
         "src/private/app/workflow-delivery/CI/Callers/RubyCiCaller.cs",
         "src/private/app/workflow-delivery/CI/Callers/NodeCiCaller.cs",
-        "src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs", "eng/scripts/ci_scope.py",
-        "eng/scripts/repository_path_patterns.py", "eng/scripts/Bootstrap-CiControl.ps1",
+        "src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs",
+        "eng/scripts/Bootstrap-CiControl.ps1",
         "src/private/app/workflow-delivery/CI/Callers/CiCallerCli.cs",
         "src/private/app/workflow-delivery/CI/Callers/CiCallerTransfer.cs",
         "src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs",
-        "src/private/app/workflow-delivery/CI/Callers/CiArtifactReceipt.cs",
         "mise.toml", "mise.lock"];
 
     internal static Task<RubyRevisionInputs> ReadAsync(GitMaterialization checkout,

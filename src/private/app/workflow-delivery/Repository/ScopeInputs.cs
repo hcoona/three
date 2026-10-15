@@ -9,7 +9,8 @@ internal sealed record ScopeResponsibility(string Owner, string Target, string R
 internal sealed record ScopeCoordinate(string Path, bool Present, string? Mode,
     ScopeResponsibility[] Reasons);
 
-// Responsibility is supplied by the retained selector. Consumption remains native facts.
+// The scope job supplies responsibility once; receivers bind it to their native comparison.
+// Consumption remains native facts.
 internal sealed record ScopeInputs(CiComparison Comparison, string[] ChangedPaths,
     ScopeCoordinate[] Basis, ScopeCoordinate[] Candidate)
 {
@@ -90,13 +91,10 @@ internal sealed record ScopeInputs(CiComparison Comparison, string[] ChangedPath
             var reasons = new List<ScopeResponsibility>();
             foreach (JsonElement reason in Array(Field(item, "reasons")))
             {
-                string[] sources = Paths(Field(reason, "sources"));
-                if (!present || sources.Length == 0 || sources.Any(source =>
-                    !entries.TryGetValue(source, out GitEntry? origin) ||
-                    origin.ObjectType != "blob" || origin.Mode is not ("100644" or "100755")))
-                    throw new InvalidDataException("Scope responsibility has no committed source.");
+                if (!present)
+                    throw new InvalidDataException("An absent coordinate has no responsibility.");
                 reasons.Add(new(Text(Field(reason, "owner")), Text(Field(reason, "target")),
-                    Text(Field(reason, "rule")), sources));
+                    Text(Field(reason, "rule")), Paths(Field(reason, "sources"))));
             }
             if (!rows.TryAdd(path, new(path, present, mode, reasons.ToArray())))
                 throw new InvalidDataException("Scope repeated a changed coordinate.");
@@ -119,23 +117,8 @@ internal sealed record ScopeInputs(CiComparison Comparison, string[] ChangedPath
             bool present = entries.TryGetValue(row.Path, out GitEntry? entry);
             if (row.Present != present || row.Mode != entry?.Mode)
                 throw new InvalidDataException("Scope entry differs from native Git: " + row.Path);
-            foreach (ScopeResponsibility reason in row.Reasons)
-            {
-                if (!present || string.IsNullOrWhiteSpace(reason.Owner) ||
-                    string.IsNullOrWhiteSpace(reason.Target) ||
-                    string.IsNullOrWhiteSpace(reason.Rule) || reason.Sources.Length == 0 ||
-                    reason.Sources.Distinct(StringComparer.Ordinal).Count() !=
-                        reason.Sources.Length)
-                    throw new InvalidDataException("Scope responsibility has no committed source.");
-                foreach (string source in reason.Sources)
-                {
-                    ImpactPlanner.ValidatePath(source);
-                    if (!entries.TryGetValue(source, out GitEntry? origin) ||
-                        origin.ObjectType != "blob" || origin.Mode is not ("100644" or "100755"))
-                        throw new InvalidDataException(
-                            "Scope responsibility has no committed source.");
-                }
-            }
+            if (!present && row.Reasons.Length != 0)
+                throw new InvalidDataException("An absent coordinate has no responsibility.");
         }
         return rows.OrderBy(row => row.Path, StringComparer.Ordinal).ToArray();
     }

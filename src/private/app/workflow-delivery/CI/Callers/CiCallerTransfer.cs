@@ -97,7 +97,6 @@ internal static class CiCallerTransfer
             (await reader.ReadAsync("HEAD", token)).Commit != candidate)
             throw new
                 InvalidDataException("Scope does not name exact available candidate commits.");
-        _ = ScopeInputs.Read(scope.GetRawText(), comparison, full);
         return comparison;
     }
 

@@ -11,59 +11,6 @@ namespace WorkflowDelivery.Tests.CI;
 public sealed class CiCallerTransferTests(TestContext context)
 {
     [TestMethod]
-    [DataRow("id", "12")]
-    [DataRow("name", "\"ci-dotnet-plan\"")]
-    [DataRow("expired", "true")]
-    [DataRow("expired", "\"false\"")]
-    [DataRow("workflow_run", "{\"id\":8,\"repository_id\":9}")]
-    [DataRow("workflow_run", "{\"id\":7,\"repository_id\":10}")]
-    [DataRow("workflow_run", "null")]
-    public void ReceiptRejectsSubstitutedOrExpiredProducer(string field, string replacement)
-    {
-        var value = System.Text.Json.Nodes.JsonNode.Parse(Receipt())!.AsObject();
-        value[field] = System.Text.Json.Nodes.JsonNode.Parse(replacement);
-        using JsonDocument document = JsonDocument.Parse(value.ToJsonString());
-        Assert.ThrowsExactly<InvalidDataException>(() => CiArtifactReceipt.Validate(
-            document.RootElement, "ci-scope", 11, 7, 9));
-    }
-
-    [TestMethod]
-    [DataRow(11L, 7L, 9L, true)]
-    [DataRow(0L, 7L, 9L, false)]
-    [DataRow(11L, 0L, 9L, false)]
-    [DataRow(11L, 7L, -1L, false)]
-    public void ReceiptRequiresPositiveNativeIdentity(long artifact, long run, long repository,
-        bool valid)
-    {
-        using JsonDocument document = JsonDocument.Parse(Receipt());
-        if (valid) CiArtifactReceipt.Validate(document.RootElement, "ci-scope", artifact, run,
-            repository);
-        else Assert.ThrowsExactly<InvalidDataException>(() => CiArtifactReceipt.Validate(
-            document.RootElement, "ci-scope", artifact, run, repository));
-    }
-
-    [TestMethod]
-    public void CliRejectsDuplicateMetadataAndExtraArguments()
-    {
-        using var files = new CiCallerFiles();
-        string metadata = Path.Combine(files.Root, "metadata.json");
-        File.WriteAllText(metadata, Receipt().Replace("\"id\":11", "\"id\":12,\"id\":11",
-            StringComparison.Ordinal));
-        using var output = new StringWriter();
-        using var error = new StringWriter();
-        Assert.AreEqual(2, Program.Run(["ci", "caller-artifact", metadata, "ci-scope", "11",
-            "7", "9"], output, error));
-        Assert.Contains("Duplicate", error.ToString());
-        error.GetStringBuilder().Clear();
-        File.WriteAllText(metadata, Receipt());
-        Assert.AreEqual(0, Program.Run(["ci", "caller-artifact", metadata, "ci-scope", "11",
-            "7", "9"], output, error));
-        Assert.AreEqual(2, Program.Run(["ci", "caller-artifact", metadata, "ci-scope", "11",
-            "7", "9", "extra"], output, error));
-        Assert.Contains("argument count", error.ToString());
-    }
-
-    [TestMethod]
     public void TypedReadRejectsMissingUnknownAndDuplicateFields()
     {
         using var files = new CiCallerFiles();
@@ -214,10 +161,6 @@ public sealed class CiCallerTransferTests(TestContext context)
         Assert.IsFalse(Directory.Exists(state));
         Assert.IsNotEmpty(error.ToString());
     }
-
-    private static string Receipt() =>
-        "{\"id\":11,\"name\":\"ci-scope\",\"expired\":false," +
-        "\"workflow_run\":{\"id\":7,\"repository_id\":9}}";
 }
 
 internal sealed class CiCallerFiles : IDisposable

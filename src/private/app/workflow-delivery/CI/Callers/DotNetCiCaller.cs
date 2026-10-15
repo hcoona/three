@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.CI.Callers;
@@ -48,7 +49,6 @@ internal static class DotNetCiCaller
             Path.Combine(state, name + "-graph.json"), 900);
         DotNetReadFiles candidateFiles = files("candidate");
         var request = new DotNetGroupRequest(endpoints.Basis, endpoints.Candidate, endpoints.Full,
-            Path.Combine(state, "preliminary-scope.json"),
             endpoints.Basis == endpoints.Candidate ? candidateFiles : files("basis"),
                 candidateFiles,
             new(endpoints.Candidate.Directory, CiCallerTransfer.Fresh(Path.Combine(state,
@@ -59,38 +59,93 @@ internal static class DotNetCiCaller
         return path;
     }
 
-    internal static async Task<JsonElement> FinishAsync(string root, string scopePath,
-        string requestPath, string transfer, CancellationToken token)
+    // One in-process selection: native control resources, changed-coordinate responsibility,
+    // retained-job applicability and the original .NET plan, written once for other jobs.
+    internal static async Task<JsonObject> SelectAsync(string root, string requestPath,
+        string controlRequestPath, string transfer, string output, CancellationToken token)
     {
         DotNetGroupRequest request = CiCallerTransfer.Read(requestPath,
             TransferJson.Default.DotNetGroupRequest);
-        GitComparison comparison = await CiCallerTransfer.ComparisonAsync(root, scopePath, token);
-        if (comparison.Basis.Commit != request.Basis.Reference ||
-            comparison.Candidate.Commit != request.Candidate.Reference ||
-            CiCallerTransfer.Application(transfer) != request.CandidateFiles.Assembly)
+        ControlTestInputRequest controlRequest = CiCallerTransfer.Read(controlRequestPath,
+            TransferJson.Default.ControlTestInputRequest);
+        if (CiCallerTransfer.Application(transfer) != request.CandidateFiles.Assembly ||
+            controlRequest.Comparison != new CiComparison(request.Basis.Reference,
+                request.Candidate.Reference, request.Full))
             throw new
                 InvalidDataException(".NET planning request has a different original binding.");
-        JsonElement preliminary = CiCallerTransfer.Read(scopePath,
-            TransferJson.Default.JsonElement);
-        CiCallerTransfer.Write(request.ScopePath, preliminary, TransferJson.Default.JsonElement);
-        DotNetGroupReadback readback = await DotNetGroupReader.ReadAsync(request, token);
+        ControlTestInputResponse control = await ControlTestInputs.ReadAsync(controlRequest,
+            token);
+        GitComparison comparison = await new GitReader(root).CompareAsync(
+            request.Basis.Reference, request.Candidate.Reference, token);
+        GitMaterialization basis = await GitMaterialization.BindAsync(request.Basis.Directory,
+            comparison.Basis, token);
+        GitMaterialization candidate = await GitMaterialization.BindAsync(
+            request.Candidate.Directory, comparison.Candidate, token);
+        string[] changed = comparison.ChangedPaths;
+        var scope = new ScopeInputs(controlRequest.Comparison, changed,
+            await CiScope.OwnersAsync(basis, changed, control.Basis.Inputs,
+                CiScope.MiseTasksAsync, token),
+            await CiScope.OwnersAsync(candidate, changed, control.Candidate.Inputs,
+                CiScope.MiseTasksAsync, token));
+        CiScopeApplicability retained = CiScope.Select(changed, comparison, request.Full,
+            [.. control.Basis.Inputs, .. control.Candidate.Inputs]);
+        DotNetGroupReadback readback = await DotNetGroupReader.ReadAsync(request, scope, token);
         CiCallerTransfer.Plan(readback.Plan, request.Basis.Reference,
             request.Candidate.Reference, Scope);
         CiCallerTransfer.Write(Path.Combine(transfer, "dotnet-plan.json"), readback.Plan,
             TransferJson.Default.CiPlan);
         CiCallerTransfer.Write(Path.Combine(Path.GetDirectoryName(requestPath)!, "readback.json"),
             readback, TransferJson.Default.DotNetGroupReadback);
-        JsonObject joined = JsonNode.Parse(preliminary.GetRawText())!.AsObject();
-        joined["endpoint_owners"]!["basis"]!["paths"] = JsonSerializer.SerializeToNode(
-            readback.Basis, TransferJson.Default.ScopeCoordinateArray);
-        joined["endpoint_owners"]!["candidate"]!["paths"] = JsonSerializer.SerializeToNode(
-            readback.Candidate, TransferJson.Default.ScopeCoordinateArray);
-        joined["scopes"]!["dotnet"] = readback.Plan.Checks.Length != 0;
-        joined["reasons"]!["dotnet"] = new JsonArray(readback.Plan.Checks.SelectMany(c => c.Reasons)
+        bool dotnet = readback.Plan.Checks.Length != 0;
+        var reasons = new JsonObject();
+        foreach ((string job, string[] why) in retained.Reasons)
+            reasons[job] = Strings(why);
+        reasons["dotnet"] = Strings(readback.Plan.Checks.SelectMany(c => c.Reasons)
             .Select(r => $"{r.Path} -> {r.Project} ({r.Revision})").Distinct(StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal).Select(r => (JsonNode?)JsonValue.Create(r)).ToArray());
-        using JsonDocument document = JsonDocument.Parse(joined.ToJsonString());
-        return document.RootElement.Clone();
+            .Order(StringComparer.Ordinal));
+        var result = new JsonObject
+        {
+            ["base"] = request.Basis.Reference,
+            ["candidate"] = request.Candidate.Reference,
+            ["full"] = request.Full,
+            ["changed_paths"] = Strings(changed),
+            ["endpoint_owners"] = new JsonObject
+            {
+                ["basis"] = Endpoint(request.Basis.Reference, readback.Basis),
+                ["candidate"] = Endpoint(request.Candidate.Reference, readback.Candidate),
+            },
+            ["scopes"] = new JsonObject
+            {
+                ["validation"] = true,
+                ["mise"] = retained.Mise,
+                ["dotnet"] = dotnet,
+                ["azureauth"] = retained.AzureAuth,
+                ["scholarly"] = retained.Scholarly,
+            },
+            ["nuget_reproducibility"] = retained.NuGetReproducibility,
+            ["reasons"] = reasons,
+        };
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
+        File.WriteAllText(output, result.ToJsonString(new JsonSerializerOptions
+            { WriteIndented = true }) + "\n", new System.Text.UTF8Encoding(false, true));
+        foreach ((string key, bool value) in new[] { ("validation", true),
+                     ("mise", retained.Mise), ("azureauth", retained.AzureAuth),
+                     ("scholarly", retained.Scholarly),
+                     ("nuget_reproducibility", retained.NuGetReproducibility),
+                     ("full", request.Full) })
+            CiCallerTransfer.Output(key, value ? "true" : "false");
+        CiCallerTransfer.Output("base", request.Basis.Reference);
+        CiCallerTransfer.Output("candidate", request.Candidate.Reference);
+        return result;
+
+        static JsonArray Strings(IEnumerable<string> values) =>
+            new(values.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray());
+        static JsonObject Endpoint(string revision, ScopeCoordinate[] rows) => new()
+        {
+            ["revision"] = revision,
+            ["paths"] = JsonSerializer.SerializeToNode(rows,
+                TransferJson.Default.ScopeCoordinateArray),
+        };
     }
 
     internal static async Task<CiOutcome> ExecuteAsync(string root, string transfer,
