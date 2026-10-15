@@ -10,9 +10,10 @@ namespace WorkflowDelivery.Tests.CI;
 [TestClass]
 public sealed class DotNetNativeExecutionTests(TestContext context)
 {
-    // A request budget, not a performance assertion: concurrent native graph builds on a
-    // 4-core hosted runner exceeded 60 seconds. Method timeouts still bound each test.
-    private const int NativeDeadline = 150;
+    // A per-command budget, not a performance assertion: concurrent native graph builds
+    // on a 4-core hosted runner exceeded 60 seconds. Each row runs up to three native
+    // commands after fixture setup, so these rows use the native-row method timeout.
+    private const int NativeCommandDeadlineSeconds = 150;
 
     [TestMethod]
     [Timeout(180000, CooperativeCancellation = true)]
@@ -59,7 +60,7 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [Timeout(180000, CooperativeCancellation = true)]
+    [Timeout(600000, CooperativeCancellation = true)]
     public async Task NativeMtpInnerVariantRetainsSettingsAndOutput()
     {
         using var fixture = await DotNetNativeFixture.CreateAsync("MTP", context.CancellationToken);
@@ -74,13 +75,14 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         CiPlan plan = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate, "MTP",
             globals, DotNetNativeFixture.Project);
         DotNetRunResult result = await DotNetExecution.RunAsync(plan,
-            new(fixture.Root, fixture.RunScratch, NativeDeadline), context.CancellationToken);
+            new(fixture.Root, fixture.RunScratch, NativeCommandDeadlineSeconds),
+            context.CancellationToken);
         context.WriteLine(JsonSerializer.Serialize(result, TransferJson.Default.DotNetRunResult));
         AssertSuccessfulNativeRun(fixture, plan, result, "net10.0", "InvokeTestingPlatform");
     }
 
     [TestMethod]
-    [Timeout(180000, CooperativeCancellation = true)]
+    [Timeout(600000, CooperativeCancellation = true)]
     public async Task NativeVstestUsesProjectSettings()
     {
         using var fixture = await DotNetNativeFixture.CreateAsync("VSTest",
@@ -95,13 +97,14 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         CiPlan plan = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate, "VSTest",
             globals, DotNetNativeFixture.Project);
         DotNetRunResult result = await DotNetExecution.RunAsync(plan,
-            new(fixture.Root, fixture.RunScratch, NativeDeadline), context.CancellationToken);
+            new(fixture.Root, fixture.RunScratch, NativeCommandDeadlineSeconds),
+            context.CancellationToken);
         context.WriteLine(JsonSerializer.Serialize(result, TransferJson.Default.DotNetRunResult));
         AssertSuccessfulNativeRun(fixture, plan, result, "net10.0", "VSTest");
     }
 
     [TestMethod]
-    [Timeout(180000, CooperativeCancellation = true)]
+    [Timeout(600000, CooperativeCancellation = true)]
     public async Task NativeBatchRetainsIndependentVariantsWithNbgvWhenAnotherEntryFails()
     {
         using var fixture = await DotNetNativeFixture.CreateAsync("MTP",
@@ -120,7 +123,8 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
             project: "broken/Broken.csproj");
         CiPlan plan = first with { Checks = [.. first.Checks, .. broken.Checks, .. second.Checks] };
         DotNetRunResult result = await DotNetExecution.RunAsync(plan,
-            new(fixture.Root, fixture.RunScratch, NativeDeadline), context.CancellationToken);
+            new(fixture.Root, fixture.RunScratch, NativeCommandDeadlineSeconds),
+            context.CancellationToken);
         context.WriteLine(JsonSerializer.Serialize(result, TransferJson.Default.DotNetRunResult));
         Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item =>
             item.Key.Target == "broken/Broken.csproj").Status, Diagnostics(result));
