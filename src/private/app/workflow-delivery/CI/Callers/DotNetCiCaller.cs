@@ -89,7 +89,8 @@ internal static class DotNetCiCaller
                 CiScope.MiseTasksAsync, token));
         CiScopeApplicability retained = CiScope.Select(changed, comparison, request.Full,
             [.. control.Basis.Inputs, .. control.Candidate.Inputs]);
-        DotNetGroupReadback readback = await DotNetGroupReader.ReadAsync(request, scope, token);
+        DotNetGroupReadback readback = await DotNetGroupReader.ReadAsync(request, scope,
+            comparison, basis, candidate, token);
         CiCallerTransfer.Plan(readback.Plan, request.Basis.Reference,
             request.Candidate.Reference, Scope);
         CiCallerTransfer.Write(Path.Combine(transfer, "dotnet-plan.json"), readback.Plan,
@@ -158,8 +159,9 @@ internal static class DotNetCiCaller
         CiPlan plan = CiCallerTransfer.Read(Path.Combine(transfer, "dotnet-plan.json"),
             TransferJson.Default.CiPlan);
         CiCallerTransfer.Plan(plan, basis, candidate, Scope);
-        if ((await new GitReader(root).ReadAsync("HEAD", token)).Commit != candidate ||
-            (await new GitReader(root).ReadAsync(basis, token)).Commit != basis)
+        var reader = new GitReader(root);
+        if (await reader.ResolveAsync("HEAD", token) != candidate ||
+            await reader.ResolveAsync(basis, token) != basis)
             throw new InvalidDataException(".NET execution has a different original checkout.");
         CiCallerTransfer.Fresh(directory);
         var request = new DotNetRunRequest(root,

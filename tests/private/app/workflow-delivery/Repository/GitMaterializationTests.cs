@@ -43,8 +43,8 @@ public sealed class GitMaterializationTests(TestContext context)
         if (defect == "missing-head")
         {
             await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-                GitMaterialization.BindAsync(repo.Directory, new(NodeScenario.Basis, []),
-                    context.CancellationToken));
+                GitMaterialization.BindAsync(repo.Directory,
+                    new GitRevision(NodeScenario.Basis, []), context.CancellationToken));
             return;
         }
         await repo.SetAsync("content.txt", "original");
@@ -164,6 +164,107 @@ public sealed class GitMaterializationTests(TestContext context)
         Assert.AreEqual(first, before.Revision.Commit);
         Assert.AreEqual(next, after.Revision.Commit);
     }
+
+    [TestMethod]
+    [DataRow("commit")]
+    [DataRow("alias")]
+    [DataRow("head")]
+    public async Task BindReferenceReadsTheCheckedOutCommitTree(string form)
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        await repo.SetAsync("content.txt", "committed");
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+        await repo.GitAsync("tag", "alias", commit);
+
+        GitMaterialization bound = form == "head"
+            ? await GitMaterialization.BindHeadAsync(repo.Directory, context.CancellationToken)
+            : await GitMaterialization.BindAsync(repo.Directory,
+                form == "commit" ? commit : "alias", context.CancellationToken);
+
+        Assert.AreEqual(commit, bound.Revision.Commit);
+        Assert.AreEqual("content.txt", Assert.ContainsSingle(bound.Revision.Entries).Path);
+        Assert.AreEqual("committed", await bound.ReadOptionalTextAsync("content.txt",
+            context.CancellationToken));
+    }
+
+    [TestMethod]
+    [DataRow("wrong-head")]
+    [DataRow("missing")]
+    [DataRow("modified")]
+    [DataRow("subdirectory")]
+    public async Task BindReferenceRejectsWrongOrDirtyCheckout(string defect)
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        await repo.SetAsync("nested/content.txt", "original");
+        string commit = await repo.CommitAsync();
+        await repo.SetAsync("nested/content.txt", "next");
+        string next = await repo.CommitAsync(commit);
+        await repo.GitAsync("reset", "--hard", defect == "wrong-head" ? next : commit);
+        if (defect == "modified")
+            await File.WriteAllTextAsync(Path.Combine(repo.Directory, "nested", "content.txt"),
+                "dirty", context.CancellationToken);
+        string directory = defect == "subdirectory"
+            ? Path.Combine(repo.Directory, "nested") : repo.Directory;
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            GitMaterialization.BindAsync(directory, defect == "missing"
+                ? "missing-ref" : commit, context.CancellationToken));
+        if (defect == "modified")
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+                GitMaterialization.BindHeadAsync(directory, context.CancellationToken));
+    }
+
+    [TestMethod]
+    public async Task BindRejectsTagObjectIdNamingTheCheckedOutCommit()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+        await repo.GitAsync("tag", "-a", "annotated", "-m", "tag", commit);
+        string tag = (await repo.GitAsync("rev-parse", "refs/tags/annotated")).Trim();
+        Assert.AreNotEqual(commit, tag);
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            GitMaterialization.BindAsync(repo.Directory, tag, context.CancellationToken));
+    }
+
+    [TestMethod]
+    public async Task ReuseAcceptsOnlyTheSameCleanCheckoutAndCommit()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        await repo.SetAsync("content.txt", "committed");
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+        GitMaterialization bound = await GitMaterialization.BindAsync(repo.Directory, commit,
+            context.CancellationToken);
+
+        Assert.AreSame(bound, await GitMaterialization.ReuseOrBindAsync(bound,
+            repo.Directory + Path.DirectorySeparatorChar, commit, context.CancellationToken));
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            GitMaterialization.ReuseOrBindAsync(bound, repo.Directory, new string('0', 40),
+                context.CancellationToken));
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            GitMaterialization.ReuseOrBindAsync(bound, Path.GetTempPath(), commit,
+                context.CancellationToken));
+        // Earlier native work that changes a tracked file stops a later partition.
+        await File.WriteAllTextAsync(Path.Combine(repo.Directory, "content.txt"), "changed",
+            context.CancellationToken);
+        InvalidDataException dirty = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            GitMaterialization.ReuseOrBindAsync(bound, repo.Directory, commit,
+                context.CancellationToken));
+        Assert.Contains("clean tracked checkout", dirty.Message);
+    }
+
+    [TestMethod]
+    [DataRow("0123456789abcdef0123456789abcdef01234567", true)]
+    [DataRow("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", true)]
+    [DataRow("0123456789ABCDEF0123456789ABCDEF01234567", false)]
+    [DataRow("0123456789abc", false)]
+    [DataRow("HEAD", false)]
+    [DataRow("", false)]
+    public void CommitIdentityIsOnlyACompleteNativeObjectName(string value, bool expected) =>
+        Assert.AreEqual(expected, GitReader.IsCommitId(value));
 
     [TestMethod]
     public async Task BindRejectsCheckoutSubdirectory()

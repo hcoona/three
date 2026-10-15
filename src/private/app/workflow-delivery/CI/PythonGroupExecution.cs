@@ -12,13 +12,14 @@ internal static class PythonGroupExecution
 {
     internal static Task<PythonGroupRunResult> RunAsync(CiPlan plan,
         PythonGroupRunRequest request, CancellationToken token) => RunAsync(plan, request,
-            PythonPytestExecution.RunBoundAsync, PythonPackageExecution.RunAsync,
-            NativeProcess.ExecuteAsync, token);
+            null, null, NativeProcess.ExecuteAsync, token);
 
+    // Null partitions run the product executors on this group's checkout binding.
     internal static async Task<PythonGroupRunResult> RunAsync(CiPlan plan,
         PythonGroupRunRequest request,
-        Func<CiPlan, PythonPytestRunRequest, CancellationToken, Task<PythonPytestRunResult>> pytest,
-        Func<CiPlan, PythonPackageRunRequest, CancellationToken, Task<PythonPackageRunResult>>
+        Func<CiPlan, PythonPytestRunRequest, CancellationToken, Task<PythonPytestRunResult>>?
+            pytest,
+        Func<CiPlan, PythonPackageRunRequest, CancellationToken, Task<PythonPackageRunResult>>?
             packages,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> metadata,
         CancellationToken token)
@@ -57,12 +58,17 @@ internal static class PythonGroupExecution
                     throw new InvalidDataException(
                         "Python package consumers require Git-free scratch.");
         }
-        GitRevision revision = await new GitReader(checkout).ReadAsync(plan.Candidate, token);
-        if (revision.Commit != plan.Candidate)
+        if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Python group requires its exact candidate.");
         GitMaterialization materialization = await GitMaterialization.BindAsync(checkout,
-            revision, token);
-        PythonPytestExecution.ReadChecks(pytestPlan, native, revision);
+            plan.Candidate, token);
+        pytest ??= (partition, partitionRequest, cancellation) =>
+            PythonPytestExecution.RunBoundAsync(partition, partitionRequest, materialization,
+                cancellation);
+        packages ??= (partition, partitionRequest, cancellation) =>
+            PythonPackageExecution.RunBoundAsync(partition, partitionRequest, materialization,
+                cancellation);
+        PythonPytestExecution.ReadChecks(pytestPlan, native, materialization.Revision);
         await PythonPackageExecution.ReadChecksAsync(packagePlan, native.Members,
             materialization, token);
         if (plan.Checks.Length != 0)

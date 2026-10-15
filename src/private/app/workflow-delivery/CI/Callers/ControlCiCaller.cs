@@ -33,7 +33,7 @@ internal static class ControlCiCaller
             requested.Candidate, token);
         if (comparison.Basis.Commit != requested.Basis ||
             comparison.Candidate.Commit != requested.Candidate ||
-            (await reader.ReadAsync("HEAD", token)).Commit != requested.Candidate ||
+            await reader.ResolveAsync("HEAD", token) != requested.Candidate ||
             (requested.Full && requested.Basis != requested.Candidate))
             throw new InvalidDataException("Control preparation requires the exact candidate.");
         ControlTestInputs.RequireOwner(comparison.Candidate, false);
@@ -43,14 +43,11 @@ internal static class ControlCiCaller
             requested.Candidate);
         var basis = requested.Basis == requested.Candidate ? candidate :
             new MaterializedEndpoint(Path.Combine(directory, "basis"), requested.Basis);
+        // Git creates each fresh detached checkout at the exact commit; consumers bind it.
         foreach (MaterializedEndpoint endpoint in new[] { candidate, basis }.Distinct())
-        {
             await CiCallerTransfer.RunAsync(new("git", root, ["worktree", "add", "--detach",
                 endpoint.Directory, endpoint.Reference], 300), directory,
                 Path.GetFileName(endpoint.Directory) + "-checkout", token);
-            await GitMaterialization.BindAsync(endpoint.Directory,
-                endpoint == candidate ? comparison.Candidate : comparison.Basis, token);
-        }
         CiCallerTransfer.Write(Path.Combine(directory, "group-endpoints.json"),
             new CiCallerEndpoints(basis, candidate, requested.Full),
             TransferJson.Default.CiCallerEndpoints);

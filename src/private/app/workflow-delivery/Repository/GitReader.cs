@@ -24,6 +24,9 @@ internal sealed class GitReader(string directory, string executable = "git")
         string basisCommit = await ResolveAsync(basis, token);
         string candidateCommit = await ResolveAsync(candidate, token);
         GitRevision before = await ReadCommitAsync(basisCommit, token);
+        // One commit has one tree and no changes; Git need not list or diff it twice.
+        if (candidateCommit == basisCommit)
+            return new(before, before, []);
         GitRevision after = await ReadCommitAsync(candidateCommit, token);
         string changes = await QueryAsync(["diff-tree", "-r", "--no-commit-id",
             "--name-only", "-z", "--no-renames", "--no-relative", "--no-ext-diff",
@@ -32,7 +35,12 @@ internal sealed class GitReader(string directory, string executable = "git")
         return new(before, after, Records(changes).Order(StringComparer.Ordinal).ToArray());
     }
 
-    private async Task<string> ResolveAsync(string reference, CancellationToken token)
+    // A complete native object name as Git prints it. Abbreviations, refs and other aliases
+    // are not exact identities, so callers can reject them before starting Git.
+    internal static bool IsCommitId(string value) => value is { Length: 40 or 64 } &&
+        value.All(c => char.IsAsciiDigit(c) || c is >= 'a' and <= 'f');
+
+    internal async Task<string> ResolveAsync(string reference, CancellationToken token)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reference);
         string output = await QueryAsync(["rev-parse", "--verify", "--end-of-options",
@@ -43,7 +51,7 @@ internal sealed class GitReader(string directory, string executable = "git")
         return commit;
     }
 
-    private async Task<GitRevision> ReadCommitAsync(string commit, CancellationToken token)
+    internal async Task<GitRevision> ReadCommitAsync(string commit, CancellationToken token)
     {
         string output = await QueryAsync(["ls-tree", "-r", "-z", "--full-tree",
             commit, "--"], token);

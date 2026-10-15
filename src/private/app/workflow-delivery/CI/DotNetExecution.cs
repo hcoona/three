@@ -25,7 +25,17 @@ internal static class DotNetExecution
     internal static Task<DotNetRunResult> RunAsync(CiPlan plan, DotNetRunRequest request,
         CancellationToken token) => RunAsync(plan, request, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<DotNetRunResult> RunAsync(CiPlan plan, DotNetRunRequest request,
+    internal static Task<DotNetRunResult> RunAsync(CiPlan plan, DotNetRunRequest request,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token) => RunAsync(plan, request, null, execute, token);
+
+    // The group has already bound this exact checkout for the original plan.
+    internal static Task<DotNetRunResult> RunBoundAsync(CiPlan plan, DotNetRunRequest request,
+        GitMaterialization bound, CancellationToken token) =>
+        RunAsync(plan, request, bound, NativeProcess.ExecuteAsync, token);
+
+    private static async Task<DotNetRunResult> RunAsync(CiPlan plan, DotNetRunRequest request,
+        GitMaterialization? bound,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
@@ -40,10 +50,10 @@ internal static class DotNetExecution
         if (plan.Scope != DotNetFactsAssembler.Scope)
             throw new InvalidDataException("Unsupported native .NET execution scope.");
         Dictionary<CheckKey, DotNetGraphNode> nodes = ReadChecks(plan, checkout);
-        GitRevision revision = await new GitReader(checkout).ReadAsync(plan.Candidate, token);
-        if (revision.Commit != plan.Candidate)
+        if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Native .NET execution requires its exact candidate.");
-        await GitMaterialization.BindAsync(checkout, revision, token);
+        GitRevision revision = (await GitMaterialization.ReuseOrBindAsync(bound, checkout,
+            plan.Candidate, token)).Revision;
         foreach (CheckKey key in nodes.Keys)
             if (!revision.Entries.Any(entry => entry.Path == key.Target &&
                     entry.ObjectType == "blob" && entry.Mode is "100644" or "100755"))

@@ -81,7 +81,7 @@ internal static class CiCallerTransfer
         var reader = new GitReader(root);
         GitComparison comparison = await reader.CompareAsync(basis, candidate, token);
         if (comparison.Basis.Commit != basis || comparison.Candidate.Commit != candidate ||
-            (await reader.ReadAsync("HEAD", token)).Commit != candidate)
+            await reader.ResolveAsync("HEAD", token) != candidate)
             throw new
                 InvalidDataException("Scope does not name exact available candidate commits.");
         return comparison;
@@ -99,14 +99,11 @@ internal static class CiCallerTransfer
         var candidate = new MaterializedEndpoint(!separate &&
             comparison.Basis.Commit == comparison.Candidate.Commit ? basis.Directory :
                 Path.Combine(directory, "candidate"), comparison.Candidate.Commit);
+        // Git creates each fresh detached checkout at the exact commit; consumers bind it.
         foreach (MaterializedEndpoint endpoint in new[] { basis, candidate }.Distinct())
-        {
             await RunAsync(new("git", root, ["worktree", "add", "--detach", endpoint.Directory,
                 endpoint.Reference], 900), directory, Path.GetFileName(endpoint.Directory) +
                 "-checkout", token);
-            await GitMaterialization.BindAsync(endpoint.Directory,
-                endpoint == basis ? comparison.Basis : comparison.Candidate, token);
-        }
         return new(basis, candidate, full);
     }
 

@@ -38,11 +38,9 @@ internal static class DotNetFactsAssembler
             !Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
             OwnedPath.Overlap(scratch, checkout))
             throw new InvalidDataException("Native projection requires fresh external scratch.");
-        GitRevision revision = await new GitReader(checkout).ReadAsync(
-            selection.Request.Candidate.Revision, token);
-        if (revision.Commit != selection.Request.Candidate.Revision)
+        if (!GitReader.IsCommitId(selection.Request.Candidate.Revision))
             throw new InvalidDataException("Native projection requires its exact candidate.");
-        await GitMaterialization.BindAsync(checkout, revision, token);
+        await GitMaterialization.BindAsync(checkout, selection.Request.Candidate.Revision, token);
         if (packages.Any(package => !Path.GetFullPath(package.Node.Identity.Project).Equals(
                 Path.GetFullPath(Path.Combine(checkout, package.Project)),
                 OperatingSystem.IsWindows() ?

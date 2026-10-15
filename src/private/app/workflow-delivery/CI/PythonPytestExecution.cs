@@ -24,17 +24,18 @@ internal static class PythonPytestExecution
         PythonPytestRunRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
-        => RunAsync(plan, request, execute, false, token);
+        => RunAsync(plan, request, execute, null, token);
 
-    // The group has already bound the native membership before dispatching either partition.
+    // The group has already bound the checkout and the native membership before dispatching
+    // either partition.
     internal static Task<PythonPytestRunResult> RunBoundAsync(CiPlan plan,
-        PythonPytestRunRequest request, CancellationToken token) =>
-        RunAsync(plan, request, NativeProcess.ExecuteAsync, true, token);
+        PythonPytestRunRequest request, GitMaterialization bound, CancellationToken token) =>
+        RunAsync(plan, request, NativeProcess.ExecuteAsync, bound, token);
 
     private static async Task<PythonPytestRunResult> RunAsync(CiPlan plan,
         PythonPytestRunRequest request,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        bool membershipBound, CancellationToken token)
+        GitMaterialization? bound, CancellationToken token)
     {
         string checkout = OwnedPath.Absolute(request.Checkout, PathMessage);
         string scratch = OwnedPath.Absolute(request.Scratch, PathMessage);
@@ -43,13 +44,13 @@ internal static class PythonPytestExecution
             !Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
             OwnedPath.Overlap(scratch, checkout))
             throw new InvalidDataException("Pytest execution requires fresh external scratch.");
-        GitRevision revision = await new GitReader(checkout).ReadAsync(plan.Candidate, token);
-        if (revision.Commit != plan.Candidate)
+        if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Pytest execution requires its exact candidate.");
-        await GitMaterialization.BindAsync(checkout, revision, token);
-        ReadChecks(plan, request, revision);
+        GitMaterialization materialization = await GitMaterialization.ReuseOrBindAsync(bound,
+            checkout, plan.Candidate, token);
+        ReadChecks(plan, request, materialization.Revision);
         if (plan.Checks.Length == 0) return new(plan.Candidate, [], [], []);
-        if (!membershipBound)
+        if (bound is null)
             request = await BindMembershipAsync(request, execute, token);
 
         var commands = new List<PythonPytestCommand>();

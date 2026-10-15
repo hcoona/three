@@ -7,6 +7,7 @@ namespace WorkflowDelivery.Release;
 
 internal sealed record PythonPreparationRequest(ReleaseSubject Subject, string Checkout,
     string Scratch, string MiseDataDirectory);
+internal sealed record PythonReleaseRecipe(ReleaseBuild Build, string Directory);
 internal sealed record PythonPreparationResult(PreparedRelease Prepared,
     Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors);
 
@@ -53,44 +54,13 @@ internal static class PythonPreparation
         await CheckAsync("native-input", async () =>
         {
             ReleaseSubject subject = request.Subject;
-            bool buddy = subject.Channel == "buddy" && subject.Destination == "testpypi";
-            bool official = subject.Channel == "official" && subject.Destination == "pypi";
-            if (!(buddy || official) || string.IsNullOrWhiteSpace(subject.SelectedRef))
-                throw new InvalidDataException("Unsupported Python Release channel or ref.");
-            ReleasePolicy.RequireEligible(subject);
-            GitRevision revision = await new GitReader(checkout).ReadAsync(subject.Revision, token);
-            if (revision.Commit != subject.Revision)
-                throw new InvalidDataException(
-                    "Python Release requires the exact selected revision.");
-            GitMaterialization bound = await GitMaterialization.BindAsync(checkout, revision,
-                token);
-            ReleaseUnitDeclaration unit = ReleaseUnitDeclarationReader.Read(
-                await bound.ReadOptionalTextAsync(subject.Declaration, token) ??
-                    throw new InvalidDataException("Missing committed Python release declaration."),
-                subject.Declaration);
-            if (unit.Id != subject.Unit || unit.Builds is not
-                [{ Definition: "python/distribution-set-v1", Outputs: { Length: 2 } }])
-                throw new InvalidDataException("Unsupported complete Python Release recipe.");
-            build = unit.Builds[0];
-            if (build.Outputs.Count(output => output is
-                    { Role: "primary-package", Kind: "python-wheel" }) != 1 ||
-                build.Outputs.Count(output => output is
-                    { Role: "source-package", Kind: "python-sdist" }) != 1)
-                throw new InvalidDataException("Unsupported complete Python distribution set.");
-            string parent = Path.GetDirectoryName(subject.Declaration)!.Replace('\\', '/');
-            string entry = parent.Length == 0 ? build.EntryPoint : parent + "/" + build.EntryPoint;
-            string directory = Path.GetDirectoryName(entry)!.Replace('\\', '/');
-            if (Path.GetFileName(entry) != "pyproject.toml" ||
-                await bound.ReadOptionalTextAsync(entry, token) is null)
-                throw new InvalidDataException("Missing committed native Python entry.");
-            QualitySelection? quality = await new QualitySelectionReader(checkout,
-                bound.ReadOptionalTextAsync).ReadAsync(directory.Length == 0 ? "." : directory,
-                    "python", token);
-            if (quality?.Preset != PythonSmokePackageOperations.Preset)
-                throw new InvalidDataException("Unsupported complete Python quality selection.");
-            foreach (string input in Inputs)
-                if (await bound.ReadOptionalTextAsync(input, token) is null)
-                    throw new InvalidDataException("Missing committed native input: " + input);
+            bool official = Admit(subject);
+            GitMaterialization bound = await GitMaterialization.BindAsync(checkout,
+                subject.Revision, token);
+            PythonReleaseRecipe recipe = await ReadRecipeAsync(subject, bound.Root,
+                bound.ReadOptionalTextAsync, token);
+            build = recipe.Build;
+            string directory = recipe.Directory;
             if ((await RunAsync(new("git", checkout,
                 ["rev-parse", "--is-shallow-repository"], 30))).Stdout.Trim() != "false")
                 throw new InvalidDataException("Native versioning requires complete Git history.");
@@ -109,18 +79,8 @@ internal static class PythonPreparation
             (name, version) = await operations.PrepareAsync(directory, ExecuteAsync, token);
             using JsonDocument facts = await operations.VersionFactsAsync(directory,
                 ExecuteAsync, token);
-            JsonElement value = facts.RootElement;
-            bool publicRelease = value.GetProperty("public_release").GetBoolean();
-            if (name != "hcoona-release-smoke-python" ||
-                value.GetProperty("name").GetString() != name ||
-                value.GetProperty("version").GetString() != version ||
-                value.GetProperty("commit").GetString() != subject.Revision ||
-                value.GetProperty("implementation").GetString() != "cpython" ||
-                value.GetProperty("interpreter_version").GetString() != pythonVersion ||
-                value.GetProperty("dependencies").GetArrayLength() != 0 ||
-                !subject.DryRun && (value.GetProperty("local_version").ValueKind !=
-                    JsonValueKind.Null || official && !publicRelease))
-                throw new InvalidDataException("Unsupported native Python Release identity.");
+            bool publicRelease = QualifyNative(subject, official, name, version, pythonVersion,
+                facts.RootElement);
             native.Add("name", name);
             native.Add("version", version);
             native.Add("commit", subject.Revision);
@@ -217,6 +177,70 @@ internal static class PythonPreparation
                 throw new InvalidDataException("Native tool differs from committed authority.");
             return selected;
         }
+    }
+
+    // Pure subject admission, before any Git or native work. Returns whether it is Official.
+    internal static bool Admit(ReleaseSubject subject)
+    {
+        bool buddy = subject.Channel == "buddy" && subject.Destination == "testpypi";
+        bool official = subject.Channel == "official" && subject.Destination == "pypi";
+        if (!(buddy || official) || string.IsNullOrWhiteSpace(subject.SelectedRef))
+            throw new InvalidDataException("Unsupported Python Release channel or ref.");
+        ReleasePolicy.RequireEligible(subject);
+        if (!GitReader.IsCommitId(subject.Revision))
+            throw new InvalidDataException("Python Release requires the exact selected revision.");
+        return official;
+    }
+
+    // The complete committed recipe and native inputs, read through a revision-bound reader.
+    internal static async Task<PythonReleaseRecipe> ReadRecipeAsync(ReleaseSubject subject,
+        string root, Func<string, CancellationToken, Task<string?>> read,
+        CancellationToken token)
+    {
+        ReleaseUnitDeclaration unit = ReleaseUnitDeclarationReader.Read(
+            await read(subject.Declaration, token) ??
+                throw new InvalidDataException("Missing committed Python release declaration."),
+            subject.Declaration);
+        if (unit.Id != subject.Unit || unit.Builds is not
+            [{ Definition: "python/distribution-set-v1", Outputs: { Length: 2 } }])
+            throw new InvalidDataException("Unsupported complete Python Release recipe.");
+        ReleaseBuild build = unit.Builds[0];
+        if (build.Outputs.Count(output => output is
+                { Role: "primary-package", Kind: "python-wheel" }) != 1 ||
+            build.Outputs.Count(output => output is
+                { Role: "source-package", Kind: "python-sdist" }) != 1)
+            throw new InvalidDataException("Unsupported complete Python distribution set.");
+        string parent = Path.GetDirectoryName(subject.Declaration)!.Replace('\\', '/');
+        string entry = parent.Length == 0 ? build.EntryPoint : parent + "/" + build.EntryPoint;
+        string directory = Path.GetDirectoryName(entry)!.Replace('\\', '/');
+        if (Path.GetFileName(entry) != "pyproject.toml" || await read(entry, token) is null)
+            throw new InvalidDataException("Missing committed native Python entry.");
+        QualitySelection? quality = await new QualitySelectionReader(root, read).ReadAsync(
+            directory.Length == 0 ? "." : directory, "python", token);
+        if (quality?.Preset != PythonSmokePackageOperations.Preset)
+            throw new InvalidDataException("Unsupported complete Python quality selection.");
+        foreach (string input in Inputs)
+            if (await read(input, token) is null)
+                throw new InvalidDataException("Missing committed native input: " + input);
+        return new(build, directory);
+    }
+
+    // Pure check of the native version facts against the admitted subject.
+    internal static bool QualifyNative(ReleaseSubject subject, bool official, string name,
+        string version, string pythonVersion, JsonElement value)
+    {
+        bool publicRelease = value.GetProperty("public_release").GetBoolean();
+        if (name != "hcoona-release-smoke-python" ||
+            value.GetProperty("name").GetString() != name ||
+            value.GetProperty("version").GetString() != version ||
+            value.GetProperty("commit").GetString() != subject.Revision ||
+            value.GetProperty("implementation").GetString() != "cpython" ||
+            value.GetProperty("interpreter_version").GetString() != pythonVersion ||
+            value.GetProperty("dependencies").GetArrayLength() != 0 ||
+            !subject.DryRun && (value.GetProperty("local_version").ValueKind !=
+                JsonValueKind.Null || official && !publicRelease))
+            throw new InvalidDataException("Unsupported native Python Release identity.");
+        return publicRelease;
     }
 
     private static Dictionary<string, string?> EnvironmentFor(string scratch, string checkout,

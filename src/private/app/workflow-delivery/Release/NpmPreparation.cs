@@ -62,15 +62,14 @@ internal static class NpmPreparation
             ("MISE_EXEC_AUTO_INSTALL", "0"), ("MISE_AUTO_INSTALL", "0"),
             ("MISE_TRUSTED_CONFIG_PATHS", checkout),
         }) environment[name] = value;
-        GitRevision revision = await new GitReader(checkout).ReadAsync(request.Subject.Revision,
-            token);
-        GitMaterialization bound = await GitMaterialization.BindAsync(checkout, revision, token);
         bool official = request.Subject.Channel == "official" &&
             request.Subject.Destination == "npmjs" && request.Subject.DryRun;
         bool buddy = request.Subject.Channel == "buddy" &&
             request.Subject.Destination == "github-packages-npm";
-        if (revision.Commit != request.Subject.Revision || !(official || buddy))
+        if (!GitReader.IsCommitId(request.Subject.Revision) || !(official || buddy))
             throw new InvalidDataException("Unsupported selected npm destination and mode.");
+        GitMaterialization bound = await GitMaterialization.BindAsync(checkout,
+            request.Subject.Revision, token);
         ReleaseUnitDeclaration unit = ReleaseUnitDeclarationReader.Read(
             await bound.ReadOptionalTextAsync(request.Subject.Declaration, token)
                 ?? throw new InvalidDataException("Missing selected release declaration."),
@@ -97,7 +96,7 @@ internal static class NpmPreparation
         string nativeVersion = "";
         await CheckAsync("native-input", async () =>
         {
-            nativeVersion = version(checkout, revision, product, token);
+            nativeVersion = version(checkout, bound.Revision, product, token);
             if (string.IsNullOrWhiteSpace(nativeVersion))
                 throw new InvalidDataException("Missing native NBGV npm projection.");
             string node = await ToolAsync("node", "24");

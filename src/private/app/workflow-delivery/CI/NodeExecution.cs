@@ -52,26 +52,15 @@ internal static class NodeExecution
             scratch.Contains("%v", StringComparison.Ordinal))
             throw new InvalidDataException(
                 "Node scratch cannot contain native pack output markers.");
-        GitRevision revision = await new GitReader(checkout).ReadAsync(plan.Candidate, token);
-        if (revision.Commit != plan.Candidate)
+        if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException(
                 "Node execution requires the exact native commit identity.");
-        await GitMaterialization.BindAsync(checkout, revision, token);
+        await GitMaterialization.BindAsync(checkout, plan.Candidate, token);
         if (plan.Checks.Length == 0)
             return new(plan.Candidate, [], [], [], [], request.Runtime, null);
         NativeCommandResult node = await execute(new("node", checkout, ["--version"], 30), token);
         NativeCommandResult pnpm = await execute(new("pnpm", checkout, ["--version"], 30), token);
-        string nodeVersion = ReadVersion(node, "node");
-        string pnpmVersion = ReadVersion(pnpm, "pnpm");
-        Dictionary<string, string> dimensions = selected.Checks[0].Work.Dimensions;
-        if (pnpmVersion != dimensions["pnpm"] ||
-            (dimensions.TryGetValue("node-version", out string? exact) ? nodeVersion != exact :
-                System.Version.Parse(nodeVersion).Major.ToString(
-                    System.Globalization.CultureInfo.InvariantCulture) +
-                        ".x" != dimensions["node"]))
-            throw new InvalidDataException(
-                "Native runtime differs from the selected Node context.");
-        var runtimeVersions = new NodeRuntimeReadback(nodeVersion, pnpmVersion, node, pnpm);
+        NodeRuntimeReadback runtimeVersions = ReadRuntime(selected, node, pnpm);
         var results = new Dictionary<CheckKey, CheckResult>();
         var commands = new List<NodeCommandObservation>();
         var outputs = new List<NodeOriginalOutput>();
@@ -176,7 +165,24 @@ internal static class NodeExecution
             Status(await ObserveAsync(check, command));
     }
 
-    private static CheckStatus Status(NativeCommandResult result) => result.Termination switch
+    // Pure check of the native runtime answers against the selected runtime context.
+    internal static NodeRuntimeReadback ReadRuntime(CiPlan selected, NativeCommandResult node,
+        NativeCommandResult pnpm)
+    {
+        string nodeVersion = ReadVersion(node, "node");
+        string pnpmVersion = ReadVersion(pnpm, "pnpm");
+        Dictionary<string, string> dimensions = selected.Checks[0].Work.Dimensions;
+        if (pnpmVersion != dimensions["pnpm"] ||
+            (dimensions.TryGetValue("node-version", out string? exact) ? nodeVersion != exact :
+                System.Version.Parse(nodeVersion).Major.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture) +
+                        ".x" != dimensions["node"]))
+            throw new InvalidDataException(
+                "Native runtime differs from the selected Node context.");
+        return new(nodeVersion, pnpmVersion, node, pnpm);
+    }
+
+    internal static CheckStatus Status(NativeCommandResult result) => result.Termination switch
     {
         NativeTermination.Cancelled => CheckStatus.Cancelled,
         NativeTermination.TimedOut => CheckStatus.TimedOut,

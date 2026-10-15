@@ -21,8 +21,18 @@ internal static class DotNetPackageExecution
         DotNetRunRequest request, CancellationToken token) =>
         RunAsync(plan, request, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<DotNetPackageRunResult> RunAsync(CiPlan plan,
+    internal static Task<DotNetPackageRunResult> RunAsync(CiPlan plan,
         DotNetRunRequest request,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token) => RunAsync(plan, request, null, execute, token);
+
+    // The group has already bound this exact checkout for the original plan.
+    internal static Task<DotNetPackageRunResult> RunBoundAsync(CiPlan plan,
+        DotNetRunRequest request, GitMaterialization bound, CancellationToken token) =>
+        RunAsync(plan, request, bound, NativeProcess.ExecuteAsync, token);
+
+    private static async Task<DotNetPackageRunResult> RunAsync(CiPlan plan,
+        DotNetRunRequest request, GitMaterialization? bound,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
@@ -36,12 +46,12 @@ internal static class DotNetPackageExecution
         ResultCollector.Collect(plan, []);
         if (plan.Scope != DotNetFactsAssembler.Scope)
             throw new InvalidDataException("Unsupported native package execution scope.");
-        GitRevision revision = await new GitReader(checkout).ReadAsync(plan.Candidate, token);
-        if (revision.Commit != plan.Candidate)
+        RequireContract(plan);
+        if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException(
                 "Native package execution requires its exact candidate.");
-        GitMaterialization materialization = await GitMaterialization.BindAsync(checkout,
-            revision, token);
+        GitMaterialization materialization = await GitMaterialization.ReuseOrBindAsync(bound,
+            checkout, plan.Candidate, token);
         var facts = await ReadChecksAsync(plan, materialization, token);
         var results = new Dictionary<CheckKey, CheckResult>();
         var commands = new List<DotNetCommandObservation>();
@@ -138,17 +148,13 @@ internal static class DotNetPackageExecution
         Dictionary<string, string> Values)>> ReadChecksAsync(CiPlan plan,
         GitMaterialization materialization, CancellationToken token)
     {
+        RequireContract(plan);
         string checkout = materialization.Root;
         var facts = new Dictionary<CheckKey, (DotNetGraphNode Node,
             Dictionary<string, string> Values)>();
         foreach (PlannedCheck item in plan.Checks)
         {
-            if (!item.Origins.SequenceEqual([CheckOrigin.Preset]) ||
-                !item.QualityPresets.SequenceEqual([DotNetPackageChecks.Preset]))
-                throw new InvalidDataException(
-                    "Unsupported selected native package quality contract.");
-            PackageTarget subject = item.Work.Package ??
-                throw new InvalidDataException("Missing selected native package association.");
+            PackageTarget subject = item.Work.Package!;
             string declaration = await materialization.ReadOptionalTextAsync(subject.Declaration,
                 token) ?? throw new InvalidDataException(
                     "Missing committed release-unit declaration.");
@@ -159,6 +165,19 @@ internal static class DotNetPackageExecution
             facts.Add(item.Work.Key, DotNetPackageChecks.Read(item.Work, checkout,
                 ReleaseUnitDeclarationReader.Read(declaration, subject.Declaration)));
         }
+        return facts;
+    }
+
+    // Pure plan-contract rules, applied before any Git or native work.
+    internal static void RequireContract(CiPlan plan)
+    {
+        foreach (PlannedCheck item in plan.Checks)
+            if (!item.Origins.SequenceEqual([CheckOrigin.Preset]) ||
+                !item.QualityPresets.SequenceEqual([DotNetPackageChecks.Preset]))
+                throw new InvalidDataException(
+                    "Unsupported selected native package quality contract.");
+            else if (item.Work.Package is null)
+                throw new InvalidDataException("Missing selected native package association.");
         foreach (var group in plan.Checks.GroupBy(item =>
                      (item.Work.Key.Target, item.Work.Key.Variant)))
             if (group.Count() != 3 || group.Select(item => item.Work.Key.Check).ToHashSet()
@@ -169,7 +188,6 @@ internal static class DotNetPackageExecution
                     !ImpactPlanner.SamePackage(item.Work.Package, group.First().Work.Package)))
                 throw new InvalidDataException(
                     "Incomplete or conflicting native package obligations.");
-        return facts;
     }
 
     internal static DotNetOriginalPackage Archive(PackageTarget subject, JsonElement root,

@@ -9,14 +9,14 @@ internal sealed record DotNetGroupRunResult(string Candidate, CheckResult[] Resu
 // The two current contracts are explicit partitions of one unchanged original plan.
 internal static class DotNetGroupExecution
 {
+    // The product partitions reuse this group's checkout binding.
     internal static Task<DotNetGroupRunResult> RunAsync(CiPlan plan, DotNetRunRequest request,
-        CancellationToken token) => RunAsync(plan, request, DotNetExecution.RunAsync,
-            DotNetPackageExecution.RunAsync, token);
+        CancellationToken token) => RunAsync(plan, request, null, null, token);
 
     internal static async Task<DotNetGroupRunResult> RunAsync(CiPlan plan,
         DotNetRunRequest request,
-        Func<CiPlan, DotNetRunRequest, CancellationToken, Task<DotNetRunResult>> retained,
-        Func<CiPlan, DotNetRunRequest, CancellationToken, Task<DotNetPackageRunResult>> packages,
+        Func<CiPlan, DotNetRunRequest, CancellationToken, Task<DotNetRunResult>>? retained,
+        Func<CiPlan, DotNetRunRequest, CancellationToken, Task<DotNetPackageRunResult>>? packages,
         CancellationToken token)
     {
         ResultCollector.Collect(plan, []);
@@ -48,11 +48,16 @@ internal static class DotNetGroupExecution
             OwnedPath.Overlap(scratch, checkout))
             throw new InvalidDataException(
                 "Native group execution requires fresh external scratch.");
-        GitRevision revision = await new GitReader(checkout).ReadAsync(plan.Candidate, token);
-        if (revision.Commit != plan.Candidate)
+        if (!GitReader.IsCommitId(plan.Candidate))
             throw new InvalidDataException("Native group execution requires its exact candidate.");
         GitMaterialization materialization = await GitMaterialization.BindAsync(checkout,
-            revision, token);
+            plan.Candidate, token);
+        retained ??= (partition, partitionRequest, cancellation) =>
+            DotNetExecution.RunBoundAsync(partition, partitionRequest, materialization,
+                cancellation);
+        packages ??= (partition, partitionRequest, cancellation) =>
+            DotNetPackageExecution.RunBoundAsync(partition, partitionRequest, materialization,
+                cancellation);
         // Reuse each executor's complete contract validation before either product partition.
         DotNetExecution.ReadChecks(nativePlan, checkout);
         await DotNetPackageExecution.ReadChecksAsync(packagePlan, materialization, token);
