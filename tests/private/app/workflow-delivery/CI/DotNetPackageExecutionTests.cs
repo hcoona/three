@@ -337,6 +337,8 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
         Assert.HasCount(1, result.Packages);
         Assert.IsEmpty(result.ConsumerOutputs);
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+        if (defect == "marker")
+            Assert.Contains("marker API", Assert.ContainsSingle(result.Failures).Error);
     }
 
     [TestMethod]

@@ -35,6 +35,17 @@ public sealed class RubyPreparationTests(TestContext context)
     // committed repository; each row still owns fresh scratch and runs the full preparation.
     private static GitFixture? shared;
     private static string sharedRevision = "";
+    // RubySourceCollector writes <product>/lib/.../version.rb into the checkout, so every
+    // shared row that can reach source reading gets its own committed product directory.
+    private const int LaneCount = 64;
+    private static int nextLane = -1;
+
+    private static Fixture SharedLane()
+    {
+        int lane = Interlocked.Increment(ref nextLane);
+        Assert.IsLessThan(LaneCount, lane, "Raise LaneCount for the added shared rows.");
+        return Fixture.Shared(shared!, sharedRevision, "lanes/" + lane, "");
+    }
 
     [ClassInitialize]
     public static async Task InitializeAsync(TestContext classContext)
@@ -48,6 +59,8 @@ public sealed class RubyPreparationTests(TestContext context)
             await Fixture.StageProductAsync(repo, "recipes/control", "");
             foreach (string defect in RecipeDefects)
                 await Fixture.StageProductAsync(repo, "recipes/" + defect, defect);
+            for (int lane = 0; lane < LaneCount; lane++)
+                await Fixture.StageProductAsync(repo, "lanes/" + lane, "");
             sharedRevision = await repo.CommitAsync();
             await repo.GitAsync("reset", "--hard", sharedRevision);
             shared = repo;
@@ -257,7 +270,7 @@ public sealed class RubyPreparationTests(TestContext context)
         bool accepted
     )
     {
-        using var fixture = Fixture.Shared(shared!, sharedRevision);
+        using var fixture = SharedLane();
         fixture.Subject = fixture.Subject with
         {
             Channel = channel,
@@ -327,7 +340,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("projection-raw")]
     public async Task NativeIdentityCannotQualifyAnotherRequest(string defect)
     {
-        using var fixture = Fixture.Shared(shared!, sharedRevision);
+        using var fixture = SharedLane();
         fixture.Subject = fixture.Subject with
         {
             Channel = "official",
@@ -393,7 +406,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("archive-path")]
     public async Task UnsupportedArchiveCannotReachConsumer(string defect)
     {
-        using var fixture = Fixture.Shared(shared!, sharedRevision);
+        using var fixture = SharedLane();
         fixture.ArchiveDefect = defect;
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "contents", ReleaseCheckStatus.Failed);
@@ -428,7 +441,7 @@ public sealed class RubyPreparationTests(TestContext context)
         string statusText
     )
     {
-        using var fixture = Fixture.Shared(shared!, sharedRevision);
+        using var fixture = SharedLane();
         NativeTermination termination = Enum.Parse<NativeTermination>(terminationText);
         fixture.Override = command =>
             fixture.Phase(command) == phase

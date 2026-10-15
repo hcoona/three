@@ -60,6 +60,37 @@ public sealed class NativeProcessTests
     }
 
     [TestMethod]
+    public async Task ExecuteWithoutInheritedEnvironmentPassesOnlyCommandEnvironment()
+    {
+        // The app's own Environment.Clear wrapper line; ambient variables are only read.
+        string ambientName = OperatingSystem.IsWindows() ? "USERNAME" : "USER";
+        Assert.IsNotNull(Environment.GetEnvironmentVariable(ambientName));
+        string pwsh = (Environment.GetEnvironmentVariable("PATH") ?? "")
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(directory => Path.Combine(directory,
+                OperatingSystem.IsWindows() ? "pwsh.exe" : "pwsh"))
+            .First(File.Exists);
+        string marker = "WORKFLOW_PROCESS_PROBE_" + Guid.NewGuid().ToString("N");
+        var environment = new Dictionary<string, string?> { [marker] = "kept" };
+        foreach (string name in (string[])(OperatingSystem.IsWindows() ?
+            ["SystemRoot", "TEMP", "TMP", "USERPROFILE"] : ["HOME", "TMPDIR"]))
+            if (Environment.GetEnvironmentVariable(name) is { } value)
+                environment[name] = value;
+        string script = "[Console]::Out.Write([Environment]::GetEnvironmentVariable('" +
+            marker + "') + '|' + [Environment]::GetEnvironmentVariable('" + ambientName +
+            "'))";
+        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+
+        NativeCommandResult result = await NativeProcess.ExecuteAsync(new(pwsh,
+            Path.GetTempPath(), ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                encoded], 30, environment, InheritEnvironment: false),
+            TestContext.CancellationToken);
+
+        Assert.IsTrue(result.Succeeded, result.Stderr);
+        Assert.AreEqual("kept|", result.Stdout);
+    }
+
+    [TestMethod]
     public async Task RunPreservesLiteralArgumentsAndWorkingDirectory()
     {
         using var fixture = new ProcessFixture(

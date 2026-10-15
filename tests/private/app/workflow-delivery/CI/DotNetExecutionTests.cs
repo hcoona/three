@@ -98,6 +98,38 @@ public sealed class DotNetExecutionTests(TestContext context)
             item.Key.Check == DotNetChecks.Test).Status);
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
         Assert.HasCount(2, fixture.Commands);
+        Assert.AreEqual(termination, Assert.ContainsSingle(result.Commands).Result.Termination);
+        Assert.IsNotNull(result.BatchBuild);
+        Assert.AreEqual(DotNetChecks.Build, Assert.ContainsSingle(result.Outputs).Key.Check);
+    }
+
+    [TestMethod]
+    [DataRow("Cancelled", "Cancelled")]
+    [DataRow("TimedOut", "TimedOut")]
+    public async Task InterruptedBatchCannotPassFromSuccessfulBatchResponse(
+        string terminationName, string statusName)
+    {
+        using var fixture = Shared();
+        NativeTermination termination = Enum.Parse<NativeTermination>(terminationName);
+        CheckStatus status = Enum.Parse<CheckStatus>(statusName);
+        DotNetRunResult result = await DotNetExecution.RunAsync(fixture.Plan, fixture.Request,
+            async (command, token) =>
+            {
+                // The controlled batch writes a successful response before the interruption.
+                NativeCommandResult native = await fixture.ExecuteAsync(command, token);
+                return command.Arguments.Contains("-target:BuildSelected") ?
+                    native with { Termination = termination, ExitCode = null } : native;
+            }, context.CancellationToken);
+
+        Assert.IsTrue(File.Exists(Path.Combine(fixture.Scratch, "build-response.json")));
+        Assert.AreEqual(status, result.Results[0].Status);
+        Assert.AreEqual(CheckStatus.Skipped, result.Results[1].Status);
+        Assert.IsEmpty(result.Outputs);
+        Assert.IsEmpty(result.Commands);
+        Assert.HasCount(1, fixture.Commands);
+        Assert.IsNotNull(result.BatchBuild);
+        Assert.AreEqual(termination, result.BatchBuild.Result.Termination);
+        Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
     }
 
     [TestMethod]

@@ -84,8 +84,8 @@ public sealed class PythonGroupReaderTests(TestContext context)
             await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
                 PythonGroupReader.ReadAsync(transferred, (command, _) =>
                 {
-                    // NativeProcessTests covers ProcessStartInfo.Environment once; this row
-                    // qualifies only the command boundary the reader builds.
+                    // NativeProcessTests proves InheritEnvironment=false clears the child
+                    // block; this row qualifies only the command boundary the reader builds.
                     Assert.IsFalse(command.InheritEnvironment);
                     Assert.IsNotNull(command.Environment);
                     Assert.IsFalse(command.Environment.ContainsKey(sentinel));
