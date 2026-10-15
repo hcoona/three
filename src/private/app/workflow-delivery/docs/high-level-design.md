@@ -154,8 +154,14 @@ request constraints and business result evaluation.
 Adapting a native resolved identity is permitted: decode its supported output
 format or compare it with the encoding of a known project/output identity. This
 does not authorize interpreting unresolved dependency declarations or guessing a
-missing producer from a protocol prefix. Reuse native output-directory metadata
-when available rather than requiring a duplicate Workflow declaration.
+missing producer from a protocol prefix. One bounded exception exists because
+native UV metadata stubs build nodes: the
+[Python planning contract](middle-level-design.md#native-python-planning-facts)
+joins PyPA-parsed Hatchling build-requirement names to native workspace members
+only under an absent or exact workspace source, and fails on every other shape.
+It is not UV lowering and is rechecked under its research record. Reuse native
+output-directory metadata when available rather than requiring a duplicate
+Workflow declaration.
 
 Before implementing an integration, identify the native interface and verify
 that its output supports the required scope and errors. A successful call does

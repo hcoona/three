@@ -1,0 +1,166 @@
+[
+  {
+    "directory": "/recorded/python-endpoint",
+    "build_requirements": null,
+    "sources": {
+      "nbgv-python": "workspace"
+    }
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/lab/azure-document-intelligence-lab",
+    "build_requirements": [
+      {
+        "name": "hatchling",
+        "extras": []
+      },
+      {
+        "name": "nbgv-python",
+        "extras": []
+      }
+    ],
+    "sources": {}
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/private/app/azureauth-credprovider/python",
+    "build_requirements": [
+      {
+        "name": "hatchling",
+        "extras": []
+      },
+      {
+        "name": "nbgv-python",
+        "extras": []
+      }
+    ],
+    "sources": {
+      "nbgv-python": "workspace"
+    }
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/private/app/factorio-cycle-calculator",
+    "build_requirements": [
+      {
+        "name": "hatchling",
+        "extras": []
+      }
+    ],
+    "sources": {}
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/private/app/git-commit-heatmap",
+    "build_requirements": null,
+    "sources": {}
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/private/app/html-sm-processor",
+    "build_requirements": [
+      {
+        "name": "hatchling",
+        "extras": []
+      }
+    ],
+    "sources": {}
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/private/app/llm-text-splitter",
+    "build_requirements": [
+      {
+        "name": "hatchling",
+        "extras": []
+      }
+    ],
+    "sources": {}
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/private/app/music-flash-card-generator",
+    "build_requirements": null,
+    "sources": {}
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/private/app/rag-postgresql-openai",
+    "build_requirements": [
+      {
+        "name": "hatchling",
+        "extras": []
+      }
+    ],
+    "sources": {}
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/private/app/supermemo-mcp",
+    "build_requirements": [
+      {
+        "name": "hatchling",
+        "extras": []
+      }
+    ],
+    "sources": {}
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/private/app/transcribe",
+    "build_requirements": null,
+    "sources": {}
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/public/app/markdown-hybrid-search-mcp",
+    "build_requirements": [
+      {
+        "name": "hatchling",
+        "extras": []
+      }
+    ],
+    "sources": {}
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/public/lib/hcoona-release-smoke-python",
+    "build_requirements": [
+      {
+        "name": "hatchling",
+        "extras": []
+      },
+      {
+        "name": "nbgv-python",
+        "extras": []
+      }
+    ],
+    "sources": {
+      "nbgv-python": "workspace"
+    }
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/public/lib/nbgv-python",
+    "build_requirements": [
+      {
+        "name": "hatchling",
+        "extras": []
+      }
+    ],
+    "sources": {}
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/public/lib/three-workflow-delivery-v3",
+    "build_requirements": [
+      {
+        "name": "hatchling",
+        "extras": []
+      }
+    ],
+    "sources": {}
+  },
+  {
+    "directory": "/recorded/python-endpoint/src/sample/nbgv-hatch-demo",
+    "build_requirements": [
+      {
+        "name": "hatchling",
+        "extras": []
+      },
+      {
+        "name": "nbgv-python",
+        "extras": []
+      }
+    ],
+    "sources": {
+      "nbgv-python": "workspace"
+    }
+  }
+]

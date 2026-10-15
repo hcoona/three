@@ -55,5 +55,5 @@ pwsh -NoLogo -NoProfile -File eng/scripts/Bootstrap-CiControl.ps1 \
 dotnet "$directory/control-build/transfer/control/WorkflowDelivery.dll" ci caller-local-python \
   "$repository" "$directory" "$directory/control-build/transfer" "$operator_directory" "$tool_data" \
   "$(command -v uv)" "$(command -v python)" "$(command -v dotnet)" \
-  "$(command -v rustup)" "$(command -v cargo)" "$(command -v mise || printf '%s' '-')" \
+  "$(command -v mise || printf '%s' '-')" \
   "$(command -v node || printf '%s' '-')" "$(command -v pwsh || printf '%s' '-')"

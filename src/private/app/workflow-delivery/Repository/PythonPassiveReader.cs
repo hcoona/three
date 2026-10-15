@@ -3,11 +3,16 @@ using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Repository;
 
+internal sealed record PythonBuildRequirement(string Name, string[] Extras);
+internal sealed record PythonPassiveProject(string Directory,
+    PythonBuildRequirement[]? BuildRequirements,
+    IReadOnlyDictionary<string, string>? Sources = null);
 internal sealed record PythonNbgvCoordinates(string WorkingDirectory, string? GeneratedFile);
 internal sealed record PythonPassiveInputs(PythonPassiveProject Project,
     PythonNbgvCoordinates? Nbgv);
 
-// PyPA supplies build strings and the maintained NBGV plugin supplies its input coordinates.
+// PyPA supplies declared build requirements and the maintained NBGV plugin supplies its
+// input coordinates. Source entries are classified physically, not lowered.
 internal sealed class PythonPassiveReader
 {
     private readonly Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute;
@@ -35,8 +40,15 @@ internal sealed class PythonPassiveReader
             if (facts.GetProperty("directory").GetString() != directory)
                 throw new InvalidDataException("Python passive context differs from its request.");
             JsonElement build = facts.GetProperty("build_requirements");
-            string[]? requirements = build.ValueKind == JsonValueKind.Null ? null :
-                build.EnumerateArray().Select(Text).ToArray();
+            PythonBuildRequirement[]? requirements = build.ValueKind == JsonValueKind.Null ? null :
+                build.EnumerateArray().Select(requirement => new PythonBuildRequirement(
+                    Text(requirement.GetProperty("name")), requirement.GetProperty("extras")
+                        .EnumerateArray().Select(Text).ToArray())).ToArray();
+            var sources = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (JsonProperty source in facts.GetProperty("sources").EnumerateObject())
+                if (Text(source.Value) is not ("workspace" or "unsupported") ||
+                    !sources.TryAdd(source.Name, source.Value.GetString()!))
+                    throw new InvalidDataException("Invalid Python passive source class.");
             JsonElement plugin = facts.GetProperty("nbgv");
             PythonNbgvCoordinates? coordinates = null;
             if (plugin.ValueKind != JsonValueKind.Null)
@@ -46,12 +58,58 @@ internal sealed class PythonPassiveReader
                 coordinates = new(workingDirectory, generated.ValueKind == JsonValueKind.Null
                     ? null : Absolute(Text(generated)));
             }
-            return new(new(directory, requirements), coordinates);
+            return new(new(directory, requirements, sources), coordinates);
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or
             InvalidOperationException or ArgumentException)
         {
             throw new InvalidDataException("Invalid Python passive response.");
+        }
+    }
+
+    // Preflight every manifest UV can read for this endpoint, including ancestors.
+    internal async Task<string[]> ReadConfigurationAsync(string root, string helperPython,
+        string passiveScript, IEnumerable<string> contexts,
+        IReadOnlyDictionary<string, string?> environment, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        CanonicalEndpoint(root);
+        var directories = new HashSet<string>(contexts, StringComparer.Ordinal);
+        if (!directories.Contains(root))
+            throw new InvalidDataException("Python passive contexts omit the workspace root.");
+        for (DirectoryInfo? ancestor = new DirectoryInfo(root); ancestor is not null;
+            ancestor = ancestor.Parent)
+        {
+            // UV project settings discovery reads uv.toml before pyproject.toml. This
+            // request admits only pyproject workspace/source settings.
+            if (Path.Exists(Path.Combine(ancestor.FullName, "uv.toml")))
+                throw new InvalidDataException("Python project uv.toml settings are unsupported.");
+            if (ancestor.FullName != root &&
+                File.Exists(Path.Combine(ancestor.FullName, "pyproject.toml")))
+                directories.Add(ancestor.FullName);
+        }
+        string[] ordered = directories.Order(StringComparer.Ordinal).ToArray();
+        string[] inputs = ordered.Select(directory => Path.Combine(directory, "pyproject.toml"))
+            .Order(StringComparer.Ordinal).ToArray();
+        NativeCommandResult preflight = await execute(new(helperPython, root,
+            [passiveScript, "--configuration-only", .. ordered], 30, environment), token);
+        if (!preflight.Succeeded || preflight.Error is not null)
+            throw new InvalidDataException("Python configuration preflight failed.");
+        try
+        {
+            using JsonDocument result = JsonDocument.Parse(preflight.Stdout);
+            string?[] observed = result.RootElement.GetProperty("configuration_inputs")
+                .EnumerateArray().Select(input => input.GetString()).ToArray();
+            if (!observed.Order(StringComparer.Ordinal).SequenceEqual(inputs,
+                StringComparer.Ordinal))
+                throw new InvalidDataException(
+                    "Python configuration input identity is incomplete.");
+            return inputs;
+        }
+        catch (Exception exception) when (exception is JsonException or KeyNotFoundException or
+            InvalidOperationException)
+        {
+            throw new InvalidDataException("Python configuration preflight response is invalid.");
         }
     }
 

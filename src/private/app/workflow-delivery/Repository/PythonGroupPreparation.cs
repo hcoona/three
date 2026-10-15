@@ -2,8 +2,7 @@ using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Repository;
 
-internal sealed record PythonQueryTools(string Uv, string Interpreter, string Dotnet,
-    string Rustup, string Cargo);
+internal sealed record PythonQueryTools(string Uv, string Interpreter, string Dotnet);
 internal sealed record PythonGroupPreparationRequest(MaterializedEndpoint Basis,
     MaterializedEndpoint Candidate, bool Full, string ScopePath, string ControlSources,
     string Scratch, PythonQueryTools Tools, PythonPytestOperation Operation, int DeadlineSeconds);
@@ -41,8 +40,8 @@ internal static class PythonGroupPreparation
             after = Absolute(request.Candidate.Directory);
         _ = Absolute(request.ScopePath);
         PythonQueryTools tools = request.Tools;
-        foreach (string path in new[] { tools.Uv, tools.Interpreter, tools.Dotnet, tools.Rustup,
-                     tools.Cargo }) _ = Absolute(path);
+        foreach (string path in new[] { tools.Uv, tools.Interpreter, tools.Dotnet })
+            _ = Absolute(path);
         if (request.DeadlineSeconds <= 0 || !Directory.Exists(sources) ||
             !Directory.Exists(before) || !Directory.Exists(after) ||
             !Directory.Exists(scratch) || Directory.EnumerateFileSystemEntries(scratch).Any() ||
@@ -59,22 +58,6 @@ internal static class PythonGroupPreparation
             await GitMaterialization.BindAsync(endpoint.Directory, revision, token);
         }
         var commands = new List<PythonPreparationCommand>();
-        string native = Path.Combine(scratch, "native");
-        Directory.CreateDirectory(native);
-        Dictionary<string, string?> compilation = EnvironmentFor(native);
-        compilation["RUSTUP_HOME"] = Path.Combine(native, "rustup");
-        compilation["CARGO_HOME"] = Path.Combine(native, "cargo");
-        string output = Path.Combine(native, "output");
-        compilation["CARGO_TARGET_DIR"] = output;
-        string rust = Path.Combine(sources, "uv");
-        await RunAsync(tools.Rustup, rust, ["show"], compilation);
-        await RunAsync(tools.Cargo, rust, ["build", "--locked"], compilation);
-        string supplement = Path.Combine(output, "debug", "workflow-python-native-facts" +
-            (OperatingSystem.IsWindows() ? ".exe" : ""));
-        if (!File.Exists(supplement))
-            throw new PythonGroupPreparationException(scratch, commands.ToArray(),
-                "missing native supplement");
-
         PythonGroupEndpoint basis = await EndpointAsync(request.Basis, "basis");
         PythonGroupEndpoint candidate = await EndpointAsync(request.Candidate, "candidate");
         token.ThrowIfCancellationRequested();
@@ -97,13 +80,9 @@ internal static class PythonGroupPreparation
                 throw new PythonGroupPreparationException(scratch, commands.ToArray(),
                     $"missing {name} helper interpreter");
             environment["UV_PROJECT_ENVIRONMENT"] = Path.Combine(state, "activity-environment");
-            string bootstrap = Path.Combine(state, "bootstrap"),
-                activity = Path.Combine(state, "activity");
-            Directory.CreateDirectory(bootstrap);
-            Directory.CreateDirectory(activity);
             return new(endpoint, new(new(endpoint.Directory, tools.Uv, tools.Interpreter, helper,
-                Path.Combine(sources, "passive.py"), supplement, environment["UV_CACHE_DIR"]!,
-                bootstrap, activity), Path.Combine(sources, "pytest_configuration.py"),
+                Path.Combine(sources, "passive.py")),
+                Path.Combine(sources, "pytest_configuration.py"),
                 Path.Combine(sources, "packages.py"), request.Operation), environment);
         }
 
@@ -133,7 +112,7 @@ internal static class PythonGroupPreparation
                 ? System.Environment.GetFolderPath(System.Environment.SpecialFolder.System)
                 : "/usr/bin";
             environment["PATH"] = string.Join(Path.PathSeparator, new[] { tools.Dotnet,
-                tools.Interpreter, tools.Uv, tools.Cargo, tools.Rustup }
+                tools.Interpreter, tools.Uv }
                 .Select(Path.GetDirectoryName).Append(system).Append(OperatingSystem.IsWindows()
                     ? system : "/bin").Distinct(StringComparer.Ordinal));
             environment["HOME"] = home;
@@ -149,6 +128,8 @@ internal static class PythonGroupPreparation
             environment["LC_ALL"] = "C.UTF-8";
             environment["UV_CACHE_DIR"] = Path.Combine(state, "uv-cache");
             environment["UV_PYTHON_DOWNLOADS"] = "never";
+            // Ambient system settings are outside this default request; UV ignores them.
+            environment["UV_NO_SYSTEM_CONFIG"] = "1";
             environment["UV_NO_PROGRESS"] = "1";
             environment["PYTHONNOUSERSITE"] = "1";
             environment["PYTHONSAFEPATH"] = "1";

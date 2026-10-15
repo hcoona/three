@@ -237,8 +237,6 @@ def _commands(tmp_path: Path, *, missing: str | None = None) -> dict[str, str]:
         "uv",
         "hk",
         "python",
-        "rustup",
-        "cargo",
     }:
         if name != missing:
             executable(tools / name, COMMAND_RECORDER)

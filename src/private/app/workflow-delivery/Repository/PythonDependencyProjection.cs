@@ -1,117 +1,112 @@
-using System.Text.Json;
-
 namespace WorkflowDelivery.Repository;
 
-// These are native operation answers, not an additional package/group declaration.
+// Group selections follow UV's documented defaults, not an additional declaration.
+internal sealed record PythonGroupOperation(string Id, string Directory,
+    string[] Packages, bool NoDev);
 internal sealed record PythonOperationGroups(string Directory, string[] Groups);
-internal sealed record PythonBuildAssociation(string Consumer, string Producer,
-    string[] Extras, string? Marker);
+internal sealed record PythonBuildAssociation(string Consumer, string Producer, string[] Extras);
 internal sealed record PythonProjectDependencies(string Directory, string Name,
     string[] Ordinary, string[] Build);
 
-// Marker evaluation and operation group selection stay native. Workflow joins resolved
-// coordinates, follows graph edges and computes a finite union for impact selection.
+// Native metadata owns the resolved graph. Workflow treats every marker as active, so the
+// projection is the finite union over platforms and interpreters, and joins guarded build
+// requirement names to native workspace members.
 internal static class PythonDependencyProjection
 {
+    private const string DefaultGroup = "dev";
+
     internal static PythonBuildAssociation[] ReadBuildAssociations(PythonMetadata metadata,
-        PythonSupplementResult supplement, PythonPassiveProject[] projects)
+        PythonPassiveProject[] projects)
     {
-        try
+        var members = metadata.Members.ToDictionary(member => member.Directory,
+            StringComparer.Ordinal);
+        var names = metadata.Members.ToDictionary(member => member.Name, StringComparer.Ordinal);
+        var passive = new Dictionary<string, PythonPassiveProject>(StringComparer.Ordinal);
+        foreach (PythonPassiveProject project in projects)
+            if (!passive.TryAdd(PythonMetadataReader.Relative(metadata.Root, project.Directory),
+                project))
+                throw new InvalidDataException("Ambiguous Python passive context.");
+        if (!passive.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(members.Keys.Append(".")))
+            throw new InvalidDataException("Python passive contexts omit native ownership.");
+        IReadOnlyDictionary<string, string> workspace = passive["."].Sources ??
+            new Dictionary<string, string>();
+        var associations = new List<PythonBuildAssociation>();
+        foreach ((string consumer, PythonPassiveProject project) in passive.OrderBy(pair =>
+            pair.Key, StringComparer.Ordinal))
         {
-            JsonElement facts = supplement.Facts;
-            if (facts.GetProperty("workspace_root").GetString() != metadata.Root)
-                throw new InvalidDataException(
-                    "Python native supplement has a different endpoint.");
-            var members = metadata.Members.ToDictionary(member => member.Directory,
-                StringComparer.Ordinal);
-            var passive = new Dictionary<string, PythonPassiveProject>(StringComparer.Ordinal);
-            foreach (PythonPassiveProject project in projects)
-                if (!passive.TryAdd(PythonMetadataReader.Relative(metadata.Root, project.Directory),
-                    project))
-                    throw new InvalidDataException("Ambiguous Python passive context.");
-            if (!passive.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(members.Keys.Append(".")))
-                throw new InvalidDataException("Python passive contexts omit native ownership.");
-            var observed = new HashSet<string>(StringComparer.Ordinal);
-            foreach (JsonElement member in facts.GetProperty("members").EnumerateArray())
+            if (project.BuildRequirements is not { } requirements) continue;
+            if (!members.TryGetValue(consumer, out PythonMetadataMember? owner))
+                throw new InvalidDataException("Unresolved Python build context.");
+            foreach (PythonBuildRequirement requirement in requirements)
             {
-                string directory = PythonMetadataReader.Relative(metadata.Root,
-                    Text(member.GetProperty("directory")));
-                if (!observed.Add(directory) || !members.TryGetValue(directory,
-                    out PythonMetadataMember? native) ||
-                    Text(member.GetProperty("name")) != native.Name)
-                    throw new InvalidDataException("Python native membership results disagree.");
-            }
-            if (!observed.SetEquals(members.Keys))
-                throw new InvalidDataException("Python native supplement omits a member.");
-            var associations = new List<PythonBuildAssociation>();
-            var contexts = new HashSet<string>(StringComparer.Ordinal);
-            foreach (JsonElement build in facts.GetProperty("build_requirements").EnumerateArray())
-            {
-                string consumer = PythonMetadataReader.Relative(metadata.Root,
-                    Text(build.GetProperty("directory")));
-                if (!contexts.Add(consumer) || !members.ContainsKey(consumer) ||
-                    passive[consumer].BuildRequirements is not { } strings)
-                    throw new InvalidDataException("Unresolved Python native build context.");
-                JsonElement[] requirements = build.GetProperty("requirements")
-                    .EnumerateArray().ToArray();
-                if (requirements.Length != strings.Length)
+                // Admit the same finite source shapes as UV build lowering: no source, or an
+                // exact workspace reference in the project or workspace root table. A
+                // project entry takes precedence, so a member producer needs one there or
+                // in the root.
+                string? local = project.Sources?.GetValueOrDefault(requirement.Name);
+                workspace.TryGetValue(requirement.Name, out string? shared);
+                if (local is "unsupported" || shared is "unsupported")
+                    throw new InvalidDataException("Unsupported Python build requirement source.");
+                bool workspaceSource = (local ?? shared) == "workspace";
+                // UV exempts only an unsourced self-reference from the workspace-source check;
+                // it stays a registry requirement. A sourced one lowers to the project itself,
+                // so its requested extras still reach their local dependencies.
+                if (requirement.Name == owner.Name && !workspaceSource) continue;
+                bool member = names.TryGetValue(requirement.Name,
+                    out PythonMetadataMember? producer);
+                if (member != workspaceSource)
                     throw new InvalidDataException(
-                        "Python native build requirements are incomplete.");
-                foreach (JsonElement requirement in requirements)
-                {
-                    _ = Text(requirement.GetProperty("name"));
-                    if (requirement.EnumerateObject().Any(field => field.Name is not
-                        ("name" or "extras" or "marker" or "specifier" or "index" or "conflict" or
-                            "editable" or "directory")) ||
-                        (requirement.TryGetProperty("index", out JsonElement index) &&
-                            index.ValueKind != JsonValueKind.Null) ||
-                        (requirement.TryGetProperty("conflict", out JsonElement conflict) &&
-                            conflict.ValueKind != JsonValueKind.Null))
-                        throw new InvalidDataException("Unsupported Python native build source.");
-                    bool editable = requirement.TryGetProperty("editable", out JsonElement source);
-                    bool directory = requirement.TryGetProperty("directory", out JsonElement other);
-                    if (editable && directory)
-                        throw new InvalidDataException("Ambiguous Python native build source.");
-                    if (!editable && !directory) continue;
-                    string producer = PythonMetadataReader.Relative(metadata.Root,
-                        Text(editable ? source : other));
-                    if (!members.TryGetValue(producer, out PythonMetadataMember? native) ||
-                        Text(requirement.GetProperty("name")) != native.Name)
-                        throw new InvalidDataException(
-                            "Python native build source has no member owner.");
-                    string[] extras = requirement.TryGetProperty("extras", out JsonElement selected)
-                        ? selected.EnumerateArray().Select(Text).ToArray() : [];
-                    string? marker = requirement.TryGetProperty("marker",
-                        out JsonElement expression)
-                        ? Text(expression) : null;
-                    associations.Add(new(consumer, producer, extras, marker));
-                }
+                        "Python build requirement has no unique workspace owner.");
+                if (!member) continue;
+                if (requirement.Extras.Distinct(StringComparer.Ordinal).Count() !=
+                    requirement.Extras.Length)
+                    throw new InvalidDataException("Duplicate Python build requirement extra.");
+                associations.Add(new(consumer, producer!.Directory, requirement.Extras));
             }
-            if (!contexts.SetEquals(passive.Where(pair => pair.Value.BuildRequirements is not null)
-                .Select(pair => pair.Key)))
-                throw new InvalidDataException(
-                    "Python native build output omits a passive context.");
-            return associations.ToArray();
         }
-        catch (Exception exception) when (exception is JsonException or KeyNotFoundException or
-            InvalidOperationException or ArgumentException)
-        {
-            throw new InvalidDataException(
-                "Invalid Python native build association response.", exception);
-        }
+        return associations.ToArray();
     }
 
-    private static string Text(JsonElement value) => value.ValueKind == JsonValueKind.String &&
-        !string.IsNullOrWhiteSpace(value.GetString()) ? value.GetString()!
-            : throw new InvalidDataException("Invalid Python native association coordinate.");
+    // UV selects the default dev group unless no-dev is requested. Settings that change that
+    // default are rejected by the passive guard. An undeclared or empty group has no node.
+    internal static PythonOperationGroups[] SelectGroups(PythonMetadata metadata,
+        PythonGroupOperation[] operations)
+    {
+        var contexts = metadata.Members.Select(member => member.Directory)
+            .Append(".").ToHashSet(StringComparer.Ordinal);
+        string[] directories = operations.Select(operation =>
+            PythonMetadataReader.Relative(metadata.Root, operation.Directory)).ToArray();
+        if (operations.Select(operation => operation.Id).Distinct(StringComparer.Ordinal)
+            .Count() != operations.Length || !contexts.SetEquals(directories))
+            throw new InvalidDataException("Python group operations omit native contexts.");
+        var groups = new List<PythonOperationGroups>();
+        for (int index = 0; index < operations.Length; index++)
+        {
+            PythonGroupOperation operation = operations[index];
+            // Directory/base contexts remain even when a singleton package owns the groups.
+            groups.Add(new(directories[index], []));
+            string owner = operation.Packages switch
+            {
+                [] => directories[index],
+                [var package] => metadata.Members.SingleOrDefault(member =>
+                    member.Name == package)?.Directory ?? throw new InvalidDataException(
+                        "Python group operation has no unique native owner."),
+                _ => throw new InvalidDataException(
+                    "Unsupported Python group operation package scope."),
+            };
+            string entry = metadata.Members.SingleOrDefault(member =>
+                member.Directory == owner)?.Id ?? metadata.WorkspaceId;
+            bool declared = metadata.Nodes[entry].Groups.Concat(owner == "." ?
+                metadata.Nodes[metadata.WorkspaceId].Groups : []).Any(group =>
+                    group.Name == DefaultGroup);
+            groups.Add(new(owner, !operation.NoDev && declared ? [DefaultGroup] : []));
+        }
+        return groups.ToArray();
+    }
 
     internal static PythonProjectDependencies[] Project(PythonMetadata metadata,
-        PythonOperationGroups[] operations, PythonBuildAssociation[] builds,
-        Func<string, string[], bool> active, bool supportsPython)
+        PythonOperationGroups[] operations, PythonBuildAssociation[] builds)
     {
-        if (!supportsPython)
-            throw new InvalidDataException(
-                "Python operation interpreter is outside native constraints.");
         var members = metadata.Members.ToDictionary(member => member.Directory,
             StringComparer.Ordinal);
         var local = members.Values.ToDictionary(member =>
@@ -165,7 +160,6 @@ internal static class PythonDependencyProjection
                 foreach (PythonBuildAssociation association in builds.Where(association =>
                     association.Consumer == consumer))
                 {
-                    if (association.Marker is not null && !active(association.Marker, [])) continue;
                     PythonMetadataMember producer = members[association.Producer];
                     var entries = new List<string> { producer.Id };
                     foreach (string extra in association.Extras)
@@ -211,10 +205,8 @@ internal static class PythonDependencyProjection
                             "Python local source has no native member owner.");
                     dependencies.Add(owner);
                 }
-                string[] extras = node.Kind == "extra" ? [node.Dimension!] : [];
                 foreach (PythonMetadataEdge edge in node.Dependencies)
-                    if (edge.Marker is null || active(edge.Marker, extras))
-                        pending.Enqueue(edge.Id);
+                    pending.Enqueue(edge.Id);
             }
         }
     }

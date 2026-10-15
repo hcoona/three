@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, PropertyMock
 
 import pytest
+from packaging.requirements import InvalidRequirement
 
 ROOT = Path(__file__).resolve().parents[6]
 SPEC = importlib.util.spec_from_file_location(
@@ -51,8 +52,8 @@ def builder(monkeypatch):
     return factory
 
 
-def test_declared_requirements_preserve_native_strings(project, builder):
-    """The adapter must not normalize, parse or round-trip requirements."""
+def test_declared_requirements_are_parsed_by_pypa(project, builder):
+    """PyPA supplies canonical names and extras; markers are not evaluated."""
     requirements = {
         "nbgv_Python[Mixed.Extra]>=2 ; python_version >= '3.14'",
         "Hatchling >= 1.25",
@@ -69,7 +70,11 @@ def test_declared_requirements_preserve_native_strings(project, builder):
 
     assert result == {
         "directory": str(project.resolve()),
-        "build_requirements": sorted(requirements),
+        "build_requirements": [
+            {"name": "hatchling", "extras": []},
+            {"name": "nbgv-python", "extras": ["mixed-extra"]},
+        ],
+        "sources": {"nbgv-python": "workspace"},
         "nbgv": None,
     }
     builder.assert_called_once_with(project.resolve())
@@ -257,7 +262,11 @@ def test_cli_emits_one_complete_response(project, builder, monkeypatch, capsys):
     result = capsys.readouterr()
     assert json.loads(result.out) == {
         "directory": str(project.resolve()),
-        "build_requirements": ["hatchling", "nbgv-python"],
+        "build_requirements": [
+            {"name": "hatchling", "extras": []},
+            {"name": "nbgv-python", "extras": []},
+        ],
+        "sources": {},
         "nbgv": None,
     }
     assert result.err == ""
@@ -394,9 +403,71 @@ def test_native_warnings_preserve_cli_outcome_and_do_not_escape(
         assert json.loads(result.out) == {
             "directory": str(project.resolve()),
             "build_requirements": [],
+            "sources": {},
             "nbgv": None,
         }
         assert result.err == ""
     assert "private-source-warning" not in result.out + result.err
     assert "private-native-error" not in result.out + result.err
     builder.assert_called_once_with(project.resolve())
+
+
+@pytest.mark.parametrize(
+    ("source", "kind"),
+    [
+        ("{ workspace = true }", "workspace"),
+        ("{ workspace = false }", "unsupported"),
+        ('{ path = "../plugin" }', "unsupported"),
+        ('{ git = "https://example.invalid/plugin.git" }', "unsupported"),
+        ('{ index = "private" }', "unsupported"),
+        ("{ workspace = true, editable = false }", "unsupported"),
+        (
+            "[{ workspace = true, marker = \"sys_platform == 'linux'\" }]",
+            "unsupported",
+        ),
+    ],
+)
+@pytest.mark.usefixtures("builder")
+def test_sources_are_classified_without_lowering(project, source, kind):
+    """Admit only an exact workspace reference; keep other shapes visible."""
+    (project / "pyproject.toml").write_text(
+        MANIFEST + f"[tool.uv.sources]\nNBGV_Python = {source}\n"
+    )
+
+    assert passive.inspect_project(project)["sources"] == {"nbgv-python": kind}
+
+
+@pytest.mark.parametrize(
+    "requirement",
+    [
+        "nbgv-python @ https://example.invalid/plugin.whl",
+        "nbgv-python @ file:///unowned/plugin",
+    ],
+)
+def test_direct_url_build_requirements_are_unsupported(
+    project, builder, requirement
+):
+    """URL requirements bypass the workspace join and remain unsupported."""
+    builder.return_value.build_system_requires = {"hatchling", requirement}
+
+    with pytest.raises(passive.UnsupportedContextError, match="URL"):
+        passive.inspect_project(project)
+
+
+def test_malformed_build_requirement_is_terminal(project, builder):
+    """A requirement PyPA cannot parse yields no partial facts."""
+    builder.return_value.build_system_requires = {"hatchling", "nbgv-python["}
+
+    with pytest.raises(InvalidRequirement):
+        passive.inspect_project(project)
+
+
+@pytest.mark.usefixtures("builder")
+def test_sources_must_be_a_table(project):
+    """A malformed source table cannot be admitted."""
+    (project / "pyproject.toml").write_text(
+        MANIFEST + "[tool.uv]\nsources = 1\n"
+    )
+
+    with pytest.raises(passive.UnsupportedContextError, match="sources"):
+        passive.inspect_project(project)

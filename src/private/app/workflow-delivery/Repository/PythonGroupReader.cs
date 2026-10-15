@@ -40,7 +40,6 @@ internal static class PythonGroupReader
         PythonRepositoryRequest afterRequest = request.Candidate.Collection;
         if (beforeRequest.Graph.Interpreter != afterRequest.Graph.Interpreter ||
             beforeRequest.Graph.Uv != afterRequest.Graph.Uv ||
-            beforeRequest.Graph.SupplementExecutable != afterRequest.Graph.SupplementExecutable ||
             beforeRequest.Graph.PassiveScript != afterRequest.Graph.PassiveScript ||
             beforeRequest.PytestHelper != afterRequest.PytestHelper ||
             beforeRequest.PackageHelper != afterRequest.PackageHelper ||

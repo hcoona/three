@@ -3,8 +3,7 @@ using WorkflowDelivery.Platform;
 namespace WorkflowDelivery.Repository;
 
 internal sealed record PythonGraphRequest(string Root, string Uv, string Interpreter,
-    string HelperPython, string PassiveScript, string SupplementExecutable, string Cache,
-    string BootstrapScratch, string ActivityScratch);
+    string HelperPython, string PassiveScript);
 internal sealed record PythonNativeGraph(PythonMetadata Metadata, string Interpreter,
     PythonPassiveInputs[] Passive, PythonGroupOperation[] Operations,
     PythonProjectDependencies[] Projects, string[] ConfigurationInputs);
@@ -14,7 +13,6 @@ internal sealed class PythonNativeGraphReader
 {
     private readonly PythonMetadataReader metadataReader;
     private readonly PythonPassiveReader passiveReader;
-    private readonly PythonNativeSupplementReader supplementReader;
 
     internal PythonNativeGraphReader() : this(NativeProcess.ExecuteAsync) { }
 
@@ -30,54 +28,38 @@ internal sealed class PythonNativeGraphReader
         }
         metadataReader = new(ExecuteAsync);
         passiveReader = new(ExecuteAsync);
-        supplementReader = new(ExecuteAsync);
     }
 
     internal async Task<PythonNativeGraph> ReadAsync(PythonGraphRequest request,
         Func<PythonMetadata, PythonGroupOperation[]> createOperations,
         IReadOnlyDictionary<string, string?> environment, CancellationToken token)
     {
+        // Metadata does not reject an interpreter outside requires-python. The caller's
+        // `uv sync --frozen --python` preparation enforces it before this read.
         token.ThrowIfCancellationRequested();
-        string bootstrapScratch = Path.TrimEndingDirectorySeparator(
-            Path.GetFullPath(request.BootstrapScratch));
-        string activityScratch = Path.TrimEndingDirectorySeparator(
-            Path.GetFullPath(request.ActivityScratch));
-        StringComparison paths = OperatingSystem.IsWindows() ?
-            StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        if (bootstrapScratch.Equals(activityScratch, paths))
-            throw new InvalidDataException("Python graph requests require distinct scratch paths.");
         PythonMetadata metadata = await metadataReader.ReadAsync(request.Root, request.Uv,
             request.Interpreter, environment, token);
         token.ThrowIfCancellationRequested();
         PythonGroupOperation[] operations = createOperations(metadata);
         token.ThrowIfCancellationRequested();
-        var passive = new List<PythonPassiveInputs>();
-        foreach (string directory in metadata.Members.Select(member =>
+        string[] contexts = metadata.Members.Select(member =>
             Path.GetFullPath(Path.Combine(metadata.Root, member.Directory))).Append(metadata.Root)
-            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        string[] configuration = await passiveReader.ReadConfigurationAsync(metadata.Root,
+            request.HelperPython, request.PassiveScript, contexts, environment, token);
+        var passive = new List<PythonPassiveInputs>();
+        foreach (string directory in contexts)
         {
             token.ThrowIfCancellationRequested();
             passive.Add(await passiveReader.ReadAsync(directory, request.HelperPython,
                 request.PassiveScript, environment, token));
         }
-        PythonPassiveProject[] projects = passive.Select(input => input.Project).ToArray();
         token.ThrowIfCancellationRequested();
-        PythonSupplementResult bootstrap = await supplementReader.ReadAsync(new(metadata.Root,
-            request.Interpreter, request.Cache, projects, [], [], []), request.HelperPython,
-            request.PassiveScript, request.SupplementExecutable, request.BootstrapScratch,
-            environment, token);
         PythonBuildAssociation[] builds = PythonDependencyProjection.ReadBuildAssociations(
-            metadata, bootstrap, projects);
-        var activities = new PythonPlanningActivities(metadata, builds, request.Interpreter,
-            request.Cache, projects, operations);
-        token.ThrowIfCancellationRequested();
-        PythonSupplementResult result = await supplementReader.ReadAsync(activities.Request,
-            request.HelperPython, request.PassiveScript, request.SupplementExecutable,
-            request.ActivityScratch, environment, token);
-        PythonProjectDependencies[] graph = activities.Project(result);
-        token.ThrowIfCancellationRequested();
+            metadata, passive.Select(input => input.Project).ToArray());
+        PythonProjectDependencies[] graph = PythonDependencyProjection.Project(metadata,
+            PythonDependencyProjection.SelectGroups(metadata, operations), builds);
         return new(metadata, request.Interpreter, passive.ToArray(), operations, graph,
-            bootstrap.ConfigurationInputs.Concat(result.ConfigurationInputs)
-                .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray());
+            configuration);
     }
 }

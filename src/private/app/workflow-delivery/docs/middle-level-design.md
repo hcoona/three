@@ -133,59 +133,78 @@ closure; it need not evaluate unrelated projects.
 
 ### Native Python Planning Facts
 
-Within the existing private app's `Native/Python`, use the repository-pinned UV metadata CLI, passive PyPA build string extraction
-and the pinned UV Rust parsing/lowering interfaces in the
-[source assessment](research/python-native-planning.md). Standard tomllib supplies
-physical key/shape guards only. Native libraries own requirements, defaults, sources, markers
-and NBGV semantics. No parallel parser/settings interpreter/resolver, record chain or
-compatibility promise.
+Within the existing private app's `Native/Python`, use the repository-pinned UV
+metadata and synchronization CLI, passive PyPA build-requirement extraction and
+the bounded build-association join below. The
+[source assessment](research/python-native-planning.md) retains the evidence for
+these choices. Standard tomllib supplies physical key/shape guards only. UV owns
+resolution, the resolved graph, workspace membership and `requires-python`
+enforcement; PyPA owns build-requirement strings and PEP 508 parsing; NBGV owns
+its semantics. No embedded UV crate, settings interpreter, resolver, record chain
+or compatibility promise.
 
 For each exact basis/candidate checkout, bind revision, workspace root, interpreter/tool
 identity and operation dimensions. Invoke `uv workspace metadata --frozen --python <interpreter>` at that workspace root, without sync/active/script mode. Consume each endpoint's committed lock under the existing synchronized-lock guarantee;
 frozen does not revalidate freshness. Consume pinned
 preview schema, native member paths/names, structured sources, opaque graph IDs, ordinary
-edges, group/extra entry IDs, markers and `requires_python`. Never decode IDs or guess owners
-from package names, URLs, prefixes or caches.
+edges, group/extra entry IDs and `requires_python`. Never decode IDs or guess owners
+from URLs, prefixes or caches; the only name join is the guarded build association below.
 
-Admit the current explicit default-index, source-enabled request. Read project settings through
-`uv_settings::FilesystemOptions::find(root)`/`into_options`; use public `ResolverOptions::from`,
-`IndexLocations::from` and `NoSources::from_args` for native settings construction. Under the
-finite guard, these yield native default index locations and NoSources::None. Admit tool.uv
-workspace/sources only; additional necessary settings are unsupported until native adaptation,
-not ignored. Malformed settings remain errors. Do not port private CLI precedence or suppress
-configuration/sources. DiscoveryOptions defaults discover all members; stop_discovery_at=None
-for endpoint trees, not a sandbox.
+Admit the current explicit default-index, source-enabled request. Every manifest
+in a native context or above the workspace root may configure `tool.uv` only with
+`workspace` and `sources`; other settings are unsupported until a native
+adaptation exists, not ignored. A project `uv.toml` at or above the workspace
+root is unsupported, because UV settings discovery would read it first.
+Malformed manifests remain errors. Do not port private CLI precedence or suppress
+configuration/sources.
 
-Construct a credential-free child request with owned HOME/XDG/cache/temp roots, explicit
-interpreter, downloads disabled and no inherited UV/PIP/index/credential settings. Use `FilesystemOptions::user()`/`system()` with their native result/error semantics,
-including the `/etc/uv/uv.toml` fallback. Relevant returned ambient settings are
-outside this default request. Do not add filesystem proofs of native configuration
-results or reproduce CLI precedence. Bind project configuration and
-version-file inputs. Select an owned absent UV_PROJECT_ENVIRONMENT: metadata can inspect/lock
-existing environments, so unexpected environment facts fail this request. Native Cache,
-WorkspaceCache and empty CredentialsCache supply owned state; no new cache/proof service.
+Construct a credential-free child request with owned HOME/XDG/cache/temp roots,
+explicit interpreter, downloads disabled, `UV_NO_SYSTEM_CONFIG` set and no inherited
+UV/PIP/index/credential settings. The owned XDG root holds no user configuration and
+UV's documented switch excludes system configuration, so ambient settings cannot
+enter this request. Bind project configuration and version-file inputs. Select an
+owned absent UV_PROJECT_ENVIRONMENT: metadata can inspect/lock existing
+environments, so unexpected environment facts fail this request. No new
+cache/proof service.
 
 For named package contexts with explicit Hatchling build tables, no backend-path/package
-override, obtain unchanged strings from `ProjectBuilder.build_system_requires`. Parse through
-UV Requirement::from_str and lower with `BuildRequires::from_project_maybe_workspace`, native
-name/install path/settings, editable=true and owned caches. Reject necessary
-unsupported native source shapes before a fetch-capable lowering branch. Join typed Directory.install_path
-exactly to endpoint-native member roots and committed ownership. Repeat extraction for every
-necessary local build-requirement source, combining its ordinary local dependencies/requested
-extras with its build associations. Workflow computes transitive/reverse closure and cycles.
-Such sources can be plugins: nbgv-python is a build requirement/Hatch version-source plugin;
-Hatchling remains the backend. Association does not prove isolated version satisfaction or
-build success. Tableless native quality/group contexts remain; necessary forced package builds,
-default backends or undeclared dynamic inputs are unsupported.
+override, obtain declared strings from `ProjectBuilder.build_system_requires` and
+parse them with PyPA `packaging.requirements.Requirement`. Transfer canonical
+names and extras; reject direct URL requirements. UV metadata stubs build nodes,
+so no UV CLI exposes this relation. Join a build requirement to a workspace member
+by canonical name under a strict subset of the former UV lowering admission:
+the requirement's `tool.uv.sources` entry in the project table, else in the
+workspace root table, must be absent or exactly `{ workspace = true }`. Any
+other source shape fails planning. A member requirement without that workspace
+source, or a non-member requirement with it, fails, matching UV's own lowering
+errors; a registry requirement or an unsourced self-reference adds no local
+input, while a workspace-sourced self-reference keeps its requested extras.
+Workspace sources with additional fields, which UV accepts, also fail. The
+join is the bounded HLD exception over physical source classes, not UV
+lowering; it admits a subset of UV behavior and fails on everything else.
+Repeat association for every necessary local build-requirement source, combining
+its ordinary local dependencies/requested extras with its build associations.
+Workflow computes transitive/reverse closure and cycles. Such sources can be
+plugins: nbgv-python is a build requirement/Hatch version-source plugin;
+Hatchling remains the backend. Association does not prove isolated version
+satisfaction or build success. Tableless native quality/group contexts remain;
+necessary forced package builds, default backends or undeclared dynamic inputs
+are unsupported.
 
-Use native Interpreter::query(...).markers(), MarkerTree parsing/evaluation,
-VirtualProject::default_groups_for_packages and DependencyGroups::from_args(...).with_defaults.
+Treat every edge and build-requirement marker as active. The projection is the
+finite union over interpreters and platforms; it can only add consumers, which
+is the safe direction for impact selection. Select groups by UV's documented
+default: the owner's `dev` group unless no-dev is requested. The passive guard
+rejects `default-groups`, `dev-dependencies` and `dependency-groups` settings, so
+no other default applies; an undeclared or empty group has no graph entry.
+`uv sync --frozen --python <interpreter>` during preparation enforces the workspace
+`requires-python` constraint for the operation interpreter.
 Root pytest preparation includes root plus selected quality owners;
-control preparation uses native DevMode::Exclude for no-dev; build-requirement ordinary legs use no development groups.
-Initial operation-selected extras are empty; native build-requirement extras retain producer
-entry IDs. Require native conflicts empty; necessary unknown group/extra/marker/conflict
-selection fails. Preserve endpoint, interpreter/platform, groups/extras and check/build variant;
-resolve activity or its justified finite union before markerless ProjectFacts.Dependencies.
+no-dev operations select no groups; build-requirement ordinary legs use no development groups.
+Initial operation-selected extras are empty; build-requirement extras select
+producer extra entry IDs. Require native conflicts empty; necessary unknown
+group/extra/conflict selection fails. Preserve endpoint, interpreter/platform,
+groups/extras and check/build variant before markerless ProjectFacts.Dependencies.
 Union both endpoints so removed/renamed producers retain consumers.
 
 Adapt into existing RepositoryFacts/ProjectFacts/SharedInput/CheckSpec and impact closure;
@@ -569,8 +588,8 @@ The Windows scope job transfers the exact event comparison and explicit
 full/incremental mode, together with the complete candidate control distribution.
 The existing Linux Python job performs the first Python selection: it materializes
 both exact endpoints and collects their native facts for its actual Linux product
-interpreter and supported operation dimensions. Windows interpreter activity
-cannot substitute for Linux marker answers. The selected control distribution
+interpreter and supported operation dimensions. Windows interpreter facts
+cannot substitute for that Linux context. The selected control distribution
 and native query tools must run in that context; unavailable necessary capability
 fails analysis rather than introducing platform emulation.
 
@@ -586,23 +605,20 @@ declared plugin may be built as a query-tool dependency without making unrelated
 workspace members product or quality owners. Passive query execution remains
 distinct from this tool installation. Keep the installed helper environment
 separate from product/test/package environments and from the owned absent
-`UV_PROJECT_ENVIRONMENT` required by native metadata/activity queries.
+`UV_PROJECT_ENVIRONMENT` required by native metadata queries.
 
-Supply the candidate control version's existing `Native/Python/uv` supplement
-compiled for Linux using `cargo build --locked`, its committed Cargo manifests,
-lock, `rust-toolchain.toml` and sources, and an owned output directory. Transfer
-candidate control sources/resources rather than a Windows native executable.
-Bind helper source, toolchain, executable and runtime identities to both endpoint
-queries; each query retains its own endpoint configuration, lock, groups and
-actual Linux interpreter facts. Preserve native configuration preflight,
-ambient-setting/error behavior and owned credential-free query state. Necessary
-tool preparation or compilation failure, timeout or cancellation stops analysis.
+Supply the candidate control version's `Native/Python` helper sources from the
+transferred candidate control sources. Bind helper source and runtime identities
+to both endpoint queries; each query retains its own endpoint configuration,
+lock, groups and actual Linux interpreter facts. Preserve the configuration
+preflight and owned credential-free query state. Necessary tool preparation
+failure, timeout or cancellation stops analysis.
 The current native Python callers own this preparation. Affected preparation or
 caller changes require qualification of their actual source and environment;
 stopped graph/enrichment observations alone do not establish installation or
 caller success.
 
-Reuse the accepted native metadata, passive extraction, UV supplement and pytest query;
+Reuse the accepted native metadata, passive extraction, build-association join and pytest query;
 candidate facts cannot substitute for missing basis facts. Bind actual quality
 adoption and release declarations before complete paired selection. Existing
 shared-core closure selects surviving checks and supplies initiating path/revision

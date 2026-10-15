@@ -50,18 +50,14 @@ public sealed class PythonGroupReaderTests(TestContext context)
         string Tool(string name) => Path.Combine(state, "tools", name);
         var preparation = new PythonGroupPreparationRequest(fixture.Request.Basis.Checkout,
             fixture.Request.Candidate.Checkout, true, fixture.Request.ScopePath, sources, scratch,
-            new(Tool("uv"), Tool("python"), Tool("dotnet"), Tool("rustup"), Tool("cargo")),
+            new(Tool("uv"), Tool("python"), Tool("dotnet")),
             fixture.Request.Candidate.Collection.Operation, 600);
         string sentinel = "WORKFLOW_RECEIVER_SECRET_" + Guid.NewGuid().ToString("N");
         Assert.IsNull(Environment.GetEnvironmentVariable(sentinel));
         PythonGroupPreparationResult prepared = await PythonGroupPreparation.PrepareAsync(
             preparation, (command, _) =>
             {
-                string? created = command.Executable == preparation.Tools.Cargo
-                    ? Path.Combine(command.Environment!["CARGO_TARGET_DIR"]!, "debug",
-                        "workflow-python-native-facts" +
-                        (OperatingSystem.IsWindows() ? ".exe" : ""))
-                    : command.Executable == preparation.Tools.Uv
+                string? created = command.Executable == preparation.Tools.Uv
                         ? Path.Combine(command.Environment!["UV_PROJECT_ENVIRONMENT"]!,
                             OperatingSystem.IsWindows() ? "Scripts/python.exe" : "bin/python")
                         : null;
@@ -165,9 +161,9 @@ public sealed class PythonGroupReaderTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task NativeManagedResponsibilityPreservesPythonRustConsumer()
+    public async Task NativeManagedResponsibilityPreservesPythonHelperConsumer()
     {
-        const string path = "src/private/app/workflow-delivery/Native/Python/uv/src/main.rs";
+        const string path = "src/private/app/workflow-delivery/Native/Python/passive.py";
         const string target = "tests/private/app/workflow-delivery/Native/Python";
         using var fixture = await Fixture.CreateAsync(path, false,
             context.CancellationToken, "dotnet", target);
@@ -233,7 +229,7 @@ public sealed class PythonGroupReaderTests(TestContext context)
 
     [TestMethod]
     [DataRow("interpreter")]
-    [DataRow("supplement")]
+    [DataRow("passive")]
     [DataRow("helper")]
     [DataRow("operation")]
     public async Task EndpointsCannotSubstituteAnotherControlRuntime(string defect)
@@ -244,8 +240,8 @@ public sealed class PythonGroupReaderTests(TestContext context)
         {
             "interpreter" => candidate with
             { Graph = candidate.Graph with { Interpreter = "/other/python" } },
-            "supplement" => candidate with
-            { Graph = candidate.Graph with { SupplementExecutable = "/other/supplement" } },
+            "passive" => candidate with
+            { Graph = candidate.Graph with { PassiveScript = "/other/passive.py" } },
             "helper" => candidate with { PackageHelper = "/other/packages.py" },
             _ => candidate with { Operation = candidate.Operation with { Variant = "other" } }
         };
@@ -376,8 +372,7 @@ public sealed class PythonGroupReaderTests(TestContext context)
 
         private static PythonGroupEndpoint EndpointRequest(string directory, string commit) =>
             new(new(directory, commit), new(new(directory, "uv", "/runtime/python",
-                Path.Combine(directory, ".query-tools/python"), "/control/passive.py",
-                "/control/supplement", "/query/cache", "/query/bootstrap", "/query/activity"),
+                Path.Combine(directory, ".query-tools/python"), "/control/passive.py"),
                 "/control/pytest_configuration.py", "/control/packages.py",
                 new("ubuntu-latest", "python-3.14", new()
                 { ["python"] = "3.14", ["platform"] = "linux" })),

@@ -14,76 +14,13 @@ public sealed class CiCallerPythonTests(TestContext context)
         CiPlan plan = Plan("tests/private/app/workflow-delivery/Native/Python",
             "tests/eng/test_legacy_release_contract.py",
                 "src/private/app/azureauth-credprovider/python/tests");
-        Assert.AreEqual(new PythonCiAuxiliary(true, true, true), PythonCiCaller.Auxiliary(plan));
-        Assert.AreEqual(new PythonCiAuxiliary(false, false, false), PythonCiCaller.Auxiliary(Plan(
+        Assert.AreEqual(new PythonCiAuxiliary(true, true), PythonCiCaller.Auxiliary(plan));
+        Assert.AreEqual(new PythonCiAuxiliary(false, false), PythonCiCaller.Auxiliary(Plan(
             "tests/private/app/workflow-delivery/Native/Ruby",
                 "tests/eng/test_python_release_preparation_gate.py",
             "tests/eng/test_ruby_release_preparation_gate.py")));
-        Assert.AreEqual(new PythonCiAuxiliary(false, false, false),
+        Assert.AreEqual(new PythonCiAuxiliary(false, false),
             PythonCiCaller.Auxiliary(plan with { Checks = [] }));
-    }
-
-    [TestMethod]
-    public async Task CargoGateUsesPreparedNativeIdentityAndRetainsOriginalReports()
-    {
-        using var files = new CiCallerFiles();
-        NativeCommand original = Compilation(files.Root);
-        var seen = new List<NativeCommand>();
-        await PythonCiCaller.CargoGateAsync(new(true, false, false),
-            [new(original, Passed())], files.Root, (command, _) =>
-            {
-                seen.Add(command);
-                return Task.FromResult(Passed());
-            }, context.CancellationToken);
-        Assert.AreEqual("fmt,test,clippy", string.Join(',', seen.Select(c => c.Arguments[0])));
-        Assert.IsTrue(seen.All(command => command.Executable == original.Executable &&
-            command.Directory == original.Directory && !command.InheritEnvironment &&
-            command.Environment!["CARGO_HOME"] == original.Environment!["CARGO_HOME"]));
-        Assert.IsTrue(seen[0].Arguments.SequenceEqual(["fmt", "--all", "--", "--check"]));
-        Assert.Contains("--locked", seen[1].Arguments);
-        Assert.Contains("warnings", seen[2].Arguments);
-        foreach (string label in new[] { "format", "test", "clippy" })
-        {
-            CiCallerCommand retained = CiCallerTransfer.Read(Path.Combine(files.Root,
-                "native-helper-" + label + ".command.json"), TransferJson.Default.CiCallerCommand);
-            Assert.AreEqual(original.Executable, retained.Command.Executable);
-            Assert.AreEqual("original stdout", retained.Result.Stdout);
-            Assert.IsTrue(retained.Result.Succeeded);
-        }
-    }
-
-    [TestMethod]
-    [DataRow((int)NativeTermination.Exited, 1)]
-    [DataRow((int)NativeTermination.Cancelled, null)]
-    [DataRow((int)NativeTermination.TimedOut, null)]
-    [DataRow((int)NativeTermination.InvalidOutput, null)]
-    public async Task CargoGateAbnormalNativeOutcomeStopsDependentExecution(int value, int? code)
-    {
-        var termination = (NativeTermination)value;
-        using var files = new CiCallerFiles();
-        NativeCommand original = Compilation(files.Root);
-        await Assert.ThrowsExactlyAsync<IOException>(() => PythonCiCaller.CargoGateAsync(
-            new(true, false, false), [new(original, Passed())], files.Root,
-            (_, _) => Task.FromResult(new NativeCommandResult(termination, code,
-                "original stdout", "original stderr", 1, "native failure")),
-            context.CancellationToken));
-        CiCallerCommand report = CiCallerTransfer.Read(Path.Combine(files.Root,
-            "native-helper-format.command.json"), TransferJson.Default.CiCallerCommand);
-        Assert.AreEqual(termination, report.Result.Termination);
-        Assert.AreEqual(code, report.Result.ExitCode);
-        Assert.AreEqual("original stderr", report.Result.Stderr);
-        Assert.IsFalse(File.Exists(Path.Combine(files.Root, "native-helper-test.command.json")));
-    }
-
-    [TestMethod]
-    public async Task CargoGateUnselectedHelperDoesNotRequireCompilation()
-    {
-        using var files = new CiCallerFiles();
-        await PythonCiCaller.CargoGateAsync(new(false, false, false), [], files.Root,
-            (_, _) => throw new
-                AssertFailedException("Unselected native helper must not execute."),
-                context.CancellationToken);
-        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(files.Root));
     }
 
     [TestMethod]
@@ -106,7 +43,7 @@ public sealed class CiCallerPythonTests(TestContext context)
         });
         var graph = new PythonGraphRequest(checkout, Path.Combine(files.Root, "uv-shim"),
             Path.Combine(files.Root, "python-shim"), Path.Combine(files.Root, "helper-python"),
-            "passive.py", "supplement", "cache", "bootstrap", "activity");
+            "passive.py");
         var environment = new Dictionary<string, string?>
         {
             ["PATH"] = "native path",
@@ -167,13 +104,6 @@ public sealed class CiCallerPythonTests(TestContext context)
             files.Root, null, null, null, null, context.CancellationToken));
     }
 
-    private static NativeCommand Compilation(string root) => new(Path.Combine(root,
-        "cargo-shim"), root,
-        ["build", "--locked"], 900, new Dictionary<string, string?>
-        { ["PATH"] = "prepared path", ["CARGO_HOME"] = Path.Combine(root, "cargo-home") },
-            InheritEnvironment: false);
-    private static NativeCommandResult Passed() => new(NativeTermination.Exited, 0,
-        "original stdout", "", 1, null);
     private static CiPlan Plan(params string[] targets) => new(new('a', 40), new('a', 40),
         PythonCiCaller.Scope,
         targets.Select(target => new PlannedCheck(new(new("root", "python/pytest-v1", target),

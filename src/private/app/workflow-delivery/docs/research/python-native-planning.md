@@ -4,15 +4,17 @@
 
 This source assessment supports the next Python CI integration under the
 [implementation plan](../migration-strategy.md#native-facts-and-first-supported-shapes).
-It identifies the native facts available at the repository's UV 0.12.23 pin and a
-specific missing relation. It is not an accepted reader, complete Python graph,
-implementation choice or complete runtime qualification. The later
+It identifies the native facts available at the repository's former UV 0.12.23
+pin and a specific missing relation. It is not an accepted reader, complete
+Python graph, implementation choice or complete runtime qualification. The later
 [primitive observation](#primitive-native-observation) retains its separate scope.
+The [supplement retirement recheck](#embedded-uv-supplement-retirement) binds the
+current UV 0.13.0 pin and supersedes the library candidate as the selected design.
 
-The source pin is UV commit
-[`46b84fd0bfec23b72f29e8e2185ba68a65052f48`][uv-pin]. The committed
-[`mise.toml`][repository-uv-pin] and [`mise.lock`][repository-uv-lock] select
-0.12.23. The source conclusions below use pinned public source and repository
+The original source pin is UV commit
+[`46b84fd0bfec23b72f29e8e2185ba68a65052f48`][uv-pin]. At assessment time the committed
+[`mise.toml`][repository-uv-pin] and [`mise.lock`][repository-uv-lock] selected
+0.12.23; the repository now selects 0.13.0. The source conclusions below use pinned public source and repository
 files. No workspace evaluation, resolver, installation, backend hook or build
 was executed for the source assessment; the later observation is separate evidence.
 
@@ -67,9 +69,9 @@ Python impact closure.
 
 ## Native Library Candidate and Its Limits
 
-The [planning-fact contract](../middle-level-design.md#native-python-planning-facts)
-owns the selected integration and admitted shape. These source findings supply
-its evidence basis; they do not qualify its implementation.
+This section retains the original candidate assessment. The
+[planning-fact contract](../middle-level-design.md#native-python-planning-facts)
+no longer selects it; see the [retirement recheck](#embedded-uv-supplement-retirement).
 
 UV [documents][build-sources] that its build frontend respects `tool.uv.sources`
 for build requirements. PyPA `build` does not provide those UV source semantics.
@@ -110,6 +112,64 @@ complete integration and support/maintenance cost remain unqualified. Source
 findings alone must not claim complete relations have already
 been recovered, relax completeness, add duplicate declarations, or implement UV
 source semantics in the application.
+
+## Embedded UV Supplement Retirement
+
+The owner approved retiring the embedded Rust supplement. This recheck evaluates
+each fact it supplied against the current UV pin, tag `0.13.0` at commit
+[`4ecd0eff2a81e3ffdcd7cfee10d08936e4747c17`][uv-013]. Source findings below cite
+that commit; runtime observations used the mise-pinned UV 0.13.0 binary on Linux
+x86_64 with CPython 3.14.3, against repository commit
+`e87ddd5e12fb0b1314e87af840294ad2407b3521`. These are local, credential-free
+observations, not a native experiment campaign or caller qualification.
+
+Source findings:
+
+- The metadata exporter still [stubs build nodes][uv-013-build-stub] and
+  [emits no Build dependencies][uv-013-build-empty]. No UV CLI exposes
+  build-requirement lowering, so the relation still needs a passive extraction.
+- UV [lowering][uv-013-lowering] takes a requirement's project
+  `tool.uv.sources` entry before the workspace entry. A workspace-member
+  requirement without a source, or with a non-workspace source, is an error;
+  a `{ workspace = true }` source lowers to the member. The supplement already
+  rejected non-workspace source shapes before calling this code; it still
+  admitted workspace sources with additional fields.
+- [Settings discovery][uv-013-from-directory] reads a directory's `uv.toml` before
+  its `pyproject.toml`, and the [documented][uv-013-config-files] search walks to
+  the nearest parent. [`UV_NO_SYSTEM_CONFIG`][uv-013-system] disables system
+  configuration.
+- UV [documents][uv-013-default-groups] that it includes the `dev` group by
+  default unless `tool.uv.default-groups` changes it or `--no-dev` excludes it.
+  The passive guard already rejects that setting and the legacy group settings.
+
+Inference: under the existing guards, a canonical name join from PyPA-parsed
+build requirements to metadata members, admitted only when the effective
+source is absent or exactly `{ workspace = true }`, yields the same
+associations as the former lowering for every admitted shape and fails on the
+rest. The admission is a strict subset of the former one. It is an application rule, not UV lowering. Treating every marker as
+active yields a finite union that can only add consumers. The operation's
+`requires-python` check is already enforced by `uv sync --frozen --python` during
+preparation.
+
+Runtime observation: on the repository commit above, the former reader with the
+supplement built from its committed lock, and the replacement reader, produced
+byte-identical projections: 15 projects, 664 input bindings, the same four
+`nbgv-python` build associations, 15 full-selection checks and identical
+single-path selections for all 394 bound inputs. Of 40 marked metadata edges,
+none reaches a local workspace node. The implementing pull request records the
+summary and output digest; the throwaway probe and JSON were not retained. The
+committed `GuardedNameJoinMatchesRecordedNativeLowering` replay test compares
+the join with the retained PR #1063 lowering.
+
+Limits: future marker-gated local edges are over-selected rather than
+platform-exact. Admitting other source shapes, default-group settings or a
+project `uv.toml` requires a new explicit rule. This recheck does not establish
+Windows behavior or different-commit renamed producers; the paired union
+consumes the same association records. Recheck these findings when the UV pin,
+the PyPA `packaging` or `build` pin changes, or metadata gains build nodes. The
+author of that pin change checks the cited interfaces and reruns the replay test;
+an independent evidence reviewer evaluates the result. If the recheck fails or is
+skipped, the join is no longer admitted and the gap returns to the owner.
 
 ## Pytest Configuration Source Basis
 
@@ -234,6 +294,14 @@ findings separate from later operation observations and support claims.
 [metadata-warning]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/workspace/metadata.rs#L66-L73
 [uv-lock-flags]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-cli/src/lib.rs#L7879-L7892
 [metadata-lock-operation]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/workspace/metadata.rs#L99-L174
+[uv-013]: https://github.com/astral-sh/uv/tree/4ecd0eff2a81e3ffdcd7cfee10d08936e4747c17
+[uv-013-build-stub]: https://github.com/astral-sh/uv/blob/4ecd0eff2a81e3ffdcd7cfee10d08936e4747c17/crates/uv-lock/src/lock/export/metadata.rs#L249
+[uv-013-build-empty]: https://github.com/astral-sh/uv/blob/4ecd0eff2a81e3ffdcd7cfee10d08936e4747c17/crates/uv-lock/src/lock/export/metadata.rs#L646
+[uv-013-lowering]: https://github.com/astral-sh/uv/blob/4ecd0eff2a81e3ffdcd7cfee10d08936e4747c17/crates/uv-distribution/src/metadata/lowering.rs#L61-L150
+[uv-013-from-directory]: https://github.com/astral-sh/uv/blob/4ecd0eff2a81e3ffdcd7cfee10d08936e4747c17/crates/uv-settings/src/lib.rs#L130-L132
+[uv-013-config-files]: https://github.com/astral-sh/uv/blob/4ecd0eff2a81e3ffdcd7cfee10d08936e4747c17/docs/concepts/configuration-files.md#L1-L44
+[uv-013-system]: https://github.com/astral-sh/uv/blob/4ecd0eff2a81e3ffdcd7cfee10d08936e4747c17/crates/uv-settings/src/lib.rs#L83-L86
+[uv-013-default-groups]: https://github.com/astral-sh/uv/blob/4ecd0eff2a81e3ffdcd7cfee10d08936e4747c17/docs/concepts/projects/dependencies.md#L738-L757
 [pytest-source]: https://github.com/pytest-dev/pytest/tree/cf470ec0bf7eb89cd97dd56df4859eae5db46447
 [pytest-config]: https://github.com/pytest-dev/pytest/blob/cf470ec0bf7eb89cd97dd56df4859eae5db46447/src/_pytest/config/__init__.py
 [pytest-hook]: https://github.com/pytest-dev/pytest/blob/cf470ec0bf7eb89cd97dd56df4859eae5db46447/src/_pytest/hookspec.py

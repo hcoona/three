@@ -401,8 +401,7 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
                 projects.Select(project => Path.Combine(Root, project.Directory,
                     "pyproject.toml")).ToArray());
             Request = new(new(Root, "uv", interpreter, interpreter,
-                Path.Combine(Root, "passive.py"), "supplement", "cache",
-                "bootstrap", "activity"), "pytest_configuration.py", "packages.py",
+                Path.Combine(Root, "passive.py")), "pytest_configuration.py", "packages.py",
                 new("ubuntu-latest", "python-3.14", new()
                 { ["python"] = "3.14", ["platform"] = "linux" }));
         }

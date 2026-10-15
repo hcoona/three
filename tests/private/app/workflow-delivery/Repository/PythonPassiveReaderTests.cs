@@ -10,16 +10,18 @@ public sealed class PythonPassiveReaderTests
 {
     private static readonly string Directory = Path.GetFullPath("python passive endpoint");
     private static readonly string Generated = Path.Combine(Directory, "absent-generated.py");
-    private static readonly string[] Requirements =
-        ["hatchling>=1.25.0", "nbgv-python[build]; python_version >= '3.14'"];
+    private static readonly string[] BuildExtras = ["build"];
+    private static readonly string[] BuildNames = ["hatchling", "nbgv-python"];
     private static readonly IReadOnlyDictionary<string, string?> Environment =
         new Dictionary<string, string?> { ["PYTHONPATH"] = null, ["UV_NO_MANAGED_PYTHON"] = "1" };
 
     private static JsonObject Response() => new()
     {
         ["directory"] = Directory,
-        ["build_requirements"] = new JsonArray(Requirements.Select(value =>
-            (JsonNode?)JsonValue.Create(value)).ToArray()),
+        ["build_requirements"] = new JsonArray(
+            new JsonObject { ["name"] = "hatchling", ["extras"] = new JsonArray() },
+            new JsonObject { ["name"] = "nbgv-python", ["extras"] = new JsonArray("build") }),
+        ["sources"] = new JsonObject { ["nbgv-python"] = "workspace" },
         ["nbgv"] = new JsonObject
         {
             ["working_directory"] = Directory,
@@ -34,7 +36,7 @@ public sealed class PythonPassiveReaderTests
                 CancellationToken.None);
 
     [TestMethod]
-    public async Task NativeStringsAndPluginCoordinatesRemainOpaque()
+    public async Task ParsedRequirementsSourcesAndPluginCoordinatesAreTransferred()
     {
         NativeCommand? command = null;
         var reader = new PythonPassiveReader((request, _) =>
@@ -46,7 +48,12 @@ public sealed class PythonPassiveReaderTests
         PythonPassiveInputs inputs = await reader.ReadAsync(Directory, "python-helper",
             "passive-script", Environment, CancellationToken.None);
 
-        CollectionAssert.AreEqual(Requirements, inputs.Project.BuildRequirements);
+        PythonBuildRequirement[] requirements = inputs.Project.BuildRequirements!;
+        CollectionAssert.AreEqual(BuildNames,
+            requirements.Select(requirement => requirement.Name).ToArray());
+        Assert.IsEmpty(requirements[0].Extras);
+        CollectionAssert.AreEqual(BuildExtras, requirements[1].Extras);
+        Assert.AreEqual("workspace", inputs.Project.Sources!["nbgv-python"]);
         Assert.AreEqual(Directory, inputs.Project.Directory);
         Assert.IsNotNull(inputs.Nbgv);
         Assert.AreEqual(Directory, inputs.Nbgv.WorkingDirectory);
@@ -112,6 +119,9 @@ public sealed class PythonPassiveReaderTests
     [DataRow("missing-build")]
     [DataRow("build-type")]
     [DataRow("empty-requirement")]
+    [DataRow("missing-extras")]
+    [DataRow("missing-sources")]
+    [DataRow("source-class")]
     [DataRow("missing-plugin")]
     [DataRow("plugin-type")]
     [DataRow("relative-working")]
@@ -124,7 +134,14 @@ public sealed class PythonPassiveReaderTests
             case "subject": response["directory"] = Path.GetDirectoryName(Directory); break;
             case "missing-build": response.Remove("build_requirements"); break;
             case "build-type": response["build_requirements"] = "not-an-array"; break;
-            case "empty-requirement": response["build_requirements"] = new JsonArray(""); break;
+            case "empty-requirement":
+                response["build_requirements"] = new JsonArray(new JsonObject
+                { ["name"] = "", ["extras"] = new JsonArray() }); break;
+            case "missing-extras":
+                response["build_requirements"] = new JsonArray(new JsonObject
+                { ["name"] = "hatchling" }); break;
+            case "missing-sources": response.Remove("sources"); break;
+            case "source-class": response["sources"]!["nbgv-python"] = "path"; break;
             case "missing-plugin": response.Remove("nbgv"); break;
             case "plugin-type": response["nbgv"] = 42; break;
             case "relative-working": response["nbgv"]!["working_directory"] = "."; break;

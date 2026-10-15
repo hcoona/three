@@ -19,7 +19,7 @@ dev = [
   "PyYAML>=6.0.2",
   "ruff==0.17.0",
 ]
-workflow-delivery-python = ["build==1.6.1", "nbgv-python"]
+workflow-delivery-python = ["build==1.6.1", "nbgv-python", "packaging==26.3"]
 
 [tool.uv.workspace]
 # Python projects live under src/; internal delivery products live under tests/.
