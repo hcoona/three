@@ -19,13 +19,11 @@ public sealed class BashWorkflowCallerTests(TestContext context)
     [TestMethod]
     [DataRow("npm", "Exact", 0, "Satisfied")]
     [DataRow("npm", "Conflict", 1, "Unsatisfied")]
-    [DataRow("npm", "Unknown", 1, "Unknown")]
     [DataRow("python", "Exact", 0, "Satisfied")]
     [DataRow("python", "Conflict", 1, "Unsatisfied")]
-    [DataRow("python", "Unknown", 1, "Unknown")]
     [DataRow("ruby", "Exact", 0, "Satisfied")]
     [DataRow("ruby", "Conflict", 1, "Unsatisfied")]
-    [DataRow("ruby", "Unknown", 1, "Unknown")]
+    // One handled exit-1 row per caller; ReleaseStateTests maps each typed state.
     public async Task ActualVerificationStepRetainsTypedRegistryOutcome(string ecosystem,
         string state, int expectedExit, string expectedState)
     {
