@@ -475,9 +475,11 @@ public sealed class GitReaderTests(TestContext context)
                     CreateNoWindow = true,
                 },
             };
-            // unpackLimit=0 keeps the pack instead of launching unpack-objects.
+            // Fixture imports stay loose objects, as the former hash-object/commit-tree path
+            // wrote them. The default limit (100) packs larger imports, and in-process readers
+            // such as NBGV map pack files until finalization, which blocks Windows cleanup.
             foreach (string argument in new[] { "--no-replace-objects", "-c",
-                "fastimport.unpackLimit=0", "fast-import", "--quiet", "--force", "--done",
+                "fastimport.unpackLimit=1000000", "fast-import", "--quiet", "--force", "--done",
                 "--date-format=now" })
                 process.StartInfo.ArgumentList.Add(argument);
             process.Start();
@@ -505,8 +507,29 @@ public sealed class GitReaderTests(TestContext context)
             }
             finally
             {
+                await StopAsync(process);
+            }
+        }
+
+        // Kill is asynchronous, so cleanup waits for exit under its own bounded deadline.
+        private static async Task StopAsync(Process process)
+        {
+            try
+            {
                 if (!process.HasExited)
                     process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException) when (process.HasExited) { }
+            catch (System.ComponentModel.Win32Exception) when (process.HasExited) { }
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await process.WaitForExitAsync(cleanup.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new TimeoutException(
+                    "Git fast-import cleanup exceeded its 5-second deadline.");
             }
         }
 
