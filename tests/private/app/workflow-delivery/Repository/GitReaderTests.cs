@@ -211,8 +211,18 @@ public sealed class GitReaderTests(TestContext context)
             var fixture = new GitFixture(legacyNbgvCleanup, token);
             try
             {
-                string template = await Templates.GetOrAdd(format, InitializeAsync).Value
-                    .WaitAsync(token);
+                Lazy<Task<string>> initialization = Templates.GetOrAdd(format, InitializeAsync);
+                string template;
+                try
+                {
+                    template = await initialization.Value.WaitAsync(token);
+                }
+                catch when (initialization.Value.IsFaulted || initialization.Value.IsCanceled)
+                {
+                    // A failed shared init fails this fixture only; the next one starts afresh.
+                    Templates.TryRemove(KeyValuePair.Create(format, initialization));
+                    throw;
+                }
                 // Git's own initialized layout is copied, so no fixture launches init/config.
                 Copy(template, Path.Combine(fixture.Directory, ".git"));
                 return fixture;
@@ -241,8 +251,10 @@ public sealed class GitReaderTests(TestContext context)
         private static Lazy<Task<string>> InitializeAsync(string format) =>
             new(async () =>
             {
-                // Each format owns its init template, so concurrent formats never share writes.
-                string empty = Path.Combine(TemplateRoot, format + "-template");
+                // Each attempt owns its directory, so a retry after a failure starts clean.
+                string attempt = Path.Combine(TemplateRoot,
+                    format + "-" + Guid.NewGuid().ToString("N"));
+                string empty = Path.Combine(attempt, "template");
                 System.IO.Directory.CreateDirectory(empty);
                 // One template config replaces per-key launches; Git copies it during init.
                 string hooks = empty.Replace('\\', '/');
@@ -250,7 +262,7 @@ public sealed class GitReaderTests(TestContext context)
                     "[user]\n\tname = Workflow fixture\n\temail = fixture@example.invalid\n" +
                     "[commit]\n\tgpgSign = false\n[tag]\n\tgpgSign = false\n[gc]\n\tauto = 0\n" +
                     "[core]\n\thooksPath = \"" + hooks + "\"\n\tprotectNTFS = false\n");
-                string repository = Path.Combine(TemplateRoot, format);
+                string repository = Path.Combine(attempt, "repository");
                 System.IO.Directory.CreateDirectory(repository);
                 // The template is shared, so its creation is not bound to one test's token.
                 await NativeProcess.RunAsync("git", repository, ["init", "--quiet",
