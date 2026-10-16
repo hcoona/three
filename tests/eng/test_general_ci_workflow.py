@@ -138,7 +138,7 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
             "Execute required original Python preparation scenario": (
                 "steps.plan.outputs.python == 'true'"
             ),
-            "Execute all original Ruby preparation rows": (
+            "Execute original Ruby preparation scenario": (
                 "${{ !cancelled() && steps.plan.outputs.ruby == 'true' }}"
             ),
             "Retain original preparation plans, reports and packages": (
@@ -1523,7 +1523,7 @@ def test_nuget_native_preparation_runs_selected_rows(workflow):
     run = _native_test(job)
     assert CONTROL_PROJECT in run
     assert "--filter 'TestCategory=NuGetNativePreparation'" in run
-    assert "-- --minimum-expected-tests 3" in run
+    assert "-- --minimum-expected-tests 2" in run
     assert "--report-trx" in run
     assert "native-preparation.binlog" in run
     assert "exit $LASTEXITCODE" in run
@@ -1578,7 +1578,7 @@ def test_nuget_reproducibility_runs_on_dispatch_and_main_changes(workflow):
     run = _native_test(job)
     assert CONTROL_PROJECT in run
     assert "--filter 'TestCategory=NuGetNativeScenarios'" in run
-    assert "-- --minimum-expected-tests 4" in run
+    assert "-- --minimum-expected-tests 3" in run
     assert "--report-trx" in run
     assert "native-scenarios.binlog" in run
     assert "exit $LASTEXITCODE" in run

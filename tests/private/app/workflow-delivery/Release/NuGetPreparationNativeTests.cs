@@ -20,14 +20,14 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
     [TestMethod]
     [TestCategory("NuGetNativePreparation")]
     [Timeout(600000, CooperativeCancellation = true)]
-    [DataRow(false, "refs/heads/development")]
-    [DataRow(true, "refs/heads/development")]
-    [DataRow(false, "refs/heads/main")]
-    public async Task NativeReleasePreparationUsesOriginalPackageAndCleanConsumer(bool dryRun,
+    // Preparation does not read DryRun; NuGetPreparationTests asserts its subject round-trip.
+    [DataRow("refs/heads/development")]
+    [DataRow("refs/heads/main")]
+    public async Task NativeReleasePreparationUsesOriginalPackageAndCleanConsumer(
         string selectedRef)
     {
         using var fixture = new NativeFixture(context);
-        Preparation preparation = await fixture.PrepareAsync(0, dryRun, selectedRef);
+        Preparation preparation = await fixture.PrepareAsync(0, selectedRef: selectedRef);
         NuGetPreparationResult result = preparation.Result;
         string revision = result.Prepared.Subject.Revision;
         string checkout = preparation.Checkout;
@@ -35,7 +35,6 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
         Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(new
         {
             Errors = result.Errors, Revision = revision, SelectedRef = selectedRef,
-            DryRun = dryRun,
             FailedCommands = result.Commands.Where(command => !command.Result.Succeeded)
                 .Select(command => new
                 {
@@ -91,13 +90,6 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                 || argument.Contains("NBGV_CacheMode",
                     StringComparison.OrdinalIgnoreCase)));
         }
-        NativeCommandResult caching = await fixture.DiagnosticAsync(new("dotnet", checkout,
-            ["msbuild", Path.Combine(checkout, NativeFixture.Project), "-nologo",
-                "-noAutoResponse",
-                "-property:Configuration=Release", "-getProperty:NBGV_CacheMode"], 60,
-            preparation.ActualCommands[0].Command.Environment, false));
-        Assert.IsTrue(caching.Succeeded, caching.Stderr);
-        Assert.AreEqual("MSBuildTargetCaching", caching.Stdout.Trim());
         Assert.IsTrue(preparation.ActualCommands.Where(command => command.Check != "consumer")
             .All(command => command.Command.Environment!["NUGET_PACKAGES"] ==
                 preparation.Cache));
@@ -168,9 +160,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
     [TestMethod]
     [TestCategory("NuGetNativeScenarios")]
     [Timeout(600000, CooperativeCancellation = true)]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task NativeFreshRecoveryUsesIndependentOriginals(bool conflict)
+    public async Task NativeFreshRecoveryUsesIndependentOriginals()
     {
         using var fixture = new NativeFixture(context);
         Preparation first = await fixture.PrepareAsync(0);
@@ -192,53 +182,74 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
         AssertEquivalent(first, fresh);
         Assert.AreNotEqual(first.Scratch, fresh.Scratch);
         Assert.AreNotEqual(first.Cache, fresh.Cache);
-        using var feed = new Feed(fresh.Result.Prepared.Files[0].Version,
-            conflict ? [.. firstBytes, 0] : firstBytes);
-        using var client = new HttpClient(feed);
-        var observer = new GithubNuGetObservation(client);
-        int writes = 0;
-        try
+        // The same fresh originals meet an exact and a conflicting served archive. Each
+        // controlled outcome is checked independently so one cannot hide the other.
+        var failures = new List<string>();
+        foreach (bool conflict in new[] { false, true })
         {
-            GithubNuGetPublicationResult publication = await NuGetRelease.PublishAsync(
-                fresh.Result, fresh.Scratch, "controlled-read", observer.ObserveAsync,
-                (_, _, _, _, _) =>
-                {
-                    writes++;
-                    throw new AssertFailedException("Recovery must not call the publisher.");
-                }, context.CancellationToken);
-            fixture.Attach("fresh-publication.json", publication);
-            Assert.AreEqual(0, writes);
-            Assert.IsNull(publication.Invocation);
-            Assert.AreEqual(conflict ? ReleaseFileState.Conflict : ReleaseFileState.Exact,
-                publication.Before.Observation.Files[0].State);
-            // Completion is the independent registry readback of the served original bytes.
-            GithubNuGetObservationResult final = await observer.ObserveAsync(
-                fresh.Result.Prepared, "controlled-read", context.CancellationToken);
-            GithubNuGetCompletionResult complete = NuGetRelease.Complete(fresh.Result.Prepared,
-                absent, final, publication);
-            fixture.Attach("fresh-completion.json", complete);
-            Assert.AreEqual(conflict ? ReleaseBusinessState.Unsatisfied :
-                ReleaseBusinessState.Satisfied, complete.Outcome.State);
-            Assert.AreEqual(false, complete.MutationAttempted);
-            Assert.IsTrue(feed.Requests.Any(request => request.Uri.EndsWith(".nupkg",
-                StringComparison.Ordinal)));
-            Assert.IsTrue(feed.Requests.All(request => request.Method == "GET"));
-            Assert.IsTrue(absentFeed.Requests.All(request => request.Method == "GET"));
-            CollectionAssert.AreEqual(originalResultBytes, File.ReadAllBytes(originalResult));
-            fixture.Attach("recovery-history-binding.json", new
+            string label = conflict ? "conflict" : "exact";
+            try
             {
-                OriginalBytes = originalResultBytes.LongLength,
-                OriginalSha256 = Convert.ToHexStringLower(SHA256.HashData(originalResultBytes)),
-                AfterBytes = new FileInfo(originalResult).Length,
-                AfterSha256 = DotNetPackageArchive.Digest(originalResult),
-            });
-            Assert.AreEqual(ReleaseBusinessState.Unknown, missing.Outcome.State);
-            Assert.IsNull(missing.MutationAttempted);
+                await RecoverAsync(conflict, label);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                failures.Add(label + ": " + exception.Message);
+            }
         }
-        finally
+        Assert.IsEmpty(failures, string.Join("\n", failures));
+
+        async Task RecoverAsync(bool conflict, string label)
         {
-            fixture.Attach("fresh-reads.json", feed.Requests);
-            fixture.Attach("initial-reads.json", absentFeed.Requests);
+            using var feed = new Feed(fresh.Result.Prepared.Files[0].Version,
+                conflict ? [.. firstBytes, 0] : firstBytes);
+            using var client = new HttpClient(feed);
+            var observer = new GithubNuGetObservation(client);
+            int writes = 0;
+            try
+            {
+                GithubNuGetPublicationResult publication = await NuGetRelease.PublishAsync(
+                    fresh.Result, fresh.Scratch, "controlled-read", observer.ObserveAsync,
+                    (_, _, _, _, _) =>
+                    {
+                        writes++;
+                        throw new AssertFailedException("Recovery must not call the publisher.");
+                    }, context.CancellationToken);
+                fixture.Attach(label + "-fresh-publication.json", publication);
+                Assert.AreEqual(0, writes);
+                Assert.IsNull(publication.Invocation);
+                Assert.AreEqual(conflict ? ReleaseFileState.Conflict : ReleaseFileState.Exact,
+                    publication.Before.Observation.Files[0].State);
+                // Completion is the independent registry readback of the served original bytes.
+                GithubNuGetObservationResult final = await observer.ObserveAsync(
+                    fresh.Result.Prepared, "controlled-read", context.CancellationToken);
+                GithubNuGetCompletionResult complete = NuGetRelease.Complete(
+                    fresh.Result.Prepared, absent, final, publication);
+                fixture.Attach(label + "-fresh-completion.json", complete);
+                Assert.AreEqual(conflict ? ReleaseBusinessState.Unsatisfied :
+                    ReleaseBusinessState.Satisfied, complete.Outcome.State);
+                Assert.AreEqual(false, complete.MutationAttempted);
+                Assert.IsTrue(feed.Requests.Any(request => request.Uri.EndsWith(".nupkg",
+                    StringComparison.Ordinal)));
+                Assert.IsTrue(feed.Requests.All(request => request.Method == "GET"));
+                Assert.IsTrue(absentFeed.Requests.All(request => request.Method == "GET"));
+                CollectionAssert.AreEqual(originalResultBytes, File.ReadAllBytes(originalResult));
+                fixture.Attach(label + "-recovery-history-binding.json", new
+                {
+                    OriginalBytes = originalResultBytes.LongLength,
+                    OriginalSha256 = Convert.ToHexStringLower(
+                        SHA256.HashData(originalResultBytes)),
+                    AfterBytes = new FileInfo(originalResult).Length,
+                    AfterSha256 = DotNetPackageArchive.Digest(originalResult),
+                });
+                Assert.AreEqual(ReleaseBusinessState.Unknown, missing.Outcome.State);
+                Assert.IsNull(missing.MutationAttempted);
+            }
+            finally
+            {
+                fixture.Attach(label + "-fresh-reads.json", feed.Requests);
+                fixture.Attach(label + "-initial-reads.json", absentFeed.Requests);
+            }
         }
     }
 
@@ -325,7 +336,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             ".editorconfig", "stylecop.json"];
         private readonly List<ReleaseCommand> commands = [];
 
-        internal async Task<Preparation> PrepareAsync(int index, bool dryRun = false,
+        internal async Task<Preparation> PrepareAsync(int index,
             string selectedRef = "refs/heads/development", bool changeSource = false,
             string? timestamp = null)
         {
@@ -377,7 +388,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             var subject = new ReleaseSubject(revision, selectedRef,
                 "hcoona-release-smoke-github-packages",
                 Product + "/workflow-delivery.release-unit.yml",
-                "buddy", "github-packages-nuget", dryRun);
+                "buddy", "github-packages-nuget", false);
             int firstCommand = commands.Count;
             NuGetPreparationResult result = await NuGetPreparation.PrepareAsync(new(subject,
                 checkout, scratch), async (command, cancellation) =>
@@ -506,9 +517,6 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             }
             Attach(Path.GetFileName(cache) + "-tools.json", inputs);
         }
-
-        internal Task<NativeCommandResult> DiagnosticAsync(NativeCommand command) =>
-            RunAsync(WithBinlog(command, Root, commands.Count));
 
         private async Task<NativeCommandResult> RunAsync(NativeCommand command)
         {

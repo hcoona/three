@@ -24,8 +24,8 @@ while retaining distinct business decisions. The existing root CI owns the
 native .NET, PNPM, Python and Ruby groups, selected retained checks and source
 conformance. Each group executes its original candidate-bound plan and collects
 all required results; it does not replan or silently broaden failed analysis.
-A Windows CI job runs the three native NuGet preparation rows when the existing
-.NET/Workflow scope selection selects it. The four sensitivity/fresh-recovery rows run in the
+A Windows CI job runs the two native NuGet preparation rows when the existing
+.NET/Workflow scope selection selects it. The three sensitivity/fresh-recovery tests run in the
 Windows reproducibility workflow on owner dispatch and on `main`
 build-infrastructure changes; reproducibility is not per-PR evidence.
 

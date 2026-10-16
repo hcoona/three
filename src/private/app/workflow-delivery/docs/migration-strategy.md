@@ -104,7 +104,7 @@ or closed campaign operators as compatibility services.
 | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.github/workflows/ci.yml` and the CI scope caller         | Actual native ownership, control preparation, group selection, complete results and retained originals                                                                                              |
 | Native Node, .NET, Python and Ruby group wrappers          | Paired endpoint facts, selected work, effective quality, original tool outputs and terminal process facts                                                                                           |
-| Windows NuGet preparation job and reproducibility workflow | Three preparation rows in CI and four sensitivity/recovery rows on dispatch or `main` changes, executed and passed, with original packages, separate PDBs, native diagnostics and failure retention |
+| Windows NuGet preparation job and reproducibility workflow | Two preparation rows in CI and three sensitivity/recovery tests on dispatch or `main` changes, executed and passed, with original packages, separate PDBs, native diagnostics and failure retention |
 | Ordinary npm, NuGet, Python and Ruby release workflows     | Selected control/product revision, prepared artifact bindings, native authorization, upload-once behavior and separate no-write verification/results                                                |
 | Remaining platform-specific CI and independent projects    | Preserve their own ownership, runners, preparations and required checks                                                                                                                             |
 
@@ -273,7 +273,7 @@ Ruby helper behavior is owned by the quality-adopted bundle-only RSpec carrier.
 Its Gemfile and locks declare native test dependencies, including both actual
 Bundler contexts; no caller installation roster or Python test host remains.
 Managed contract tests and real C# native integration retain counterpart coverage.
-The existing one Python and three Ruby Linux managed preparation scenarios execute
+The existing one Python and one Ruby Linux managed preparation scenarios execute
 directly in the native-preparation CI job. It binds the original comparison,
 preserves selected triggers and exact passed-row qualification, retains reports and
 original packages, and contributes to required Validate completion. Retired pytest
@@ -579,13 +579,13 @@ cannot satisfy absent, skipped or failed obligations.
 
 The Workflow Delivery test project's native MTP configuration excludes the
 `NuGetNativePreparation` and `NuGetNativeScenarios` categories by default.
-The Windows CI preparation job owns the three preparation rows; its
+The Windows CI preparation job owns the two preparation rows; its
 applicability follows the existing .NET/Workflow scope selection and its result
 consumer remains required. Same-input .NET
 reproducibility was established once ([Issue #948](https://github.com/hcoona/three/issues/948),
 [PR #952](https://github.com/hcoona/three/pull/952)); by owner decision it is build-infrastructure behavior, not
-per-PR evidence. The Windows reproducibility workflow runs the four
-sensitivity/recovery rows on owner dispatch and on `main` pushes changing the
+per-PR evidence. The Windows reproducibility workflow runs the three
+sensitivity/recovery tests on owner dispatch and on `main` pushes changing the
 SDK, shared MSBuild/NuGet/NBGV/Git inputs, NuGet Release/package adapter source
 or the fixture product; its run ID, source commit and 30-day artifact are the
 evidence carrier. The triggering PR's author, then the repository owner, owns a

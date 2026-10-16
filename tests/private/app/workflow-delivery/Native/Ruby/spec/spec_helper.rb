@@ -17,9 +17,7 @@ module NativeHelpers
   ROOT = CARRIER.ascend.find { |path| (path / "mise.toml").file? }
   HELPERS = ROOT / "src/private/app/workflow-delivery/Native/Ruby"
   CONTRACTS = ROOT / "src/private/app/workflow-delivery/Native/contracts"
-  PRODUCT = ROOT / "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby"
   NAME = "hcoona-release-smoke-ruby"
-  FILES = %w[LICENSE README.md lib/hcoona_release_smoke_ruby.rb lib/hcoona_release_smoke_ruby/version.rb].freeze
   RUBY = File.realpath(RbConfig.ruby)
   Context = Struct.new(:gemfile, :version, :environment, keyword_init: true)
   Result = Struct.new(:stdout, :stderr, :returncode, keyword_init: true)

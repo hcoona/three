@@ -858,7 +858,7 @@ jobs:
             -p:RestoreLockedMode=true --filter 'TestCategory=NuGetNativePreparation' `
             --report-trx --results-directory "$env:WDV3_NUGET_PREPARATION_EVIDENCE" `
             "-bl:$env:WDV3_NUGET_PREPARATION_EVIDENCE/native-preparation.binlog" `
-            -- --minimum-expected-tests 3
+            -- --minimum-expected-tests 2
           exit $LASTEXITCODE
       - name: Retain original archives and native evidence
         if: always() && steps.scope.outputs.run == 'true'
@@ -1047,7 +1047,7 @@ jobs:
             --filter FullyQualifiedName=WorkflowDelivery.Tests.Release.PythonPreparationNativeTests.NativeBranchPreparationBuildsCompleteOriginalPairAndGitFreeConsumer \
             --report-trx --report-trx-filename preparation.trx \
             --results-directory "$RUNNER_TEMP/native-preparation/python" -- --minimum-expected-tests 1
-      - name: Execute all original Ruby preparation rows
+      - name: Execute original Ruby preparation scenario
         if: ${{ !cancelled() && steps.plan.outputs.ruby == 'true' }}
         run: |
           mise exec --locked dotnet ruby -- dotnet test \
@@ -1055,7 +1055,7 @@ jobs:
             -property:RestoreLockedMode=true \
             --filter FullyQualifiedName=WorkflowDelivery.Tests.Release.RubyPreparationNativeTests.NativePreparationQualifiesCommittedOriginalAndInstalledOrigin \
             --report-trx --report-trx-filename preparation.trx \
-            --results-directory "$RUNNER_TEMP/native-preparation/ruby" -- --minimum-expected-tests 3
+            --results-directory "$RUNNER_TEMP/native-preparation/ruby" -- --minimum-expected-tests 1
       - name: Retain original preparation plans, reports and packages
         if: always()
         uses: actions/upload-artifact@v7

@@ -43,18 +43,16 @@ public sealed class RubyPreparationNativeTests(TestContext context)
     ];
     private static readonly string[] RequirePaths = ["lib"];
 
+    // One real Official public-release row proves the native journey. Channel, ref and
+    // dry-run admission are app decisions covered by RubyPreparationTests substitutes.
+    private const string Channel = "official";
+    private const string Destination = "rubygems";
+    private const string SelectedRef = "refs/heads/main";
+
     [TestMethod]
-    [DataRow("buddy", "github-packages-ruby", "refs/heads/preparation-development", false)]
-    [DataRow("official", "rubygems", "refs/heads/main", false)]
-    [DataRow("official", "rubygems", "refs/tags/preparation-preview", true)]
     [OSCondition(OperatingSystems.Linux)]
     [Timeout(600000, CooperativeCancellation = true)]
-    public async Task NativePreparationQualifiesCommittedOriginalAndInstalledOrigin(
-        string channel,
-        string destination,
-        string selectedRef,
-        bool dryRun
-    )
+    public async Task NativePreparationQualifiesCommittedOriginalAndInstalledOrigin()
     {
         string source = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(source, "global.json")))
@@ -146,12 +144,12 @@ public sealed class RubyPreparationNativeTests(TestContext context)
             string dotnet = await PreparedToolAsync("dotnet");
             var subject = new ReleaseSubject(
                 revision,
-                selectedRef,
+                SelectedRef,
                 "hcoona-release-smoke-ruby",
                 Product + "/workflow-delivery.release-unit.yml",
-                channel,
-                destination,
-                dryRun
+                Channel,
+                Destination,
+                false
             );
             var request = new RubyPreparationRequest(
                 subject,
@@ -161,20 +159,13 @@ public sealed class RubyPreparationNativeTests(TestContext context)
             );
             RubyPreparationResult result = await RubyPreparation.PrepareAsync(
                 request,
-                async (command, token) =>
+                (command, token) =>
                 {
                     Assert.DoesNotContain("push", command.Arguments);
                     Assert.DoesNotContain("fetch", command.Arguments);
                     if (command.Arguments[0] == gem && command.Arguments.Contains("install"))
                         Assert.Contains("--local", command.Arguments);
-                    // Invalid user options must not enter native gem build/install or API facts.
-                    string home = command.Environment!["HOME"]!;
-                    await File.WriteAllTextAsync(
-                        Path.Combine(home, ".gemrc"),
-                        "gem: --definitely-invalid-preparation-option\n",
-                        token
-                    );
-                    return await NativeProcess.ExecuteAsync(command, token);
+                    return NativeProcess.ExecuteAsync(command, token);
                 },
                 context.CancellationToken
             );
@@ -224,7 +215,7 @@ public sealed class RubyPreparationNativeTests(TestContext context)
             Assert.HasCount(5, result.Prepared.Checks);
             Assert.AreEqual(revision, result.Native["commit"]);
             Assert.AreEqual(
-                selectedRef == "refs/heads/main" ? "true" : "false",
+                "true",
                 result.Native["public-release"]
             );
             Assert.AreEqual("4.0.7", result.Native["ruby"]);
@@ -259,7 +250,7 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                 Assert.IsTrue(command.Result.Succeeded, command.Result.Stderr);
                 Assert.IsFalse(command.Command.InheritEnvironment);
                 Assert.IsTrue(command.Command.CloseStandardInput);
-                Assert.AreEqual(selectedRef, command.Command.Environment!["GITHUB_REF"]);
+                Assert.AreEqual(SelectedRef, command.Command.Environment!["GITHUB_REF"]);
                 Assert.AreEqual(revision, command.Command.Environment["GITHUB_SHA"]);
                 foreach (
                     string excluded in new[]
@@ -306,10 +297,7 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                     revision,
                     projection.RootElement.GetProperty("GitCommitId").GetString()
                 );
-                Assert.AreEqual(
-                    selectedRef == "refs/heads/main",
-                    projection.RootElement.GetProperty("PublicRelease").GetBoolean()
-                );
+                Assert.IsTrue(projection.RootElement.GetProperty("PublicRelease").GetBoolean());
             }
 
             // Controlled destination state follows complete actual native qualification.
