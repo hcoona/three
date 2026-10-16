@@ -195,6 +195,10 @@ public sealed class GitReaderTests(TestContext context)
     private static string[] Paths(GitRevision revision) =>
         revision.Entries.Select(entry => entry.Path).ToArray();
 
+    // Index contract: staged edits and commits update an in-memory model; the on-disk index is
+    // rebuilt only by GitAsync (except reset --hard, which rewrites it) or FlushAsync. CommitAsync
+    // moves HEAD but leaves the index stale, so production code that reads the checkout must
+    // follow a GitAsync call (usually reset --hard or checkout) or an explicit FlushAsync.
     internal sealed class GitFixture(bool legacyNbgvCleanup, CancellationToken token) : IDisposable
     {
         private readonly string temporary = Path.Combine(Path.GetTempPath(),
@@ -214,7 +218,7 @@ public sealed class GitReaderTests(TestContext context)
                 string hooks = empty.Replace('\\', '/');
                 await File.WriteAllTextAsync(Path.Combine(empty, "config"),
                     "[user]\n\tname = Workflow fixture\n\temail = fixture@example.invalid\n" +
-                    "[commit]\n\tgpgSign = false\n[tag]\n\tgpgSign = false\n" +
+                    "[commit]\n\tgpgSign = false\n[tag]\n\tgpgSign = false\n[gc]\n\tauto = 0\n" +
                     "[core]\n\thooksPath = \"" + hooks + "\"\n\tprotectNTFS = false\n", token);
                 await fixture.GitAsync("init", "--quiet", "--initial-branch=fixture",
                     "--object-format=" + format, "--template=" + empty);
@@ -234,7 +238,9 @@ public sealed class GitReaderTests(TestContext context)
         // stream. The index is rebuilt only before a later Git command that may observe it.
         private sealed record Entry(string Mode, string? Object, string? Content);
 
-        // Commands that neither read nor write the index or HEAD.
+        // Commands that neither read nor write the index or HEAD. Pending content is hashed
+        // when committed or flushed, so it uses the configuration current at that time, not
+        // at the time it was staged (only CRLF content is hashed under configuration).
         private static readonly HashSet<string> IndexNeutral = new(StringComparer.Ordinal)
             { "branch", "config", "fetch", "init", "replace", "tag", "worktree" };
 
@@ -274,31 +280,42 @@ public sealed class GitReaderTests(TestContext context)
         internal async Task SetAsync(string path, string content = "fixture",
             string mode = "100644")
         {
-            (await ModelAsync())[path] = new(mode, null, content);
+            Dictionary<string, Entry> entries = await ModelAsync();
+            Validate(path, entries);
+            entries[path] = new(mode, null, content);
             indexCurrent = false;
             modelCommit = null;
         }
 
         internal async Task LinkAsync(string path, string commit)
         {
-            (await ModelAsync())[path] = new("160000", commit, null);
+            Dictionary<string, Entry> entries = await ModelAsync();
+            Validate(path, entries);
+            entries[path] = new("160000", commit, null);
             indexCurrent = false;
             modelCommit = null;
         }
 
         internal async Task RemoveAsync(string path)
         {
+            Validate(path, null);
             (await ModelAsync()).Remove(path);
             indexCurrent = false;
             modelCommit = null;
         }
 
-        // Writes the cumulative staged tree as a commit with exactly these parents and
-        // moves HEAD (or the branch it names) to it, like commit-tree plus update-ref HEAD.
+        // Writes the cumulative staged tree as a commit with these parents and moves HEAD
+        // (or the branch it names) to it, like commit-tree plus update-ref HEAD. Repeated
+        // parent arguments are dropped in order, as commit-tree does for repeated ids.
+        // The index is left stale rather than rebuilt here: nearly every commit is followed
+        // by reset --hard, which rewrites the index anyway, so an eager read-tree would add
+        // one launch per commit. When edits were staged, the next GitAsync or FlushAsync
+        // rebuilds the index from this commit; otherwise it already holds the same tree.
         internal async Task<string> CommitAsync(params string[] parents)
         {
             Dictionary<string, Entry> entries = await ModelAsync();
-            string commit = await ImportAsync(entries, "HEAD", parents);
+            string commit = await ImportAsync(entries, "HEAD",
+                parents.Distinct(StringComparer.Ordinal).ToArray());
             commits[commit] = new(entries, StringComparer.Ordinal);
             head = modelCommit = commit;
             return commit;
@@ -315,6 +332,26 @@ public sealed class GitReaderTests(TestContext context)
             // Single-tree -m keeps stat data for unchanged entries, as update-index did.
             await RunAsync(["--no-replace-objects", "read-tree", "-m", tree]);
             indexCurrent = true;
+        }
+
+        // Rejects paths update-index rejected, at staging time rather than at a later commit.
+        private static void Validate(string path, Dictionary<string, Entry>? entries)
+        {
+            foreach (string segment in path.Split('/'))
+                if (segment is "" or "." or ".." || Path.IsPathRooted(path) ||
+                    string.Equals(segment, ".git", StringComparison.OrdinalIgnoreCase))
+                    throw new ArgumentException($"Invalid fixture path: {path}", nameof(path));
+            if (entries is null)
+                return;
+            for (int slash = path.IndexOf('/', StringComparison.Ordinal); slash >= 0;
+                slash = path.IndexOf('/', slash + 1))
+                if (entries.ContainsKey(path[..slash]))
+                    throw new ArgumentException(
+                        $"Fixture path is below a file: {path}", nameof(path));
+            string directory = path + "/";
+            if (entries.Keys.Any(key => key.StartsWith(directory, StringComparison.Ordinal)))
+                throw new ArgumentException(
+                    $"Fixture path is a directory: {path}", nameof(path));
         }
 
         private async Task<Dictionary<string, Entry>> ModelAsync()
@@ -448,13 +485,23 @@ public sealed class GitReaderTests(TestContext context)
             {
                 Task<string> output = process.StandardOutput.ReadToEndAsync(timeout.Token);
                 Task<string> error = process.StandardError.ReadToEndAsync(timeout.Token);
-                await process.StandardInput.BaseStream.WriteAsync(input, timeout.Token);
-                process.StandardInput.Close();
+                try
+                {
+                    await process.StandardInput.BaseStream.WriteAsync(input, timeout.Token);
+                    process.StandardInput.Close();
+                }
+                // A failed import closes its input early; its exit code and stderr explain why.
+                catch (IOException) { }
                 await process.WaitForExitAsync(timeout.Token);
+                string message = await error;
                 if (process.ExitCode != 0)
-                    throw new InvalidDataException("Git fast-import failed: " + await error);
-                await error;
+                    throw new InvalidDataException(
+                        $"Git fast-import failed with exit code {process.ExitCode}: {message}");
                 return await output;
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            {
+                throw new TimeoutException("Git fast-import exceeded its 30-second deadline.");
             }
             finally
             {
