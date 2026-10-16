@@ -12,10 +12,12 @@ public sealed class PythonPreparationTests(TestContext context)
 {
     private static readonly string[] DistributionKinds = ["python-wheel", "python-sdist"];
 
-    // Request and native-answer rows read one committed repository; each row still owns
-    // fresh scratch and runs the complete preparation.
+    // End-to-end rows read one committed repository; each row still owns fresh scratch and
+    // runs the complete preparation. Pure rule rows run on their entry points.
     private static GitFixture? shared;
     private static string sharedRevision = "";
+    private const string Revision = "0123456789abcdef0123456789abcdef01234567";
+    private const string Identity = "Unsupported native Python Release identity.";
 
     [ClassInitialize]
     public static async Task InitializeAsync(TestContext classContext)
@@ -76,27 +78,41 @@ public sealed class PythonPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("buddy", "testpypi", "refs/heads/development", false, true)]
-    [DataRow("official", "pypi", "refs/heads/main", false, true)]
-    [DataRow("official", "pypi", "refs/heads/development", true, true)]
-    [DataRow("buddy", "testpypi", "refs/tags/preview", true, true)]
-    [DataRow("official", "pypi", "refs/heads/development", false, false)]
-    [DataRow("buddy", "testpypi", "refs/tags/preview", false, false)]
-    [DataRow("buddy", "pypi", "refs/heads/main", false, false)]
-    [DataRow("official", "testpypi", "refs/heads/main", true, false)]
-    [DataRow("buddy", "testpypi", "refs/heads/", false, false)]
-    [DataRow("official", "pypi", "", true, false)]
-    public async Task ChannelRefAndDryRunRemainIndependent(string channel, string destination,
-        string selectedRef, bool dryRun, bool accepted)
+    [DataRow("buddy", "testpypi", "refs/heads/development", false, "")]
+    [DataRow("official", "pypi", "refs/heads/main", false, "")]
+    [DataRow("official", "pypi", "refs/heads/development", true, "")]
+    [DataRow("buddy", "testpypi", "refs/tags/preview", true, "")]
+    [DataRow("official", "pypi", "refs/heads/development", false, LiveRef)]
+    [DataRow("buddy", "testpypi", "refs/tags/preview", false, LiveRef)]
+    [DataRow("buddy", "pypi", "refs/heads/main", false, Channel)]
+    [DataRow("official", "testpypi", "refs/heads/main", true, Channel)]
+    [DataRow("buddy", "testpypi", "refs/heads/", false, LiveRef)]
+    [DataRow("official", "pypi", "", true, Channel)]
+    public void ChannelRefAndDryRunRemainIndependent(string channel, string destination,
+        string selectedRef, bool dryRun, string rejection)
+    {
+        ReleaseSubject subject = Fixture.SubjectFor(Revision) with { Channel = channel,
+            Destination = destination, SelectedRef = selectedRef, DryRun = dryRun };
+        if (rejection.Length == 0)
+            Assert.AreEqual(channel == "official", PythonPreparation.Admit(subject));
+        else
+            Assert.AreEqual(rejection, Assert.ThrowsExactly<InvalidDataException>(() =>
+                PythonPreparation.Admit(subject)).Message);
+    }
+
+    private const string LiveRef = "Unsupported live Release channel ref.";
+    private const string Channel = "Unsupported Python Release channel or ref.";
+
+    [TestMethod]
+    public async Task UnadmittedSubjectStopsBeforeNativeWork()
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision);
-        fixture.Subject = fixture.Subject with { Channel = channel, Destination = destination,
-            SelectedRef = selectedRef, DryRun = dryRun };
+        fixture.Subject = fixture.Subject with { Destination = "pypi" };
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.AreEqual(accepted ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed,
-            result.Prepared.Checks[0].Status);
-        Assert.AreEqual(accepted ? 2 : 0, result.Prepared.Files.Length);
-        if (!accepted) Assert.IsEmpty(result.Commands);
+        Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
+        Assert.IsEmpty(result.Prepared.Files);
+        Assert.IsEmpty(result.Commands);
+        Assert.AreEqual(Channel, Assert.ContainsSingle(result.Errors));
         Assert.AreEqual(fixture.Subject, result.Prepared.Subject);
     }
 
@@ -108,22 +124,73 @@ public sealed class PythonPreparationTests(TestContext context)
     [DataRow("dependencies", "runtime")]
     [DataRow("local_version", "g1234567")]
     [DataRow("public_release", "false")]
-    public async Task NativeFactsCannotQualifyAnotherProduct(string field, string value)
+    public void NativeFactsCannotQualifyAnotherProduct(string field, string value)
     {
-        using var fixture = Fixture.Shared(shared!, sharedRevision);
-        fixture.Subject = fixture.Subject with { Channel = "official", Destination = "pypi",
-            SelectedRef = "refs/heads/main" };
-        fixture.ChangeFacts = facts => facts[field] = field switch
+        ReleaseSubject subject = Fixture.SubjectFor(Revision) with { Channel = "official",
+            Destination = "pypi", SelectedRef = "refs/heads/main" };
+        JsonObject facts = Fixture.Facts(Revision, "1.0.0");
+        Change(facts, field, value);
+        using JsonDocument document = JsonDocument.Parse(facts.ToJsonString());
+        Assert.AreEqual(Identity, Assert.ThrowsExactly<InvalidDataException>(() =>
+            PythonPreparation.QualifyNative(subject, official: true,
+                "hcoona-release-smoke-python", "1.0.0", "3.14.3", document.RootElement))
+            .Message);
+    }
+
+    [TestMethod]
+    [DataRow("official", false, "", "", true)]
+    [DataRow("official", true, "local_version", "g1234567", false)]
+    [DataRow("buddy", false, "public_release", "false", false)]
+    public void NativeFactsQualifyTheirProduct(string channel, bool dryRun, string field,
+        string value, bool publicRelease)
+    {
+        ReleaseSubject subject = Fixture.SubjectFor(Revision) with { Channel = channel,
+            DryRun = dryRun };
+        JsonObject facts = Fixture.Facts(Revision, "1.0.0");
+        if (field.Length > 0) Change(facts, field, value);
+        if (field == "local_version") facts["public_release"] = false;
+        using JsonDocument document = JsonDocument.Parse(facts.ToJsonString());
+        Assert.AreEqual(publicRelease, PythonPreparation.QualifyNative(subject,
+            channel == "official", "hcoona-release-smoke-python", "1.0.0", "3.14.3",
+            document.RootElement));
+    }
+
+    [TestMethod]
+    public void NativeNameCannotQualifyAnotherProduct()
+    {
+        ReleaseSubject subject = Fixture.SubjectFor(Revision);
+        JsonObject facts = Fixture.Facts(Revision, "1.0.0");
+        facts["name"] = "other";
+        using JsonDocument document = JsonDocument.Parse(facts.ToJsonString());
+        Assert.AreEqual(Identity, Assert.ThrowsExactly<InvalidDataException>(() =>
+            PythonPreparation.QualifyNative(subject, official: false, "other", "1.0.0",
+                "3.14.3", document.RootElement)).Message);
+    }
+
+    private static void Change(JsonObject facts, string field, string value) =>
+        facts[field] = field switch
         {
             "public_release" => JsonValue.Create(false),
             "dependencies" => new JsonArray(value),
             _ => JsonValue.Create(value),
         };
+
+    // The non-public row proves production passes the admitted Official result.
+    [TestMethod]
+    [DataRow("commit")]
+    [DataRow("public_release")]
+    public async Task NativeFactsStopBeforeBuild(string field)
+    {
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
+        fixture.Subject = fixture.Subject with { Channel = "official", Destination = "pypi",
+            SelectedRef = "refs/heads/main" };
+        fixture.ChangeFacts = facts => facts[field] = field == "commit"
+            ? JsonValue.Create(new string('0', 40)) : JsonValue.Create(false);
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
-        Assert.Contains("native Python Release identity", string.Join(";", result.Errors));
+        Assert.AreEqual(Identity, Assert.ContainsSingle(result.Errors));
     }
 
     [TestMethod]
@@ -169,17 +236,49 @@ public sealed class PythonPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("quality")]
-    [DataRow("outputs")]
-    [DataRow("input")]
-    public async Task UnsupportedCommittedRecipeStopsBeforeNativeWork(string defect)
+    [DataRow("quality", "Unsupported complete Python quality selection.")]
+    [DataRow("outputs", "Unsupported complete Python distribution set.")]
+    [DataRow("input", "Missing committed native input: uv.lock")]
+    public async Task UnsupportedCommittedRecipeIsRejected(string defect, string message)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken, defect);
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            ReadRecipeAsync(defect));
+        Assert.AreEqual(message, error.Message);
+    }
+
+    [TestMethod]
+    public async Task CompleteCommittedRecipeSelectsItsEntry()
+    {
+        PythonReleaseRecipe recipe = await ReadRecipeAsync(null);
+        Assert.AreEqual("distributions", recipe.Build.Id);
+        Assert.AreEqual("product", recipe.Directory);
+    }
+
+    // Reads one committed recipe through an in-memory tree; only the directory must exist.
+    private async Task<PythonReleaseRecipe> ReadRecipeAsync(string? defect)
+    {
+        string root = Directory.CreateTempSubdirectory("python-recipe-").FullName;
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "product"));
+            Dictionary<string, string> files = Fixture.Files(defect);
+            return await PythonPreparation.ReadRecipeAsync(Fixture.SubjectFor(Revision), root,
+                (path, _) => Task.FromResult(files.GetValueOrDefault(path)),
+                context.CancellationToken);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [TestMethod]
+    public async Task UnsupportedCommittedRecipeStopsBeforeNativeWork()
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken, "outputs");
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
         Assert.IsEmpty(result.Commands);
         Assert.IsEmpty(result.Prepared.Files);
-        Assert.IsNotEmpty(result.Errors);
+        Assert.AreEqual("Unsupported complete Python distribution set.",
+            Assert.ContainsSingle(result.Errors));
     }
 
     [TestMethod]
@@ -255,17 +354,28 @@ public sealed class PythonPreparationTests(TestContext context)
 
         private const string Declaration = "product/workflow-delivery.release-unit.yml";
 
-        private static ReleaseSubject SubjectFor(string revision) => new(revision,
+        internal static ReleaseSubject SubjectFor(string revision) => new(revision,
             "refs/heads/development", "product", Declaration, "buddy", "testpypi", false);
 
         internal static async Task<string> CommitAsync(GitFixture repo, string? defect)
         {
+            foreach ((string path, string content) in Files(defect))
+                await repo.SetAsync(path, content);
+            string revision = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", revision);
+            return revision;
+        }
+
+        // The committed files of the product, keyed by repository path.
+        internal static Dictionary<string, string> Files(string? defect)
+        {
+            var files = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (string input in new[] { "pyproject.toml", "uv.lock", "mise.toml",
                 "mise.lock", "global.json", ".config/dotnet-tools.json",
                 "src/private/app/workflow-delivery/Native/Python/packages.py",
                 "product/pyproject.toml" })
-                if (defect != "input" || input != "uv.lock") await repo.SetAsync(input);
-            await repo.SetAsync("product/workflow-delivery.quality.yml", """
+                if (defect != "input" || input != "uv.lock") files.Add(input, "fixture");
+            files.Add("product/workflow-delivery.quality.yml", """
                 schema: workflow-delivery/v3/quality-selection
                 ecosystems:
                   python:
@@ -273,7 +383,7 @@ public sealed class PythonPreparationTests(TestContext context)
                 """.Replace("python/hcoona-release-smoke-python-v1", defect == "quality"
                     ? "python/unknown-v1" : "python/hcoona-release-smoke-python-v1",
                         StringComparison.Ordinal));
-            await repo.SetAsync(Declaration, """
+            files.Add(Declaration, """
                 schema: workflow-delivery/v3/release-unit
                 release-unit: product
                 builds:
@@ -289,10 +399,16 @@ public sealed class PythonPreparationTests(TestContext context)
                         kind: python-sdist
                 """.Replace("python-sdist", defect == "outputs" ? "other-kind" :
                     "python-sdist", StringComparison.Ordinal));
-            string revision = await repo.CommitAsync();
-            await repo.GitAsync("reset", "--hard", revision);
-            return revision;
+            return files;
         }
+
+        internal static JsonObject Facts(string revision, string version) => new()
+        {
+            ["name"] = "hcoona-release-smoke-python", ["version"] = version,
+            ["commit"] = revision, ["public_release"] = true, ["local_version"] = null,
+            ["dependencies"] = new JsonArray(), ["implementation"] = "cpython",
+            ["interpreter_version"] = "3.14.3",
+        };
 
         internal Task<PythonPreparationResult> RunAsync(CancellationToken token) =>
             PythonPreparation.PrepareAsync(new(Subject, Repo.Directory, Scratch, Repo.Directory),
@@ -318,11 +434,7 @@ public sealed class PythonPreparationTests(TestContext context)
                 { name = "hcoona-release-smoke-python", version = Version }));
             if (arguments.Contains("version-facts"))
             {
-                var facts = new JsonObject { ["name"] = "hcoona-release-smoke-python",
-                    ["version"] = Version, ["commit"] = Subject.Revision,
-                    ["public_release"] = true, ["local_version"] = null,
-                    ["dependencies"] = new JsonArray(), ["implementation"] = "cpython",
-                    ["interpreter_version"] = "3.14.3" };
+                JsonObject facts = Facts(Subject.Revision, Version);
                 ChangeFacts?.Invoke(facts);
                 return Success(facts.ToJsonString());
             }

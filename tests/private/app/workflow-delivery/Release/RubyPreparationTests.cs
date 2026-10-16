@@ -31,14 +31,16 @@ public sealed class RubyPreparationTests(TestContext context)
         "nbgv",
     ];
 
-    // Rows that only vary the request, native answers or committed recipe directory read one
-    // committed repository; each row still owns fresh scratch and runs the full preparation.
+    // Rows that only vary native answers read one committed repository; each row still owns
+    // fresh scratch and runs the full preparation. Pure admission, recipe and projection rules
+    // run on their entry points without a repository.
     private static GitFixture? shared;
     private static string sharedRevision = "";
     // RubySourceCollector writes <product>/lib/.../version.rb into the checkout, so every
     // shared row that can reach source reading gets its own committed product directory.
-    private const int LaneCount = 64;
+    private const int LaneCount = 38;
     private static int nextLane = -1;
+    private const string Revision = "0123456789abcdef0123456789abcdef01234567";
 
     private static Fixture SharedLane()
     {
@@ -57,8 +59,7 @@ public sealed class RubyPreparationTests(TestContext context)
             await Fixture.StageProductAsync(repo, "product", "");
             // A defect-free control at the same depth proves the location itself qualifies.
             await Fixture.StageProductAsync(repo, "recipes/control", "");
-            foreach (string defect in RecipeDefects)
-                await Fixture.StageProductAsync(repo, "recipes/" + defect, defect);
+            await Fixture.StageProductAsync(repo, "recipes/quality", "quality");
             for (int lane = 0; lane < LaneCount; lane++)
                 await Fixture.StageProductAsync(repo, "lanes/" + lane, "");
             sharedRevision = await repo.CommitAsync();
@@ -74,20 +75,6 @@ public sealed class RubyPreparationTests(TestContext context)
 
     [ClassCleanup]
     public static void Cleanup() => shared?.Dispose();
-
-    private static readonly string[] RecipeDefects =
-    [
-        "declaration",
-        "build",
-        "extra-build",
-        "outputs",
-        "extra-output",
-        "quality",
-        "missing-quality",
-        "entry",
-        "entry-name",
-        "unit",
-    ];
 
     [TestMethod]
     public async Task CompleteOriginalQualifiesRelease()
@@ -250,68 +237,118 @@ public sealed class RubyPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("buddy", "github-packages-ruby", "refs/heads/topic", false, true)]
-    [DataRow("official", "rubygems", "refs/heads/main", false, true)]
-    [DataRow("official", "rubygems", "refs/heads/topic", true, true)]
-    [DataRow("buddy", "github-packages-ruby", "refs/tags/preview", true, true)]
-    [DataRow("official", "rubygems", "refs/tags/preview", true, true)]
-    [DataRow("buddy", "github-packages-ruby", "refs/tags/preview", false, false)]
-    [DataRow("buddy", "github-packages-ruby", "refs/heads/", false, false)]
-    [DataRow("official", "rubygems", "refs/heads/topic", false, false)]
-    [DataRow("buddy", "rubygems", "refs/heads/main", false, false)]
-    [DataRow("official", "github-packages-ruby", "refs/heads/main", true, false)]
-    [DataRow("buddy", "github-packages-ruby", "", true, false)]
-    [DataRow("unknown", "rubygems", "refs/heads/main", true, false)]
-    public async Task ChannelRefAndDryRunRemainIndependent(
+    [DataRow("buddy", "github-packages-ruby", "refs/heads/topic", false, "")]
+    [DataRow("official", "rubygems", "refs/heads/main", false, "")]
+    [DataRow("official", "rubygems", "refs/heads/topic", true, "")]
+    [DataRow("buddy", "github-packages-ruby", "refs/tags/preview", true, "")]
+    [DataRow("official", "rubygems", "refs/tags/preview", true, "")]
+    [DataRow("buddy", "github-packages-ruby", "refs/tags/preview", false, LiveRef)]
+    [DataRow("buddy", "github-packages-ruby", "refs/heads/", false, LiveRef)]
+    [DataRow("official", "rubygems", "refs/heads/topic", false, LiveRef)]
+    [DataRow("buddy", "rubygems", "refs/heads/main", false, Channel)]
+    [DataRow("official", "github-packages-ruby", "refs/heads/main", true, Channel)]
+    [DataRow("buddy", "github-packages-ruby", "", true, Channel)]
+    [DataRow("unknown", "rubygems", "refs/heads/main", true, Channel)]
+    public void ChannelRefAndDryRunRemainIndependent(
         string channel,
         string destination,
         string selectedRef,
         bool dryRun,
-        bool accepted
+        string rejection
     )
     {
-        using var fixture = SharedLane();
-        fixture.Subject = fixture.Subject with
+        ReleaseSubject subject = Fixture.SubjectFor(Revision, "product", "") with
         {
             Channel = channel,
             Destination = destination,
             SelectedRef = selectedRef,
             DryRun = dryRun,
         };
+        if (rejection.Length == 0)
+            Assert.AreEqual(channel == "official", RubyPreparation.Admit(subject));
+        else
+            Assert.AreEqual(
+                rejection,
+                Assert.ThrowsExactly<InvalidDataException>(() => RubyPreparation.Admit(subject))
+                    .Message
+            );
+    }
+
+    private const string LiveRef = "Unsupported live Release channel ref.";
+    private const string Channel = "Unsupported Ruby Release channel or ref.";
+
+    [TestMethod]
+    public async Task UnadmittedSubjectStopsBeforeNativeWork()
+    {
+        using var fixture = Fixture.Shared(shared!, sharedRevision, "recipes/control", "");
+        fixture.Subject = fixture.Subject with { Destination = "rubygems" };
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(fixture.Subject, result.Prepared.Subject);
-        if (accepted)
-        {
-            Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
-            Assert.AreEqual("1.2.3", Assert.ContainsSingle(result.Prepared.Files).Version);
-            Assert.IsTrue(
-                result.Prepared.Checks.All(check => check.Status == ReleaseCheckStatus.Passed)
-            );
-        }
-        else
-        {
-            RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
-            Assert.IsEmpty(result.Commands);
-        }
+        RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
+        Assert.AreEqual(Channel, Assert.ContainsSingle(result.Errors));
+        Assert.IsEmpty(result.Commands);
     }
 
     [TestMethod]
-    [DataRow("declaration")]
-    [DataRow("build")]
-    [DataRow("extra-build")]
-    [DataRow("outputs")]
-    [DataRow("extra-output")]
-    [DataRow("quality")]
-    [DataRow("missing-quality")]
-    [DataRow("entry")]
-    [DataRow("entry-name")]
-    [DataRow("unit")]
-    public async Task UnsupportedCommittedRecipeStopsBeforeNativeWork(string defect)
+    [DataRow("declaration", "Missing committed Ruby release declaration.")]
+    [DataRow("build", Recipe)]
+    [DataRow("extra-build", Recipe)]
+    [DataRow("outputs", Recipe)]
+    [DataRow("extra-output", Recipe)]
+    [DataRow("quality", Quality)]
+    [DataRow("missing-quality", Quality)]
+    [DataRow("entry", "Missing committed adopted Ruby entry.")]
+    [DataRow("entry-name", "Missing committed adopted Ruby entry.")]
+    [DataRow("unit", Recipe)]
+    public async Task UnsupportedCommittedRecipeIsRejected(string defect, string message)
     {
-        using var fixture = Fixture.Shared(shared!, sharedRevision, "recipes/" + defect, defect);
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            ReadRecipeAsync(defect)
+        );
+        Assert.AreEqual(message, error.Message);
+    }
+
+    private const string Recipe = "Unsupported complete Ruby Release recipe.";
+    private const string Quality = "Unsupported complete Ruby quality selection.";
+
+    [TestMethod]
+    public async Task CompleteCommittedRecipeSelectsItsEntry()
+    {
+        RubyReleaseRecipe recipe = await ReadRecipeAsync("");
+        Assert.AreEqual("gem-build", recipe.Build.Id);
+        Assert.AreEqual(Fixture.Entry, recipe.Entry);
+        Assert.AreEqual("product", recipe.Directory);
+    }
+
+    [TestMethod]
+    public async Task UnsupportedCommittedRecipeStopsBeforeNativeWork()
+    {
+        using var fixture = Fixture.Shared(shared!, sharedRevision, "recipes/quality", "quality");
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
+        Assert.AreEqual(Quality, Assert.ContainsSingle(result.Errors));
         Assert.IsEmpty(result.Commands);
+    }
+
+    // Reads one committed recipe through an in-memory tree; only the directory must exist.
+    private async Task<RubyReleaseRecipe> ReadRecipeAsync(string defect)
+    {
+        string root = Directory.CreateTempSubdirectory("ruby-recipe-").FullName;
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "product"));
+            Dictionary<string, string> files = Fixture.ProductFiles("product", defect);
+            return await RubyPreparation.ReadRecipeAsync(
+                Fixture.SubjectFor(Revision, "product", defect),
+                root,
+                (path, _) => Task.FromResult(files.GetValueOrDefault(path)),
+                context.CancellationToken
+            );
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [TestMethod]
@@ -327,10 +364,6 @@ public sealed class RubyPreparationTests(TestContext context)
 
     [TestMethod]
     [DataRow("commit")]
-    [DataRow("missing-commit")]
-    [DataRow("missing-version")]
-    [DataRow("missing-public-release")]
-    [DataRow("public-release")]
     [DataRow("ruby")]
     [DataRow("rubygems")]
     [DataRow("name")]
@@ -351,6 +384,77 @@ public sealed class RubyPreparationTests(TestContext context)
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
         Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
+    }
+
+    // Production passes the admitted Official result into the native projection check.
+    [TestMethod]
+    public async Task OfficialNonPublicProjectionStopsBeforeBuild()
+    {
+        using var fixture = SharedLane();
+        fixture.Subject = fixture.Subject with
+        {
+            Channel = "official",
+            Destination = "rubygems",
+            SelectedRef = "refs/heads/main",
+        };
+        fixture.Defect = "public-release";
+        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
+        Assert.AreEqual(
+            "Native Ruby source/ref projection differs.",
+            Assert.ContainsSingle(result.Errors)
+        );
+        Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
+    }
+
+    [TestMethod]
+    [DataRow("commit", nameof(InvalidDataException))]
+    [DataRow("public-release", nameof(InvalidDataException))]
+    [DataRow("missing-commit", nameof(KeyNotFoundException))]
+    [DataRow("missing-version", nameof(KeyNotFoundException))]
+    [DataRow("missing-public-release", nameof(KeyNotFoundException))]
+    public void NativeProjectionCannotQualifyAnotherRequest(string defect, string failure)
+    {
+        ReleaseSubject subject = Fixture.SubjectFor(Revision, "product", "") with
+        {
+            Channel = "official",
+            Destination = "rubygems",
+            SelectedRef = "refs/heads/main",
+        };
+        using JsonDocument projection = JsonDocument.Parse(
+            Fixture.Projection(Revision, defect).ToJsonString()
+        );
+        Exception error = Assert.Throws<Exception>(() =>
+            RubyPreparation.QualifyNative(subject, official: true, projection.RootElement)
+        );
+        Assert.AreEqual(failure, error.GetType().Name);
+        if (error is InvalidDataException)
+            Assert.AreEqual("Native Ruby source/ref projection differs.", error.Message);
+    }
+
+    [TestMethod]
+    [DataRow("official", false, "", true)]
+    [DataRow("official", true, "public-release", false)]
+    [DataRow("buddy", false, "public-release", false)]
+    public void NativeProjectionQualifiesItsRequest(
+        string channel,
+        bool dryRun,
+        string defect,
+        bool publicRelease
+    )
+    {
+        ReleaseSubject subject = Fixture.SubjectFor(Revision, "product", "") with
+        {
+            Channel = channel,
+            DryRun = dryRun,
+        };
+        using JsonDocument projection = JsonDocument.Parse(
+            Fixture.Projection(Revision, defect).ToJsonString()
+        );
+        Assert.AreEqual(
+            ("1.2.3+g1234567", publicRelease),
+            RubyPreparation.QualifyNative(subject, channel == "official", projection.RootElement)
+        );
     }
 
     [TestMethod]
@@ -690,7 +794,7 @@ public sealed class RubyPreparationTests(TestContext context)
             string defect = ""
         ) => new(repo, SubjectFor(revision, directory, defect), ownsRepository: false);
 
-        private static ReleaseSubject SubjectFor(
+        internal static ReleaseSubject SubjectFor(
             string revision,
             string directory,
             string defect
@@ -728,10 +832,18 @@ public sealed class RubyPreparationTests(TestContext context)
             string defect
         )
         {
+            foreach ((string path, string content) in ProductFiles(directory, defect))
+                await repo.SetAsync(path, content);
+        }
+
+        // The committed files of one recipe directory, keyed by repository path.
+        internal static Dictionary<string, string> ProductFiles(string directory, string defect)
+        {
+            var files = new Dictionary<string, string>(StringComparer.Ordinal);
             if (defect != "entry")
-                await repo.SetAsync(directory + "/hcoona-release-smoke-ruby.gemspec");
+                files.Add(directory + "/hcoona-release-smoke-ruby.gemspec", "fixture");
             if (defect != "missing-quality")
-                await repo.SetAsync(
+                files.Add(
                     directory + "/workflow-delivery.quality.yml",
                     """
                     schema: workflow-delivery/v3/quality-selection
@@ -778,7 +890,25 @@ public sealed class RubyPreparationTests(TestContext context)
                 _ => text,
             };
             if (defect != "declaration")
-                await repo.SetAsync(directory + "/workflow-delivery.release-unit.yml", text);
+                files.Add(directory + "/workflow-delivery.release-unit.yml", text);
+            return files;
+        }
+
+        internal static JsonObject Projection(string revision, string defect)
+        {
+            var value = new JsonObject
+            {
+                ["SemVer2"] = "1.2.3+g1234567",
+                ["GitCommitId"] = defect == "commit" ? new string('0', 40) : revision,
+                ["PublicRelease"] = defect != "public-release",
+            };
+            if (defect == "missing-version")
+                value.Remove("SemVer2");
+            if (defect == "missing-commit")
+                value.Remove("GitCommitId");
+            if (defect == "missing-public-release")
+                value.Remove("PublicRelease");
+            return value;
         }
 
         internal Task<RubyPreparationResult> RunAsync(CancellationToken token) =>
@@ -834,21 +964,7 @@ public sealed class RubyPreparationTests(TestContext context)
                     )
                 );
             if (args[0] == "get-version")
-            {
-                var value = new JsonObject
-                {
-                    ["SemVer2"] = "1.2.3+g1234567",
-                    ["GitCommitId"] = Defect == "commit" ? new string('0', 40) : Subject.Revision,
-                    ["PublicRelease"] = Defect != "public-release",
-                };
-                if (Defect == "missing-version")
-                    value.Remove("SemVer2");
-                if (Defect == "missing-commit")
-                    value.Remove("GitCommitId");
-                if (Defect == "missing-public-release")
-                    value.Remove("PublicRelease");
-                return Success(value.ToJsonString());
-            }
+                return Success(Projection(Subject.Revision, Defect).ToJsonString());
             if (args[0] == Tools.Gem)
             {
                 Assert.AreEqual("--norc", args[2]);

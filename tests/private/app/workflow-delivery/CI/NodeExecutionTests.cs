@@ -5,6 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
+using WorkflowDelivery.Tests.Repository;
 
 namespace WorkflowDelivery.Tests.CI;
 
@@ -174,35 +175,73 @@ public sealed class NodeExecutionTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("node24", "node", "v24.22.0", "Exited")]
-    [DataRow("node22", "node", "v24.21.0", "Exited")]
-    [DataRow("node24", "node", "24.21.0", "Exited")]
-    [DataRow("node24", "node", "v24.21", "Exited")]
-    [DataRow("node24", "node", "v24.21.0\nv24.21.0", "Exited")]
-    [DataRow("node24", "pnpm", "12.8.3", "Exited")]
-    [DataRow("node24", "pnpm", "invalid", "Exited")]
-    [DataRow("node24", "node", "v24.21.0", "FailedExit")]
-    [DataRow("node24", "node", "v24.21.0", "StartFailed")]
-    [DataRow("node24", "pnpm", "12.8.2", "TimedOut")]
-    [DataRow("node24", "node", "v24.21.0", "Cancelled")]
-    [DataRow("node24", "node", "v24.21.0", "InvalidOutput")]
-    [DataRow("node24", "pnpm", "12.8.2", "CleanupFailed")]
-    public async Task RunRejectsRuntimeBeforeProductWork(string runtime, string tool,
-        string output, string termination)
+    [DataRow("node24", "node", "v24.22.0", "Exited", Differs)]
+    [DataRow("node22", "node", "v24.21.0", "Exited", Differs)]
+    [DataRow("node24", "node", "24.21.0", "Exited", "Malformed native Node version.")]
+    [DataRow("node24", "node", "v24.21", "Exited", Unavailable + "node")]
+    [DataRow("node24", "node", "v24.21.0\nv24.21.0", "Exited", Unavailable + "node")]
+    [DataRow("node24", "pnpm", "12.8.3", "Exited", Differs)]
+    [DataRow("node24", "pnpm", "invalid", "Exited", Unavailable + "pnpm")]
+    [DataRow("node24", "node", "v24.21.0", "FailedExit", Unavailable + "node")]
+    [DataRow("node24", "node", "v24.21.0", "StartFailed", Unavailable + "node")]
+    [DataRow("node24", "pnpm", "12.8.2", "TimedOut", Unavailable + "pnpm")]
+    [DataRow("node24", "node", "v24.21.0", "Cancelled", Unavailable + "node")]
+    [DataRow("node24", "node", "v24.21.0", "InvalidOutput", Unavailable + "node")]
+    [DataRow("node24", "pnpm", "12.8.2", "CleanupFailed", Unavailable + "pnpm")]
+    public void UnsupportedRuntimeReadbackIsRejected(string runtime, string tool,
+        string output, string termination, string message)
+    {
+        CiPlan selected = NodeExecution.SelectRuntime(
+            NodeExecutionFixture.CreatePlan(NodeScenario.Candidate), runtime);
+        NativeCommandResult answer = RuntimeAnswer(output, termination);
+        NativeCommandResult node = tool == "node" ? answer :
+            NodeExecutionFixture.Success("v24.21.0\n");
+        NativeCommandResult pnpm = tool == "pnpm" ? answer :
+            NodeExecutionFixture.Success("12.8.2\n");
+
+        Assert.AreEqual(message, Assert.ThrowsExactly<InvalidDataException>(() =>
+            NodeExecution.ReadRuntime(selected, node, pnpm)).Message);
+    }
+
+    [TestMethod]
+    [DataRow("node22", "v22.20.0\n", "22.20.0")]
+    [DataRow("node24", "v24.21.0\n", "24.21.0")]
+    public void SupportedRuntimeReadbackIsRetained(string runtime, string output,
+        string version)
+    {
+        CiPlan selected = NodeExecution.SelectRuntime(
+            NodeExecutionFixture.CreatePlan(NodeScenario.Candidate), runtime);
+        NativeCommandResult node = NodeExecutionFixture.Success(output);
+        NativeCommandResult pnpm = NodeExecutionFixture.Success("12.8.2\n");
+
+        Assert.AreEqual(new NodeRuntimeReadback(version, "12.8.2", node, pnpm),
+            NodeExecution.ReadRuntime(selected, node, pnpm));
+    }
+
+    private const string Differs = "Native runtime differs from the selected Node context.";
+    private const string Unavailable = "Unavailable native runtime version: ";
+
+    private static NativeCommandResult RuntimeAnswer(string output, string termination) =>
+        new(termination == "FailedExit" ? NativeTermination.Exited :
+            Enum.Parse<NativeTermination>(termination), termination == "FailedExit" ? 7 : 0,
+            output, "", 0.1, null);
+
+    [TestMethod]
+    public async Task RunRejectsRuntimeBeforeProductWork()
     {
         using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
-        fixture.Runtime = runtime;
-        fixture.Override = command => command.Executable == tool &&
+        fixture.Override = command => command.Executable == "node" &&
             command.Arguments.Contains("--version")
-            ? new(termination == "FailedExit" ? NativeTermination.Exited :
-                Enum.Parse<NativeTermination>(termination), termination == "FailedExit" ? 7 : 0,
-                output, "", 0.1, null) : null;
+            ? RuntimeAnswer("v24.22.0", "Exited") : null;
 
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(context.CancellationToken));
 
+        Assert.AreEqual(Differs, error.Message);
         Assert.IsTrue(fixture.Commands.All(item => item.Arguments.SequenceEqual(["--version"])));
-        Assert.IsNotEmpty(fixture.Commands);
+        string[] tools = ["node", "pnpm"];
+        CollectionAssert.AreEqual(tools, fixture.Commands.Select(item => item.Executable)
+            .ToArray());
         Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Scratch));
     }
 
@@ -679,17 +718,29 @@ public sealed class NodeExecutionTests(TestContext context)
     [DataRow("TimedOut", "TimedOut")]
     [DataRow("InvalidOutput", "Failed")]
     [DataRow("CleanupFailed", "Failed")]
-    public async Task RunNativeTerminationNeverPasses(string nativeTermination, string status)
+    public void NativeTerminationNeverPasses(string nativeTermination, string status) =>
+        Assert.AreEqual(Enum.Parse<CheckStatus>(status), NodeExecution.Status(
+            NodeExecutionFixture.Failure(Enum.Parse<NativeTermination>(nativeTermination))));
+
+    [TestMethod]
+    public void OnlySuccessfulExitPasses()
     {
-        NativeTermination termination = Enum.Parse<NativeTermination>(nativeTermination);
-        CheckStatus expected = Enum.Parse<CheckStatus>(status);
+        Assert.AreEqual(CheckStatus.Passed, NodeExecution.Status(NodeExecutionFixture.Success()));
+        Assert.AreEqual(CheckStatus.Failed, NodeExecution.Status(
+            NodeExecutionFixture.Success() with { ExitCode = null }));
+    }
+
+    [TestMethod]
+    public async Task RunNativeTerminationNeverPasses()
+    {
+        NativeTermination termination = NativeTermination.TimedOut;
         using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
         fixture.Override = command => command.Arguments[^1] == "build"
             ? NodeExecutionFixture.Failure(termination) : null;
 
         NodeRunResult result = await fixture.RunAsync(context.CancellationToken);
 
-        Assert.AreEqual(expected, Status(result, NodeExecutionFixture.Build));
+        Assert.AreEqual(CheckStatus.TimedOut, Status(result, NodeExecutionFixture.Build));
         Assert.AreEqual(CheckStatus.Passed, Status(result, NodeExecutionFixture.Test));
         Assert.AreEqual(CheckStatus.Skipped, Status(result, NodeExecutionFixture.Pack));
         Assert.AreEqual(termination, result.Commands[0].Result.Termination);
