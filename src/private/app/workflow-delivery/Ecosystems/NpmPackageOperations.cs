@@ -11,12 +11,12 @@ internal static class NpmPackageOperations
             archive], 300);
 
     internal static async Task<(long Size, string Sha256)> OriginalAsync(string archive,
-        long limit, CancellationToken token)
+        CancellationToken token)
     {
         NodePackageArchive.RequireRegularFile(archive);
         using var file = File.OpenRead(archive);
-        if (file.Length is <= 0 || file.Length > limit)
-            throw new InvalidDataException("Native npm output exceeds its size bound.");
+        if (file.Length <= 0)
+            throw new InvalidDataException("Native npm output is empty.");
         return (file.Length, Convert.ToHexStringLower(await SHA256.HashDataAsync(file, token)));
     }
 

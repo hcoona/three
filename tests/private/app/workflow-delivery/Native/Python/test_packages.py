@@ -292,7 +292,7 @@ def test_reader_rejects_ambiguity_links_and_limits(
         path = sdist(tmp_path, extra=info)
     else:
         path = sdist(tmp_path)
-        monkeypatch.setattr(packages, "MAX_CONTENTS", 1)
+        monkeypatch.setattr(packages, "MAX_SDIST_CONTENTS", 1)
     with pytest.raises(
         ValueError, match=r"identity|archive|distribution|sdist"
     ):

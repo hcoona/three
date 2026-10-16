@@ -16,7 +16,7 @@ internal sealed class NpmjsObservation(HttpClient client, TimeProvider? timeProv
         CancellationToken token)
     {
         if (prepared.Subject.Destination != "npmjs" || prepared.Files is not
-            [{ Kind: "npm-tarball", Size: <= 25_000_000 }])
+            [{ Kind: "npm-tarball" }])
             throw new InvalidDataException("Unsupported complete public npmjs request.");
         ReleaseFile file = prepared.Files[0];
         var reads = new List<NpmjsRead>();
@@ -30,7 +30,8 @@ internal sealed class NpmjsObservation(HttpClient client, TimeProvider? timeProv
                 StringComparison.Ordinal);
             var uri = new Uri($"https://registry.npmjs.org/{name}/"
                 + Uri.EscapeDataString(file.Version));
-            (int status, byte[] body) = await ReadAsync("metadata", uri, 1_000_000);
+            (int status, byte[] body) = await ReadAsync("metadata", uri, (stream, length, read) =>
+                RegistryBody.LimitedAsync(stream, length, 1_000_000, read));
             if (status == 404) return Result(ReleaseFileState.Absent);
             if (status != 200) return Result(ReleaseFileState.Unknown);
             using JsonDocument document = JsonDocument.Parse(body);
@@ -43,11 +44,12 @@ internal sealed class NpmjsObservation(HttpClient client, TimeProvider? timeProv
                     UriKind.Absolute, out Uri? tarball))
                 return Result(ReleaseFileState.Unknown);
             ValidateUri(tarball);
-            (status, body) = await ReadAsync("tarball", tarball, 25_000_000);
+            (status, RegistryOriginalBytes served) = await ReadAsync("tarball", tarball,
+                (stream, length, read) => RegistryBody.OriginalAsync(stream, length, file.Size,
+                    retain: false, read));
             if (status != 200) return Result(ReleaseFileState.Unknown);
-            string sha256 = Convert.ToHexStringLower(SHA256.HashData(body));
-            return Result(body.LongLength == file.Size && sha256 == file.Sha256
-                ? ReleaseFileState.Exact : ReleaseFileState.Conflict, body.LongLength, sha256);
+            return Result(served.Size == file.Size && served.Sha256 == file.Sha256
+                ? ReleaseFileState.Exact : ReleaseFileState.Conflict, served.Size, served.Sha256);
         }
         catch (OperationCanceledException)
         {
@@ -76,7 +78,8 @@ internal sealed class NpmjsObservation(HttpClient client, TimeProvider? timeProv
                         ReleaseCheckStatus.Failed)]), [.. reads]);
 
         // The platform handler follows any redirect; an unfollowed 3xx is not success.
-        async Task<(int, byte[])> ReadAsync(string stage, Uri uri, int limit)
+        async Task<(int, T)> ReadAsync<T>(string stage, Uri uri,
+            Func<Stream, long?, CancellationToken, Task<T>> read)
         {
             ValidateUri(uri);
             using var requestTimer = new CancellationTokenSource(TimeSpan.FromSeconds(20),
@@ -96,24 +99,13 @@ internal sealed class NpmjsObservation(HttpClient client, TimeProvider? timeProv
             if (response.Content.Headers.ContentEncoding.Any(value =>
                 !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidDataException("Unsupported response encoding.");
-            long? length = response.Content.Headers.ContentLength;
-            if (length > limit) throw new IOException("Response exceeds its body limit.");
             using Stream stream = await response.Content.ReadAsStreamAsync(
                 requestDeadline.Token);
-            using var body = new MemoryStream();
-            byte[] buffer = new byte[8192];
-            int count;
-            while ((count = await stream.ReadAsync(buffer, requestDeadline.Token)) != 0)
-            {
-                if (body.Length + count > limit)
-                    throw new IOException("Response exceeds its body limit.");
-                await body.WriteAsync(buffer.AsMemory(0, count), requestDeadline.Token);
-            }
-            if (length is not null && body.Length != length)
-                throw new IOException("Incomplete response body.");
+            T body = await read(stream, response.Content.Headers.ContentLength,
+                requestDeadline.Token);
             deadline.Token.ThrowIfCancellationRequested();
             requestDeadline.Token.ThrowIfCancellationRequested();
-            return (status, body.ToArray());
+            return (status, body);
         }
     }
 

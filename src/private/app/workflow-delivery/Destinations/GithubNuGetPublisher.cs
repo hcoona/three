@@ -30,7 +30,7 @@ internal static class GithubNuGetPublisher
     {
         if (prepared.Subject.DryRun || prepared.Subject.Channel != "buddy" ||
             prepared.Subject.Destination != "github-packages-nuget" || endpoint != Endpoint ||
-            prepared.Files is not [{ Kind: "nuget-package", Size: <= 25 * 1024 * 1024 }] ||
+            prepared.Files is not [{ Kind: "nuget-package" }] ||
             string.IsNullOrEmpty(credential) || credential.Any(c => c is '\r' or '\n' or '\0') ||
             !Path.IsPathFullyQualified(originals))
             throw new InvalidDataException("Unsupported or unqualified native NuGet upload.");

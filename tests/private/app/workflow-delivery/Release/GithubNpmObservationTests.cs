@@ -45,6 +45,26 @@ public sealed class GithubNpmObservationTests
     }
 
     [TestMethod]
+    public async Task LongerTarballIsAConflictWithoutAMeasurement()
+    {
+        using var handler = new Handler((request, index) => index switch
+        {
+            0 => Json(Control),
+            1 => Json(Metadata("https://npm.pkg.github.com/archive")),
+            _ => new(HttpStatusCode.OK) { Content = new ByteArrayContent([.. Original, 0]) },
+        });
+        using var client = new HttpClient(handler);
+
+        GithubNpmObservationResult result = await new GithubNpmObservation(client)
+            .ObserveAsync(Prepared(), Credential, CancellationToken.None);
+
+        ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
+        Assert.AreEqual(ReleaseFileState.Conflict, file.State);
+        Assert.IsNull(file.Size);
+        Assert.IsNull(file.Sha256);
+    }
+
+    [TestMethod]
     public async Task ValidContainerAndCompleteVersionMapEstablishAbsence()
     {
         using var handler = new Handler((_, index) => Json(index == 0 ? Control

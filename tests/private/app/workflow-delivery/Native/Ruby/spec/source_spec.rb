@@ -88,7 +88,7 @@ module NativeHelpers
     failures = {
       "load_specs" => %w[fail-released fail-prerelease too-many duplicate],
       "fetch_spec" => %w[fail-spec spec-name spec-version spec-platform],
-      "download" => %w[fail-download outside-original prefix-sibling missing-original directory-original invalid-original empty-original oversized-original]
+      "download" => %w[fail-download outside-original prefix-sibling missing-original directory-original invalid-original empty-original]
     }
     failures.each do |last_method, scenarios|
       scenarios.each do |scenario|
@@ -120,12 +120,12 @@ module NativeHelpers
       expect(Pathname.new(value["path"]).binread).to eq(ORIGINAL)
     end
 
-    it "original_at_size_limit_is_portable_present" do
-      result, value, trace, request = invoke("limit-original")
+    it "large_original_is_portable_present_without_an_application_size_cap" do
+      result, value, trace, request = invoke("large-original")
       expect(result.returncode).to eq(0)
       assert_queries(trace)
       expect(value["state"]).to eq("present")
-      expect(value["size"]).to eq(8 * 1024 * 1024)
+      expect(value["size"]).to eq(8 * 1024 * 1024 + 1)
       original = Pathname.new(value["path"])
       expect(original.dirname.to_s).to eq(request["directory"])
       expect(value["sha256"]).to eq(digest(original))

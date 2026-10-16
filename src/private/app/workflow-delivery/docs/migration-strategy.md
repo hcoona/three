@@ -953,8 +953,9 @@ native producer source; they do not authorize replay.
 
 Use the existing bounded native read mechanisms as extraction inputs, not the old
 Governance expiry/profile digests. Each integration closes endpoint, redirect and
-credential handling, request/body limits, read deadline/poll bound, package-size
-bounds and cancellation before it is callable. No missing lower-layer guarantee
+credential handling, metadata/response-body and archive-expansion bounds, read
+deadline/poll bound and cancellation before it is callable; registries own
+package size. No missing lower-layer guarantee
 may be replaced by an application reservation or probe ledger. A failed upload
 still permits bounded read-only evaluation; it never permits application resend or
 the next file write after the native invocation reports failure or ambiguity.
@@ -980,6 +981,10 @@ establish exact or absent state. Exact and conflicting original state rests on
 exact coordinate metadata and original size/SHA-256 equality, not on the
 serving host. Absence and metadata rely on the selected HTTPS origin and the
 redirects it issues. Each body-inclusive read deadline covers its redirects.
+Metadata bodies keep fixed limits because they are parsed in memory. Served
+originals have no application package-size limit; registries own package size.
+An original is compared by a streaming SHA-256, and its read stops one byte past
+the qualified original's size, because a longer body cannot match.
 
 Ordinary workflows request 45-day retention for required prepared CLI,
 qualified packages and request/results, matching the existing workflow setting.
@@ -1038,8 +1043,7 @@ original archive comparison. API inventory is supporting metadata with bounded
 pagination, not an independent admission authority.
 
 Bound each observation to 90 seconds and 80 application reads, each
-body-inclusive read to 30 seconds, metadata bodies to 2 MiB and the original
-archive to 25 MiB. The shared client follows the archive's storage redirect;
+body-inclusive read to 30 seconds and metadata bodies to 2 MiB. The shared client follows the archive's storage redirect;
 signed URLs are not retained in diagnostics. Compare original size and digest. Exact, absent, conflicting and unknown observations
 use the same predicate before and after publication. Unknown control, identity
 or original bytes block writes; absence permits creation only with established
@@ -1163,8 +1167,8 @@ facts cannot permit mutation. Registry active-file non-overwrite is the native
 dependency; no atomic two-file release or lifetime-global retention is promised.
 
 Bound each observation phase to 90 seconds and nine application reads, each
-body-inclusive read to 30 seconds, index JSON to 2 MiB/4,096 entries and each
-original to 8 MiB. Use verified HTTPS through the shared registry HTTP client,
+body-inclusive read to 30 seconds and index JSON to 2 MiB/4,096 entries. Use
+verified HTTPS through the shared registry HTTP client,
 without insecure fallback. Accept index file URLs only on the selected public
 storage host with no user information or fragment. Bounded
 visibility polling is read-only and remains inside those phase limits. Retain
@@ -1291,8 +1295,9 @@ absent; transport/authentication/index/spec failures or contradictory facts are
 unknown. An exact original can be reused; different bytes forbid publication.
 
 Each observation uses a fresh external process/home/spec cache, a 90-second
-whole-process deadline, at most 64 selected tuples, a 256-KiB JSON answer and an
-8-MiB selected original. These are application process/result/original limits;
+whole-process deadline, at most 64 selected tuples and a 256-KiB JSON answer.
+These are application process/result limits; the selected original has no
+application size limit and is hashed from the owned download file.
 RubyGems owns full inventory transfers, decompression and native request retries.
 Do not claim an underlying HTTP/inflated-index byte ceiling or replace native
 fetching to simulate one. Allow bounded read-only visibility polling only within

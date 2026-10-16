@@ -16,8 +16,6 @@ internal sealed record DotNetOriginalPackage(string Unit, string Build, string O
 // Read the registered product's normal package with NuGet and .NET metadata APIs.
 internal static class DotNetPackageArchive
 {
-    private const int StreamLimit = 8 * 1024 * 1024;
-
     internal static PackageIdentity Identity(string path)
     {
         using var reader = new PackageArchiveReader(path);
@@ -104,6 +102,8 @@ internal static class DotNetPackageArchive
                 throw new InvalidDataException("Unsafe or ambiguous native-decoded package name.");
     }
 
+    // Reads a required member of the repository's own qualified Pack output, which is
+    // not untrusted input; package size is the registry's concern, not this reader's.
     private static MemoryStream Read(PackageArchiveReader reader, string path)
     {
         using Stream stream = reader.GetStream(path);
@@ -113,11 +113,7 @@ internal static class DotNetPackageArchive
             byte[] block = new byte[8192];
             int count;
             while ((count = stream.Read(block)) != 0)
-            {
-                if (buffer.Length + count > StreamLimit)
-                    throw new InvalidDataException("Required package stream exceeds its limit.");
                 buffer.Write(block, 0, count);
-            }
             buffer.Position = 0;
             return buffer;
         }

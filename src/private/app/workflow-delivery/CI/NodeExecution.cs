@@ -92,7 +92,7 @@ internal static class NodeExecution
                 if (status != CheckStatus.Passed)
                     return status;
                 (long size, string digest) = await NpmPackageOperations.OriginalAsync(archive,
-                    NodePackageArchive.CompressedLimit, token);
+                    token);
                 PackageOutput output = package.Outputs.Single();
                 outputs.Add(new(package.Unit, package.Build, output.Id, output.Role, output.Kind,
                     archive, size, digest));

@@ -37,7 +37,7 @@ internal static class NuGetRelease
         ReleaseCompletion.Validate(prepared);
         if (prepared.Subject.Channel != "buddy" ||
             prepared.Subject.Destination != "github-packages-nuget" ||
-            prepared.Files is not [{ Kind: "nuget-package", Size: <= 25 * 1024 * 1024 }] ||
+            prepared.Files is not [{ Kind: "nuget-package" }] ||
             prepared.Subject.Unit != "hcoona-release-smoke-github-packages" ||
             !prepared.RequiredChecks.SequenceEqual(NuGetPreparation.Required) ||
             prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&

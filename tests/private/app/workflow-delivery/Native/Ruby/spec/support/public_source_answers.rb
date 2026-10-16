@@ -91,8 +91,7 @@ Gem::Source.prepend(Module.new do
     path = File.join(directory, "native-original.gem")
     bytes = "actual controlled native download"
     bytes = "" if scenario == "empty-original"
-    bytes = "x" * (8 * 1024 * 1024 + 1) if scenario == "oversized-original"
-    bytes = "x" * (8 * 1024 * 1024) if scenario == "limit-original"
+    bytes = "x" * (8 * 1024 * 1024 + 1) if scenario == "large-original"
     if scenario == "outside-original"
       path = File.join(File.dirname(directory), "outside.gem")
     elsif scenario == "prefix-sibling"

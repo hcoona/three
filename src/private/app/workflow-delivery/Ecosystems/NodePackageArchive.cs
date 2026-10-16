@@ -5,12 +5,11 @@ namespace WorkflowDelivery.Ecosystems;
 
 // Inspect required members without extracting archive-controlled paths. Native PNPM
 // remains responsible for installing the original archive and package-format semantics.
+// Every member is decompressed, so expanded bytes, including tar headers, bound the work
+// of a decompression bomb. Only the manifest is retained. The registry owns package size.
 internal static class NodePackageArchive
 {
-    internal const long CompressedLimit = 32 * 1024 * 1024;
     internal const long ExpandedLimit = 128 * 1024 * 1024;
-    internal const long MemberLimit = 32 * 1024 * 1024;
-    internal const int MemberCountLimit = 1024;
     internal const int ManifestLimit = 1024 * 1024;
 
     internal static async Task ReadAsync(string archive, string metadataDirectory,
@@ -20,20 +19,16 @@ internal static class NodePackageArchive
         if (!Directory.Exists(metadataDirectory) ||
             Directory.EnumerateFileSystemEntries(metadataDirectory).Any())
             throw new InvalidDataException("Packed metadata requires a fresh empty directory.");
-        // Bound the opened stream: a linked path's own length is not the archive read.
         using var input = File.OpenRead(archive);
-        if (input.Length is <= 0 or > CompressedLimit)
-            throw new InvalidDataException("Native npm archive exceeds its compressed size bound.");
+        if (input.Length <= 0)
+            throw new InvalidDataException("Native npm archive is empty.");
         using var gzip = new GZipStream(input, CompressionMode.Decompress);
         using var bounded = new BoundedReadStream(gzip, ExpandedLimit);
         using var tar = new TarReader(bounded, leaveOpen: true);
         bool manifest = false;
         bool payload = false;
-        int count = 0;
         while (await tar.GetNextEntryAsync(copyData: false, token) is { } entry)
         {
-            if (++count > MemberCountLimit || entry.Length > MemberLimit)
-                throw new InvalidDataException("Native npm archive exceeds its member bounds.");
             if (entry.Name is "package/binding.gyp" or "package/.hooks" ||
                 entry.Name.StartsWith("package/.hooks/", StringComparison.Ordinal))
                 throw new InvalidDataException(
@@ -43,7 +38,8 @@ internal static class NodePackageArchive
             bool isManifest = entry.Name == "package/package.json";
             if ((isManifest ? manifest : payload) ||
                 entry.EntryType is not (TarEntryType.RegularFile or TarEntryType.V7RegularFile) ||
-                entry.Length is <= 0 or > ManifestLimit || entry.DataStream is null)
+                entry.Length <= 0 || isManifest && entry.Length > ManifestLimit ||
+                entry.DataStream is null)
                 throw new InvalidDataException("Missing, ambiguous or unsupported npm member: "
                     + entry.Name);
             // The unseekable stream must be consumed before requesting the next entry.

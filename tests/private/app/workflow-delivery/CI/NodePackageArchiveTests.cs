@@ -51,11 +51,7 @@ public sealed class NodePackageArchiveTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("compressed", "compressed")]
     [DataRow("manifest", "member")]
-    [DataRow("payload", "member")]
-    [DataRow("member", "member bounds")]
-    [DataRow("count", "member bounds")]
     [DataRow("expanded", "expanded")]
     public async Task ReadEnforcesArchiveBounds(string bound, string diagnostic)
     {
@@ -64,59 +60,21 @@ public sealed class NodePackageArchiveTests(TestContext context)
         IEnumerable<ArchiveMember> members = required;
         switch (bound)
         {
-            case "compressed":
-                using (var sparse = File.Create(files.Archive))
-                    sparse.SetLength(NodePackageArchive.CompressedLimit + 1);
-                break;
             case "manifest":
                 required[0] = required[0] with
                     { Bytes = new byte[NodePackageArchive.ManifestLimit + 1] };
                 break;
-            case "payload":
-                required[1] = required[1] with
-                    { Bytes = new byte[NodePackageArchive.ManifestLimit + 1] };
-                break;
-            case "member":
-                members = required.Append(new("package/large.bin",
-                    new byte[NodePackageArchive.MemberLimit + 1]));
-                break;
-            case "count":
-                members = required.Concat(Enumerable.Range(0,
-                    NodePackageArchive.MemberCountLimit - 1)
-                    .Select(index => new ArchiveMember("package/extra-" + index, [1])));
-                break;
             case "expanded":
-                byte[] block = new byte[NodePackageArchive.MemberLimit];
-                members = required.Concat(Enumerable.Range(0, 4).Select(index =>
-                    new ArchiveMember("package/expanded-" + index, block)));
+                members = required.Append(new ArchiveMember("package/expanded.bin",
+                    new byte[NodePackageArchive.ExpandedLimit]));
                 break;
         }
-        if (bound != "compressed")
-            PackageArchiveFixture.Write(files.Archive, members);
+        PackageArchiveFixture.Write(files.Archive, members);
 
         InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() =>
             NodePackageArchive.ReadAsync(files.Archive, files.Metadata, context.CancellationToken));
 
         Assert.Contains(diagnostic, error.Message);
-    }
-
-    [TestMethod]
-    public async Task ReadBoundsTheLinkedArchiveTarget()
-    {
-        using var files = new ArchiveFiles();
-        string target = Path.Combine(files.Root, "target.tgz");
-        using (var sparse = File.Create(target))
-            sparse.SetLength(NodePackageArchive.CompressedLimit + 1);
-        try { File.CreateSymbolicLink(files.Archive, target); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            Assert.Inconclusive("The platform cannot create a file link.");
-        }
-
-        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
-            NodePackageArchive.ReadAsync(files.Archive, files.Metadata, context.CancellationToken));
-
-        Assert.Contains("compressed", failure.Message);
     }
 
     [TestMethod]
@@ -159,8 +117,11 @@ public sealed class NodePackageArchiveTests(TestContext context)
         using var files = new ArchiveFiles();
         ArchiveMember[] required = PackageArchiveFixture.Required();
         required[0] = required[0] with { Bytes = new byte[NodePackageArchive.ManifestLimit] };
+        // Payload and other members carry no per-member size cap below the expanded bound.
+        required[1] = required[1] with
+            { Bytes = new byte[NodePackageArchive.ManifestLimit + 1] };
         PackageArchiveFixture.Write(files.Archive,
-            required.Append(new("package/large.bin", new byte[NodePackageArchive.MemberLimit])));
+            required.Append(new("package/large.bin", new byte[48 * 1024 * 1024])));
 
         await NodePackageArchive.ReadAsync(files.Archive, files.Metadata,
             context.CancellationToken);
@@ -188,11 +149,11 @@ public sealed class NodePackageArchiveTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task ReadAcceptsTheMemberCountBoundary()
+    public async Task ReadAcceptsManySmallMembers()
     {
         using var files = new ArchiveFiles();
         IEnumerable<ArchiveMember> members = PackageArchiveFixture.Required().Concat(
-            Enumerable.Range(0, NodePackageArchive.MemberCountLimit - 2)
+            Enumerable.Range(0, 2048)
                 .Select(index => new ArchiveMember("package/extra-" + index, [1])));
         PackageArchiveFixture.Write(files.Archive, members);
 

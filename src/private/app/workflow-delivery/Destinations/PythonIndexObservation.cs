@@ -56,7 +56,9 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
         try
         {
             var indexUri = new Uri($"https://{origin}/simple/{Package}/");
-            (int status, byte[] body) = await ReadAsync("index", indexUri, origin, MetadataLimit);
+            (int status, byte[] body) = await ReadAsync("index", indexUri, origin,
+                (stream, length, read) => RegistryBody.LimitedAsync(stream, length,
+                    MetadataLimit, read), []);
             if (status == 404) return All(ReleaseFileState.Absent);
             if (status != 200) return All(ReleaseFileState.Unknown);
             await File.WriteAllBytesAsync(input, body, lifetime.Token);
@@ -103,14 +105,15 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
                 }
                 var archive = new Uri(indexUri, metadata.GetProperty("url").GetString());
                 ValidateUri(archive, storage);
-                (status, body) = await ReadAsync(original.Output, archive, storage,
-                    ReleasePolicy.ReadbackOriginalLimit);
+                (status, RegistryOriginalBytes served) = await ReadAsync(original.Output,
+                    archive, storage, (stream, length, read) => RegistryBody.OriginalAsync(
+                        stream, length, original.Size, retain: false, read),
+                    new RegistryOriginalBytes(null, null, null));
                 if (status != 200) continue;
-                string digest = Convert.ToHexStringLower(SHA256.HashData(body));
                 files[i] = new(original.Output, original.Name, original.Version,
-                    digest == original.Sha256 && body.LongLength == original.Size
+                    served.Sha256 == original.Sha256 && served.Size == original.Size
                         ? ReleaseFileState.Exact : ReleaseFileState.Conflict,
-                    body.LongLength, digest);
+                    served.Size, served.Sha256);
             }
             lifetime.Token.ThrowIfCancellationRequested();
             return Result();
@@ -148,7 +151,8 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
                     ReleaseFileState.Absent or ReleaseFileState.Exact)
                     ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed))]), [.. reads]);
 
-        async Task<(int, byte[])> ReadAsync(string stage, Uri uri, string host, int limit)
+        async Task<(int, T)> ReadAsync<T>(string stage, Uri uri, string host,
+            Func<Stream, long?, CancellationToken, Task<T>> read, T unread)
         {
             ValidateUri(uri, host);
             using var readTimer = new CancellationTokenSource(TimeSpan.FromSeconds(30),
@@ -164,26 +168,15 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
                 HttpCompletionOption.ResponseHeadersRead, deadline.Token);
             int code = (int)response.StatusCode;
             reads.Add(new(stage, code, "Received public response headers."));
-            if (code != 200 && code != 404) return (code, []);
+            if (code != 200 && code != 404) return (code, unread);
             if (response.Content.Headers.ContentEncoding.Any(value =>
                 !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidDataException("Unsupported public response encoding.");
-            if (response.Content.Headers.ContentLength > limit)
-                throw new IOException("Public response exceeds its body limit.");
             using Stream stream = await response.Content.ReadAsStreamAsync(deadline.Token);
-            using var content = new MemoryStream();
-            byte[] buffer = new byte[8192];
-            int count;
-            while ((count = await stream.ReadAsync(buffer, deadline.Token)) != 0)
-            {
-                if (content.Length + count > limit)
-                    throw new IOException("Public response exceeds its body limit.");
-                await content.WriteAsync(buffer.AsMemory(0, count), deadline.Token);
-            }
-            if (response.Content.Headers.ContentLength is { } length && content.Length != length)
-                throw new IOException("Incomplete public response body.");
+            T content = await read(stream, response.Content.Headers.ContentLength,
+                deadline.Token);
             deadline.Token.ThrowIfCancellationRequested();
-            return (code, content.ToArray());
+            return (code, content);
         }
     }
 

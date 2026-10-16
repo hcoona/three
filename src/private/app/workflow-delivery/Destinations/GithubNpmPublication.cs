@@ -25,8 +25,7 @@ internal static partial class GithubNpmPublication
             throw new InvalidDataException("Unsupported live GitHub npm request.");
         ReleaseFile file = prepared.Files[0];
         string archive = Path.Combine(originals, file.Path);
-        (long size, string digest) = await NpmPackageOperations.OriginalAsync(archive, 25_000_000,
-            token);
+        (long size, string digest) = await NpmPackageOperations.OriginalAsync(archive, token);
         if (size != file.Size || digest != file.Sha256)
             throw new InvalidDataException("Publication original differs from preparation.");
         Dictionary<string, string?> environment = await GithubNpmRuntime.PrepareAsync(scratch,
@@ -49,7 +48,7 @@ internal static partial class GithubNpmPublication
             return new(prepared.Subject, before, [], before,
                 ["Current destination state does not permit native creation."]);
         // Recheck the actual original at the write boundary. The platform owns approval.
-        (size, digest) = await NpmPackageOperations.OriginalAsync(archive, 25_000_000, token);
+        (size, digest) = await NpmPackageOperations.OriginalAsync(archive, token);
         if (size != file.Size || digest != file.Sha256)
             throw new InvalidDataException("Publication original changed before upload.");
         NativeCommandResult actual = await execute(Command("npm",

@@ -91,11 +91,10 @@ internal static class RubySourceReader
                         !Path.IsPathFullyQualified(path) ||
                         // The directory itself fails the regular-file check below.
                         !OwnedPath.Within(Path.GetFullPath(path), download) ||
-                        size <= 0 || size > ReleasePolicy.ReadbackOriginalLimit ||
+                        size <= 0 ||
                         !File.Exists(path) ||
                         OwnedFile.Length(path) != size ||
-                        Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))) !=
-                            digest)
+                        Digest(path) != digest)
                         return Unknown("Native Ruby original or identity is inconsistent.");
                     return new(RubySourceState.Present,
                         new(path, "hcoona-release-smoke-ruby", version, "ruby", size, digest),
@@ -111,5 +110,11 @@ internal static class RubySourceReader
 
         RubySourceReadResult Unknown(string error) => new(RubySourceState.Unknown, null,
             command, [error]);
+    }
+
+    private static string Digest(string path)
+    {
+        using FileStream file = File.OpenRead(path);
+        return Convert.ToHexStringLower(SHA256.HashData(file));
     }
 }
