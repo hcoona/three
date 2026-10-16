@@ -45,7 +45,7 @@ internal static class ReleaseCli
             NpmjsObservationResult result;
             if (observe is null)
             {
-                using HttpClient client = NpmjsObservation.CreateClient();
+                using HttpClient client = RegistryHttpClient.Create();
                 result = new NpmjsObservation(client).ObserveAsync(prepared, CancellationToken.None)
                     .GetAwaiter().GetResult();
             }
@@ -74,7 +74,7 @@ internal static class ReleaseCli
             PreparedRelease prepared = Read(observePreparedPath,
                 TransferJson.Default.NpmPreparationResult).Prepared;
             VerifyOriginals(prepared, observeOriginals);
-            using HttpClient client = GithubNpmObservation.CreateClient();
+            using HttpClient client = RegistryHttpClient.Create();
             GithubNpmObservationResult result = new GithubNpmObservation(client).ObserveAsync(
                 prepared, Credential(), CancellationToken.None).GetAwaiter().GetResult();
             Write(result, TransferJson.Default.GithubNpmObservationResult);
@@ -88,7 +88,7 @@ internal static class ReleaseCli
             PreparedRelease prepared = Read(publishPreparedPath,
                 TransferJson.Default.NpmPreparationResult).Prepared;
             VerifyOriginals(prepared, publishOriginals);
-            using HttpClient client = GithubNpmObservation.CreateClient();
+            using HttpClient client = RegistryHttpClient.Create();
             var reader = new GithubNpmObservation(client);
             GithubNpmPublicationResult result = GithubNpmPublication.PublishAsync(prepared,
                 publishOriginals, publishScratch, publishToolchain, Credential(),

@@ -1,4 +1,3 @@
-using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using WorkflowDelivery.Release;
@@ -12,14 +11,6 @@ internal sealed record NpmjsObservationResult(ReleaseObservation Observation, Np
 // bytes are compared without a package witness or an application approval chain.
 internal sealed class NpmjsObservation(HttpClient client, TimeProvider? timeProvider = null)
 {
-    internal static HttpClient CreateClient() => new(new HttpClientHandler
-    {
-        AllowAutoRedirect = false,
-        UseCookies = false,
-        UseProxy = false,
-        UseDefaultCredentials = false,
-        AutomaticDecompression = DecompressionMethods.None,
-    }) { Timeout = Timeout.InfiniteTimeSpan };
 
     internal async Task<NpmjsObservationResult> ObserveAsync(PreparedRelease prepared,
         CancellationToken token)
@@ -84,57 +75,45 @@ internal sealed class NpmjsObservation(HttpClient client, TimeProvider? timeProv
                     ReleaseFileState.Absent ? ReleaseCheckStatus.Passed :
                         ReleaseCheckStatus.Failed)]), [.. reads]);
 
-        async Task<(int, byte[])> ReadAsync(string stage, Uri initial, int limit)
+        // The platform handler follows any redirect; an unfollowed 3xx is not success.
+        async Task<(int, byte[])> ReadAsync(string stage, Uri uri, int limit)
         {
-            Uri current = initial;
-            for (int redirects = 0; ; redirects++)
+            ValidateUri(uri);
+            using var requestTimer = new CancellationTokenSource(TimeSpan.FromSeconds(20),
+                timeProvider ?? TimeProvider.System);
+            using var requestDeadline = CancellationTokenSource.CreateLinkedTokenSource(
+                deadline.Token, requestTimer.Token);
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.Accept.ParseAdd(stage == "metadata"
+                ? "application/vnd.npm.install-v1+json, application/json"
+                : "application/octet-stream");
+            request.Headers.AcceptEncoding.ParseAdd("identity");
+            request.Headers.CacheControl = new() { NoCache = true };
+            using HttpResponseMessage response = await client.SendAsync(request,
+                HttpCompletionOption.ResponseHeadersRead, requestDeadline.Token);
+            int status = (int)response.StatusCode;
+            reads.Add(new(stage, uri.AbsoluteUri, status, "Received response headers."));
+            if (response.Content.Headers.ContentEncoding.Any(value =>
+                !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidDataException("Unsupported response encoding.");
+            long? length = response.Content.Headers.ContentLength;
+            if (length > limit) throw new IOException("Response exceeds its body limit.");
+            using Stream stream = await response.Content.ReadAsStreamAsync(
+                requestDeadline.Token);
+            using var body = new MemoryStream();
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = await stream.ReadAsync(buffer, requestDeadline.Token)) != 0)
             {
-                ValidateUri(current);
-                using var requestTimer = new CancellationTokenSource(TimeSpan.FromSeconds(20),
-                    timeProvider ?? TimeProvider.System);
-                using var requestDeadline = CancellationTokenSource.CreateLinkedTokenSource(
-                    deadline.Token, requestTimer.Token);
-                using var request = new HttpRequestMessage(HttpMethod.Get, current);
-                request.Headers.Accept.ParseAdd(stage == "metadata"
-                    ? "application/vnd.npm.install-v1+json, application/json"
-                    : "application/octet-stream");
-                request.Headers.AcceptEncoding.ParseAdd("identity");
-                request.Headers.CacheControl = new() { NoCache = true };
-                using HttpResponseMessage response = await client.SendAsync(request,
-                    HttpCompletionOption.ResponseHeadersRead, requestDeadline.Token);
-                ValidateUri(response.RequestMessage?.RequestUri ?? current);
-                int status = (int)response.StatusCode;
-                reads.Add(new(stage, current.AbsoluteUri, status, "Received response headers."));
-                if (response.Content.Headers.ContentEncoding.Any(value =>
-                    !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
-                    throw new InvalidDataException("Unsupported response encoding.");
-                if (status is >= 300 and < 400)
-                {
-                    if (redirects >= 5 || response.Headers.Location is not { } location)
-                        throw new InvalidDataException("Unsupported redirect response.");
-                    current = location.IsAbsoluteUri ? location : new Uri(current, location);
-                    ValidateUri(current);
-                    continue;
-                }
-                long? length = response.Content.Headers.ContentLength;
-                if (length > limit) throw new IOException("Response exceeds its body limit.");
-                using Stream stream = await response.Content.ReadAsStreamAsync(
-                    requestDeadline.Token);
-                using var body = new MemoryStream();
-                byte[] buffer = new byte[8192];
-                int count;
-                while ((count = await stream.ReadAsync(buffer, requestDeadline.Token)) != 0)
-                {
-                    if (body.Length + count > limit)
-                        throw new IOException("Response exceeds its body limit.");
-                    await body.WriteAsync(buffer.AsMemory(0, count), requestDeadline.Token);
-                }
-                if (length is not null && body.Length != length)
-                    throw new IOException("Incomplete response body.");
-                deadline.Token.ThrowIfCancellationRequested();
-                requestDeadline.Token.ThrowIfCancellationRequested();
-                return (status, body.ToArray());
+                if (body.Length + count > limit)
+                    throw new IOException("Response exceeds its body limit.");
+                await body.WriteAsync(buffer.AsMemory(0, count), requestDeadline.Token);
             }
+            if (length is not null && body.Length != length)
+                throw new IOException("Incomplete response body.");
+            deadline.Token.ThrowIfCancellationRequested();
+            requestDeadline.Token.ThrowIfCancellationRequested();
+            return (status, body.ToArray());
         }
     }
 

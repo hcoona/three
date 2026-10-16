@@ -1,4 +1,3 @@
-using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using Newtonsoft.Json;
@@ -11,8 +10,7 @@ using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
 
-internal sealed record GithubNuGetRead(string Stage, int? Status, string Detail,
-    string? StorageOrigin = null, string? LocationSha256 = null);
+internal sealed record GithubNuGetRead(string Stage, int? Status, string Detail);
 internal sealed record GithubNuGetResources(string PackageBaseAddress, string PackagePublish);
 internal sealed record GithubNuGetObservationResult(ReleaseObservation Observation,
     GithubNuGetResources? Resources, GithubNuGetRead[] Reads);
@@ -27,12 +25,6 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
         + "hcoona.releasesmoke.githubpackages";
     private const int MetadataLimit = 2 * 1024 * 1024;
     private const int ArchiveLimit = 25 * 1024 * 1024;
-
-    internal static HttpClient CreateClient() => new(new HttpClientHandler
-    {
-        AllowAutoRedirect = false, UseCookies = false, UseProxy = false,
-        UseDefaultCredentials = false, AutomaticDecompression = DecompressionMethods.None,
-    }) { Timeout = Timeout.InfiniteTimeSpan };
 
     internal async Task<GithubNuGetObservationResult> ObserveAsync(PreparedRelease prepared,
         string credential, CancellationToken token)
@@ -142,72 +134,49 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
                         ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed)]), resources,
                 [.. reads]);
 
-        async Task<(int, byte[])> ReadAsync(string stage, Uri initial, bool archive = false)
+        // The platform handler follows the archive's storage redirect and clears
+        // Authorization on each hop; the archive bytes are then compared below.
+        async Task<(int, byte[])> ReadAsync(string stage, Uri uri, bool archive = false)
         {
-            ValidateOrigin(initial, stage.StartsWith("github", StringComparison.Ordinal) ||
+            ValidateOrigin(uri, stage.StartsWith("github", StringComparison.Ordinal) ||
                 stage == "package-control" ? "api.github.com" : "nuget.pkg.github.com");
+            if (++sends > 80) throw new IOException("Observation read allowance exhausted.");
             using var requestTimer = new CancellationTokenSource(TimeSpan.FromSeconds(30),
                 clock ?? TimeProvider.System);
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token,
                 requestTimer.Token);
-            Uri current = initial;
-            string? storageOrigin = null;
-            string? locationDigest = null;
-            for (int hop = 0; ; hop++)
+            bool api = uri.Host == "api.github.com";
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.Authorization = api ? new("Bearer", credential)
+                : new("Basic", Convert.ToBase64String(
+                    Encoding.UTF8.GetBytes("hcoona:" + credential)));
+            request.Headers.UserAgent.ParseAdd("WorkflowDelivery");
+            request.Headers.Accept.ParseAdd(archive ? "application/octet-stream"
+                : api ? "application/vnd.github+json" : "application/json");
+            request.Headers.AcceptEncoding.ParseAdd("identity");
+            if (api) request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
+            using HttpResponseMessage response = await client.SendAsync(request,
+                HttpCompletionOption.ResponseHeadersRead, deadline.Token);
+            int status = (int)response.StatusCode;
+            reads.Add(new(stage, status, "Received response headers."));
+            if (response.Content.Headers.ContentEncoding.Any(value =>
+                !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidDataException("Unsupported response encoding.");
+            int limit = archive ? ArchiveLimit : MetadataLimit;
+            long? length = response.Content.Headers.ContentLength;
+            if (length > limit) throw new IOException("Response body exceeds its limit.");
+            using Stream content = await response.Content.ReadAsStreamAsync(deadline.Token);
+            using var bytes = new MemoryStream();
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = await content.ReadAsync(buffer, deadline.Token)) != 0)
             {
-                if (++sends > 80) throw new IOException("Observation read allowance exhausted.");
-                using var request = new HttpRequestMessage(HttpMethod.Get, current);
-                if (hop == 0) request.Headers.Authorization = initial.Host == "api.github.com"
-                    ? new("Bearer", credential) : new("Basic", Convert.ToBase64String(
-                        Encoding.UTF8.GetBytes("hcoona:" + credential)));
-                request.Headers.UserAgent.ParseAdd("WorkflowDelivery");
-                request.Headers.Accept.ParseAdd(archive ? "application/octet-stream"
-                    : initial.Host == "api.github.com" ? "application/vnd.github+json"
-                    : "application/json");
-                request.Headers.AcceptEncoding.ParseAdd("identity");
-                if (initial.Host == "api.github.com" && hop == 0)
-                    request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
-                using HttpResponseMessage response = await client.SendAsync(request,
-                    HttpCompletionOption.ResponseHeadersRead, deadline.Token);
-                if (response.RequestMessage?.RequestUri is { } actual && actual != current)
-                    throw new InvalidDataException("Unexpected automatic redirect.");
-                int status = (int)response.StatusCode;
-                reads.Add(new(stage, status, "Received response headers.", storageOrigin,
-                    locationDigest));
-                if (response.Content.Headers.ContentEncoding.Any(value =>
-                    !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
-                    throw new InvalidDataException("Unsupported response encoding.");
-                string[] locations = response.Headers.NonValidated.TryGetValues("Location",
-                    out var values) ? values.ToArray() : [];
-                if (status is >= 300 and < 400)
-                {
-                    if (!archive || hop != 0 || status is not (301 or 302) ||
-                        locations is not [string location] || string.IsNullOrWhiteSpace(location))
-                        throw new InvalidDataException("Unsupported redirect.");
-                    current = Storage(location, credential);
-                    storageOrigin = current.GetLeftPart(UriPartial.Authority);
-                    locationDigest = Convert.ToHexStringLower(SHA256.HashData(
-                        Encoding.UTF8.GetBytes(location)));
-                    continue;
-                }
-                if (locations.Length != 0)
-                    throw new InvalidDataException("Unexpected Location response.");
-                int limit = archive ? ArchiveLimit : MetadataLimit;
-                long? length = response.Content.Headers.ContentLength;
-                if (length > limit) throw new IOException("Response body exceeds its limit.");
-                using Stream content = await response.Content.ReadAsStreamAsync(deadline.Token);
-                using var bytes = new MemoryStream();
-                byte[] buffer = new byte[8192];
-                int count;
-                while ((count = await content.ReadAsync(buffer, deadline.Token)) != 0)
-                {
-                    if (bytes.Length + count > limit) throw new IOException();
-                    await bytes.WriteAsync(buffer.AsMemory(0, count), deadline.Token);
-                }
-                if (length is not null && length != bytes.Length) throw new IOException();
-                deadline.Token.ThrowIfCancellationRequested();
-                return (status, bytes.ToArray());
+                if (bytes.Length + count > limit) throw new IOException();
+                await bytes.WriteAsync(buffer.AsMemory(0, count), deadline.Token);
             }
+            if (length is not null && length != bytes.Length) throw new IOException();
+            deadline.Token.ThrowIfCancellationRequested();
+            return (status, bytes.ToArray());
         }
     }
 
@@ -232,32 +201,6 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
         if (!uri.IsAbsoluteUri || uri.Scheme != "https" || uri.Host != host ||
             uri.Port != 443 || uri.UserInfo.Length != 0 || uri.Fragment.Length != 0)
             throw new InvalidDataException("Unsupported native origin.");
-    }
-
-    private static Uri Storage(string raw, string credential)
-    {
-        string decoded = Uri.UnescapeDataString(raw);
-        string basic = Convert.ToBase64String(Encoding.UTF8.GetBytes("hcoona:" + credential));
-        if (new[] { credential, basic }.Any(secret =>
-                raw.Contains(secret, StringComparison.Ordinal) ||
-                decoded.Contains(secret, StringComparison.Ordinal)))
-            throw new InvalidDataException("Archive storage location reflects a credential.");
-        if (!raw.StartsWith("https://", StringComparison.Ordinal) ||
-            raw.Any(c => c is < '!' or > '~' or '\\' or '#'))
-            throw new InvalidDataException("Unsupported archive storage location.");
-        string authority = raw[8..].Split('/', '?')[0].ToLowerInvariant();
-        string[] labels = authority.Split('.');
-        if (authority.Length is 0 or > 253 || authority == "api.github.com" ||
-            labels.Any(label => label.Length is 0 or > 63 ||
-                !char.IsAsciiLetterOrDigit(label[0]) ||
-                !char.IsAsciiLetterOrDigit(label[^1]) ||
-                label.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-')) ||
-            labels.All(label => label.All(char.IsAsciiDigit) ||
-                (label.StartsWith("0x", StringComparison.Ordinal) && label.Length > 2 &&
-                    label[2..].All(char.IsAsciiHexDigit))))
-            throw new InvalidDataException("Unsupported archive storage DNS authority.");
-        return new(raw, new UriCreationOptions
-            { DangerousDisablePathAndQueryCanonicalization = true });
     }
 
     private static JToken Parse(byte[] bytes) => JToken.Parse(new UTF8Encoding(false, true)

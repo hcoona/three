@@ -913,12 +913,14 @@ identity, endpoint, response and partial-set semantics. Do not encode npm tags a
 universal identity or Python's two-file behavior as a universal transaction. A
 supported interface does not require each method to have its own class or record.
 
-Each concrete integration specifies native non-overwrite reliance, required files,
-metadata/readback, credential scope, safe redirects, visibility/read bounds and
-partial-set behavior. Use operation deadlines and native capability lifetimes;
-do not reinstate a dynamic Governance expiry. Different destinations may need
-different read budgets. Necessary guarantees cannot be supplied by application
-locks or extra probe records.
+Each concrete integration specifies native non-overwrite reliance, required
+files, metadata/readback, credential scope, redirect handling, visibility/read
+bounds and partial-set behavior. Rely on the native client's redirect contract;
+the application does not reimplement redirect following or storage-host
+admission. Use operation deadlines and native capability lifetimes; do not
+reinstate a dynamic Governance expiry. Different destinations may need different
+read budgets. Necessary guarantees cannot be supplied by application locks or
+extra probe records.
 
 ### Decision Table
 
