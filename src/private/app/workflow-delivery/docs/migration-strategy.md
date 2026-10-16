@@ -965,15 +965,21 @@ publisher retry boundary without supplying new runtime evidence.
 
 The npm, NuGet and Python registry observations share one standard HTTP client
 with no cookies, proxies, default credentials or automatic decompression. It
-follows at most five redirects under the platform's documented contract, which
-clears the `Authorization` header on every automatic redirect and does not
-follow an HTTPS-to-HTTP redirect. The adapter validates the HTTPS origin of each
-URL it requests and attaches credentials only to the registry or API origin it
-selects. It does not validate redirect targets or implement its own redirect
-hop. An unfollowed redirect, including one beyond the limit, is a non-success
-response and cannot establish exact or absent state. Exact coordinate metadata
-and original size/SHA-256 equality, not the serving host, establish the
-observed state. Each body-inclusive read deadline covers its redirects.
+follows at most five redirects under the platform's
+[documented redirect contract](https://learn.microsoft.com/dotnet/api/system.net.http.httpclienthandler.allowautoredirect?view=net-10.0#remarks)
+([runtime source](https://github.com/dotnet/runtime/blob/v10.0.12/src/libraries/System.Net.Http/src/System/Net/Http/SocketsHttpHandler/RedirectHandler.cs)),
+which clears the \`Authorization\` header on every automatic redirect, including
+a same-host redirect, and does not follow an HTTPS-to-HTTP redirect. The
+adapter validates the HTTPS origin of each URL it requests and attaches
+credentials only to the registry or API origin it selects. It does not
+validate redirect targets or implement its own redirect hop. A redirect target
+that requires the dropped credential, such as an authenticated path on the
+same registry host, therefore fails closed as an unknown read. An unfollowed
+redirect, including one beyond the limit, is a non-success response and cannot
+establish exact or absent state. Exact and conflicting original state rests on
+exact coordinate metadata and original size/SHA-256 equality, not on the
+serving host. Absence and metadata rely on the selected HTTPS origin and the
+redirects it issues. Each body-inclusive read deadline covers its redirects.
 
 Ordinary workflows request 45-day retention for required prepared CLI,
 qualified packages and request/results, matching the existing workflow setting.
