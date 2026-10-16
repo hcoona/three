@@ -98,7 +98,14 @@ mise lock --platform linux-x64,windows-x64
 mise -C src/public/lib/hexo-renderer-asciidoc lock --platform linux-x64,windows-x64
 ```
 
-MISE 2026.7.17 and later provide the built-in `core:dotnet` backend used by this
+Run these refresh commands on Linux; WSL is sufficient. On Windows, mise
+currently writes no Ruby platform entries
+([jdx/mise#14517](https://github.com/jdx/mise/issues/14517)), so a Windows
+refresh drops Ruby from the lockfile. Locked installs and lockfile validation
+work on both platforms.
+
+The repository requires MISE 2026.10.11 or later through `min_version` in
+`mise.toml`. MISE provides the built-in `core:dotnet` backend used by this
 repository. Do not install `version-fox/vfox-dotnet` manually. If that legacy
 plugin is already installed, remove it before installing the repository tools:
 
