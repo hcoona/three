@@ -18,6 +18,15 @@
     <EmbeddedResource Include="Repository/fixtures/*.json" />
     <EmbeddedResource Include="fixtures/products/hcoona-release-smoke-npm/version.json"
                       LogicalName="NpmFixtureVersionConfiguration" />
+    <!-- Caller tests execute these workflow step bodies; embedding binds them as test inputs. -->
+    <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-buddy-smoke.yml"
+                      LogicalName="workflow-delivery-v3-buddy-smoke.yml" />
+    <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-python-smoke.yml"
+                      LogicalName="workflow-delivery-v3-python-smoke.yml" />
+    <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-ruby-smoke.yml"
+                      LogicalName="workflow-delivery-v3-ruby-smoke.yml" />
+    <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-nuget-live-attempt.yml"
+                      LogicalName="workflow-delivery-v3-nuget-live-attempt.yml" />
   </ItemGroup>
   <Target Name="ReferenceOfficialNbgv" BeforeTargets="ResolveAssemblyReferences">
     <Error Condition="'$(NerdbankGitVersioningTasksPath)' == ''" Text="The official NBGV task path is unavailable." />
