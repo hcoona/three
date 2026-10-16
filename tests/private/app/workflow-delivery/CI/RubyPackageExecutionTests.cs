@@ -48,12 +48,13 @@ public sealed class RubyPackageExecutionTests(TestContext context)
 
     private static string Lane(int lane) => "src/lanes/" + lane + "/hcoona-release-smoke-ruby";
 
-    private static (CiPlan Plan, RubyPackageRequest Request) SharedLane()
+    private static (CiPlan Plan, RubyPackageRequest Request, string Directory) SharedLane()
     {
         int lane = Interlocked.Increment(ref nextLane);
         Assert.IsLessThan(LaneCount, lane, "Raise LaneCount for the added shared rows.");
-        return Request(shared!, sharedCandidate, Lane(lane),
+        var (plan, request) = Request(shared!, sharedCandidate, Lane(lane),
             System.IO.Directory.CreateTempSubdirectory("workflow-ruby-gem-").FullName);
+        return (plan, request, Lane(lane));
     }
 
     private static NativeCommandResult Answer(object value) =>
@@ -122,7 +123,7 @@ public sealed class RubyPackageExecutionTests(TestContext context)
                 scratch,
                 new(
                     Path.Combine(repo.Directory, "ruby"),
-                    Path.Combine(repo.Directory, directory, "facts.rb"),
+                    Path.Combine(repo.Directory, "facts.rb"),
                     scratch,
                     new Dictionary<string, string?> { ["PATH"] = "native tools" },
                     30
@@ -133,23 +134,18 @@ public sealed class RubyPackageExecutionTests(TestContext context)
         );
     }
 
-    // Each request's facts helper sits beside its product directory's lane marker.
-    private static string ProductDirectory(RubyPackageRequest request) =>
-        Path.GetRelativePath(request.Checkout, Path.GetDirectoryName(request.Facts.Helper)!)
-            .Replace('\\', '/');
-
     private static async Task<NativeCommandResult> NativeAsync(
         RubyPackageRequest request,
         NativeCommand command,
         string defect,
-        CancellationToken token
+        CancellationToken token,
+        string directory = DirectoryName
     )
     {
         Assert.IsFalse(command.InheritEnvironment);
         if (command.Executable == request.Nbgv)
         {
-            Assert.AreEqual(Path.Combine(request.Checkout, ProductDirectory(request)),
-                command.Directory);
+            Assert.AreEqual(Path.Combine(request.Checkout, directory), command.Directory);
             return defect == "source-failed"
                 ? Answer(new { }) with
                 {
@@ -199,7 +195,7 @@ public sealed class RubyPackageExecutionTests(TestContext context)
                 Path.GetFullPath(
                     Path.Combine(
                         request.Checkout,
-                        ProductDirectory(request),
+                        directory,
                         "hcoona-release-smoke-ruby.gemspec"
                     )
                 ),
@@ -284,12 +280,12 @@ public sealed class RubyPackageExecutionTests(TestContext context)
     public async Task SharedLaneExecutesCompleteChecks()
     {
         // Defect-free control: a shared lane satisfies every package obligation.
-        var (plan, request) = SharedLane();
+        var (plan, request, directory) = SharedLane();
         using var scratch = new Scratch(request.Scratch);
         RubyPackageRun result = await RubyPackageExecution.RunAsync(
             plan,
             request,
-            (command, token) => NativeAsync(request, command, "", token),
+            (command, token) => NativeAsync(request, command, "", token, directory),
             context.CancellationToken
         );
         Assert.IsTrue(ResultCollector.Collect(plan, result.Results).Satisfied);
@@ -311,12 +307,12 @@ public sealed class RubyPackageExecutionTests(TestContext context)
     [DataRow("consumer-failed")]
     public async Task FailedBuildContentsOrConsumerCannotPass(string defect)
     {
-        var (plan, request) = SharedLane();
+        var (plan, request, directory) = SharedLane();
         using var scratch = new Scratch(request.Scratch);
         RubyPackageRun result = await RubyPackageExecution.RunAsync(
             plan,
             request,
-            (command, token) => NativeAsync(request, command, defect, token),
+            (command, token) => NativeAsync(request, command, defect, token, directory),
             context.CancellationToken
         );
         Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);

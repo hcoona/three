@@ -107,9 +107,11 @@ public sealed class NativeCommandTests(TestContext context)
         Assert.IsFalse(result.Succeeded);
     }
 
-    // Both streams share one strict bounded reader; each stream and each defect runs once.
+    // Each stream builds its own strict decoder, so both reject invalid UTF-8. The bound is
+    // enforced by one shared capture, so a single limit row covers both streams.
     [TestMethod]
     [DataRow("stdout", "utf8")]
+    [DataRow("stderr", "utf8")]
     [DataRow("stderr", "limit")]
     public async Task ExecuteRejectsInvalidUtf8OrBoundedOutput(string stream, string defect)
     {
