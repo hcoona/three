@@ -140,14 +140,14 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                       Version="3.10.94" PrivateAssets="all" /></ItemGroup></Project>
                     """, StringComparison.Ordinal);
             }
+            // A genuine assertion failure in the net8.0 inner variant only.
             if (failNet8Test)
-                files["Directory.Build.targets"] = files["Directory.Build.targets"].Replace(
-                    "</Project>", """
-                      <Target Name="FailNet8NativeTest" BeforeTargets="InvokeTestingPlatform;VSTest"
-                        Condition="'$(TargetFramework)' == 'net8.0'">
-                        <Error Text="Intentional native net8.0 test failure" />
-                      </Target>
-                    </Project>
+                files["tests/NativeTests.cs"] = files["tests/NativeTests.cs"].Replace(
+                    "Assert.AreEqual(42, DependencyValue.Answer);", """
+                    Assert.AreEqual(42, DependencyValue.Answer);
+                    #if !NET10_0_OR_GREATER
+                            Assert.Fail("Intentional native net8.0 test failure");
+                    #endif
                     """, StringComparison.Ordinal);
             foreach ((string path, string content) in files)
                 await repo.SetAsync(path, content);

@@ -141,15 +141,17 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow("MTP")]
+    [DataRow("VSTest")]
     [Timeout(600000, CooperativeCancellation = true)]
-    public async Task NativeTestBatchKeepsEachEntryResultWhenAnotherEntryFails()
+    public async Task NativeTestBatchKeepsEachEntryResultWhenAnotherEntryFails(string capability)
     {
-        using var fixture = await DotNetNativeFixture.CreateAsync("MTP",
+        using var fixture = await DotNetNativeFixture.CreateAsync(capability,
             context.CancellationToken, failNet8Test: true);
-        CiPlan passing = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate, "MTP",
-            DotNetNativeFixture.Globals(), DotNetNativeFixture.Project);
-        CiPlan failing = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate, "MTP",
-            DotNetNativeFixture.Globals("net8.0", false), DotNetNativeFixture.Project);
+        CiPlan passing = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate,
+            capability, DotNetNativeFixture.Globals(), DotNetNativeFixture.Project);
+        CiPlan failing = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate,
+            capability, DotNetNativeFixture.Globals("net8.0", false), DotNetNativeFixture.Project);
         CiPlan plan = failing with { Checks = [.. failing.Checks, .. passing.Checks] };
         DotNetRunResult result = await DotNetExecution.RunAsync(plan,
             new(fixture.Root, fixture.RunScratch, NativeCommandDeadlineSeconds),
@@ -166,11 +168,20 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         Assert.IsNotNull(result.TestBatch);
         Assert.IsTrue(result.TestBatch.Result.Succeeded, Diagnostics(result));
         Assert.HasCount(2, result.TestBatch.Keys);
-        Assert.Contains("Intentional native net8.0 test failure",
-            Assert.ContainsSingle(result.Failures).Error);
-        Assert.AreEqual(failed, result.Failures[0].Key);
-        Assert.DoesNotContain("Intentional native net8.0 test failure",
-            result.Tests.Single(test => test.Key == passed).Log);
+        Assert.AreEqual(failed, Assert.ContainsSingle(result.Failures).Key);
+        Assert.AreEqual("Failure", result.Tests.Single(test => test.Key == failed).Test);
+        Assert.AreEqual("Success", result.Tests.Single(test => test.Key == passed).Test);
+        // MTP reports through MSBuild diagnostics attributed to its own submission; the
+        // VSTest console report stays on the batch command's captured stdout.
+        if (capability == "MTP")
+        {
+            Assert.Contains("Intentional native net8.0 test failure", result.Failures[0].Error);
+            Assert.DoesNotContain("Intentional native net8.0 test failure",
+                result.Tests.Single(test => test.Key == passed).Log);
+        }
+        else
+            Assert.Contains("Intentional native net8.0 test failure",
+                result.TestBatch.Result.Stdout);
         Assert.HasCount(3, result.Outputs);
         Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
     }

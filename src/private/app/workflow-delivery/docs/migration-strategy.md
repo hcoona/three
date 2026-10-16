@@ -562,10 +562,13 @@ one SDK-hosted `BuildManager` session as separate native submissions with their
 original globals and `Build`/`GetTargetPath`/test targets. MSBuild owns node
 scheduling and concurrency across them. Each completed submission records its own
 overall/target result codes, outputs and submission-attributed diagnostics, bound
-to the original selected check; one failed test cannot mask another. Only a
-successful wrapper can promote these results. After cancellation or timeout,
-completed entries are retained and unfinished entries take that termination.
-Retain one test batch command observation. Evaluated
+to the original selected check; one failed test cannot mask another. A wrapper
+that failed for another reason cannot promote these results. After cancellation
+or timeout, completed entries are retained and unfinished entries take that
+termination; the one operation deadline covers the whole test session. Retain
+one test batch command observation; as with `dotnet test`, worker nodes keep
+task-process console output, including VSTest's own report, on its captured
+output. Evaluated
 `IsTestingPlatformApplication` selects MTP; otherwise `IsTestProject` selects
 VSTest using native inner `GetTargetPath` output. Do not infer framework paths or
 capability from package names. Every selected supported variant contributes its
