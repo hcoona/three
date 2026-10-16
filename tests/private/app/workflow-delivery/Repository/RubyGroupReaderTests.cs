@@ -9,10 +9,12 @@ namespace WorkflowDelivery.Tests.Repository;
 public sealed class RubyGroupReaderTests(TestContext context)
 {
     private const string Spec = "src/input/spec/one_spec.rb";
+    private const string Other = "src/other/code.cs";
+    private const string Unresolved = "unresolved.txt";
 
-    // Rows that vary only collection answers or the changed caller input read class-owned
-    // committed endpoints. Each caller input has its own candidate worktree over one shared
-    // basis, and every row writes its scope and native requests to private scratch.
+    // Every row varies only collection answers, the request or the changed input and reads
+    // class-owned committed endpoints. Each changed input has its own candidate worktree over
+    // one shared basis, and every row writes its scope and native requests to private scratch.
     private static GitFixture? shared;
     private static Fixture.Pair? sharedSpec;
     private static readonly Dictionary<string, Fixture.Pair> SharedCallers =
@@ -25,7 +27,7 @@ public sealed class RubyGroupReaderTests(TestContext context)
         try
         {
             (sharedSpec, Fixture.Pair[] callers) = await Fixture.CommitSharedAsync(shared,
-                RubyRepositoryReader.CallerSources);
+                [.. RubyRepositoryReader.CallerSources, Other, Unresolved]);
             foreach (Fixture.Pair pair in callers) SharedCallers.Add(pair.Changed, pair);
         }
         catch { shared.Dispose(); throw; }
@@ -44,19 +46,25 @@ public sealed class RubyGroupReaderTests(TestContext context)
         PlannedCheck check = Assert.ContainsSingle(result.Plan.Checks);
         Assert.Contains(new SelectionReason(Spec, result.Plan.Comparison, "ruby:src/input"),
             check.Reasons);
-        CollectionAssert.AreEqual(new[] { fixture.Request.Basis.Checkout.Reference,
-            fixture.Request.Candidate.Checkout.Reference }, fixture.Collected);
+        AssertCandidateContext(fixture, result, check);
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task ExactPairedSelectionRetainsCandidateContext(bool full)
+    public async Task FullModeRetainsCandidateContext()
     {
-        using var fixture = await Fixture.CreateAsync("src/input/spec/one_spec.rb", full,
-            context.CancellationToken);
+        // Full mode reads the candidate commit and root for both endpoints.
+        using var fixture = await Fixture.SharedAsync(sharedSpec! with
+        {
+            Basis = sharedSpec!.Candidate,
+            BasisRoot = sharedSpec.CandidateRoot,
+        }, false, context.CancellationToken, full: true);
         RubyGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
-        PlannedCheck check = Assert.ContainsSingle(result.Plan.Checks);
+        AssertCandidateContext(fixture, result, Assert.ContainsSingle(result.Plan.Checks));
+    }
+
+    private static void AssertCandidateContext(Fixture fixture, RubyGroupReadback result,
+        PlannedCheck check)
+    {
         Assert.AreEqual(RubyFactsAssembler.Scope, result.Plan.Scope);
         Assert.AreEqual(fixture.Request.Candidate.Checkout.Reference, result.Plan.Candidate);
         Assert.AreEqual(fixture.Request.Basis.Checkout.Reference, result.Plan.Comparison);
@@ -67,9 +75,6 @@ public sealed class RubyGroupReaderTests(TestContext context)
             fixture.Request.Candidate.Checkout.Reference }, fixture.Collected);
         Assert.AreEqual("asciidoctor-latexmath", Assert.ContainsSingle(result.Candidate.Sources)
             .Gem.Name);
-        if (!full)
-            Assert.Contains(new SelectionReason("src/input/spec/one_spec.rb",
-                result.Plan.Comparison, "ruby:src/input"), check.Reasons);
     }
 
     [TestMethod]
@@ -77,7 +82,7 @@ public sealed class RubyGroupReaderTests(TestContext context)
     [DataRow(true)]
     public async Task OtherResponsibilityCannotSuppressRubyConsumption(bool consumed)
     {
-        using var fixture = await Fixture.CreateAsync("src/other/code.cs", false,
+        using var fixture = await Fixture.SharedAsync(SharedCallers[Other], false,
             context.CancellationToken, "dotnet");
         fixture.CrossInput = consumed;
         RubyGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
@@ -96,10 +101,22 @@ public sealed class RubyGroupReaderTests(TestContext context)
     [DataRow("ruby")]
     public async Task UnknownOrLegacyRubyHeuristicCannotBecomeNoWork(string? owner)
     {
-        using var fixture = await Fixture.CreateAsync("unresolved.txt", false,
+        using var fixture = await Fixture.SharedAsync(SharedCallers[Unresolved], false,
             context.CancellationToken, owner);
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
+        Assert.AreEqual("Unresolved Ruby input: " + Unresolved, error.Message);
+    }
+
+    [TestMethod]
+    public async Task SharedUnresolvedPairQualifiesWithKnownOtherResponsibility()
+    {
+        // Defect-free control: the shared unresolved-path pair itself reads successfully.
+        using var fixture = await Fixture.SharedAsync(SharedCallers[Unresolved], false,
+            context.CancellationToken, "dotnet");
+        RubyGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
+        Assert.IsEmpty(result.Plan.Checks);
+        Assert.HasCount(2, fixture.Collected);
     }
 
     [TestMethod]
@@ -130,7 +147,7 @@ public sealed class RubyGroupReaderTests(TestContext context)
     [TestMethod]
     public async Task BadScopeStopsBeforeCollection()
     {
-        using var fixture = await Fixture.CreateAsync("src/input/spec/one_spec.rb", false,
+        using var fixture = await Fixture.SharedAsync(sharedSpec!, false,
             context.CancellationToken);
         var scope = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(
             fixture.Request.ScopePath, context.CancellationToken))!;
@@ -145,7 +162,7 @@ public sealed class RubyGroupReaderTests(TestContext context)
     [TestMethod]
     public async Task DifferentControlRuntimeStopsBeforeCollection()
     {
-        using var fixture = await Fixture.CreateAsync("src/input/spec/one_spec.rb", false,
+        using var fixture = await Fixture.SharedAsync(sharedSpec!, false,
             context.CancellationToken);
         RubyGroupEndpoint candidate = fixture.Request.Candidate;
         fixture.Request = fixture.Request with
@@ -177,7 +194,7 @@ public sealed class RubyGroupReaderTests(TestContext context)
     [TestMethod]
     public async Task CancelledCollectionCannotReturnPlan()
     {
-        using var fixture = await Fixture.CreateAsync("src/input/spec/one_spec.rb", false,
+        using var fixture = await Fixture.SharedAsync(sharedSpec!, false,
             context.CancellationToken);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
@@ -188,9 +205,8 @@ public sealed class RubyGroupReaderTests(TestContext context)
             Assert.ContainsSingle(fixture.Collected));
     }
 
-    private sealed class Fixture(GitFixture? repository, string state) : IDisposable
+    private sealed class Fixture(string state) : IDisposable
     {
-        private readonly GitFixture? repo = repository;
         internal RubyGroupRequest Request { get; set; } = null!;
         internal bool CrossInput { get; set; }
         internal bool ActualCollection { get; set; }
@@ -243,40 +259,14 @@ public sealed class RubyGroupReaderTests(TestContext context)
 
         // Reads class-owned endpoints; the row owns only its scope and native scratch.
         internal static async Task<Fixture> SharedAsync(Pair pair, bool actualCollection,
-            CancellationToken token, string? owner = null)
+            CancellationToken token, string? owner = null, bool full = false)
         {
-            var fixture = new Fixture(null, Directory.CreateTempSubdirectory(
+            var fixture = new Fixture(Directory.CreateTempSubdirectory(
                 "workflow-ruby-group-").FullName) { ActualCollection = actualCollection };
             try
             {
-                await fixture.RequestAsync(pair.Changed, false, owner, pair.Basis,
+                await fixture.RequestAsync(pair.Changed, full, owner, pair.Basis,
                     pair.BasisRoot, pair.Candidate, pair.CandidateRoot, token);
-                return fixture;
-            }
-            catch { fixture.Dispose(); throw; }
-        }
-
-        internal static async Task<Fixture> CreateAsync(string changed, bool full,
-            CancellationToken token, string? owner = null, bool actualCollection = false)
-        {
-            GitFixture repo = await GitFixture.CreateAsync(token);
-            var fixture = new Fixture(repo, Directory.CreateDirectory(Path.Combine(
-                Path.GetDirectoryName(repo.Directory)!, "state")).FullName);
-            try
-            {
-                fixture.ActualCollection = actualCollection;
-                await StageAsync(repo, [changed], actualCollection);
-                string before = await repo.CommitAsync();
-                await repo.GitAsync("reset", "--hard", before);
-                string parent = Path.GetDirectoryName(repo.Directory)!;
-                string beforeRoot = Path.Combine(parent, "basis");
-                await repo.GitAsync("worktree", "add", "--detach", beforeRoot, before);
-                await repo.SetAsync(changed, "updated");
-                string after = await repo.CommitAsync(before);
-                await repo.GitAsync("reset", "--hard", after);
-                if (full) { before = after; beforeRoot = repo.Directory; }
-                await fixture.RequestAsync(changed, full, owner, before, beforeRoot, after,
-                    repo.Directory, token);
                 return fixture;
             }
             catch { fixture.Dispose(); throw; }
@@ -378,10 +368,6 @@ public sealed class RubyGroupReaderTests(TestContext context)
                 return Task.FromResult(new RubyRevisionInputs(facts, [source], [], []));
             }, token);
 
-        public void Dispose()
-        {
-            if (repo is null) Directory.Delete(state, recursive: true);
-            else repo.Dispose();
-        }
+        public void Dispose() => Directory.Delete(state, recursive: true);
     }
 }

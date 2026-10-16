@@ -6,12 +6,33 @@ using WorkflowDelivery.CI;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Tests.Repository;
+using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
 namespace WorkflowDelivery.Tests.CI;
 
 [TestClass]
 public sealed class NodeExecutionTests(TestContext context)
 {
+    // Rows that only vary native answers, the request or scratch read one class-owned
+    // committed checkout. Rows that edit, tag or fetch into the checkout keep their own.
+    private static GitFixture? shared;
+    private static string? sharedCandidate;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            sharedCandidate = await NodeExecutionFixture.CommitAsync(repo);
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
     [TestMethod]
     [DataRow("check", "Incomplete or conflicting Node package checks")]
     [DataRow("runner", "Unsupported Node execution quality/runner/variant")]
@@ -137,7 +158,8 @@ public sealed class NodeExecutionTests(TestContext context)
     public async Task RunSelectedRuntimeRetainsExactKeysAndReadback(string runtime,
         string nodeVersion, int checkCount, int packageCount)
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        // Defect-free control for the shared checkout.
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         fixture.Runtime = runtime;
         fixture.NodeVersion = nodeVersion;
 
@@ -229,7 +251,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [TestMethod]
     public async Task RunRejectsRuntimeBeforeProductWork()
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         fixture.Override = command => command.Executable == "node" &&
             command.Arguments.Contains("--version")
             ? RuntimeAnswer("v24.22.0", "Exited") : null;
@@ -338,7 +360,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [DataRow(true)]
     public async Task RunRejectsCheckoutFilesystemRootBeforeNativeWork(bool empty)
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         string root = Path.GetPathRoot(fixture.Request.Checkout)!;
         Assert.IsTrue(Path.IsPathFullyQualified(root));
         Assert.IsTrue(Directory.Exists(root));
@@ -362,7 +384,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [DataRow("all")]
     public async Task RunRejectsAdvisorySupportedQualityBeforeProductCommands(string operation)
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         CiPlan advisory = fixture.Plan with
         {
             Checks = fixture.Plan.Checks.Select(item => operation == "all" ||
@@ -409,7 +431,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [TestMethod]
     public async Task RunRetainsEveryMultiBuildCheckAndOriginalOutput()
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken,
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!,
             "first", "second");
         CiPlan plan = fixture.Plan with { Checks = fixture.Plan.Checks.Reverse().ToArray() };
 
@@ -457,7 +479,7 @@ public sealed class NodeExecutionTests(TestContext context)
     public async Task RunFailedBuildStillExecutesIndependentSourceTest(string runtime,
         string nodeVersion)
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         fixture.Runtime = runtime;
         fixture.NodeVersion = nodeVersion;
         fixture.Override = command => command.Arguments[^1] == "build"
@@ -480,7 +502,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [TestMethod]
     public async Task RunFailedPackWithLeftoverSkipsOnlyItsArtifactChecks()
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken,
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!,
             "first", "second");
         fixture.Override = command =>
         {
@@ -512,7 +534,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [DataRow("empty")]
     public async Task RunRejectsMissingOrNonregularPackOutput(string defect)
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         fixture.WriteArchive = path =>
         {
             if (defect == "directory")
@@ -566,7 +588,7 @@ public sealed class NodeExecutionTests(TestContext context)
     {
         // The metadata rule is checked above without a repository; these rows prove execution
         // applies it to both artifact checks and stops before any native install effect.
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         fixture.NativeMetadata = defect switch
         {
             "identity" => UnexpectedMetadata("version", "1.2.4"),
@@ -582,7 +604,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [TestMethod]
     public async Task RunAllowsDevelopmentAndPackLifecycles()
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         JsonObject metadata = JsonNode.Parse(NodeExecutionFixture.Metadata)!.AsObject();
         metadata["devDependencies"] = JsonNode.Parse("{\"development\":\"workspace:*\"}");
         metadata["scripts"] = JsonNode.Parse(
@@ -605,7 +627,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [TestMethod]
     public async Task RunUsesOriginalTarballAndFreshNativeConsumerPaths()
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         fixture.Override = command =>
         {
             if (!command.Arguments.Contains("install"))
@@ -677,7 +699,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [TestMethod]
     public async Task RunFailedContentsStillExecutesIndependentConsumer()
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         fixture.Override = command => command.Arguments.Contains("pkg") &&
             Path.GetFileName(command.Directory) == "contents-metadata"
             ? NodeExecutionFixture.Failure() : null;
@@ -695,7 +717,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [DataRow("node")]
     public async Task RunInstallOrPublicApiFailureCannotPass(string stage)
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         fixture.Override = command => (stage == "node" ? command.Executable == "node" &&
             !command.Arguments.Contains("--version") :
             command.Arguments.Contains("install")) ? NodeExecutionFixture.Failure() : null;
@@ -734,7 +756,7 @@ public sealed class NodeExecutionTests(TestContext context)
     public async Task RunNativeTerminationNeverPasses()
     {
         NativeTermination termination = NativeTermination.TimedOut;
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         fixture.Override = command => command.Arguments[^1] == "build"
             ? NodeExecutionFixture.Failure(termination) : null;
 
@@ -751,7 +773,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [TestMethod]
     public async Task RunCancellationRetainsEveryRemainingKey()
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         fixture.Override = command =>
@@ -813,7 +835,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [TestMethod]
     public async Task RunEmptyPlanBindsExactCandidateWithoutProductWork()
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         CiPlan plan = fixture.Plan with { Checks = [] };
 
         NodeRunResult result = await fixture.RunAsync(context.CancellationToken, plan);
@@ -867,7 +889,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [DataRow("%v")]
     public async Task RunRejectsNativeOutputMarkersInEffectiveScratchParents(string marker)
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         using var scratch = new ScratchFixture("native-" + marker + "-parent");
         NodeRunRequest request = fixture.Request with { Scratch = scratch.Scratch };
 
@@ -884,7 +906,7 @@ public sealed class NodeExecutionTests(TestContext context)
     [TestMethod]
     public async Task RunAllowsUnrelatedPercentPaths()
     {
-        using var fixture = await NodeExecutionFixture.CreateAsync(context.CancellationToken);
+        using var fixture = NodeExecutionFixture.Shared(shared!, sharedCandidate!);
         using var scratch = new ScratchFixture("ordinary-%q-%20-parent");
 
         NodeRunResult result = await fixture.RunAsync(context.CancellationToken,

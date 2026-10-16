@@ -9,9 +9,9 @@ namespace WorkflowDelivery.Tests.Release;
 [TestClass]
 public sealed class NuGetWorkflowCallerTests(TestContext context)
 {
+    // The step treats the state generically; ReleaseJobInputsTests maps Absent and Exact.
     [TestMethod]
     [DataRow("Absent", "true")]
-    [DataRow("Exact", "false")]
     public async Task ActualStateStepConsumesSerializedObservation(string state, string needed)
     {
         using var fixture = new NuGetReleaseTestFixture();
@@ -33,7 +33,6 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
     [TestMethod]
     [DataRow("Exact", 0, "Satisfied")]
     [DataRow("Conflict", 1, "Unsatisfied")]
-    [DataRow("Unknown", 1, "Unknown")]
     public async Task ActualVerificationStepRetainsTypedRegistryOutcome(string state,
         int expectedExit, string expectedState)
     {
@@ -51,7 +50,8 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         environment["WRITE_NEEDED"] = "false";
         environment["CONTROLLED_OBSERVATION"] = Path.Combine(fixture.Root,
             "controlled-final.json");
-        // The actual observe command exits 1 for a handled conflict or unknown state.
+        // The actual observe command exits 1 for a handled conflict or unknown state; both
+        // take the same caller branch, and ReleaseStateTests maps each typed state.
         environment["CONTROLLED_OBSERVATION_EXIT"] = state == "Exact" ? "0" : "1";
         Assert.IsTrue((await Step(fixture, "verify-result", "Receive transferred preparation",
             environment)).Succeeded);

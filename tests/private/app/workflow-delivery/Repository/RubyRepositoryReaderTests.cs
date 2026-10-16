@@ -20,6 +20,46 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         new Dictionary<string, string?> { ["PATH"] = "prepared" }, 30),
         Path.Combine(root, "nbgv"), "2.7.2");
 
+    // Bundle-collection rows that vary only native answers read one class-owned commit; each
+    // row writes native requests to its own scratch, never the checkout.
+    private static GitFixture? sharedBundle;
+    private static GitMaterialization? sharedBundleCheckout;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            await repo.SetAsync("node/Gemfile", "native declaration");
+            await repo.SetAsync("node/Gemfile.lock", "native lock");
+            string head = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", head);
+            sharedBundleCheckout = await GitMaterialization.BindAsync(repo.Directory,
+                await new GitReader(repo.Directory).ReadAsync(head,
+                    classContext.CancellationToken), classContext.CancellationToken);
+            sharedBundle = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => sharedBundle?.Dispose();
+
+    private sealed class Scratch : IDisposable
+    {
+        internal string Directory { get; } =
+            System.IO.Directory.CreateTempSubdirectory("workflow-ruby-reader-").FullName;
+        public void Dispose() => System.IO.Directory.Delete(Directory, recursive: true);
+    }
+
+    // The shared commit with this row's own native request scratch.
+    private static RubyRepositoryRequest SharedRequest(string scratch) => Request(
+        sharedBundle!.Directory) with
+    {
+        Tools = Request(sharedBundle.Directory).Tools with { Scratch = scratch }
+    };
+
     private async Task<GitMaterialization> BindAsync(GitFixture repo)
     {
         string head = await repo.CommitAsync();
@@ -165,11 +205,11 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
     [TestMethod]
     public async Task NativeCollectorsUseLockedBundleWithoutInventingOwner()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        await repo.SetAsync("node/Gemfile", "native declaration");
-        await repo.SetAsync("node/Gemfile.lock", "native lock");
-        GitMaterialization checkout = await BindAsync(repo);
-        RubyRepositoryRequest request = Request(repo.Directory);
+        // Defect-free control for the shared bundle commit.
+        GitFixture repo = sharedBundle!;
+        GitMaterialization checkout = sharedBundleCheckout!;
+        using var scratch = new Scratch();
+        RubyRepositoryRequest request = SharedRequest(scratch.Directory);
         RubyRevisionInputs result = await RubyRepositoryReader.ReadAsync(checkout, request,
             async (command, token) =>
             {
@@ -303,17 +343,17 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("failure")]
-    [DataRow("lock-mismatch")]
-    [DataRow("incomplete-answer")]
-    public async Task NativeCollectionFailureCannotBecomeEndpointFacts(string defect)
+    [DataRow("failure", "Native Ruby fact collection failed")]
+    [DataRow("lock-mismatch", "Native Bundler version differs from the request.")]
+    [DataRow("incomplete-answer", "Incomplete native Ruby fact response.")]
+    public async Task NativeCollectionFailureCannotBecomeEndpointFacts(string defect,
+        string diagnostic)
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        await repo.SetAsync("node/Gemfile");
-        await repo.SetAsync("node/Gemfile.lock");
-        GitMaterialization checkout = await BindAsync(repo);
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => RubyRepositoryReader.ReadAsync(
-            checkout, Request(repo.Directory), async (command, token) =>
+        GitFixture repo = sharedBundle!;
+        using var scratch = new Scratch();
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            RubyRepositoryReader.ReadAsync(sharedBundleCheckout!, SharedRequest(scratch.Directory),
+            async (command, token) =>
             {
                 using JsonDocument input = JsonDocument.Parse(
                     await File.ReadAllTextAsync(command.Arguments[^1], token));
@@ -339,6 +379,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
                     specifications = Array.Empty<object>()
                 });
             }, context.CancellationToken));
+        Assert.StartsWith(diagnostic, error.Message);
     }
 
     [TestMethod]

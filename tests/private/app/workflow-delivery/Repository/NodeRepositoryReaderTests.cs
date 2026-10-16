@@ -124,8 +124,8 @@ public sealed class NodeRepositoryReaderTests(TestContext context)
         Assert.Contains(additionalConfiguration ? ".npmrc" : "mise.lock", error.Message);
     }
 
+    // The reader identifies the fixture by package name, so only its current location runs.
     [TestMethod]
-    [DataRow("src/public/lib/hcoona-release-smoke-npm")]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm")]
     public async Task ReadRejectsUncommittedNativeVersionConfiguration(string product)
     {
@@ -154,8 +154,8 @@ public sealed class NodeRepositoryReaderTests(TestContext context)
     }
 
 
+    // The reader identifies the fixture by package name, so only its current location runs.
     [TestMethod]
-    [DataRow("src/public/lib/hcoona-release-smoke-npm")]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm")]
     public async Task ReadKeepsCurrentProductLegalInputConsumers(string fixture)
     {

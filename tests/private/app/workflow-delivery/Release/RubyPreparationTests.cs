@@ -38,7 +38,7 @@ public sealed class RubyPreparationTests(TestContext context)
     private static string sharedRevision = "";
     // RubySourceCollector writes <product>/lib/.../version.rb into the checkout, so every
     // shared row that can reach source reading gets its own committed product directory.
-    private const int LaneCount = 38;
+    private const int LaneCount = 59;
     private static int nextLane = -1;
     private const string Revision = "0123456789abcdef0123456789abcdef01234567";
 
@@ -460,7 +460,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     public async Task DryRefPreservesNativeProjectionWhenPublicReleaseIsFalse()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = SharedLane();
         fixture.Subject = fixture.Subject with
         {
             Channel = "official",
@@ -485,7 +485,9 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("helper")]
     public async Task MissingHistoryOrPreparedToolsCannotBuild(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken, defect);
+        // Committed root defects need a private repository; native-answer defects share one.
+        using var fixture = defect is "manifest" or "global" or "helper"
+            ? await Fixture.CreateAsync(context.CancellationToken, defect) : SharedLane();
         fixture.Defect = defect;
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
@@ -574,7 +576,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     public async Task PreparedTransferPreservesFailureAndNativeCommandReceipt()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = SharedLane();
         fixture.Override = command =>
             fixture.Phase(command) == "build"
                 ? new(NativeTermination.TimedOut, null, "partial", "diagnostic", 1.5, "deadline")
@@ -601,7 +603,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     public async Task BuddyBranchDoesNotRequireNativePublicRelease()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = SharedLane();
         fixture.Defect = "public-release";
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
@@ -616,7 +618,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("consumer-origin")]
     public async Task MissingOutputOrFailedInstalledIdentityCannotQualify(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = SharedLane();
         fixture.Defect = defect;
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         string phase =
@@ -635,7 +637,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("consumer", "missing")]
     public async Task ChangedOriginalCannotQualifyRelease(string phase, string change)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = SharedLane();
         fixture.Override = command =>
         {
             if (
@@ -660,7 +662,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     public async Task AbbreviatedRevisionCannotSupplyExactBinding()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = SharedLane();
         fixture.Subject = fixture.Subject with { Revision = fixture.Subject.Revision[..12] };
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
@@ -670,7 +672,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     public async Task CancellationBeforeWorkRetainsCompleteObligations()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = SharedLane();
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
         RubyPreparationResult result = await fixture.RunAsync(cancelled.Token);
@@ -685,7 +687,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("nonempty-scratch")]
     public async Task UnownedOrUnpreparedPathsFailBeforeCommands(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = SharedLane();
         RubyPreparationRequest request = fixture.Request;
         if (defect == "relative-checkout")
             request = request with { Checkout = "relative" };

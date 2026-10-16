@@ -11,13 +11,33 @@ namespace WorkflowDelivery.Tests.Release;
 [TestClass]
 public sealed class NpmPreparationTests(TestContext context)
 {
+    // Every row varies only the request or controlled native answers and reads one
+    // class-owned commit; preparation writes only to the row's own scratch.
+    private static GitFixture? shared;
+    private static string sharedCommit = "";
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            sharedCommit = await Fixture.CommitAsync(repo);
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
     [TestMethod]
     [DataRow(true)]
     [DataRow(false)]
     public async Task BuddyDevelopmentRevisionUsesSameCompleteNativePreparation(
         bool dryRun)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.Request = fixture.Request with { Subject = fixture.Request.Subject with
             { Channel = "buddy", Destination = "github-packages-npm", DryRun = dryRun } };
 
@@ -34,7 +54,8 @@ public sealed class NpmPreparationTests(TestContext context)
     [TestMethod]
     public async Task SelectedPreparationQualifiesOriginalWithoutCiPlan()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        // Defect-free control for the shared commit.
+        using var fixture = Fixture.Shared(shared!, sharedCommit);
 
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
 
@@ -79,7 +100,7 @@ public sealed class NpmPreparationTests(TestContext context)
     [DataRow("consumer")]
     public async Task FailedQualificationRetainsFailureAndStopsDependentWork(string failed)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.Fail = failed;
 
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
@@ -98,7 +119,7 @@ public sealed class NpmPreparationTests(TestContext context)
     [TestMethod]
     public async Task NativeVersionDisagreementCannotQualifyOrInstallPackage()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.ExpectedVersion = "9.9.9";
 
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
@@ -114,7 +135,7 @@ public sealed class NpmPreparationTests(TestContext context)
     [TestMethod]
     public async Task ConsumerCannotModifyQualifiedOriginal()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.MutateOriginal = true;
 
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
@@ -128,7 +149,7 @@ public sealed class NpmPreparationTests(TestContext context)
     [TestMethod]
     public async Task MissingNativeArchiveCannotBecomeQualifiedOutput()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.OmitArchive = true;
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
@@ -142,7 +163,7 @@ public sealed class NpmPreparationTests(TestContext context)
     [TestMethod]
     public async Task CancelledQualificationStopsRemainingWorkAndCannotSucceed()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.CancelCheck = "build";
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
@@ -156,7 +177,7 @@ public sealed class NpmPreparationTests(TestContext context)
     [TestMethod]
     public async Task WrongNativeNodeMajorBlocksPreparationBeforeProductCode()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.NodeVersion = "22.21.0";
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
@@ -174,7 +195,7 @@ public sealed class NpmPreparationTests(TestContext context)
     public async Task NativeTerminationRemainsVisibleInRequiredQualification(
         string native, string status, string checkId)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedCommit);
         fixture.Termination = Enum.Parse<NativeTermination>(native);
         fixture.TerminationCheck = checkId;
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
@@ -202,42 +223,40 @@ public sealed class NpmPreparationTests(TestContext context)
         internal string TerminationCheck { get; set; } = "build";
         private string? archive;
 
-        internal static async Task<Fixture> CreateAsync(CancellationToken token)
+        // Reads a class-owned committed repository; the row owns only its scratch.
+        internal static Fixture Shared(GitFixture repository, string commit) => new(repository,
+            new(new(commit, "refs/heads/development", "hcoona-release-smoke-npm",
+                "product/workflow-delivery.release-unit.yml", "official", "npmjs", true),
+                repository.Directory,
+                Directory.CreateTempSubdirectory("workflow-release-").FullName));
+
+        internal static async Task<string> CommitAsync(GitFixture repository)
         {
-            GitFixture repository = await GitFixture.CreateAsync(token);
-            try
-            {
-                await repository.SetAsync("product/package.json", NodeExecutionFixture.Metadata);
-                await repository.SetAsync("product/workflow-delivery.release-unit.yml", """
-                    schema: workflow-delivery/v3/release-unit
-                    release-unit: hcoona-release-smoke-npm
-                    builds:
-                      - id: npm-package
-                        definition: node/npm-package-v1
-                        entry-point: package.json
-                        outputs:
-                          - id: npm-tarball
-                            role: primary-package
-                            kind: npm-tarball
-                    """);
-                await repository.SetAsync("product/workflow-delivery.quality.yml", """
-                    schema: workflow-delivery/v3/quality-selection
-                    ecosystems:
-                      node:
-                        preset: node/hcoona-release-smoke-npm-v1
-                    """);
-                foreach (string path in new[] { "mise.toml", "mise.lock", "pnpm-lock.yaml",
-                    "pnpm-workspace.yaml" })
-                    await repository.SetAsync(path, "committed native fixture");
-                string commit = await repository.CommitAsync();
-                await repository.GitAsync("reset", "--hard", commit);
-                var subject = new ReleaseSubject(commit, "refs/heads/development",
-                    "hcoona-release-smoke-npm", "product/workflow-delivery.release-unit.yml",
-                    "official", "npmjs", true);
-                return new(repository, new(subject, repository.Directory,
-                    Directory.CreateTempSubdirectory("workflow-release-").FullName));
-            }
-            catch { repository.Dispose(); throw; }
+            await repository.SetAsync("product/package.json", NodeExecutionFixture.Metadata);
+            await repository.SetAsync("product/workflow-delivery.release-unit.yml", """
+                schema: workflow-delivery/v3/release-unit
+                release-unit: hcoona-release-smoke-npm
+                builds:
+                  - id: npm-package
+                    definition: node/npm-package-v1
+                    entry-point: package.json
+                    outputs:
+                      - id: npm-tarball
+                        role: primary-package
+                        kind: npm-tarball
+                """);
+            await repository.SetAsync("product/workflow-delivery.quality.yml", """
+                schema: workflow-delivery/v3/quality-selection
+                ecosystems:
+                  node:
+                    preset: node/hcoona-release-smoke-npm-v1
+                """);
+            foreach (string path in new[] { "mise.toml", "mise.lock", "pnpm-lock.yaml",
+                "pnpm-workspace.yaml" })
+                await repository.SetAsync(path, "committed native fixture");
+            string commit = await repository.CommitAsync();
+            await repository.GitAsync("reset", "--hard", commit);
+            return commit;
         }
 
         internal Task<NpmPreparationResult> RunAsync(CancellationToken token) =>
@@ -293,10 +312,6 @@ public sealed class NpmPreparationTests(TestContext context)
             return Task.FromResult(NodeExecutionFixture.Success(output));
         }
 
-        public void Dispose()
-        {
-            repository.Dispose();
-            Directory.Delete(Scratch, recursive: true);
-        }
+        public void Dispose() => Directory.Delete(Scratch, recursive: true);
     }
 }

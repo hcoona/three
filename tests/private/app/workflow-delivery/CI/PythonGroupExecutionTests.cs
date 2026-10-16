@@ -11,10 +11,34 @@ namespace WorkflowDelivery.Tests.CI;
 [TestClass]
 public sealed class PythonGroupExecutionTests(TestContext context)
 {
+    // Every row reads one class-owned committed checkout and owns fresh scratch. A row that
+    // edits the checkout must create its own repository instead.
+    private static GitFixture? shared;
+    private static string? sharedCandidate;
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            sharedCandidate = await Fixture.CommitAsync(repo);
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    private Task<Fixture> SharedAsync() =>
+        Fixture.CreateAsync(shared!, sharedCandidate!, context.CancellationToken);
+
     [TestMethod]
     public async Task OriginalMixedPlanAndRequiredResultsSurviveBothPartitions()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        // Defect-free control for the shared checkout.
+        using var fixture = await SharedAsync();
         PythonGroupRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsTrue(result.Outcome.Satisfied);
         Assert.AreEqual(fixture.Plan.Candidate, result.Candidate);
@@ -40,7 +64,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     [TestMethod]
     public async Task PytestFailureLeavesIndependentPackageObligationsVisible()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = await SharedAsync();
         fixture.PytestStatus = CheckStatus.Failed;
         PythonGroupRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsFalse(result.Outcome.Satisfied);
@@ -56,7 +80,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     [DataRow("helper")]
     public async Task BothContractsAreValidatedBeforeEitherPartition(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = await SharedAsync();
         CiPlan plan = fixture.Plan;
         PythonGroupRunRequest request = fixture.Request;
         if (defect == "package") plan = plan with { Checks = plan.Checks[..^1] };
@@ -74,7 +98,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     [TestMethod]
     public async Task CancellationRetainsEveryOriginalRequiredResult()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = await SharedAsync();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         fixture.Cancel = cancellation;
@@ -89,7 +113,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     [TestMethod]
     public async Task MissingRequiredPackageResultCannotBecomeGroupSuccess()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = await SharedAsync();
         fixture.DropPackageResult = true;
         PythonGroupRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsFalse(result.Outcome.Satisfied);
@@ -101,7 +125,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     [TestMethod]
     public async Task EmptyPlanCreatesNoProductPartition()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = await SharedAsync();
         PythonGroupRunResult result = await fixture.RunAsync(context.CancellationToken,
             fixture.Plan with { Checks = [] });
         Assert.IsTrue(result.Outcome.Satisfied);
@@ -113,7 +137,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     [TestMethod]
     public async Task CliTransfersOriginalRequestAndCollectsAgainstOriginalPlan()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = await SharedAsync();
         using var files = new DriverFiles();
         string plan = Path.Combine(files.Root, "plan.json"), request = Path.Combine(files.Root,
             "request.json");
@@ -148,7 +172,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     [DataRow("target", true)]
     public async Task NullNativeElementsReturnInputErrorBeforeDispatch(string defect, bool empty)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = await SharedAsync();
         using var files = new DriverFiles();
         CiPlan original = empty ? fixture.Plan with { Checks = [] } : fixture.Plan;
         string plan = Path.Combine(files.Root, "plan.json"), request = Path.Combine(files.Root,
@@ -180,7 +204,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     [DataRow("swap")]
     public async Task CliMembershipMismatchRejectsBothPartitionsBeforeDispatch(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = await SharedAsync();
         using var files = new DriverFiles();
         PythonMetadataMember[] members = fixture.Request.Native.Members.ToArray();
         if (defect == "root-name") members[0] = members[0] with { Name = "other-root" };
@@ -216,7 +240,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     [DataRow("created-environment")]
     public async Task UnavailableNativeMembershipStopsBothProductPartitions(string defect)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = await SharedAsync();
         fixture.MetadataDefect = defect;
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(context.CancellationToken));
@@ -229,7 +253,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     [TestMethod]
     public async Task BothPartitionsReceiveTheSingleNativeMembershipContext()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = await SharedAsync();
         PythonGroupRunRequest request = fixture.Request with
         { Native = fixture.Request.Native with { Members = fixture.Request.Native.Members
             .Reverse().Select(member => member with { Id = "previous:" + member.Id }).ToArray() } };
@@ -262,32 +286,37 @@ public sealed class PythonGroupExecutionTests(TestContext context)
         internal CancellationTokenSource? Cancel { get; set; }
         internal string? MetadataDefect { get; set; }
 
-        internal static async Task<Fixture> CreateAsync(CancellationToken token)
+        internal static async Task<string> CommitAsync(GitFixture repo)
         {
-            GitFixture repo = await GitFixture.CreateAsync(token);
+            await repo.SetAsync("pyproject.toml", "controlled root pytest configuration");
+            await repo.SetAsync("tests/root/test_one.py");
+            await repo.SetAsync("product/pyproject.toml", "controlled native product");
+            await repo.SetAsync(PythonPackageChecksTests.Unit.SourcePath, """
+                schema: workflow-delivery/v3/release-unit
+                release-unit: product
+                builds:
+                  - id: distributions
+                    definition: python/distribution-set-v1
+                    entry-point: pyproject.toml
+                    outputs:
+                      - id: wheel
+                        role: primary-package
+                        kind: python-wheel
+                      - id: source
+                        role: source-package
+                        kind: python-sdist
+                """);
+            string candidate = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", candidate);
+            return candidate;
+        }
+
+        internal static async Task<Fixture> CreateAsync(GitFixture repo, string candidate,
+            CancellationToken token)
+        {
             string scratch = Directory.CreateTempSubdirectory("workflow-python-group-").FullName;
             try
             {
-                await repo.SetAsync("pyproject.toml", "controlled root pytest configuration");
-                await repo.SetAsync("tests/root/test_one.py");
-                await repo.SetAsync("product/pyproject.toml", "controlled native product");
-                await repo.SetAsync(PythonPackageChecksTests.Unit.SourcePath, """
-                    schema: workflow-delivery/v3/release-unit
-                    release-unit: product
-                    builds:
-                      - id: distributions
-                        definition: python/distribution-set-v1
-                        entry-point: pyproject.toml
-                        outputs:
-                          - id: wheel
-                            role: primary-package
-                            kind: python-wheel
-                          - id: source
-                            role: source-package
-                            kind: python-sdist
-                    """);
-                string candidate = await repo.CommitAsync();
-                await repo.GitAsync("reset", "--hard", candidate);
                 GitRevision revision = await new GitReader(repo.Directory).ReadAsync(candidate,
                     token);
                 PythonMetadataMember[] members = [new("native-root", ".", "root"),
@@ -311,7 +340,7 @@ public sealed class PythonGroupExecutionTests(TestContext context)
                     Path.Combine(scratch, "python"), members, configuration, targets, operation,
                     30, new Dictionary<string, string?>()), Path.Combine(scratch, "packages.py")));
             }
-            catch { repo.Dispose(); Directory.Delete(scratch, true); throw; }
+            catch { Directory.Delete(scratch, true); throw; }
         }
 
         internal Task<PythonGroupRunResult> RunAsync(CancellationToken token, CiPlan? plan = null,
@@ -354,6 +383,6 @@ public sealed class PythonGroupExecutionTests(TestContext context)
             return Task.FromResult(new PythonPackageRunResult(plan.Candidate,
                 DropPackageResult ? results[..^1] : results, [], [], []));
         }
-        public void Dispose() { Repo.Dispose(); Directory.Delete(Scratch, true); }
+        public void Dispose() => Directory.Delete(Scratch, true);
     }
 }

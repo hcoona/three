@@ -107,10 +107,9 @@ public sealed class NativeCommandTests(TestContext context)
         Assert.IsFalse(result.Succeeded);
     }
 
+    // Both streams share one strict bounded reader; each stream and each defect runs once.
     [TestMethod]
     [DataRow("stdout", "utf8")]
-    [DataRow("stderr", "utf8")]
-    [DataRow("stdout", "limit")]
     [DataRow("stderr", "limit")]
     public async Task ExecuteRejectsInvalidUtf8OrBoundedOutput(string stream, string defect)
     {
