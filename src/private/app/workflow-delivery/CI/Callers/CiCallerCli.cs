@@ -4,7 +4,7 @@ using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.CI.Callers;
 
-// Finite positional commands for current CI and committed local-full callers.
+// Finite positional commands for current CI callers.
 internal static class CiCallerCli
 {
     internal static int? Run(string[] args, TextWriter output)
@@ -32,15 +32,6 @@ internal static class CiCallerCli
                     candidate, token).GetAwaiter().GetResult());
             case ["ci", var caller, "materialize", var root, var scope, var transfer, var directory]
                 when caller is "caller-python" or "caller-ruby" or "caller-node":
-                Materialize(caller, root, scope, transfer, directory);
-                return 0;
-            // Credential-free local full follows the same exact source/plan path without an
-            // Actions artifact producer. It is explicitly full, not an incremental fallback.
-            case ["ci", var caller, "local-full", var root, var scope, var transfer, var directory]
-                when caller is "caller-python" or "caller-ruby" or "caller-node":
-                if (!CiCallerTransfer.Full(CiCallerTransfer.Read(scope,
-                    TransferJson.Default.JsonElement)))
-                    throw new InvalidDataException("Local full requires explicit full selection.");
                 Materialize(caller, root, scope, transfer, directory);
                 return 0;
             case ["ci", "caller-ruby", "plan", var directory, var scope, var ruby, var gem,

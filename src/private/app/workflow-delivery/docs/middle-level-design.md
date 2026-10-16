@@ -394,7 +394,8 @@ preparation. Do not restore the test project again. The full root graph uses
 additional CI/locked-restore globals; retain this query's default Debug context
 rather than claiming equivalent conditional resources.
 
-At the C#-to-Python process boundary, the required response carries the exact
+The response that the C# scope selector (`ci caller-dotnet select`) consumes in
+process carries the exact
 native comparison and each endpoint's revision, project, concrete effective
 dimension and committed resource array. Represent confirmed base-project absence
 explicitly; missing facts or failed evaluation are not absence. The candidate
@@ -816,7 +817,9 @@ native capability stops for owner disposition without reduced check coverage.
 Build and qualification operations receive the selected revision, native entry
 point, dimensions, expected native version projections and relevant locked inputs.
 Planning may calculate NBGV; builds may calculate it again under the same relevant
-Git/ref/history, configuration, dependency and supported toolchain inputs. Required
+Git/ref/history, configuration, dependency and supported toolchain inputs. CI
+package execution owns its process environment and does not inherit the runner's
+ambient ref context, which would otherwise change the NBGV projection. Required
 package/assembly projections must agree. Missing facts and disagreement fail the
 operation; no fallback version or execution suffix is invented.
 
@@ -1016,14 +1019,14 @@ writers remain governed by registry guarantees, not an application-wide lock.
 | Native facts from another runner/process | Revision, relevant entry points, facts, errors and coverage limitations                                                                             | Correct subject and required fact coverage                             |
 | CI plan and task results                 | Candidate/comparison, selected work/reasons, required checks, concrete result subjects and outcomes                                                 | Result corresponds to selected work; complete required closure         |
 | Release preparation                      | Source/control revision, unit/channel/destination/mode, native versions, complete original files, qualification results and maximum intended writes | Actual files and qualified subject match the reviewed request          |
-| Prepared CLI                             | Selected control revision and immutable output with its producer/integrity binding                                                                  | Publisher executes the intended control artifact without rebuilding it |
+| Prepared CLI                             | Selected control revision and immutable output with its same-run artifact ID and native integrity                                                   | Publisher executes the intended control artifact without rebuilding it |
 | Publication and verification result      | Attempted operations, raw responses/outcomes, required observations/checks and unresolved effects                                                   | Completion is supported; missing data does not prove non-start         |
 
 These are consumer-specific typed contracts, not a universal envelope or one file
 per row. Keep data in memory when no real boundary requires transfer. Executors
 need their work, not a serialized copy of the entire repository graph.
 
-Use native immutable artifact IDs and relevant producer/integrity bindings; reject
+Use same-run native immutable artifact IDs and native download integrity; reject
 missing, substituted or mismatched inputs. Display names and latest-artifact lookup
 are not identity. Trust successful native upload; the actual receiving consumer
 validates its download. Do not upload/download/re-admit every producer intermediate

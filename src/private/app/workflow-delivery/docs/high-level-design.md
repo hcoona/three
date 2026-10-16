@@ -66,10 +66,11 @@ C4Container
 
 CI control comes from the exact candidate revision. Release control and product
 source come from the selected release revision. The publisher uses a prepared
-CLI artifact from that control revision, with its actual producer and integrity
-binding checked at transfer. It does not build the CLI while holding publication
-credentials. An authorized control-code writer is inside this trust boundary;
-application checks do not confine a malicious accepted writer's effective token.
+CLI artifact from that control revision, transferred by same-run immutable
+artifact ID with the native download digest check. It does not build the CLI
+while holding publication credentials. An authorized control-code writer is
+inside this trust boundary; application checks do not confine a malicious
+accepted writer's effective token.
 
 ## Repository Facts and Selection
 

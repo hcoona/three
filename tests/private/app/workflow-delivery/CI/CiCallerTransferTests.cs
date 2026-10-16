@@ -114,25 +114,6 @@ public sealed class CiCallerTransferTests(TestContext context)
         }
         finally { Environment.SetEnvironmentVariable("GITHUB_OUTPUT", original); }
     }
-
-    [TestMethod]
-    [DataRow("{\"full\":false}")]
-    [DataRow("{\"full\":\"true\"}")]
-    [DataRow("[]")]
-    [DataRow("{}")]
-    public void CliLocalFullRejectsIncrementalOrMalformedScope(string payload)
-    {
-        using var files = new CiCallerFiles();
-        string scope = Path.Combine(files.Root, "scope.json");
-        File.WriteAllText(scope, payload);
-        using var output = new StringWriter();
-        using var error = new StringWriter();
-        string state = Path.Combine(files.Root, "state");
-        Assert.AreEqual(2, Program.Run(["ci", "caller-node", "local-full", files.Root,
-            scope, Path.Combine(files.Root, "transfer"), state], output, error));
-        Assert.IsFalse(Directory.Exists(state));
-        Assert.IsNotEmpty(error.ToString());
-    }
 }
 
 internal sealed class CiCallerFiles : IDisposable

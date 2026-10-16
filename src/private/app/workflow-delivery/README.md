@@ -181,7 +181,9 @@ capability. Its description is hypothetical and never claims live completion.
 
 ### npm Buddy Release
 
-The existing Buddy workflow accepts allowed development refs and transfers
+The existing Buddy workflow accepts any dispatched ref without an application
+ref-class check (see the [Official channel
+scope](docs/migration-strategy.md#official-channel-scope)) and transfers
 selected source/control, originals and qualification by immutable artifact IDs.
 GitHub package association and exact archive state are checked natively. The
 actual publisher gate precedes the write-capable invocation; a separate no-write
@@ -240,8 +242,11 @@ and native campaigns are not alternate operational entries.
 
 ## Validation and Evidence Limits
 
-The application has one managed test project and native helper suites; useful
-root workflow contracts live under `tests/eng/`. From the repository root:
+The application has one managed test project and native helper suites. Root
+workflow contracts live under `tests/eng/`; the managed project also runs actual
+Release workflow step bodies under their native shells
+(`BashWorkflowCallerTests`, `NuGetWorkflowCallerTests`). From the repository
+root:
 
 ```powershell
 dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj
