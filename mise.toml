@@ -2,11 +2,6 @@ min_version = "2026.10.11"
 
 monorepo_root = true
 
-# Require lock entries for this configuration root without applying the policy
-# to tools inherited from user-global configuration.
-[tool_config]
-locked = true
-
 [settings]
 experimental = true
 
