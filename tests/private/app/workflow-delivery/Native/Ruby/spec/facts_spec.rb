@@ -149,8 +149,12 @@ module NativeHelpers
           expect(locked.binread).to eq(before)
         end
 
-        # Helper-owned frozen and locked-version checks; Bundler owns its lock equivalence.
-        %w[unfrozen wrong_lock].each do |defect|
+        # Helper-owned frozen, locked-version and explicit lock-equivalence checks. The
+        # helper-requested Gemfile/lock equivalence is version-independent, so one context
+        # covers [changed].
+        defects = %w[unfrozen wrong_lock]
+        defects << "changed" if context.equal?(NativeHelpers::CONTEXTS.first)
+        defects.each do |defect|
           it "invalid_bundle_context_cannot_return_facts [#{defect}]" do
             gem_fixture(@scratch / "source", "fixture_a")
             gemfile = write(@scratch / "Gemfile", "gem \"fixture_a\", path: \"source\"\n")
@@ -158,6 +162,7 @@ module NativeHelpers
             locked = @scratch / "Gemfile.lock"
             case defect
             when "unfrozen" then environment["BUNDLE_FROZEN"] = "0"
+            when "changed" then gemfile.write("gem \"fixture_a\", \"= 9.9.9\", path: \"source\"\n")
             when "wrong_lock"
               other = CONTEXTS.find { |candidate| candidate.version != context.version }
               locked.write(locked.read.gsub(context.version, other.version))

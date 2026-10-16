@@ -194,7 +194,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                failures.Add(label + ": " + exception.Message);
+                failures.Add(label + ": " + exception);
             }
         }
         Assert.IsEmpty(failures, string.Join("\n", failures));

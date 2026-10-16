@@ -1507,7 +1507,7 @@ def _native_test(job: dict[str, Any]) -> str:
 
 
 def test_nuget_native_preparation_runs_selected_rows(workflow):
-    """Per-PR CI runs only the three native NuGet preparation rows."""
+    """Per-PR CI runs only the two native NuGet preparation rows."""
     job = workflow["jobs"]["nuget-native-preparation"]
     assert job["name"] == "NuGet native preparation (Windows)"
     assert job["runs-on"].startswith("windows-")
