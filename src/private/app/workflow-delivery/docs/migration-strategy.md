@@ -630,7 +630,7 @@ runtime configuration together, without publishing or packaging it. The scope
 job additionally uploads that build output, together with a Git archive of the
 candidate Native/Python helper sources (`python-control.zip`), the Ruby facts
 helper and the original .NET plan, as the `ci-dotnet-plan` transfer that the
-other group jobs consume. Resolve the native event comparison once with `ci
+later CI jobs consume. Resolve the native event comparison once with `ci
 comparison`, then resolve its actual Git objects. Confirm the named test
 project's committed entry, materialize exact endpoints outside the candidate
 source root, install each endpoint's selected `global.json` SDK, and perform
@@ -1203,8 +1203,8 @@ unexpected selected-version files, conflicting bytes or unavailable required
 facts cannot permit mutation. Registry active-file non-overwrite is the native
 dependency; no atomic two-file release or lifetime-global retention is promised.
 
-Bound each observation phase to 90 seconds, with one index read and at most one
-original read per prepared file, each body-inclusive read to 30 seconds and
+Bound each observation phase to 90 seconds, with one application index read and at
+most one application original read per prepared file, each body-inclusive read to 30 seconds and
 index JSON to 2 MiB/4,096 entries. Use verified HTTPS through the shared
 registry HTTP client, without insecure fallback. Accept index file URLs only on
 the selected public storage host with no user information or fragment.
