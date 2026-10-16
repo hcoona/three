@@ -171,17 +171,10 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         Assert.AreEqual(failed, Assert.ContainsSingle(result.Failures).Key);
         Assert.AreEqual("Failure", result.Tests.Single(test => test.Key == failed).Test);
         Assert.AreEqual("Success", result.Tests.Single(test => test.Key == passed).Test);
-        // MTP reports through MSBuild diagnostics attributed to its own submission; the
-        // VSTest console report stays on the batch command's captured stdout.
-        if (capability == "MTP")
-        {
-            Assert.Contains("Intentional native net8.0 test failure", result.Failures[0].Error);
-            Assert.DoesNotContain("Intentional native net8.0 test failure",
-                result.Tests.Single(test => test.Key == passed).Log);
-        }
-        else
-            Assert.Contains("Intentional native net8.0 test failure",
-                result.TestBatch.Result.Stdout);
+        // Both runners report through MSBuild diagnostics attributed to their own submission.
+        Assert.Contains("Intentional native net8.0 test failure", result.Failures[0].Error);
+        Assert.DoesNotContain("Intentional native net8.0 test failure",
+            result.Tests.Single(test => test.Key == passed).Log);
         Assert.HasCount(3, result.Outputs);
         Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
     }

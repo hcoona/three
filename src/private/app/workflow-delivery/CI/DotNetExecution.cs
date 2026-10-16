@@ -223,12 +223,15 @@ internal static class DotNetExecution
                       </Target>
                     </Project>
                     """, token);
-                // As `dotnet test` does, native worker nodes keep task-process console
-                // output (VSTest's own run report) on this command's captured stdout.
+                // As `dotnet test` does, terminal-logger mode with VSTest MSBuild output makes
+                // VSTest report results as MSBuild events of its own submission. The plain
+                // console logger still writes this command's captured output.
                 var command = new NativeCommand("dotnet", checkout,
-                    ["msbuild", wrapper, "-nologo", "-noAutoResponse", "-target:TestSelected"],
+                    ["msbuild", wrapper, "-nologo", "-noAutoResponse", "-tl:true",
+                        "-noConsoleLogger", "-logger:ConsoleLogger,Microsoft.Build;" +
+                        "Verbosity=minimal", "-target:TestSelected"],
                     request.DeadlineSeconds, new Dictionary<string, string?>
-                    { ["MSBUILDENSURESTDOUTFORTASKPROCESSES"] = "1" });
+                    { ["VsTestUseMSBuildOutput"] = "true" });
                 NativeCommandResult native = await execute(command, token);
                 testBatch = new(runnable.Select(test => test.Work.Key).ToArray(), command,
                     native);
@@ -283,8 +286,6 @@ internal static class DotNetExecution
                             failure = $"Native submission {entry.Overall}, Build {entry.Build}, " +
                                 $"GetTargetPath " +
                                 $"{entry.GetTargetPath}, {entry.TestTarget} {entry.Test}." +
-                                (entry.TestTarget == "VSTest" ? " The VSTest console report " +
-                                    "is in the test batch command output." : "") +
                                 (entry.Log.Length == 0 ? "" : Environment.NewLine + entry.Log);
                         }
                         else if (entry.Outputs is null || entry.Outputs.Length != 1 ||
