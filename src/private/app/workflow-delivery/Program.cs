@@ -242,7 +242,7 @@ internal static class Program
                 return result.Satisfied ? 0 : 1;
             }
             error.WriteLine(
-                "Usage: workflow-delivery ci plan <request.json>"
+                "Usage: WorkflowDelivery ci plan <request.json>"
                     + " | release prepare-npm <request.json>"
                     + " | release observe-npmjs <preparation.json> <original-directory>"
                     + " | release describe-npmjs <preparation.json> <observation.json>"

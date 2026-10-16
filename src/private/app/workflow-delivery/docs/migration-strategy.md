@@ -56,10 +56,11 @@ immutable artifact IDs carry the producer run; each later job checks the receive
 preparation once against the request subject rather than restating run and
 attempt in separate producer records. Live ref eligibility has one definition,
 applied where the request is formed and again by the privileged publisher.
-npm completion consumes the retained initial observation to
-distinguish legitimate no-write completion from missing required publication
-information. NuGet callers forward native process termination; typed completion
-owns result interpretation, without a shell enum mirror.
+Every `complete-*` command (npm, NuGet, Python and Ruby) consumes the retained
+initial observation to distinguish legitimate no-write completion from missing
+required publication information. NuGet callers forward native process
+termination; typed completion owns result interpretation, without a shell enum
+mirror.
 
 Ruby helpers retain RubyGems/Bundler evaluation and native source reads; local
 installation/API qualification uses the native gem and Ruby commands. Python helpers retain PyPA/NBGV library bindings over
@@ -216,17 +217,17 @@ remain the package graph. Read both revisions and preserve the following concret
 consumers in the current native group. This table defines ownership and retained
 behavior, not another package or test-target roster.
 
-| Current consumer relation                                 | Replacement association and retained behavior                                                                                                                                                                                                                                |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native member source and local dependency consumers       | Resolve ownership over all native members, union both revisions' ordinary/build/group/quality relations, then map to actual configured member test or adopted package owners. Preserve removed edges and input-only intermediaries.                                          |
-| Root pytest `testpaths` and direct target inputs          | Query native pytest configuration and bind each explicit committed target to its endpoint. Changes within a configured target select its complete check; standalone repository targets have exact input consumers and no blanket root ownership.                             |
-| `ALL_INPUTS` and `PYTHON_INPUTS`                          | Retain root CI/toolchain, native workspace/lock/configuration, test configuration and Python preparation-script consumers for the actual retained Python target set. Keep source-input reasons and distinguish helper preparation from product build inputs.                 |
-| Passive Python helper tests                               | Retain native helper source and maintained `nbgv-python` source as inputs to the configured passive test target. This does not turn the helper into a publishable project.                                                                                                   |
-| General CI shell and current control tests                | Retain exact native helper, engineering script, workflow and configuration inputs for the root test owner. The general CI shell contract consumes `tests/eng/ci_workflow_shell.py`; no old public-core test or adapter relation remains.                                     |
-| Azure credential-provider Python tests and `_azure_input` | Retain source, .NET interoperability, engineering script, maintained plugin and Python configuration consumers. Keep its independent special-job ownership.                                                                                                                  |
-| Maintained NBGV plugin tests                              | Retain required .NET tooling/configuration inputs as well as native member-source consumers. Native plugin coordinates and managed NBGV input discovery supply version/template/generated consumers, including absent generated files.                                       |
-| `tests/eng` source associations                           | Retain the Python runtime/version projection, HK wrapper and native shell/workflow consumers; retain the exact typo-configuration and legacy-release-contract consumers. Derive target membership from native pytest configuration and retain cross-target script relations. |
-| Adopted Python distribution checks                        | Preserve wheel/sdist build outputs, distribution contents, wheel install/import and Git-free sdist build/install/import, with their complete required variants and actual prerequisites. Keep these obligations separate from root pytest preparation.                       |
+| Current consumer relation                               | Replacement association and retained behavior                                                                                                                                                                                                                                |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native member source and local dependency consumers     | Resolve ownership over all native members, union both revisions' ordinary/build/group/quality relations, then map to actual configured member test or adopted package owners. Preserve removed edges and input-only intermediaries.                                          |
+| Root pytest `testpaths` and direct target inputs        | Query native pytest configuration and bind each explicit committed target to its endpoint. Changes within a configured target select its complete check; standalone repository targets have exact input consumers and no blanket root ownership.                             |
+| `CiScope.AllInputs` and `PythonInputs`                  | Retain root CI/toolchain, native workspace/lock/configuration, test configuration and Python preparation-script consumers for the actual retained Python target set. Keep source-input reasons and distinguish helper preparation from product build inputs.                 |
+| Passive Python helper tests                             | Retain native helper source and maintained `nbgv-python` source as inputs to the configured passive test target. This does not turn the helper into a publishable project.                                                                                                   |
+| General CI shell and current control tests              | Retain exact native helper, engineering script, workflow and configuration inputs for the root test owner. The general CI shell contract consumes `tests/eng/ci_workflow_shell.py`; no old public-core test or adapter relation remains.                                     |
+| Azure credential-provider Python tests and `AzureInput` | Retain source, .NET interoperability, engineering script, maintained plugin and Python configuration consumers. Keep its independent special-job ownership.                                                                                                                  |
+| Maintained NBGV plugin tests                            | Retain required .NET tooling/configuration inputs as well as native member-source consumers. Native plugin coordinates and managed NBGV input discovery supply version/template/generated consumers, including absent generated files.                                       |
+| `tests/eng` source associations                         | Retain the Python runtime/version projection, HK wrapper and native shell/workflow consumers; retain the exact typo-configuration and legacy-release-contract consumers. Derive target membership from native pytest configuration and retain cross-target script relations. |
+| Adopted Python distribution checks                      | Preserve wheel/sdist build outputs, distribution contents, wheel install/import and Git-free sdist build/install/import, with their complete required variants and actual prerequisites. Keep these obligations separate from root pytest preparation.                       |
 
 Prepare root plus selected quality-member package contexts with native UV group
 answers, retaining the current frozen selected/full preparation behavior. Do not
@@ -275,7 +276,8 @@ Bundler contexts; no caller installation roster or Python test host remains.
 Managed contract tests and real C# native integration retain counterpart coverage.
 The existing one Python and three Ruby Linux managed preparation scenarios execute
 directly in the native-preparation CI job. It binds the original comparison,
-preserves selected triggers and exact passed-row qualification, retains reports and
+preserves selected triggers, qualifies rows through the native test filter,
+per-module `--minimum-expected-tests` and exit code, retains reports and
 original packages, and contributes to required Validate completion. Retired pytest
 gates and their wrapper-only tests have no continuing consumer.
 
@@ -617,23 +619,27 @@ Root CI connects the MLD's
 to root CI. Run native evaluation and final selection in the existing `scope`
 job on Windows, keeping its job name, outputs, downstream guards and final
 `ci-scope` artifact. Keep `Build & Test (.NET 10)` as the sole general .NET test
-executor. This co-location needs neither an extra resource producer job nor a
-resource/CLI artifact transfer; only the concrete receiving process consumes the
-comparison/resource response.
+executor. This co-location needs no extra resource producer job, and the
+comparison/resource response does not cross a job boundary: only the concrete
+receiving process in the scope job consumes it.
 
-Prepare the selected candidate control application once using its pinned SDK
-and locked native dependencies. Invoke that complete same-runner build output
-with its selected .NET runtime; keep required assemblies, dependency metadata and
-runtime configuration together without creating a portable archive. Resolve the
-native event comparison once with `ci comparison`, then resolve its actual Git
-objects. Confirm the named test project's committed entry, materialize exact
-endpoints outside the candidate source root, install each endpoint's selected
-`global.json` SDK, and perform necessary locked restore of that test project and
-its native reference closure under Debug before the single evaluation query.
-Candidate preparation never substitutes for unavailable base inputs. Native
-preparation/evaluation is unprivileged; the scope job runs no second test suite.
-Confirmed base absence requires successful inventory inspection; the candidate
-owner must remain present. Identical full-mode endpoints may reuse one evaluation.
+Prepare the selected candidate control application once using its pinned SDK and
+locked native dependencies. Run that same-runner build output directly with its
+selected .NET runtime, keeping required assemblies, dependency metadata and
+runtime configuration together, without publishing or packaging it. The scope
+job additionally uploads that build output, together with a Git archive of the
+candidate Native/Python helper sources (`python-control.zip`), the Ruby facts
+helper and the original .NET plan, as the `ci-dotnet-plan` transfer that the
+later CI jobs consume. Resolve the native event comparison once with `ci
+comparison`, then resolve its actual Git objects. Confirm the named test
+project's committed entry, materialize exact endpoints outside the candidate
+source root, install each endpoint's selected `global.json` SDK, and perform
+necessary locked restore of that test project and its native reference closure
+under Debug before the single evaluation query. Candidate preparation never
+substitutes for unavailable base inputs. Native preparation/evaluation is
+unprivileged; the scope job runs no second test suite. Confirmed base absence
+requires successful inventory inspection; the candidate owner must remain
+present. Identical full-mode endpoints may reuse one evaluation.
 
 The existing scope job explicitly prepares locked dotnet, Node and PNPM tools
 before native environment export, with `MISE_EXEC_AUTO_INSTALL=0` scoped to that
@@ -790,13 +796,15 @@ invocation reuse, not an artifact cache or replay contract.
 
 #### Workflow, Runtime Variants and Results
 
-Add one static Ubuntu group job after the existing Windows scope job. The scope
-upload exposes its actual immutable artifact ID. The group downloads that ID and
-validates the actual producer/run, comparison, complete changed-coordinate set
-and endpoint facts before planning. Use native transfer integrity; add no
-signature, admission mirror or producer download/readmission loop. Plan every
-change, independently of the old coarse Node Boolean. Build and use the candidate
-CLI in this job; there is no separate CLI artifact without another consumer.
+Add one static Ubuntu group job after the existing Windows scope job and the
+Ruby group. Their uploads expose same-run immutable artifact IDs. The group
+downloads the scope selection, the complete candidate control transfer and
+Ruby's typed contribution by those IDs, relying on the native download digest
+check. Its caller binds the scope comparison to the checked-out candidate before
+planning and binds the resulting plan to that comparison. Add no signature,
+admission mirror or producer download/readmission loop. Plan every change,
+independently of the old coarse Node Boolean. The job runs the transferred
+candidate control directly; it does not build the CLI again.
 
 The retained Node matrix depends one-way on scope and this group. Successful
 planning supplies explicit retained-member selections/reasons and applicability;
@@ -826,8 +834,8 @@ Planning obtains lockfile-only native PNPM facts and metadata without installing
 product dependencies at either endpoint. Selected execution retains its frozen
 product installation. Tool preparation remains a separate prerequisite.
 
-The Node job prepares the committed dotnet, Node, PNPM, UV and Python tools and
-starts its frozen caller with explicit UV/Python selection. Native automatic
+The Node job prepares the committed dotnet, Node and PNPM tools and invokes the
+C# Node caller (`ci caller-node`) directly. Native automatic
 installation is disabled within this job and the local group's child processes.
 Each endpoint explicitly installs its own locked dotnet, Node and PNPM before
 use; native version, SDK and verification semantics remain unchanged. This
@@ -877,32 +885,39 @@ returns to the owner.
 
 ### CLI and Boundary Payloads
 
-The executable is `workflow-delivery`; these are internal command families with
-JSON files only at actual process/job boundaries. Changes to field spelling
-update producers and consumers together.
+The application is `WorkflowDelivery.dll`, run with `dotnet`; these are internal
+command families with JSON files only at actual process/job boundaries. The
+[application interface](../README.md#commands-and-transfers) and its CLI sources
+own exact signatures. Changes to field spelling update producers and consumers
+together.
 Do not build an envelope registry or independent schema version service.
 
-| Command and caller                                 | Required inputs                                                                                         | Output consumed at the next real boundary                                                                                                                            |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci comparison` in root CI planning                | Native event name/payload and platform-tested candidate                                                 | Comparison basis, candidate and explicit full flag for native checkout/plan preparation                                                                              |
-| `repository facts` on a required native runner     | Candidate or comparison revision, ecosystem, evaluation roots and dimensions                            | Revision, project ownership, local/shared-input relations, native dimensions, explicit coverage/errors                                                               |
-| `ci plan` in root CI planning                      | Candidate/comparison identities, changed paths and necessary native facts, supported group              | Selected project/target/check/dimensions, reasons, required/advisory flags, runner, prerequisites and unresolved scope                                               |
-| `ci run` in a selected executor                    | Selected work, candidate and required native inputs                                                     | Check/target/dimensions, actual status, native command result and output identities where consumed                                                                   |
-| `ci result` in collection                          | Expected work and available candidate-bound results/native job conclusions                              | Required-check result and missing/failed/unknown reasons; no success from absent work                                                                                |
-| `release prepare` before write capability          | Source/control revision, unit, channel, destination, live/dry-run mode                                  | Complete qualified original files with native coordinates/version, qualification results, applicable completion checks and maximum intended writes                   |
-| `release observe` without product execution        | Prepared request/files and scoped read access where needed                                              | Per-file absent/exact/conflict/unknown, native metadata/visibility, remaining required checks and proposed missing writes                                            |
-| `release publish` in the gated publisher           | Prepared selected-control artifact, qualified input identities, maximum writes and native authorization | Fresh observation, one native invocation per needed operation, raw command outcomes and bounded readback; stop application writes after invocation failure/ambiguity |
-| `release verify` in unprivileged verification jobs | Prepared request/files and destination read access where required                                       | Required remote coordinate observations and downloaded original-byte comparisons for the complete intended set                                                       |
-| `release result` in collection                     | Request, publisher/native execution facts and final readback                                            | Satisfied/unsatisfied/unknown with command abnormality and unresolved effects kept distinct                                                                          |
+| Command and caller                                                                                   | Required inputs                                                                                         | Output consumed at the next real boundary                                                                                                                            |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci comparison` in root CI planning                                                                  | Native event name/payload and platform-tested candidate                                                 | Comparison basis, candidate and explicit full flag for native checkout/plan preparation                                                                              |
+| `ci caller-control prepare`, `ci caller-<ecosystem> materialize/prepare` on a required native runner | Exact comparison, candidate control and fresh owned directories                                         | Materialized endpoints and requests; native facts are read in process, with explicit coverage/errors                                                                 |
+| `ci caller-dotnet select`, `ci caller-<ecosystem> plan`, `ci plan*`                                  | Candidate/comparison identities, changed paths and necessary native facts, supported group              | Selected project/target/check/dimensions, reasons, required/advisory flags, runner, prerequisites and unresolved scope                                               |
+| `ci caller-<ecosystem> execute`, `ci run-*` in a selected executor                                   | Selected work, candidate and required native inputs                                                     | Check/target/dimensions, actual status, native command result and output identities where consumed                                                                   |
+| `ci result`, `ci caller-node join` in collection                                                     | Expected work and available candidate-bound results/native job conclusions                              | Required-check result and missing/failed/unknown reasons; no success from absent work                                                                                |
+| `release job-inputs <ecosystem> <operation>` in each Release job                                     | Native run context, request subject, transferred preparation and phase                                  | Request, originals and phase directories; `receive <phase>` binds the received preparation's subject to the request                                                  |
+| `release prepare-<ecosystem>` before write capability                                                | Source/control revision, unit, channel, destination, live/dry-run mode                                  | Complete qualified original files with native coordinates/version, qualification results, applicable completion checks and maximum intended writes                   |
+| `release observe-*`, `describe-*` without product execution                                          | Prepared request/files and scoped read access where needed                                              | Per-file absent/exact/conflict/unknown, native metadata, remaining required checks and proposed missing writes                                                       |
+| `release publish-*` in the gated publisher                                                           | Prepared selected-control artifact, qualified input identities, maximum writes and native authorization | Fresh observation, one native invocation per needed operation, raw command outcomes and bounded readback; stop application writes after invocation failure/ambiguity |
+| Final `release observe-*` in the unprivileged verification job                                       | Prepared request/files and destination read access where required                                       | Required remote coordinate observations and downloaded original-byte comparisons for the complete intended set                                                       |
+| `release complete-*` in collection                                                                   | Preparation, initial and final observations and publication result (`-` only when omitted)              | Satisfied/unsatisfied/unknown with command abnormality and unresolved effects kept distinct                                                                          |
 
 In-process callers use the same typed operations without serializing each row.
-The finite [GitHub comparison mapping](middle-level-design.md#github-event-comparison)
-reads native payload fields directly rather than adding another event declaration.
-Its implementation alone does not switch root CI or establish group coverage.
-Artifact references crossing jobs carry immutable artifact ID, producer/run and
-integrity bindings; qualified file entries carry relative path, size and digest
-for package comparison. These checks bind actual consumers, not approvals or a
-chain of internal facts. A receiving consumer validates the actual download.
+The finite [GitHub comparison
+mapping](middle-level-design.md#github-event-comparison) reads native payload
+fields directly rather than adding another event declaration. Its implementation
+alone does not switch root CI or establish group coverage. Artifact references
+crossing jobs carry the same-run immutable artifact ID, and the native download
+checks its digest (`digest-mismatch: error`). Qualified file entries carry
+relative path, size and digest for package comparison. Each later Release job
+binds the received preparation's subject to its request with `release job-inputs
+<ecosystem> receive <phase>`. These checks bind actual consumers, not approvals
+or a chain of internal facts. A receiving consumer validates the actual
+download.
 
 Dry run executes qualification and supported reads, reports hypothetical writes
 and missing read authorization, and never enters a write gate.
@@ -1091,14 +1106,15 @@ complete fresh observation, preserving the command abnormality. Missing or malfo
 digest or required result cannot satisfy the request.
 
 The ordinary NuGet Buddy entry and reusable live caller use four concrete jobs:
-prepare, observe, publish and verify/result. Use the existing
-Environment on the actual publisher and native package concurrency through
-verification. Bind transferred control, preparation and original artifacts to
-immutable artifact ID/digest, producer/run and source subject, with 45-day
-retention. Product code runs outside the publication context. Development Buddy
-refs and dry runs are supported; dry runs enter no write gate and make no live
-claim. Retained closed-campaign readers keep their actual historical consumers;
-there is no compatibility alias for old runtime schemas.
+prepare, observe, publish and verify/result. Use the existing Environment on the
+actual publisher and native package concurrency through verification. Transfer
+control, preparation and original artifacts by same-run immutable artifact ID
+with the native download digest check; `job-inputs nuget receive <phase>` binds
+the received preparation's source subject to the request. Keep 45-day retention.
+Product code runs outside the publication context. Development Buddy refs and
+dry runs are supported; dry runs enter no write gate and make no live claim.
+Retained closed-campaign readers keep their actual historical consumers; there
+is no compatibility alias for old runtime schemas.
 
 Changes preserve this contract and its governing native-invocation boundary,
 with independent review before implementation. Validate application journeys, authentication separation, cancellation,
@@ -1138,6 +1154,14 @@ Provide faithful selected native ref/commit context on detached materializations
 missing required history/context or a live local-version projection blocks that
 request. Do not strip suffixes, choose another field or override only Release's
 version. Same-version/different-byte conflicts retain their normal outcome.
+
+CI package execution runs native tools in an owned environment that does not
+inherit the runner's ambient Actions/ref context, so builds see the same NBGV
+inputs as planning. Without ref context NBGV projects a non-public version that
+carries a `+g<commit>` local segment. Release preparation supplies the selected
+ref, so NBGV projects the public version. CI qualifies package construction, not
+the Release version string.
+
 Changes to this configuration or shared preparation require qualification of
 the exact changed source and affected CI/Release version and identity boundaries
 before delivery; they supply no new native experiment or live-operation authority.
@@ -1179,13 +1203,13 @@ unexpected selected-version files, conflicting bytes or unavailable required
 facts cannot permit mutation. Registry active-file non-overwrite is the native
 dependency; no atomic two-file release or lifetime-global retention is promised.
 
-Bound each observation phase to 90 seconds and nine application reads, each
-body-inclusive read to 30 seconds and index JSON to 2 MiB/4,096 entries. Use
-verified HTTPS through the shared registry HTTP client,
-without insecure fallback. Accept index file URLs only on the selected public
-storage host with no user information or fragment. Bounded
-visibility polling is read-only and remains inside those phase limits. Retain
-necessary sanitized observations rather than a replayable HTTP trust ledger.
+Bound each observation phase to 90 seconds, with one application index read and at
+most one application original read per prepared file, each body-inclusive read to 30 seconds and
+index JSON to 2 MiB/4,096 entries. Use verified HTTPS through the shared
+registry HTTP client, without insecure fallback. Accept index file URLs only on
+the selected public storage host with no user information or fragment.
+Observation performs no visibility polling. Retain necessary sanitized
+observations rather than a replayable HTTP trust ledger.
 
 Only the actual publisher receives the existing destination Environment and
 native `id-token: write`. Invoke the repository-selected UV publisher once for
@@ -1233,9 +1257,11 @@ resolver file selection. Missing or unknown observation blocks completion.
 The ordinary Python entry and actual Release caller compose qualified components.
 They use prepare, observe, gated publish and separate
 verify/result jobs on the supported Linux runner. Build/retain complete control
-before product execution; bind immutable transferred control, preparation and
-original artifacts to source/ref, unit/channel/destination/mode and actual
-producer/run, with the existing 45-day retention setting. Serialize by physical
+before product execution. Transfer control, preparation and original artifacts
+by same-run immutable artifact ID with the native download digest check;
+`job-inputs python receive <phase>` binds the received preparation's
+source/ref, unit/channel/destination/mode subject to the request. Keep the
+existing 45-day retention setting. Serialize by physical
 registry and normalized package through required verification. Dry run uses
 qualification/read/hypothetical operations and never `uv publish --dry-run`.
 Exact-state and dry-run paths enter no write gate. Common result evaluation
@@ -1313,9 +1339,8 @@ These are application process/result limits; the selected original has no
 application size limit and is hashed from the owned download file.
 RubyGems owns full inventory transfers, decompression and native request retries.
 Do not claim an underlying HTTP/inflated-index byte ceiling or replace native
-fetching to simulate one. Allow bounded read-only visibility polling only within
-the phase deadline. Retain sanitized business observations, not a replayable
-transport trust ledger.
+fetching to simulate one. Observation performs no visibility polling. Retain
+sanitized business observations, not a replayable transport trust ledger.
 
 GitHub read credentials belong only to the read adapter's environment and
 in-memory owner Source URI. Use no global authorization header, credentials in
@@ -1371,8 +1396,10 @@ dependency resolution. Missing or unknown observation blocks completion.
 The ordinary Ruby entry and actual caller compose qualified components.
 They use prepare, observe, gated publish and separate verify/result
 jobs on the supported Linux runner. Transfer complete same-revision control
-before product execution and bind immutable preparation/original transfers to
-source/ref, unit/channel/destination/mode and actual producer/run. Use the
+before product execution. Transfer preparation and originals by same-run
+immutable artifact ID with the native download digest check;
+`job-inputs ruby receive <phase>` binds the received preparation's
+source/ref, unit/channel/destination/mode subject to the request. Use the
 existing 45-day retention and physical registry/package native concurrency
 through verification. Dry run performs qualification/read/hypothetical work
 with no publication credential acquisition or `gem push`. Exact/dry-run paths

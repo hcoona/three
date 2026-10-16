@@ -66,10 +66,11 @@ C4Container
 
 CI control comes from the exact candidate revision. Release control and product
 source come from the selected release revision. The publisher uses a prepared
-CLI artifact from that control revision, with its actual producer and integrity
-binding checked at transfer. It does not build the CLI while holding publication
-credentials. An authorized control-code writer is inside this trust boundary;
-application checks do not confine a malicious accepted writer's effective token.
+CLI artifact from that control revision, transferred by same-run immutable
+artifact ID with the native download digest check. It does not build the CLI
+while holding publication credentials. An authorized control-code writer is
+inside this trust boundary; application checks do not confine a malicious
+accepted writer's effective token.
 
 ## Repository Facts and Selection
 
@@ -387,7 +388,7 @@ consumer. Inside a trusted invocation, ordinary typed values suffice.
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | Executor in another job/process | Candidate/request target, selected work, inputs, native versions and required checks                                       | Execute selected scope and return results for that subject                                       |
 | Review and publisher            | Complete qualified files, coordinates, source/control revision, destination, intended operations and qualification results | Bind actual artifacts to request and qualification; reject missing/substituted/mismatched inputs |
-| Platform artifact transfer      | Intended immutable artifact identity and relevant producer/integrity information                                           | Use native identity/integrity; no display-name/latest fallback                                   |
+| Platform artifact transfer      | Same-run immutable artifact identity and native download integrity                                                         | Use native identity/integrity; no display-name/latest fallback                                   |
 | Result consumer                 | Attempted effects, actual command results, remote facts, verification and uncertainty                                      | Keep execution facts separate from satisfaction; missing data cannot prove no effects            |
 | Operator                        | Scope, outcome, diagnostic reasons and supported next action                                                               | Preserve terminal outcomes; later requests cannot rewrite them                                   |
 

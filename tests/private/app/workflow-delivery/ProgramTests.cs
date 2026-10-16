@@ -404,7 +404,7 @@ public sealed class ProgramTests
 
         Assert.AreEqual(2, exit);
         Assert.AreEqual(string.Empty, output.ToString());
-        Assert.StartsWith("Usage: workflow-delivery ci plan", error.ToString());
+        Assert.StartsWith("Usage: WorkflowDelivery ci plan", error.ToString());
     }
 
 

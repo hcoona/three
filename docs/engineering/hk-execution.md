@@ -59,25 +59,29 @@ root development tools using uv's frozen package selection, including each
 selected member's default development groups. Tests then use that prepared
 environment without another sync. Engineering tests declare their own root
 dependencies. The native Python caller prepares only the adapters required by
-its selected targets, including isolated Ruby fixture tools
-and native Release preparation. Selected NBGV consumers also use .NET tools.
+its selected targets: native Node for the legacy release-contract test and
+PowerShell with the .NET runtime for the Azure credential-provider tests.
+Selected NBGV consumers also use .NET tools.
 Keep native preparation and execution bound to the original selected plan and
 its prepared environment. New test consumers must declare any additional native needs
-in the selector and workflow.
+in the C# scope and caller (`CiScope`, `PythonCiCaller`) and the workflow.
 
-Node and .NET may retain their existing workspace build
-units where dependency selection is conservative; that is workspace-level,
-not exact per-project execution. AzureAuth platform artifacts and Ruby or
-scholarly-publication suites have their own affected inputs. A changed .NET
-product does not by itself require AzureAuth artifacts or unrelated Python tests.
+.NET runs the selected native per-project/variant plan. Node runs the adopted
+group's plan plus the selected retained workspace members. AzureAuth platform
+artifacts and Ruby or scholarly-publication suites have their own affected
+inputs. A changed .NET product does not by itself require AzureAuth artifacts or
+unrelated Python tests.
 
-The selector runs without repository package restore or full validation.
+The scope job builds the candidate control application, then installs locked
+tools, restores dotnet tools and performs a locked `dotnet restore dirs.proj`
+at each endpoint before selection; it runs no tests or full validation.
 Each existing required GitHub context remains present and fails if selection
 fails, is canceled, or omits required output. Successful explicit
 non-applicability may omit work; selected work must complete successfully.
-The stable required `Validate` context consumes both source-conformance and
-scholarly-test job results. Its short result guard rejects failed, skipped,
-missing or canceled results, including workflow cancellation. Both workers
+The stable required `Validate` context consumes the source-conformance,
+scholarly-test, NuGet native preparation and native preparation test job
+results. Its short result guard rejects failed, skipped, missing or canceled
+results, including workflow cancellation. All four workers
 retain explicit successful non-applicability and run independently; this
 summary does not move project tests back into HK or precede language jobs.
 Worker jobs use `!cancelled()` so failed selection still reaches the scope
