@@ -35,6 +35,8 @@ internal static class RegistryBody
     {
         if (declared > expected) return new(null, null, null);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        if (retain && expected > Array.MaxLength)
+            throw new IOException("Original exceeds the platform array length.");
         byte[]? copy = retain ? new byte[expected] : null;
         byte[] buffer = new byte[81920];
         long total = 0;
