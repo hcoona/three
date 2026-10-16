@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -193,6 +195,10 @@ public sealed class GitReaderTests(TestContext context)
     private static string[] Paths(GitRevision revision) =>
         revision.Entries.Select(entry => entry.Path).ToArray();
 
+    // Index contract: staged edits and commits update an in-memory model; the on-disk index is
+    // rebuilt only by GitAsync (except reset --hard, which rewrites it) or FlushAsync. CommitAsync
+    // moves HEAD but leaves the index stale, so production code that reads the checkout must
+    // follow a GitAsync call (usually reset --hard or checkout) or an explicit FlushAsync.
     internal sealed class GitFixture(bool legacyNbgvCleanup, CancellationToken token) : IDisposable
     {
         private readonly string temporary = Path.Combine(Path.GetTempPath(),
@@ -212,7 +218,7 @@ public sealed class GitReaderTests(TestContext context)
                 string hooks = empty.Replace('\\', '/');
                 await File.WriteAllTextAsync(Path.Combine(empty, "config"),
                     "[user]\n\tname = Workflow fixture\n\temail = fixture@example.invalid\n" +
-                    "[commit]\n\tgpgSign = false\n[tag]\n\tgpgSign = false\n" +
+                    "[commit]\n\tgpgSign = false\n[tag]\n\tgpgSign = false\n[gc]\n\tauto = 0\n" +
                     "[core]\n\thooksPath = \"" + hooks + "\"\n\tprotectNTFS = false\n", token);
                 await fixture.GitAsync("init", "--quiet", "--initial-branch=fixture",
                     "--object-format=" + format, "--template=" + empty);
@@ -228,94 +234,302 @@ public sealed class GitReaderTests(TestContext context)
             }
         }
 
-        // Index edits are staged in order and applied before any later Git use, so a
-        // fixture commit costs a few Git launches instead of two per path.
-        private readonly List<(string Path, string? Mode, string? Content, string? Object)>
-            pending = [];
+        // The staged state is modelled in memory and each commit is one git fast-import
+        // stream. The index is rebuilt only before a later Git command that may observe it.
+        private sealed record Entry(string Mode, string? Object, string? Content);
+
+        // Commands that neither read nor write the index or HEAD. Pending content is hashed
+        // when committed or flushed, so it uses the configuration current at that time, not
+        // at the time it was staged (only CRLF content is hashed under configuration).
+        private static readonly HashSet<string> IndexNeutral = new(StringComparer.Ordinal)
+            { "branch", "config", "fetch", "init", "replace", "tag", "worktree" };
+
+        private static readonly UTF8Encoding Utf8 = new(false);
+        private readonly Dictionary<string, Dictionary<string, Entry>> commits =
+            new(StringComparer.Ordinal);
+        // Null means another Git command may have changed the index; reload lazily.
+        private Dictionary<string, Entry>? model = new(StringComparer.Ordinal);
+        private bool indexCurrent = true;
+        private string? modelCommit;
+        private string? head;
 
         internal async Task<string> GitAsync(params string[] arguments)
         {
-            await FlushAsync();
-            return await NativeProcess.RunAsync("git", Directory, arguments, token);
+            // A hard reset rewrites the index from its target, so pending edits are moot.
+            bool hardReset = arguments is ["reset", "--hard", _];
+            bool neutral = arguments.Length != 0 && IndexNeutral.Contains(arguments[0]);
+            if (!hardReset && !neutral)
+                await FlushAsync();
+            string output = await RunAsync(arguments);
+            if (hardReset && commits.TryGetValue(arguments[2] == "HEAD" ? head ?? ""
+                : arguments[2], out var tree))
+            {
+                head = modelCommit = arguments[2] == "HEAD" ? head : arguments[2];
+                model = new(tree, StringComparer.Ordinal);
+                indexCurrent = true;
+            }
+            else if (!neutral && arguments is not ["status", ..])
+            {
+                model = null;
+                modelCommit = head = null;
+                indexCurrent = true;
+            }
+            return output;
         }
 
-        internal Task SetAsync(string path, string content = "fixture", string mode = "100644")
+        internal async Task SetAsync(string path, string content = "fixture",
+            string mode = "100644")
         {
-            pending.Add((path, mode, content, null));
-            return Task.CompletedTask;
+            Dictionary<string, Entry> entries = await ModelAsync();
+            Validate(path, entries);
+            entries[path] = new(mode, null, content);
+            indexCurrent = false;
+            modelCommit = null;
         }
 
-        internal Task LinkAsync(string path, string commit)
+        internal async Task LinkAsync(string path, string commit)
         {
-            pending.Add((path, "160000", null, commit));
-            return Task.CompletedTask;
+            Dictionary<string, Entry> entries = await ModelAsync();
+            Validate(path, entries);
+            entries[path] = new("160000", commit, null);
+            indexCurrent = false;
+            modelCommit = null;
         }
 
-        internal Task RemoveAsync(string path)
+        internal async Task RemoveAsync(string path)
         {
-            pending.Add((path, null, null, null));
-            return Task.CompletedTask;
+            Validate(path, null);
+            (await ModelAsync()).Remove(path);
+            indexCurrent = false;
+            modelCommit = null;
         }
 
+        // Writes the cumulative staged tree as a commit with these parents and moves HEAD
+        // (or the branch it names) to it, like commit-tree plus update-ref HEAD. Repeated
+        // parent arguments are dropped in order, as commit-tree does for repeated ids.
+        // The index is left stale rather than rebuilt here: nearly every commit is followed
+        // by reset --hard, which rewrites the index anyway, so an eager read-tree would add
+        // one launch per commit. When edits were staged, the next GitAsync or FlushAsync
+        // rebuilds the index from this commit; otherwise it already holds the same tree.
         internal async Task<string> CommitAsync(params string[] parents)
         {
-            string tree = (await GitAsync("write-tree")).Trim();
-            var arguments = new List<string> { "commit-tree", tree, "-m", "Fixture" };
-            foreach (string parent in parents)
-                arguments.AddRange(["-p", parent]);
-            string commit = (await GitAsync(arguments.ToArray())).Trim();
-            await GitAsync("update-ref", "HEAD", commit);
+            Dictionary<string, Entry> entries = await ModelAsync();
+            string commit = await ImportAsync(entries, "HEAD",
+                parents.Distinct(StringComparer.Ordinal).ToArray());
+            commits[commit] = new(entries, StringComparer.Ordinal);
+            head = modelCommit = commit;
             return commit;
         }
 
         // Applies staged index edits now, for scenarios that leave them uncommitted.
         internal async Task FlushAsync()
         {
-            if (pending.Count == 0)
+            if (indexCurrent || model is null)
                 return;
-            var operations = pending.ToArray();
-            pending.Clear();
+            // An unreferenced scratch commit yields the staged tree without moving a ref.
+            string tree = modelCommit ?? await ImportAsync(model, "refs/fixture/index", [],
+                scratch: true);
+            // Single-tree -m keeps stat data for unchanged entries, as update-index did.
+            await RunAsync(["--no-replace-objects", "read-tree", "-m", tree]);
+            indexCurrent = true;
+        }
+
+        // Rejects paths update-index rejected, at staging time rather than at a later commit.
+        private static void Validate(string path, Dictionary<string, Entry>? entries)
+        {
+            foreach (string segment in path.Split('/'))
+                if (segment is "" or "." or ".." || Path.IsPathRooted(path) ||
+                    string.Equals(segment, ".git", StringComparison.OrdinalIgnoreCase))
+                    throw new ArgumentException($"Invalid fixture path: {path}", nameof(path));
+            if (entries is null)
+                return;
+            for (int slash = path.IndexOf('/', StringComparison.Ordinal); slash >= 0;
+                slash = path.IndexOf('/', slash + 1))
+                if (entries.ContainsKey(path[..slash]))
+                    throw new ArgumentException(
+                        $"Fixture path is below a file: {path}", nameof(path));
+            string directory = path + "/";
+            if (entries.Keys.Any(key => key.StartsWith(directory, StringComparison.Ordinal)))
+                throw new ArgumentException(
+                    $"Fixture path is a directory: {path}", nameof(path));
+        }
+
+        private async Task<Dictionary<string, Entry>> ModelAsync()
+        {
+            if (model is not null)
+                return model;
+            var entries = new Dictionary<string, Entry>(StringComparer.Ordinal);
+            foreach (string line in (await RunAsync(["ls-files", "--stage", "-z"])).Split('\0',
+                StringSplitOptions.RemoveEmptyEntries))
+            {
+                string[] fields = line[..line.IndexOf('\t', StringComparison.Ordinal)].Split(' ');
+                if (fields[2] != "0")
+                    throw new InvalidDataException("The fixture index has unmerged entries.");
+                entries[line[(line.IndexOf('\t', StringComparison.Ordinal) + 1)..]] =
+                    new(fields[0], fields[1], null);
+            }
+            return model = entries;
+        }
+
+        private async Task<string> ImportAsync(Dictionary<string, Entry> entries,
+            string reference, string[] parents, bool scratch = false)
+        {
+            await HashCarriageReturnsAsync(entries);
+            using var stream = new MemoryStream();
+            void Write(string text) => stream.Write(Utf8.GetBytes(text));
+            var marks = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach ((string path, Entry entry) in entries.Where(item => item.Value.Object is null))
+            {
+                byte[] data = Utf8.GetBytes(entry.Content!);
+                marks[path] = marks.Count + 2;
+                Write($"blob\nmark :{marks[path]}\ndata {data.Length}\n");
+                stream.Write(data);
+                Write("\n");
+            }
+            const string identity = "Workflow fixture <fixture@example.invalid> now\n";
+            // Reset first so a commit without parents is a root even on an existing ref.
+            Write($"reset {reference}\ncommit {reference}\nmark :1\nauthor {identity}" +
+                $"committer {identity}data 8\nFixture\n");
+            for (int index = 0; index < parents.Length; index++)
+                Write((index == 0 ? "from " : "merge ") + parents[index] + "^0\n");
+            Write("deleteall\n");
+            foreach ((string path, Entry entry) in entries)
+                Write($"M {entry.Mode} {entry.Object ?? ":" + marks[path]} {Quote(path)}\n");
+            Write(scratch ? "\nls :1 \"\"\n" : "\nget-mark :1\n");
+            foreach (int mark in marks.Values)
+                Write($"get-mark :{mark}\n");
+            if (scratch)
+                Write($"reset {reference}\n");
+            Write("done\n");
+            string[] lines = (await FastImportAsync(stream.ToArray())).Split('\n',
+                StringSplitOptions.RemoveEmptyEntries);
+            if (lines.Length != marks.Count + 1)
+                throw new InvalidDataException("Git fast-import returned unexpected output.");
+            int line = 1;
+            // Later streams reference stored blobs instead of resending their content.
+            foreach (string path in marks.Keys)
+                entries[path] = entries[path] with { Object = lines[line++], Content = null };
+            return scratch ? lines[0].Split(' ', '\t')[2] : lines[0];
+        }
+
+        // fast-import stores bytes verbatim; content Git may convert (CRLF under autocrlf)
+        // keeps today's hash-object conversion.
+        private async Task HashCarriageReturnsAsync(Dictionary<string, Entry> entries)
+        {
+            string[] paths = entries.Where(item => item.Value.Content?.Contains('\r') == true)
+                .Select(item => item.Key).ToArray();
+            if (paths.Length == 0)
+                return;
             string content = Path.Combine(temporary, "content");
             System.IO.Directory.CreateDirectory(content);
             var files = new List<string>();
-            foreach (var operation in operations.Where(item => item.Content is not null))
+            foreach (string path in paths)
             {
                 string file = Path.Combine(content, files.Count.ToString(
                     System.Globalization.CultureInfo.InvariantCulture));
-                await File.WriteAllTextAsync(file, operation.Content, token);
+                await File.WriteAllTextAsync(file, entries[path].Content, token);
                 files.Add(file);
             }
             var blobs = new List<string>();
             foreach (string[] chunk in Chunks(files))
-                blobs.AddRange((await NativeProcess.RunAsync("git", Directory,
-                    ["hash-object", "-w", "--", .. chunk], token)).Split('\n',
+                blobs.AddRange((await RunAsync(["hash-object", "-w", "--", .. chunk])).Split('\n',
                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
             if (blobs.Count != files.Count)
                 throw new InvalidDataException("Git returned an unexpected blob count.");
-            int blob = 0;
-            // Each run of additions or removals keeps its relative order in one launch.
-            for (int start = 0; start < operations.Length;)
-            {
-                bool remove = operations[start].Mode is null;
-                int end = start;
-                while (end < operations.Length && (operations[end].Mode is null) == remove)
-                    end++;
-                if (remove)
-                    foreach (string[] chunk in Chunks(operations[start..end]
-                        .Select(item => item.Path)))
-                        await NativeProcess.RunAsync("git", Directory,
-                            ["update-index", "--force-remove", "--", .. chunk], token);
-                else
+            for (int index = 0; index < paths.Length; index++)
+                entries[paths[index]] = entries[paths[index]] with
+                { Object = blobs[index], Content = null };
+        }
+
+        private static string Quote(string path)
+        {
+            var quoted = new StringBuilder("\"");
+            foreach (char value in path)
+                quoted.Append(value switch
                 {
-                    var entries = new List<string>();
-                    foreach (var operation in operations[start..end])
-                        entries.Add(operation.Mode + "," + (operation.Object ?? blobs[blob++]) +
-                            "," + operation.Path);
-                    foreach (string[] chunk in Chunks(entries))
-                        await NativeProcess.RunAsync("git", Directory, ["update-index", "--add",
-                            .. chunk.SelectMany(entry => new[] { "--cacheinfo", entry })], token);
+                    '"' => "\\\"",
+                    '\\' => "\\\\",
+                    '\n' => "\\n",
+                    < ' ' => "\\" + Convert.ToString((int)value, 8).PadLeft(3, '0'),
+                    _ => value.ToString(),
+                });
+            return quoted.Append('"').ToString();
+        }
+
+        private Task<string> RunAsync(string[] arguments) =>
+            NativeProcess.RunAsync("git", Directory, arguments, token);
+
+        private async Task<string> FastImportAsync(byte[] input)
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            using var process = new Process
+            {
+                StartInfo = new("git")
+                {
+                    WorkingDirectory = Directory,
+                    UseShellExecute = false,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                },
+            };
+            // Fixture imports stay loose objects, as the former hash-object/commit-tree path
+            // wrote them. The default limit (100) packs larger imports, and in-process readers
+            // such as NBGV map pack files until finalization, which blocks Windows cleanup.
+            foreach (string argument in new[] { "--no-replace-objects", "-c",
+                "fastimport.unpackLimit=1000000", "fast-import", "--quiet", "--force", "--done",
+                "--date-format=now" })
+                process.StartInfo.ArgumentList.Add(argument);
+            process.Start();
+            try
+            {
+                Task<string> output = process.StandardOutput.ReadToEndAsync(timeout.Token);
+                Task<string> error = process.StandardError.ReadToEndAsync(timeout.Token);
+                try
+                {
+                    await process.StandardInput.BaseStream.WriteAsync(input, timeout.Token);
+                    process.StandardInput.Close();
                 }
-                start = end;
+                // A failed import closes its input early; its exit code and stderr explain why.
+                catch (IOException) { }
+                await process.WaitForExitAsync(timeout.Token);
+                string message = await error;
+                if (process.ExitCode != 0)
+                    throw new InvalidDataException(
+                        $"Git fast-import failed with exit code {process.ExitCode}: {message}");
+                return await output;
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            {
+                throw new TimeoutException("Git fast-import exceeded its 30-second deadline.");
+            }
+            finally
+            {
+                await StopAsync(process);
+            }
+        }
+
+        // Kill is asynchronous, so cleanup waits for exit under its own bounded deadline.
+        private static async Task StopAsync(Process process)
+        {
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException) when (process.HasExited) { }
+            catch (System.ComponentModel.Win32Exception) when (process.HasExited) { }
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await process.WaitForExitAsync(cleanup.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new TimeoutException(
+                    "Git fast-import cleanup exceeded its 5-second deadline.");
             }
         }
 
