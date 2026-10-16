@@ -61,7 +61,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
     [DataRow(429, "Unknown")]
     [DataRow(503, "Unknown")]
     [DataRow(302, "Unknown")]
-    public async Task IndexStatusCannotInvokeNativeFactsOrFollowRedirects(int status,
+    public async Task UnsuccessfulIndexStatusCannotInvokeNativeFacts(int status,
         string expected)
     {
         using var fixture = new Fixture();

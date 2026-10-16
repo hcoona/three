@@ -101,7 +101,7 @@ internal static class PythonReleaseCli
             PythonIndexTools tools, CancellationToken token)
         {
             if (observe is not null) return await observe(prepared, tools, token);
-            using HttpClient client = PythonIndexObservation.CreateClient();
+            using HttpClient client = RegistryHttpClient.Create();
             return await new PythonIndexObservation(client, tools).ObserveAsync(prepared, token);
         }
     }

@@ -27,7 +27,7 @@ internal static class NuGetReleaseCli
         {
             NuGetPreparationResult preparation = Preparation(preparationPath);
             _ = NuGetRelease.Original(preparation, originals);
-            using HttpClient client = GithubNuGetObservation.CreateClient();
+            using HttpClient client = RegistryHttpClient.Create();
             GithubNuGetObservationResult result = (observe ?? new GithubNuGetObservation(client)
                 .ObserveAsync)(preparation.Prepared, Credential(), CancellationToken.None)
                 .GetAwaiter().GetResult();
@@ -53,7 +53,7 @@ internal static class NuGetReleaseCli
                 var publishOriginals])
         {
             NuGetPreparationResult preparation = Preparation(publishPreparation);
-            using HttpClient client = GithubNuGetObservation.CreateClient();
+            using HttpClient client = RegistryHttpClient.Create();
             var reader = new GithubNuGetObservation(client);
             GithubNuGetPublicationResult result = NuGetRelease.PublishAsync(preparation,
                 publishOriginals, Credential(), reader.ObserveAsync,

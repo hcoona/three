@@ -1,4 +1,3 @@
-using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using WorkflowDelivery.Platform;
@@ -18,16 +17,6 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
 {
     private const string Package = "hcoona-release-smoke-python";
     private const int MetadataLimit = 2 * 1024 * 1024;
-
-    internal static HttpClient CreateClient() => new(new HttpClientHandler
-    {
-        AllowAutoRedirect = false,
-        UseCookies = false,
-        UseProxy = false,
-        UseDefaultCredentials = false,
-        AutomaticDecompression = DecompressionMethods.None,
-    })
-    { Timeout = Timeout.InfiniteTimeSpan };
 
     internal Task<PythonIndexObservationResult> ObserveAsync(PreparedRelease prepared,
         CancellationToken token) => ObserveAsync(prepared, NativeProcess.ExecuteAsync, token);
@@ -173,8 +162,6 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
             request.Headers.CacheControl = new() { NoCache = true };
             using HttpResponseMessage response = await client.SendAsync(request,
                 HttpCompletionOption.ResponseHeadersRead, deadline.Token);
-            if (response.RequestMessage?.RequestUri is { } actualUri && actualUri != uri)
-                throw new InvalidDataException("Unexpected public response redirect.");
             int code = (int)response.StatusCode;
             reads.Add(new(stage, code, "Received public response headers."));
             if (code != 200 && code != 404) return (code, []);

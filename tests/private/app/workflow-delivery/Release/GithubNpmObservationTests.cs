@@ -62,6 +62,7 @@ public sealed class GithubNpmObservationTests
     }
 
     [TestMethod]
+    [DataRow(302, "Unknown")]
     [DataRow(404, "Unknown")]
     [DataRow(401, "Unknown")]
     [DataRow(429, "Unknown")]
@@ -81,51 +82,6 @@ public sealed class GithubNpmObservationTests
         Assert.HasCount(1, handler.Requests);
         Assert.AreEqual(ReleaseCheckStatus.Missing,
             result.Observation.Checks.Single(check => check.Id == "native-package-control").Status);
-    }
-
-    [TestMethod]
-    public async Task StorageRedirectStripsCredentialsWithoutReattachingOnReturn()
-    {
-        using var handler = new Handler((_, index) => index switch
-        {
-            0 => Json(Control),
-            1 => Json(Metadata("https://npm.pkg.github.com/archive")),
-            2 => Redirect("https://pkg-npm.githubusercontent.com/archive?signature=private"),
-            3 => Redirect("https://npm.pkg.github.com/final"),
-            _ => new(HttpStatusCode.OK) { Content = new ByteArrayContent(Original) },
-        });
-        using var client = new HttpClient(handler);
-
-        GithubNpmObservationResult result = await new GithubNpmObservation(client)
-            .ObserveAsync(Prepared(), Credential, CancellationToken.None);
-
-        Assert.AreEqual(ReleaseFileState.Exact,
-            Assert.ContainsSingle(result.Observation.Files).State);
-        Assert.HasCount(5, handler.Requests);
-        Assert.AreEqual(Credential, handler.Requests[2].Credential);
-        Assert.IsNull(handler.Requests[3].Credential);
-        Assert.IsNull(handler.Requests[4].Credential);
-        Assert.DoesNotContain("signature", JsonSerializer.Serialize(result));
-    }
-
-    [TestMethod]
-    public async Task UnsupportedStorageRedirectStopsBeforeCredentialedRequest()
-    {
-        using var handler = new Handler((_, index) => index switch
-        {
-            0 => Json(Control),
-            1 => Json(Metadata("https://npm.pkg.github.com/archive")),
-            _ => Redirect("https://unrelated.example/archive"),
-        });
-        using var client = new HttpClient(handler);
-
-        GithubNpmObservationResult result = await new GithubNpmObservation(client)
-            .ObserveAsync(Prepared(), Credential, CancellationToken.None);
-
-        Assert.AreEqual(ReleaseFileState.Unknown,
-            Assert.ContainsSingle(result.Observation.Files).State);
-        Assert.HasCount(3, handler.Requests);
-        Assert.IsFalse(handler.Requests.Any(request => request.Uri.Host == "unrelated.example"));
     }
 
     [TestMethod]
@@ -238,28 +194,6 @@ public sealed class GithubNpmObservationTests
         Assert.Contains("deadline", result.Reads[^1].Detail);
     }
 
-    [TestMethod]
-    public async Task RedirectsAndCompleteBodiesShareOneOperationDeadline()
-    {
-        var clock = new ManualClock();
-        using var handler = new Handler((_, index) =>
-        {
-            clock.Advance(TimeSpan.FromSeconds(16));
-            if (index == 0) return Json(Control);
-            if (index < 3) return Redirect("https://npm.pkg.github.com/next");
-            return Json(Metadata("https://npm.pkg.github.com/archive"));
-        });
-        using var client = new HttpClient(handler);
-
-        GithubNpmObservationResult result = await new GithubNpmObservation(client, clock)
-            .ObserveAsync(Prepared(), Credential, CancellationToken.None);
-
-        Assert.AreEqual(ReleaseFileState.Unknown,
-            Assert.ContainsSingle(result.Observation.Files).State);
-        Assert.HasCount(4, handler.Requests);
-        Assert.Contains("deadline", result.Reads[^1].Detail);
-    }
-
     private sealed class ExpiredBody(ManualClock clock) : MemoryStream
     {
         public override ValueTask<int> ReadAsync(Memory<byte> buffer,
@@ -327,13 +261,6 @@ public sealed class GithubNpmObservationTests
 
     private static HttpResponseMessage Json(string value) => new(HttpStatusCode.OK)
         { Content = new StringContent(value, Encoding.UTF8, "application/json") };
-
-    private static HttpResponseMessage Redirect(string value)
-    {
-        var response = new HttpResponseMessage(HttpStatusCode.Found);
-        response.Headers.Location = new(value);
-        return response;
-    }
 
     private sealed class Handler(Func<HttpRequestMessage, int, HttpResponseMessage> respond)
         : HttpMessageHandler

@@ -1,4 +1,3 @@
-using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using WorkflowDelivery.Release;
@@ -17,12 +16,6 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
     internal const string Registry = "https://npm.pkg.github.com";
     private const string Api = "https://api.github.com/users/hcoona/packages/npm/"
         + "hcoona-release-smoke-npm";
-
-    internal static HttpClient CreateClient() => new(new HttpClientHandler
-    {
-        AllowAutoRedirect = false, UseCookies = false, UseProxy = false,
-        UseDefaultCredentials = false, AutomaticDecompression = DecompressionMethods.None,
-    }) { Timeout = Timeout.InfiniteTimeSpan };
 
     internal async Task<GithubNpmObservationResult> ObserveAsync(PreparedRelease prepared,
         string credential, CancellationToken token)
@@ -112,67 +105,50 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
                         ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed)]), [.. reads],
                 tarballUrlSha256);
 
-        async Task<(int, byte[])> ReadAsync(string stage, Uri initial, int limit)
+        // The platform handler follows storage redirects and clears Authorization on
+        // each hop; tarball bytes are compared with the original above.
+        async Task<(int, byte[])> ReadAsync(string stage, Uri uri, int limit)
         {
-            Uri current = initial;
-            bool authorized = current.Host is "api.github.com" or "npm.pkg.github.com";
-            for (int redirects = 0; ; redirects++)
+            ValidateUri(uri, stage);
+            using var requestTimer = new CancellationTokenSource(TimeSpan.FromSeconds(20),
+                clock ?? TimeProvider.System);
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(
+                lifetime.Token, requestTimer.Token);
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            if (uri.Host is "api.github.com" or "npm.pkg.github.com")
+                request.Headers.Authorization = new("Bearer", credential);
+            request.Headers.Accept.ParseAdd(stage == "package"
+                ? "application/vnd.github+json" : stage == "metadata"
+                    ? "application/vnd.npm.install-v1+json, application/json"
+                    : "application/octet-stream");
+            request.Headers.UserAgent.ParseAdd("WorkflowDelivery");
+            if (stage == "package") request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
+            request.Headers.AcceptEncoding.ParseAdd("identity");
+            request.Headers.CacheControl = new() { NoCache = true };
+            using HttpResponseMessage response = await client.SendAsync(request,
+                HttpCompletionOption.ResponseHeadersRead, deadline.Token);
+            int status = (int)response.StatusCode;
+            // URLs can contain signed storage credentials; never retain them.
+            reads.Add(new(stage, status, "Received response headers."));
+            if (response.Content.Headers.ContentEncoding.Any(value =>
+                    !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidDataException("Unsupported response encoding.");
+            long? length = response.Content.Headers.ContentLength;
+            if (length > limit) throw new IOException("Response exceeds its body limit.");
+            using Stream stream = await response.Content.ReadAsStreamAsync(deadline.Token);
+            using var body = new MemoryStream();
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = await stream.ReadAsync(buffer, deadline.Token)) != 0)
             {
-                ValidateUri(current, stage);
-                using var requestTimer = new CancellationTokenSource(TimeSpan.FromSeconds(20),
-                    clock ?? TimeProvider.System);
-                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(
-                    lifetime.Token, requestTimer.Token);
-                using var request = new HttpRequestMessage(HttpMethod.Get, current);
-                if (authorized) request.Headers.Authorization = new("Bearer", credential);
-                request.Headers.Accept.ParseAdd(stage == "package"
-                    ? "application/vnd.github+json" : stage == "metadata"
-                        ? "application/vnd.npm.install-v1+json, application/json"
-                        : "application/octet-stream");
-                request.Headers.UserAgent.ParseAdd("WorkflowDelivery");
-                if (stage == "package") request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
-                request.Headers.AcceptEncoding.ParseAdd("identity");
-                request.Headers.CacheControl = new() { NoCache = true };
-                using HttpResponseMessage response = await client.SendAsync(request,
-                    HttpCompletionOption.ResponseHeadersRead, deadline.Token);
-                Uri actual = response.RequestMessage?.RequestUri ?? current;
-                ValidateUri(actual, stage);
-                if (actual != current)
-                    throw new InvalidDataException("Unexpected automatic redirect.");
-                int status = (int)response.StatusCode;
-                // URLs can contain signed storage credentials; never retain them.
-                reads.Add(new(stage, status, "Received response headers."));
-                if (response.Content.Headers.ContentEncoding.Any(value =>
-                        !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
-                    throw new InvalidDataException("Unsupported response encoding.");
-                if (status is >= 300 and < 400)
-                {
-                    if (redirects >= 5 || response.Headers.Location is not { } location)
-                        throw new InvalidDataException("Unsupported redirect response.");
-                    Uri next = location.IsAbsoluteUri ? location : new Uri(current, location);
-                    ValidateUri(next, stage);
-                    if (next.GetLeftPart(UriPartial.Authority) !=
-                        current.GetLeftPart(UriPartial.Authority)) authorized = false;
-                    current = next;
-                    continue;
-                }
-                long? length = response.Content.Headers.ContentLength;
-                if (length > limit) throw new IOException("Response exceeds its body limit.");
-                using Stream stream = await response.Content.ReadAsStreamAsync(deadline.Token);
-                using var body = new MemoryStream();
-                byte[] buffer = new byte[8192];
-                int count;
-                while ((count = await stream.ReadAsync(buffer, deadline.Token)) != 0)
-                {
-                    if (body.Length + count > limit)
-                        throw new IOException("Response exceeds its body limit.");
-                    await body.WriteAsync(buffer.AsMemory(0, count), deadline.Token);
-                }
-                if (length is not null && body.Length != length)
-                    throw new IOException("Incomplete response body.");
-                deadline.Token.ThrowIfCancellationRequested();
-                return (status, body.ToArray());
+                if (body.Length + count > limit)
+                    throw new IOException("Response exceeds its body limit.");
+                await body.WriteAsync(buffer.AsMemory(0, count), deadline.Token);
             }
+            if (length is not null && body.Length != length)
+                throw new IOException("Incomplete response body.");
+            deadline.Token.ThrowIfCancellationRequested();
+            return (status, body.ToArray());
         }
     }
 

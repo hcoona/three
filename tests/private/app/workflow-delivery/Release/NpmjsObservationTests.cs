@@ -41,6 +41,7 @@ public sealed class NpmjsObservationTests(TestContext context)
     [DataRow(429, "Unknown")]
     [DataRow(503, "Unknown")]
     [DataRow(403, "Unknown")]
+    [DataRow(302, "Unknown")]
     public async Task MetadataStatusDefinesReadOnlyStateWithoutTarballRequest(int status,
         string state)
     {
@@ -125,49 +126,6 @@ public sealed class NpmjsObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("https://example.org/file")]
-    [DataRow("https://user@registry.npmjs.org/file")]
-    [DataRow("https://registry.npmjs.org:444/file")]
-    [DataRow("https://registry.npmjs.org/file#fragment")]
-    [DataRow("http://registry.npmjs.org/file")]
-    public async Task OffOriginRedirectIsRejectedBeforeItCanBeSent(string destination)
-    {
-        using var handler = new Handler((_, _, _) =>
-        {
-            HttpResponseMessage response = Response(302, "");
-            response.Headers.Location = new(destination);
-            return Task.FromResult(response);
-        });
-        using var client = new HttpClient(handler);
-
-        NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
-            Prepare([1, 2, 3]), context.CancellationToken);
-
-        Assert.AreEqual(ReleaseFileState.Unknown,
-            Assert.ContainsSingle(result.Observation.Files).State);
-        Assert.HasCount(1, handler.Requests);
-    }
-
-    [TestMethod]
-    public async Task RedirectLimitStopsWithoutBlindRetry()
-    {
-        using var handler = new Handler((_, number, _) =>
-        {
-            HttpResponseMessage response = Response(302, "");
-            response.Headers.Location = new("/redirect-" + number, UriKind.Relative);
-            return Task.FromResult(response);
-        });
-        using var client = new HttpClient(handler);
-
-        NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
-            Prepare([1, 2, 3]), context.CancellationToken);
-
-        Assert.AreEqual(ReleaseFileState.Unknown,
-            Assert.ContainsSingle(result.Observation.Files).State);
-        Assert.HasCount(6, handler.Requests);
-    }
-
-    [TestMethod]
     public async Task TruncatedBodyCannotEstablishExactOrAbsentState()
     {
         using var handler = new Handler((_, _, _) =>
@@ -206,32 +164,6 @@ public sealed class NpmjsObservationTests(TestContext context)
             Assert.ContainsSingle(result.Observation.Files).State);
         Assert.Contains("Cancelled", result.Reads[^1].Detail);
         Assert.HasCount(1, handler.Requests);
-    }
-
-    [TestMethod]
-    public async Task RedirectsAndBothBodiesShareOneOperationDeadline()
-    {
-        var clock = new ManualClock();
-        using var handler = new Handler((_, number, token) =>
-        {
-            clock.Advance(TimeSpan.FromSeconds(16));
-            token.ThrowIfCancellationRequested();
-            if (number < 2)
-            {
-                HttpResponseMessage redirect = Response(302, "");
-                redirect.Headers.Location = new("/next", UriKind.Relative);
-                return Task.FromResult(redirect);
-            }
-            return Task.FromResult(Response(200, Metadata()));
-        });
-        using var client = new HttpClient(handler);
-
-        NpmjsObservationResult result = await new NpmjsObservation(client, clock).ObserveAsync(
-            Prepare([1, 2, 3]), context.CancellationToken);
-
-        Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
-        Assert.HasCount(4, handler.Requests);
-        Assert.Contains("deadline", result.Reads[^1].Detail);
     }
 
     [TestMethod]

@@ -952,7 +952,7 @@ hosted Live invocation. Historical acceptance readers retain their actual pinned
 native producer source; they do not authorize replay.
 
 Use the existing bounded native read mechanisms as extraction inputs, not the old
-Governance expiry/profile digests. Each integration closes endpoint/redirect and
+Governance expiry/profile digests. Each integration closes endpoint, redirect and
 credential handling, request/body limits, read deadline/poll bound, package-size
 bounds and cancellation before it is callable. No missing lower-layer guarantee
 may be replaced by an application reservation or probe ledger. A failed upload
@@ -962,6 +962,24 @@ Built-in bounded native retries remain within that one invocation, under the
 [MLD destination contract](middle-level-design.md#destination-interface).
 The [NuGet source basis](research/nuget-native-publisher.md) closes the selected
 publisher retry boundary without supplying new runtime evidence.
+
+The npm, NuGet and Python registry observations share one standard HTTP client
+with no cookies, proxies, default credentials or automatic decompression. It
+follows at most five redirects under the platform's
+[documented redirect contract](https://learn.microsoft.com/dotnet/api/system.net.http.httpclienthandler.allowautoredirect?view=net-10.0#remarks)
+([runtime source](https://github.com/dotnet/runtime/blob/v10.0.12/src/libraries/System.Net.Http/src/System/Net/Http/SocketsHttpHandler/RedirectHandler.cs)),
+which clears the \`Authorization\` header on every automatic redirect, including
+a same-host redirect, and does not follow an HTTPS-to-HTTP redirect. The
+adapter validates the HTTPS origin of each URL it requests and attaches
+credentials only to the registry or API origin it selects. It does not
+validate redirect targets or implement its own redirect hop. A redirect target
+that requires the dropped credential, such as an authenticated path on the
+same registry host, therefore fails closed as an unknown read. An unfollowed
+redirect, including one beyond the limit, is a non-success response and cannot
+establish exact or absent state. Exact and conflicting original state rests on
+exact coordinate metadata and original size/SHA-256 equality, not on the
+serving host. Absence and metadata rely on the selected HTTPS origin and the
+redirects it issues. Each body-inclusive read deadline covers its redirects.
 
 Ordinary workflows request 45-day retention for required prepared CLI,
 qualified packages and request/results, matching the existing workflow setting.
@@ -1009,9 +1027,8 @@ implementation. Source inspection and installed package availability establish
 neither runtime compatibility nor live publication. Keep this client untrimmed
 and JIT; no AOT claim is made.
 
-Observe the selected `https://nuget.pkg.github.com/hcoona/index.json` through an
-owned standard HTTP handler with no automatic redirects, cookies, proxies or
-default credentials. Official `ServiceIndexResourceV3` interprets the service
+Observe the selected `https://nuget.pkg.github.com/hcoona/index.json` through the
+shared registry HTTP client described above. Official `ServiceIndexResourceV3` interprets the service
 index; require unique HTTPS owner-origin PackageBaseAddress and PackagePublish
 endpoints without user information, query or fragment. Native NuGet identity
 comparison owns normalized package/version equality. Require the selected
@@ -1020,13 +1037,10 @@ GitHub package's NuGet type, normalized name, public visibility and
 original archive comparison. API inventory is supporting metadata with bounded
 pagination, not an independent admission authority.
 
-Bound each observation to 90 seconds and 80 HTTP reads, each body-inclusive read
-to 30 seconds, metadata bodies to 2 MiB and the original archive to 25 MiB. Permit
-one actual 301/302 archive redirect under the retained native storage contract:
-public HTTPS DNS destination without user information, fragment or a nondefault
-port, no credentials to storage and no further redirects. Signed URLs stay in
-memory; diagnostic output uses sanitized origin and location digest. Compare
-original size and digest. Exact, absent, conflicting and unknown observations
+Bound each observation to 90 seconds and 80 application reads, each
+body-inclusive read to 30 seconds, metadata bodies to 2 MiB and the original
+archive to 25 MiB. The shared client follows the archive's storage redirect;
+signed URLs are not retained in diagnostics. Compare original size and digest. Exact, absent, conflicting and unknown observations
 use the same predicate before and after publication. Unknown control, identity
 or original bytes block writes; absence permits creation only with established
 native package control.
@@ -1071,7 +1085,7 @@ there is no compatibility alias for old runtime schemas.
 
 Changes preserve this contract and its governing native-invocation boundary,
 with independent review before implementation. Validate application journeys, authentication separation, cancellation,
-observation redirects, transfer/result completeness and official-client binding with controlled
+transfer/result completeness and official-client binding with controlled
 contract tests and real credential-free local native package/consumer tests.
 Complete affected managed/Python suites, HK, records, independent engineering/OCR
 and record/research reviews, and ordinary Windows CI before caller delivery.
@@ -1148,11 +1162,11 @@ unexpected selected-version files, conflicting bytes or unavailable required
 facts cannot permit mutation. Registry active-file non-overwrite is the native
 dependency; no atomic two-file release or lifetime-global retention is promised.
 
-Bound each observation phase to 90 seconds and nine HTTP reads, each
+Bound each observation phase to 90 seconds and nine application reads, each
 body-inclusive read to 30 seconds, index JSON to 2 MiB/4,096 entries and each
-original to 8 MiB. Use verified HTTPS, no automatic redirects, cookies,
-proxy/default credentials or insecure fallback. Accept file URLs only on the
-selected public storage host with no user information or fragment. Bounded
+original to 8 MiB. Use verified HTTPS through the shared registry HTTP client,
+without insecure fallback. Accept index file URLs only on the selected public
+storage host with no user information or fragment. Bounded
 visibility polling is read-only and remains inside those phase limits. Retain
 necessary sanitized observations rather than a replayable HTTP trust ledger.
 
