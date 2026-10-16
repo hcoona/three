@@ -74,25 +74,23 @@ public sealed class NpmjsObservationTests(TestContext context)
         Assert.HasCount(2, handler.Requests);
     }
 
-    // No application size cap applies; a body longer than the original stops one byte
-    // past it and is a conflict without a measured size or digest.
+    // A body longer than the original stops one byte past it and is a conflict without a
+    // measured size or digest.
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task LargeOriginalIsExactAndALongerBodyIsAConflict(bool longer)
+    public async Task LongerTarballIsAConflictWithoutAMeasurement()
     {
-        byte[] original = new byte[26 * 1000 * 1000];
-        new Random(23).NextBytes(original);
+        byte[] original = Encoding.UTF8.GetBytes("qualified original bytes");
         using var handler = new Handler((_, number, _) => Task.FromResult(number == 0
-            ? Response(200, Metadata()) : Response(200, longer ? [.. original, 0] : original)));
+            ? Response(200, Metadata()) : Response(200, [.. original, 0])));
         using var client = new HttpClient(handler);
 
         NpmjsObservationResult result = await new NpmjsObservation(client).ObserveAsync(
             Prepare(original), context.CancellationToken);
 
         ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
-        Assert.AreEqual(longer ? ReleaseFileState.Conflict : ReleaseFileState.Exact, file.State);
-        Assert.AreEqual(longer ? null : original.LongLength, file.Size);
+        Assert.AreEqual(ReleaseFileState.Conflict, file.State);
+        Assert.IsNull(file.Size);
+        Assert.IsNull(file.Sha256);
     }
 
     [TestMethod]

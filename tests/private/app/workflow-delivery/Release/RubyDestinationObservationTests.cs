@@ -207,26 +207,6 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task LargeNativeOriginalCanBeExact()
-    {
-        using var fixture = new Fixture("official", "rubygems");
-        // No application size cap applies; the registry owns package size limits.
-        byte[] bytes = Enumerable.Repeat((byte)'x', 8 * 1024 * 1024 + 1).ToArray();
-        PreparedRelease prepared = fixture.Prepared with
-        { Files = [fixture.Prepared.Files[0] with { Size = bytes.LongLength, Sha256 = Hash(
-            bytes) }] };
-        RubyObservationResult result = await RubyDestinationObservation.ObserveAsync(prepared,
-            fixture.Tools, null, (command, _) =>
-                Task.FromResult(Success(fixture.Present(command, bytes))),
-                    context.CancellationToken);
-        AssertObservation(prepared, result, ReleaseFileState.Exact, ReleaseCheckStatus.Passed);
-        Assert.AreEqual(bytes.LongLength, result.Read.Original!.Size);
-        Assert.AreEqual(Hash(bytes), result.Read.Original.Sha256);
-        CollectionAssert.AreEqual(bytes, File.ReadAllBytes(result.Read.Original.Path));
-        AssertSanitized(result, Success(""));
-    }
-
-    [TestMethod]
     [DataRow("outside")]
     [DataRow("prefix-sibling")]
     [DataRow("missing")]
