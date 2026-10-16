@@ -53,10 +53,11 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                 fixture.PathOf("leaf/leaf.csproj"))));
         // Both effective native values are retained: the consumer's local base and the root
         // base other projects inherit (the SDK fallback alone would be each project directory).
-        Assert.IsTrue(response.Nodes.Where(node => PhysicalPathComparer.Equals(
-                node.Identity.Project, fixture.PathOf("dependency/dependency.csproj")))
-            .All(node => PhysicalPathComparer.Equals(fixture.Root,
-                Path.TrimEndingDirectorySeparator(node.VersionBaseDirectory))));
+        foreach (DotNetGraphNode node in response.Nodes.Where(node => PhysicalPathComparer.Equals(
+            node.Identity.Project, fixture.PathOf("dependency/dependency.csproj"))))
+            Assert.IsTrue(PhysicalPathComparer.Equals(fixture.Root,
+                Path.TrimEndingDirectorySeparator(node.VersionBaseDirectory)),
+                "dependency version base: " + node.VersionBaseDirectory);
         DotNetGraphNode[] consumers = response.Nodes.Where(node => PhysicalPathComparer.Equals(
             node.Identity.Project, fixture.PathOf("product/consumer.csproj"))).ToArray();
         Assert.HasCount(3, consumers);
@@ -64,7 +65,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         foreach (DotNetGraphNode node in consumers)
         {
             Assert.IsTrue(PhysicalPathComparer.Equals(versionBase,
-                Path.TrimEndingDirectorySeparator(node.VersionBaseDirectory)));
+                Path.TrimEndingDirectorySeparator(node.VersionBaseDirectory)),
+                "consumer version base: " + node.VersionBaseDirectory);
             Dictionary<string, string> expected = new(outer.Identity.Globals,
                 StringComparer.Ordinal);
             if (!node.OuterBuild)
@@ -163,7 +165,11 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         Assert.IsNotNull(common.Provider);
         Assert.AreEqual("TraversalPackage", common.Provider.Kind);
         Assert.AreEqual("Microsoft.SourceLink.Common", common.Provider.Identity);
-        Assert.IsNotEmpty(common.Provider.Version);
+        // The provider version is the app's pass-through of the traversal's restored assets.
+        LockFileLibrary restoredCommon = Assert.ContainsSingle(new LockFileFormat().Read(
+            fixture.PathOf("obj/dirs/project.assets.json")).Libraries.Where(library =>
+            library.Type == "package" && library.Name == "Microsoft.SourceLink.Common"));
+        Assert.AreEqual(restoredCommon.Version.ToNormalizedString(), common.Provider.Version);
         Assert.IsTrue(PhysicalPathComparer.Equals(Path.Combine(common.Provider.Root, "build",
             "Microsoft.SourceLink.Common.props"), common.Path), common.Path);
         foreach (DotNetGraphNode node in consumers.Where(node => !node.OuterBuild))
@@ -310,13 +316,13 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     [Timeout(30000, CooperativeCancellation = true)]
     public async Task NativeOwnershipPreservesNearestRegionsAndVariantExcludes()
     {
-        // One nested region holds both extension casings; each must claim the region.
+        // Separate nested regions: each extension casing must form and claim its own region.
         using var fixture = new GraphFixture();
         fixture.Write("dirs.proj", """
             <Project><ItemGroup>
               <ProjectReference Include="parent/main.csproj" />
               <ProjectReference Include="parent/nested/one.csproj" />
-              <ProjectReference Include="parent/nested/two.CSPROJ" />
+              <ProjectReference Include="parent/nested2/two.CSPROJ" />
             </ItemGroup></Project>
             """);
         fixture.Write("parent/main.csproj", """
@@ -333,13 +339,14 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             </Project>
             """);
         fixture.Write("parent/nested/one.csproj", GraphFixture.Project);
-        fixture.Write("parent/nested/two.CSPROJ", GraphFixture.Project);
+        fixture.Write("parent/nested2/two.CSPROJ", GraphFixture.Project);
         fixture.CommittedPaths = [fixture.PathOf("parent/document.md"),
             fixture.PathOf("parent/fixtures/version.json"),
             fixture.PathOf("parent/.cache/hidden.txt"),
             fixture.PathOf("parent/semi;colon.txt"),
             fixture.PathOf("parent/variant-only.txt"),
-            fixture.PathOf("parent/nested/new.cs"), fixture.PathOf("unowned.md")];
+            fixture.PathOf("parent/nested/new.cs"), fixture.PathOf("parent/nested2/upper.cs"),
+            fixture.PathOf("unowned.md")];
         DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
         DotNetGraphNode[] parent = response.Nodes.Where(node =>
             node.Identity.Project == fixture.PathOf("parent/main.csproj") && !node.OuterBuild)
@@ -352,18 +359,21 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             Assert.DoesNotContain(fixture.PathOf("parent/.cache/hidden.txt"), node.OwnedPaths);
             Assert.DoesNotContain(fixture.PathOf("parent/semi;colon.txt"), node.OwnedPaths);
             Assert.DoesNotContain(fixture.PathOf("parent/nested/new.cs"), node.OwnedPaths);
+            Assert.DoesNotContain(fixture.PathOf("parent/nested2/upper.cs"), node.OwnedPaths);
             Assert.DoesNotContain(fixture.PathOf("unowned.md"), node.OwnedPaths);
             Assert.AreEqual(node.Dimension.TargetFramework == "net10.0",
                 node.OwnedPaths.Contains(fixture.PathOf("parent/variant-only.txt")));
         }
-        DotNetGraphNode[] nested = response.Nodes.Where(node =>
-            node.Identity.Project == fixture.PathOf("parent/nested/one.csproj") ||
-            node.Identity.Project == fixture.PathOf("parent/nested/two.CSPROJ")).ToArray();
-        Assert.HasCount(2, nested);
-        foreach (DotNetGraphNode node in nested)
+        foreach ((string project, string owned) in new[]
         {
-            Assert.HasCount(1, node.OwnedPaths);
-            Assert.Contains(fixture.PathOf("parent/nested/new.cs"), node.OwnedPaths);
+            ("parent/nested/one.csproj", "parent/nested/new.cs"),
+            ("parent/nested2/two.CSPROJ", "parent/nested2/upper.cs"),
+        })
+        {
+            DotNetGraphNode node = Assert.ContainsSingle(response.Nodes.Where(node =>
+                node.Identity.Project == fixture.PathOf(project)), project);
+            CollectionAssert.AreEqual(new[] { fixture.PathOf(owned) }, node.OwnedPaths,
+                project + " owns: " + string.Join("; ", node.OwnedPaths));
         }
     }
 
@@ -603,11 +613,14 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                 project, consumer, fixture.Root, committed), scenario);
         }
 
-        // The native task applies the same validator and writes no response on failure.
+        // The native task passes its own committed paths to the validator: valid assets with
+        // an uncommitted root configuration fail end to end and write no response.
+        await File.WriteAllBytesAsync(path, originalAssets, context.CancellationToken);
         await File.WriteAllBytesAsync(lockPath, originalLock, context.CancellationToken);
-        File.Delete(path);
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            fixture.ReadAsync(context.CancellationToken));
+        fixture.IncludeRootConfiguration = false;
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => fixture.ReadAsync(context.CancellationToken));
+        Assert.Contains("locked restore metadata", failure.Message);
         Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
     }
 
@@ -1223,7 +1236,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                         new System.Xml.Linq.XElement("Project",
                             new System.Xml.Linq.XAttribute("Path", project)))))
                     .Save(solution);
-                // The supported locked operation also writes absent disposable fixture locks.
+                // Observed on the pinned SDK 10.0.401 (not a documented contract): locked mode
+                // writes absent fixture locks. If that changes, commit literal locks as data.
                 await RestoreAsync(["restore", solution, "--locked-mode",
                     "-property:Configuration=Debug", "-property:ContinuousIntegrationBuild=true"],
                     token);
