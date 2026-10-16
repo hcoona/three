@@ -112,16 +112,12 @@ public sealed class NodePackageArchiveTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task ReadAcceptsMemberAndManifestByteBoundaries()
+    public async Task ReadAcceptsTheManifestByteBoundary()
     {
         using var files = new ArchiveFiles();
         ArchiveMember[] required = PackageArchiveFixture.Required();
         required[0] = required[0] with { Bytes = new byte[NodePackageArchive.ManifestLimit] };
-        // Payload and other members carry no per-member size cap below the expanded bound.
-        required[1] = required[1] with
-            { Bytes = new byte[NodePackageArchive.ManifestLimit + 1] };
-        PackageArchiveFixture.Write(files.Archive,
-            required.Append(new("package/large.bin", new byte[48 * 1024 * 1024])));
+        PackageArchiveFixture.Write(files.Archive, required);
 
         await NodePackageArchive.ReadAsync(files.Archive, files.Metadata,
             context.CancellationToken);

@@ -23,6 +23,23 @@ public sealed class RegistryBodyTests(TestContext context)
         else Assert.IsNull(served.Bytes);
     }
 
+    // A body spanning many short reads is hashed and retained across every chunk.
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task OriginalAccumulatesAcrossShortReads(bool retain)
+    {
+        byte[] original = new byte[200 * 1024 + 3];
+        new Random(29).NextBytes(original);
+        using var stream = new ShortReadStream(original, 7);
+        RegistryOriginalBytes served = await RegistryBody.OriginalAsync(stream,
+            original.LongLength, original.LongLength, retain, context.CancellationToken);
+        Assert.AreEqual(original.LongLength, served.Size);
+        Assert.AreEqual(Convert.ToHexStringLower(SHA256.HashData(original)), served.Sha256);
+        if (retain) CollectionAssert.AreEqual(original, served.Bytes);
+        else Assert.IsNull(served.Bytes);
+    }
+
     [TestMethod]
     [DataRow(null)]
     [DataRow(5L)]
@@ -66,6 +83,13 @@ public sealed class RegistryBodyTests(TestContext context)
         using var stream = new MemoryStream(new byte[5]);
         await Assert.ThrowsExactlyAsync<IOException>(() => RegistryBody.LimitedAsync(stream,
             declared, 4, context.CancellationToken));
+    }
+
+    private sealed class ShortReadStream(byte[] bytes, int chunk) : MemoryStream(bytes)
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer,
+            CancellationToken cancellationToken = default) =>
+            base.ReadAsync(buffer[..Math.Min(buffer.Length, chunk)], cancellationToken);
     }
 
     private sealed class CountingStream(byte[] bytes) : MemoryStream(bytes)
