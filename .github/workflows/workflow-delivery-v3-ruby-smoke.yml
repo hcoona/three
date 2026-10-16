@@ -383,7 +383,10 @@ jobs:
         run: |-
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby source-config final-observation-scratch
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/verification/final.json" || true
+          # A handled conflicting or unknown observation remains typed completion input.
+          status=0
+          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/verification/final.json" || status=$?
+          if [ "$status" -gt 1 ]; then exit "$status"; fi
           publication=-
           if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
           mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
