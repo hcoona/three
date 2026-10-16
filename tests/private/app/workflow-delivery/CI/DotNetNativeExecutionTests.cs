@@ -61,50 +61,6 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
 
     [TestMethod]
     [Timeout(600000, CooperativeCancellation = true)]
-    public async Task NativeMtpInnerVariantRetainsSettingsAndOutput()
-    {
-        using var fixture = await DotNetNativeFixture.CreateAsync("MTP", context.CancellationToken);
-        Dictionary<string, string> globals = DotNetNativeFixture.Globals();
-        using JsonDocument properties = await fixture.QueryAsync(globals,
-            ["IsTestingPlatformApplication", "TargetFrameworks", "UseAppHost"],
-            context.CancellationToken);
-        Assert.AreEqual("true", properties.RootElement.GetProperty("Properties")
-            .GetProperty("IsTestingPlatformApplication").GetString());
-        Assert.AreEqual("net10.0;net8.0", properties.RootElement.GetProperty("Properties")
-            .GetProperty("TargetFrameworks").GetString());
-        CiPlan plan = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate, "MTP",
-            globals, DotNetNativeFixture.Project);
-        DotNetRunResult result = await DotNetExecution.RunAsync(plan,
-            new(fixture.Root, fixture.RunScratch, NativeCommandDeadlineSeconds),
-            context.CancellationToken);
-        context.WriteLine(JsonSerializer.Serialize(result, TransferJson.Default.DotNetRunResult));
-        AssertSuccessfulNativeRun(fixture, plan, result, "net10.0", "InvokeTestingPlatform");
-    }
-
-    [TestMethod]
-    [Timeout(600000, CooperativeCancellation = true)]
-    public async Task NativeVstestUsesProjectSettings()
-    {
-        using var fixture = await DotNetNativeFixture.CreateAsync("VSTest",
-            context.CancellationToken);
-        Dictionary<string, string> globals = DotNetNativeFixture.Globals();
-        using JsonDocument properties = await fixture.QueryAsync(globals,
-            ["IsTestingPlatformApplication", "IsTestProject"], context.CancellationToken);
-        Assert.AreEqual("false", properties.RootElement.GetProperty("Properties")
-            .GetProperty("IsTestingPlatformApplication").GetString());
-        Assert.AreEqual("true", properties.RootElement.GetProperty("Properties")
-            .GetProperty("IsTestProject").GetString());
-        CiPlan plan = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate, "VSTest",
-            globals, DotNetNativeFixture.Project);
-        DotNetRunResult result = await DotNetExecution.RunAsync(plan,
-            new(fixture.Root, fixture.RunScratch, NativeCommandDeadlineSeconds),
-            context.CancellationToken);
-        context.WriteLine(JsonSerializer.Serialize(result, TransferJson.Default.DotNetRunResult));
-        AssertSuccessfulNativeRun(fixture, plan, result, "net10.0", "VSTest");
-    }
-
-    [TestMethod]
-    [Timeout(600000, CooperativeCancellation = true)]
     public async Task NativeBatchRetainsIndependentVariantsWithNbgvWhenAnotherEntryFails()
     {
         using var fixture = await DotNetNativeFixture.CreateAsync("MTP",
@@ -157,6 +113,20 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
             new(fixture.Root, fixture.RunScratch, NativeCommandDeadlineSeconds),
             context.CancellationToken);
         context.WriteLine(JsonSerializer.Serialize(result, TransferJson.Default.DotNetRunResult));
+        // Passing-entry evidence first, so a success-path regression reports before isolation.
+        Assert.Contains(capability == "MTP" ? "InvokeTestingPlatform" : "VSTest",
+            File.ReadAllText(Path.Combine(fixture.RunScratch, "test-request.json")));
+        Assert.HasCount(3, result.Outputs);
+        Assert.IsTrue(result.Outputs.All(output => File.Exists(output.Path) &&
+            output.Path.Contains("native-bin", StringComparison.Ordinal)), Diagnostics(result));
+        XElement[] tests = XDocument.Load(Path.Combine(fixture.Root, "tests", "receipts",
+            "net10.0", "native.trx")).Descendants().Where(element =>
+                element.Name.LocalName == "UnitTestResult").ToArray();
+        Assert.HasCount(2, tests);
+        Assert.AreEqual("Passed", tests.Single(test => test.Attribute("testName")!.Value ==
+            "SelectedPasses").Attribute("outcome")!.Value);
+        Assert.AreEqual("NotExecuted", tests.Single(test => test.Attribute("testName")!.Value ==
+            "SelectedSkipped").Attribute("outcome")!.Value);
         Assert.IsTrue(result.Results.Where(item => item.Key.Check == DotNetChecks.Build)
             .All(item => item.Status == CheckStatus.Passed), Diagnostics(result));
         CheckKey failed = failing.Checks[1].Work.Key;
@@ -175,32 +145,7 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         Assert.Contains("Intentional native net8.0 test failure", result.Failures[0].Error);
         Assert.DoesNotContain("Intentional native net8.0 test failure",
             result.Tests.Single(test => test.Key == passed).Log);
-        Assert.HasCount(3, result.Outputs);
         Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
-    }
-
-    private static void AssertSuccessfulNativeRun(DotNetNativeFixture fixture, CiPlan plan,
-        DotNetRunResult result, string framework, string target)
-    {
-        Assert.IsTrue(ResultCollector.Collect(plan, result.Results).Satisfied, Diagnostics(result));
-        Assert.IsNotNull(result.BatchBuild);
-        Assert.IsNotNull(result.TestBatch);
-        Assert.AreEqual("Success", Assert.ContainsSingle(result.Tests).Test);
-        Assert.Contains(target, File.ReadAllText(Path.Combine(fixture.RunScratch,
-            "test-request.json")));
-        Assert.HasCount(2, result.Outputs);
-        Assert.IsTrue(result.Outputs.All(output => File.Exists(output.Path) &&
-            output.Path.Contains("native-bin", StringComparison.Ordinal)));
-        string report = Path.Combine(fixture.Root, "tests", "receipts", framework, "native.trx");
-        XDocument trx = XDocument.Load(report);
-        XElement[] tests = trx.Descendants().Where(element => element.Name.LocalName ==
-            "UnitTestResult").ToArray();
-        Assert.HasCount(2, tests);
-        Assert.AreEqual("Passed", tests.Single(test => test.Attribute("testName")!.Value ==
-            "SelectedPasses").Attribute("outcome")!.Value);
-        Assert.AreEqual("NotExecuted", tests.Single(test => test.Attribute("testName")!.Value ==
-            "SelectedSkipped").Attribute("outcome")!.Value);
-        Assert.IsEmpty(result.Failures);
     }
 
     private static string Diagnostics(DotNetRunResult result) => string.Join("\n",

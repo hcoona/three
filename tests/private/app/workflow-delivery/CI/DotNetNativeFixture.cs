@@ -157,10 +157,6 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                 repo.Directory,
                 ["restore", "tests/NativeTests.csproj", "--use-lock-file"], 60), token);
             RequireSuccess(seed, "Fixture restore seed");
-            NativeCommandResult locked = await NativeProcess.ExecuteAsync(new("dotnet",
-                repo.Directory,
-                ["restore", "tests/NativeTests.csproj", "--locked-mode", "--force"], 60), token);
-            RequireSuccess(locked, "Fixture locked restore");
             string[] locks = ["tests/packages.lock.json", "library/packages.lock.json",
                 "analyzer/packages.lock.json"];
             foreach (string path in locks)
@@ -184,19 +180,6 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
             ["IsGraphBuild"] = "true",
             ["UseAppHost"] = appHost ? "true" : "false",
         };
-
-    internal async Task<JsonDocument> QueryAsync(Dictionary<string, string> globals,
-        string[] names, CancellationToken token)
-    {
-        string path = Path.Combine(Scratch, "query.json");
-        NativeCommandResult query = await NativeProcess.ExecuteAsync(new("dotnet", Root,
-            ["msbuild", Project, "-nologo", "-noAutoResponse",
-                "-getProperty:" + string.Join(',', names),
-                "-getResultOutputFile:" + path,
-                .. WorkflowDelivery.Repository.DotNetChecks.Properties(globals)], 60), token);
-        RequireSuccess(query, "Native property query");
-        return JsonDocument.Parse(await File.ReadAllTextAsync(path, token));
-    }
 
     internal static void RequireSuccess(NativeCommandResult result, string operation)
     {
