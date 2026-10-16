@@ -207,10 +207,11 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task NativeOriginalAtSizeLimitCanBeExact()
+    public async Task LargeNativeOriginalCanBeExact()
     {
         using var fixture = new Fixture("official", "rubygems");
-        byte[] bytes = Enumerable.Repeat((byte)'x', 8 * 1024 * 1024).ToArray();
+        // No application size cap applies; the registry owns package size limits.
+        byte[] bytes = Enumerable.Repeat((byte)'x', 8 * 1024 * 1024 + 1).ToArray();
         PreparedRelease prepared = fixture.Prepared with
         { Files = [fixture.Prepared.Files[0] with { Size = bytes.LongLength, Sha256 = Hash(
             bytes) }] };
@@ -237,7 +238,6 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     [DataRow("digest")]
     [DataRow("relative")]
     [DataRow("empty")]
-    [DataRow("oversized")]
     public async Task UnownedOrInconsistentOriginalCannotCertifyExact(string scenario)
     {
         using var fixture = new Fixture();
@@ -270,8 +270,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
                 case "digest": answer["sha256"] = new string('a', 64); break;
                 case "relative": answer["path"] = "download/original.gem"; break;
                 case "empty":
-                case "oversized":
-                    byte[] bytes = new byte[scenario == "empty" ? 0 : 8 * 1024 * 1024 + 1];
+                    byte[] bytes = [];
                     File.WriteAllBytes(path, bytes);
                     answer["size"] = bytes.Length;
                     answer["sha256"] = Hash(bytes);

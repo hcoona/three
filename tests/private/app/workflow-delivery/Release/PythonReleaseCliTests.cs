@@ -202,7 +202,6 @@ public sealed class PythonReleaseCliTests
     [DataRow("command-error")]
     [DataRow("errors")]
     [DataRow("destination")]
-    [DataRow("size")]
     public void InvalidCompletePreparationFailsReceipt(string defect)
     {
         using var f = new Fixture();
@@ -225,8 +224,6 @@ public sealed class PythonReleaseCliTests
             "errors" => bad with { Errors = ["incomplete preparation"] },
             "destination" => bad with { Prepared = p with { Subject = p.Subject with { Destination =
                 "pypi" } } },
-            "size" => bad with { Prepared = p with { Files = [p.Files[0] with { Size =
-                ReleasePolicy.ReadbackOriginalLimit + 1 }, p.Files[1]] } },
             _ => bad,
         };
         if (defect.StartsWith("native-", StringComparison.Ordinal))

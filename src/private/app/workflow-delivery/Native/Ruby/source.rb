@@ -58,7 +58,7 @@ def read_selected_source(request)
     raise "Native Ruby download leaves owned state"
   end
   size = File.size(path)
-  raise "Unsupported native Ruby original size" unless size.positive? && size <= 8 * 1024 * 1024
+  raise "Empty native Ruby original" unless size.positive?
 
   { "state" => "present", "name" => spec.name, "version" => spec.version.to_s,
     "platform" => spec.platform.to_s, "path" => path, "size" => size,

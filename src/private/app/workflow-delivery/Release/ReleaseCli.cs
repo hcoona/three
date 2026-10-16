@@ -36,7 +36,7 @@ internal static class ReleaseCli
             foreach (ReleaseFile file in prepared.Files)
             {
                 (long size, string digest) = NpmPackageOperations.OriginalAsync(
-                    Path.Combine(scratch, file.Path), 25_000_000, CancellationToken.None)
+                    Path.Combine(scratch, file.Path), CancellationToken.None)
                     .GetAwaiter().GetResult();
                 if (size != file.Size || digest != file.Sha256)
                     throw new InvalidDataException(
@@ -160,7 +160,7 @@ internal static class ReleaseCli
         foreach (ReleaseFile file in prepared.Files)
         {
             (long size, string digest) = NpmPackageOperations.OriginalAsync(Path.Combine(root,
-                file.Path), 25_000_000, CancellationToken.None).GetAwaiter().GetResult();
+                file.Path), CancellationToken.None).GetAwaiter().GetResult();
             if (size != file.Size || digest != file.Sha256)
                 throw new InvalidDataException(
                     "Original release transfer differs from preparation.");

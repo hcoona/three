@@ -179,12 +179,6 @@ public sealed class PythonNativePublisherTests(TestContext context)
                 [new("qualified", ReleaseCheckStatus.Failed)]
                 }; break;
             case "missing-check": prepared = prepared with { Checks = [] }; break;
-            case "too-large":
-                prepared = prepared with
-                {
-                    Files = [prepared.Files[0] with
-                { Size = 8 * 1024 * 1024 + 1 }, prepared.Files[1]]
-                }; break;
             case "wrong-name":
                 prepared = prepared with
                 {

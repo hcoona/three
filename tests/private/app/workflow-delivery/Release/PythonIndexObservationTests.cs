@@ -228,15 +228,12 @@ public sealed class PythonIndexObservationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task ResponseBoundsIncludeBodiesWithoutDeclaredLength(bool archive)
+    public async Task IndexBoundIncludesBodiesWithoutDeclaredLength()
     {
         using var fixture = new Fixture();
-        using var handler = new Handler((_, n, _) =>
+        using var handler = new Handler((_, _, _) =>
         {
-            HttpResponseMessage response = Response(200, n == 0 && archive
-                ? Encoding.UTF8.GetBytes("{}") : new byte[(archive ? 8 : 2) * 1024 * 1024 + 1]);
+            HttpResponseMessage response = Response(200, new byte[2 * 1024 * 1024 + 1]);
             response.Content.Headers.ContentLength = null;
             return Task.FromResult(response);
         });
@@ -247,8 +244,42 @@ public sealed class PythonIndexObservationTests(TestContext context)
             context.CancellationToken);
         Assert.IsTrue(result.Observation.Files.All(file => file.State == ReleaseFileState.Unknown));
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Observation.Checks[0].Status);
-        Assert.HasCount(archive ? 2 : 1, handler.Requests);
+        Assert.HasCount(1, handler.Requests);
         Assert.IsFalse(ReleaseCompletion.Describe(fixture.Prepared, result.Observation, []).Ready);
+    }
+
+    // An original has no application size cap. A served body is read only one byte past
+    // the qualified original's size, so a longer body is a conflict, never retained.
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task LargeOriginalIsExactAndALongerBodyIsAConflict(bool longer)
+    {
+        byte[] large = new byte[9 * 1024 * 1024];
+        new Random(17).NextBytes(large);
+        using var fixture = new Fixture();
+        PreparedRelease prepared = fixture.Prepared with { Files = [fixture.Prepared.Files[0] with
+            { Size = large.LongLength, Sha256 = Convert.ToHexStringLower(SHA256.HashData(large)) },
+            fixture.Prepared.Files[1]] };
+        using var handler = new Handler((_, n, _) =>
+        {
+            HttpResponseMessage response = Response(200, n == 0 ? Encoding.UTF8.GetBytes("{}")
+                : n == 1 ? (longer ? [.. large, 0] : large) : Sdist);
+            response.Content.Headers.ContentLength = null;
+            return Task.FromResult(response);
+        });
+        using var client = new HttpClient(handler);
+        PythonIndexObservationResult result = await new PythonIndexObservation(client,
+            fixture.Tools).ObserveAsync(prepared, (_, _) => Task.FromResult(Native(
+                Facts(prepared, "test-files.pythonhosted.org"))),
+            context.CancellationToken);
+        ReleaseFileObservation wheel = result.Observation.Files[0];
+        Assert.AreEqual(longer ? ReleaseFileState.Conflict : ReleaseFileState.Exact, wheel.State);
+        Assert.AreEqual(longer ? null : large.LongLength, wheel.Size);
+        Assert.AreEqual(ReleaseFileState.Exact, result.Observation.Files[1].State);
+        Assert.HasCount(3, handler.Requests);
+        Assert.AreEqual(!longer, ReleaseCompletion.Describe(prepared, result.Observation,
+            []).Ready);
     }
 
     [TestMethod]

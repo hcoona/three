@@ -18,10 +18,12 @@ import zipfile
 from email.parser import BytesParser
 from pathlib import Path, PurePosixPath
 
-MAX_ARCHIVE = 128 * 1024 * 1024
-MAX_CONTENTS = 256 * 1024 * 1024
+# Iterating a compressed sdist decompresses every member, so declared contents
+# and member headers bound that expansion. A wheel reads only its directory and
+# METADATA, so neither bound applies to it.
+MAX_SDIST_CONTENTS = 256 * 1024 * 1024
+MAX_SDIST_MEMBERS = 20000
 MAX_METADATA = 1024 * 1024
-MAX_MEMBERS = 20000
 MAX_INDEX_FILES = 4096
 QUALITY = "python/hcoona-release-smoke-python-v1"
 
@@ -99,9 +101,15 @@ def metadata_identity(data: bytes, name: str, version: str) -> None:
 
 
 class _Inventory:
-    """Bound native member inventory used by both standard archive readers."""
+    """Unique native member inventory used by both standard archive readers."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        contents_limit: int | None = None,
+        member_limit: int | None = None,
+    ) -> None:
+        self.contents_limit = contents_limit
+        self.member_limit = member_limit
         self.members: set[str] = set()
         self.files: set[str] = set()
         self.total = 0
@@ -110,14 +118,17 @@ class _Inventory:
         coordinate = member_path(coordinate)
         if (
             coordinate in self.members
-            or len(self.members) >= MAX_MEMBERS
             or size < 0
+            or (
+                self.member_limit is not None
+                and len(self.members) >= self.member_limit
+            )
         ):
             message = "Ambiguous or oversized archive"
             raise ValueError(message)
         self.members.add(coordinate)
         self.total += size
-        if self.total > MAX_CONTENTS:
+        if self.contents_limit is not None and self.total > self.contents_limit:
             message = "Oversized archive contents"
             raise ValueError(message)
         if regular:
@@ -151,7 +162,7 @@ def _wheel(path: Path) -> tuple[set[str], bytes, set[str]]:
 
 
 def _sdist(path: Path) -> tuple[set[str], bytes, set[str]]:
-    inventory = _Inventory()
+    inventory = _Inventory(MAX_SDIST_CONTENTS, MAX_SDIST_MEMBERS)
     metadata = []
     with tarfile.open(path, "r:*") as archive:
         for info in archive:
@@ -210,7 +221,7 @@ def inspect_archive(
     if quality != QUALITY:
         message = "Unsupported registered Python package quality"
         raise ValueError(message)
-    if not path.is_file() or path.stat().st_size > MAX_ARCHIVE:
+    if not path.is_file():
         message = "Invalid original distribution"
         raise ValueError(message)
     if path.suffix == ".whl":

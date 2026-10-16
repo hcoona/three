@@ -142,7 +142,7 @@ internal static class NpmPreparation
         await CheckAsync("pack", async () =>
         {
             await RunAsync("pack", NpmPackageOperations.Pack(checkout, product, archive));
-            (size, sha256) = await NpmPackageOperations.OriginalAsync(archive, 25_000_000, token);
+            (size, sha256) = await NpmPackageOperations.OriginalAsync(archive, token);
         });
         await CheckAsync("contents", async () =>
         {
@@ -160,7 +160,7 @@ internal static class NpmPreparation
         await CheckAsync("original-bytes", async () =>
         {
             (long actualSize, string actualDigest) = await NpmPackageOperations.OriginalAsync(
-                archive, 25_000_000, token);
+                archive, token);
             if (actualSize != size || actualDigest != sha256)
                 throw new InvalidDataException("Qualified original changed during consumption.");
             files.Add(new(build.Id, build.Outputs[0].Id, "npm-tarball",

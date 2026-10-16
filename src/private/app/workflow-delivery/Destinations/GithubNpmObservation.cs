@@ -22,7 +22,7 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
     {
         if (prepared.Subject.Channel != "buddy" ||
             prepared.Subject.Destination != "github-packages-npm" || prepared.Files is not
-                [{ Kind: "npm-tarball", Name: Package, Size: <= 25_000_000 }] ||
+                [{ Kind: "npm-tarball", Name: Package }] ||
             credential.Length == 0 || credential.Any(c => c is '\r' or '\n' or '\0'))
             throw new InvalidDataException("Unsupported GitHub npm request or read credential.");
         ReleaseFile file = prepared.Files[0];
@@ -34,7 +34,7 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token, timer.Token);
         try
         {
-            (int status, byte[] body) = await ReadAsync("package", new(Api), 1_000_000);
+            (int status, byte[] body) = await ReadAsync("package", new(Api), Metadata);
             // An unavailable or unreadable package-control response cannot establish state.
             if (status != 200) return Result(ReleaseFileState.Unknown);
             using (JsonDocument document = JsonDocument.Parse(body))
@@ -53,7 +53,7 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
                 control = ReleaseCheckStatus.Passed;
             }
             (status, body) = await ReadAsync("metadata", new(Registry + "/@hcoona%2F"
-                + "hcoona-release-smoke-npm"), 1_000_000);
+                + "hcoona-release-smoke-npm"), Metadata);
             // A missing provisioned package response cannot authorize creation.
             if (status != 200) return Result(ReleaseFileState.Unknown);
             using JsonDocument metadata = JsonDocument.Parse(body);
@@ -72,11 +72,12 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
             ValidateUri(archive, "tarball");
             tarballUrlSha256 = Convert.ToHexStringLower(SHA256.HashData(
                 System.Text.Encoding.UTF8.GetBytes(archive.AbsoluteUri)));
-            (status, body) = await ReadAsync("tarball", archive, 25_000_000);
+            (status, RegistryOriginalBytes served) = await ReadAsync("tarball", archive,
+                (stream, length, read) => RegistryBody.OriginalAsync(stream, length, file.Size,
+                    retain: false, read));
             if (status != 200) return Result(ReleaseFileState.Unknown);
-            string digest = Convert.ToHexStringLower(SHA256.HashData(body));
-            return Result(body.LongLength == file.Size && digest == file.Sha256
-                ? ReleaseFileState.Exact : ReleaseFileState.Conflict, body.LongLength, digest);
+            return Result(served.Size == file.Size && served.Sha256 == file.Sha256
+                ? ReleaseFileState.Exact : ReleaseFileState.Conflict, served.Size, served.Sha256);
         }
         catch (OperationCanceledException)
         {
@@ -107,7 +108,11 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
 
         // The platform handler follows storage redirects and clears Authorization on
         // each hop; tarball bytes are compared with the original above.
-        async Task<(int, byte[])> ReadAsync(string stage, Uri uri, int limit)
+        static Task<byte[]> Metadata(Stream stream, long? length, CancellationToken read) =>
+            RegistryBody.LimitedAsync(stream, length, 1_000_000, read);
+
+        async Task<(int, T)> ReadAsync<T>(string stage, Uri uri,
+            Func<Stream, long?, CancellationToken, Task<T>> read)
         {
             ValidateUri(uri, stage);
             using var requestTimer = new CancellationTokenSource(TimeSpan.FromSeconds(20),
@@ -133,22 +138,10 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
             if (response.Content.Headers.ContentEncoding.Any(value =>
                     !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidDataException("Unsupported response encoding.");
-            long? length = response.Content.Headers.ContentLength;
-            if (length > limit) throw new IOException("Response exceeds its body limit.");
             using Stream stream = await response.Content.ReadAsStreamAsync(deadline.Token);
-            using var body = new MemoryStream();
-            byte[] buffer = new byte[8192];
-            int count;
-            while ((count = await stream.ReadAsync(buffer, deadline.Token)) != 0)
-            {
-                if (body.Length + count > limit)
-                    throw new IOException("Response exceeds its body limit.");
-                await body.WriteAsync(buffer.AsMemory(0, count), deadline.Token);
-            }
-            if (length is not null && body.Length != length)
-                throw new IOException("Incomplete response body.");
+            T body = await read(stream, response.Content.Headers.ContentLength, deadline.Token);
             deadline.Token.ThrowIfCancellationRequested();
-            return (status, body.ToArray());
+            return (status, body);
         }
     }
 

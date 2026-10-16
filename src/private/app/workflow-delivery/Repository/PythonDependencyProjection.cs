@@ -28,8 +28,7 @@ internal static class PythonDependencyProjection
                 throw new InvalidDataException("Ambiguous Python passive context.");
         if (!passive.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(members.Keys.Append(".")))
             throw new InvalidDataException("Python passive contexts omit native ownership.");
-        IReadOnlyDictionary<string, string> workspace = passive["."].Sources ??
-            new Dictionary<string, string>();
+        IReadOnlyDictionary<string, string> workspace = passive["."].Sources;
         var associations = new List<PythonBuildAssociation>();
         foreach ((string consumer, PythonPassiveProject project) in passive.OrderBy(pair =>
             pair.Key, StringComparer.Ordinal))
@@ -43,7 +42,7 @@ internal static class PythonDependencyProjection
                 // exact workspace reference in the project or workspace root table. A
                 // project entry takes precedence, so a member producer needs one there or
                 // in the root.
-                string? local = project.Sources?.GetValueOrDefault(requirement.Name);
+                string? local = project.Sources.GetValueOrDefault(requirement.Name);
                 workspace.TryGetValue(requirement.Name, out string? shared);
                 if (local is "unsupported" || shared is "unsupported")
                     throw new InvalidDataException("Unsupported Python build requirement source.");
@@ -96,13 +95,17 @@ internal static class PythonDependencyProjection
             };
             string entry = metadata.Members.SingleOrDefault(member =>
                 member.Directory == owner)?.Id ?? metadata.WorkspaceId;
-            bool declared = metadata.Nodes[entry].Groups.Concat(owner == "." ?
-                metadata.Nodes[metadata.WorkspaceId].Groups : []).Any(group =>
-                    group.Name == DefaultGroup);
+            bool declared = Groups(metadata, entry, owner).Any(group =>
+                group.Name == DefaultGroup);
             groups.Add(new(owner, !operation.NoDev && declared ? [DefaultGroup] : []));
         }
         return groups.ToArray();
     }
+
+    // A root context also sees the workspace's own groups.
+    private static IEnumerable<PythonMetadataEntry> Groups(PythonMetadata metadata,
+        string entry, string directory) => metadata.Nodes[entry].Groups.Concat(
+            directory == "." ? metadata.Nodes[metadata.WorkspaceId].Groups : []);
 
     internal static PythonProjectDependencies[] Project(PythonMetadata metadata,
         PythonOperationGroups[] operations, PythonBuildAssociation[] builds)
@@ -141,8 +144,7 @@ internal static class PythonDependencyProjection
             {
                 foreach (string group in operation.Groups)
                 {
-                    PythonMetadataEntry[] groups = metadata.Nodes[entry].Groups
-                        .Concat(directory == "." ? metadata.Nodes[metadata.WorkspaceId].Groups : [])
+                    PythonMetadataEntry[] groups = Groups(metadata, entry, directory)
                         .Where(item => item.Name == group).DistinctBy(item => item.Id).ToArray();
                     if (groups.Length != 1)
                         throw new InvalidDataException(

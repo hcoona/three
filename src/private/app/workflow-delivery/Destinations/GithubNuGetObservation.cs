@@ -24,14 +24,13 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
     private const string Api = "https://api.github.com/users/hcoona/packages/nuget/"
         + "hcoona.releasesmoke.githubpackages";
     private const int MetadataLimit = 2 * 1024 * 1024;
-    private const int ArchiveLimit = 25 * 1024 * 1024;
 
     internal async Task<GithubNuGetObservationResult> ObserveAsync(PreparedRelease prepared,
         string credential, CancellationToken token)
     {
         if (prepared.Subject.Channel != "buddy" ||
             prepared.Subject.Destination != "github-packages-nuget" || prepared.Files is not
-                [{ Kind: "nuget-package", Size: <= ArchiveLimit }] ||
+                [{ Kind: "nuget-package" }] ||
             !StringComparer.OrdinalIgnoreCase.Equals(prepared.Files[0].Name, Package) ||
             string.IsNullOrEmpty(credential) || credential.Any(c => c is '\r' or '\n' or '\0'))
             throw new InvalidDataException("Unsupported GitHub NuGet request.");
@@ -100,16 +99,17 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
 
             string archiveUrl = root + Uri.EscapeDataString(version) + "/" +
                 Uri.EscapeDataString(packageId + "." + version + ".nupkg");
-            (status, body) = await ReadAsync("original-archive", new(archiveUrl), archive: true);
+            (status, RegistryOriginalBytes served) = await ReadBodyAsync("original-archive",
+                new(archiveUrl), (stream, length, read) => RegistryBody.OriginalAsync(stream,
+                    length, file.Size, retain: true, read), archive: true);
             RequireOk(status);
-            string digest = Convert.ToHexStringLower(SHA256.HashData(body));
-            if (body.LongLength != file.Size || digest != file.Sha256)
-                return Result(ReleaseFileState.Conflict, body.LongLength, digest);
-            using var stream = new MemoryStream(body, writable: false);
+            if (served.Size != file.Size || served.Sha256 != file.Sha256)
+                return Result(ReleaseFileState.Conflict, served.Size, served.Sha256);
+            using var stream = new MemoryStream(served.Bytes!, writable: false);
             using var archive = new PackageArchiveReader(stream);
             if (!PackageIdentityComparer.Default.Equals(archive.GetIdentity(), identity))
                 return Result(ReleaseFileState.Conflict);
-            return Result(ReleaseFileState.Exact, body.LongLength, digest);
+            return Result(ReleaseFileState.Exact, served.Size, served.Sha256);
         }
         catch (OperationCanceledException)
         {
@@ -136,7 +136,12 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
 
         // The platform handler follows the archive's storage redirect and clears
         // Authorization on each hop; the archive bytes are then compared below.
-        async Task<(int, byte[])> ReadAsync(string stage, Uri uri, bool archive = false)
+        Task<(int, byte[])> ReadAsync(string stage, Uri uri) => ReadBodyAsync(stage, uri,
+            (stream, length, read) => RegistryBody.LimitedAsync(stream, length, MetadataLimit,
+                read));
+
+        async Task<(int, T)> ReadBodyAsync<T>(string stage, Uri uri,
+            Func<Stream, long?, CancellationToken, Task<T>> read, bool archive = false)
         {
             ValidateOrigin(uri, stage.StartsWith("github", StringComparison.Ordinal) ||
                 stage == "package-control" ? "api.github.com" : "nuget.pkg.github.com");
@@ -162,21 +167,10 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
             if (response.Content.Headers.ContentEncoding.Any(value =>
                 !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidDataException("Unsupported response encoding.");
-            int limit = archive ? ArchiveLimit : MetadataLimit;
-            long? length = response.Content.Headers.ContentLength;
-            if (length > limit) throw new IOException("Response body exceeds its limit.");
             using Stream content = await response.Content.ReadAsStreamAsync(deadline.Token);
-            using var bytes = new MemoryStream();
-            byte[] buffer = new byte[8192];
-            int count;
-            while ((count = await content.ReadAsync(buffer, deadline.Token)) != 0)
-            {
-                if (bytes.Length + count > limit) throw new IOException();
-                await bytes.WriteAsync(buffer.AsMemory(0, count), deadline.Token);
-            }
-            if (length is not null && length != bytes.Length) throw new IOException();
+            T body = await read(content, response.Content.Headers.ContentLength, deadline.Token);
             deadline.Token.ThrowIfCancellationRequested();
-            return (status, bytes.ToArray());
+            return (status, body);
         }
     }
 

@@ -14,8 +14,8 @@ class UnsupportedContextError(ValueError):
     """Report physical request guards without source values."""
 
 
-def _guard_uv_configuration(document: dict) -> None:
-    """Check physical table shapes without interpreting native settings."""
+def _guard_uv_configuration(document: dict) -> dict:
+    """Check physical table shapes and return the UV table uninterpreted."""
     tool = document.get("tool", {})
     if not isinstance(tool, dict):
         message = "The tool table must be a table."
@@ -27,13 +27,14 @@ def _guard_uv_configuration(document: dict) -> None:
     if set(uv) - {"workspace", "sources"}:
         message = "The requested UV settings need native adaptation."
         raise UnsupportedContextError(message)
+    return uv
 
 
-def _source_kinds(document: dict) -> dict[str, str]:
+def _source_kinds(uv: dict) -> dict[str, str]:
     """Classify each declared source as the admitted workspace shape or not."""
     from packaging.utils import canonicalize_name  # noqa: PLC0415
 
-    sources = document.get("tool", {}).get("uv", {}).get("sources", {})
+    sources = uv.get("sources", {})
     if not isinstance(sources, dict):
         message = "The UV sources must be a table."
         raise UnsupportedContextError(message)
@@ -95,8 +96,7 @@ def inspect_project(directory: Path) -> dict[str, object]:
     root = directory.resolve(strict=True)
     with (root / "pyproject.toml").open("rb") as stream:
         document = tomllib.load(stream)
-    _guard_uv_configuration(document)
-    sources = _source_kinds(document)
+    sources = _source_kinds(_guard_uv_configuration(document))
     tool = document.get("tool", {})
 
     requirements = None

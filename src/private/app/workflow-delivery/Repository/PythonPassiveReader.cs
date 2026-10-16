@@ -4,9 +4,14 @@ using WorkflowDelivery.Platform;
 namespace WorkflowDelivery.Repository;
 
 internal sealed record PythonBuildRequirement(string Name, string[] Extras);
+// An omitted source table is empty, so consumers need no separate absent case.
 internal sealed record PythonPassiveProject(string Directory,
     PythonBuildRequirement[]? BuildRequirements,
-    IReadOnlyDictionary<string, string>? Sources = null);
+    IReadOnlyDictionary<string, string>? Sources = null)
+{
+    internal IReadOnlyDictionary<string, string> Sources { get; init; } =
+        Sources ?? new Dictionary<string, string>();
+}
 internal sealed record PythonNbgvCoordinates(string WorkingDirectory, string? GeneratedFile);
 internal sealed record PythonPassiveInputs(PythonPassiveProject Project,
     PythonNbgvCoordinates? Nbgv);
