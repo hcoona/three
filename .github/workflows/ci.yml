@@ -53,7 +53,7 @@ jobs:
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           # Preserve the existing Java vendor semantics at both endpoints.
-          version: '2026.8.10'
+          version: '2026.10.11'
           experimental: true
           install_args: dotnet node pnpm
       - name: Prepare the complete candidate control application
@@ -179,7 +179,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
-          version: '2026.8.10'
+          version: '2026.10.11'
           experimental: true
           install: false
 
@@ -303,7 +303,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
-          version: '2026.8.10'
+          version: '2026.10.11'
           experimental: true
           install: false
 
@@ -607,7 +607,7 @@ jobs:
       - name: Setup native tools
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
-          version: '2026.8.10'
+          version: '2026.10.11'
           experimental: true
           install_args: dotnet node pnpm
       - name: Download the exact scope artifact
@@ -662,12 +662,15 @@ jobs:
                 cd "$state/$runtime"
                 if jq -e --arg key "$runtime" '.runtime.variants[]|select(.key==$key)|.exactVersion != null' "$state/group-plan.json" >/dev/null; then
                   mise install --locked node || exit "$?"
+                  runtime_locked=1
                 else
                   MISE_EXEC_AUTO_INSTALL=0 MISE_LOCKED=0 mise --no-config install "$selector" || exit "$?"
+                  # The compatibility runtime is intentionally absent from mise.lock.
+                  runtime_locked=0
                 fi
-                mise exec "$selector" -- pnpm install --frozen-lockfile || exit "$?"
-                mise exec "$selector" -- dotnet tool restore || exit "$?"
-                mise exec "$selector" -- dotnet "$control" ci caller-node execute "$state" "$runtime"
+                MISE_LOCKED="$runtime_locked" mise exec "$selector" -- pnpm install --frozen-lockfile || exit "$?"
+                MISE_LOCKED="$runtime_locked" mise exec "$selector" -- dotnet tool restore || exit "$?"
+                MISE_LOCKED="$runtime_locked" mise exec "$selector" -- dotnet "$control" ci caller-node execute "$state" "$runtime"
               ) || status=1
             done < <(jq -r '.runtime.variants[].key' "$state/group-plan.json")
           fi
@@ -951,7 +954,7 @@ jobs:
         env:
           MISE_DATA_DIR: ${{ runner.temp }}/python-auxiliary-mise
         with:
-          version: '2026.8.10'
+          version: '2026.10.11'
           experimental: true
           install_args: node
       - name: Execute and collect original Python plan
@@ -1029,7 +1032,7 @@ jobs:
         if: steps.plan.outputs.python == 'true' || steps.plan.outputs.ruby == 'true'
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
-          version: '2026.8.10'
+          version: '2026.10.11'
           experimental: true
           install_args: >-
             dotnet
@@ -1230,7 +1233,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
-          version: '2026.8.10'
+          version: '2026.10.11'
           experimental: true
           install: false
       - name: Run scholarly project tests
