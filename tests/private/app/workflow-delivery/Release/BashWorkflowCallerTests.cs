@@ -87,12 +87,12 @@ public sealed class BashWorkflowCallerTests(TestContext context)
               workflow_dotnet "$@"
             }
             """;
+        // The workflow is an embedded resource so that native CI scope selects this test
+        // whenever the caller workflow changes.
         var yaml = new YamlStream();
-        DirectoryInfo? root = new(AppContext.BaseDirectory);
-        while (root is not null && !File.Exists(Path.Combine(root.FullName, fixture.Workflow)))
-            root = root.Parent;
-        Assert.IsNotNull(root);
-        using (var reader = File.OpenText(Path.Combine(root.FullName, fixture.Workflow)))
+        using (Stream resource = typeof(BashWorkflowCallerTests).Assembly
+            .GetManifestResourceStream(fixture.Workflow)!)
+        using (var reader = new StreamReader(resource))
             yaml.Load(reader);
         var document = (YamlMappingNode)yaml.Documents[0].RootNode;
         var jobs = (YamlMappingNode)document.Children["jobs"];
@@ -100,16 +100,26 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         var steps = (YamlSequenceNode)selected.Children["steps"];
         YamlMappingNode step = steps.Children.Cast<YamlMappingNode>().Single(value =>
             value.Children.TryGetValue("name", out YamlNode? label) && label.ToString() == name);
-        // Match the Actions bash invocation: an explicit "shell: bash" default adds pipefail.
-        bool explicitBash = document.Children.TryGetValue("defaults", out YamlNode? defaults) &&
-            ((YamlMappingNode)((YamlMappingNode)defaults).Children["run"]).Children["shell"]
-                .ToString() == "bash";
-        string[] flags = explicitBash ? ["--noprofile", "--norc", "-eo", "pipefail"] : ["-e"];
-        string script = shim.Replace("@@EXIT@@", "\"${CONTROLLED_OBSERVATION_EXIT:-0}\"",
-            StringComparison.Ordinal) + "\n" + step.Children["run"];
+        // Match the Actions bash invocation: the closest explicit "shell: bash" (step, job,
+        // then workflow default) adds pipefail; an unset shell runs "bash -e".
+        string? shell = Shell(step) ?? Shell(Defaults(selected)) ?? Shell(Defaults(document));
+        Assert.IsTrue(shell is null or "bash", "Unsupported caller shell: " + shell);
+        string[] flags = shell is null ? ["-e"] : ["--noprofile", "--norc", "-eo", "pipefail"];
+        // A CRLF checkout of this source must not leak carriage returns into the shim.
+        string script = (shim.Replace("@@EXIT@@", "\"${CONTROLLED_OBSERVATION_EXIT:-0}\"",
+            StringComparison.Ordinal) + "\n" + step.Children["run"]).ReplaceLineEndings("\n");
         return NativeProcess.ExecuteAsync(new(Bash(), fixture.Root, [.. flags, "-c", script],
             60, environment), context.CancellationToken);
     }
+
+    private static YamlMappingNode? Defaults(YamlMappingNode node) =>
+        node.Children.TryGetValue("defaults", out YamlNode? defaults) &&
+            ((YamlMappingNode)defaults).Children.TryGetValue("run", out YamlNode? run)
+            ? (YamlMappingNode)run : null;
+
+    private static string? Shell(YamlMappingNode? node) =>
+        node is not null && node.Children.TryGetValue("shell", out YamlNode? shell)
+            ? shell.ToString() : null;
 
     // Windows process creation searches the system directories (the WSL launcher) before
     // PATH, while Actions runs "shell: bash" with the Git Bash found on PATH.
@@ -119,11 +129,20 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         string system = System.Environment.GetFolderPath(System.Environment.SpecialFolder.Windows);
         return (System.Environment.GetEnvironmentVariable("PATH") ?? "")
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Where(directory => !Path.GetFullPath(directory).StartsWith(system,
+            .Select(directory => Resolve(directory.Trim('"')))
+            .Where(directory => directory is not null && !directory.StartsWith(system,
                 StringComparison.OrdinalIgnoreCase))
-            .Select(directory => Path.Combine(directory, "bash.exe"))
+            .Select(directory => Path.Combine(directory!, "bash.exe"))
             .FirstOrDefault(File.Exists) ?? throw new AssertFailedException(
                 "Git Bash is unavailable on PATH.");
+
+        static string? Resolve(string directory)
+        {
+            try { return Path.GetFullPath(directory); }
+            catch (Exception exception) when (exception is ArgumentException or
+                NotSupportedException or PathTooLongException)
+            { return null; }
+        }
     }
 
     private sealed class Fixture : IDisposable
@@ -133,7 +152,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         internal string Root { get; } = Directory.CreateTempSubdirectory("bash-caller-tests-")
             .FullName;
         internal PreparedRelease Prepared { get; }
-        internal string Workflow => ".github/workflows/workflow-delivery-v3-" + (ecosystem ==
+        internal string Workflow => "workflow-delivery-v3-" + (ecosystem ==
             "npm" ? "buddy" : ecosystem) + "-smoke.yml";
         internal string Job => ecosystem == "npm" ? "verify" : "verify-result";
         internal string VerifyStep => ecosystem switch

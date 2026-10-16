@@ -132,13 +132,12 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
               }
             }
             """;
+        // The workflow is an embedded resource so that native CI scope selects this test
+        // whenever the caller workflow changes.
         var yaml = new YamlStream();
-        DirectoryInfo? root = new(AppContext.BaseDirectory);
-        while (root is not null && !File.Exists(Path.Combine(root.FullName,
-            ".github/workflows/workflow-delivery-v3-nuget-live-attempt.yml"))) root = root.Parent;
-        Assert.IsNotNull(root);
-        using var reader = File.OpenText(Path.Combine(root.FullName,
-            ".github/workflows/workflow-delivery-v3-nuget-live-attempt.yml"));
+        using Stream resource = typeof(NuGetWorkflowCallerTests).Assembly
+            .GetManifestResourceStream("workflow-delivery-v3-nuget-live-attempt.yml")!;
+        using var reader = new StreamReader(resource);
         yaml.Load(reader);
         var document = (YamlMappingNode)yaml.Documents[0].RootNode;
         var jobs = (YamlMappingNode)document.Children["jobs"];
