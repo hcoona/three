@@ -141,13 +141,17 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
         Assert.AreEqual("node24", inputs.PackagingVariant);
     }
 
-    // Committed declaration defects stop before any native query; tool defects stop at it.
+    // Committed declaration and matrix defects stop before any native query; tool defects
+    // stop at the query that answered them.
     [TestMethod]
-    [DataRow("missing-mise", 0)]
-    [DataRow("tool-inactive", 1)]
-    public async Task UnsupportedRuntimeFactsStopTheReader(string defect, int queries)
+    [DataRow("missing-mise", 0, "Missing committed runtime authority: mise.toml")]
+    [DataRow("matrix-include", 0, Matrix)]
+    [DataRow("tool-inactive", 1, Authority)]
+    [DataRow("pnpm-floating", 2, Authority)]
+    public async Task UnsupportedRuntimeFactsStopTheReader(string defect, int queries,
+        string message)
     {
-        using var repo = await RuntimeCheckoutAsync(Workflow, defect);
+        using var repo = await RuntimeCheckoutAsync(WorkflowFor(defect), defect);
         GitMaterialization checkout = await BindAsync(repo);
         var commands = new List<string>();
         var reader = new NodeRuntimeReader(checkout, (args, _) =>
@@ -158,8 +162,7 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
 
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             reader.ReadAsync(context.CancellationToken));
-        Assert.AreEqual(queries == 0 ? "Missing committed runtime authority: mise.toml"
-            : Authority, error.Message);
+        Assert.AreEqual(message, error.Message);
         CollectionAssert.AreEqual(NativeCommands.Take(queries).ToArray(), commands);
     }
 

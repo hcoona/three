@@ -175,13 +175,17 @@ public sealed class PythonPreparationTests(TestContext context)
             _ => JsonValue.Create(value),
         };
 
+    // The non-public row proves production passes the admitted Official result.
     [TestMethod]
-    public async Task NativeFactsStopBeforeBuild()
+    [DataRow("commit")]
+    [DataRow("public_release")]
+    public async Task NativeFactsStopBeforeBuild(string field)
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Subject = fixture.Subject with { Channel = "official", Destination = "pypi",
             SelectedRef = "refs/heads/main" };
-        fixture.ChangeFacts = facts => facts["commit"] = new string('0', 40);
+        fixture.ChangeFacts = facts => facts[field] = field == "commit"
+            ? JsonValue.Create(new string('0', 40)) : JsonValue.Create(false);
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
         Assert.IsEmpty(result.Prepared.Files);

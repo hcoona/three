@@ -38,7 +38,7 @@ public sealed class RubyPreparationTests(TestContext context)
     private static string sharedRevision = "";
     // RubySourceCollector writes <product>/lib/.../version.rb into the checkout, so every
     // shared row that can reach source reading gets its own committed product directory.
-    private const int LaneCount = 37;
+    private const int LaneCount = 38;
     private static int nextLane = -1;
     private const string Revision = "0123456789abcdef0123456789abcdef01234567";
 
@@ -383,6 +383,27 @@ public sealed class RubyPreparationTests(TestContext context)
         fixture.Defect = defect;
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
+        Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
+    }
+
+    // Production passes the admitted Official result into the native projection check.
+    [TestMethod]
+    public async Task OfficialNonPublicProjectionStopsBeforeBuild()
+    {
+        using var fixture = SharedLane();
+        fixture.Subject = fixture.Subject with
+        {
+            Channel = "official",
+            Destination = "rubygems",
+            SelectedRef = "refs/heads/main",
+        };
+        fixture.Defect = "public-release";
+        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
+        Assert.AreEqual(
+            "Native Ruby source/ref projection differs.",
+            Assert.ContainsSingle(result.Errors)
+        );
         Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
     }
 
