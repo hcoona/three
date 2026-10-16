@@ -12,14 +12,17 @@ internal sealed record DotNetNativeOutput(CheckKey Key, string Path);
 internal sealed record DotNetCheckFailure(CheckKey Key, string Error);
 internal sealed record DotNetBatchCommandObservation(CheckKey[] Keys, NativeCommand Command,
     NativeCommandResult Result);
+internal sealed record DotNetTestObservation(CheckKey Key, string Overall, string Build,
+    string GetTargetPath, string Test, string Log);
 internal sealed record DotNetRunResult(string Candidate, CheckResult[] Results,
-    DotNetCommandObservation[] Commands, DotNetNativeOutput[] Outputs,
-    DotNetCheckFailure[] Failures)
+    DotNetNativeOutput[] Outputs, DotNetCheckFailure[] Failures)
 {
     public DotNetBatchCommandObservation? BatchBuild { get; init; }
+    public DotNetBatchCommandObservation? TestBatch { get; init; }
+    public DotNetTestObservation[] Tests { get; init; } = [];
 }
 
-// MSBuild owns the selected build batch and reference scheduling; MTP/VSTest own tests.
+// MSBuild owns the selected build/test batches and their scheduling; MTP/VSTest own tests.
 internal static class DotNetExecution
 {
     internal static Task<DotNetRunResult> RunAsync(CiPlan plan, DotNetRunRequest request,
@@ -59,19 +62,20 @@ internal static class DotNetExecution
                     entry.ObjectType == "blob" && entry.Mode is "100644" or "100755"))
                 throw new InvalidDataException("Selected native project is not committed source.");
         var results = new Dictionary<CheckKey, CheckResult>();
-        var commands = new List<DotNetCommandObservation>();
         var outputs = new List<DotNetNativeOutput>();
         var failures = new List<DotNetCheckFailure>();
-        int phase = 0;
+        var observations = new List<DotNetTestObservation>();
         PlannedCheck[] builds = plan.Checks.Where(item =>
             item.Work.Key.Check == DotNetChecks.Build).ToArray();
         DotNetBatchCommandObservation? batch = null;
         if (builds.Length != 0) await BuildAsync();
-        foreach (PlannedCheck test in plan.Checks.Where(item =>
-                     item.Work.Key.Check == DotNetChecks.Test))
-            await CompleteAsync(test.Work);
+        PlannedCheck[] tests = plan.Checks.Where(item =>
+            item.Work.Key.Check == DotNetChecks.Test).ToArray();
+        DotNetBatchCommandObservation? testBatch = null;
+        if (tests.Length != 0) await TestAsync();
         return new(plan.Candidate, plan.Checks.Select(item => results[item.Work.Key]).ToArray(),
-            commands.ToArray(), outputs.ToArray(), failures.ToArray()) { BatchBuild = batch };
+            outputs.ToArray(), failures.ToArray())
+        { BatchBuild = batch, TestBatch = testBatch, Tests = observations.ToArray() };
 
         async Task BuildAsync()
         {
@@ -175,52 +179,143 @@ internal static class DotNetExecution
             }
         }
 
-        async Task CompleteAsync(CheckSpec check)
+        // One native session runs every runnable test entry; each entry keeps its own
+        // submission result, receipt and log, so one failure cannot mask another.
+        async Task TestAsync()
         {
-            CheckStatus status;
-            if (token.IsCancellationRequested) status = CheckStatus.Cancelled;
-            else if (check.Prerequisites.Any(key => results[key].Status != CheckStatus.Passed))
-                status = CheckStatus.Skipped;
-            else
+            var runnable = new List<PlannedCheck>();
+            foreach (PlannedCheck test in tests)
             {
-                try
-                {
-                    DotNetGraphNode node = nodes[check.Key];
-                    string testTarget = node.TestCapability == "MTP"
-                        ? "InvokeTestingPlatform" : "VSTest";
-                    string targets = "Build,GetTargetPath," + testTarget;
-                    string queried = "GetTargetPath," + testTarget;
-                    string response = Path.Combine(scratch, "phase-" + phase++ + ".json");
-                    var command = new NativeCommand("dotnet", checkout,
-                        ["msbuild", node.Identity.Project, "-nologo", "-noAutoResponse",
-                            "-target:" + targets, "-getTargetResult:" + queried,
-                            "-getResultOutputFile:" + response,
-                            .. DotNetChecks.Properties(node.Identity.Globals)],
-                        request.DeadlineSeconds);
-                    NativeCommandResult native = await execute(command, token);
-                    commands.Add(new(check.Key, command, native));
-                    status = native.Termination switch
-                    {
-                        NativeTermination.Cancelled => CheckStatus.Cancelled,
-                        NativeTermination.TimedOut => CheckStatus.TimedOut,
-                        _ => native.Succeeded ? CheckStatus.Passed : CheckStatus.Failed,
-                    };
-                    if (status == CheckStatus.Passed)
-                        outputs.Add(new(check.Key, await ReadOutputAsync(response,
-                            testTarget, token)));
-                    else failures.Add(new(check.Key, native.Error ??
-                        $"Native command {native.Termination}, exit {native.ExitCode}."));
-                }
-                catch (OperationCanceledException) { status = CheckStatus.Cancelled; }
-                catch (Exception exception) when (exception is IOException or
-                    InvalidDataException or JsonException or UnauthorizedAccessException)
-                {
-                    failures.Add(new(check.Key, exception.Message));
-                    status = CheckStatus.Failed;
-                }
+                CheckKey key = test.Work.Key;
+                if (token.IsCancellationRequested)
+                    results.Add(key, new(plan.Candidate, key, CheckStatus.Cancelled));
+                else if (test.Work.Prerequisites.Any(item =>
+                             results[item].Status != CheckStatus.Passed))
+                    results.Add(key, new(plan.Candidate, key, CheckStatus.Skipped));
+                else runnable.Add(test);
             }
-            results.Add(check.Key, new(plan.Candidate, check.Key, status));
+            if (runnable.Count == 0) return;
+            CheckStatus fallback = CheckStatus.Cancelled;
+            string? error = null;
+            bool receipted = false;
+            string receipts = Path.Combine(scratch, "test-receipts");
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                string input = Path.Combine(scratch, "test-request.json");
+                string wrapper = Path.Combine(scratch, "test.proj");
+                var nativeRequest = new DotNetTestRequest(runnable.Select(test =>
+                {
+                    DotNetGraphNode node = nodes[test.Work.Key];
+                    return new DotNetTestEntry(node.Identity, TestTarget(node));
+                }).ToArray(), receipts);
+                await File.WriteAllTextAsync(input, JsonSerializer.Serialize(nativeRequest,
+                    TransferJson.Default.DotNetTestRequest), token);
+                string assembly = SecurityElement.Escape(
+                    typeof(DotNetTestTask).Assembly.Location)!;
+                string requestFile = SecurityElement.Escape(input)!;
+                await File.WriteAllTextAsync(wrapper, $"""
+                    <Project>
+                      <UsingTask TaskName="WorkflowDelivery.CI.DotNetTestTask"
+                        AssemblyFile="{assembly}" />
+                      <Target Name="TestSelected">
+                        <WorkflowDelivery.CI.DotNetTestTask RequestFile="{requestFile}" />
+                      </Target>
+                    </Project>
+                    """, token);
+                var command = new NativeCommand("dotnet", checkout,
+                    ["msbuild", wrapper, "-nologo", "-noAutoResponse", "-target:TestSelected"],
+                    request.DeadlineSeconds);
+                NativeCommandResult native = await execute(command, token);
+                testBatch = new(runnable.Select(test => test.Work.Key).ToArray(), command,
+                    native);
+                fallback = native.Termination switch
+                {
+                    NativeTermination.Cancelled => CheckStatus.Cancelled,
+                    NativeTermination.TimedOut => CheckStatus.TimedOut,
+                    _ => CheckStatus.Failed,
+                };
+                // An interruption keeps entries whose own submissions already completed, as
+                // sequential commands did; any other failed wrapper cannot promote a receipt.
+                receipted = native.Succeeded || native.Termination is
+                    NativeTermination.Cancelled or NativeTermination.TimedOut;
+                if (!native.Succeeded)
+                    error = native.Error ??
+                        $"Native test batch {native.Termination}, exit {native.ExitCode}.";
+            }
+            catch (OperationCanceledException) { fallback = CheckStatus.Cancelled; }
+            catch (Exception exception) when (exception is IOException or JsonException or
+                UnauthorizedAccessException)
+            {
+                fallback = CheckStatus.Failed;
+                error = exception.Message;
+            }
+            for (int index = 0; index < runnable.Count; index++)
+            {
+                CheckKey key = runnable[index].Work.Key;
+                DotNetGraphNode node = nodes[key];
+                CheckStatus status = fallback;
+                string? failure = error;
+                // A receipt is written only after its own submission completed natively.
+                string receipt = DotNetTestTask.Receipt(receipts, index);
+                if (receipted && File.Exists(receipt))
+                {
+                    try
+                    {
+                        DotNetTestEntryResult entry = await ReadReceiptAsync(receipt, token);
+                        if (entry.Log is null || entry.TestTarget != TestTarget(node) ||
+                            !new DotNetRepositoryReader.NativeIdentityComparer().Equals(
+                                DotNetRepositoryReader.Key(entry.Identity),
+                                DotNetRepositoryReader.Key(node.Identity)))
+                            throw new InvalidDataException(
+                                "Different selected native test identity.");
+                        observations.Add(new(key, entry.Overall, entry.Build,
+                            entry.GetTargetPath, entry.Test, entry.Log));
+                        if (entry.Overall != "Success" || entry.Build != "Success" ||
+                            entry.GetTargetPath != "Success" || entry.Test != "Success")
+                        {
+                            status = CheckStatus.Failed;
+                            failure = $"Native submission {entry.Overall}, Build {entry.Build}, " +
+                                $"GetTargetPath " +
+                                $"{entry.GetTargetPath}, {entry.TestTarget} {entry.Test}." +
+                                (entry.Log.Length == 0 ? "" : Environment.NewLine + entry.Log);
+                        }
+                        else if (entry.Outputs is null || entry.Outputs.Length != 1 ||
+                                 entry.Outputs[0] is not { } output ||
+                                 string.IsNullOrWhiteSpace(output.Identity))
+                            throw new InvalidDataException(
+                                "Ambiguous or missing native GetTargetPath output.");
+                        else
+                        {
+                            outputs.Add(new(key, RegularOutput(output.FullPath)));
+                            status = CheckStatus.Passed;
+                        }
+                    }
+                    catch (OperationCanceledException) { status = CheckStatus.Cancelled; }
+                    catch (Exception exception) when (exception is IOException or
+                        InvalidDataException or JsonException or UnauthorizedAccessException)
+                    {
+                        status = CheckStatus.Failed;
+                        failure = exception.Message;
+                    }
+                }
+                results.Add(key, new(plan.Candidate, key, status));
+                if (status != CheckStatus.Passed)
+                    failures.Add(new(key, failure ?? "Native test did not complete."));
+            }
         }
+    }
+
+    private static string TestTarget(DotNetGraphNode node) =>
+        node.TestCapability == "MTP" ? "InvokeTestingPlatform" : "VSTest";
+
+    private static async Task<DotNetTestEntryResult> ReadReceiptAsync(string receipt,
+        CancellationToken token)
+    {
+        await using var file = File.OpenRead(receipt);
+        return await JsonSerializer.DeserializeAsync(file,
+            TransferJson.Default.DotNetTestEntryResult, token)
+            ?? throw new InvalidDataException("Missing native test receipt.");
     }
 
     internal static Dictionary<CheckKey, DotNetGraphNode> ReadChecks(CiPlan plan, string checkout)
@@ -248,44 +343,6 @@ internal static class DotNetExecution
                 throw new InvalidDataException("Incomplete selected native identity obligations.");
         }
         return nodes;
-    }
-
-    private static async Task<string> ReadOutputAsync(string response, string obligation,
-        CancellationToken token)
-    {
-        await using var file = File.OpenRead(response);
-        using JsonDocument document = await JsonDocument.ParseAsync(file,
-            cancellationToken: token);
-        JsonElement root = document.RootElement;
-        if (root.ValueKind != JsonValueKind.Object ||
-            !root.TryGetProperty("TargetResults", out JsonElement targets) ||
-            targets.ValueKind != JsonValueKind.Object)
-            throw new InvalidDataException("Missing native target results.");
-        JsonElement output = Required("GetTargetPath");
-        Required(obligation);
-        if (!output.TryGetProperty("Items", out JsonElement items) ||
-            items.ValueKind != JsonValueKind.Array || items.GetArrayLength() != 1)
-            throw new InvalidDataException("Ambiguous or missing native GetTargetPath output.");
-        JsonElement item = items[0];
-        if (item.ValueKind != JsonValueKind.Object ||
-            !item.TryGetProperty("Identity", out JsonElement identity) ||
-            identity.ValueKind != JsonValueKind.String ||
-            string.IsNullOrWhiteSpace(identity.GetString()) ||
-            !item.TryGetProperty("FullPath", out JsonElement fullPath) ||
-            fullPath.ValueKind != JsonValueKind.String ||
-            !Path.IsPathFullyQualified(fullPath.GetString()!))
-            throw new InvalidDataException("Invalid native GetTargetPath coordinate.");
-        return RegularOutput(fullPath.GetString()!);
-
-        JsonElement Required(string target)
-        {
-            if (!targets.TryGetProperty(target, out JsonElement result) ||
-                result.ValueKind != JsonValueKind.Object ||
-                !result.TryGetProperty("Result", out JsonElement verdict) ||
-                verdict.ValueKind != JsonValueKind.String || verdict.GetString() != "Success")
-                throw new InvalidDataException("Missing or failed native target: " + target);
-            return result;
-        }
     }
 
     private static string RegularOutput(string path)

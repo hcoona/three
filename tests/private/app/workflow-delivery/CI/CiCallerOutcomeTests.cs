@@ -68,8 +68,7 @@ public sealed class CiCallerOutcomeTests(TestContext context)
                 Assert.AreEqual(repo.Directory, request.Checkout);
                 Assert.IsTrue(Directory.Exists(request.Scratch));
                 Assert.IsEmpty(Directory.EnumerateFileSystemEntries(request.Scratch));
-                return Task.FromResult(new DotNetGroupRunResult(commit, [], new(commit, [], [],
-                    [], []),
+                return Task.FromResult(new DotNetGroupRunResult(commit, [], new(commit, [], [], []),
                     new(commit, [], [], [], [], []), ResultCollector.Collect(original, [])));
             });
         Assert.IsFalse(outcome.Satisfied);

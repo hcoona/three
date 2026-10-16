@@ -20,7 +20,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
         """;
 
     internal static async Task<DotNetNativeFixture> CreateAsync(string capability,
-        CancellationToken token, bool nbgv = false)
+        CancellationToken token, bool nbgv = false, bool failNet8Test = false)
     {
         GitFixture repo = await GitFixture.CreateAsync(token);
         try
@@ -140,6 +140,15 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                       Version="3.10.94" PrivateAssets="all" /></ItemGroup></Project>
                     """, StringComparison.Ordinal);
             }
+            if (failNet8Test)
+                files["Directory.Build.targets"] = files["Directory.Build.targets"].Replace(
+                    "</Project>", """
+                      <Target Name="FailNet8NativeTest" BeforeTargets="InvokeTestingPlatform;VSTest"
+                        Condition="'$(TargetFramework)' == 'net8.0'">
+                        <Error Text="Intentional native net8.0 test failure" />
+                      </Target>
+                    </Project>
+                    """, StringComparison.Ordinal);
             foreach ((string path, string content) in files)
                 await repo.SetAsync(path, content);
             string initial = await repo.CommitAsync();

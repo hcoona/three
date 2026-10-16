@@ -23,6 +23,7 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan,
     internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
     internal Action<JsonObject>? ModifyResponse { get; set; }
     internal Action<JsonObject>? ModifyBatchResponse { get; set; }
+    internal Action<int, JsonObject>? ModifyTestReceipt { get; set; }
     internal DotNetRunRequest Request => new(Repo.Directory, Scratch, 60);
 
     internal static async Task<DotNetExecutionFixture> CreateAsync(CancellationToken token,
@@ -80,11 +81,9 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan,
         Directory.CreateDirectory(Path.GetDirectoryName(Output)!);
         await File.WriteAllTextAsync(Output, "native output", token);
         bool batch = command.Arguments.Contains("-target:BuildSelected");
-        string query = batch ? "Build,GetTargetPath" : command.Arguments.Single(arg =>
-            arg.StartsWith("-getTargetResult:", StringComparison.Ordinal))[
-            "-getTargetResult:".Length..];
         var targets = new JsonObject();
-        foreach (string name in query.Split(','))
+        foreach (string name in new[] { "Build", "GetTargetPath", "InvokeTestingPlatform",
+                     "VSTest" })
             targets[name] = new JsonObject
             {
                 ["Result"] = "Success",
@@ -104,25 +103,48 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan,
                 {
                     ["identity"] = JsonSerializer.SerializeToNode(identity,
                         TransferJson.Default.DotNetNodeIdentity),
-                    ["build"] = targets["Build"]?["Result"]?.GetValue<string>() ?? "Missing",
-                    ["getTargetPath"] = targets["GetTargetPath"]?["Result"]?.GetValue<string>()
-                        ?? "Missing",
-                    ["outputs"] = new JsonArray((targets["GetTargetPath"]?["Items"]?.AsArray()
-                        ?? []).Select(item => (JsonNode?)new JsonObject
-                        {
-                            ["identity"] = item?["Identity"]?.DeepClone(),
-                            ["fullPath"] = item?["FullPath"]?.DeepClone(),
-                        }).ToArray()),
+                    ["build"] = Code(targets, "Build"),
+                    ["getTargetPath"] = Code(targets, "GetTargetPath"),
+                    ["outputs"] = Outputs(targets),
                 });
             var projection = new JsonObject { ["entries"] = entries };
             ModifyBatchResponse?.Invoke(projection);
             await File.WriteAllTextAsync(request.Destination, projection.ToJsonString(), token);
             return new(NativeTermination.Exited, 0, "native batch stdout", "", 0.1, null);
         }
-        string destination = command.Arguments.Single(arg => arg.StartsWith(
-            "-getResultOutputFile:", StringComparison.Ordinal))["-getResultOutputFile:".Length..];
-        await File.WriteAllTextAsync(destination, response.ToJsonString(), token);
-        return new(NativeTermination.Exited, 0, "ordinary product stdout", "", 0.1, null);
+        DotNetTestRequest tests = JsonSerializer.Deserialize(await File.ReadAllTextAsync(
+            Path.Combine(Scratch, "test-request.json"), token),
+            TransferJson.Default.DotNetTestRequest)!;
+        Directory.CreateDirectory(tests.Destination);
+        for (int index = 0; index < tests.Entries.Length; index++)
+        {
+            DotNetTestEntry entry = tests.Entries[index];
+            var receipt = new JsonObject
+            {
+                ["identity"] = JsonSerializer.SerializeToNode(entry.Identity,
+                    TransferJson.Default.DotNetNodeIdentity),
+                ["testTarget"] = entry.TestTarget,
+                ["overall"] = "Success",
+                ["build"] = Code(targets, "Build"),
+                ["getTargetPath"] = Code(targets, "GetTargetPath"),
+                ["test"] = Code(targets, entry.TestTarget),
+                ["outputs"] = Outputs(targets),
+                ["log"] = "ordinary product log " + index,
+            };
+            ModifyTestReceipt?.Invoke(index, receipt);
+            await File.WriteAllTextAsync(DotNetTestTask.Receipt(tests.Destination, index),
+                receipt.ToJsonString(), token);
+        }
+        return new(NativeTermination.Exited, 0, "native test batch stdout", "", 0.1, null);
+
+        static string Code(JsonObject targets, string name) =>
+            targets[name]?["Result"]?.GetValue<string>() ?? "Missing";
+        static JsonArray Outputs(JsonObject targets) => new((targets["GetTargetPath"]?["Items"]
+            ?.AsArray() ?? []).Select(item => (JsonNode?)new JsonObject
+            {
+                ["identity"] = item?["Identity"]?.DeepClone(),
+                ["fullPath"] = item?["FullPath"]?.DeepClone(),
+            }).ToArray());
     }
 
     public void Dispose()

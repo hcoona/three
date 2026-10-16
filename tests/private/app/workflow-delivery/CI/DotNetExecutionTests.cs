@@ -62,14 +62,20 @@ public sealed class DotNetExecutionTests(TestContext context)
             Path.Combine(fixture.Scratch, "build-request.json"), context.CancellationToken),
             TransferJson.Default.DotNetBuildRequest)!;
         Assert.AreEqual("true", Assert.ContainsSingle(request.Entries).Globals["IsGraphBuild"]);
-        Assert.Contains("-target:Build,GetTargetPath," + target, fixture.Commands[1].Arguments);
-        Assert.Contains("-getTargetResult:GetTargetPath," + target, fixture.Commands[1].Arguments);
+        Assert.Contains("-target:TestSelected", fixture.Commands[1].Arguments);
+        DotNetTestRequest tests = JsonSerializer.Deserialize(await File.ReadAllTextAsync(
+            Path.Combine(fixture.Scratch, "test-request.json"), context.CancellationToken),
+            TransferJson.Default.DotNetTestRequest)!;
+        DotNetTestEntry test = Assert.ContainsSingle(tests.Entries);
+        Assert.AreEqual(target, test.TestTarget);
+        CollectionAssert.AreEquivalent(request.Entries[0].Globals, test.Identity.Globals);
+        Assert.AreEqual(request.Entries[0].Project, test.Identity.Project);
         Assert.IsTrue(fixture.Commands.All(command => command.Executable == "dotnet" &&
             command.Directory == fixture.Repo.Directory &&
             command.Arguments.Contains("-noAutoResponse") &&
-
             !command.Arguments.Contains("-restore") && !command.Arguments.Contains("-graphBuild")));
-        Assert.Contains("-property:IsGraphBuild=true", fixture.Commands[1].Arguments);
+        Assert.IsNotNull(result.TestBatch);
+        Assert.AreEqual("ordinary product log 0", Assert.ContainsSingle(result.Tests).Log);
         Assert.HasCount(2, result.Outputs);
         Assert.IsTrue(result.Outputs.All(output => output.Path == fixture.Output));
         Assert.IsEmpty(result.Failures);
@@ -88,8 +94,7 @@ public sealed class DotNetExecutionTests(TestContext context)
         using var fixture = Shared();
         NativeTermination termination = Enum.Parse<NativeTermination>(terminationName);
         CheckStatus status = Enum.Parse<CheckStatus>(statusName);
-        fixture.Override = command => command.Arguments.Contains(
-            "-target:Build,GetTargetPath,InvokeTestingPlatform") ?
+        fixture.Override = command => command.Arguments.Contains("-target:TestSelected") ?
             new(termination, 1, "test failed after its Build prelude", "", 0.1, "failure") : null;
         DotNetRunResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
@@ -98,7 +103,7 @@ public sealed class DotNetExecutionTests(TestContext context)
             item.Key.Check == DotNetChecks.Test).Status);
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
         Assert.HasCount(2, fixture.Commands);
-        Assert.AreEqual(termination, Assert.ContainsSingle(result.Commands).Result.Termination);
+        Assert.AreEqual(termination, result.TestBatch!.Result.Termination);
         Assert.IsNotNull(result.BatchBuild);
         Assert.AreEqual(DotNetChecks.Build, Assert.ContainsSingle(result.Outputs).Key.Check);
     }
@@ -125,7 +130,7 @@ public sealed class DotNetExecutionTests(TestContext context)
         Assert.AreEqual(status, result.Results[0].Status);
         Assert.AreEqual(CheckStatus.Skipped, result.Results[1].Status);
         Assert.IsEmpty(result.Outputs);
-        Assert.IsEmpty(result.Commands);
+        Assert.IsNull(result.TestBatch);
         Assert.HasCount(1, fixture.Commands);
         Assert.IsNotNull(result.BatchBuild);
         Assert.AreEqual(termination, result.BatchBuild.Result.Termination);
@@ -183,13 +188,12 @@ public sealed class DotNetExecutionTests(TestContext context)
         using var fixture = Shared();
         fixture.Override = command =>
         {
-            if (!command.Arguments.Contains("-target:Build,GetTargetPath,InvokeTestingPlatform"))
-                return null;
+            if (!command.Arguments.Contains("-target:TestSelected")) return null;
             if (defect == "invalid")
             {
-                string response = command.Arguments.Single(argument => argument.StartsWith(
-                    "-getResultOutputFile:", StringComparison.Ordinal));
-                File.WriteAllText(response["-getResultOutputFile:".Length..], "{");
+                string receipts = Directory.CreateDirectory(Path.Combine(fixture.Scratch,
+                    "test-receipts")).FullName;
+                File.WriteAllText(DotNetTestTask.Receipt(receipts, 0), "{");
             }
             return new(NativeTermination.Exited, 0, "The diagnostic stream claims success.",
                 "", 0.1, null);
@@ -200,6 +204,85 @@ public sealed class DotNetExecutionTests(TestContext context)
         Assert.AreEqual(DotNetChecks.Build, Assert.ContainsSingle(result.Outputs).Key.Check);
         Assert.AreEqual(DotNetChecks.Test, Assert.ContainsSingle(result.Failures).Key.Check);
         Assert.IsFalse(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
+    }
+
+    [TestMethod]
+    [DataRow("test", "Failed")]
+    [DataRow("overall", "Failed")]
+    [DataRow("identity", "Failed")]
+    [DataRow("target", "Failed")]
+    [DataRow("receipt", "Cancelled")]
+    public async Task TestBatchEntryCannotMaskAnotherEntry(string defect, string statusName)
+    {
+        using var fixture = DotNetExecutionFixture.Shared(shared!, sharedCommit);
+        CiPlan second = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
+            fixture.Plan.Candidate, "MTP", DotNetNativeFixture.Globals("net8.0"));
+        CiPlan plan = fixture.Plan with { Checks = [.. fixture.Plan.Checks, .. second.Checks] };
+        bool missing = defect == "receipt";
+        fixture.ModifyTestReceipt = (index, receipt) =>
+        {
+            if (index != 0) return;
+            switch (defect)
+            {
+                case "test": receipt["test"] = "Failure"; break;
+                case "overall": receipt["overall"] = "Failure"; break;
+                case "identity":
+                    receipt["identity"]!["globals"]!["TargetFramework"] = "net8.0";
+                    break;
+                case "target": receipt["testTarget"] = "VSTest"; break;
+            }
+            receipt["log"] = "entry zero diagnostic";
+        };
+        DotNetRunResult result = await DotNetExecution.RunAsync(plan, fixture.Request,
+            async (command, token) =>
+            {
+                NativeCommandResult native = await fixture.ExecuteAsync(command, token);
+                if (!missing || !command.Arguments.Contains("-target:TestSelected"))
+                    return native;
+                // An interrupted session retains completed receipts, never the unfinished one.
+                File.Delete(DotNetTestTask.Receipt(Path.Combine(fixture.Scratch,
+                    "test-receipts"), 0));
+                return native with
+                {
+                    Termination = NativeTermination.Cancelled,
+                    ExitCode = null,
+                    Error = "Command cancelled.",
+                };
+            }, context.CancellationToken);
+        CheckKey first = plan.Checks[1].Work.Key;
+        CheckKey other = plan.Checks[3].Work.Key;
+        Assert.AreEqual(Enum.Parse<CheckStatus>(statusName),
+            result.Results.Single(item => item.Key == first).Status);
+        Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item => item.Key == other)
+            .Status);
+        Assert.AreEqual(first, Assert.ContainsSingle(result.Failures).Key);
+        if (defect is "test" or "overall")
+            Assert.Contains("entry zero diagnostic", result.Failures[0].Error);
+        Assert.IsTrue(result.Outputs.Any(output => output.Key == other));
+        Assert.IsFalse(result.Outputs.Any(output => output.Key == first));
+        Assert.HasCount(2, result.TestBatch!.Keys);
+        Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
+    }
+
+    [TestMethod]
+    [DataRow(1)]
+    [DataRow(null)]
+    public async Task FailedTestWrapperCannotPassFromReceipts(int? exitCode)
+    {
+        using var fixture = Shared();
+        DotNetRunResult result = await DotNetExecution.RunAsync(fixture.Plan, fixture.Request,
+            async (command, token) =>
+            {
+                NativeCommandResult native = await fixture.ExecuteAsync(command, token);
+                return command.Arguments.Contains("-target:TestSelected") ? native with
+                { ExitCode = exitCode, Error = "Wrapper failed after receipts." } : native;
+            }, context.CancellationToken);
+        Assert.AreEqual(CheckStatus.Passed, result.Results[0].Status);
+        Assert.AreEqual(CheckStatus.Failed, result.Results[1].Status);
+        Assert.AreEqual("Wrapper failed after receipts.",
+            Assert.ContainsSingle(result.Failures).Error);
+        Assert.IsEmpty(result.Tests);
+        Assert.AreEqual(DotNetChecks.Build, Assert.ContainsSingle(result.Outputs).Key.Check);
     }
 
     [TestMethod]
@@ -281,7 +364,7 @@ public sealed class DotNetExecutionTests(TestContext context)
         Assert.AreEqual(CheckStatus.Passed, result.Results[1].Status);
         Assert.AreEqual(second.Checks[0].Work.Key, Assert.ContainsSingle(result.Outputs).Key);
         Assert.HasCount(1, fixture.Commands);
-        Assert.IsEmpty(result.Commands);
+        Assert.IsNull(result.TestBatch);
         Assert.IsNotNull(result.BatchBuild);
         Assert.HasCount(2, result.BatchBuild.Keys);
     }
