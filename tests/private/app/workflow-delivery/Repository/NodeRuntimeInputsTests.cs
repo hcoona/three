@@ -97,39 +97,81 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("missing-runtime")]
-    [DataRow("duplicate-runtime")]
-    [DataRow("unsupported-runtime")]
-    [DataRow("matrix-include")]
-    [DataRow("duplicate-yaml-key")]
-    [DataRow("missing-workflow")]
-    [DataRow("missing-mise")]
-    [DataRow("missing-lock")]
-    [DataRow("tool-source")]
-    [DataRow("tool-inactive")]
-    [DataRow("node-request")]
-    [DataRow("node-version")]
-    [DataRow("pnpm-floating")]
-    [DataRow("duplicate-tool")]
-    public async Task UnsupportedRuntimeFactsCannotBecomeAPlan(string defect)
+    [DataRow("missing-runtime", "The configured packaging runtime is absent from the matrix.")]
+    [DataRow("duplicate-runtime", Matrix)]
+    [DataRow("unsupported-runtime", Matrix)]
+    [DataRow("matrix-include", Matrix)]
+    [DataRow("duplicate-yaml-key", "Invalid Node runtime workflow YAML.")]
+    [DataRow("missing-workflow", "Missing committed Node runtime workflow.")]
+    [DataRow("missing-mise", "Missing committed runtime authority: mise.toml")]
+    [DataRow("missing-lock", "Missing committed runtime authority: mise.lock")]
+    [DataRow("tool-source", Authority)]
+    [DataRow("tool-inactive", Authority)]
+    [DataRow("node-request", Authority)]
+    [DataRow("node-version", Authority)]
+    [DataRow("pnpm-floating", Authority)]
+    [DataRow("duplicate-tool", "Unresolved native runtime tool: node")]
+    public void UnsupportedRuntimeFactsCannotBecomeAPlan(string defect, string message)
     {
-        string workflow = defect switch
-        {
-            "missing-runtime" => Workflow.Replace("[24.x, 22.x]", "[22.x]"),
-            "duplicate-runtime" => Workflow.Replace("[24.x, 22.x]", "[24.x, 24.x]"),
-            "unsupported-runtime" => Workflow.Replace("22.x", "latest"),
-            "matrix-include" => Workflow + "        include: []\n",
-            "duplicate-yaml-key" => Workflow + "        node-version: [24.x, 22.x]\n",
-            _ => Workflow,
-        };
-        using var repo = await RuntimeCheckoutAsync(workflow, defect);
-        GitMaterialization checkout = await BindAsync(repo);
-        var reader = new NodeRuntimeReader(checkout, (args, _) =>
-            Task.FromResult(Tool(repo.Directory, args[^1], defect)));
-
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            reader.ReadAsync(context.CancellationToken));
+        string root = Path.Combine(Path.GetTempPath(), "node-runtime-checkout");
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            NodeRuntimeReader.Read(new(NodeScenario.Candidate, []), root,
+                defect == "missing-workflow" ? null : WorkflowFor(defect),
+                defect == "missing-mise" ? null : "[tools]\nnode='24'\n",
+                defect == "missing-lock" ? null : "version=3\n",
+                Tool(root, "node", defect), Tool(root, "pnpm", defect)));
+        Assert.AreEqual(message, error.Message);
     }
+
+    private const string Matrix = "Unsupported complete Node runtime matrix.";
+    private const string Authority = "Native runtime tool is outside committed authority.";
+
+    [TestMethod]
+    public void SupportedRuntimeFactsBecomeTheirInputs()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "node-runtime-checkout");
+        NodeRuntimeInputs inputs = NodeRuntimeReader.Read(new(NodeScenario.Candidate, []), root,
+            Workflow, "[tools]\nnode='24'\n", "version=3\n", Tool(root, "node"),
+            Tool(root, "pnpm"));
+
+        Assert.AreEqual(NodeScenario.Candidate, inputs.Revision);
+        CollectionAssert.AreEqual(new[] { new NodeRuntimeVariant("node24", "24.x", "24.21.0"),
+            new NodeRuntimeVariant("node22", "22.x", null) }, inputs.Variants);
+        Assert.AreEqual("12.8.2", inputs.PnpmVersion);
+        Assert.AreEqual("node24", inputs.PackagingVariant);
+    }
+
+    // Committed declaration defects stop before any native query; tool defects stop at it.
+    [TestMethod]
+    [DataRow("missing-mise", 0)]
+    [DataRow("tool-inactive", 1)]
+    public async Task UnsupportedRuntimeFactsStopTheReader(string defect, int queries)
+    {
+        using var repo = await RuntimeCheckoutAsync(Workflow, defect);
+        GitMaterialization checkout = await BindAsync(repo);
+        var commands = new List<string>();
+        var reader = new NodeRuntimeReader(checkout, (args, _) =>
+        {
+            commands.Add(string.Join(' ', args));
+            return Task.FromResult(Tool(repo.Directory, args[^1], defect));
+        });
+
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            reader.ReadAsync(context.CancellationToken));
+        Assert.AreEqual(queries == 0 ? "Missing committed runtime authority: mise.toml"
+            : Authority, error.Message);
+        CollectionAssert.AreEqual(NativeCommands.Take(queries).ToArray(), commands);
+    }
+
+    private static string WorkflowFor(string defect) => defect switch
+    {
+        "missing-runtime" => Workflow.Replace("[24.x, 22.x]", "[22.x]"),
+        "duplicate-runtime" => Workflow.Replace("[24.x, 22.x]", "[24.x, 24.x]"),
+        "unsupported-runtime" => Workflow.Replace("22.x", "latest"),
+        "matrix-include" => Workflow + "        include: []\n",
+        "duplicate-yaml-key" => Workflow + "        node-version: [24.x, 22.x]\n",
+        _ => Workflow,
+    };
 
     [TestMethod]
     [DataRow("missing")]
