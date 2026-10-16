@@ -567,9 +567,10 @@ that failed for another reason cannot promote these results. After cancellation
 or timeout, completed entries are retained and unfinished entries take that
 termination; the one operation deadline covers the whole test session. Retain
 one test batch command observation. As with `dotnet test`, the session uses
-native terminal-logger mode and VSTest MSBuild output, so VSTest also reports
-through its own submission's diagnostics; a plain console logger still writes
-the captured output. Evaluated
+native terminal-logger mode and VSTest MSBuild output (the SDK selects its
+MSBuild-output VSTest task from that mode), so VSTest reports through its own
+submission's diagnostics rather than raw console text; a plain console logger
+writes the captured output. Evaluated
 `IsTestingPlatformApplication` selects MTP; otherwise `IsTestProject` selects
 VSTest using native inner `GetTargetPath` output. Do not infer framework paths or
 capability from package names. Every selected supported variant contributes its
