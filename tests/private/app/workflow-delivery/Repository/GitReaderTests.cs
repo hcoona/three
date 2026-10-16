@@ -211,26 +211,80 @@ public sealed class GitReaderTests(TestContext context)
             var fixture = new GitFixture(legacyNbgvCleanup, token);
             try
             {
-                System.IO.Directory.CreateDirectory(fixture.Directory);
-                string empty = Path.Combine(fixture.temporary, "empty-template");
-                System.IO.Directory.CreateDirectory(empty);
-                // One template config replaces per-key launches; Git copies it during init.
-                string hooks = empty.Replace('\\', '/');
-                await File.WriteAllTextAsync(Path.Combine(empty, "config"),
-                    "[user]\n\tname = Workflow fixture\n\temail = fixture@example.invalid\n" +
-                    "[commit]\n\tgpgSign = false\n[tag]\n\tgpgSign = false\n[gc]\n\tauto = 0\n" +
-                    "[core]\n\thooksPath = \"" + hooks + "\"\n\tprotectNTFS = false\n", token);
-                await fixture.GitAsync("init", "--quiet", "--initial-branch=fixture",
-                    "--object-format=" + format, "--template=" + empty);
-                // Index-only names exercise committed metadata without OS path restrictions.
-                // Init probes and may write core.ignoreCase, so this override follows it.
-                await fixture.GitAsync("config", "core.ignoreCase", "false");
+                Lazy<Task<string>> initialization = Templates.GetOrAdd(format, InitializeAsync);
+                string template;
+                try
+                {
+                    template = await initialization.Value.WaitAsync(token);
+                }
+                catch when (initialization.Value.IsFaulted || initialization.Value.IsCanceled)
+                {
+                    // A failed shared init fails this fixture only; the next one starts afresh.
+                    Templates.TryRemove(KeyValuePair.Create(format, initialization));
+                    throw;
+                }
+                // Git's own initialized layout is copied, so no fixture launches init/config.
+                Copy(template, Path.Combine(fixture.Directory, ".git"));
                 return fixture;
             }
             catch
             {
                 fixture.Dispose();
                 throw;
+            }
+        }
+
+        // One initialized repository per object format serves the whole test process. Its
+        // hooks path is a per-process empty directory that outlives every fixture.
+        private static readonly string TemplateRoot = Path.Combine(Path.GetTempPath(),
+            "workflow git template " + Guid.NewGuid().ToString("N"));
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string,
+            Lazy<Task<string>>> Templates = new(StringComparer.Ordinal);
+
+        static GitFixture() => AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            try { System.IO.Directory.Delete(TemplateRoot, recursive: true); }
+            catch (Exception exception) when (exception is IOException or
+                UnauthorizedAccessException) { }
+        };
+
+        private static Lazy<Task<string>> InitializeAsync(string format) =>
+            new(async () =>
+            {
+                // Each attempt owns its directory, so a retry after a failure starts clean.
+                string attempt = Path.Combine(TemplateRoot,
+                    format + "-" + Guid.NewGuid().ToString("N"));
+                string empty = Path.Combine(attempt, "template");
+                System.IO.Directory.CreateDirectory(empty);
+                // One template config replaces per-key launches; Git copies it during init.
+                string hooks = empty.Replace('\\', '/');
+                await File.WriteAllTextAsync(Path.Combine(empty, "config"),
+                    "[user]\n\tname = Workflow fixture\n\temail = fixture@example.invalid\n" +
+                    "[commit]\n\tgpgSign = false\n[tag]\n\tgpgSign = false\n[gc]\n\tauto = 0\n" +
+                    "[core]\n\thooksPath = \"" + hooks + "\"\n\tprotectNTFS = false\n");
+                string repository = Path.Combine(attempt, "repository");
+                System.IO.Directory.CreateDirectory(repository);
+                // The template is shared, so its creation is not bound to one test's token.
+                await NativeProcess.RunAsync("git", repository, ["init", "--quiet",
+                    "--initial-branch=fixture", "--object-format=" + format,
+                    "--template=" + empty], CancellationToken.None);
+                // Index-only names exercise committed metadata without OS path restrictions.
+                // Init probes and may write core.ignoreCase, so this override follows it.
+                await NativeProcess.RunAsync("git", repository,
+                    ["config", "core.ignoreCase", "false"], CancellationToken.None);
+                return Path.Combine(repository, ".git");
+            }, LazyThreadSafetyMode.ExecutionAndPublication);
+
+        private static void Copy(string source, string destination)
+        {
+            System.IO.Directory.CreateDirectory(destination);
+            foreach (string directory in System.IO.Directory.EnumerateDirectories(source))
+                Copy(directory, Path.Combine(destination, Path.GetFileName(directory)));
+            foreach (string file in System.IO.Directory.EnumerateFiles(source))
+            {
+                string target = Path.Combine(destination, Path.GetFileName(file));
+                File.Copy(file, target);
+                File.SetAttributes(target, FileAttributes.Normal);
             }
         }
 
