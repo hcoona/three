@@ -262,7 +262,9 @@ internal static class DotNetExecution
                 {
                     try
                     {
-                        DotNetTestEntryResult entry = await ReadReceiptAsync(receipt, token);
+                        // A completed receipt is local evidence; the caller's cancellation
+                        // must not erase it after the session has already stopped.
+                        DotNetTestEntryResult entry = await ReadReceiptAsync(receipt);
                         if (entry.Log is null || entry.TestTarget != TestTarget(node) ||
                             !new DotNetRepositoryReader.NativeIdentityComparer().Equals(
                                 DotNetRepositoryReader.Key(entry.Identity),
@@ -291,7 +293,6 @@ internal static class DotNetExecution
                             status = CheckStatus.Passed;
                         }
                     }
-                    catch (OperationCanceledException) { status = CheckStatus.Cancelled; }
                     catch (Exception exception) when (exception is IOException or
                         InvalidDataException or JsonException or UnauthorizedAccessException)
                     {
@@ -309,12 +310,11 @@ internal static class DotNetExecution
     private static string TestTarget(DotNetGraphNode node) =>
         node.TestCapability == "MTP" ? "InvokeTestingPlatform" : "VSTest";
 
-    private static async Task<DotNetTestEntryResult> ReadReceiptAsync(string receipt,
-        CancellationToken token)
+    private static async Task<DotNetTestEntryResult> ReadReceiptAsync(string receipt)
     {
         await using var file = File.OpenRead(receipt);
         return await JsonSerializer.DeserializeAsync(file,
-            TransferJson.Default.DotNetTestEntryResult, token)
+            TransferJson.Default.DotNetTestEntryResult)
             ?? throw new InvalidDataException("Missing native test receipt.");
     }
 

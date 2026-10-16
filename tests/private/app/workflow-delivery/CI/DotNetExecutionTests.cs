@@ -265,6 +265,35 @@ public sealed class DotNetExecutionTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task CallerCancellationRetainsCompletedTestReceipts()
+    {
+        using var fixture = DotNetExecutionFixture.Shared(shared!, sharedCommit);
+        CiPlan second = DotNetExecutionFixture.CreatePlan(fixture.Repo.Directory,
+            fixture.Plan.Candidate, "MTP", DotNetNativeFixture.Globals("net8.0"));
+        CiPlan plan = fixture.Plan with { Checks = [.. fixture.Plan.Checks, .. second.Checks] };
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken);
+        DotNetRunResult result = await DotNetExecution.RunAsync(plan, fixture.Request,
+            async (command, token) =>
+            {
+                NativeCommandResult native = await fixture.ExecuteAsync(command, token);
+                if (!command.Arguments.Contains("-target:TestSelected")) return native;
+                // The first submission completed; the caller then cancels the session.
+                File.Delete(DotNetTestTask.Receipt(Path.Combine(fixture.Scratch,
+                    "test-receipts"), 1));
+                await cancellation.CancelAsync();
+                return new(NativeTermination.Cancelled, null, "", "", 0.1,
+                    "Command cancelled.");
+            }, cancellation.Token);
+        Assert.IsTrue(cancellation.IsCancellationRequested);
+        Assert.AreEqual(CheckStatus.Passed, result.Results[1].Status);
+        Assert.AreEqual(CheckStatus.Cancelled, result.Results[3].Status);
+        Assert.IsTrue(result.Outputs.Any(output => output.Key == plan.Checks[1].Work.Key));
+        Assert.AreEqual("ordinary product log 0", Assert.ContainsSingle(result.Tests).Log);
+        Assert.AreEqual(plan.Checks[3].Work.Key, Assert.ContainsSingle(result.Failures).Key);
+    }
+
+    [TestMethod]
     [DataRow(1)]
     [DataRow(null)]
     public async Task FailedTestWrapperCannotPassFromReceipts(int? exitCode)
