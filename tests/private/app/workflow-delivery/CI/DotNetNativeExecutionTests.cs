@@ -132,8 +132,50 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
             .All(item => item.Status == CheckStatus.Passed), Diagnostics(result));
         Assert.IsNotNull(result.BatchBuild);
         Assert.HasCount(3, result.BatchBuild.Keys);
-        Assert.HasCount(2, result.Commands);
+        Assert.IsNotNull(result.TestBatch);
+        Assert.HasCount(2, result.TestBatch.Keys);
+        Assert.HasCount(2, result.Tests);
+        Assert.IsTrue(result.Tests.All(test => test.Test == "Success"), Diagnostics(result));
         Assert.HasCount(4, result.Outputs);
+        Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
+    }
+
+    [TestMethod]
+    [DataRow("MTP")]
+    [DataRow("VSTest")]
+    [Timeout(600000, CooperativeCancellation = true)]
+    public async Task NativeTestBatchKeepsEachEntryResultWhenAnotherEntryFails(string capability)
+    {
+        using var fixture = await DotNetNativeFixture.CreateAsync(capability,
+            context.CancellationToken, failNet8Test: true);
+        CiPlan passing = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate,
+            capability, DotNetNativeFixture.Globals(), DotNetNativeFixture.Project);
+        CiPlan failing = DotNetExecutionFixture.CreatePlan(fixture.Root, fixture.Candidate,
+            capability, DotNetNativeFixture.Globals("net8.0", false), DotNetNativeFixture.Project);
+        CiPlan plan = failing with { Checks = [.. failing.Checks, .. passing.Checks] };
+        DotNetRunResult result = await DotNetExecution.RunAsync(plan,
+            new(fixture.Root, fixture.RunScratch, NativeCommandDeadlineSeconds),
+            context.CancellationToken);
+        context.WriteLine(JsonSerializer.Serialize(result, TransferJson.Default.DotNetRunResult));
+        Assert.IsTrue(result.Results.Where(item => item.Key.Check == DotNetChecks.Build)
+            .All(item => item.Status == CheckStatus.Passed), Diagnostics(result));
+        CheckKey failed = failing.Checks[1].Work.Key;
+        CheckKey passed = passing.Checks[1].Work.Key;
+        Assert.AreEqual(CheckStatus.Failed, result.Results.Single(item => item.Key == failed)
+            .Status, Diagnostics(result));
+        Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item => item.Key == passed)
+            .Status, Diagnostics(result));
+        Assert.IsNotNull(result.TestBatch);
+        Assert.IsTrue(result.TestBatch.Result.Succeeded, Diagnostics(result));
+        Assert.HasCount(2, result.TestBatch.Keys);
+        Assert.AreEqual(failed, Assert.ContainsSingle(result.Failures).Key);
+        Assert.AreEqual("Failure", result.Tests.Single(test => test.Key == failed).Test);
+        Assert.AreEqual("Success", result.Tests.Single(test => test.Key == passed).Test);
+        // Both runners report through MSBuild diagnostics attributed to their own submission.
+        Assert.Contains("Intentional native net8.0 test failure", result.Failures[0].Error);
+        Assert.DoesNotContain("Intentional native net8.0 test failure",
+            result.Tests.Single(test => test.Key == passed).Log);
+        Assert.HasCount(3, result.Outputs);
         Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
     }
 
@@ -141,10 +183,11 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
         DotNetRunResult result, string framework, string target)
     {
         Assert.IsTrue(ResultCollector.Collect(plan, result.Results).Satisfied, Diagnostics(result));
-        Assert.HasCount(1, result.Commands);
         Assert.IsNotNull(result.BatchBuild);
-        Assert.Contains("-target:Build,GetTargetPath," + target,
-            result.Commands[0].Command.Arguments);
+        Assert.IsNotNull(result.TestBatch);
+        Assert.AreEqual("Success", Assert.ContainsSingle(result.Tests).Test);
+        Assert.Contains(target, File.ReadAllText(Path.Combine(fixture.RunScratch,
+            "test-request.json")));
         Assert.HasCount(2, result.Outputs);
         Assert.IsTrue(result.Outputs.All(output => File.Exists(output.Path) &&
             output.Path.Contains("native-bin", StringComparison.Ordinal)));
@@ -161,8 +204,9 @@ public sealed class DotNetNativeExecutionTests(TestContext context)
     }
 
     private static string Diagnostics(DotNetRunResult result) => string.Join("\n",
-        result.Commands.Select(command => command.Result.Error + "\n" + command.Result.Stdout +
-            command.Result.Stderr).Concat(result.BatchBuild is { } batch
-            ? [batch.Result.Error + "\n" + batch.Result.Stdout + batch.Result.Stderr] : [])
+        new[] { result.BatchBuild, result.TestBatch }.OfType<DotNetBatchCommandObservation>()
+            .Select(batch => batch.Result.Error + "\n" + batch.Result.Stdout +
+                batch.Result.Stderr)
+            .Concat(result.Tests.Select(test => test.Log))
             .Concat(result.Failures.Select(failure => failure.Error)));
 }

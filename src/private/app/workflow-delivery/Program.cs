@@ -359,6 +359,8 @@ internal static class Program
 [JsonSerializable(typeof(DotNetRunRequest))]
 [JsonSerializable(typeof(DotNetBuildRequest))]
 [JsonSerializable(typeof(DotNetBuildResponse))]
+[JsonSerializable(typeof(DotNetTestRequest))]
+[JsonSerializable(typeof(DotNetTestEntryResult))]
 [JsonSerializable(typeof(DotNetRunResult))]
 [JsonSerializable(typeof(DotNetPackageRunResult))]
 [JsonSerializable(typeof(DotNetGroupRequest))]

@@ -66,7 +66,7 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         Assert.IsTrue(result.Outcome.Satisfied,
             string.Join("; ", result.Packages.Failures.Select(item => item.Error)));
         Assert.HasCount(3, result.Outcome.Checks);
-        Assert.IsEmpty(result.Retained.Commands);
+        Assert.IsNull(result.Retained.TestBatch);
         CollectionAssert.AreEqual(transferred.Checks.Select(item => item.Work.Key).ToArray(),
             result.Results.Select(item => item.Key).ToArray());
         Assert.AreEqual(original, JsonSerializer.Serialize(transferred,

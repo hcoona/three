@@ -63,7 +63,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
         Assert.HasCount(3, result.Results);
         Assert.IsEmpty(result.Packages.Packages);
         Assert.IsEmpty(result.Packages.ConsumerOutputs);
-        Assert.IsEmpty(result.Retained.Commands);
+        Assert.IsNull(result.Retained.TestBatch);
         string failure = Assert.ContainsSingle(result.Packages.Failures).Error;
         Assert.Contains(property == "MSBuildProjectFullPath" ? "project identity" :
             "NBGV expectations", failure);
@@ -131,7 +131,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
                 Assert.EndsWith("retained", request.Scratch);
                 return Task.FromResult(new DotNetRunResult(plan.Candidate,
                     plan.Checks.Select(item => new CheckResult(plan.Candidate,
-                        item.Work.Key, CheckStatus.Passed)).ToArray(), [], [], []));
+                        item.Work.Key, CheckStatus.Passed)).ToArray(), [], []));
             },
             (plan, request, _) =>
             {
@@ -181,7 +181,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
         Assert.AreEqual(original.Candidate, result.Outcome.Candidate);
         Assert.AreEqual(original.Scope, result.Outcome.Scope);
         Assert.IsEmpty(result.Results);
-        Assert.IsEmpty(result.Retained.Commands);
+        Assert.IsNull(result.Retained.TestBatch);
         Assert.IsEmpty(result.Packages.Commands);
     }
 
@@ -197,7 +197,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
             fixture.Request, (plan, _, _) => Task.FromResult(new DotNetRunResult(plan.Candidate,
                 plan.Checks.Select(item => new CheckResult(plan.Candidate, item.Work.Key,
                     item.Work.Key.Check == DotNetChecks.Build ? CheckStatus.Passed : status))
-                    .ToArray(), [], [], [])), DotNetPackageExecution.RunAsync,
+                    .ToArray(), [], [])), DotNetPackageExecution.RunAsync,
                         context.CancellationToken);
         Assert.IsFalse(result.Outcome.Satisfied);
         Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
@@ -233,15 +233,15 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
                 DotNetRunResult run = new(plan.Candidate, plan.Checks.Select(item =>
                     new CheckResult(plan.Candidate, item.Work.Key,
                         item.Work.Key.Check == DotNetChecks.Build ? CheckStatus.Passed :
-                            CheckStatus.Cancelled)).ToArray(), [new(test, command, observation)],
-                    [], []);
+                            CheckStatus.Cancelled)).ToArray(), [], [])
+                { TestBatch = new([test], command, observation) };
                 completed = run;
                 return Task.FromResult(run);
             }, DotNetPackageExecution.RunAsync, cancellation.Token);
         Assert.IsFalse(result.Outcome.Satisfied);
         Assert.AreSame(completed, result.Retained);
         Assert.AreEqual(NativeTermination.Cancelled,
-            Assert.ContainsSingle(result.Retained.Commands).Result.Termination);
+            result.Retained.TestBatch!.Result.Termination);
         Assert.AreEqual(CheckStatus.Passed, result.Results.Single(item =>
             item.Key.Check == DotNetChecks.Build).Status);
         Assert.AreEqual(CheckStatus.Cancelled, result.Results.Single(item =>
@@ -276,7 +276,7 @@ public sealed class DotNetGroupExecutionTests(TestContext context)
                 CheckResult[] results = plan.Checks.Take(complete ? 2 : 1).Select(item =>
                     new CheckResult(plan.Candidate, item.Work.Key, CheckStatus.Passed)).ToArray();
                 return Task.FromResult(new DotNetGroupRunResult(plan.Candidate, results,
-                    new(plan.Candidate, results, [], [], []),
+                    new(plan.Candidate, results, [], []),
                     new(plan.Candidate, [], [], [], [], []),
                     ResultCollector.Collect(plan, results)));
             });
