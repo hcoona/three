@@ -33,7 +33,6 @@ internal static class RegistryBody
     internal static async Task<RegistryOriginalBytes> OriginalAsync(Stream stream,
         long? declared, long expected, bool retain, CancellationToken token)
     {
-        if (declared > expected) return new(null, null, null);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         if (retain && expected > Array.MaxLength)
             throw new IOException("Original exceeds the platform array length.");

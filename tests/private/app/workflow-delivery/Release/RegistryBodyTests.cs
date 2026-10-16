@@ -38,6 +38,15 @@ public sealed class RegistryBodyTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task LongerDeclaredLengthWithTruncatedBodyIsIncomplete()
+    {
+        // A declared length is not the served bytes; a short transfer stays incomplete.
+        using var truncated = new MemoryStream(Original[..3]);
+        await Assert.ThrowsExactlyAsync<IOException>(() => RegistryBody.OriginalAsync(
+            truncated, 5, 4, retain: true, context.CancellationToken));
+    }
+
+    [TestMethod]
     public async Task ShorterOrTruncatedBodiesStayDistinguishable()
     {
         using var shorter = new MemoryStream(Original[..3]);
