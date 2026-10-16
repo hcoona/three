@@ -29,13 +29,13 @@ internal static class RegistryBody
     }
 
     // A body longer than the original yields no size or digest: its remaining bytes are
-    // neither read nor retained. Retained bytes never exceed the original's size.
+    // neither read nor retained. A retained copy is allocated once at the original's size.
     internal static async Task<RegistryOriginalBytes> OriginalAsync(Stream stream,
         long? declared, long expected, bool retain, CancellationToken token)
     {
         if (declared > expected) return new(null, null, null);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        using MemoryStream? copy = retain ? new() : null;
+        byte[]? copy = retain ? new byte[expected] : null;
         byte[] buffer = new byte[81920];
         long total = 0;
         while (true)
@@ -46,10 +46,12 @@ internal static class RegistryBody
             total += count;
             if (total > expected) return new(null, null, null);
             hash.AppendData(buffer, 0, count);
-            copy?.Write(buffer, 0, count);
+            if (copy is not null)
+                Buffer.BlockCopy(buffer, 0, copy, (int)(total - count), count);
         }
         if (declared is not null && total != declared)
             throw new IOException("Incomplete response body.");
-        return new(total, Convert.ToHexStringLower(hash.GetHashAndReset()), copy?.ToArray());
+        return new(total, Convert.ToHexStringLower(hash.GetHashAndReset()),
+            copy is null || total == expected ? copy : copy[..(int)total]);
     }
 }

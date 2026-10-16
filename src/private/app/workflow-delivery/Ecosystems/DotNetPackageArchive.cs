@@ -102,6 +102,8 @@ internal static class DotNetPackageArchive
                 throw new InvalidDataException("Unsafe or ambiguous native-decoded package name.");
     }
 
+    // Reads a required member of the repository's own qualified Pack output, which is
+    // not untrusted input; package size is the registry's concern, not this reader's.
     private static MemoryStream Read(PackageArchiveReader reader, string path)
     {
         using Stream stream = reader.GetStream(path);

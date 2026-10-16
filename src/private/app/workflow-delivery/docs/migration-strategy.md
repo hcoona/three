@@ -953,8 +953,9 @@ native producer source; they do not authorize replay.
 
 Use the existing bounded native read mechanisms as extraction inputs, not the old
 Governance expiry/profile digests. Each integration closes endpoint, redirect and
-credential handling, request/body limits, read deadline/poll bound, package-size
-bounds and cancellation before it is callable. No missing lower-layer guarantee
+credential handling, metadata/response-body and archive-expansion bounds, read
+deadline/poll bound and cancellation before it is callable; registries own
+package size. No missing lower-layer guarantee
 may be replaced by an application reservation or probe ledger. A failed upload
 still permits bounded read-only evaluation; it never permits application resend or
 the next file write after the native invocation reports failure or ambiguity.

@@ -48,6 +48,29 @@ public sealed class GithubNuGetObservationTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task LongerArchiveIsAConflictWithoutAMeasurement(bool declared)
+    {
+        byte[] original = Archive();
+        using var handler = new Handler((_, step) =>
+        {
+            HttpResponseMessage response = Response(step, [.. original, 0]);
+            if (!declared && step > 3) response.Content.Headers.ContentLength = null;
+            return response;
+        });
+        using var client = new HttpClient(handler);
+        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+            .ObserveAsync(Prepared(original), Credential, CancellationToken.None);
+
+        ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
+        Assert.AreEqual(ReleaseFileState.Conflict, file.State);
+        Assert.IsNull(file.Size);
+        Assert.IsNull(file.Sha256);
+        Assert.HasCount(5, handler.Requests);
+    }
+
+    [TestMethod]
     public async Task DifferingMalformedArchiveIsConflictWithObservedBytes()
     {
         byte[] original = Archive();
