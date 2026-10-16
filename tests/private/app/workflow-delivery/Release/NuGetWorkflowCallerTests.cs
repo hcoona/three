@@ -136,7 +136,8 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         // whenever the caller workflow changes.
         var yaml = new YamlStream();
         using Stream resource = typeof(NuGetWorkflowCallerTests).Assembly
-            .GetManifestResourceStream("workflow-delivery-v3-nuget-live-attempt.yml")!;
+            .GetManifestResourceStream("workflow-delivery-v3-nuget-live-attempt.yml")
+            ?? throw new AssertFailedException("Missing embedded caller workflow.");
         using var reader = new StreamReader(resource);
         yaml.Load(reader);
         var document = (YamlMappingNode)yaml.Documents[0].RootNode;

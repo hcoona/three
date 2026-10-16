@@ -90,9 +90,10 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         // The workflow is an embedded resource so that native CI scope selects this test
         // whenever the caller workflow changes.
         var yaml = new YamlStream();
-        using (Stream resource = typeof(BashWorkflowCallerTests).Assembly
-            .GetManifestResourceStream(fixture.Workflow)!)
-        using (var reader = new StreamReader(resource))
+        using (Stream? resource = typeof(BashWorkflowCallerTests).Assembly
+            .GetManifestResourceStream(fixture.Workflow))
+        using (var reader = new StreamReader(resource ?? throw new AssertFailedException(
+            "Missing embedded caller workflow: " + fixture.Workflow)))
             yaml.Load(reader);
         var document = (YamlMappingNode)yaml.Documents[0].RootNode;
         var jobs = (YamlMappingNode)document.Children["jobs"];
