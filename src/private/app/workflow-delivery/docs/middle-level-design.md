@@ -443,7 +443,8 @@ sequenceDiagram
     Ruby->>Store: ruby-node-inputs, ruby-group-results
     Store->>Node: ci-scope, ruby-node-inputs, ci-dotnet-plan
     Node->>Store: node-group-results
-    Store->>NodeTests: ci-dotnet-plan; node-group outputs
+    Node-->>NodeTests: retained selection outputs
+    Store->>NodeTests: ci-dotnet-plan
     NodeTests->>Store: retained-node-*
     Store->>Python: ci-scope, ci-dotnet-plan
     Python->>Store: python-group-results
