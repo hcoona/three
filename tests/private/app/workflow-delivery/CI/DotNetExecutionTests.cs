@@ -12,6 +12,7 @@ public sealed class DotNetExecutionTests(TestContext context)
 {
     // Rows that vary only the plan, request or native answers read one committed
     // repository; each row still owns fresh scratch and native output.
+    private static readonly string[] WrapperPrefix = ["msbuild", "--disable-build-servers"];
     private static GitFixture? shared;
     private static string sharedCommit = "";
 
@@ -42,6 +43,15 @@ public sealed class DotNetExecutionTests(TestContext context)
             string.Join("; ", result.Failures.Select(failure => failure.Error)));
         Assert.HasCount(2, fixture.Commands);
         Assert.HasCount(2, result.Outputs);
+        // Neither wrapper may leave reusable MSBuild nodes or compiler servers behind. The
+        // nested BuildManager reads the compiler-server choices from the environment.
+        foreach (NativeCommand command in fixture.Commands)
+        {
+            CollectionAssert.AreEqual(WrapperPrefix, command.Arguments[..2]);
+            Assert.AreEqual("false", command.Environment!["UseSharedCompilation"]);
+            Assert.AreEqual("false", command.Environment["UseRazorBuildServer"]);
+        }
+        Assert.AreEqual("true", fixture.Commands[1].Environment!["VsTestUseMSBuildOutput"]);
     }
 
     [TestMethod]

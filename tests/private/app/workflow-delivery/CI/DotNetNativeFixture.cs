@@ -43,6 +43,11 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
                     """,
                 ["Directory.Build.targets"] = """
                     <Project>
+                      <Target Name="RequireNoCompilerServers" BeforeTargets="CoreCompile">
+                        <Error Condition="'$(UseSharedCompilation)' != 'false' Or
+                          '$(UseRazorBuildServer)' != 'false'"
+                          Text="Native compilation would leave a compiler server running." />
+                      </Target>
                       <Target Name="SetNativeBuildState" AfterTargets="Build">
                         <PropertyGroup><FixtureBuildState>ready</FixtureBuildState></PropertyGroup>
                         <ItemGroup><TestingPlatformEnvironmentVariable

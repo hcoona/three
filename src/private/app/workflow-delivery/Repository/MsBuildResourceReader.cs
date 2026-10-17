@@ -52,8 +52,8 @@ internal sealed class MsBuildResourceReader
         RequireLiteral(dimension.Configuration, false);
         RequireLiteral(dimension.TargetFramework, false);
         RequireLiteral(dimension.RuntimeIdentifier, true);
-        string output = await query(["msbuild", Path.Combine(root, committedProject),
-            "-nologo", "-noAutoResponse",
+        string output = await query(["msbuild", DotNetCli.DisableBuildServers,
+            Path.Combine(root, committedProject), "-nologo", "-noAutoResponse",
             "-getProperty:MSBuildProjectFullPath,Configuration,TargetFramework,RuntimeIdentifier",
             "-getItem:EmbeddedResource", "-property:Configuration=" + dimension.Configuration,
             "-property:TargetFramework=" + dimension.TargetFramework,
@@ -68,8 +68,8 @@ internal sealed class MsBuildResourceReader
         RequireCoordinate(project);
         string committedProject = RequireFile(project);
         RequireLiteral(configuration, false);
-        string output = await query(["msbuild", Path.Combine(root, committedProject),
-            "-nologo", "-noAutoResponse",
+        string output = await query(["msbuild", DotNetCli.DisableBuildServers,
+            Path.Combine(root, committedProject), "-nologo", "-noAutoResponse",
             "-getProperty:MSBuildProjectFullPath,Configuration,TargetFramework,TargetFrameworks,"
                 + "RuntimeIdentifier,RuntimeIdentifiers",
             "-getItem:EmbeddedResource", "-property:Configuration=" + configuration], token);

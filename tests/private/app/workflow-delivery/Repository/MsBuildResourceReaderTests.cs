@@ -80,8 +80,8 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
             context.CancellationToken);
 
         Assert.AreEqual(1, queries);
-        CollectionAssert.AreEqual(new[] { "msbuild", Path.Combine(checkout.Root, Project),
-            "-nologo", "-noAutoResponse",
+        CollectionAssert.AreEqual(new[] { "msbuild", "--disable-build-servers",
+            Path.Combine(checkout.Root, Project), "-nologo", "-noAutoResponse",
             "-getProperty:MSBuildProjectFullPath,Configuration,TargetFramework,TargetFrameworks,"
                 + "RuntimeIdentifier,RuntimeIdentifiers",
             "-getItem:EmbeddedResource", "-property:Configuration=Debug" }, arguments);
@@ -170,8 +170,8 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
         MsBuildResources result = await reader.ReadAsync(Project, Release,
             context.CancellationToken);
 
-        CollectionAssert.AreEqual(new[] { "msbuild", Path.Combine(checkout.Root, Project),
-            "-nologo", "-noAutoResponse",
+        CollectionAssert.AreEqual(new[] { "msbuild", "--disable-build-servers",
+            Path.Combine(checkout.Root, Project), "-nologo", "-noAutoResponse",
             "-getProperty:MSBuildProjectFullPath,Configuration,TargetFramework,RuntimeIdentifier",
             "-getItem:EmbeddedResource", "-property:Configuration=Release",
             "-property:TargetFramework=net10.0", "-property:RuntimeIdentifier=linux-x64" }, actual);

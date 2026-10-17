@@ -73,7 +73,8 @@ internal static class DotNetPackageChecks
     internal static NativeCommand Query(DotNetGraphNode node, string checkout,
         string response, string targets, string returned, int deadline,
         string[]? storage = null) => new("dotnet", checkout,
-        ["msbuild", node.Identity.Project, "-nologo", "-noAutoResponse", "-target:" + targets,
+        ["msbuild", DotNetCli.DisableBuildServers, node.Identity.Project, "-nologo",
+            "-noAutoResponse", "-target:" + targets,
             "-getTargetResult:" + returned, "-getProperty:" + string.Join(',', NativeProperties),
             "-getResultOutputFile:" + response, .. DotNetChecks.Properties(node.Identity.Globals),
             .. (storage ?? [])], deadline);

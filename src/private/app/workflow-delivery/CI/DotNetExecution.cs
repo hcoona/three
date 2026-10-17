@@ -105,8 +105,9 @@ internal static class DotNetExecution
                     </Project>
                     """, token);
                 var command = new NativeCommand("dotnet", checkout,
-                    ["msbuild", wrapper, "-nologo", "-noAutoResponse", "-target:BuildSelected"],
-                    request.DeadlineSeconds);
+                    ["msbuild", DotNetCli.DisableBuildServers, wrapper, "-nologo",
+                        "-noAutoResponse", "-target:BuildSelected"],
+                    request.DeadlineSeconds, DotNetCli.NestedBuildEnvironment());
                 NativeCommandResult native = await execute(command, token);
                 batch = new(builds.Select(build => build.Work.Key).ToArray(), command, native);
                 fallback = native.Termination switch
@@ -227,10 +228,12 @@ internal static class DotNetExecution
                 // VSTest report results as MSBuild events of its own submission. The plain
                 // console logger still writes this command's captured output.
                 var command = new NativeCommand("dotnet", checkout,
-                    ["msbuild", wrapper, "-nologo", "-noAutoResponse", "-tl:true",
-                        "-noConsoleLogger", "-logger:ConsoleLogger,Microsoft.Build;" +
-                        "Verbosity=minimal", "-target:TestSelected"],
-                    request.DeadlineSeconds, new Dictionary<string, string?>
+                    ["msbuild", DotNetCli.DisableBuildServers, wrapper, "-nologo",
+                        "-noAutoResponse", "-tl:true", "-noConsoleLogger",
+                        "-logger:ConsoleLogger,Microsoft.Build;Verbosity=minimal",
+                        "-target:TestSelected"],
+                    request.DeadlineSeconds,
+                    new Dictionary<string, string?>(DotNetCli.NestedBuildEnvironment())
                     { ["VsTestUseMSBuildOutput"] = "true" });
                 NativeCommandResult native = await execute(command, token);
                 testBatch = new(runnable.Select(test => test.Work.Key).ToArray(), command,
