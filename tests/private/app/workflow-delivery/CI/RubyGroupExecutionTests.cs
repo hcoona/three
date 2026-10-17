@@ -17,7 +17,27 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     private static NativeCommandResult Answer(object value) => new(NativeTermination.Exited,
         0, JsonSerializer.Serialize(value), "", 0, null);
 
-    private async Task<(CiPlan Plan, RubyGroupRunRequest Request)> PrepareAsync(GitFixture repo)
+    // Rows that stop before any product work read one class-owned commit; rows that build
+    // the gem write generated version.rb into the checkout and keep a private repository.
+    private static GitFixture? shared;
+    private static string sharedHead = "";
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            sharedHead = await CommitAsync(repo);
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    private static async Task<string> CommitAsync(GitFixture repo)
     {
         await repo.SetAsync(Suite + "/asciidoctor-latexmath.gemspec");
         await repo.SetAsync(Suite + "/Gemfile");
@@ -25,6 +45,23 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         await repo.SetAsync(Gem + "/hcoona-release-smoke-ruby.gemspec");
         string head = await repo.CommitAsync();
         await repo.GitAsync("reset", "--hard", head);
+        return head;
+    }
+
+    private async Task<(CiPlan Plan, RubyGroupRunRequest Request)> PrepareAsync(GitFixture repo)
+    {
+        string head = await CommitAsync(repo);
+        return await RequestAsync(repo, head, Directory.CreateDirectory(Path.Combine(
+            Path.GetDirectoryName(repo.Directory)!, "execution")).FullName);
+    }
+
+    // Reads the class-owned commit; the row owns only its scratch.
+    private Task<(CiPlan Plan, RubyGroupRunRequest Request)> SharedAsync(string scratch) =>
+        RequestAsync(shared!, sharedHead, scratch);
+
+    private async Task<(CiPlan Plan, RubyGroupRunRequest Request)> RequestAsync(GitFixture repo,
+        string head, string scratch)
+    {
         GitRevision revision = await new GitReader(repo.Directory).ReadAsync(head,
             context.CancellationToken);
         string PathFor(string path) => Path.GetFullPath(Path.Combine(repo.Directory, path));
@@ -49,8 +86,6 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         var inputs = new RubyRevisionInputs(facts, [source, suite],
             [new(PathFor(Suite + "/Gemfile"), PathFor(Suite + "/Gemfile.lock"), "2.4.20",
                 [PathFor(Suite + "/Gemfile")], [], [])], [unit]);
-        string scratch = Directory.CreateDirectory(Path.Combine(
-            Path.GetDirectoryName(repo.Directory)!, "execution")).FullName;
         return (plan, new(repo.Directory, scratch,
             new(PathFor("ruby"), PathFor("facts.rb"), scratch,
                 new Dictionary<string, string?> { ["PATH"] = "prepared tools" }, 30),
@@ -125,8 +160,8 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     [DataRow("candidate")]
     public async Task InvalidOriginalPlanCannotExecute(string defect)
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        var (plan, request) = await PrepareAsync(repo);
+        using var scratch = new Scratch();
+        var (plan, request) = await SharedAsync(scratch.Directory);
         if (defect == "partial-gem") plan = plan with { Checks = plan.Checks[..^1] };
         if (defect == "missing-bundle") request = request with
             { Candidate = request.Candidate with { Bundles = [] } };
@@ -143,8 +178,9 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     [TestMethod]
     public async Task EmptySelectionPerformsNoProductPreparation()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        var (plan, request) = await PrepareAsync(repo);
+        // Defect-free control: the shared commit binds and satisfies an empty selection.
+        using var scratch = new Scratch();
+        var (plan, request) = await SharedAsync(scratch.Directory);
         RubyGroupRun result = await RubyGroupExecution.RunAsync(plan with { Checks = [] },
             request, (_, _) =>
             {
@@ -154,6 +190,13 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         Assert.IsTrue(result.Outcome.Satisfied);
         Assert.IsEmpty(result.Results);
         Assert.IsEmpty(Directory.GetFileSystemEntries(request.Scratch));
+    }
+
+    private sealed class Scratch : IDisposable
+    {
+        internal string Directory { get; } =
+            System.IO.Directory.CreateTempSubdirectory("workflow-ruby-group-").FullName;
+        public void Dispose() => System.IO.Directory.Delete(Directory, recursive: true);
     }
 
     [TestMethod]

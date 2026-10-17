@@ -16,6 +16,38 @@ namespace WorkflowDelivery.Tests.Release;
 [TestClass]
 public sealed class BashWorkflowCallerTests(TestContext context)
 {
+    // The receive step is identical for every row of one caller, so it runs once per
+    // ecosystem here; each row verifies from its own copy of the received tree.
+    private static readonly Dictionary<string, Fixture> Received = new(StringComparer.Ordinal);
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        try
+        {
+            foreach (string ecosystem in new[] { "npm", "python", "ruby" })
+            {
+                var fixture = new Fixture(ecosystem);
+                Received.Add(ecosystem, fixture);
+                NativeCommandResult received = await Step(fixture,
+                    "Receive transferred preparation", fixture.Environment(),
+                    classContext.CancellationToken);
+                if (!received.Succeeded)
+                    throw new AssertFailedException(ecosystem + " receive failed: " +
+                        received.Stderr);
+                Assert.IsTrue(Directory.Exists(Path.Combine(fixture.Root, "verification")));
+            }
+        }
+        catch { Cleanup(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup()
+    {
+        foreach (Fixture fixture in Received.Values) fixture.Dispose();
+        Received.Clear();
+    }
+
     [TestMethod]
     [DataRow("npm", "Exact", 0, "Satisfied")]
     [DataRow("npm", "Conflict", 1, "Unsatisfied")]
@@ -27,16 +59,14 @@ public sealed class BashWorkflowCallerTests(TestContext context)
     public async Task ActualVerificationStepRetainsTypedRegistryOutcome(string ecosystem,
         string state, int expectedExit, string expectedState)
     {
-        using var fixture = new Fixture(ecosystem);
+        using var fixture = Fixture.CopyOf(Received[ecosystem]);
         fixture.WriteFinal(Enum.Parse<ReleaseFileState>(state));
         var environment = fixture.Environment();
         // The actual observe command exits 1 for a handled conflict or unknown state.
         environment["CONTROLLED_OBSERVATION_EXIT"] = state == "Exact" ? "0" : "1";
-        NativeCommandResult received = await Step(fixture, "Receive transferred preparation",
-            environment);
-        Assert.IsTrue(received.Succeeded, received.Stderr);
 
-        NativeCommandResult result = await Step(fixture, fixture.VerifyStep, environment);
+        NativeCommandResult result = await Step(fixture, fixture.VerifyStep, environment,
+            context.CancellationToken);
 
         Assert.AreEqual(expectedExit, result.ExitCode, result.Stderr);
         ReleaseOutcome outcome = fixture.Outcome();
@@ -51,23 +81,21 @@ public sealed class BashWorkflowCallerTests(TestContext context)
     [DataRow("ruby")]
     public async Task ActualVerificationStepStopsOnUnhandledObservationFailure(string ecosystem)
     {
-        using var fixture = new Fixture(ecosystem);
+        using var fixture = Fixture.CopyOf(Received[ecosystem]);
         fixture.WriteFinal(ReleaseFileState.Exact);
         var environment = fixture.Environment();
         // Exit 2 is an unhandled native failure, not a typed destination state.
         environment["CONTROLLED_OBSERVATION_EXIT"] = "2";
-        NativeCommandResult received = await Step(fixture, "Receive transferred preparation",
-            environment);
-        Assert.IsTrue(received.Succeeded, received.Stderr);
 
-        NativeCommandResult result = await Step(fixture, fixture.VerifyStep, environment);
+        NativeCommandResult result = await Step(fixture, fixture.VerifyStep, environment,
+            context.CancellationToken);
 
         Assert.AreEqual(2, result.ExitCode, result.Stderr);
         Assert.IsFalse(File.Exists(Path.Combine(fixture.Root, "verification/outcome.json")));
     }
 
-    private Task<NativeCommandResult> Step(Fixture fixture, string name,
-        Dictionary<string, string?> environment)
+    private static Task<NativeCommandResult> Step(Fixture fixture, string name,
+        Dictionary<string, string?> environment, CancellationToken token)
     {
         // Only the native destination observation is controlled. The actual workflow
         // shell and typed application phase/completion commands run unchanged.
@@ -108,7 +136,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         string script = (shim.Replace("@@EXIT@@", "\"${CONTROLLED_OBSERVATION_EXIT:-0}\"",
             StringComparison.Ordinal) + "\n" + step.Children["run"]).ReplaceLineEndings("\n");
         return NativeProcess.ExecuteAsync(new(Bash(), fixture.Root, [.. flags, "-c", script],
-            60, environment), context.CancellationToken);
+            60, environment), token);
     }
 
     private static YamlMappingNode? Defaults(YamlMappingNode node) =>
@@ -160,6 +188,26 @@ public sealed class BashWorkflowCallerTests(TestContext context)
             "python" => "Verify both index files and original bytes in final public state",
             _ => "Verify native source original and complete final native state",
         };
+
+        private Fixture(Fixture received)
+        {
+            ecosystem = received.ecosystem;
+            Prepared = received.Prepared;
+            foreach (string file in Directory.EnumerateFiles(received.Root, "*",
+                SearchOption.AllDirectories))
+            {
+                string target = Path.Combine(Root, Path.GetRelativePath(received.Root, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(file, target);
+            }
+            foreach (string directory in Directory.EnumerateDirectories(received.Root, "*",
+                SearchOption.AllDirectories))
+                Directory.CreateDirectory(Path.Combine(Root,
+                    Path.GetRelativePath(received.Root, directory)));
+        }
+
+        // A row-owned copy of one caller's received tree.
+        internal static Fixture CopyOf(Fixture received) => new(received);
 
         internal Fixture(string ecosystem)
         {

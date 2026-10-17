@@ -12,8 +12,28 @@ public sealed class RubyGroupPreparationTests(TestContext context)
     private static NativeCommandResult Answer(object value) => new(NativeTermination.Exited,
         0, JsonSerializer.Serialize(value), "", 0, null);
 
-    private static async Task<RubyGroupPreparationRequest> RequestAsync(GitFixture repo,
-        CancellationToken token, bool manifest = true)
+    // Rows over the bundle-only commit read one class-owned repository: it has no gem source,
+    // so preparation writes nothing into the checkout. Rows that add a gem source or a
+    // committed defect keep a private repository. Each row owns its scope and scratch.
+    private static GitFixture? shared;
+    private static string sharedRevision = "";
+
+    [ClassInitialize]
+    public static async Task InitializeAsync(TestContext classContext)
+    {
+        GitFixture repo = await GitFixture.CreateAsync(classContext.CancellationToken);
+        try
+        {
+            sharedRevision = await CommitAsync(repo, true);
+            shared = repo;
+        }
+        catch { repo.Dispose(); throw; }
+    }
+
+    [ClassCleanup]
+    public static void Cleanup() => shared?.Dispose();
+
+    private static async Task<string> CommitAsync(GitFixture repo, bool manifest)
     {
         await repo.SetAsync("node/Gemfile");
         await repo.SetAsync("node/Gemfile.lock");
@@ -22,7 +42,26 @@ public sealed class RubyGroupPreparationTests(TestContext context)
                 "{\"tools\":{\"nbgv\":{\"version\":\"3.10.94\"}}}");
         string revision = await repo.CommitAsync();
         await repo.GitAsync("reset", "--hard", revision);
-        string parent = Path.GetDirectoryName(repo.Directory)!;
+        return revision;
+    }
+
+    private static async Task<RubyGroupPreparationRequest> RequestAsync(GitFixture repo,
+        CancellationToken token, bool manifest = true) => await RequestAsync(repo,
+            await CommitAsync(repo, manifest), Path.GetDirectoryName(repo.Directory)!, token);
+
+    // Reads the class-owned commit; the row owns only its state directory.
+    private sealed class SharedState : IDisposable
+    {
+        internal string Directory { get; } =
+            System.IO.Directory.CreateTempSubdirectory("workflow-ruby-preparation-").FullName;
+        internal Task<RubyGroupPreparationRequest> RequestAsync(CancellationToken token) =>
+            RubyGroupPreparationTests.RequestAsync(shared!, sharedRevision, Directory, token);
+        public void Dispose() => System.IO.Directory.Delete(Directory, recursive: true);
+    }
+
+    private static async Task<RubyGroupPreparationRequest> RequestAsync(GitFixture repo,
+        string revision, string parent, CancellationToken token)
+    {
         string scope = Path.Combine(parent, "scope.json");
         await File.WriteAllTextAsync(scope, JsonSerializer.Serialize(new
         {
@@ -94,8 +133,9 @@ public sealed class RubyGroupPreparationTests(TestContext context)
     [TestMethod]
     public async Task NativePreparationUsesOriginalPinAndOwnedEndpointContexts()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        RubyGroupPreparationRequest request = await RequestAsync(repo, context.CancellationToken);
+        // Defect-free control for the shared commit.
+        using var state = new SharedState();
+        RubyGroupPreparationRequest request = await state.RequestAsync(context.CancellationToken);
         RubyGroupPreparationResult result = await RubyGroupPreparation.PrepareAsync(request,
             (command, token) => NativeAsync(request, command, token), context.CancellationToken);
         Assert.AreEqual(request.Candidate.Reference, result.Request.Candidate.Checkout.Reference);
@@ -164,8 +204,8 @@ public sealed class RubyGroupPreparationTests(TestContext context)
     [TestMethod]
     public async Task FailedNativePreparationPreservesDiagnostics()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        RubyGroupPreparationRequest request = await RequestAsync(repo, context.CancellationToken);
+        using var state = new SharedState();
+        RubyGroupPreparationRequest request = await state.RequestAsync(context.CancellationToken);
         RubyBundlePreparationException error = await Assert.ThrowsExactlyAsync<
             RubyBundlePreparationException>(() => RubyGroupPreparation.PrepareAsync(request,
                 (_, _) => Task.FromResult(Answer(new { }) with
@@ -179,8 +219,8 @@ public sealed class RubyGroupPreparationTests(TestContext context)
     [TestMethod]
     public async Task CancellationCannotPrepareCandidate()
     {
-        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
-        RubyGroupPreparationRequest request = await RequestAsync(repo, context.CancellationToken);
+        using var state = new SharedState();
+        RubyGroupPreparationRequest request = await state.RequestAsync(context.CancellationToken);
         using var cancellation = new CancellationTokenSource();
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
             RubyGroupPreparation.PrepareAsync(request, async (command, token) =>

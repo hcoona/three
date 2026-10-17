@@ -848,7 +848,6 @@ def test_scope_prepares_exact_native_endpoints_from_native_line_records(
     assert observations[-1]["cwd"] == str(tmp_path)
 
 
-@pytest.mark.parametrize("line_ending", ["\n", "\r\n"], ids=["lf", "crlf"])
 @pytest.mark.parametrize(
     "failed_command",
     [
@@ -870,11 +869,13 @@ def test_scope_prepares_exact_native_endpoints_from_native_line_records(
 def test_scope_endpoint_native_failure_blocks_dependent_preparation(
     workflow: dict[str, Any],
     tmp_path: Path,
-    line_ending: str,
     failed_command: list[str],
 ) -> None:
-    """Keep every native prerequisite fatal before dependent preparation."""
-    env, endpoints = _scope_endpoint_commands(tmp_path, line_ending)
+    """Keep every native prerequisite fatal before dependent preparation.
+
+    Endpoint-record line endings are covered by the line-record test above.
+    """
+    env, endpoints = _scope_endpoint_commands(tmp_path, "\n")
     env["FAIL_COMMAND"] = json.dumps(failed_command)
     result = run_step(
         _scope_endpoint_step(workflow),

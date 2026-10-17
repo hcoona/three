@@ -54,7 +54,9 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [DataRow(true)]
     public async Task PreparedEndpointsRetainExactNativeToolAndSourceContexts(bool full)
     {
-        using var fixture = await Fixture.CreateAsync(full, context.CancellationToken);
+        // The full row needs one endpoint for both sides, so only it owns a repository.
+        using var fixture = full ? await Fixture.CreateAsync(full, context.CancellationToken)
+            : Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!);
         PythonGroupPreparationResult prepared = await fixture.PrepareAsync(
             context.CancellationToken);
         PythonGroupRequest result = prepared.Request;
@@ -101,7 +103,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [TestMethod]
     public async Task BackendQueriesRetainPreparedNbgvAndCredentialFreeState()
     {
-        using var fixture = await Fixture.CreateAsync(false, context.CancellationToken);
+        using var fixture = Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!);
         string sentinel = "WORKFLOW_PREPARATION_TEST_SECRET_" + Guid.NewGuid().ToString("N");
         Environment.SetEnvironmentVariable(sentinel, "controlled-secret-value");
         try
@@ -186,7 +188,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
     [DataRow(true)]
     public async Task CancelledPreparationCannotContinueOrReturnRequest(bool inFlight)
     {
-        using var fixture = await Fixture.CreateAsync(false, context.CancellationToken);
+        using var fixture = Fixture.Shared(sharedBasisEndpoint!, sharedCandidateEndpoint!);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         if (inFlight) fixture.Cancel = cancellation;

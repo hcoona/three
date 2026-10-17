@@ -139,11 +139,11 @@ public sealed class NativeProcessTests
         Assert.AreEqual(expected, output);
     }
 
+    // One invalid sequence and one BOM prove strict UTF-8 without BOM detection; the other
+    // BOM forms exercise only StreamReader's documented detection.
     [TestMethod]
     [DataRow("wyg=")]
     [DataRow("//5BAA==")]
-    [DataRow("/v8AQQ==")]
-    [DataRow("//4AAA==")]
     public async Task RunRejectsInvalidUtf8WithoutSwitchingEncoding(string bytes)
     {
         await Assert.ThrowsExactlyAsync<DecoderFallbackException>(

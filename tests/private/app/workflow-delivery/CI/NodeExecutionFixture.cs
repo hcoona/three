@@ -9,7 +9,8 @@ using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
 namespace WorkflowDelivery.Tests.CI;
 
-internal sealed class NodeExecutionFixture(GitFixture repository, CiPlan plan) : IDisposable
+internal sealed class NodeExecutionFixture(GitFixture repository, CiPlan plan,
+    bool ownsRepository = true) : IDisposable
 {
     internal const string Source = "src/product";
     internal const string Build = "node/project-build-v1";
@@ -45,11 +46,7 @@ internal sealed class NodeExecutionFixture(GitFixture repository, CiPlan plan) :
         GitFixture repository = await GitFixture.CreateAsync(token);
         try
         {
-            await repository.SetAsync(Source + "/package.json", Metadata);
-            await repository.SetAsync(Source + "/index.js", "export const source = true;");
-            string candidate = await repository.CommitAsync();
-            await repository.GitAsync("reset", "--hard", candidate);
-            return new(repository, CreatePlan(candidate, builds));
+            return new(repository, CreatePlan(await CommitAsync(repository), builds));
         }
         catch
         {
@@ -57,6 +54,20 @@ internal sealed class NodeExecutionFixture(GitFixture repository, CiPlan plan) :
             throw;
         }
     }
+
+    // Commits the complete product shape once; a shared repository must stay read-only.
+    internal static async Task<string> CommitAsync(GitFixture repository)
+    {
+        await repository.SetAsync(Source + "/package.json", Metadata);
+        await repository.SetAsync(Source + "/index.js", "export const source = true;");
+        string candidate = await repository.CommitAsync();
+        await repository.GitAsync("reset", "--hard", candidate);
+        return candidate;
+    }
+
+    // Reads a class-owned committed repository; this row owns only its scratch.
+    internal static NodeExecutionFixture Shared(GitFixture repository, string candidate,
+        params string[] builds) => new(repository, CreatePlan(candidate, builds), false);
 
     internal static CiPlan CreatePlan(string candidate, params string[] builds)
     {
@@ -111,7 +122,7 @@ internal sealed class NodeExecutionFixture(GitFixture repository, CiPlan plan) :
 
     public void Dispose()
     {
-        Repository.Dispose();
+        if (ownsRepository) Repository.Dispose();
         Directory.Delete(Scratch, recursive: true);
     }
 }

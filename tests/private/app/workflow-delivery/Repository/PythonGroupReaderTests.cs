@@ -10,17 +10,38 @@ namespace WorkflowDelivery.Tests.Repository;
 public sealed class PythonGroupReaderTests(TestContext context)
 {
     private const string Source = "src/input/source.py";
+    private const string Other = "src/other/code.cs";
+    private const string ControlCaller =
+        "src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs";
+    private const string Passive = "src/private/app/workflow-delivery/Native/Python/passive.py";
+    private const string PassiveTarget = "tests/private/app/workflow-delivery/Native/Python";
+    private const string Unresolved = "unresolved.txt";
+    private static readonly string[] ChangedPaths = [Source, Other, ControlCaller, Passive,
+        "src/private/app/workflow-delivery/README.md",
+        "src/private/app/workflow-delivery/docs/high-level-design.md", Unresolved];
 
-    // Runtime-substitution and scope-transfer rows read one class-owned committed pair;
-    // each row writes its scope transfer to private scratch.
+    // Every row reads class-owned committed endpoints: one basis and a sibling candidate
+    // worktree per changed path. Each row writes its scope transfer to private scratch; a
+    // row that must edit or fetch into an endpoint needs its own repository.
     private static GitFixture? shared;
-    private static Fixture.Pair? sharedPair;
+    private static readonly Dictionary<string, Fixture.Pair> SharedPairs =
+        new(StringComparer.Ordinal);
+    private static Fixture.Pair SharedPair => SharedPairs[Source];
+
+    // Full mode reads the candidate commit and root for both endpoints.
+    private static Fixture.Pair SharedFull => SharedPair with
+    { Full = true, Basis = SharedPair.Candidate, BasisRoot = SharedPair.CandidateRoot };
 
     [ClassInitialize]
     public static async Task InitializeAsync(TestContext classContext)
     {
         shared = await GitFixture.CreateAsync(classContext.CancellationToken);
-        try { sharedPair = await Fixture.CommitAsync(shared, Source, false); }
+        try
+        {
+            foreach (Fixture.Pair pair in await Fixture.CommitSharedAsync(shared, ChangedPaths,
+                [Fixture.DefaultTarget, PassiveTarget]))
+                SharedPairs.Add(pair.Changed, pair);
+        }
         catch { shared.Dispose(); throw; }
     }
 
@@ -31,19 +52,43 @@ public sealed class PythonGroupReaderTests(TestContext context)
     public async Task SharedEndpointsQualifyPairedSelection()
     {
         // Defect-free control: the shared pair itself selects the changed pytest target.
-        using var fixture = await Fixture.SharedAsync(sharedPair!, context.CancellationToken);
+        using var fixture = await Fixture.SharedAsync(SharedPair, context.CancellationToken);
         PythonGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
         PlannedCheck check = Assert.ContainsSingle(result.Plan.Checks);
         Assert.Contains(new SelectionReason(Source, fixture.Request.Basis.Checkout.Reference,
             check.Work.Key.Target), check.Reasons);
         Assert.HasCount(2, fixture.Collected);
+        AssertCandidateContext(fixture, result, check);
+    }
+
+    [TestMethod]
+    public async Task FullModeRetainsCandidateContext()
+    {
+        using var fixture = await Fixture.SharedAsync(SharedFull, context.CancellationToken);
+        PythonGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
+        AssertCandidateContext(fixture, result, Assert.ContainsSingle(result.Plan.Checks));
+    }
+
+    private static void AssertCandidateContext(Fixture fixture, PythonGroupReadback result,
+        PlannedCheck check)
+    {
+        Assert.AreEqual(fixture.Request.Candidate.Checkout.Reference, result.Plan.Candidate);
+        Assert.AreEqual(fixture.Request.Basis.Checkout.Reference, result.Plan.Comparison);
+        Assert.AreEqual("pytest:src/input/tests", check.Work.Key.Target);
+        Assert.AreEqual(fixture.Request.Candidate.Collection.Graph.Interpreter,
+            result.Interpreter);
+        Assert.AreEqual("input", result.Members.Single(member =>
+            member.Directory == "src/input").Name);
+        Assert.AreEqual(result.Plan.Candidate, result.Targets.Revision);
+        Assert.AreEqual("src/input", Assert.ContainsSingle(result.Targets.Targets).Member);
+        Assert.AreSame(fixture.After!.Facts.Configuration, result.Configuration);
+        Assert.AreSame(fixture.After.Facts.Operation, result.Operation);
     }
 
     [TestMethod]
     public async Task TransferredPreparationExcludesNewReceiverEnvironmentAtQueryLaunch()
     {
-        using var fixture = await Fixture.CreateAsync("src/input/source.py", true,
-            context.CancellationToken);
+        using var fixture = await Fixture.SharedAsync(SharedFull, context.CancellationToken);
         string state = Path.GetDirectoryName(fixture.Request.ScopePath)!;
         string sources = Directory.CreateDirectory(Path.Combine(state, "control")).FullName;
         string scratch = Directory.CreateDirectory(Path.Combine(state, "preparation")).FullName;
@@ -101,35 +146,9 @@ public sealed class PythonGroupReaderTests(TestContext context)
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
-    public async Task ExactPairedSelectionRetainsCandidateContextAndFullMode(bool full)
-    {
-        using var fixture = await Fixture.CreateAsync("src/input/source.py", full,
-            context.CancellationToken);
-        PythonGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
-
-        PlannedCheck check = Assert.ContainsSingle(result.Plan.Checks);
-        Assert.AreEqual(fixture.Request.Candidate.Checkout.Reference, result.Plan.Candidate);
-        Assert.AreEqual(fixture.Request.Basis.Checkout.Reference, result.Plan.Comparison);
-        Assert.AreEqual("pytest:src/input/tests", check.Work.Key.Target);
-        Assert.AreEqual(fixture.Request.Candidate.Collection.Graph.Interpreter,
-            result.Interpreter);
-        Assert.AreEqual("input", result.Members.Single(member =>
-            member.Directory == "src/input").Name);
-        Assert.AreEqual(result.Plan.Candidate, result.Targets.Revision);
-        Assert.AreEqual("src/input", Assert.ContainsSingle(result.Targets.Targets).Member);
-        Assert.AreSame(fixture.After!.Facts.Configuration, result.Configuration);
-        Assert.AreSame(fixture.After.Facts.Operation, result.Operation);
-        if (!full)
-            Assert.Contains(new SelectionReason("src/input/source.py",
-                fixture.Request.Basis.Checkout.Reference, check.Work.Key.Target), check.Reasons);
-    }
-
-    [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
     public async Task KnownOtherResponsibilityCannotSuppressNativePythonConsumption(bool consumed)
     {
-        using var fixture = await Fixture.CreateAsync("src/other/code.cs", false,
+        using var fixture = await Fixture.SharedAsync(SharedPairs[Other],
             context.CancellationToken, "dotnet");
         fixture.CrossInput = consumed;
         PythonGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
@@ -152,8 +171,7 @@ public sealed class PythonGroupReaderTests(TestContext context)
     [TestMethod]
     public async Task ControlCallerUsesNativeManagedResponsibility()
     {
-        using var fixture = await Fixture.CreateAsync(
-            "src/private/app/workflow-delivery/CI/Callers/ControlCiCaller.cs", false,
+        using var fixture = await Fixture.SharedAsync(SharedPairs[ControlCaller],
             context.CancellationToken, "dotnet");
         PythonGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
         Assert.IsEmpty(result.Plan.Checks);
@@ -163,9 +181,9 @@ public sealed class PythonGroupReaderTests(TestContext context)
     [TestMethod]
     public async Task NativeManagedResponsibilityPreservesPythonHelperConsumer()
     {
-        const string path = "src/private/app/workflow-delivery/Native/Python/passive.py";
-        const string target = "tests/private/app/workflow-delivery/Native/Python";
-        using var fixture = await Fixture.CreateAsync(path, false,
+        const string path = Passive;
+        const string target = PassiveTarget;
+        using var fixture = await Fixture.SharedAsync(SharedPairs[path],
             context.CancellationToken, "dotnet", target);
         PythonGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
         PlannedCheck check = Assert.ContainsSingle(result.Plan.Checks);
@@ -184,7 +202,7 @@ public sealed class PythonGroupReaderTests(TestContext context)
     public async Task DeclaredControlDocumentsRemainNonconsumersWithPythonCallerResponsibility(
         string path)
     {
-        using var fixture = await Fixture.CreateAsync(path, false,
+        using var fixture = await Fixture.SharedAsync(SharedPairs[path],
             context.CancellationToken, "python");
         PythonGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
         Assert.IsEmpty(result.Plan.Checks);
@@ -197,11 +215,22 @@ public sealed class PythonGroupReaderTests(TestContext context)
     [DataRow("python")]
     public async Task UnknownOrLegacyPythonHeuristicCannotBecomeSuccessfulNoWork(string? owner)
     {
-        using var fixture = await Fixture.CreateAsync("unresolved.txt", false,
+        using var fixture = await Fixture.SharedAsync(SharedPairs[Unresolved],
             context.CancellationToken, owner);
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
         Assert.AreEqual("Unresolved Python input: unresolved.txt", error.Message);
+    }
+
+    [TestMethod]
+    public async Task SharedUnresolvedPairQualifiesWithKnownOtherResponsibility()
+    {
+        // Defect-free control: the shared unresolved-path pair itself reads successfully.
+        using var fixture = await Fixture.SharedAsync(SharedPairs[Unresolved],
+            context.CancellationToken, "dotnet");
+        PythonGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
+        Assert.IsEmpty(result.Plan.Checks);
+        Assert.HasCount(2, fixture.Collected);
     }
 
     [TestMethod]
@@ -211,7 +240,7 @@ public sealed class PythonGroupReaderTests(TestContext context)
     [DataRow("entry-mode")]
     public async Task BadScopeTransferStopsBeforeNativeCollection(string defect)
     {
-        using var fixture = await Fixture.SharedAsync(sharedPair!, context.CancellationToken);
+        using var fixture = await Fixture.SharedAsync(SharedPair, context.CancellationToken);
         var text = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(
             fixture.Request.ScopePath, context.CancellationToken))!;
         if (defect == "comparison") text["candidate"] = new string('a', 40);
@@ -234,7 +263,7 @@ public sealed class PythonGroupReaderTests(TestContext context)
     [DataRow("operation")]
     public async Task EndpointsCannotSubstituteAnotherControlRuntime(string defect)
     {
-        using var fixture = await Fixture.SharedAsync(sharedPair!, context.CancellationToken);
+        using var fixture = await Fixture.SharedAsync(SharedPair, context.CancellationToken);
         PythonRepositoryRequest candidate = fixture.Request.Candidate.Collection;
         candidate = defect switch
         {
@@ -258,8 +287,7 @@ public sealed class PythonGroupReaderTests(TestContext context)
     [DataRow(true)]
     public async Task FailedEndpointDoesNotUseOtherEndpointFactsOrFullFallback(bool candidate)
     {
-        using var fixture = await Fixture.CreateAsync("src/input/source.py", false,
-            context.CancellationToken);
+        using var fixture = await Fixture.SharedAsync(SharedPair, context.CancellationToken);
         fixture.FailedEndpoint = candidate ? fixture.Request.Candidate.Checkout.Reference :
             fixture.Request.Basis.Checkout.Reference;
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
@@ -270,8 +298,7 @@ public sealed class PythonGroupReaderTests(TestContext context)
     [TestMethod]
     public async Task CancelledBasisCollectionDoesNotQueryCandidateOrReturnNoWork()
     {
-        using var fixture = await Fixture.CreateAsync("src/input/source.py", false,
-            context.CancellationToken);
+        using var fixture = await Fixture.SharedAsync(SharedPair, context.CancellationToken);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken);
         fixture.AfterBasis = cancellation.Cancel;
@@ -282,62 +309,55 @@ public sealed class PythonGroupReaderTests(TestContext context)
             Assert.ContainsSingle(fixture.Collected));
     }
 
-    private sealed class Fixture(GitFixture? repository, string state) : IDisposable
+    private sealed class Fixture(string state) : IDisposable
     {
-        private readonly GitFixture? repo = repository;
+        internal const string DefaultTarget = "src/input/tests";
         internal PythonGroupRequest Request { get; set; } = null!;
         internal PythonRevisionInputs? After { get; private set; }
         internal List<string> Collected { get; } = [];
         internal bool CrossInput { get; set; }
-        private string testTarget = "src/input/tests";
+        private string testTarget = DefaultTarget;
         internal string? FailedEndpoint { get; set; }
         internal Action? AfterBasis { get; set; }
 
         internal sealed record Pair(string Changed, bool Full, string Basis, string BasisRoot,
             string Candidate, string CandidateRoot);
 
-        // Commits the basis/candidate pair; the basis gets its own worktree.
-        internal static async Task<Pair> CommitAsync(GitFixture repo, string changed, bool full,
-            string target = "src/input/tests")
+        // One basis worktree; each changed path gets a sibling candidate in its own worktree.
+        internal static async Task<Pair[]> CommitSharedAsync(GitFixture repo, string[] changed,
+            string[] targets)
         {
-            foreach (string path in (string[])["pyproject.toml", "src/input/pyproject.toml",
-                "src/input/source.py", target + "/test_one.py", changed])
+            foreach (string path in ((string[])["pyproject.toml", "src/input/pyproject.toml",
+                "src/input/source.py"]).Concat(targets.Select(target => target + "/test_one.py"))
+                .Concat(changed).Distinct(StringComparer.Ordinal))
                 await repo.SetAsync(path);
-            string before = await repo.CommitAsync();
-            await repo.GitAsync("reset", "--hard", before);
+            string basis = await repo.CommitAsync();
+            await repo.GitAsync("reset", "--hard", basis);
             string parent = Path.GetDirectoryName(repo.Directory)!;
-            string beforeDirectory = Path.Combine(parent, "basis");
-            await repo.GitAsync("worktree", "add", "--detach", beforeDirectory, before);
-            await repo.SetAsync(changed, "updated");
-            string after = await repo.CommitAsync(before);
-            await repo.GitAsync("reset", "--hard", after);
-            if (full) { before = after; beforeDirectory = repo.Directory; }
-            return new(changed, full, before, beforeDirectory, after, repo.Directory);
-        }
-
-        // Reads a class-owned pair; the row owns only its scope transfer.
-        internal static async Task<Fixture> SharedAsync(Pair pair, CancellationToken token)
-        {
-            var fixture = new Fixture(null, Directory.CreateTempSubdirectory(
-                "workflow-python-group-").FullName);
-            try
+            string basisRoot = Path.Combine(parent, "basis");
+            await repo.GitAsync("worktree", "add", "--detach", basisRoot, basis);
+            var pairs = new List<Pair>();
+            foreach (string path in changed)
             {
-                await fixture.RequestAsync(pair, null, token);
-                return fixture;
+                await repo.SetAsync(path, "updated");
+                string candidate = await repo.CommitAsync(basis);
+                string root = Path.Combine(parent, "candidate-" + pairs.Count);
+                await repo.GitAsync("worktree", "add", "--detach", root, candidate);
+                pairs.Add(new(path, false, basis, basisRoot, candidate, root));
+                await repo.SetAsync(path);
             }
-            catch { fixture.Dispose(); throw; }
+            return [.. pairs];
         }
 
-        internal static async Task<Fixture> CreateAsync(string changed, bool full,
-            CancellationToken token, string? owner = null, string target = "src/input/tests")
+        // Reads class-owned endpoints; the row owns only its scope transfer.
+        internal static async Task<Fixture> SharedAsync(Pair pair, CancellationToken token,
+            string? owner = null, string target = DefaultTarget)
         {
-            GitFixture repo = await GitFixture.CreateAsync(token);
-            var fixture = new Fixture(repo, Path.GetDirectoryName(repo.Directory)!);
+            var fixture = new Fixture(Directory.CreateTempSubdirectory(
+                "workflow-python-group-").FullName) { testTarget = target };
             try
             {
-                fixture.testTarget = target;
-                await fixture.RequestAsync(await CommitAsync(repo, changed, full, target), owner,
-                    token);
+                await fixture.RequestAsync(pair, owner, token);
                 return fixture;
             }
             catch { fixture.Dispose(); throw; }
@@ -408,10 +428,6 @@ public sealed class PythonGroupReaderTests(TestContext context)
                 return Task.FromResult(result);
             }, token);
 
-        public void Dispose()
-        {
-            if (repo is null) Directory.Delete(state, recursive: true);
-            else repo.Dispose();
-        }
+        public void Dispose() => Directory.Delete(state, recursive: true);
     }
 }

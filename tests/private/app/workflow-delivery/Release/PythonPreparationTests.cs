@@ -13,7 +13,9 @@ public sealed class PythonPreparationTests(TestContext context)
     private static readonly string[] DistributionKinds = ["python-wheel", "python-sdist"];
 
     // End-to-end rows read one committed repository; each row still owns fresh scratch and
-    // runs the complete preparation. Pure rule rows run on their entry points.
+    // runs the complete preparation, which writes only to scratch (the control row checks the
+    // checkout stays clean). A committed recipe defect keeps a private repository. Pure rule
+    // rows run on their entry points.
     private static GitFixture? shared;
     private static string sharedRevision = "";
     private const string Revision = "0123456789abcdef0123456789abcdef01234567";
@@ -37,8 +39,12 @@ public sealed class PythonPreparationTests(TestContext context)
     [TestMethod]
     public async Task CompletePairAndConsumersQualifyRelease()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        // Defect-free control for the shared repository.
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.AreEqual("", await NativeProcess.RunAsync("git", fixture.Repo.Directory,
+            ["status", "--porcelain", "--untracked-files=all"], context.CancellationToken),
+            "Preparation must leave the shared checkout clean.");
         Assert.IsEmpty(result.Errors);
         ReleaseCompletion.Validate(result.Prepared);
         Assert.HasCount(2, result.Prepared.Files);
@@ -196,7 +202,7 @@ public sealed class PythonPreparationTests(TestContext context)
     [TestMethod]
     public async Task DryRunRetainsNativeLocalVersionWithoutTransformingIt()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Subject = fixture.Subject with { DryRun = true, SelectedRef = "refs/tags/preview" };
         fixture.Version = "1.0.0+g1234567";
         fixture.ChangeFacts = facts => { facts["local_version"] = "g1234567";
@@ -216,7 +222,7 @@ public sealed class PythonPreparationTests(TestContext context)
     public async Task FailedNativePhaseRetainsActualResultAndStops(string argument,
         string terminationText, string statusText)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         NativeTermination termination = Enum.Parse<NativeTermination>(terminationText);
         fixture.Override = command => command.Arguments.Contains(argument) ?
             new(termination, termination == NativeTermination.Exited ? 1 : null,
@@ -286,7 +292,7 @@ public sealed class PythonPreparationTests(TestContext context)
     [DataRow("consume")]
     public async Task ChangedOriginalCannotQualifyRelease(string phase)
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Override = command =>
         {
             if (command.Arguments.Contains(phase))
@@ -305,7 +311,7 @@ public sealed class PythonPreparationTests(TestContext context)
     [TestMethod]
     public async Task SelectedToolMismatchStopsPreparation()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Override = command => command.Arguments.Contains("ls") ?
             Fixture.Success("[]") : null;
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
@@ -317,7 +323,7 @@ public sealed class PythonPreparationTests(TestContext context)
     [TestMethod]
     public async Task CancellationBeforeWorkProducesCompleteChecks()
     {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        using var fixture = Fixture.Shared(shared!, sharedRevision);
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
         PythonPreparationResult result = await fixture.RunAsync(cancelled.Token);
