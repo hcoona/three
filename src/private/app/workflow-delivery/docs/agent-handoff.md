@@ -23,34 +23,29 @@ retained.
 
 ## Starting Work
 
-1. Inspect the actual Git branch, worktree/index state, accepted target, active
-   worker ownership, PR checks and unresolved findings. Preserve unrelated user
-   changes. A missing process alone does not prove a worker is idle elsewhere.
-2. Read accepted repository AGENTS, governance, record policy and Wave before
-   depending on proposed changes. Follow the
-   [shared engineering guidance](../../../../../.github/skills/engineering-guidance/SKILL.md)
-   and concern-specific review skills through their canonical paths.
-3. Confirm affected requirements, native responsibility, transfer/permission
+Root [agent instructions](../../../../../AGENTS.md) route the accepted
+governance, record policy, Wave and shared engineering guidance.
+[Agent execution and recovery](../../../../../docs/engineering/agent-execution.md)
+owns inspecting worker ownership, worktree state, checks and unresolved findings
+and exact-session recovery, and
+[GOV-011](../../../../../docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)
+owns independent classification of material findings. Workflow Delivery adds:
+
+1. Preserve unrelated user changes.
+2. Confirm affected requirements, native responsibility, transfer/permission
    boundaries, concrete integration contract and validation basis. New
    feasibility or material product/trust/cost tradeoffs return to the owner;
    do not compensate by implementing missing lower-layer guarantees.
-4. Prepare and validate complete affected changes, including applicable tests,
+3. Prepare and validate complete affected changes, including applicable tests,
    root HK, hooks and `git diff --check`, before independent engineering/OCR (open-code-review delegate),
-   record-system and research-evidence review. Use the exact persisted session
-   and bounded worktree when recovering a worker, following
-   [agent execution](../../../../../docs/engineering/agent-execution.md).
-5. Keep terminal outcomes, originals and source/run identities intact. Await
+   record-system and research-evidence review.
+4. Keep terminal outcomes, originals and source/run identities intact. Await
    terminal tool/worker output and verify evidence before dependent effects.
 
-Authors/implementers cannot satisfy their own independent gate. Every material
-finding requires distinct
-[GOV-011](../../../../../docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)
-classification before it drives repair;
-unresolved owner decisions stay open. Return fixes to original reviewers until
-clear. For Workflow Delivery reviews, use `open-code-review-delegate`,
-including the complete Git manifest when OCR filtering omits documentation, and
-contract after every two review iterations, after changes/reviews and before PR
-preparation. The pinned
+Return fixes to original reviewers until clear. For Workflow Delivery reviews,
+use `open-code-review-delegate`, including the complete Git manifest when OCR
+filtering omits documentation, and contract after every two review iterations,
+after changes/reviews and before PR preparation. The pinned
 [NuGet delivery retrospective](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/nuget-delivery-retrospective.md#next-agent-guide)
 retains practical Windows/PowerShell, timestamp, helper-basename and
 draft-path delivery lessons as historical lessons, not rules.
