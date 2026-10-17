@@ -46,7 +46,8 @@ inputs. Package file membership describes packaged content, not a test-input
 inventory. Unknown dynamic Ruby IO or external input cannot be proven closed by
 loaded-feature enumeration; such a required shape remains unsupported. Native
 facts from both endpoints join the existing paired impact selection, including
-removed local producers and their previous consumers.
+removed local producers and their previous consumers, through the
+[paired direct-selection reasons](../middle-level-design.md#paired-direct-selection-reasons).
 
 ## Native Ruby CI Group
 

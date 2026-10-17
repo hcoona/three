@@ -308,8 +308,7 @@ remain separate integration responsibilities.
    and relevant relations in the comparison basis and candidate. Changes to
    dependency declarations must not erase the evidence needed to select consumers.
 3. Select directly affected projects and shared-input consumers, including valid
-   paired direct-selection reasons from the
-   [Python quality-owner contract](integration/python.md#python-quality-owners-and-input-only-members). Follow required
+   [paired direct-selection reasons](#paired-direct-selection-reasons). Follow required
    transitive reverse dependencies and quality-consumer relations from both sides.
 4. Resolve surviving work against the candidate revision. A deleted project is
    not a runnable target; its surviving consumers and changed declarations still
@@ -335,6 +334,29 @@ facts instead of claiming unsupported repository-wide coverage.
 Version and impact input declarations must include genuine shared build and
 dependency inputs. A selection optimization cannot make a version-affecting
 dependency invisible to the project's native version contract.
+
+### Paired Direct-Selection Reasons
+
+Keep same-endpoint exact input consumers in existing `SharedInput` and explicit
+`ProjectFacts.OwnedPaths` values. A paired input association may reach a runnable
+owner present only at the other endpoint. Transfer that direct selection through
+the existing `SelectionReason(Path, Revision, Project)` value: `Project` identifies
+the resolved quality consumer, while `Revision` identifies the committed input's
+initiating endpoint. It does not assert that consumer's presence at that endpoint.
+A path can enter `UnaffectedPaths` only when the complete paired analysis
+establishes no applicable owner. An endpoint-local empty closure, missing facts
+or unknown ownership cannot justify exclusion. The core selected-check guard
+remains unchanged.
+
+The shared selection operation accepts these paired direct reasons before its
+existing union relation and Release Unit closure. Validate each reason against a
+normalized changed path, an exact comparison revision and a real owner in the
+union of actual endpoint owners. Native Git/ownership binding establishes input
+presence and complete scope before this transfer. A valid reason resolves only
+its own path; other unresolved changed paths still fail, including in full mode.
+Do not clear the changed-path set, transfer an externally completed plan or bypass
+ordinary fact validation. Candidate survival, complete checks/variants, selected
+origins and prerequisite expansion remain the shared core's responsibilities.
 
 ### Declarations and Quality Autonomy
 
@@ -414,12 +436,17 @@ one ordinary CI owner, selected by actual inputs/dependencies. CI never imports
 Release authority or exposes publication capability. General C# execution follows
 the repository's Windows default unless a declared variant selects another runner.
 
-Finite `CI/Callers` composition assembles the existing .NET, Node, Python and Ruby
-requests and collects their original results, including retained-job scope and
-record-catalog responsibility. Actions owns SDK and locked tool setup, the
-initial native control build and immutable artifact transport. Control-resource
-prepare/query remain separate around endpoint SDK setup; the query retains its
-default Debug context. The Linux-only Python and Ruby managed preparation scenarios
+Finite `CI/Callers` composition in the existing C# application assembles the
+existing .NET, Node, Python and Ruby requests and collects their original
+results, including retained-job scope and record-catalog responsibility. Actions
+owns SDK and locked tool setup, the initial native control build and immutable
+artifact transport: native Actions/shell bootstrap builds and transfers the
+complete control distribution once and prepares the declared native tools. The
+scope caller selects retained jobs and changed-coordinate responsibility in the
+same process as the .NET plan; it does not reproduce native planners.
+Control-resource prepare/query remain separate around endpoint SDK setup; the
+scope caller consumes the separate query response, which retains its default
+Debug context. The Linux-only Python and Ruby managed preparation scenarios
 run directly through .NET, independently of pytest. Their selected source/build/
 version/quality triggers, original reports and packages remain required. The
 test runner's filter, per-module `--minimum-expected-tests` (which excludes

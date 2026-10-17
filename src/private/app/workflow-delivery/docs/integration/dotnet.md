@@ -212,7 +212,7 @@ product directory. Unsupported external/repository-relative contexts fail.
 Build and native inner `GetTargetPath` supply runnable output at their proper
 stage; passive evaluation does not promise target-produced values.
 
-The adapter populates the MLD's exact `OwnedPaths` from committed endpoint entries
+The adapter populates the exact [`OwnedPaths`](#native-net-project-facts) from committed endpoint entries
 in ordinary native project regions, narrowed by evaluated `DefaultItemExcludes`
 and `DefaultItemExcludesInProjectFolder`. Match each native file spec through
 selected-SDK `Microsoft.Build.Globbing.MSBuildGlob.Parse`/`IsMatch`, preserving
@@ -330,7 +330,7 @@ follows from this group.
 
 ## Control-Test Input Routing
 
-Root CI connects the MLD's
+Root CI connects the
 [control-test resource consumer](#control-test-resource-consumer)
 to root CI. Run native evaluation and final selection in the existing `scope`
 job on Windows, keeping its job name, outputs, downstream guards and final

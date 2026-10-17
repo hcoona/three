@@ -144,7 +144,7 @@ selected checks and exact candidate/control bindings. Binlogs may remain native
 diagnostics; they are not a required input-fact carrier.
 
 Control-test resources retain their separate default Debug native query under
-the [MLD contract](dotnet.md#control-test-resource-consumer).
+the [.NET contract](dotnet.md#control-test-resource-consumer).
 The complete root graph additionally uses CI and locked-restore globals, so it
 cannot replace that query without a reviewed context change. Existing endpoint
 root restore supplies prerequisites; do not separately restore the test project.

@@ -98,28 +98,11 @@ Keep each endpoint's committed path association and initiating path/revision rea
 resolve executable work against surviving candidate owners. Do not infer native
 identity matches from package names or opaque graph ID spelling.
 
-Keep same-endpoint exact input consumers in existing `SharedInput` and explicit
-`ProjectFacts.OwnedPaths` values. A paired input association may reach a runnable
-owner present only at the other endpoint. Transfer that direct selection through
-the existing `SelectionReason(Path, Revision, Project)` value: `Project` identifies
-the resolved quality consumer, while `Revision` identifies the committed input's
-initiating endpoint. It does not assert that consumer's presence at that endpoint.
+Paired input associations reach runnable owners through the
+[paired direct-selection reasons](../middle-level-design.md#paired-direct-selection-reasons).
 Only actual endpoint runnable owners become `ProjectFacts` with nonempty resolved
 checks; input-only members retain their graph role without synthetic builds,
-empty-check policy, candidate-only basis proxies or a new core origin. A path can enter
-`UnaffectedPaths` only when the complete paired analysis establishes no applicable
-owner. An endpoint-local empty closure, missing facts or unknown ownership cannot
-justify exclusion. The core selected-check guard remains unchanged.
-
-The shared selection operation accepts these paired direct reasons before its
-existing union relation and Release Unit closure. Validate each reason against a
-normalized changed path, an exact comparison revision and a real owner in the
-union of actual endpoint owners. Native Git/ownership binding establishes input
-presence and complete scope before this transfer. A valid reason resolves only
-its own path; other unresolved changed paths still fail, including in full mode.
-Do not clear the changed-path set, transfer an externally completed plan or bypass
-ordinary fact validation. Candidate survival, complete checks/variants, selected
-origins and prerequisite expansion remain the shared core's responsibilities.
+empty-check policy, candidate-only basis proxies or a new core origin.
 
 Read root pytest configuration through its public `pytest.main(..., plugins=[...])`
 and `pytest_cmdline_main` hook, using native `Config.getini`, `rootpath` and `inipath`.
@@ -224,12 +207,6 @@ callers retain their own responsibilities. Historical evidence readers use their
 actual pinned producers, without retired selection, preparation or constraint
 runtime consumers.
 
-CI caller composition for all four implemented ecosystems belongs to the existing
-C# application. Native Actions/shell bootstrap builds and transfers the complete
-control distribution once and prepares the declared native tools. The scope
-caller selects retained jobs and changed-coordinate responsibility in the same
-process as the .NET plan, consuming the separate default Debug control-resource
-response; it does not reproduce native planners.
 The local Linux full entry uses a native launcher to build committed control before
 the same typed Python caller executes explicit full scope. No retired wrapper is a
 fallback or compatibility path.
@@ -256,8 +233,9 @@ protocol using the actual current tools and lock format; the stopped primitive
 campaign is not reused or repeated. Ordinary PR CI remains available for its
 authorized caller-integration qualification after contract acceptance.
 
-The shared core owns the MLD's paired direct-reason transfer used by Python fact
-assembly. Keep both endpoint project sets actual; no
+The shared core owns the
+[paired direct-reason transfer](../middle-level-design.md#paired-direct-selection-reasons)
+used by Python fact assembly. Keep both endpoint project sets actual; no
 candidate-only owner proxy is inserted into basis facts. Controlled integration
 must cover a basis-only input reaching candidate-only `C`, deleted quality owners,
 candidate Release Unit siblings, all selected variants/checks/prerequisites and
@@ -278,7 +256,7 @@ the adopted project's payload/API expectations in its registered quality
 implementation, separate from ordinary native distribution validity.
 
 Reuse the committed root development/build-tool groups and maintained
-`nbgv-python` plugin, with the MLD's phase-specific native frozen preparation
+`nbgv-python` plugin, with the [phase-specific native frozen preparation](#native-python-package-execution)
 and build-dependency checking. Preserve declared workspace editability through
 original distribution creation; reconcile the same tools to noneditable native
 installation before Git-free original-archive consumption. Bind the repository-pinned official NBGV command
@@ -310,6 +288,8 @@ associations and paired fact assembler already defined above. It adds no project
 dependency, test-target or backend declaration. The
 [caller mapping](#python-quality-and-caller-mapping)
 retains the concrete repository and special-job consumers.
+Ordinary hosted qualification of this group is carried by
+[PR #1114](https://github.com/hcoona/three/pull/1114).
 
 The Windows scope job transfers the exact event comparison and explicit
 full/incremental mode, together with the complete candidate control distribution.
