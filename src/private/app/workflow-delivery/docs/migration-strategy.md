@@ -726,7 +726,9 @@ not a positive owner for an arbitrary path.
 
 The endpoint's native `mise tasks ls --json` metadata names the `records:check`
 and `records:test` scripts, which, with the checker's shared matcher, receive
-record-system responsibility. This finite route neither invokes the checker nor
+record-system responsibility. These PEP 723 scripts run under their mise tasks,
+not as Python group targets, so they receive no Python caller responsibility.
+This finite route neither invokes the checker nor
 adds CI selections; it does not infer owners for other local controls, tests or
 engineering paths. A present coordinate with neither responsibility nor a native
 consumer remains a planning failure, not a run-everything fallback. Actual

@@ -18,7 +18,7 @@ internal sealed record CiScopeApplicability(bool Mise, bool AzureAuth, bool Scho
 internal static partial class CiScope
 {
     internal const string FamilyCatalog = "docs/governance/record-families.yaml";
-    // check_repository_records.py imports this matcher; the record tasks own it.
+    // check_repository_records.py imports this matcher; the record-control task owns it.
     internal const string RecordMatcher = "eng/scripts/repository_path_patterns.py";
     private const string Azure = "src/private/app/azureauth-credprovider";
     private const string Scholarly = "src/private/lib/scholarly-publication";
@@ -139,12 +139,17 @@ internal static partial class CiScope
             if (jobs.Contains("scholarly"))
                 Add("scholarly", Scholarly, "retained-special-job-input",
                     Scholarly + "/pyproject.toml", "apm.yml");
+            // Record-task scripts (and the checker's shared matcher) run as PEP 723
+            // 'uv run --script' files under the record tasks, not as Python group targets.
+            RecordTaskOwner[] recordTasks = tasks.Where(task => task.Script == path ||
+                (path == RecordMatcher && task.Rule.StartsWith("record-control:",
+                    StringComparison.Ordinal))).ToArray();
             // This only tells another ecosystem that a coordinate has a Python consumer.
             // The Linux Python group ignores Python-only reasons and plans natively.
             string[] python = manifests.Where(manifest =>
                 manifest.EndsWith("/pyproject.toml", StringComparison.Ordinal) &&
                 Under(path, Parent(manifest))).ToArray();
-            if (python.Length != 0 || PythonResponsibility(path))
+            if (recordTasks.Length == 0 && (python.Length != 0 || PythonResponsibility(path)))
                 Add("python", ".github/workflows/ci.yml#python-tests",
                     "native-python-caller-responsibility", ["pyproject.toml", .. python]);
             if (resourceInputs.Contains(path, StringComparer.Ordinal))
@@ -153,11 +158,8 @@ internal static partial class CiScope
             foreach ((string id, string pattern) in bindings)
                 if (Matches(path, pattern))
                     Add("record-system", path, "record-binding:" + id, FamilyCatalog);
-            foreach (RecordTaskOwner task in tasks)
-                if (task.Script == path ||
-                    (path == RecordMatcher && task.Rule.StartsWith("record-control:",
-                        StringComparison.Ordinal)))
-                    Add("record-system", path, task.Rule, "mise.toml");
+            foreach (RecordTaskOwner task in recordTasks)
+                Add("record-system", path, task.Rule, "mise.toml");
             rows.Add(new(path, true, entry.Mode, reasons.Distinct()
                 .OrderBy(reason => reason.Owner, StringComparer.Ordinal)
                 .ThenBy(reason => reason.Target, StringComparer.Ordinal)
@@ -284,9 +286,8 @@ internal static partial class CiScope
             : DotNetInheritedInputs.Consumes(path, NuGetPreparationRoots);
 
     private static bool PythonResponsibility(string path) =>
-        (path.EndsWith(".py", StringComparison.Ordinal) && path is not
-            ("eng/scripts/check_repository_records.py" or
-             "eng/scripts/update_node_mise_lock.py" or RecordMatcher)) ||
+        (path.EndsWith(".py", StringComparison.Ordinal) &&
+            path != "eng/scripts/update_node_mise_lock.py") ||
         AllInputs.Contains(path, StringComparer.Ordinal) ||
         PythonInputs.Contains(path, StringComparer.Ordinal) || Under(path, "tests/eng") ||
         path is ".github/workflows/workflow-delivery-v3-python-smoke.yml" or
