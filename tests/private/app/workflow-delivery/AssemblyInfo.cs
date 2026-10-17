@@ -8,7 +8,9 @@ namespace WorkflowDelivery.Tests;
 [TestClass]
 public static class RunnerCommandFiles
 {
-    private const string ScratchPrefix = "workflow-delivery-tests-";
+    // Short on purpose: Windows native fixtures nest deep repository paths under this root and
+    // must stay within the default 260-character path limit.
+    private const string ScratchPrefix = "wdt-";
     private static string? scratch;
     private static string? directory;
 
@@ -34,11 +36,12 @@ public static class RunnerCommandFiles
         }
     }
 
+    // Best effort: a child still holding a handle or a read-only file leaves the root for the
+    // next run's sweep rather than failing the run.
     [AssemblyCleanup]
     public static void Cleanup()
     {
-        if (scratch is not null && Directory.Exists(scratch))
-            Directory.Delete(scratch, recursive: true);
+        if (scratch is not null) TryDelete(scratch);
     }
 
     // Test fixtures and native children (MSBuild, Git, package managers and .NET runtime IPC)
@@ -48,18 +51,34 @@ public static class RunnerCommandFiles
     private static void RedirectTemporaryFiles()
     {
         string parent = Path.GetTempPath();
+        // Assumes one PID namespace per temporary directory; a root shared across PID
+        // namespaces could make a live foreign run look exited.
         foreach (string stale in Directory.EnumerateDirectories(parent, ScratchPrefix + "*"))
         {
-            string[] parts = Path.GetFileName(stale)[ScratchPrefix.Length..].Split('-');
-            if (!int.TryParse(parts[0], out int owner) || Running(owner)) continue;
-            try { Directory.Delete(stale, recursive: true); }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
+            if (!int.TryParse(Path.GetFileName(stale)[ScratchPrefix.Length..], out int owner) ||
+                Running(owner))
+                continue;
+            TryDelete(stale);
         }
-        scratch = Directory.CreateTempSubdirectory(ScratchPrefix + Environment.ProcessId + "-")
-            .FullName;
+        scratch = Path.Combine(parent, ScratchPrefix + Environment.ProcessId);
+        TryDelete(scratch);
+        Directory.CreateDirectory(scratch);
         foreach (string name in new[] { "TMPDIR", "TMP", "TEMP" })
             Environment.SetEnvironmentVariable(name, scratch);
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (!Directory.Exists(path)) return;
+            foreach (string file in Directory.EnumerateFiles(path, "*",
+                         SearchOption.AllDirectories))
+                File.SetAttributes(file, FileAttributes.Normal);
+            Directory.Delete(path, recursive: true);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     private static bool Running(int process)
