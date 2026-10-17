@@ -49,7 +49,7 @@ const assertColdStartEvidence = (evidence: ColdStartEvidence): void => {
   expect(evidence.wallClockMilliseconds).toBeGreaterThan(0);
 };
 
-describe.sequential('Asciidoctor cold-start timing evidence', () => {
+describe('Asciidoctor cold-start timing evidence', { concurrent: false }, () => {
   it('captures sequential cold-start timings for the production renderer', async () => {
     const packageRoot = path.resolve(import.meta.dirname, '..');
     const startedAt = performance.now();

@@ -359,7 +359,7 @@ afterEach(() => {
   }
 });
 
-describe.sequential('Asciidoctor v4 runtime worker', () => {
+describe('Asciidoctor v4 runtime worker', { concurrent: false }, () => {
   it('returns string output without writing files', async () => {
     const workingDirectory = createTemporaryDirectory();
     process.chdir(workingDirectory);
