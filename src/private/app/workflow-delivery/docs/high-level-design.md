@@ -419,7 +419,7 @@ The [middle-level design](middle-level-design.md) closes common selection,
 quality, package/consumer, Release-state and transfer behavior. The
 [integration contracts](middle-level-design.md#integration-mapping) specify
 ecosystem native fact extraction coverage, destination completion conditions and
-runner mapping; the [common tables](integration/common.md) specify concrete
+ecosystem runner specifics; the [common tables](integration/common.md) specify concrete
 command/transfer fields, and the MLD's
 [registry observation contract](middle-level-design.md#registry-observation-and-retention)
 specifies shared read bounds and retention. Changes validate/review these boundaries
