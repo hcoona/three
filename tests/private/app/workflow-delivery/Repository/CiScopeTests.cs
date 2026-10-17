@@ -137,12 +137,14 @@ public sealed class CiScopeTests
     }
 
     [TestMethod]
-    public void RecordTaskDiscoveryDecidesPythonExclusion()
+    [DataRow("tests/eng/test_repository_records.py")]
+    [DataRow("eng/scripts/check_repository_records.py")]
+    [DataRow(CiScope.RecordMatcher)]
+    public void RecordTaskDiscoveryDecidesPythonExclusion(string path)
     {
-        // Without native record-task metadata the script is an ordinary repository test.
-        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(
-            Revision("tests/eng/test_repository_records.py"),
-            ["tests/eng/test_repository_records.py"], [], [], []));
+        // Without native record-task metadata the path is an ordinary Python caller input.
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], []));
         Assert.AreEqual("python", Assert.ContainsSingle(row.Reasons).Owner);
         // Other tests/eng paths keep their Python responsibility.
         row = Assert.ContainsSingle(CiScope.Owners(Revision("tests/eng/test_typos_config.py"),

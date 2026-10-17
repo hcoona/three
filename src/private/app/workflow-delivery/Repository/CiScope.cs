@@ -139,8 +139,8 @@ internal static partial class CiScope
             if (jobs.Contains("scholarly"))
                 Add("scholarly", Scholarly, "retained-special-job-input",
                     Scholarly + "/pyproject.toml", "apm.yml");
-            // Record-task scripts (and the checker's shared matcher) run as PEP 723
-            // 'uv run --script' files under the record tasks, not as Python group targets.
+            // Record-task scripts, and the matcher the checker imports, run under their mise
+            // tasks ('uv run --script'), not as Python group targets.
             RecordTaskOwner[] recordTasks = tasks.Where(task => task.Script == path ||
                 (path == RecordMatcher && task.Rule.StartsWith("record-control:",
                     StringComparison.Ordinal))).ToArray();
