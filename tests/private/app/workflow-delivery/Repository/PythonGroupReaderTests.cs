@@ -223,11 +223,13 @@ public sealed class PythonGroupReaderTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task SharedUnresolvedPairQualifiesWithKnownOtherResponsibility()
+    [DataRow("dotnet")]
+    [DataRow("record-system")]
+    public async Task SharedUnresolvedPairQualifiesWithKnownOtherResponsibility(string owner)
     {
         // Defect-free control: the shared unresolved-path pair itself reads successfully.
         using var fixture = await Fixture.SharedAsync(SharedPairs[Unresolved],
-            context.CancellationToken, "dotnet");
+            context.CancellationToken, owner);
         PythonGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
         Assert.IsEmpty(result.Plan.Checks);
         Assert.HasCount(2, fixture.Collected);

@@ -120,6 +120,39 @@ public sealed class CiScopeTests
     }
 
     [TestMethod]
+    [DataRow("tests/eng/test_repository_records.py", "record-regression:records:test")]
+    [DataRow("eng/scripts/check_repository_records.py",
+        "record-control:repository-record-validation")]
+    [DataRow(CiScope.RecordMatcher, "record-control:repository-record-validation")]
+    public void RecordTaskScriptsAreNotPythonGroupInputs(string path, string rule)
+    {
+        // PEP 723 record-task scripts run under their mise task; the Python group cannot
+        // resolve them, so a Python reason would fail its planning (PR #1226).
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks));
+        ScopeResponsibility reason = Assert.ContainsSingle(row.Reasons);
+        Assert.AreEqual("record-system", reason.Owner);
+        Assert.AreEqual(path, reason.Target);
+        Assert.AreEqual(rule, reason.Rule);
+    }
+
+    [TestMethod]
+    [DataRow("tests/eng/test_repository_records.py")]
+    [DataRow("eng/scripts/check_repository_records.py")]
+    [DataRow(CiScope.RecordMatcher)]
+    public void RecordTaskDiscoveryDecidesPythonExclusion(string path)
+    {
+        // Without native record-task metadata the path is an ordinary Python caller input.
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], []));
+        Assert.AreEqual("python", Assert.ContainsSingle(row.Reasons).Owner);
+        // Other tests/eng paths keep their Python responsibility.
+        row = Assert.ContainsSingle(CiScope.Owners(Revision("tests/eng/test_typos_config.py"),
+            ["tests/eng/test_typos_config.py"], [], [], Tasks));
+        Assert.AreEqual("python", Assert.ContainsSingle(row.Reasons).Owner);
+    }
+
+    [TestMethod]
     [DataRow("docs/unbound/notes.md")]
     [DataRow("src/public/lib/hexo-renderer-asciidoc/index.js")]
     [DataRow("docs/root-gem.md")]
