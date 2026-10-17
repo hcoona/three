@@ -415,10 +415,11 @@ evaluation requires them. These are real transfers, not proof-only phases.
 The following UML sequence view is at the level of GitHub Actions jobs in the
 root [`ci.yml`](../../../../../.github/workflows/ci.yml) and the artifacts they
 transfer by same-run immutable artifact ID. It omits steps inside each job and
-the retained jobs that do not exchange Workflow Delivery artifacts. Job results
-reach Validate only through its declared `needs`, which also include the omitted
-`conformance` and `scholarly-tests` jobs; the group jobs' results are their own
-required checks rather than Validate inputs.
+the retained jobs that do not exchange Workflow Delivery artifacts. Validate's
+declared `needs` also include the omitted `conformance` and `scholarly-tests`
+jobs. The repository ruleset's required checks are Validate, `dotnet-tests`,
+`python-tests` and the `node-tests` matrix; `ruby-group` and `node-group` are
+not required checks and gate merge only through `node-tests`.
 
 ```mermaid
 sequenceDiagram
@@ -430,7 +431,8 @@ sequenceDiagram
     participant Python as python-tests (Linux)
     participant Prep as native-preparation-tests (Linux)
     participant NuGet as nuget-native-preparation (Windows)
-    participant Validate as Validate (Linux)
+    participant NodeTests as node-tests (Linux matrix)
+    participant Validate as validation: Validate (Linux)
     Scope->>Scope: Build candidate control, read paired native facts, select work
     Scope->>Store: ci-scope (selection and reasons)
     Scope->>Store: ci-dotnet-plan (control output, python-control.zip, Ruby facts helper, original .NET plan)
@@ -441,6 +443,8 @@ sequenceDiagram
     Ruby->>Store: ruby-node-inputs, ruby-group-results
     Store->>Node: ci-scope, ruby-node-inputs, ci-dotnet-plan
     Node->>Store: node-group-results
+    Store->>NodeTests: ci-dotnet-plan; node-group outputs
+    NodeTests->>Store: retained-node-*
     Store->>Python: ci-scope, ci-dotnet-plan
     Python->>Store: python-group-results
     Store->>Prep: ci-scope, ci-dotnet-plan

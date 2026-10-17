@@ -44,9 +44,10 @@ from local observations and from completed publication campaigns.
 
 ## Retained Campaign Evidence
 
-Read these only to interpret or audit a closed campaign, or when the
-[handoff](agent-handoff.md#authorization-and-closed-campaigns) limits route to
-them; they are not current behavior.
+Read the campaign records only to interpret or audit a closed campaign, or when
+the [handoff](agent-handoff.md#authorization-and-closed-campaigns) limits route
+to them; they are not current behavior. The registry support research and the
+retained v1 boundary also listed here remain current source research.
 
 | Concern                                             | Original outcomes, controls and limits                                                                                                                         | Read when                                                                                                  |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |

@@ -56,8 +56,8 @@ draft-path delivery lessons as historical lessons, not rules.
 ## Authorization and Closed Campaigns
 
 All npm, NuGet, Python and Ruby proving campaigns are complete and stopped.
-[Domain values](high-level-design.md#domain-values) define campaign, generation,
-slot, lifetime, original D and Native R4. Their operation slots, failed lifetimes and dispatch/recovery ceilings remain
+[Domain values](high-level-design.md#domain-values) define campaign, original D
+and Native R4 and note how generation, slot and lifetime are used. Their operation slots, failed lifetimes and dispatch/recovery ceilings remain
 spent. No source change, artifact download, requirements revision, Wave
 contraction or evidence acceptance authorizes a new campaign generation, rerun,
 release/proving dispatch, publication, authentication, Environment, account,
