@@ -13,7 +13,8 @@ Former MLDs, ecosystem LLDs and completed campaigns keep their original scope
 under the [historical source rule](README.md#historical-source-rule); their
 record chains and extension frameworks are not requirements for this design.
 
-This document owns the common middle-level contracts. Concrete native extraction
+This document owns the common middle-level contracts and the shared project,
+CLI consumer and workflow caller inventories. Concrete native extraction
 coverage, destination read limits and workflow wiring are reviewed with their
 implementation scope. Missing necessary native capabilities remain unsupported;
 implementation details cannot silently weaken these contracts. The
@@ -786,13 +787,18 @@ own controlled validation cases, runner, additional checks and non-claims.
 
 ### Integration Mapping
 
-The per-ecosystem integration contracts for [.NET and NuGet](integration/dotnet.md),
+This design owns the shared inventories and common contracts: the
+[owned projects](#owned-projects), [runtime and CLI consumers](#runtime-and-cli-consumers),
+[workflow caller boundaries](#workflow-caller-boundaries) and
+[root tooling](#root-tooling-declarations-and-record-readers). Each per-ecosystem
+integration contract ([.NET and NuGet](integration/dotnet.md),
 [Node and npm](integration/node.md), [Python](integration/python.md) and
-[Ruby](integration/ruby.md), with the [common integration tables](integration/common.md),
-own the concrete project and CLI/workflow caller inventory, integration payloads
-and destination conditions. These contracts govern current integrations and
-changes to them. Keep that mapping with actual caller changes; do not
-maintain a second inventory here. Implementers and reviewers use them to preserve
+[Ruby](integration/ruby.md)) owns only its ecosystem-specific native facts, CI
+group, Release caller and destination conditions. The
+[common integration tables](integration/common.md) own only the Official channel
+scope and the CLI/boundary payload table. These contracts govern current
+integrations and changes to them. Keep each inventory with its actual caller
+changes in its single owner; do not maintain a second copy. Implementers and reviewers use them to preserve
 complete journeys across actual process, permission and artifact transfers; they
 are not an execution or publication grant. The
 [Wave](../../../../../docs/delivery-wave.md) owns work authorization;

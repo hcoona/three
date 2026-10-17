@@ -1,7 +1,8 @@
 # Workflow Delivery Common Integration Tables
 
-These tables own the Official channel scope and the CLI/boundary payload tables
-shared by every ecosystem. The
+These tables own only the Official channel scope and the CLI/boundary payload
+table shared by every ecosystem; the MLD owns the other shared inventories and
+contracts. The
 [MLD](../middle-level-design.md#integration-mapping) states the shared scope and
 authority of the integration contracts.
 

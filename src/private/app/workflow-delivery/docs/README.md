@@ -8,14 +8,14 @@ second authority or a support/operation grant. The
 
 ## Normative Hierarchy
 
-| Concern                                                           | Current authority                                                                                                                                                          |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Required behavior and non-goals                                   | [Requirements](requirements.md)                                                                                                                                            |
-| Architecture and trust boundaries                                 | [High-level design](high-level-design.md)                                                                                                                                  |
-| Selection, execution, quality, transfers and outcomes             | [Middle-level design](middle-level-design.md)                                                                                                                              |
-| Concrete ecosystem interfaces, callers and Official channel scope | [.NET/NuGet](integration/dotnet.md), [Node/npm](integration/node.md), [Python](integration/python.md), [Ruby](integration/ruby.md), [common tables](integration/common.md) |
-| Current positive work authorization                               | [Repository Delivery Wave](../../../../../docs/delivery-wave.md)                                                                                                           |
-| Repository review and record lifecycle                            | [Governance](../../../../../docs/governance/governance-system.md), [record policy](../../../../../docs/governance/record-system.md)                                        |
+| Concern                                                                                           | Current authority                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Required behavior and non-goals                                                                   | [Requirements](requirements.md)                                                                                                                                            |
+| Architecture and trust boundaries                                                                 | [High-level design](high-level-design.md)                                                                                                                                  |
+| Selection, execution, quality, transfers, outcomes and shared project/caller inventories          | [Middle-level design](middle-level-design.md)                                                                                                                              |
+| Ecosystem-specific facts, callers and destinations; Official channel scope and CLI payload tables | [.NET/NuGet](integration/dotnet.md), [Node/npm](integration/node.md), [Python](integration/python.md), [Ruby](integration/ruby.md), [common tables](integration/common.md) |
+| Current positive work authorization                                                               | [Repository Delivery Wave](../../../../../docs/delivery-wave.md)                                                                                                           |
+| Repository review and record lifecycle                                                            | [Governance](../../../../../docs/governance/governance-system.md), [record policy](../../../../../docs/governance/record-system.md)                                        |
 
 Requirements govern current design. Native source findings and observations
 retain their actual evidence level; merge does not expand their environments or

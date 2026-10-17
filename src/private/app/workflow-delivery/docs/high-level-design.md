@@ -10,8 +10,9 @@ publication behavior or permission to reopen a completed campaign.
 
 The [middle-level design](middle-level-design.md) owns the component,
 selection, execution, transfer and outcome contracts for this architecture.
-The [integration contracts](middle-level-design.md#integration-mapping) map concrete projects,
-callers and integration contracts. The
+It also owns the shared project and caller inventories; the
+[integration contracts](middle-level-design.md#integration-mapping) own the
+ecosystem-specific native facts, callers and destination conditions. The
 [Wave](../../../../../docs/delivery-wave.md) owns current work authorization;
 the [handoff](agent-handoff.md) retains operational limits. Historical records
 keep their original scope under the
@@ -416,9 +417,12 @@ old/new-format byte equality.
 
 The [middle-level design](middle-level-design.md) closes common selection,
 quality, package/consumer, Release-state and transfer behavior. The
-[integration contracts](middle-level-design.md#integration-mapping) specify concrete command/transfer
-fields, native fact extraction coverage, destination completion conditions/read
-bounds, runner mapping and retention. Changes validate/review these boundaries
+[integration contracts](middle-level-design.md#integration-mapping) specify
+ecosystem native fact extraction coverage, destination completion conditions and
+runner mapping; the [common tables](integration/common.md) specify concrete
+command/transfer fields, and the MLD's
+[registry observation contract](middle-level-design.md#registry-observation-and-retention)
+specifies shared read bounds and retention. Changes validate/review these boundaries
 with their affected caller group. These are bounded implementation contracts,
 not new frameworks or automatic owner questions.
 New behavior, trust-boundary or material scope/cost conflicts return for owner
