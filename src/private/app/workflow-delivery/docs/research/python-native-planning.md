@@ -4,7 +4,7 @@
 
 This source assessment supported the Python CI integration, delivered in
 [PR #1114](https://github.com/hcoona/three/pull/1114) under the
-[integration contract](../migration-strategy.md#native-facts-and-first-supported-shapes).
+[integration contract](../middle-level-design.md#native-fact-integration).
 It identifies the native facts available at the repository's former UV 0.12.23
 pin and a specific missing relation. It is not an accepted reader, complete
 Python graph, implementation choice or complete runtime qualification. The later
@@ -71,7 +71,7 @@ Python impact closure.
 ## Native Library Candidate and Its Limits
 
 This section retains the original candidate assessment. The
-[planning-fact contract](../middle-level-design.md#native-python-planning-facts)
+[planning-fact contract](../integration/python.md#native-python-planning-facts)
 no longer selects it; see the [retirement recheck](#embedded-uv-supplement-retirement).
 
 UV [documents][build-sources] that its build frontend respects `tool.uv.sources`
@@ -177,7 +177,7 @@ skipped, the join is no longer admitted and the gap returns to the owner.
 Immutable pytest 9.1.1 source at
 [`cf470ec0bf7eb89cd97dd56df4859eae5db46447`][pytest-source] supplies the candidate
 configuration query used by the
-[quality-owner contract](../middle-level-design.md#python-quality-owners-and-input-only-members).
+[quality-owner contract](../integration/python.md#python-quality-owners-and-input-only-members).
 Public `pytest.main(..., plugins=[...])` calls the first-result
 `pytest_cmdline_main` hook after native configuration parsing. A supplied plugin
 can return a result before the default configure/collect/run lifecycle while
@@ -260,10 +260,10 @@ qualifies native pytest, committed NBGV/quality inputs and producer input mappin
 on those exact Linux subjects. It reused retained graph answers without another
 UV query; its campaign and cleanup are complete, and both unused diagnostics
 stopped. Complete runnable caller facts, package preparation/execution and
-caller cutover were pending at that time. They are now owned by the MLD's
-[Python planning facts](../middle-level-design.md#native-python-planning-facts),
-[CI group](../middle-level-design.md#native-python-ci-group) and
-[package execution](../middle-level-design.md#native-python-package-execution)
+caller cutover were pending at that time. They are now owned by the Python integration contract's
+[Python planning facts](../integration/python.md#native-python-planning-facts),
+[CI group](../integration/python.md#native-python-ci-group) and
+[package execution](../integration/python.md#native-python-package-execution)
 contracts, with their own qualification.
 
 If further native execution is needed, its exact remaining subject first needs
@@ -274,7 +274,7 @@ Recheck these source findings when the repository UV pin changes or a change to
 the Python planning facts or caller relies on them. The author of that pin change or
 Python planning-fact/caller change checks the affected native interfaces and omissions; an independent evidence reviewer evaluates the
 result. The review of the next change to the
-[Python planning facts](../middle-level-design.md#native-python-planning-facts)
+[Python planning facts](../integration/python.md#native-python-planning-facts)
 is the fallback event. Keep immutable source
 findings separate from later operation observations and support claims.
 

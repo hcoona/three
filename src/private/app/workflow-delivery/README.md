@@ -114,7 +114,7 @@ Native MSBuild owns evaluated projects, imports, resources and references;
 NBGV owns version projections. The NBGV auxiliary cache project is the accepted
 bounded native exception, not a business release unit or custom version cache.
 The current managed recipe's runner/configuration limits follow the
-[concrete integration contract](docs/migration-strategy.md#native-net-ci-group).
+[concrete integration contract](docs/integration/dotnet.md#native-net-ci-group).
 
 ### Native Python CI Caller
 
@@ -160,7 +160,8 @@ Completion, retry and recovery semantics are owned by the
 [requirements](docs/requirements.md#observation-retry-and-recovery), the MLD's
 [decision table](docs/middle-level-design.md#decision-table) and
 [recovery contract](docs/middle-level-design.md#recovery), and the
-[per-destination completion conditions](docs/migration-strategy.md#destination-completion-and-remaining-native-limits).
+per-destination completion conditions in each
+[integration contract](docs/middle-level-design.md#integration-mapping).
 
 ### Official npm Dry Run
 
@@ -174,7 +175,7 @@ capability. Its description is hypothetical and never claims live completion.
 
 The existing Buddy workflow accepts any dispatched ref without an application
 ref-class check (see the [Official channel
-scope](docs/migration-strategy.md#official-channel-scope)) and transfers
+scope](docs/integration/common.md#official-channel-scope)) and transfers
 selected source/control, originals and qualification by immutable artifact IDs.
 GitHub package association and exact archive state are checked natively. The
 actual publisher gate precedes the write-capable invocation; a separate no-write
@@ -194,7 +195,7 @@ The Windows `NuGet native preparation (Windows)` CI job and the
 [NuGet reproducibility workflow](../../../../.github/workflows/workflow-delivery-v3-nuget-reproducibility.yml)
 run the `NuGetNativePreparation` and `NuGetNativeScenarios` tests. Their
 triggers, evidence carrier, failure ownership and retained diagnostics are
-owned by the [native .NET CI group contract](docs/migration-strategy.md#planning-execution-and-collection).
+owned by the [native .NET CI group contract](docs/integration/dotnet.md#planning-execution-and-collection).
 
 ### Ordinary Python Release
 

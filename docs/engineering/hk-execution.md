@@ -31,8 +31,8 @@ must report which files and execution mode they actually covered.
 
 [Issue #817](https://github.com/hcoona/three/issues/817) separates source
 checks from project tests. Workflow Delivery's current
-[integration contract](../../src/private/app/workflow-delivery/docs/migration-strategy.md#python-planning-integration)
-and [native Python group design](../../src/private/app/workflow-delivery/docs/middle-level-design.md#native-python-ci-group)
+[integration contract](../../src/private/app/workflow-delivery/docs/integration/python.md#python-planning-integration)
+and [native Python group design](../../src/private/app/workflow-delivery/docs/integration/python.md#native-python-ci-group)
 own its execution boundaries.
 
 HK checks source/configuration conformance, including file checks, lock and

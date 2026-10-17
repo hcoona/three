@@ -35,7 +35,7 @@ passing native generation are no longer Python admission prerequisites, and this
 is not an operator readiness checklist, an executable protocol or authorization
 for another generation. Current validation and publication/consumer completion
 requirements follow the [requirements](../requirements.md#python-smoke-slice) and
-[concrete Python Release integration](../migration-strategy.md#concrete-python-release-integration).
+[concrete Python Release integration](../integration/python.md#concrete-python-release-integration).
 The [handoff](../agent-handoff.md) routes ordinary Release work independently of
 this boundary; it requires no new duplicate/race generation.
 

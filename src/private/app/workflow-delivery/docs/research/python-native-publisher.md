@@ -99,7 +99,7 @@ it does not carry original archive hashes or provenance. Do not turn that JSON
 into another durable trust record. Preserve actual command outcomes and required
 selection/hash inputs instead. Missing or failed native acknowledgement blocks
 consumption; a local-original installation cannot establish remote routing.
-The [concrete contract](../migration-strategy.md#concrete-python-release-integration)
+The [concrete contract](../integration/python.md#concrete-python-release-integration)
 retains component/caller qualification and separate live authorization. Recheck
 these affected native contracts when the selected UV changes; dependency and
 implementation review is the fallback event.
@@ -151,7 +151,7 @@ qualifies its own complete set from the original revision. Native package
 identity and provenance remain owned by packaging, the backend and NBGV; no
 application witness or source-code bundle is added.
 
-The [concrete Python contract](../migration-strategy.md#concrete-python-release-integration)
+The [concrete Python contract](../integration/python.md#concrete-python-release-integration)
 owns selected flags, process/configuration isolation, destination reads,
 consumers, deadlines and workflow transfer. Controlled integration tests and
 ordinary CI qualify only their stated scope. Any live validation, publisher

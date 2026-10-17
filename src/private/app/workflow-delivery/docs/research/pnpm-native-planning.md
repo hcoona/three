@@ -3,13 +3,13 @@
 ## Scope and Premise
 
 This source assessment supports the application's
-[native fact integration](../migration-strategy.md#native-facts-and-first-supported-shapes).
+[native fact integration](../middle-level-design.md#native-fact-integration).
 Its original interface assessment and native observations use PNPM 12.8.1;
 the [12.9.0 pin recheck](#pnpm-1290-pin-recheck) assessed the repository pin of that time, 12.9.0,
 and the [12.11.2 pin recheck](#pnpm-12112-pin-recheck) assessed the pin selected on 2026-10-12, 12.11.2.
 It does not audit
 the former V3 implementation or assert runtime coverage. The
-[implementation plan](../migration-strategy.md#native-facts-and-first-supported-shapes)
+[Node integration contract](../integration/node.md#native-pnpm-facts)
 records the owner's CLI selection. Maintainers and integration reviewers use this assessment to avoid choosing
 an incomplete API or introducing a second PNPM resolver.
 

@@ -7,7 +7,7 @@ operation limits; it is not a second specification. The [portal](README.md)
 identifies the owning records, and the [application interface](../README.md)
 owns current commands, callers and local validation. Read
 [requirements](requirements.md), [HLD](high-level-design.md),
-[MLD](middle-level-design.md) and [integration contract](migration-strategy.md)
+[MLD](middle-level-design.md) and [integration contracts](middle-level-design.md#integration-mapping)
 before affected design, implementation or caller changes, and use actual native
 sources for operations.
 

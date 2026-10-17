@@ -1,7 +1,7 @@
 # Native Python Package Qualification Protocol and Observation
 
 This record retains the finite local package protocol for the accepted
-[execution contract](../middle-level-design.md#native-python-package-execution)
+[execution contract](../integration/python.md#native-python-package-execution)
 and its [completed corrected Linux observation](#completed-corrected-linux-package-observation).
 The exact four-check package integration passed independent actual audit, with its
 separately classified filename-discovery method exception retained. One fresh package
