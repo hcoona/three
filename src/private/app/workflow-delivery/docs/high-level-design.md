@@ -347,22 +347,11 @@ sequenceDiagram
 
 ### Completion and Recovery
 
-| Observation in the active request                                            | Business result and next action                                                                                         |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Complete exact state and every required check satisfied                      | Satisfied; distinguish acknowledged upload from completion established by observation                                   |
-| Upload success but missing required state verification                       | Unsatisfied or unknown; retain the successful command result                                                            |
-| Upload failed/lost response but complete authoritative verification succeeds | Satisfied by observed state; preserve command failure/ambiguity and do not claim this invocation created the objects    |
-| Verified exact subset and adapter supports completion                        | Only missing files may be planned in a fresh recovery request; no generic partial-release repair                        |
-| Conflicting bytes or unknown required state                                  | No further mutation; explain uncertainty and supported operator action                                                  |
-| Interrupted publisher or missing required result                             | Effects remain possibly unknown unless native facts prove non-start; missing application records do not prove non-start |
-
-Recovery uses a fresh manual dispatch at the original source/control revision
-and relevant inputs, rebuilds, qualifies and observes anew. It obtains current
-native authorization for remaining writes. It does not reuse approval, promote
-old files, enumerate all historical runs or relabel a terminal failure. A control
-fix is a new revision, not permission to combine latest tooling with an older
-target. Exceptional administration needs a separate operator decision and native
-operation; there is no general repair service.
+The MLD's [decision table](middle-level-design.md#decision-table),
+[result behavior](middle-level-design.md#result-and-exit-behavior) and
+[recovery contract](middle-level-design.md#recovery) own the business result for
+each observed condition and fresh same-revision recovery under
+[WD-OPS](requirements.md#observation-retry-and-recovery).
 
 ### Concurrency
 
@@ -382,32 +371,9 @@ mutable-resource-set scheduler is introduced.
 ## Data Crossing Boundaries
 
 Persist information for a concrete transfer, permission or interruption/recovery
-consumer. Inside a trusted invocation, ordinary typed values suffice.
-
-| Boundary consumer               | Necessary information                                                                                                      | Required check                                                                                   |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Executor in another job/process | Candidate/request target, selected work, inputs, native versions and required checks                                       | Execute selected scope and return results for that subject                                       |
-| Review and publisher            | Complete qualified files, coordinates, source/control revision, destination, intended operations and qualification results | Bind actual artifacts to request and qualification; reject missing/substituted/mismatched inputs |
-| Platform artifact transfer      | Same-run immutable artifact identity and native download integrity                                                         | Use native identity/integrity; no display-name/latest fallback                                   |
-| Result consumer                 | Attempted effects, actual command results, remote facts, verification and uncertainty                                      | Keep execution facts separate from satisfaction; missing data cannot prove no effects            |
-| Operator                        | Scope, outcome, diagnostic reasons and supported next action                                                               | Preserve terminal outcomes; later requests cannot rewrite them                                   |
-
-This does not require one file per row, a universal envelope, recursive digest
-chains, approval certificates, a durable attempt aggregate or a record engine.
-Concrete JSON fields and command signatures follow actual implementation
-consumers. Internal formats may break; callers change or retire together without
-mandatory historical readers in the new core. Independently consumed helper
-messages may have static schemas generated from their actual serializer types;
-keep producer/consumer shape tests separate from native semantic tests. Do not
-mirror upstream native formats or introduce a runtime schema registry.
-
-Retain qualified files and required request/results through native approval waits
-and the supported operation window. Concrete retention belongs in workflow
-integration; expired required inputs block that operation. Native observation
-may suffice for a fresh request where its contract permits. Optional telemetry
-failure does not undo an established result; missing required completion evidence
-leaves uncertainty. No permanent ledger or mandatory per-product GitHub Release
-is added.
+consumer; inside a trusted invocation, ordinary typed values suffice. The MLD's
+[data-crossing contract](middle-level-design.md#data-crossing-boundaries) owns
+the necessary information, consumer validation and retention for each boundary.
 
 ## Implementation and Retirement Boundaries
 
