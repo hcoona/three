@@ -36,7 +36,14 @@ repository=$(realpath "$repository")
   exit 2
 }
 candidate=$(git -C "$repository" rev-parse HEAD)
-if [[ -z $directory ]]; then directory=$(mktemp -d -t three-python-full-XXXXXXXX)/state; fi
+created_root=''
+if [[ -z $directory ]]; then
+  # Results are retained for inspection, so keep them in the user cache, not tmpfs.
+  state_root=${XDG_CACHE_HOME:-$HOME/.cache}/three/python-full
+  mkdir -p "$state_root"
+  created_root=$(mktemp -d "$state_root/$(date -u +%Y%m%dT%H%M%SZ)-XXXXXXXX")
+  directory=$created_root/state
+fi
 directory=$(realpath -m "$directory")
 [[ $directory != "$repository" && $directory != "$repository/"* && $repository != "$directory/"* ]] || {
   echo 'Full-group state must be outside the source checkout.' >&2
@@ -47,6 +54,23 @@ directory=$(realpath -m "$directory")
   exit 2
 }
 mkdir -p "$directory"
+# Report retained state on success and failure; remove only what this run created.
+# The run registers Git worktrees under the state directory (the control checkout and the
+# full group's endpoints); remove each registered one before deleting the directory.
+report_retained_state() {
+  local line path removal=''
+  echo "Retained full Python group state: $directory"
+  # NUL-delimited porcelain keeps paths literal (no C-quoting of special characters).
+  while IFS= read -r -d '' line; do
+    [[ $line == 'worktree '* ]] || continue
+    path=${line#worktree }
+    [[ $path == "$directory/"* ]] || continue
+    removal+=$(printf 'git -C %q worktree remove --force %q && ' "$repository" "$path")
+  done < <(git -C "$repository" worktree list --porcelain -z 2>/dev/null || true)
+  printf 'Remove it when finished: %sgit -C %q worktree prune && rm -rf %q\n' \
+    "$removal" "$repository" "${created_root:-$directory}"
+}
+trap report_retained_state EXIT
 echo "Full Python group at commit $candidate; results: $directory"
 git -C "$repository" worktree add --detach "$directory/control-checkout" "$candidate"
 cd "$directory/control-checkout"

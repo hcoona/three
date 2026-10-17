@@ -25,6 +25,10 @@ replacement sessions recover from Git and work carriers. A failed or stopped
 worker neither establishes completion nor permits an unverified external effect
 to be repeated. Never put session IDs, retries or results into the Wave.
 
+Keep agent worktrees and large local state on persistent storage outside tmpfs.
+Remove finished worktrees with `git worktree remove` and delete their retained
+local state.
+
 ## Mutable Interface Recheck
 
 Before an implementation or execution grant relies on Codex CLI, app-server or
