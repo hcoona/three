@@ -316,12 +316,13 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     [Timeout(30000, CooperativeCancellation = true)]
     public async Task NativeOwnershipPreservesNearestRegionsAndVariantExcludes()
     {
-        // Separate nested regions: each extension casing must form and claim its own region.
+        // Same-directory projects share their region; a lone upper-case extension forms its own.
         using var fixture = new GraphFixture();
         fixture.Write("dirs.proj", """
             <Project><ItemGroup>
               <ProjectReference Include="parent/main.csproj" />
               <ProjectReference Include="parent/nested/one.csproj" />
+              <ProjectReference Include="parent/nested/three.csproj" />
               <ProjectReference Include="parent/nested2/two.CSPROJ" />
             </ItemGroup></Project>
             """);
@@ -339,6 +340,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             </Project>
             """);
         fixture.Write("parent/nested/one.csproj", GraphFixture.Project);
+        fixture.Write("parent/nested/three.csproj", GraphFixture.Project);
         fixture.Write("parent/nested2/two.CSPROJ", GraphFixture.Project);
         fixture.CommittedPaths = [fixture.PathOf("parent/document.md"),
             fixture.PathOf("parent/fixtures/version.json"),
@@ -367,6 +369,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         foreach ((string project, string owned) in new[]
         {
             ("parent/nested/one.csproj", "parent/nested/new.cs"),
+            ("parent/nested/three.csproj", "parent/nested/new.cs"),
             ("parent/nested2/two.CSPROJ", "parent/nested2/upper.cs"),
         })
         {
