@@ -12,9 +12,9 @@ last-source navigation link as a producer binding.
 > **Implementation baseline:** This record describes the pre-contraction
 > implementation. Its authority for retained evidence is defined by the
 > [historical source rule](README.md#historical-source-rule).
-> New architecture, terminology and cutover direction are owned by the
-> [replacement HLD](high-level-design.md). This record remains only for its
-> existing implementation and evidence consumers; it does not constrain the replacement.
+> Current architecture and terminology are owned by the [HLD](high-level-design.md).
+> This record remains only for its existing implementation and evidence
+> consumers; it does not constrain the current application.
 
 ## Status and Authority
 

@@ -2,7 +2,7 @@
 
 ## Decision and Evidence Scope
 
-The [replacement HLD](../high-level-design.md) permits native NBGV execution
+The [HLD](../high-level-design.md) permits native NBGV execution
 during build and consolidates the .NET provider and native-consumer helpers.
 This record preserves unadmitted local author observations and the owner's
 Windows assumption. The architecture choices rest on accepted requirements and

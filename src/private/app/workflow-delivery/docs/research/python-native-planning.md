@@ -271,8 +271,8 @@ a concrete accepted isolated protocol. Reuse the retained primitive evidence
 for its qualified boundary; do not repeat it as a complete-reader test.
 
 Recheck these source findings when the repository UV pin changes or a change to
-the Python planning facts or caller relies on them. Its author checks the affected
-native interfaces and omissions; an independent evidence reviewer evaluates the
+the Python planning facts or caller relies on them. The author of that pin change or
+Python planning-fact/caller change checks the affected native interfaces and omissions; an independent evidence reviewer evaluates the
 result. The review of the next change to the
 [Python planning facts](../middle-level-design.md#native-python-planning-facts)
 is the fallback event. Keep immutable source

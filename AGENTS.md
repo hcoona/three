@@ -67,7 +67,10 @@ Workflow Delivery v3 is the only normative source for new workflow delivery
 work. Do not use v1 or v2 to fill a v3 decision gap unless the v3 documents
 explicitly require mechanism extraction and revalidation.
 
-All Workflow Delivery proving campaigns are closed; the handoff's
-[closed-campaign limits](src/private/app/workflow-delivery/docs/agent-handoff.md#authorization-and-closed-campaigns)
-remain in force. Repository governance does not reopen them or supply permission
-for native operations, publication, dispatch, authentication, or access changes.
+The handoff's [authority and purpose](src/private/app/workflow-delivery/docs/agent-handoff.md#authority-and-purpose)
+section routes current work. All Workflow Delivery proving campaigns are closed,
+and the handoff's [closed-campaign limits](src/private/app/workflow-delivery/docs/agent-handoff.md#authorization-and-closed-campaigns)
+remain in force. The former separate NuGet implementation authorization ended
+with its campaign and is not renewed. Repository governance does not reopen the
+campaigns or supply permission for native operations, publication, dispatch,
+authentication, or access changes.

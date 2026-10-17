@@ -12,21 +12,20 @@ last-source navigation link as a producer binding.
 > **Implementation baseline:** This record describes the pre-contraction
 > implementation. Its authority for retained evidence is defined by the
 > [historical source rule](README.md#historical-source-rule).
-> New architecture, terminology and cutover direction are owned by the
-> [replacement HLD](high-level-design.md). This record remains only for its
-> existing implementation and evidence consumers; it does not constrain the replacement.
+> Current architecture and terminology are owned by the [HLD](high-level-design.md).
+> This record remains only for its existing implementation and evidence
+> consumers; it does not constrain the current application.
 
 ## Status and Authorization
 
 The reproducible-build advancement was [Issue #948](https://github.com/hcoona/three/issues/948),
 selected by the then-accepted [Delivery Wave](../../../../../docs/delivery-wave.md).
 Its feasibility experiment and independent evidence review completed, and its
-production integration followed the
+production integration and build-only acceptance followed the
 [LLD mechanism and gates](hcoona-release-smoke-github-packages-lld.md#reproducible-original-archive)
 in [PR #952](https://github.com/hcoona/three/pull/952). That work preserved the
 completed go-live evidence and granted no new native operation or publication.
-The current Wave contains no entry for it. The earlier go-live scope below is
-also historical.
+That grant has ended. The earlier go-live scope below is also historical.
 
 This was the operating handoff. The research delivery and interactive
 requirements confirmation are complete. The canonical confirmed product,
