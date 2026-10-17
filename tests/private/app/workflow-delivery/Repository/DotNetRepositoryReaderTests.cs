@@ -344,24 +344,21 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
             </PropertyGroup></Project>
             """);
         await fixture.Repo.SetAsync("linked/source.cs", "");
+        // Committed locks are fixture data; NuGet owns their format and locked restore.
+        await fixture.Repo.SetAsync("product/packages.A.lock.json", """
+            {"version":1,"dependencies":{"net10.0":{"b":{"type":"Project"}},
+              "net9.0":{"b":{"type":"Project"}}}}
+            """);
+        await fixture.Repo.SetAsync("product/packages.B.lock.json", """
+            {"version":1,"dependencies":{"net9.0":{}}}
+            """);
         await fixture.CommitAsync();
-        foreach (string project in new[] { "A", "B" })
-        {
-            foreach (string mode in new[] { "--use-lock-file", "--locked-mode" })
-            {
-                NativeCommandResult restored = await NativeProcess.ExecuteAsync(new("dotnet",
-                    fixture.Root, ["restore", fixture.PathOf("product/" + project + ".csproj"),
-                        mode, "-property:Configuration=Debug",
-                        "-property:ContinuousIntegrationBuild=true"], 30),
-                    context.CancellationToken);
-                Assert.IsTrue(restored.Succeeded,
-                    restored.Stdout + restored.Stderr + restored.Error);
-            }
-            string path = "product/packages." + project + ".lock.json";
-            await fixture.Repo.SetAsync(path, await File.ReadAllTextAsync(fixture.PathOf(path),
-                context.CancellationToken));
-        }
-        await fixture.CommitAsync();
+        // Restoring A also restores its referenced B under the same locked operation.
+        NativeCommandResult restored = await NativeProcess.ExecuteAsync(new("dotnet",
+            fixture.Root, ["restore", fixture.PathOf("product/A.csproj"), "--locked-mode",
+                "-property:Configuration=Debug", "-property:ContinuousIntegrationBuild=true"], 30),
+            context.CancellationToken);
+        Assert.IsTrue(restored.Succeeded, restored.Stdout + restored.Stderr + restored.Error);
 
         // Separate obj subdirectories are not blanket native-provider authority:
         // the sibling's SDK default None glob still sees another project's outputs.

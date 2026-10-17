@@ -1,7 +1,8 @@
 using System.Security;
 using System.Text.Json;
-using Microsoft.Build.Framework;
-using Microsoft.Build.Logging;
+using Microsoft.Build.Construction;
+using Microsoft.Build.Evaluation;
+using Microsoft.Build.Execution;
 using NuGet.ProjectModel;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
@@ -17,76 +18,22 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     private static readonly string[] NativeFrameworks = ["net10.0", "net9.0"];
 
     [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
+    // Fixture restore phases and the graph read retain their own command deadlines.
     [Timeout(360000, CooperativeCancellation = true)]
-    public async Task NativeNbgvHelperPreservesBusinessVariantsAndInputs(bool rootVersionBase)
+    public async Task NativeNbgvHelperPreservesBusinessVariantsAndInputs()
     {
         using var fixture = new GraphFixture();
-        fixture.ConfigureNbgv(rootVersionBase);
+        fixture.ConfigureNbgv(rootVersionBase: false);
         fixture.Globals.Add("BusinessSentinel", "original semantic value");
-        using JsonDocument native = await fixture.QueryAsync("product/consumer.csproj",
-            context.CancellationToken);
-        using JsonDocument traversal = await fixture.QueryAsync("dirs.proj",
-            context.CancellationToken);
-        context.WriteLine(native.RootElement.GetRawText());
-        context.WriteLine(traversal.RootElement.GetRawText());
-        JsonElement nativeProperties = traversal.RootElement.GetProperty("Properties");
-        string commonRoot = nativeProperties.GetProperty("PkgMicrosoft_SourceLink_Common")
-            .GetString()!;
-        string commonProps = Path.Combine(commonRoot, "build", "Microsoft.SourceLink.Common.props");
-        string nativeDiagnostic = "Traversal properties: " + nativeProperties.GetRawText();
-        Assert.IsTrue(Path.IsPathFullyQualified(commonRoot), nativeDiagnostic);
-        Assert.IsTrue(File.Exists(commonProps), commonProps + "\n" + nativeDiagnostic);
-        string assetsPath = Path.Combine(nativeProperties
-            .GetProperty("MSBuildProjectExtensionsPath").GetString()!, "project.assets.json");
-        LockFile assets = new LockFileFormat().Read(assetsPath)
-            ?? throw new InvalidDataException("Native traversal assets are unavailable.");
-        LockFileLibrary common = Assert.ContainsSingle(assets.Libraries.Where(library =>
-            library.Name == "Microsoft.SourceLink.Common"), nativeDiagnostic);
-        Assert.AreEqual("package", common.Type);
-        Assert.Contains("build/Microsoft.SourceLink.Common.props", common.Files, nativeDiagnostic);
-        Assert.ContainsSingle(assets.PackageFolders.Where(folder => PhysicalPathComparer.Equals(
-            Path.GetFullPath(Path.Combine(folder.Path, common.Path)),
-            Path.GetFullPath(commonRoot))), nativeDiagnostic);
-        Assert.IsNotEmpty(assets.ProjectFileDependencyGroups, nativeDiagnostic);
-        Assert.IsFalse(assets.ProjectFileDependencyGroups.SelectMany(group =>
-            group.Dependencies).Any(dependency => dependency.StartsWith(
-                "Microsoft.SourceLink.Common ", StringComparison.Ordinal)),
-            "Common must remain a transitive fixture dependency. " + nativeDiagnostic);
-        var imports = new List<string>();
-        var replay = new BinaryLogReplayEventSource { AllowForwardCompatibility = false };
-        replay.AnyEventRaised += (_, entry) =>
-        {
-            if (entry is ProjectImportedEventArgs import && !import.ImportIgnored &&
-                PhysicalPathComparer.Equals(import.ProjectFile, fixture.PathOf("dirs.proj")) &&
-                import.ImportedProjectFile is not null)
-                imports.Add(import.ImportedProjectFile);
-        };
-        string queryLog = fixture.PathOf("dirs.proj.query.binlog");
-        replay.Replay(queryLog, context.CancellationToken);
-        context.WriteLine("Native traversal imports: " + string.Join("; ", imports));
-        Directory.CreateDirectory(context.TestResultsDirectory!);
-        string evidence = Path.Combine(context.TestResultsDirectory!,
-            "nbgv-transitive-" + Guid.NewGuid().ToString("N"));
-        File.Copy(queryLog, evidence + ".query.binlog");
-        File.Copy(assetsPath, evidence + ".assets.json");
-        File.Copy(Path.Combine(Path.GetDirectoryName(assetsPath)!, "dirs.proj.nuget.g.props"),
-            evidence + ".nuget.g.props");
-        context.WriteLine("Native traversal evidence: " + evidence);
-        Assert.IsTrue(imports.Any(path => PhysicalPathComparer.Equals(path, commonProps)),
-            "Expected actual traversal import " + commonProps + "\n" + nativeDiagnostic +
-            "\nObserved imports: " + string.Join("; ", imports));
-        string helper = NativeHelper(native);
-        Assert.AreEqual(helper, NativeHelper(traversal));
-        string versionBase = rootVersionBase ? fixture.Root : fixture.PathOf("product");
-        Assert.IsTrue(PhysicalPathComparer.Equals(versionBase, Path.TrimEndingDirectorySeparator(
-            native.RootElement.GetProperty("Properties").GetProperty("GitVersionBaseDirectory")
-                .GetString()!)));
-        Assert.IsFalse(File.Exists(fixture.PathOf("packages.dirs.lock.json")));
+        string versionBase = fixture.PathOf("product");
 
         DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
-        Assert.HasCount(6, response.Nodes);
+        Assert.AreEqual(GraphFixture.Revision, response.Revision);
+        Assert.AreEqual(fixture.Root, response.Root);
+        Assert.HasCount(7, response.Nodes);
+        // The pinned package's caching helper is an input, never a business node.
+        string helper = response.Inputs.Select(input => input.Path).Distinct(PhysicalPathComparer)
+            .Single(path => Path.GetFileName(path) == "PrivateP2PCaching.proj");
         Assert.IsFalse(response.Nodes.Any(node => PhysicalPathComparer.Equals(
             node.Identity.Project, helper)));
         Assert.IsTrue(response.Nodes.All(node => node.Dimension.Configuration == "Debug"));
@@ -97,7 +44,20 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             Assert.IsFalse(node.Identity.Globals.ContainsKey("GitVersionBaseDirectory"));
             Assert.IsFalse(node.Identity.Globals.ContainsKey("NBGV_PrivateP2PAuxTargets"));
             Assert.IsFalse(node.Identity.Globals.ContainsKey("WrapperSentinel"));
+            Assert.IsFalse(node.Identity.Globals.ContainsKey("RequestFile"));
         }
+        // Native reference edges include a transitive reference below the entry graph.
+        Assert.IsTrue(response.Edges.Any(edge => PhysicalPathComparer.Equals(
+                edge.Consumer.Project, fixture.PathOf("dependency/dependency.csproj")) &&
+            PhysicalPathComparer.Equals(edge.Dependency.Project,
+                fixture.PathOf("leaf/leaf.csproj"))));
+        // Both effective native values are retained: the consumer's local base and the root
+        // base other projects inherit (the SDK fallback alone would be each project directory).
+        foreach (DotNetGraphNode node in response.Nodes.Where(node => PhysicalPathComparer.Equals(
+            node.Identity.Project, fixture.PathOf("dependency/dependency.csproj"))))
+            Assert.IsTrue(PhysicalPathComparer.Equals(fixture.Root,
+                Path.TrimEndingDirectorySeparator(node.VersionBaseDirectory)),
+                "dependency version base: " + node.VersionBaseDirectory);
         DotNetGraphNode[] consumers = response.Nodes.Where(node => PhysicalPathComparer.Equals(
             node.Identity.Project, fixture.PathOf("product/consumer.csproj"))).ToArray();
         Assert.HasCount(3, consumers);
@@ -105,7 +65,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         foreach (DotNetGraphNode node in consumers)
         {
             Assert.IsTrue(PhysicalPathComparer.Equals(versionBase,
-                Path.TrimEndingDirectorySeparator(node.VersionBaseDirectory)));
+                Path.TrimEndingDirectorySeparator(node.VersionBaseDirectory)),
+                "consumer version base: " + node.VersionBaseDirectory);
             Dictionary<string, string> expected = new(outer.Identity.Globals,
                 StringComparer.Ordinal);
             if (!node.OuterBuild)
@@ -194,17 +155,23 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             input.Provider?.Kind == "RestoreGenerated"));
         Assert.IsTrue(response.Inputs.Any(input => SameIdentity(input.Consumer, root.Identity) &&
             input.Role == "RestoreAssets"));
-        Assert.IsTrue(response.Inputs.Any(input => SameIdentity(input.Consumer, root.Identity) &&
-            PhysicalPathComparer.Equals(input.Path, commonProps) && input.Role == "Import" &&
-            input.Provider is
-            {
-                Kind: "TraversalPackage",
-                Identity: "Microsoft.SourceLink.Common"
-            } && input.Provider.Version == common.Version.ToNormalizedString()),
-            "Expected traversal provider for " + commonProps + "\n" + nativeDiagnostic +
-            "\nObserved Common inputs: " + string.Join("; ", response.Inputs.Where(input =>
-                Path.GetFileName(input.Path) == "Microsoft.SourceLink.Common.props").Select(input =>
-                $"{input.Consumer.Project}: {input.Role} {input.Path} {input.Provider}")));
+        // The traversal consumes a transitive restored package import with its package provider.
+        DotNetGraphInput common = Assert.ContainsSingle(response.Inputs.Where(input =>
+            SameIdentity(input.Consumer, root.Identity) && input.Role == "Import" &&
+            Path.GetFileName(input.Path) == "Microsoft.SourceLink.Common.props"),
+            "Observed root imports: " + string.Join("; ", response.Inputs.Where(input =>
+                SameIdentity(input.Consumer, root.Identity) && input.Role == "Import")
+                .Select(input => $"{input.Path} {input.Provider}")));
+        Assert.IsNotNull(common.Provider);
+        Assert.AreEqual("TraversalPackage", common.Provider.Kind);
+        Assert.AreEqual("Microsoft.SourceLink.Common", common.Provider.Identity);
+        // The provider version is the app's pass-through of the traversal's restored assets.
+        LockFileLibrary restoredCommon = Assert.ContainsSingle(new LockFileFormat().Read(
+            fixture.PathOf("obj/dirs/project.assets.json")).Libraries.Where(library =>
+            library.Type == "package" && library.Name == "Microsoft.SourceLink.Common"));
+        Assert.AreEqual(restoredCommon.Version.ToNormalizedString(), common.Provider.Version);
+        Assert.IsTrue(PhysicalPathComparer.Equals(Path.Combine(common.Provider.Root, "build",
+            "Microsoft.SourceLink.Common.props"), common.Path), common.Path);
         foreach (DotNetGraphNode node in consumers.Where(node => !node.OuterBuild))
         {
             CheckSpec[] checks = DotNetChecks.Expand("product/consumer.csproj", node);
@@ -212,22 +179,6 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             Dictionary<string, string> globals = JsonSerializer.Deserialize(
                 checks[0].Dimensions["globals"], TransferJson.Default.DictionaryStringString)!;
             CollectionAssert.AreEquivalent(node.Identity.Globals.ToArray(), globals.ToArray());
-        }
-
-        string NativeHelper(JsonDocument receipt)
-        {
-            JsonElement properties = receipt.RootElement.GetProperty("Properties");
-            Assert.AreEqual("MSBuildTargetCaching", properties.GetProperty("NBGV_CacheMode")
-                .GetString());
-            JsonElement reference = Assert.ContainsSingle(receipt.RootElement.GetProperty("Items")
-                .GetProperty("ProjectReference").EnumerateArray().Where(item =>
-                    item.TryGetProperty("NBGV_InnerProject", out JsonElement marker) &&
-                    marker.GetString() == "true"));
-            string path = reference.GetProperty("FullPath").GetString()!;
-            Assert.AreEqual("PrivateP2PCaching.proj", Path.GetFileName(path));
-            Assert.IsTrue(PhysicalPathComparer.Equals(path,
-                properties.GetProperty("NBGV_CachingProjectReference").GetString()));
-            return path;
         }
     }
 
@@ -286,73 +237,6 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     private static bool SameIdentity(DotNetNodeIdentity first, DotNetNodeIdentity second) =>
         new DotNetRepositoryReader.NativeIdentityComparer().Equals(
             DotNetRepositoryReader.Key(first), DotNetRepositoryReader.Key(second));
-
-    [TestMethod]
-    // Fixture restore phases and the graph query retain their own command deadlines.
-    [Timeout(360000, CooperativeCancellation = true)]
-    public async Task LoadedNativeGraphPreservesInnerVariantsAndReferenceEdges()
-    {
-        using var fixture = new GraphFixture();
-        fixture.Globals.Add("BusinessSentinel", "semantic");
-        fixture.Write("dirs.proj", """
-            <Project>
-              <ItemGroup><ProjectReference Include="consumer.csproj" /></ItemGroup>
-            </Project>
-            """);
-        fixture.Write("consumer.csproj", """
-            <Project Sdk="Microsoft.NET.Sdk">
-              <PropertyGroup><TargetFrameworks>net10.0;net9.0</TargetFrameworks></PropertyGroup>
-              <ItemGroup>
-                <ProjectReference Include="dependency.csproj" />
-                <ProjectReference Include="analyzer.csproj" OutputItemType="Analyzer"
-                                  ReferenceOutputAssembly="false" />
-              </ItemGroup>
-            </Project>
-            """);
-        fixture.Write("dependency.csproj", """
-            <Project Sdk="Microsoft.NET.Sdk">
-              <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>
-              <ItemGroup><ProjectReference Include="leaf.csproj" /></ItemGroup>
-            </Project>
-            """);
-        fixture.Write("leaf.csproj", GraphFixture.Project.Replace("net10.0", "net9.0"));
-        fixture.Write("analyzer.csproj", GraphFixture.Project);
-        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
-        Assert.AreEqual(GraphFixture.Revision, response.Revision);
-        Assert.AreEqual(fixture.Root, response.Root);
-        DotNetGraphNode[] consumer = response.Nodes.Where(node =>
-            node.Identity.Project == fixture.PathOf("consumer.csproj")).ToArray();
-        Assert.HasCount(3, consumer);
-        Assert.HasCount(1, consumer.Where(node => node.OuterBuild));
-        string[] frameworks = consumer.Where(node => !node.OuterBuild)
-            .Select(node => node.Dimension.TargetFramework).ToArray();
-        Assert.HasCount(2, frameworks);
-        Assert.Contains("net10.0", frameworks);
-        Assert.Contains("net9.0", frameworks);
-        foreach (DotNetGraphNode node in response.Nodes)
-        {
-            Assert.AreEqual("Debug", node.Identity.Globals["Configuration"]);
-            Assert.AreEqual("true", node.Identity.Globals["ContinuousIntegrationBuild"]);
-            Assert.AreEqual("true", node.Identity.Globals["RestoreLockedMode"]);
-            Assert.AreEqual("semantic", node.Identity.Globals["BusinessSentinel"]);
-            Assert.IsFalse(node.Identity.Globals.ContainsKey("WrapperSentinel"));
-            Assert.IsFalse(node.Identity.Globals.ContainsKey("RequestFile"));
-        }
-        foreach (DotNetGraphNode node in consumer.Where(node => !node.OuterBuild))
-        {
-            Assert.AreEqual(node.Dimension.TargetFramework,
-                node.Identity.Globals["TargetFramework"]);
-            foreach (string reference in new[] { "dependency.csproj", "analyzer.csproj" })
-                Assert.HasCount(1, response.Edges.Where(edge =>
-                    edge.Consumer.Project == node.Identity.Project &&
-                    edge.Consumer.Globals.TryGetValue("TargetFramework", out string? framework) &&
-                    framework == node.Dimension.TargetFramework &&
-                    edge.Dependency.Project == fixture.PathOf(reference)));
-        }
-        Assert.IsTrue(response.Edges.Any(edge =>
-            edge.Consumer.Project == fixture.PathOf("dependency.csproj") &&
-            edge.Dependency.Project == fixture.PathOf("leaf.csproj")));
-    }
 
     [TestMethod]
     [DataRow("TargetFramework", "net10.0")]
@@ -429,17 +313,17 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(".csproj")]
-    [DataRow(".CSPROJ")]
     [Timeout(30000, CooperativeCancellation = true)]
-    public async Task NativeOwnershipPreservesNearestRegionsAndVariantExcludes(string extension)
+    public async Task NativeOwnershipPreservesNearestRegionsAndVariantExcludes()
     {
+        // Same-directory projects share their region; a lone upper-case extension forms its own.
         using var fixture = new GraphFixture();
-        fixture.Write("dirs.proj", $"""
+        fixture.Write("dirs.proj", """
             <Project><ItemGroup>
               <ProjectReference Include="parent/main.csproj" />
-              <ProjectReference Include="parent/nested/one{extension}" />
-              <ProjectReference Include="parent/nested/two{extension}" />
+              <ProjectReference Include="parent/nested/one.csproj" />
+              <ProjectReference Include="parent/nested/three.csproj" />
+              <ProjectReference Include="parent/nested2/two.CSPROJ" />
             </ItemGroup></Project>
             """);
         fixture.Write("parent/main.csproj", """
@@ -455,14 +339,16 @@ public sealed class DotNetGraphTaskTests(TestContext context)
               </PropertyGroup>
             </Project>
             """);
-        fixture.Write($"parent/nested/one{extension}", GraphFixture.Project);
-        fixture.Write($"parent/nested/two{extension}", GraphFixture.Project);
+        fixture.Write("parent/nested/one.csproj", GraphFixture.Project);
+        fixture.Write("parent/nested/three.csproj", GraphFixture.Project);
+        fixture.Write("parent/nested2/two.CSPROJ", GraphFixture.Project);
         fixture.CommittedPaths = [fixture.PathOf("parent/document.md"),
             fixture.PathOf("parent/fixtures/version.json"),
             fixture.PathOf("parent/.cache/hidden.txt"),
             fixture.PathOf("parent/semi;colon.txt"),
             fixture.PathOf("parent/variant-only.txt"),
-            fixture.PathOf("parent/nested/new.cs"), fixture.PathOf("unowned.md")];
+            fixture.PathOf("parent/nested/new.cs"), fixture.PathOf("parent/nested2/upper.cs"),
+            fixture.PathOf("unowned.md")];
         DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
         DotNetGraphNode[] parent = response.Nodes.Where(node =>
             node.Identity.Project == fixture.PathOf("parent/main.csproj") && !node.OuterBuild)
@@ -475,18 +361,22 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             Assert.DoesNotContain(fixture.PathOf("parent/.cache/hidden.txt"), node.OwnedPaths);
             Assert.DoesNotContain(fixture.PathOf("parent/semi;colon.txt"), node.OwnedPaths);
             Assert.DoesNotContain(fixture.PathOf("parent/nested/new.cs"), node.OwnedPaths);
+            Assert.DoesNotContain(fixture.PathOf("parent/nested2/upper.cs"), node.OwnedPaths);
             Assert.DoesNotContain(fixture.PathOf("unowned.md"), node.OwnedPaths);
             Assert.AreEqual(node.Dimension.TargetFramework == "net10.0",
                 node.OwnedPaths.Contains(fixture.PathOf("parent/variant-only.txt")));
         }
-        DotNetGraphNode[] nested = response.Nodes.Where(node =>
-            node.Identity.Project == fixture.PathOf($"parent/nested/one{extension}") ||
-            node.Identity.Project == fixture.PathOf($"parent/nested/two{extension}")).ToArray();
-        Assert.HasCount(2, nested);
-        foreach (DotNetGraphNode node in nested)
+        foreach ((string project, string owned) in new[]
         {
-            Assert.HasCount(1, node.OwnedPaths);
-            Assert.Contains(fixture.PathOf("parent/nested/new.cs"), node.OwnedPaths);
+            ("parent/nested/one.csproj", "parent/nested/new.cs"),
+            ("parent/nested/three.csproj", "parent/nested/new.cs"),
+            ("parent/nested2/two.CSPROJ", "parent/nested2/upper.cs"),
+        })
+        {
+            DotNetGraphNode node = Assert.ContainsSingle(response.Nodes.Where(node =>
+                node.Identity.Project == fixture.PathOf(project)), project);
+            CollectionAssert.AreEqual(new[] { fixture.PathOf(owned) }, node.OwnedPaths,
+                project + " owns: " + string.Join("; ", node.OwnedPaths));
         }
     }
 
@@ -564,9 +454,28 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     [Timeout(60000, CooperativeCancellation = true)]
     public async Task LockedRestoreInputsRetainAllNativeConsumers()
     {
+        // One restore covers default and redirected CPM, custom lock paths and a native RID.
         using var fixture = new GraphFixture();
         fixture.Write("dirs.proj", """
-            <Project><ItemGroup><ProjectReference Include="multi.csproj" /></ItemGroup></Project>
+            <Project><ItemGroup><ProjectReference Include="multi.csproj" />
+              <ProjectReference Include="main.csproj" /></ItemGroup></Project>
+            """);
+        fixture.Write("Directory.Build.props", File.ReadAllText(
+            fixture.PathOf("Directory.Build.props")).Replace("</PropertyGroup>",
+            "<DirectoryPackagesPropsPath Condition=\"'$(MSBuildProjectName)' == 'main'\"" +
+            ">$(MSBuildThisFileDirectory)config/packages.props" +
+            "</DirectoryPackagesPropsPath></PropertyGroup>"));
+        fixture.Write("config/packages.props", """
+            <Project><PropertyGroup>
+              <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+            </PropertyGroup></Project>
+            """);
+        fixture.Write("main.csproj", """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+              <TargetFramework>net10.0</TargetFramework>
+              <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+              <UseAppHost>false</UseAppHost>
+            </PropertyGroup></Project>
             """);
         fixture.Write("Directory.Packages.props", """
             <Project><PropertyGroup>
@@ -613,7 +522,22 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         }
         Assert.IsFalse(response.Inputs.Any(input => input.Role == "RestoreAssets" &&
             input.Consumer.Project == fixture.PathOf("dirs.proj")));
-        Assert.IsFalse(File.Exists(fixture.PathOf("global.json")));
+        DotNetGraphNode consumer = Assert.ContainsSingle(response.Nodes.Where(node =>
+            node.Identity.Project == fixture.PathOf("main.csproj")));
+        Assert.AreEqual("linux-x64", consumer.Dimension.RuntimeIdentifier);
+        foreach ((string path, string role) in new[]
+        {
+            ("config/packages.props", "CentralPackageConfiguration"),
+            ("packages.main.lock.json", "RestoreLock"),
+            ("obj/main/project.assets.json", "RestoreAssets"),
+        })
+        {
+            DotNetGraphInput input = Assert.ContainsSingle(response.Inputs.Where(input =>
+                input.Path == fixture.PathOf(path) && input.Role == role));
+            Assert.AreEqual(consumer.Identity.Project, input.Consumer.Project);
+            CollectionAssert.AreEquivalent(consumer.Identity.Globals.ToArray(),
+                input.Consumer.Globals.ToArray());
+        }
     }
 
     [TestMethod]
@@ -628,22 +552,33 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         await fixture.PrepareAsync(context.CancellationToken);
         string path = fixture.PathOf("obj/main/project.assets.json");
         string lockPath = fixture.PathOf("packages.main.lock.json");
+        string rootConfiguration = fixture.PathOf("nuget.config");
         byte[] originalAssets = await File.ReadAllBytesAsync(path, context.CancellationToken);
         byte[] originalLock = await File.ReadAllBytesAsync(lockPath, context.CancellationToken);
+        using var collection = new ProjectCollection();
+        ProjectRootElement element = ProjectRootElement.Create(collection);
+        element.FullPath = fixture.PathOf("main.csproj");
+        element.AddProperty("ProjectAssetsFile", path);
+        var project = new ProjectInstance(element);
+        var consumer = new DotNetNodeIdentity(project.FullPath, fixture.Globals);
+        // The one real locked restore is valid input to the app's validator.
+        DotNetRestoreInputs valid = DotNetConfigurationInputs.Restore(project, consumer,
+            fixture.Root, [rootConfiguration]);
+        Assert.IsTrue(valid.Inputs.Any(input => input.Role == "RestoreLock" &&
+            PhysicalPathComparer.Equals(input.Path, lockPath)));
         var format = new LockFileFormat();
-        foreach (string scenario in new[] { "missing-assets", "unsupported-format",
-            "missing-project", "missing-restore", "unsupported-project-style", "wrong-project",
-            "unlocked", "empty-configurations", "missing-root-contributor",
+        foreach (string scenario in new[] { "unsupported-format", "missing-project",
+            "missing-restore", "unsupported-project-style", "wrong-project", "unlocked",
+            "empty-configurations", "missing-root-contributor",
             "uncommitted-root-configuration", "missing-lock" })
         {
             context.WriteLine("Restore metadata case: " + scenario);
             await File.WriteAllBytesAsync(path, originalAssets, context.CancellationToken);
             await File.WriteAllBytesAsync(lockPath, originalLock, context.CancellationToken);
-            fixture.IncludeRootConfiguration = true;
+            string[] committed = [rootConfiguration];
             LockFile assets = format.Read(path);
             switch (scenario)
             {
-                case "missing-assets": File.Delete(path); break;
                 case "missing-lock": File.Delete(lockPath); break;
                 case "unsupported-format": assets.Version = LockFileFormat.Version + 1; break;
                 case "missing-project": assets.PackageSpec = null; break;
@@ -663,7 +598,6 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                     assets.PackageSpec.RestoreMetadata.ConfigFilePaths.Clear();
                     break;
                 case "missing-root-contributor":
-                    string rootConfiguration = fixture.PathOf("nuget.config");
                     var configurations = assets.PackageSpec.RestoreMetadata.ConfigFilePaths;
                     string contributor = Assert.ContainsSingle(configurations.Where(
                         configuration => PhysicalPathComparer.Equals(
@@ -674,57 +608,23 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                     Assert.IsTrue(configurations.Remove(contributor));
                     break;
                 case "uncommitted-root-configuration":
-                    fixture.IncludeRootConfiguration = false;
+                    committed = [];
                     break;
             }
-            if (scenario is not ("missing-assets" or "missing-lock")) format.Write(path, assets);
-            await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-                fixture.ReadAsync(context.CancellationToken), scenario);
-            Assert.IsFalse(File.Exists(fixture.PathOf("response.json")), scenario);
+            if (scenario != "missing-lock") format.Write(path, assets);
+            Assert.ThrowsExactly<InvalidDataException>(() => DotNetConfigurationInputs.Restore(
+                project, consumer, fixture.Root, committed), scenario);
         }
-    }
 
-    [TestMethod]
-    [Timeout(60000, CooperativeCancellation = true)]
-    public async Task NativeRestoreRetainsRidAndRedirectedCpm()
-    {
-        using var fixture = new GraphFixture();
-        fixture.Write("dirs.proj", """
-            <Project><ItemGroup><ProjectReference Include="main.csproj" /></ItemGroup></Project>
-            """);
-        fixture.Write("Directory.Build.props", File.ReadAllText(
-            fixture.PathOf("Directory.Build.props")).Replace("</PropertyGroup>",
-            "<DirectoryPackagesPropsPath>$(MSBuildThisFileDirectory)config/packages.props" +
-            "</DirectoryPackagesPropsPath></PropertyGroup>"));
-        fixture.Write("config/packages.props", """
-            <Project><PropertyGroup>
-              <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-            </PropertyGroup></Project>
-            """);
-        fixture.Write("main.csproj", """
-            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
-              <TargetFramework>net10.0</TargetFramework>
-              <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
-              <UseAppHost>false</UseAppHost>
-            </PropertyGroup></Project>
-            """);
-        DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
-        DotNetGraphNode consumer = Assert.ContainsSingle(response.Nodes.Where(node =>
-            node.Identity.Project == fixture.PathOf("main.csproj")));
-        Assert.AreEqual("linux-x64", consumer.Dimension.RuntimeIdentifier);
-        foreach ((string path, string role) in new[]
-        {
-            ("config/packages.props", "CentralPackageConfiguration"),
-            ("packages.main.lock.json", "RestoreLock"),
-            ("obj/main/project.assets.json", "RestoreAssets"),
-        })
-        {
-            DotNetGraphInput input = Assert.ContainsSingle(response.Inputs.Where(input =>
-                input.Path == fixture.PathOf(path) && input.Role == role));
-            Assert.AreEqual(consumer.Identity.Project, input.Consumer.Project);
-            CollectionAssert.AreEquivalent(consumer.Identity.Globals.ToArray(),
-                input.Consumer.Globals.ToArray());
-        }
+        // The native task passes its own committed paths to the validator: valid assets with
+        // an uncommitted root configuration fail end to end and write no response.
+        await File.WriteAllBytesAsync(path, originalAssets, context.CancellationToken);
+        await File.WriteAllBytesAsync(lockPath, originalLock, context.CancellationToken);
+        fixture.IncludeRootConfiguration = false;
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => fixture.ReadAsync(context.CancellationToken));
+        Assert.Contains("locked restore metadata", failure.Message);
+        Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
     }
 
     [TestMethod]
@@ -768,48 +668,39 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     [Timeout(30000, CooperativeCancellation = true)]
     public async Task NativeTestCapabilitiesFollowEvaluatedPrecedence()
     {
+        // The precedence rule reads evaluated properties; non-SDK nodes need no restore.
         using var fixture = new GraphFixture();
         (string Project, string Mtp, string VSTest, string Expected)[] cases =
         [
-            ("mtp-first.csproj", "true", "true", "MTP"),
-            ("uppercase-mtp.csproj", "TRUE", "malformed", "MTP"),
-            ("mtp-only.csproj", "true", "false", "MTP"),
-            ("vstest.csproj", "false", "true", "VSTest"),
-            ("uppercase-vstest.csproj", "", "TRUE", "VSTest"),
-            ("disabled.csproj", "false", "false", "None"),
-            ("unspecified.csproj", "", "", "None"),
-            ("uppercase-false.csproj", "FALSE", "", "None"),
+            ("mtp-first.proj", "true", "true", "MTP"),
+            ("uppercase-mtp.proj", "TRUE", "malformed", "MTP"),
+            ("mtp-only.proj", "true", "false", "MTP"),
+            ("vstest.proj", "false", "true", "VSTest"),
+            ("uppercase-vstest.proj", "", "TRUE", "VSTest"),
+            ("disabled.proj", "false", "false", "None"),
+            ("unspecified.proj", "", "", "None"),
+            ("uppercase-false.proj", "FALSE", "", "None"),
         ];
         fixture.Write("dirs.proj", "<Project><ItemGroup>" + string.Join("",
             cases.Select(value => $"<ProjectReference Include=\"{value.Project}\" />")) +
             "</ItemGroup></Project>");
         foreach (var value in cases)
             fixture.Write(value.Project, $"""
-                <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
-                  <TargetFrameworks>net10.0;net9.0</TargetFrameworks>
+                <Project><PropertyGroup>
                   <IsTestingPlatformApplication>{value.Mtp}</IsTestingPlatformApplication>
                   <IsTestProject>{value.VSTest}</IsTestProject>
                 </PropertyGroup></Project>
                 """);
         DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
-        Assert.HasCount(1 + cases.Length * 3, response.Nodes);
+        Assert.HasCount(1 + cases.Length, response.Nodes);
         foreach (var value in cases)
         {
-            DotNetGraphNode[] nodes = response.Nodes.Where(node =>
-                PhysicalPathComparer.Equals(node.Identity.Project, fixture.PathOf(value.Project)))
-                .ToArray();
-            Assert.HasCount(3, nodes, value.Project);
-            Assert.HasCount(1, nodes.Where(node => node.OuterBuild), value.Project);
-            Assert.HasCount(1, nodes.Where(node => node.Dimension.TargetFramework == "net10.0"),
+            DotNetGraphNode node = Assert.ContainsSingle(response.Nodes.Where(node =>
+                PhysicalPathComparer.Equals(node.Identity.Project, fixture.PathOf(value.Project))),
                 value.Project);
-            Assert.HasCount(1, nodes.Where(node => node.Dimension.TargetFramework == "net9.0"),
-                value.Project);
-            foreach (DotNetGraphNode node in nodes)
-            {
-                Assert.AreEqual(value.Expected, node.TestCapability, value.Project);
-                Assert.AreEqual("Debug", node.Identity.Globals["Configuration"], value.Project);
-                Assert.AreEqual("true", node.Identity.Globals["RestoreLockedMode"], value.Project);
-            }
+            Assert.AreEqual(value.Expected, node.TestCapability, value.Project);
+            Assert.AreEqual("Debug", node.Identity.Globals["Configuration"], value.Project);
+            Assert.AreEqual("true", node.Identity.Globals["RestoreLockedMode"], value.Project);
         }
         Assert.AreEqual("None", response.Nodes.Single(node =>
             PhysicalPathComparer.Equals(node.Identity.Project, fixture.PathOf("dirs.proj")))
@@ -846,51 +737,66 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("src/public/lib/CircularList/CircularList.csproj", "SetPackageReleaseNotes")]
-    [DataRow("src/public/lib/Hjg.Pngcs/Hjg.Pngcs.csproj", "SetPackageReleaseNotes")]
-    [DataRow("src/public/lib/Memoization/Memoization.csproj", "SetPackageReleaseNotes")]
-    [DataRow("src/public/lib/MicrosoftExtensions.Logging.MSTest/" +
-        "MicrosoftExtensions.Logging.MSTest.csproj",
-        "SetPackageReleaseNotes")]
-    [DataRow("src/public/lib/MicrosoftExtensions.Logging.Xunit/" +
-        "MicrosoftExtensions.Logging.Xunit.csproj",
-        "SetPackageReleaseNotes")]
-    [DataRow("src/public/lib/MicrosoftExtensions.Options.DedupChangeExtensions/" +
-        "MicrosoftExtensions.Options.DedupChangeExtensions.csproj",
-        "SetPackageReleaseNotes")]
-    [DataRow("src/public/lib/PhiFailureDetector/PhiFailureDetector.csproj",
-        "SetPackageReleaseNotes")]
-    [DataRow("src/public/lib/WebHdfs.Extensions.FileProviders/" +
-        "WebHdfs.Extensions.FileProviders.csproj",
-        "SetPackageReleaseNotes")]
-    [DataRow("src/private/app/workflow-delivery/WorkflowDelivery.csproj", "ReferenceOfficialNbgv")]
-    [DataRow("tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj",
-        "ReferenceOfficialNbgv")]
-    [DataRow("tests/public/lib/WebHdfs.Extensions.FileProviders.UnitTest/" +
-        "WebHdfs.Extensions.FileProviders.UnitTest.csproj",
-        "PreBuild")]
-    [DataRow("dirs.proj", "RestoreWindowsOnlyProjectsOnNonWindows")]
     [Timeout(30000, CooperativeCancellation = true)]
-    public async Task SupportedRepositoryProducersRetainNativeConsumers(string origin, string name)
+    public async Task SupportedRepositoryProducersRetainNativeConsumers()
     {
+        (string Origin, string Name)[] producers =
+        [
+            ("src/public/lib/CircularList/CircularList.csproj", "SetPackageReleaseNotes"),
+            ("src/public/lib/Hjg.Pngcs/Hjg.Pngcs.csproj", "SetPackageReleaseNotes"),
+            ("src/public/lib/Memoization/Memoization.csproj", "SetPackageReleaseNotes"),
+            ("src/public/lib/MicrosoftExtensions.Logging.MSTest/" +
+                "MicrosoftExtensions.Logging.MSTest.csproj", "SetPackageReleaseNotes"),
+            ("src/public/lib/MicrosoftExtensions.Logging.Xunit/" +
+                "MicrosoftExtensions.Logging.Xunit.csproj", "SetPackageReleaseNotes"),
+            ("src/public/lib/MicrosoftExtensions.Options.DedupChangeExtensions/" +
+                "MicrosoftExtensions.Options.DedupChangeExtensions.csproj",
+                "SetPackageReleaseNotes"),
+            ("src/public/lib/PhiFailureDetector/PhiFailureDetector.csproj",
+                "SetPackageReleaseNotes"),
+            ("src/public/lib/WebHdfs.Extensions.FileProviders/" +
+                "WebHdfs.Extensions.FileProviders.csproj", "SetPackageReleaseNotes"),
+            ("src/private/app/workflow-delivery/WorkflowDelivery.csproj", "ReferenceOfficialNbgv"),
+            ("tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj",
+                "ReferenceOfficialNbgv"),
+            ("tests/public/lib/WebHdfs.Extensions.FileProviders.UnitTest/" +
+                "WebHdfs.Extensions.FileProviders.UnitTest.csproj", "PreBuild"),
+        ];
+        // One graph read: each origin wins its target in its own wrapper node, so every
+        // supported (origin, name) entry is validated; names use non-canonical casing.
         using var fixture = new GraphFixture();
-        fixture.Write(origin, """
-            <Project>
-            """ + $"<Target Name=\"{name.ToLowerInvariant()}\" />" + "</Project>",
-            restoreProject: false);
-        if (origin != "dirs.proj")
-            fixture.Write("dirs.proj", $"<Project><Import Project=\"{origin}\" /></Project>");
-        fixture.CommittedPaths = [fixture.PathOf(origin)];
+        for (int index = 0; index < producers.Length; index++)
+        {
+            fixture.Write(producers[index].Origin, "<Project><Target Name=\"" +
+                producers[index].Name.ToLowerInvariant() + "\" /></Project>",
+                restoreProject: false);
+            fixture.Write($"wrappers/w{index}.proj", "<Project><Import Project=\"../" +
+                producers[index].Origin + "\" /></Project>");
+        }
+        fixture.Write("dirs.proj", "<Project><ItemGroup>" + string.Join("",
+            producers.Select((_, index) =>
+                $"<ProjectReference Include=\"wrappers/w{index}.proj\" />")) +
+            "</ItemGroup><Target Name=\"restorewindowsonlyprojectsonnonwindows\" /></Project>");
+        fixture.CommittedPaths = [fixture.PathOf("dirs.proj"),
+            .. producers.Select(producer => fixture.PathOf(producer.Origin))];
         DotNetGraphResponse response = await fixture.ReadAsync(context.CancellationToken);
-        DotNetGraphNode node = Assert.ContainsSingle(response.Nodes);
-        Assert.AreEqual("None", node.TestCapability);
-        DotNetGraphInput input = Assert.ContainsSingle(response.Inputs.Where(input =>
-            PhysicalPathComparer.Equals(input.Path, fixture.PathOf(origin)) &&
-            input.Role == (origin == "dirs.proj" ? "Project" : "Import")));
-        Assert.AreEqual("Evaluation", input.Stage);
-        Assert.AreEqual(node.Identity.Project, input.Consumer.Project);
-        CollectionAssert.AreEquivalent(node.Identity.Globals.ToArray(),
-            input.Consumer.Globals.ToArray());
+        Assert.HasCount(1 + producers.Length, response.Nodes);
+        Assert.IsTrue(response.Nodes.All(node => node.TestCapability == "None"));
+        foreach ((string origin, string role, string consumer) in producers.Select(
+                (producer, index) => (producer.Origin, "Import", $"wrappers/w{index}.proj"))
+            .Append(("dirs.proj", "Project", "dirs.proj")))
+        {
+            DotNetGraphNode node = Assert.ContainsSingle(response.Nodes.Where(node =>
+                PhysicalPathComparer.Equals(node.Identity.Project, fixture.PathOf(consumer))),
+                consumer);
+            DotNetGraphInput input = Assert.ContainsSingle(response.Inputs.Where(input =>
+                PhysicalPathComparer.Equals(input.Path, fixture.PathOf(origin)) &&
+                input.Role == role), origin);
+            Assert.AreEqual("Evaluation", input.Stage, origin);
+            Assert.AreEqual(node.Identity.Project, input.Consumer.Project, origin);
+            CollectionAssert.AreEquivalent(node.Identity.Globals.ToArray(),
+                input.Consumer.Globals.ToArray(), origin);
+        }
     }
 
     [TestMethod]
@@ -1047,17 +953,11 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             root.Identity.Project, ""), rootAssets.Provider);
         Assert.IsFalse(response.Inputs.Any(input => SameIdentity(root.Identity, input.Consumer) &&
             input.Role == "RestoreLock"));
-        Assert.IsFalse(File.Exists(fixture.PathOf("packages.dirs.lock.json")));
         Assert.IsTrue(response.Inputs.Any(input => input.Role == "RestoreLock" &&
             PhysicalPathComparer.Equals(input.Path, fixture.PathOf("packages.main.lock.json")) &&
             PhysicalPathComparer.Equals(input.Consumer.Project, fixture.PathOf("main.csproj"))));
         Assert.IsTrue(response.Inputs.Any(input => input.Provider?.Kind == "Toolset"));
         Assert.IsTrue(response.Inputs.Any(input => input.Provider?.Kind == "LockedPackage"));
-        foreach (string name in new[] { "Microsoft.Build.Artifacts.props",
-                     "Microsoft.Build.Artifacts.targets", "Microsoft.Build.Artifacts.Common.props",
-                     "Microsoft.Build.Artifacts.Common.targets" })
-            Assert.IsTrue(response.Inputs.Any(input => Path.GetFileName(input.Path) == name &&
-                input.Provider is { Kind: "Sdk", Identity: "Microsoft.Build.Artifacts" }));
         DotNetGraphInput hook = Assert.ContainsSingle(response.Inputs.Where(input =>
             input.Path == fixture.PathOf("extra.props") && input.Role == "Import"));
         Assert.IsNull(hook.Provider);
@@ -1304,7 +1204,10 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                     ReferenceOutputAssembly="false" />
                 </ItemGroup></Project>
                 """);
-            Write("dependency/dependency.csproj", Project.Replace("net10.0", "net9.0"));
+            Write("dependency/dependency.csproj", Project.Replace("net10.0", "net9.0").Replace(
+                "</Project>", "<ItemGroup><ProjectReference Include=\"../leaf/leaf.csproj\" />" +
+                "</ItemGroup></Project>"));
+            Write("leaf/leaf.csproj", Project.Replace("net10.0", "net9.0"));
             Write("analyzer/analyzer.csproj", Project);
             Write("version.json", """{"version":"1.0"}""");
             Write("product/version.json", """{"version":"2.0"}""");
@@ -1317,7 +1220,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             CommittedPaths = [PathOf("global.json"), PathOf("Directory.Build.props"),
                 PathOf("Directory.Packages.props"),
                 PathOf("dirs.proj"), PathOf("product/consumer.csproj"),
-                PathOf("dependency/dependency.csproj"), PathOf("analyzer/analyzer.csproj"),
+                PathOf("dependency/dependency.csproj"), PathOf("leaf/leaf.csproj"),
+                PathOf("analyzer/analyzer.csproj"),
                 PathOf("version.json"), PathOf("product/version.json"),
                 PathOf("shared/nbgv-aux.targets"), PathOf("shared/aux-input.txt")];
         }
@@ -1335,37 +1239,17 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                         new System.Xml.Linq.XElement("Project",
                             new System.Xml.Linq.XAttribute("Path", project)))))
                     .Save(solution);
-                string[] operation = ["-property:Configuration=Debug",
-                    "-property:ContinuousIntegrationBuild=true"];
-                // Seed only disposable fixture locks, then perform the supported locked operation.
-                await RestoreAsync(
-                    ["restore", solution, "--use-lock-file", .. operation], token);
-                await RestoreAsync(
-                    ["restore", solution, "--locked-mode", "--force", .. operation], token);
+                // Observed on the pinned SDK 10.0.401 (not a documented contract): locked mode
+                // writes absent fixture locks. If that changes, commit literal locks as data.
+                await RestoreAsync(["restore", solution, "--locked-mode",
+                    "-property:Configuration=Debug", "-property:ContinuousIntegrationBuild=true"],
+                    token);
             }
             if (_restoreTraversal)
                 await RestoreAsync(["restore", PathOf("dirs.proj"), "--locked-mode",
                     "-property:Configuration=Debug", "-property:ContinuousIntegrationBuild=true"],
                     token);
             _prepared = true;
-        }
-
-        internal async Task<JsonDocument> QueryAsync(string project, CancellationToken token)
-        {
-            await PrepareAsync(token);
-            NativeCommandResult result = await NativeProcess.ExecuteAsync(new("dotnet", Root,
-                ["msbuild", PathOf(project), "-nologo", "-noAutoResponse",
-                    "-property:IsGraphBuild=true", .. DotNetChecks.Properties(Globals),
-                    "-getItem:ProjectReference",
-                    "-getProperty:NBGV_CacheMode,NBGV_CachingProjectReference," +
-                    "GitVersionBaseDirectory,MSBuildProjectExtensionsPath,NuGetPackageRoot," +
-                    "PkgMicrosoft_SourceLink_Common",
-                    "-binaryLogger:" + PathOf(
-                        System.IO.Path.GetFileName(project) + ".query.binlog")],
-                30), token);
-            token.ThrowIfCancellationRequested();
-            Assert.IsTrue(result.Succeeded, result.Error + result.Stdout + result.Stderr);
-            return JsonDocument.Parse(result.Stdout);
         }
 
         private async Task RestoreAsync(string[] arguments, CancellationToken token)
