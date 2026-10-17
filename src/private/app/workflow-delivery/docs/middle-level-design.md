@@ -197,6 +197,9 @@ any relevant coverage limitation:
 - explicit extra inputs or cross-ecosystem relations unavailable from native tools;
 - effective project quality selection and available native check targets.
 
+`ProjectFacts.OwnedPaths` is optional: null retains existing nearest-directory
+ownership; a populated array names exact committed endpoint coordinates.
+
 Keep build-input dependencies and quality-consumer relationships distinguishable.
 A test project can implement another project's checks without becoming an input
 to that product's package or version. Resolve native references and imports using

@@ -57,9 +57,9 @@ Keep this physical subject local to the endpoint; portable checks retain only
 product globals. Quality adoption continues to use the product directory.
 Unsupported external or ambiguous native version contexts remain unavailable.
 
-`ProjectFacts.OwnedPaths` is optional: null retains existing nearest-directory
-ownership; a populated array names exact committed endpoint coordinates. The
-.NET adapter derives ordinary regions from native project directories, preserving
+The
+.NET adapter populates [`ProjectFacts.OwnedPaths`](../middle-level-design.md#minimum-facts).
+It derives ordinary regions from native project directories, preserving
 nearest-project ownership and multiple projects sharing a directory, and narrows
 them with native evaluated default excludes using the official MSBuild glob
 matcher. The traversal entry is a discovery input, never a repository-root owner.
