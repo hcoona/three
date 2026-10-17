@@ -2,7 +2,7 @@
 
 ## Question and Status
 
-This closed protocol qualified the application's composition of native graph
+This closed protocol defined qualification of the application's composition of native graph
 facts, native pytest configuration, official managed NBGV inputs, committed
 quality selection and input consumers. Its campaign and cleanup are complete;
 it supplies no current execution permission. Future work requires the
