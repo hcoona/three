@@ -137,8 +137,9 @@ evidence and recheck triggers. UV owns resolution, the resolved graph, workspace
 membership and `requires-python` enforcement; PyPA owns build-requirement
 strings and PEP 508 parsing; NBGV owns its semantics. Standard tomllib supplies
 physical key/shape guards only. There is no embedded UV library, settings
-interpreter, resolver or compatibility promise. A nonempty dependency group whose
-requirements a disjoint marker removes can lack a metadata node; that valid UV
+interpreter, resolver or compatibility promise. A nonempty flattened
+dependency group whose every requirement has a marker disjoint from the
+workspace Python range can lack a metadata node; that valid UV
 shape remains an unsupported
 [group-transfer gap](research/python-native-graph-qualification.md#failed-captures-and-counterexamples)
 with its recorded review obligation.

@@ -2,7 +2,7 @@
 
 ## Authority and Purpose
 
-Read this page before Workflow Delivery work. It routes work and retains closed
+Read this page before Workflow Delivery work. It routes work and retained
 operation limits; it is not a second specification. The [portal](README.md)
 identifies the owning records, and the [application interface](../README.md)
 owns current commands, callers and local validation. Read

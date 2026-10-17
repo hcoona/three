@@ -133,16 +133,16 @@ than a transplanted admission, approval-proof or replay implementation.
 
 ## Concrete Integration Contracts
 
-Changes to a concrete Release integration below preserve its contract and its
-governing native-invocation boundary. Review affected changes with independent
-engineering/OCR and record/research review before implementation. Run complete
-affected suites, HK/hooks and exact record checks, and qualify the final
-component/caller subject in ordinary CI on the integration's supported runner
-before delivery. Each integration lists its own controlled validation cases.
-These checks do not prove current OIDC, token or publisher configuration,
-hosted Release/feed or live registry behavior, or a new publication. They grant
-no publication, campaign replay, configuration change or postmerge test and
-reopen no stopped campaign.
+### Release Integration Review
+
+The [Concrete NuGet Buddy](#concrete-nuget-buddy-integration),
+[Python Release](#concrete-python-release-integration) and
+[Ruby Release](#concrete-ruby-release-integration) integrations share one review
+core: review affected changes with independent engineering/OCR and
+record/research review before implementation, run complete affected suites, HK
+and record checks, and qualify the final caller subject in ordinary CI before
+delivery. These checks do not prove a new publication. Each section states its
+own controlled validation cases, runner, additional checks and non-claims.
 
 ### Native Facts and First Supported Shapes
 
@@ -1131,11 +1131,14 @@ dry runs are supported; dry runs enter no write gate and make no live claim.
 Retained closed-campaign readers keep their actual historical consumers; there
 is no compatibility alias for old runtime schemas.
 
-Validate application journeys, authentication separation, cancellation,
-transfer/result completeness and official-client binding with controlled
-contract tests and real credential-free local native package/consumer tests,
-including affected managed/Python suites; ordinary Windows CI qualifies the
-caller.
+Changes follow the [shared review core](#release-integration-review) and preserve
+this contract and its governing native-invocation boundary. Validate application
+journeys, authentication separation, cancellation, transfer/result completeness
+and official-client binding with controlled contract tests and real
+credential-free local native package/consumer tests. Complete affected
+managed/Python suites and ordinary Windows CI before caller delivery. These
+checks do not prove new hosted Release/feed behavior or grant publication,
+campaign replay, configuration changes or postmerge tests.
 
 ### Concrete Python Release Integration
 
@@ -1281,12 +1284,15 @@ retains attempted effects, actual command outcomes, observed state and business
 satisfaction separately. Historical readers retain their actual consumers;
 there is no runtime-schema compatibility alias.
 
-Validate native command/configuration and output boundaries, original
+Changes follow the [shared review core](#release-integration-review). Validate
+native command/configuration and output boundaries, original
 preparation/consumption, partial-state order, failure-after-effect,
 cancellation, missing transfers and complete results with controlled contract
-tests and credential-free local builds/tests; ordinary Linux CI qualifies the
-final subject. The stopped Python package and publication campaigns stay
-closed.
+tests and credential-free local builds/tests. Run complete affected suites,
+HK/hooks and exact record checks. Ordinary Linux CI must qualify the final
+component/caller subject before delivery. These checks do not prove current OIDC
+configuration, live registry behavior or a new publication and do not reopen
+the stopped Python package or publication campaigns.
 
 ### Concrete Ruby Release Integration
 
@@ -1415,11 +1421,14 @@ with no publication credential acquisition or `gem push`. Exact/dry-run paths
 enter no write gate. The common result separates attempted effects, actual
 command outcomes, observed state and required business satisfaction.
 
-Controlled credential-free component tests and ordinary Linux CI must qualify
-native command/configuration/output boundaries, original
-build/inspection/consumption, failure-after-effect, cancellation, missing
-transfers and complete results on the final subject. Historical readers and
-spent campaigns remain intact; no runtime schema compatibility alias is added.
+Changes follow the [shared review core](#release-integration-review). Controlled
+credential-free component tests and ordinary Linux CI must qualify native
+command/configuration/output boundaries, original build/inspection/consumption,
+failure-after-effect, cancellation, missing transfers and complete results on
+the final subject. Run complete affected suites and repository HK/hooks/record
+checks. These checks do not establish current token/publisher configuration or
+a new live feed/publication. Historical readers and spent campaigns remain
+intact; no runtime schema compatibility alias is added.
 
 ## Current Integration Boundaries
 
