@@ -133,6 +133,17 @@ than a transplanted admission, approval-proof or replay implementation.
 
 ## Concrete Integration Contracts
 
+Changes to a concrete Release integration below preserve its contract and its
+governing native-invocation boundary. Review affected changes with independent
+engineering/OCR and record/research review before implementation. Run complete
+affected suites, HK/hooks and exact record checks, and qualify the final
+component/caller subject in ordinary CI on the integration's supported runner
+before delivery. Each integration lists its own controlled validation cases.
+These checks do not prove current OIDC, token or publisher configuration,
+hosted Release/feed or live registry behavior, or a new publication. They grant
+no publication, campaign replay, configuration change or postmerge test and
+reopen no stopped campaign.
+
 ### Native Facts and First Supported Shapes
 
 For each new integration, first identify its maintained native library or
@@ -581,18 +592,25 @@ cannot satisfy absent, skipped or failed obligations.
 
 The Workflow Delivery test project's native MTP configuration excludes the
 `NuGetNativePreparation` and `NuGetNativeScenarios` categories by default.
-The Windows CI preparation job owns the two preparation rows; its
-applicability follows the existing .NET/Workflow scope selection and its result
-consumer remains required. Same-input .NET
+The Windows `NuGet native preparation (Windows)` CI job owns the two
+preparation rows (real preparation, original package and clean consumer). Its
+applicability follows the existing .NET/Workflow scope selection, which covers
+any Workflow Delivery source or test change, the fixture product and shared
+.NET/CI inputs; Validate requires its result. Same-input .NET
 reproducibility was established once ([Issue #948](https://github.com/hcoona/three/issues/948),
 [PR #952](https://github.com/hcoona/three/pull/952)); by owner decision it is build-infrastructure behavior, not
 per-PR evidence. The Windows reproducibility workflow runs the three
-sensitivity/recovery tests on owner dispatch and on `main` pushes changing the
-SDK, shared MSBuild/NuGet/NBGV/Git inputs, NuGet Release/package adapter source
-or the fixture product; its run ID, source commit and 30-day artifact are the
-evidence carrier. The triggering PR's author, then the repository owner, owns a
-failed `main` run. Skipped intermediate `main` commits are acceptable because
-the next run covers the newer state; dispatch can target a specific commit.
+sensitivity/recovery tests (source and timestamp sensitivity, and one
+fresh-recovery test over exact and conflicting state) on owner dispatch and on
+`main` pushes changing the SDK, shared MSBuild/NuGet/NBGV/Git inputs, NuGet
+Release/package adapter source or the fixture product. Its run ID, source commit
+and 30-day artifact are the evidence carrier; no additional record is needed.
+The triggering PR's author, then the repository owner, owns a failed `main`
+run. Skipped intermediate `main` commits are acceptable because the next run
+covers the newer state; dispatch with `ref` can target a specific commit. Both
+Windows jobs retain original archives, DLLs, separate native portable PDBs,
+debug paths, TRX attachments and binlogs. `IncludeSymbols=false` does not
+promise a PDB inside the package. A run qualifies only its own source.
 Both override the default through MTP's ordinary command-line filter. Explicit
 local filters also override the default; this is project-owned test
 configuration, not a Workflow filter interpreter.
@@ -951,12 +969,9 @@ updates this table and its tests together.
 
 ### Destination Completion and Remaining Native Limits
 
-All destinations require complete native identity/version, required metadata and
-visibility, original-byte comparison of the downloaded served artifact and, before
-publication, local clean consumption of the qualified originals. Post-publication
-completion is that registry observation alone; no remote native install, restore
-or import runs after publication. Exact-state and newly published requests have
-the same completion conditions.
+The MLD's [post-publication completion](middle-level-design.md#post-publication-completion)
+contract applies to every destination; the table below owns each destination's
+concrete conditions and observation.
 
 | Existing destination/use         | Native completion conditions to preserve                                                                                                                          | Post-publication observation                                                                                                                               |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -967,12 +982,8 @@ the same completion conditions.
 | GitHub Packages Ruby Buddy       | Owner feed, native gem name/version/platform, index visibility and exact original `.gem`; safe signed storage redirect behavior                                   | Native selected-source specification for name/version/platform and downloaded `.gem` size/SHA-256 equal to the original                                    |
 | RubyGems.org Official            | Native gem name/version/platform, native index/API metadata, visibility and exact original `.gem`                                                                 | Native selected-source specification for name/version/platform and downloaded `.gem` size/SHA-256 equal to the original                                    |
 
-Byte equality carries the pre-publication qualification to the published state.
-It does not establish that a stock client's credentials, scoped-registry, feed or
-index routing, source mapping or dependency resolution install the published
-package, and these integrations make no such claim. Historical audits keep their
-original consumer tests.
-The table distinguishes the current mechanisms and required properties; it does
+The integrations make no stock-client routing or resolution claim, including
+scoped-registry routing. The table distinguishes the current mechanisms and required properties; it does
 not assert new platform guarantees or itself enable any remote operation.
 
 The [npm Buddy integration](../README.md#npm-buddy-release)
@@ -1120,14 +1131,11 @@ dry runs are supported; dry runs enter no write gate and make no live claim.
 Retained closed-campaign readers keep their actual historical consumers; there
 is no compatibility alias for old runtime schemas.
 
-Changes preserve this contract and its governing native-invocation boundary,
-with independent review before implementation. Validate application journeys, authentication separation, cancellation,
+Validate application journeys, authentication separation, cancellation,
 transfer/result completeness and official-client binding with controlled
-contract tests and real credential-free local native package/consumer tests.
-Complete affected managed/Python suites, HK, records, independent engineering/OCR
-and record/research reviews, and ordinary Windows CI before caller delivery.
-These checks do not prove new hosted Release/feed behavior or grant publication,
-campaign replay, configuration changes or postmerge tests.
+contract tests and real credential-free local native package/consumer tests,
+including affected managed/Python suites; ordinary Windows CI qualifies the
+caller.
 
 ### Concrete Python Release Integration
 
@@ -1273,15 +1281,12 @@ retains attempted effects, actual command outcomes, observed state and business
 satisfaction separately. Historical readers retain their actual consumers;
 there is no runtime-schema compatibility alias.
 
-Before implementing affected changes, review this contract with independent
-engineering/OCR and record/research review. Validate native command/configuration
-and output boundaries, original preparation/consumption, partial-state order,
-failure-after-effect, cancellation, missing transfers and complete results with
-controlled contract tests and credential-free local builds/tests. Run complete
-affected suites, HK/hooks and exact record checks. Ordinary Linux CI must qualify
-the final component/caller subject before delivery. These checks do not prove
-current OIDC configuration, live registry behavior or a new publication and do
-not reopen the stopped Python package or publication campaigns.
+Validate native command/configuration and output boundaries, original
+preparation/consumption, partial-state order, failure-after-effect,
+cancellation, missing transfers and complete results with controlled contract
+tests and credential-free local builds/tests; ordinary Linux CI qualifies the
+final subject. The stopped Python package and publication campaigns stay
+closed.
 
 ### Concrete Ruby Release Integration
 
@@ -1410,14 +1415,11 @@ with no publication credential acquisition or `gem push`. Exact/dry-run paths
 enter no write gate. The common result separates attempted effects, actual
 command outcomes, observed state and required business satisfaction.
 
-Before implementing affected changes, review this contract with independent
-engineering/OCR and record/research review. Controlled credential-free component
-tests and ordinary Linux CI must qualify native command/configuration/output
-boundaries, original build/inspection/consumption, failure-after-effect,
-cancellation, missing transfers and complete results on the final subject. Run complete affected suites and repository HK/hooks/record
-checks. These checks do not establish current token/publisher configuration or
-a new live feed/publication. Historical readers and spent campaigns remain
-intact; no runtime schema compatibility alias is added.
+Controlled credential-free component tests and ordinary Linux CI must qualify
+native command/configuration/output boundaries, original
+build/inspection/consumption, failure-after-effect, cancellation, missing
+transfers and complete results on the final subject. Historical readers and
+spent campaigns remain intact; no runtime schema compatibility alias is added.
 
 ## Current Integration Boundaries
 

@@ -156,20 +156,11 @@ receives bound qualified originals and uses the actual destination's native
 permission policy. Effective Environment configuration owns approval; the
 application does not mirror reviewers or re-prove platform approval.
 
-The publisher reobserves exact state and performs only still-needed supported
-native invocations. Failure, ambiguity or interruption stops later application
-mutation. Native transport retries retain their documented bounds; the
-application adds no retry or administrative repair loop. A separate no-write
-registry observation of each exact coordinate, with the downloaded served bytes
-equal to the qualified originals, establishes satisfaction separately from upload
-acknowledgement. No remote install or restore runs after publication; clean local
-consumption during preparation qualifies the originals. An absent result cannot prove publication never started.
-
-Ordinary recovery is a fresh request at the original source/control revision,
-with rebuilt qualification, fresh observation and current native authorization.
-It cannot combine repaired latest control with an old target, reuse approval,
-rewrite a terminal failure or perform deletion/yank/restoration. Registry
-semantics govern external writers; Actions concurrency is not a global lock.
+Completion, retry and recovery semantics are owned by the
+[requirements](docs/requirements.md#observation-retry-and-recovery), the MLD's
+[decision table](docs/middle-level-design.md#decision-table) and
+[recovery contract](docs/middle-level-design.md#recovery), and the
+[per-destination completion conditions](docs/migration-strategy.md#destination-completion-and-remaining-native-limits).
 
 ### Official npm Dry Run
 
@@ -199,28 +190,11 @@ invocation. A fresh registry observation and original-byte comparison run in a
 separate read-only verification job. A successful upload alone cannot satisfy
 the request.
 
-Ordinary CI's Windows `NuGet native preparation (Windows)` job runs the two
-`NuGetNativePreparation` rows (real preparation, original package and clean
-consumer) when the existing .NET/Workflow scope selection selects it, which
-covers any Workflow Delivery source or test change, the fixture product and
-shared .NET/CI inputs; Validate requires its result.
-
-Same-input .NET reproducibility was established once by
-[Issue #948](https://github.com/hcoona/three/issues/948) and [PR #952](https://github.com/hcoona/three/pull/952). By owner decision it is
-build-infrastructure behavior, not per-PR evidence. The
+The Windows `NuGet native preparation (Windows)` CI job and the
 [NuGet reproducibility workflow](../../../../.github/workflows/workflow-delivery-v3-nuget-reproducibility.yml)
-runs the three `NuGetNativeScenarios` tests (source and timestamp sensitivity,
-one fresh-recovery test over exact and conflicting state) on owner dispatch and
-on pushes to `main` that change
-the SDK, shared MSBuild/NuGet/NBGV/Git inputs, NuGet Release/package adapter
-source or the fixture product. The run itself (run ID, source commit and 30-day
-artifact) is the evidence carrier; no additional record is needed. The author of
-the triggering PR, then the repository owner, owns a failed `main` run.
-Concurrency may skip intermediate `main` commits; the next run covers the newer
-state, and a dispatch with `ref` can target a specific commit. Both jobs retain original
-archives, DLLs, separate native portable PDBs, debug paths, TRX attachments and
-binlogs. `IncludeSymbols=false` does not promise a PDB inside the package. A
-run qualifies only its own source.
+run the `NuGetNativePreparation` and `NuGetNativeScenarios` tests. Their
+triggers, evidence carrier, failure ownership and retained diagnostics are
+owned by the [native .NET CI group contract](docs/migration-strategy.md#planning-execution-and-collection).
 
 ### Ordinary Python Release
 
@@ -254,7 +228,7 @@ dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests
 ```
 
 The project's native MTP default excludes `NuGetNativePreparation` and
-`NuGetNativeScenarios`; the Windows jobs above own them. To run them locally,
+`NuGetNativeScenarios`; the Windows jobs named above own them. To run them locally,
 override the default with `--filter 'TestCategory=NuGetNativePreparation'
 --minimum-expected-tests 2` or `--filter 'TestCategory=NuGetNativeScenarios'
 --minimum-expected-tests 3`. An explicit filter replaces the default, so an

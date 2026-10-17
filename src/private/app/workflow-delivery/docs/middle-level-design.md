@@ -137,7 +137,11 @@ evidence and recheck triggers. UV owns resolution, the resolved graph, workspace
 membership and `requires-python` enforcement; PyPA owns build-requirement
 strings and PEP 508 parsing; NBGV owns its semantics. Standard tomllib supplies
 physical key/shape guards only. There is no embedded UV library, settings
-interpreter, resolver or compatibility promise.
+interpreter, resolver or compatibility promise. A nonempty dependency group whose
+requirements a disjoint marker removes can lack a metadata node; that valid UV
+shape remains an unsupported
+[group-transfer gap](research/python-native-graph-qualification.md#failed-captures-and-counterexamples)
+with its recorded review obligation.
 
 For each exact basis/candidate checkout, bind revision, workspace root,
 interpreter/tool identity and operation dimensions, then invoke
@@ -934,6 +938,7 @@ extra probe records.
 | Verified exact subset supported by the destination                    | Fresh request qualifies the complete set and plans only missing files | Pending until the full set is verified                              |
 | Conflicting bytes or unknown required state                           | No mutation                                                           | Unsatisfied or unknown, with the blocking reason                    |
 | Acknowledged upload and complete required verification                | No additional write                                                   | Satisfied; preserve the acknowledged command result                 |
+| Acknowledged upload with missing required verification                | No additional write                                                   | Unsatisfied or unknown; retain the successful command result        |
 | Failed/ambiguous native invocation and complete required verification | Stop application mutation; bounded reads only                         | Satisfied by observed state; preserve the command failure/ambiguity |
 | Failed/ambiguous native invocation with incomplete/uncertain state    | Stop application mutation; bounded reads only                         | Unsatisfied or unknown; fresh recovery may be possible              |
 | Interrupted publisher or missing result                               | No inferred retry                                                     | Effects may remain unknown unless native facts establish non-start  |
@@ -980,7 +985,7 @@ new revision; it cannot silently be combined with the old source for recovery.
 
 Conflicting bytes, unsupported partial state, missing necessary facts or required
 administrative operations need a separate operator decision. Normal release does
-not delete, restore, retarget, change access or compensate across registries. No
+not delete, yank, restore, retarget, change access or compensate across registries. No
 historical run discovery, permanent ledger or general repair engine is required.
 
 ## Workflow, Permission and Transfer Boundaries
@@ -1021,10 +1026,19 @@ writers remain governed by registry guarantees, not an application-wide lock.
 | Release preparation                      | Source/control revision, unit/channel/destination/mode, native versions, complete original files, qualification results and maximum intended writes | Actual files and qualified subject match the reviewed request          |
 | Prepared CLI                             | Selected control revision and immutable output with its same-run artifact ID and native integrity                                                   | Publisher executes the intended control artifact without rebuilding it |
 | Publication and verification result      | Attempted operations, raw responses/outcomes, required observations/checks and unresolved effects                                                   | Completion is supported; missing data does not prove non-start         |
+| Operator                                 | Scope, outcome, diagnostic reasons and supported next action                                                                                        | Preserve terminal outcomes; later requests cannot rewrite them         |
 
 These are consumer-specific typed contracts, not a universal envelope or one file
-per row. Keep data in memory when no real boundary requires transfer. Executors
-need their work, not a serialized copy of the entire repository graph.
+per row, recursive digest chains, approval certificates, a durable attempt
+aggregate or a record engine. Concrete JSON fields and command signatures follow
+actual implementation consumers. Internal formats may break; callers change or
+retire together without mandatory historical readers in the new core.
+Independently consumed helper messages may have static schemas generated from
+their actual serializer types; keep producer/consumer shape tests separate from
+native semantic tests. Do not mirror upstream native formats or introduce a
+runtime schema registry. Keep data in memory when no real boundary requires
+transfer. Executors need their work, not a serialized copy of the entire
+repository graph.
 
 Use same-run native immutable artifact IDs and native download integrity; reject
 missing, substituted or mismatched inputs. Display names and latest-artifact lookup
@@ -1037,7 +1051,10 @@ Retain qualified files and required request/results for approval waits and the
 supported operation window within platform limits. Concrete durations are workflow
 settings, reviewed with their caller. Expired required inputs block that operation.
 Fresh same-revision recovery may use current native state under its destination
-contract without requiring a permanent application record store.
+contract without requiring a permanent application record store. Optional
+telemetry failure does not undo an established result; missing required
+completion evidence leaves uncertainty. No permanent ledger or mandatory
+per-product GitHub Release is added.
 
 ## Validation and Integration
 

@@ -2,63 +2,23 @@
 
 ## Authority and Purpose
 
-Read this page before Workflow Delivery work. It routes the current internal
-application and retained operation limits; it is not a second specification.
-The [portal](README.md) identifies the owning records. Read
+Read this page before Workflow Delivery work. It routes work and retains closed
+operation limits; it is not a second specification. The [portal](README.md)
+identifies the owning records, and the [application interface](../README.md)
+owns current commands, callers and local validation. Read
 [requirements](requirements.md), [HLD](high-level-design.md),
 [MLD](middle-level-design.md) and [integration contract](migration-strategy.md)
-before affected design, implementation or caller changes. Use the current
-[application interface](../README.md) and actual native sources for operations.
+before affected design, implementation or caller changes, and use actual native
+sources for operations.
 
 The accepted [Wave](../../../../../docs/delivery-wave.md) is the sole positive
 work authority. Further substantive work requires an accepted entry. A PR,
 proposed document, research result, local observation or merged source cannot
-grant itself broader effects.
-Do not use Workflow v1/v2 to fill a V3 decision gap. Internal formats may break;
-there is no requirement to retain old readers in the new core.
-
-## Current Application and Callers
-
-CI and Release share native mechanisms in `src/private/app/workflow-delivery/`
-while retaining distinct business decisions. The existing root CI owns the
-native .NET, PNPM, Python and Ruby groups, selected retained checks and source
-conformance. Each group executes its original candidate-bound plan and collects
-all required results; it does not replan or silently broaden failed analysis.
-A Windows CI job runs the two native NuGet preparation rows when the existing
-.NET/Workflow scope selection selects it. The three sensitivity/fresh-recovery tests run in the
-Windows reproducibility workflow on owner dispatch and on `main`
-build-infrastructure changes; reproducibility is not per-PR evidence.
-
-Ordinary npm Buddy, Official npm simulation, NuGet Buddy, Python and Ruby
-callers compose the implemented internal CLI. Control precedes project
-execution. Native observation, conditional publication, separate registry readback
-of exact coordinates and original bytes, and truthful completion replace the former dynamic admission, approval mirror,
-marker and proof chain. Effective native Environment/identity/destination
-configuration owns publication authorization. Existing external resources and
-publisher registrations are unchanged by source retirement. Ordinary Ruby/Python/npm/NuGet
-caller inputs now belong to the existing C# CLI; native helpers retain native
-library operations. [Static wire descriptions](../Native/contracts/) are generated
-from consumed serializer types and have no compatibility promise.
-
-Finite CI callers also live in the existing C# application. Actions/native shell
-owns first control build, configured tools and artifact transfer; the C# scope
-caller reads record-catalog bindings and native task metadata. Ruby helper
-behavior runs in the quality-adopted native RSpec carrier. Linux managed Python/
-Ruby preparation scenarios run directly through .NET with native runner minimum
-counts and required Validate ownership; pytest is not their admission wrapper.
-
-Control input selection uses native source/configuration/reference facts without
-a fresh basis build or task-log interpreter. The separate default Debug
-control-resource query remains necessary because the full graph has different
-CI globals. The [integration contract](migration-strategy.md) owns these bounds.
-
-Products live under `tests/private/app/workflow-delivery/fixtures/products/`
-with ordinary native manifests, coordinates and quality declarations.
-`nbgv-python` and its sample remain independent. The old public Python control
-package, specialized provider/authority/consumer projects, scanner, admission
-configuration and closed campaign workflows are retired. Current historical
-readers use [actual producer-qualified source](validation/historical-readers.md).
-No compatibility tree, runtime replay service or parallel source authority is
+grant itself broader effects. Do not use Workflow v1/v2 to fill a V3 decision
+gap. Internal formats may break; there is no requirement to retain old readers
+in the new core. Historical readers use
+[actual producer-qualified source](validation/historical-readers.md); no
+compatibility tree, runtime replay service or parallel source authority is
 retained.
 
 ## Starting Work
@@ -67,17 +27,31 @@ retained.
    worker ownership, PR checks and unresolved findings. Preserve unrelated user
    changes. A missing process alone does not prove a worker is idle elsewhere.
 2. Read accepted repository AGENTS, governance, record policy and Wave before
-   depending on proposed changes. Follow the shared engineering guidance and
-   concern-specific review skills through their canonical paths.
+   depending on proposed changes. Follow the
+   [shared engineering guidance](../../../../../.github/skills/engineering-guidance/SKILL.md)
+   and concern-specific review skills through their canonical paths.
 3. Confirm affected requirements, native responsibility, transfer/permission
    boundaries, concrete integration contract and validation basis. New
    feasibility or material product/trust/cost tradeoffs return to the owner;
    do not compensate by implementing missing lower-layer guarantees.
-4. Prepare and validate complete affected changes before independent review.
-   Use the exact persisted session and bounded worktree when recovering a
-   worker, following [agent execution](../../../../../docs/engineering/agent-execution.md).
+4. Prepare and validate complete affected changes, including applicable tests,
+   root HK, hooks and `git diff --check`, before independent engineering/OCR,
+   record-system and research-evidence review. Use the exact persisted session
+   and bounded worktree when recovering a worker, following
+   [agent execution](../../../../../docs/engineering/agent-execution.md).
 5. Keep terminal outcomes, originals and source/run identities intact. Await
    terminal tool/worker output and verify evidence before dependent effects.
+
+Authors/implementers cannot satisfy their own independent gate. Every material
+finding requires distinct GOV-011 classification before it drives repair;
+unresolved owner decisions stay open. Return fixes to original reviewers until
+clear. For Workflow Delivery reviews, use `open-code-review-delegate`,
+including the complete Git manifest when OCR filtering omits documentation, and
+contract after every two review iterations, after changes/reviews and before PR
+preparation. The pinned
+[NuGet delivery retrospective](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/nuget-delivery-retrospective.md#next-agent-guide)
+retains practical Windows/PowerShell, timestamp, helper-basename and
+draft-path delivery lessons as historical lessons, not rules.
 
 ## Authorization and Closed Campaigns
 
@@ -86,8 +60,9 @@ Their operation slots, failed lifetimes and dispatch/recovery ceilings remain
 spent. No source change, artifact download, requirements revision, Wave
 contraction or evidence acceptance authorizes a new campaign generation, rerun,
 release/proving dispatch, publication, authentication, Environment, account,
-publisher or access change. Native experiments still require their exact
-accepted bounded protocol and effects authorization.
+publisher or access change. Existing external resources and publisher
+registrations are unchanged by source retirement. Native experiments still
+require their exact accepted bounded protocol and effects authorization.
 
 Ordinary CI/PR delivery is separate from a release request. Local or controlled
 checks establish only their actual application/tool/environment scope. They do
@@ -144,45 +119,3 @@ destinations, original publication/consumer observations and spent bootstrap,
 native, normal and recovery slots. Linux caller qualification does not claim
 Windows Ruby operations or deployed authentication/destination behavior.
 The old operation CLI and bootstrap entry are not fallback execution paths.
-
-## Design, Testing and Delivery Discipline
-
-Rely on maintained native platforms and ecosystem interfaces within their
-actual contracts. Application bindings and results remain its responsibility;
-platform trust does not invent missing guarantees. Add abstractions only for
-concrete independent responsibilities. Keep unsupported necessary shapes
-explicit, rather than adding an unbounded queue, cache, scheduler, dynamic
-policy/admission service or general recovery engine.
-The pinned [NuGet delivery retrospective](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/nuget-delivery-retrospective.md#next-agent-guide)
-retains practical Windows/PowerShell, timestamp, helper-basename and
-draft-path delivery lessons as historical lessons, not rules.
-
-Persist data for an actual permission/process/transfer/interruption consumer.
-Use typed values inside a trusted invocation and immutable native artifact
-identity across jobs. Consumers and project code have no publication capability.
-Native source metadata varies by ecosystem and cannot replace required original
-byte/state checks. Same-input reproducibility does not imply cross-commit byte
-equality. Ordinary recovery rebuilds at the original source/control revision;
-it cannot combine latest control with an older target or erase earlier failure.
-
-Validate complete affected business scenarios, native integration assumptions,
-real transfer contracts, missing/cancelled/unknown outcomes and selected scope.
-Use focused tests for impact and outcome logic. Do not retain tests solely for
-retired internal records or re-proving supported platform approval/scheduling.
-Run applicable complete tests, root HK, hooks and `git diff --check` before
-independent engineering/OCR, record-system and research-evidence review.
-
-Authors/implementers cannot satisfy their own independent gate. Every material
-finding requires distinct GOV-011 classification before it drives repair;
-unresolved owner decisions stay open. Return fixes to original reviewers until
-clear. Use `open-code-review-delegate`, including the complete Git manifest
-when OCR filtering omits documentation. Contract after every two review
-iterations, after changes/reviews and before PR preparation.
-
-Keep repository code, comments, commits and records in English. Current pages
-own current interfaces and route to canonical contracts. Git and PR/Issue
-carriers retain chronology; do not add retry ledgers, test-count histories or
-session machinery to current pages or the Wave. Preserve unique human facts,
-licenses, actual producer source and original failures before retirement.
-Use the accepted Wave and record policy for work authorization and its
-termination.
