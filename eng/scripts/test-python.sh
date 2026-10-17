@@ -55,10 +55,19 @@ directory=$(realpath -m "$directory")
 }
 mkdir -p "$directory"
 # Report retained state on success and failure; remove only what this run created.
+# The run registers Git worktrees under the state directory (the control checkout and the
+# full group's endpoints); remove each registered one before deleting the directory.
 report_retained_state() {
+  local line path removal=''
   echo "Retained full Python group state: $directory"
-  printf 'Remove it when finished: git -C %q worktree remove --force %q; rm -rf %q\n' \
-    "$repository" "$directory/control-checkout" "${created_root:-$directory}"
+  while IFS= read -r line; do
+    [[ $line == 'worktree '* ]] || continue
+    path=${line#worktree }
+    [[ $path == "$directory/"* ]] || continue
+    removal+=$(printf 'git -C %q worktree remove --force %q && ' "$repository" "$path")
+  done < <(git -C "$repository" worktree list --porcelain 2>/dev/null || true)
+  printf 'Remove it when finished: %sgit -C %q worktree prune && rm -rf %q\n' \
+    "$removal" "$repository" "${created_root:-$directory}"
 }
 trap report_retained_state EXIT
 echo "Full Python group at commit $candidate; results: $directory"

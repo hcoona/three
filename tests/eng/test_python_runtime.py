@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 import shlex
 import shutil
 import subprocess
@@ -175,3 +176,79 @@ def test_native_full_launcher_rejects_invalid_source_before_bootstrap(
     assert result.returncode == 2, result.stderr
     assert not (state / "control-checkout").exists()
     assert not (root / "state").exists()
+
+
+def test_native_full_launcher_reports_complete_worktree_cleanup(tmp_path):
+    """Print removal of every registered worktree, even after a failure."""
+    root = tmp_path / "source"
+    root.mkdir()
+    native_git = shutil.which("git")
+    native_bash = shutil.which("bash")
+    assert native_git is not None
+    assert native_bash is not None
+
+    def git(*arguments):
+        return subprocess.run(  # noqa: S603 - Native Git and this test's owned fixture.
+            [native_git, "-C", str(root), *arguments],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+
+    git("init", "-q")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    (root / "source.py").write_text("committed = True\n")
+    git("add", "source.py")
+    git(
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgSign=false",
+        "commit",
+        "-qm",
+        "Fixture",
+    )
+    # The bootstrap stand-in registers a group endpoint worktree, then fails.
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    pwsh = tools / "pwsh"
+    pwsh.write_text(
+        "#!/usr/bin/env bash\n"
+        'state="$(dirname "$PWD")"\n'
+        f'"{native_git}" -C "{root}" worktree add -q --detach '
+        '"$state/group/basis" HEAD\n'
+        "exit 3\n"
+    )
+    pwsh.chmod(0o755)
+    state = (tmp_path / "state").resolve()
+    path = f"{tools}{os.pathsep}{os.environ['PATH']}"
+    environment = {**os.environ, "PATH": path}
+    result = subprocess.run(  # noqa: S603 - Exact native launcher and fixture.
+        [
+            native_bash,
+            str(ROOT / "eng/scripts/test-python.sh"),
+            "--repository",
+            str(root),
+            "--directory",
+            str(state),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=root,
+        env=environment,
+    )
+    assert result.returncode == 3, result.stderr
+    removal = next(
+        line.removeprefix("Remove it when finished: ")
+        for line in result.stdout.splitlines()
+        if line.startswith("Remove it when finished: ")
+    )
+    assert str(state / "control-checkout") in removal
+    assert str(state / "group" / "basis") in removal
+    assert removal.endswith(f"rm -rf {state}")
+    subprocess.run([native_bash, "-c", removal], check=True)  # noqa: S603
+    assert not state.exists()
+    listed = git("worktree", "list", "--porcelain")
+    assert str(state) not in listed
