@@ -257,7 +257,7 @@ const FAILURE_CASES = [
   stage: StageName;
 }[];
 
-describe.sequential('production pipeline failure worker', () => {
+describe('production pipeline failure worker', { concurrent: false }, () => {
   let hexoInstance: HexoTestInstance;
   let workspace: string;
 
