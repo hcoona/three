@@ -398,6 +398,12 @@ public sealed class DotNetPackageNativeTests(TestContext context)
 
         private static void Cleanup(string root)
         {
+            if (OperatingSystem.IsWindows())
+            {
+                // NBGV 3.10.94 leaves objects/info/alternates open until finalization.
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
             foreach (string path in Directory.EnumerateFiles(
                 root, "*", SearchOption.AllDirectories))
                 File.SetAttributes(path, FileAttributes.Normal);
