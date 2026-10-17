@@ -38,7 +38,7 @@ repository=$(realpath "$repository")
 candidate=$(git -C "$repository" rev-parse HEAD)
 created_root=''
 if [[ -z $directory ]]; then
-  # Results are retained for inspection, so keep them off memory-backed /tmp.
+  # Results are retained for inspection, so keep them in the user cache, not tmpfs.
   state_root=${XDG_CACHE_HOME:-$HOME/.cache}/three/python-full
   mkdir -p "$state_root"
   created_root=$(mktemp -d "$state_root/$(date -u +%Y%m%dT%H%M%SZ)-XXXXXXXX")
