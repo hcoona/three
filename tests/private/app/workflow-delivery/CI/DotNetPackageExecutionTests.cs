@@ -68,6 +68,8 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
             item.QualityPresets.SequenceEqual([DotNetPackageChecks.Preset]) &&
             item.Work.Package!.ExpectedVersion == "1.0.0"));
         NativeCommand projection = Assert.ContainsSingle(fixture.Commands);
+        Assert.AreEqual("msbuild --disable-build-servers",
+            string.Join(' ', projection.Arguments[..2]));
         Assert.Contains("-target:GetBuildVersion", projection.Arguments);
         Assert.AreEqual("space%3Bsemi%25percent", projection.Arguments.Single(argument =>
             argument.StartsWith("-property:Probe=", StringComparison.Ordinal))
@@ -205,6 +207,14 @@ public sealed class DotNetPackageExecutionTests(TestContext context)
         Assert.AreEqual(new FileInfo(package.Path).Length, package.Size);
         Assert.AreEqual(DotNetPackageArchive.Digest(package.Path), package.Sha256);
         Assert.HasCount(4, result.Commands);
+        // Pack, consumer restore and consumer build own their native process trees; the
+        // final command runs the consumer output itself.
+        Assert.AreEqual("msbuild restore msbuild", string.Join(' ', result.Commands.Take(3)
+            .Select(item => item.Command.Arguments[0])));
+        Assert.IsTrue(result.Commands.Take(3).All(item => item.Command.Executable == "dotnet" &&
+            item.Command.Arguments[1] == "--disable-build-servers"));
+        CollectionAssert.AreEqual(new[] { Assert.ContainsSingle(result.ConsumerOutputs).Path },
+            result.Commands[3].Command.Arguments);
         Assert.Contains("-property:Configuration=Debug", result.Commands[0].Command.Arguments);
         Assert.AreEqual("space%3Bsemi%25percent", result.Commands[0].Command.Arguments.Single(
             argument => argument.StartsWith("-property:Probe=", StringComparison.Ordinal))

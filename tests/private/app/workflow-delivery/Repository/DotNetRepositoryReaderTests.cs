@@ -37,7 +37,8 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
         Assert.Contains("linked/data.txt", result.Inputs.Select(input => input.Path));
         Assert.IsNotNull(observed);
         Assert.AreEqual(fixture.Root, observed.Directory);
-        CollectionAssert.AreEqual(new[] { "msbuild", files.Wrapper, "-nologo", "-noAutoResponse",
+        CollectionAssert.AreEqual(new[] { "msbuild", "--disable-build-servers", files.Wrapper,
+            "-nologo", "-noAutoResponse",
             "-target:Read" }, observed.Arguments);
         DotNetGraphRequest request = JsonSerializer.Deserialize(await File.ReadAllTextAsync(
             files.Request, context.CancellationToken), TransferJson.Default.DotNetGraphRequest)!;

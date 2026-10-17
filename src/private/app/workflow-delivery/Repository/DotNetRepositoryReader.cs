@@ -90,7 +90,8 @@ internal sealed class DotNetRepositoryReader
         await using (var writer = new StreamWriter(output))
             await writer.WriteAsync(wrapper.AsMemory(), token);
         NativeCommandResult result = await query(new("dotnet", checkout.Root,
-            ["msbuild", files.Wrapper, "-nologo", "-noAutoResponse", "-target:Read"],
+            ["msbuild", DotNetCli.DisableBuildServers, files.Wrapper, "-nologo",
+                "-noAutoResponse", "-target:Read"],
             files.DeadlineSeconds), token);
         token.ThrowIfCancellationRequested();
         if (!result.Succeeded)

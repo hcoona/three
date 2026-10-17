@@ -85,13 +85,15 @@ internal static class DotNetPackageConsumer
         await File.WriteAllTextAsync(Path.Combine(consumer, "Program.cs"),
             "System.Console.WriteLine(HcoonaReleaseSmokeGithubPackages.Smoke.ProjectId);", token);
         await run(new("dotnet", consumer,
-            ["restore", project, "--configfile", config, "--packages", packages],
+            ["restore", DotNetCli.DisableBuildServers, project, "--configfile", config,
+                "--packages", packages],
             deadline, environment), token);
         string assetsPath = Path.Combine(consumer, "obj", "project.assets.json");
         RequireAssets(assetsPath, project, packages, feed, config, identity, original);
         string response = Path.Combine(consumer, "build.json");
         await run(new("dotnet", consumer,
-            ["msbuild", project, "-nologo", "-noAutoResponse", "-target:Build,GetTargetPath",
+            ["msbuild", DotNetCli.DisableBuildServers, project, "-nologo", "-noAutoResponse",
+                "-target:Build,GetTargetPath",
                 "-getTargetResult:Build,GetTargetPath", "-getResultOutputFile:" + response],
             deadline, environment), token);
         using JsonDocument document = await DotNetPackageResults.ResponseAsync(response, token);

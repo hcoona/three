@@ -42,6 +42,10 @@ public sealed class DotNetExecutionTests(TestContext context)
             string.Join("; ", result.Failures.Select(failure => failure.Error)));
         Assert.HasCount(2, fixture.Commands);
         Assert.HasCount(2, result.Outputs);
+        // Neither wrapper may leave reusable MSBuild nodes or compiler servers behind.
+        foreach (NativeCommand command in fixture.Commands)
+            Assert.AreEqual("msbuild --disable-build-servers",
+                string.Join(' ', command.Arguments[..2]));
     }
 
     [TestMethod]

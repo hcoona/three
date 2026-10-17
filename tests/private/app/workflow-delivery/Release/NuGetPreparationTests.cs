@@ -47,6 +47,14 @@ public sealed class NuGetPreparationTests(TestContext context)
             item.Id == "pack").Status);
         Assert.Contains("original native archive set", string.Join(";", result.Errors));
         Assert.IsTrue(result.Commands.All(item => item.Result.Succeeded));
+        // Only the SDK selection query runs without MSBuild; every MSBuild command, including
+        // restore, owns its native process tree.
+        Assert.AreEqual("--version", string.Join(' ', result.Commands[0].Command.Arguments));
+        ReleaseCommand[] native = result.Commands.Skip(1).ToArray();
+        Assert.AreEqual("restore msbuild msbuild msbuild msbuild",
+            string.Join(' ', native.Select(item => item.Command.Arguments[0])));
+        Assert.IsTrue(native.All(item => item.Command.Executable == "dotnet" &&
+            item.Command.Arguments[1] == "--disable-build-servers"));
     }
 
     [TestMethod]

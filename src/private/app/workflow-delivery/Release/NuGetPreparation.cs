@@ -93,11 +93,13 @@ internal static class NuGetPreparation
                     environment, false))).Stdout.Trim() != selected)
                 throw new InvalidDataException("Actual SDK differs from committed selection.");
             await RunAsync("native-input", new("dotnet", checkout,
-                ["restore", project, "--locked-mode", "-property:Configuration=Release",
+                ["restore", DotNetCli.DisableBuildServers, project, "--locked-mode",
+                    "-property:Configuration=Release",
                     "-property:ContinuousIntegrationBuild=true"], 300, environment, false));
             using JsonDocument shape = JsonDocument.Parse((await RunAsync("native-input",
-                new("dotnet", checkout, ["msbuild", project, "-nologo", "-noAutoResponse",
-                    "-property:Configuration=Release", "-property:ContinuousIntegrationBuild=true",
+                new("dotnet", checkout, ["msbuild", DotNetCli.DisableBuildServers, project,
+                    "-nologo", "-noAutoResponse", "-property:Configuration=Release",
+                    "-property:ContinuousIntegrationBuild=true",
                     "-getProperty:TargetFramework,TargetFrameworks,RuntimeIdentifier," +
                     "RuntimeIdentifiers,IsTestProject,IsTestingPlatformApplication"],
                     60, environment, false))).Stdout);
@@ -156,8 +158,8 @@ internal static class NuGetPreparation
             [.. commands], [.. errors]);
 
         NativeCommand Query(string targets, string response, string[]? extra = null) => new(
-            "dotnet", checkout, ["msbuild", project, "-nologo", "-noAutoResponse",
-                "-target:" + targets, "-getTargetResult:" + targets,
+            "dotnet", checkout, ["msbuild", DotNetCli.DisableBuildServers, project, "-nologo",
+                "-noAutoResponse", "-target:" + targets, "-getTargetResult:" + targets,
                 "-getProperty:" + string.Join(',', DotNetPackageResults.NativeProperties),
                 "-getResultOutputFile:" + response, .. Dimensions,
                 "-property:PathMap=" + ProjectCollection.Escape(checkout + "=/_/"),
