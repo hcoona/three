@@ -663,7 +663,7 @@ The changed files were read in full. None changes a consumed result:
   holding a `.git` directory or `pnpm-workspace.yaml`. Upstream
   [commit `a9c9a2fa`](https://github.com/pnpm/pnpm/commit/a9c9a2fa0e24c1d6889b80fda6976b7863768f17)
   limits this to Cargo/Python ecosystem discovery. PNPM project discovery does
-  not call that walk; the runtime check below confirms it.
+  not call that walk; an unadmitted local observation below corroborates it.
 - The [lock writer][recheck2-packages] records a non-registry `version` only when
   it is a valid package version. Directory resolutions still omit it.
 - The [local resolver][recheck2-local-resolver] reports an unsupported protocol for
@@ -691,7 +691,7 @@ Release-note changes outside these files that bear on the composition:
   for workspaces with config-dependency hooks, not a runtime observation. The
   repository has no pnpmfile or `configDependencies`.
 
-**Local CLI observations.** The pinned executable
+**Unadmitted local CLI observations.** The pinned executable
 (`mise exec --locked pnpm`, lock tarball checksum
 `sha256:358f30541b42371360c0d48a8daddc0c0850a90c36fcbea598032a9850e2c9ab`,
 executable SHA256
@@ -714,6 +714,15 @@ fixtures probed nested checkouts and directory-selector subtree behaviour. The
 same queries under the previously pinned 12.9.0 executable produced
 byte-identical outputs for all three main runs and equal results for both probes.
 
+The repository owner assigned this recheck, and the current Wave permits its
+local, credential-free effects. However, no concrete experiment protocol was
+accepted before the fixture installs, the queries or the 12.9.0 comparison ran.
+These local CLI results are therefore unadmitted working observations. They
+corroborate, but do not establish, the source findings above. The recheck's
+conclusions rest on the source comparison and the release notes. Retaining the
+results does not admit them retroactively. An admitted runtime result would
+require a separately accepted protocol and a rerun.
+
 | 12.9.0-era conclusion                                                         | 12.11.2 result                                                                                                                                                                                                                                                                                                              |
 | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Layout queries: unset/shared settings render as JSON values                   | Holds: `true` for the shared setting and `null` for `lockfile-dir` in fixture and repository                                                                                                                                                                                                                                |
@@ -725,12 +734,12 @@ byte-identical outputs for all three main runs and equal results for both probes
 | Explicit `link:` path names the publish directory                             | Holds in the singleton list; `--only-projects` maps it to the source root                                                                                                                                                                                                                                                   |
 | Local tarball: ordinary version plus `resolved: file:<path>`                  | Holds; it is not a directory coordinate                                                                                                                                                                                                                                                                                     |
 | `--only-projects` omits package-snapshot edges                                | Holds for the `file:` and injected-peer edges                                                                                                                                                                                                                                                                               |
-| Injected peer library is a directory snapshot                                 | Observed with one provider context; the peer-variant suffix appears in the installation path, not in `version`                                                                                                                                                                                                              |
+| Injected peer library is a directory snapshot                                 | Holds by source (lock writer, directory resolution and coordinate format unchanged); corroborated by an unadmitted local observation with one provider context, where the peer-variant suffix appears in the installation path, not in `version`                                                                            |
 | Singleton full query keeps a transitive local input                           | Holds: the top consumer reaches the publish-directory coordinate at depth 2                                                                                                                                                                                                                                                 |
 | Wanted-lock queries ignore stale installed relations                          | Holds: after the base install, candidate queries returned candidate relations; the removed transitive relation and deleted project were absent                                                                                                                                                                              |
 | Installed extraneous packages appear as `unsavedDependencies`                 | Holds: each singleton listing carried the extraneous root package in that group                                                                                                                                                                                                                                             |
 | `pkg get <field> --json` returns the native value or nothing                  | Holds: `"dist output"`, then `"build output"` in the candidate; absent fields produced no output; repository `scripts` returned objects                                                                                                                                                                                     |
-| New: membership still lists members containing nested checkouts               | Holds at runtime: members holding a `.git` directory or `pnpm-workspace.yaml` are still listed                                                                                                                                                                                                                              |
+| New: membership still lists members containing nested checkouts               | Holds by source (PNPM project discovery does not call the pruned walk); corroborated by an unadmitted local observation in which members holding a `.git` directory or `pnpm-workspace.yaml` were still listed                                                                                                              |
 | Depth-256 cutoff without truncation flag                                      | Unchanged source; not exercised (the repository's deepest walked level is 11)                                                                                                                                                                                                                                               |
 | NAPI, embedded-runtime and v11 helper findings                                | Not rechecked: unselected and outside the trigger                                                                                                                                                                                                                                                                           |
 | 12.9.0 preparation-gate and recursive `pkg get` findings                      | Hold; 12.10.0 now forwards `--config.*` tokens to a verify-deps install, and the adopted executor still disables that gate                                                                                                                                                                                                  |
@@ -745,8 +754,8 @@ PNPM. The repository has no local entry for real-repository Node planning: the
 Node caller runs only from CI scope artifacts. The repository queries above stand
 in for that read and are not caller qualification.
 
-These are bounded source findings and local CLI observations for the tested
-fixture shapes at 12.11.2. They are not complete upstream equivalence, hosted
+These are bounded source findings at 12.11.2, corroborated by unadmitted local
+CLI observations of the tested fixture shapes. They are not complete upstream equivalence, hosted
 qualification or Windows evidence. Unobserved shapes keep their limits: hoisted
 or global virtual stores, dedicated lock layouts, absolute-path preservation,
 multiple peer contexts and updateConfig-hook filters. The earlier observation
