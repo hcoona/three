@@ -1,3 +1,4 @@
+using System.Text.Json;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
@@ -103,6 +104,8 @@ public sealed class CiScopeTests
         "record-regression:records:test")]
     [DataRow(".github/CODEOWNERS", "github", "native-codeowners-routing")]
     [DataRow("hk.pkl", "conformance", "native-hk-configuration")]
+    [DataRow("src/private/lib/hk/Config.pkl", "conformance", "native-hk-configuration")]
+    [DataRow("src/private/lib/hk/steps/Typos.pkl", "conformance", "native-hk-configuration")]
     [DataRow("renovate.json", "python", "configured-python-runtime-input")]
     [DataRow("mise.lock", "mise", "retained-special-job-input")]
     [DataRow("eng/native-resource.json", "dotnet", "native-embedded-resource")]
@@ -113,7 +116,7 @@ public sealed class CiScopeTests
         string rule)
     {
         ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path],
-            ["eng/native-resource.json"], [("delivery-wave", "docs/delivery-wave.md")], Tasks));
+            ["eng/native-resource.json"], [("delivery-wave", "docs/delivery-wave.md")], Tasks, Hk));
         Assert.IsTrue(row.Present);
         Assert.IsTrue(row.Reasons.Any(reason => reason.Owner == owner && reason.Rule == rule),
             string.Join(", ", row.Reasons.Select(reason => reason.Owner + ":" + reason.Rule)));
@@ -129,7 +132,7 @@ public sealed class CiScopeTests
         // PEP 723 record-task scripts run under their mise task; the Python group cannot
         // resolve them, so a Python reason would fail its planning (PR #1226).
         ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
-            [], Tasks));
+            [], Tasks, Hk));
         ScopeResponsibility reason = Assert.ContainsSingle(row.Reasons);
         Assert.AreEqual("record-system", reason.Owner);
         Assert.AreEqual(path, reason.Target);
@@ -144,11 +147,11 @@ public sealed class CiScopeTests
     {
         // Without native record-task metadata the path is an ordinary Python caller input.
         ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
-            [], []));
+            [], [], Hk));
         Assert.AreEqual("python", Assert.ContainsSingle(row.Reasons).Owner);
         // Other tests/eng paths keep their Python responsibility.
         row = Assert.ContainsSingle(CiScope.Owners(Revision("tests/eng/test_typos_config.py"),
-            ["tests/eng/test_typos_config.py"], [], [], Tasks));
+            ["tests/eng/test_typos_config.py"], [], [], Tasks, Hk));
         Assert.AreEqual("python", Assert.ContainsSingle(row.Reasons).Owner);
     }
 
@@ -161,7 +164,7 @@ public sealed class CiScopeTests
         // A root gemspec is not a retained owner of every repository path.
         ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(
             Revision(path, "root.gemspec"), [path], [],
-            [("delivery-wave", "docs/delivery-wave.md")], Tasks));
+            [("delivery-wave", "docs/delivery-wave.md")], Tasks, Hk));
         Assert.IsTrue(row.Present);
         Assert.IsEmpty(row.Reasons);
     }
@@ -170,7 +173,8 @@ public sealed class CiScopeTests
     public void AbsentCoordinatesAreConfirmedAbsenceWithoutReasons()
     {
         ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(),
-            ["docs/delivery-wave.md"], [], [("delivery-wave", "docs/delivery-wave.md")], Tasks));
+            ["docs/delivery-wave.md"], [], [("delivery-wave", "docs/delivery-wave.md")], Tasks,
+            Hk));
         Assert.IsFalse(row.Present);
         Assert.IsNull(row.Mode);
         Assert.IsEmpty(row.Reasons);
@@ -222,6 +226,58 @@ public sealed class CiScopeTests
         Assert.IsTrue(CiScope.Select([], Comparison(), true, []).NuGetNativePreparation);
     }
 
+    [TestMethod]
+    public void NativeHkImportsNameTheLocalConfigurationModules()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "hk root");
+        string json = $$$"""
+            {"imports":{
+              "{{{FileUri(root, "hk.pkl")}}}":[
+                {"uri":"{{{FileUri(root, "src/private/lib/hk/Config.pkl")}}}"},
+                {"uri":"{{{FileUri(root, "src/private/lib/hk/Steps.pkl")}}}"}],
+              "{{{FileUri(root, "src/private/lib/hk/Config.pkl")}}}":[
+                {"uri":"package://github.com/jdx/hk/releases/download/v2.6.0/hk@2.6.0#/x.pkl"}],
+              "{{{FileUri(root, "src/private/lib/hk/Steps.pkl")}}}":[
+                {"uri":"{{{FileUri(root, "src/private/lib/hk/steps/Typos.pkl")}}}"},
+                {"uri":"pkl:json"}],
+              "{{{FileUri(root, "src/private/lib/hk/steps/Typos.pkl")}}}":[]},
+             "resolvedImports":{
+              "{{{FileUri(root, "hk.pkl")}}}":"{{{FileUri(root, "hk.pkl")}}}"}}
+            """;
+        CollectionAssert.AreEqual(LocalHkModules, CiScope.HkModules(json, root));
+    }
+
+    [TestMethod]
+    [DataRow("{}")]
+    [DataRow("[]")]
+    [DataRow("""{"imports":[],"resolvedImports":{}}""")]
+    [DataRow("""{"imports":{},"resolvedImports":{}}""")]
+    [DataRow("""{"imports":{"ROOT":{}},"resolvedImports":{}}""")]
+    [DataRow("""{"imports":{"ROOT":[{}]},"resolvedImports":{}}""")]
+    [DataRow("""{"imports":{"ROOT":[{"uri":"https://example.com/x.pkl"}]},"resolvedImports":{}}""")]
+    [DataRow("""{"imports":{"ROOT":[{"uri":"OUTSIDE"}]},"resolvedImports":{}}""")]
+    [DataRow("""{"imports":{"ROOT":[]},"resolvedImports":{"ROOT":1}}""")]
+    [DataRow("not json")]
+    public void UnreadableHkImportsFailInsteadOfDroppingResponsibility(string json)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "hk root");
+        json = json.Replace("ROOT", FileUri(root, "hk.pkl"), StringComparison.Ordinal)
+            .Replace("OUTSIDE", FileUri(Path.GetTempPath(), "outside.pkl"),
+                StringComparison.Ordinal);
+        Exception error = Assert.Throws<Exception>(() => CiScope.HkModules(json, root));
+        Assert.IsTrue(error is InvalidDataException or JsonException, error.ToString());
+    }
+
+    private static string FileUri(string root, string path) =>
+        new Uri(Path.GetFullPath(Path.Combine(root, path))).AbsoluteUri;
+
+    private static readonly string[] LocalHkModules = ["hk.pkl",
+        "src/private/lib/hk/Config.pkl", "src/private/lib/hk/Steps.pkl",
+        "src/private/lib/hk/steps/Typos.pkl"];
+
+    private static readonly string[] Hk = ["hk.pkl", "src/private/lib/hk/Config.pkl",
+        "src/private/lib/hk/steps/Typos.pkl"];
+
     private static readonly RecordTaskOwner[] Tasks = [
         new("eng/scripts/check_repository_records.py",
             "record-control:repository-record-validation"),
@@ -231,6 +287,7 @@ public sealed class CiScopeTests
         [.. new[] { ".github/workflows/ci.yml", "hk.pkl", "mise.toml", "pyproject.toml",
                 "tests/eng/test_python_runtime.py", "Gemfile", "src/lib/gem/gem.gemspec",
                 "dirs.proj", "apm.yml", ControlTestInputs.Project,
+                "src/private/lib/hk/Config.pkl", "src/private/lib/hk/steps/Typos.pkl",
                 "src/private/lib/scholarly-publication/pyproject.toml",
                 CiScope.FamilyCatalog }
             .Concat(paths).Distinct(StringComparer.Ordinal)
