@@ -59,7 +59,8 @@ entry point. The [first reader row](#producer-qualified-readers) routes the actu
 producer's code, catalog, request and setup source separately from the later
 interpretation protocol and last-source navigation. Historical `replay`,
 `archive` and `digest` contracts, including the static catalog, are recoverable
-at their exact source revisions with the original evidence; the current
+at their exact source revisions with the original evidence. Use the map's
+producer-qualified closure when interpreting historical archives; the current
 application supplies no replay or compatibility service. Historical replay
 validates supplied bytes and lineage; it cannot recreate missing captures, prove
 provenance by itself or upgrade the failed verdict. Existing replay may run local
@@ -76,7 +77,9 @@ Git source, not as current runtime or resource-establishment callers. The
 configured native publisher remains an external resource until a separately
 authorized configuration change removes it; producer retirement and protocol
 retirement neither claim nor imply its deletion or other service configuration
-change.
+change. The former separate records are pinned as the
+[retired tooling boundary](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/validation/python-native-readiness.md) and
+[retired acceptance protocol](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/validation/python-native-acceptance.md).
 
 ## Interpretation and outcomes
 
