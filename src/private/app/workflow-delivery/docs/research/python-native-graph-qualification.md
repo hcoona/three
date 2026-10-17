@@ -129,6 +129,10 @@ checks the result. Necessary material effects or product changes outside this
 protocol stop for owner disposition. Routine repetitions within its accepted
 finite boundary need no repeated owner approval.
 
+The repository UV pin later moved to 0.13.x. That change is not evaluated for
+this UV 0.12.23 record; it falls to the record's stated fallback, the next
+integration review.
+
 [uv-group-owner]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-workspace/src/workspace.rs#L2331
 [uv-group-install]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/project/install_target.rs#L138
 [uv-group-presence]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-workspace/src/dependency_groups.rs#L30

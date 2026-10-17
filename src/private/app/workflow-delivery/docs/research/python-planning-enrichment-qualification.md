@@ -112,3 +112,7 @@ change, or at the next integration review. The author evaluates the affected
 interfaces; independent engineering/evidence review checks the conclusion.
 Unresolved necessary shapes stop for owner disposition without a parallel parser,
 target roster or reduced impact coverage.
+
+The repository UV pin later moved to 0.13.x. That change is not evaluated for
+this UV 0.12.23 record; it falls to the record's stated fallback, the next
+integration review.

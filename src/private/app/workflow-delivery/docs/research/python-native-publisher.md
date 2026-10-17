@@ -19,7 +19,8 @@ subsequent application writes. This is not transport-level exactly-once delivery
 
 UV 0.12.24 resolves to
 `5411378eb76dc1ea1ad90aeb10e84e997e5bbd96`. The source findings below concern that
-revision, rather than an inferred copy of its publication implementation.
+revision, rather than an inferred copy of its publication implementation. The
+[UV 0.13.1 recheck](#uv-01224-to-0131-recheck) compares them with the later pin.
 
 | Source                                                                  | Finding                                                                                                                                                                                             |
 | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -163,6 +164,41 @@ The implementation or dependency-change reviewer evaluates these boundaries;
 that review is the fallback event. Missing capability evidence blocks the
 changed path rather than expanding the application into another publisher.
 
+## UV 0.12.24 to 0.13.1 Recheck
+
+The selected UV changed from 0.12.24 to 0.13.0 in
+[PR #1155](https://github.com/hcoona/three/pull/1155) and to 0.13.1 in
+[PR #1238](https://github.com/hcoona/three/pull/1238). Tag `0.13.1` resolves to
+commit [`62faed3351cfee2121b3c28b937b1f4b93233a93`][uv-0131]. This recheck compares the cited files between
+`5411378eb76dc1ea1ad90aeb10e84e997e5bbd96` and that commit; no UV 0.13.1 binary, publisher or index was
+executed for it.
+
+| Cited source                                                                   | 0.12.24 → 0.13.1                         | Reviewed verdict                                                                                                                                        |
+| ------------------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `crates/uv-publish/src/trusted_publishing.rs` and `trusted_publishing/pypi.rs` | Identical                                | Audience, OIDC exchange, masking and token invalidation findings unchanged                                                                              |
+| `crates/uv-cli/src/lib.rs` `PublishArgs`                                       | Identical struct; file changed elsewhere | Publish arguments unchanged. `HashCheckingArgs` gains only a documentation pointer to the new opt-in `--require-build-hashes`                           |
+| `crates/uv-publish-commands/src/lib.rs`                                        | Changed (2 lines)                        | Passes `TarBackend::from_env()` to the session; the retry policy, file loop and finalization are unchanged                                              |
+| `crates/uv-publish/src/lib.rs`                                                 | Changed                                  | See the `TarBackend` verdict below; upload, existing-file checking and redirect handling are unchanged                                                  |
+| `crates/uv-pip-commands/src/install.rs`                                        | Changed                                  | Build-dependency hash checking becomes a separate, resolved mode; runtime `HashStrategy::from_requirements` for pinned hashed requirements is unchanged |
+| `crates/uv-types/src/hash.rs`, `crates/uv-installer/src/preparer.rs`           | Identical                                | Hash strategy and archive rejection unchanged                                                                                                           |
+| `crates/uv-distribution/src/source/mod.rs`                                     | Changed                                  | Build-settings cache sharding moves before the metadata cache lookup; every "check that the hashes match" guard before a build remains                  |
+
+UV's `ambient-id` dependency remains 0.0.11 in both lockfiles.
+
+`TarBackend` verdict: at 0.12.24 the publisher read an sdist's `PKG-INFO` with the
+tar-codec reader only under a preview feature and otherwise with `tokio-tar`. At
+0.13.1 `TarBackend::from_env()` selects the tar-codec reader by default and
+`tokio-tar` only when `UV_LEGACY_TAR_BACKEND` is true. Both readers keep the
+same single top-level `PKG-INFO` requirement and its tests. The change affects
+how UV reads upload metadata from the qualified sdist, not which file is
+uploaded, the one-invocation boundary, retries or the application's independent
+original-byte verification. No finding above depends on the tar reader.
+
+Conclusion: the source basis of this record is unchanged at UV 0.13.1 for the
+publisher, trusted-publishing and native consumption findings. This recheck
+establishes no publisher, index, runtime, Windows or live-publication behavior.
+Its dependency-change review is recorded in the governing pull request.
+
 [command]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-publish-commands/src/lib.rs
 [publisher]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-publish/src/lib.rs
 [cli]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-cli/src/lib.rs#L7362
@@ -180,3 +216,4 @@ changed path rather than expanding the application into another publisher.
 [consumer-hash]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-types/src/hash.rs
 [consumer-preparer]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-installer/src/preparer.rs#L174
 [consumer-sdist]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-distribution/src/source/mod.rs#L665
+[uv-0131]: https://github.com/astral-sh/uv/tree/62faed3351cfee2121b3c28b937b1f4b93233a93

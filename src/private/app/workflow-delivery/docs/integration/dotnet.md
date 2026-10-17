@@ -120,8 +120,8 @@ The process response is a consumed input, not an internal trust or approval reco
 This group owns general .NET CI selection and execution using the Windows Debug
 operation. It does not cover Release or change test frameworks. Root CI
 consumes the implemented group under ordinary changed-code Windows qualification
-in [PR #1054](https://github.com/hcoona/three/pull/1054). The following contract and
-eight qualification gates continue to govern changes to this operation.
+in [PR #1054](https://github.com/hcoona/three/pull/1054). The following contract governs
+changes to this operation.
 
 ### Native Process and Endpoint Facts
 

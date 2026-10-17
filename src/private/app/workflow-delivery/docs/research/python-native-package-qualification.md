@@ -129,3 +129,7 @@ compatibility, arbitrary-backend, Windows, publication or complete contraction
 acceptance. Missing necessary native capability stops for owner disposition
 rather than skipping a check, adding a duplicate declaration or weakening
 required coverage.
+
+The repository UV pin later moved to 0.13.x. That change is not evaluated for
+this UV 0.12.23 record; it falls to the record's stated fallback, the next
+integration review.
