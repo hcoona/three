@@ -31,7 +31,8 @@ and exact-session recovery, and
 [GOV-011](../../../../../docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)
 owns independent classification of material findings. Workflow Delivery adds:
 
-1. Preserve unrelated user changes.
+1. Inspect the actual Git branch, worktree/index state, accepted target and PR
+   checks. Preserve unrelated user changes.
 2. Confirm affected requirements, native responsibility, transfer/permission
    boundaries, concrete integration contract and validation basis. New
    feasibility or material product/trust/cost tradeoffs return to the owner;
