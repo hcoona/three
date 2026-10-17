@@ -86,7 +86,7 @@ jobs:
             endpoint=${endpoint%$'\r'}
             (
               cd "$endpoint"
-              mise install --locked dotnet node pnpm
+              mise install --locked dotnet node pnpm pkl
               mise exec --locked dotnet -- dotnet tool restore
               mise exec --locked dotnet -- dotnet restore dirs.proj \
                 -property:Configuration=Debug -property:ContinuousIntegrationBuild=true \

@@ -817,7 +817,7 @@ def test_scope_prepares_exact_native_endpoints_from_native_line_records(
             row["command"] for row in native if row["cwd"] == str(endpoint)
         ]
         assert commands[:2] == [
-            ["mise", "install", "--locked", "dotnet", "node", "pnpm"],
+            ["mise", "install", "--locked", "dotnet", "node", "pnpm", "pkl"],
             [
                 "mise",
                 "exec",

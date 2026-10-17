@@ -84,9 +84,9 @@ internal static class DotNetCiCaller
         string[] changed = comparison.ChangedPaths;
         var scope = new ScopeInputs(controlRequest.Comparison, changed,
             await CiScope.OwnersAsync(basis, changed, control.Basis.Inputs,
-                CiScope.MiseTasksAsync, token),
+                CiScope.MiseTasksAsync, CiScope.HkImportsAsync, token),
             await CiScope.OwnersAsync(candidate, changed, control.Candidate.Inputs,
-                CiScope.MiseTasksAsync, token));
+                CiScope.MiseTasksAsync, CiScope.HkImportsAsync, token));
         CiScopeApplicability retained = CiScope.Select(changed, comparison, request.Full,
             [.. control.Basis.Inputs, .. control.Candidate.Inputs]);
         DotNetGroupReadback readback = await DotNetGroupReader.ReadAsync(request, scope,
