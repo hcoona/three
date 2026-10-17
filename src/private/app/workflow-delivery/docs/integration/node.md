@@ -259,3 +259,63 @@ publisher, one standard native upload, separate no-write registry readback and
 complete common result. Its source-only validation does not qualify a new
 hosted Live invocation. Historical acceptance readers retain their actual pinned
 native producer source; they do not authorize replay.
+
+## Concrete npm Release Integration
+
+This section records the implemented npm Release behavior; it adds no
+obligation beyond the code it cites. It neither reopens the completed npm
+proving work nor authorizes publication, dispatch, authentication or access
+changes. Changes follow the
+[shared review core](../middle-level-design.md#release-integration-review).
+
+- **Endpoints.** GitHub Packages Buddy observes package control at
+  `https://api.github.com/users/hcoona/packages/npm/hcoona-release-smoke-npm` and
+  metadata and tarballs at `https://npm.pkg.github.com`
+  ([GithubNpmObservation.cs:16-18](../../Destinations/GithubNpmObservation.cs)).
+  It accepts only HTTPS port 443 on those hosts and the GitHub package storage
+  hosts ([:151-160](../../Destinations/GithubNpmObservation.cs)). The
+  npmjs Official simulation reads only `https://registry.npmjs.org`
+  ([NpmjsObservation.cs:31](../../Destinations/NpmjsObservation.cs),
+  [:112-118](../../Destinations/NpmjsObservation.cs)).
+- **Observation bounds.** Each observation has a 60-second operation deadline
+  and a 20-second deadline per request including its body, with metadata bodies
+  limited to 1,000,000 bytes
+  ([GithubNpmObservation.cs:32](../../Destinations/GithubNpmObservation.cs),
+  [:112](../../Destinations/GithubNpmObservation.cs),
+  [:118](../../Destinations/GithubNpmObservation.cs);
+  [NpmjsObservation.cs:23](../../Destinations/NpmjsObservation.cs),
+  [:34](../../Destinations/NpmjsObservation.cs),
+  [:85](../../Destinations/NpmjsObservation.cs)). The GitHub reader attaches
+  its Bearer credential only to `api.github.com` and `npm.pkg.github.com`
+  ([:123-124](../../Destinations/GithubNpmObservation.cs)); npmjs reads
+  are public. Both use the shared registry client and redirect contract in the
+  [MLD](../middle-level-design.md#registry-observation-and-retention).
+- **Publication.** After a fresh observation finds the version absent and the
+  original unchanged, the publisher runs one
+  `npm publish <original> --registry https://npm.pkg.github.com --tag buddy-sha-<revision> --ignore-scripts --fetch-retries=0`
+  with a 120-second deadline and no inherited environment, then observes again.
+  Exact state needs no write, other states block it, and an abnormal native
+  outcome permits reads but never another upload
+  ([GithubNpmPublication.cs:41-66](../../Destinations/GithubNpmPublication.cs)).
+- **Permissions.** In the
+  [Buddy workflow](../../../../../../.github/workflows/workflow-delivery-v3-buddy-smoke.yml),
+  only the `publish` job, behind the `workflow-delivery-v3-buddy-approval`
+  Environment, has `packages: write`; the observation and verification jobs have
+  `packages: read`. Its concurrency group is the registry/package pair without
+  cancellation. The
+  [simulation workflow](../../../../../../.github/workflows/workflow-delivery-v3-official-simulate.yml)
+  has `contents: read` only.
+- **Non-overwrite.** GitHub Packages' native non-overwrite and duplicate
+  semantics are relied on as stated in the completion table above; the
+  application adds no reservation or replacement.
+- **Validation cases.** Controlled tests cover single publication under current
+  native state, an abnormal upload with observed business state and a
+  substituted original
+  ([GithubNpmPublicationTests.cs](../../../../../../tests/private/app/workflow-delivery/Release/GithubNpmPublicationTests.cs));
+  exact identity and original bytes, longer or different bytes, absence,
+  incomplete metadata, oversized responses, deadlines and cancellation
+  ([GithubNpmObservationTests.cs](../../../../../../tests/private/app/workflow-delivery/Release/GithubNpmObservationTests.cs),
+  [NpmjsObservationTests.cs](../../../../../../tests/private/app/workflow-delivery/Release/NpmjsObservationTests.cs)).
+- **Non-claims.** These checks do not establish current token reach, publisher
+  or Environment configuration, live registry behavior or a new publication.
+  The npmjs simulation makes no live completion claim.

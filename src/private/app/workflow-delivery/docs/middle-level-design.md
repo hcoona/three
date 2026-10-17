@@ -111,8 +111,8 @@ termination; typed completion owns result interpretation, without a shell enum
 mirror.
 
 Ruby helpers retain RubyGems/Bundler evaluation and native source reads; local
-installation/API qualification uses the native gem and Ruby commands. Python helpers retain PyPA/NBGV library bindings over
-the pinned UV CLI; .NET and Node use their supported native process interfaces.
+installation/API qualification uses the native gem and Ruby commands. Python helpers retain PyPA/NBGV library bindings in the
+UV-prepared environment; the CLI runs UV; .NET and Node use their supported native process interfaces.
 A helper is justified by a required library interface, not by the language label.
 Adding a distinct product can require a concrete recipe; no generic plugin or
 automatic adoption capability is implied by these four implemented products.
@@ -698,7 +698,7 @@ with no cookies, proxies, default credentials or automatic decompression. It
 follows at most five redirects under the platform's
 [documented redirect contract](https://learn.microsoft.com/dotnet/api/system.net.http.httpclienthandler.allowautoredirect?view=net-10.0#remarks)
 ([runtime source](https://github.com/dotnet/runtime/blob/v10.0.12/src/libraries/System.Net.Http/src/System/Net/Http/SocketsHttpHandler/RedirectHandler.cs)),
-which clears the \`Authorization\` header on every automatic redirect, including
+which clears the `Authorization` header on every automatic redirect, including
 a same-host redirect, and does not follow an HTTPS-to-HTTP redirect. The
 adapter validates the HTTPS origin of each URL it requests and attaches
 credentials only to the registry or API origin it selects. It does not
@@ -825,6 +825,7 @@ closed; no implementation validation can silently consume a spent external grant
 ### Release Integration Review
 
 The [Concrete NuGet Buddy](integration/dotnet.md#concrete-nuget-buddy-integration),
+[npm Release](integration/node.md#concrete-npm-release-integration),
 [Python Release](integration/python.md#concrete-python-release-integration) and
 [Ruby Release](integration/ruby.md#concrete-ruby-release-integration) integrations share one review
 core: review affected changes with independent engineering/OCR and

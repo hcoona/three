@@ -10,12 +10,12 @@ pin and a specific missing relation. It is not an accepted reader, complete
 Python graph, implementation choice or complete runtime qualification. The later
 [primitive observation](#primitive-native-observation) retains its separate scope.
 The [supplement retirement recheck](#embedded-uv-supplement-retirement) binds the
-current UV 0.13.0 pin and supersedes the library candidate as the selected design.
+UV 0.13.0 pin of that time and supersedes the library candidate as the selected design.
 
 The original source pin is UV commit
 [`46b84fd0bfec23b72f29e8e2185ba68a65052f48`][uv-pin]. At assessment time the committed
 [`mise.toml`][repository-uv-pin] and [`mise.lock`][repository-uv-lock] selected
-0.12.23; the repository now selects 0.13.0. The source conclusions below use pinned public source and repository
+0.12.23; the [UV 0.13.1 pin recheck](#uv-0131-pin-recheck) covers the later pin. The source conclusions below use pinned public source and repository
 files. No workspace evaluation, resolver, installation, backend hook or build
 was executed for the source assessment; the later observation is separate evidence.
 
@@ -117,7 +117,7 @@ source semantics in the application.
 ## Embedded UV Supplement Retirement
 
 The owner approved retiring the embedded Rust supplement. This recheck evaluates
-each fact it supplied against the current UV pin, tag `0.13.0` at commit
+each fact it supplied against the UV pin of that time, tag `0.13.0` at commit
 [`4ecd0eff2a81e3ffdcd7cfee10d08936e4747c17`][uv-013]. Source findings below cite
 that commit; runtime observations used the mise-pinned UV 0.13.0 binary on Linux
 x86_64 with CPython 3.14.3, against repository commit
@@ -171,6 +171,41 @@ the PyPA `packaging` or `build` pin changes, or metadata gains build nodes. The
 author of that pin change checks the cited interfaces and reruns the replay test;
 an independent evidence reviewer evaluates the result. If the recheck fails or is
 skipped, the join is no longer admitted and the gap returns to the owner.
+
+## UV 0.13.1 Pin Recheck
+
+The repository pin changed from UV 0.13.0 to 0.13.1 in
+[PR #1238](https://github.com/hcoona/three/pull/1238). Tag `0.13.0` resolves to
+commit [`4ecd0eff2a81e3ffdcd7cfee10d08936e4747c17`][uv-013] and tag `0.13.1` to commit
+[`62faed3351cfee2121b3c28b937b1f4b93233a93`][uv-0131]. This recheck is a source comparison between those
+commits plus a replay test; no UV 0.13.1 binary, workspace or native query was
+executed for it.
+
+| Cited source at 0.13.0                                                    | 0.13.0 → 0.13.1 | Reviewed verdict                                          |
+| ------------------------------------------------------------------------- | --------------- | --------------------------------------------------------- |
+| `crates/uv-lock/src/lock/export/metadata.rs` (build stub and empty Build) | Identical       | Build nodes are still stubbed with no Build dependencies  |
+| `crates/uv-distribution/src/metadata/lowering.rs` (source lowering)       | Identical       | Lowering precedence and workspace-source errors unchanged |
+| `crates/uv-settings/src/lib.rs` (directory and system settings)           | Identical       | Settings discovery and `UV_NO_SYSTEM_CONFIG` unchanged    |
+| `docs/concepts/configuration-files.md`                                    | Identical       | Documented settings search unchanged                      |
+| `docs/concepts/projects/dependencies.md` (default groups)                 | Identical       | Default `dev` group behavior unchanged                    |
+
+The metadata command (`crates/uv/src/commands/workspace/metadata.rs`), its
+documentation (`docs/reference/internals/metadata.md`), the build frontend
+(`crates/uv-build-frontend/src/lib.rs`) and the workspace group sources
+(`crates/uv-workspace/src/dependency_groups.rs`,
+`crates/uv-workspace/src/workspace.rs`) are also identical between the two
+commits.
+
+The committed `GuardedNameJoinMatchesRecordedNativeLowering` test passed at
+this recheck's commit (1 test). It replays the retained PR #1063 lowering
+through the application's join; it does not run UV 0.13.1 and is not a native
+observation of UV 0.13.1 behavior.
+
+Conclusion: the source basis for the admitted guarded join is unchanged at UV
+0.13.1, so the join remains admitted on that basis. This recheck establishes no
+runtime, Windows, publisher or live-publication behavior and does not requalify
+the UV 0.12.23 observations. Its independent evidence review is recorded in the
+governing pull request.
 
 ## Pytest Configuration Source Basis
 
@@ -315,3 +350,4 @@ findings separate from later operation observations and support claims.
 [pytest-main]: https://github.com/pytest-dev/pytest/blob/cf470ec0bf7eb89cd97dd56df4859eae5db46447/src/_pytest/main.py
 [pypa-helper-pin]: https://github.com/hcoona/three/blob/8d2ed8ed86ebea8df509a0a2d78b0671ecb7a1b8/pyproject.toml#L21
 [pypa-build-wheel]: https://files.pythonhosted.org/packages/ad/9b/9fb3585dabcd73a1b2a6267f63f62649347c9e6d072c9fde365b105abb2c/build-1.6.1-py3-none-any.whl
+[uv-0131]: https://github.com/astral-sh/uv/tree/62faed3351cfee2121b3c28b937b1f4b93233a93

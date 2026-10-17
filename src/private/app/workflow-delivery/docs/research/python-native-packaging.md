@@ -190,6 +190,10 @@ enrichment campaigns remain stopped. Windows remains the owner's feasibility
 assumption. No registry publication, dispatch or credentials/access/Environment
 operation follows from this design evidence.
 
+The repository UV pin later moved to 0.13.x. That change is not evaluated for
+this UV 0.12.23 record; it falls to the record's stated fallback, the next
+integration review.
+
 ## Native Output Directory Metadata
 
 Pinned UV `46b84fd0bfec23b72f29e8e2185ba68a65052f48` documents

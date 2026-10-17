@@ -35,7 +35,7 @@ retained.
    feasibility or material product/trust/cost tradeoffs return to the owner;
    do not compensate by implementing missing lower-layer guarantees.
 4. Prepare and validate complete affected changes, including applicable tests,
-   root HK, hooks and `git diff --check`, before independent engineering/OCR,
+   root HK, hooks and `git diff --check`, before independent engineering/OCR (open-code-review delegate),
    record-system and research-evidence review. Use the exact persisted session
    and bounded worktree when recovering a worker, following
    [agent execution](../../../../../docs/engineering/agent-execution.md).
@@ -43,7 +43,9 @@ retained.
    terminal tool/worker output and verify evidence before dependent effects.
 
 Authors/implementers cannot satisfy their own independent gate. Every material
-finding requires distinct GOV-011 classification before it drives repair;
+finding requires distinct
+[GOV-011](../../../../../docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)
+classification before it drives repair;
 unresolved owner decisions stay open. Return fixes to original reviewers until
 clear. For Workflow Delivery reviews, use `open-code-review-delegate`,
 including the complete Git manifest when OCR filtering omits documentation, and
