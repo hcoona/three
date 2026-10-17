@@ -129,7 +129,7 @@ Future exceptional or live operations require their own concrete authorization.
 
 The first native generation remains failed and incomplete. Later corrected
 preparation and caller evidence does not relabel it, refund its slots or
-replace its actual producer. [Native readiness](validation/python-native-readiness.md),
+replace its actual producer. [Retired native acceptance](validation/historical-readers.md#retired-python-native-acceptance),
 [bootstrap](validation/python-bootstrap.md),
 [ordinary recovery](validation/python-hosted-recovery.md) and
 [normal-Live evidence](validation/python-normal-live-evidence.md) retain their
