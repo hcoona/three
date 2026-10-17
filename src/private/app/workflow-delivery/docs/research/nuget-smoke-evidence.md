@@ -1,8 +1,8 @@
 # NuGet Smoke Research and Design Evidence
 
-These extracts support the [NuGet handoff](../nuget-smoke-research-handoff.md),
+These extracts support the [NuGet handoff](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/nuget-smoke-research-handoff.md),
 [confirmed WD-NUGET requirements](../requirements.md#nuget-second-slice), and
-[NuGet LLD](../hcoona-release-smoke-github-packages-lld.md). Read them in their
+[NuGet LLD](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-github-packages-lld.md). Read them in their
 original sequence: researched facts and open choices, operator selection,
 then confirmed scope/trust/acceptance and source-supported design. The
 confirmed requirements are not native service evidence. Separate disabled
@@ -220,7 +220,7 @@ been downloaded or reverified by this record migration.
   writes the supplied ID and `NuGetVersion.ToFullString()`. These are source
   findings supporting fixture construction through pack; they are not proof
   that a generated fixture, GitHub feed, or native scenario passes.
-- The [LLD fixture contract](../hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
+- The [LLD fixture contract](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-github-packages-lld.md#fixture-preparation-contract)
   selects original pack outputs, official coordinate-equivalence checks,
   separate bounded preflight and mutation requests, and independently audited
   evidence. Concrete coordinates, tool/profile identities, operation budgets,
@@ -287,7 +287,7 @@ the preceding dated sections.
   classified `NUGET-PUSH-STATUS-R1` as a true positive: the frozen profile and
   four consumers consistently required 201, so the original create stage
   correctly failed that contract. The revised
-  [LLD profile](../hcoona-release-smoke-github-packages-lld.md#observation-publication-and-terminal-evidence)
+  [LLD profile](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-github-packages-lld.md#observation-publication-and-terminal-evidence)
   explicitly selects 200/201/202, retaining actual status and complete-response
   checks without accepting every 2xx or matching message text. The shared
   contract still requires exact actual-byte/witness readback and all native
@@ -331,7 +331,7 @@ the preceding dated sections.
   establish byte mismatch or original stored bytes/witness. Its actual native
   audit remains a separate evidence consumer. No target is inferred from its
   unretained Location or redirect body.
-- The [LLD read contract](../hcoona-release-smoke-github-packages-lld.md#observation-publication-and-terminal-evidence)
+- The [LLD read contract](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-github-packages-lld.md#observation-publication-and-terminal-evidence)
   selects one explicit package-content hop under `nuget-package-location-v1`,
   shared by production observation and native capture. The current original
   response owns the target; strict HTTPS/DNS and reflection checks precede use.
@@ -379,7 +379,7 @@ the preceding dated sections.
   `1c84ef526bd28ea927f60f5f1906a7aca542e2574da6c17afe24d9ac1bfe6fec`
   and `a279e2dabc46551e25d193d8fe610cee9849610d18fc826f2cff729dccd65bec`.
 - The correction applies the already accepted
-  [package-only LLD policy](../hcoona-release-smoke-github-packages-lld.md#observation-publication-and-terminal-evidence)
+  [package-only LLD policy](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-github-packages-lld.md#observation-publication-and-terminal-evidence)
   to this distinct native restore host. Automatic redirects remain disabled.
   Raw Location admission precedes URI construction; the storage GET preserves
   its path/query and receives no copied request headers. Both GETs and all

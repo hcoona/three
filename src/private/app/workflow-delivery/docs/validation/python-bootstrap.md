@@ -29,7 +29,7 @@ distinct service identities reported by the same owner.
 | `testpypi`        | `Backspace7980` | `workflow-delivery-v3-python-testpypi` | `testpypi` | `.github/workflow-delivery/bootstrap/python-request.json`      |
 | `pypi`            | `Sherry7290`    | `workflow-delivery-v3-python-pypi`     | `pypi`     | `.github/workflow-delivery/bootstrap/python-pypi-request.json` |
 
-The [registry profiles](../hcoona-release-smoke-python-lld.md#registry-and-credential-profiles)
+The [registry profiles](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-python-lld.md#registry-and-credential-profiles)
 own exact endpoints, file hosts and operation-profile digests. Username disclosure
 establishes neither account control nor project ownership. The [owner-reported](https://github.com/hcoona/three/issues/843#issuecomment-5894932481)
 production project `hcoona-release-smoke`, workflow `release-official.yml` and
@@ -49,7 +49,7 @@ generation or publisher registration is reopened by this extension.
 A later configuration request must specify the exact pending publisher tuple
 for the selected row above and Environment settings: sole reviewer `hcoona`, self-review permitted,
 the destination-specific administrator-bypass policy in
-[Python Governance](../hcoona-release-smoke-python-lld.md#python-governance-v2-migration),
+[Python Governance](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-python-lld.md#python-governance-v2-migration),
 zero wait, protected main only, and sentinel
 `WDV3_APPROVAL_ENVIRONMENT_MARKER=<selected-environment>/v1`.
 It must bound each proposed configuration write and readback. It must obtain
@@ -157,7 +157,7 @@ an already admitted in-flight request; expiry forbids new publisher requests,
 not completion of that request or credential-free evidence archival. P4 is a
 separate mandatory credential-free audit with its fixed read counts; it does
 not renew the publisher window. Only P2/P3 permit the
-[bounded post-upload observation](../hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
+[bounded post-upload observation](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-python-lld.md#bounded-post-upload-observation)
 phase. No transport/upload retry, pagination expansion, other polling or
 mutating redirect is admitted.
 

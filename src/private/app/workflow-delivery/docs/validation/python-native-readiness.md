@@ -26,7 +26,7 @@ build prerequisites, so it is not a zero-effect operation; use it only within
 separately applicable work authorization. Do not re-upload or re-observe the
 registry to complete historical evidence.
 
-The [historical v2 migration](../hcoona-release-smoke-python-lld.md#python-governance-v2-migration)
+The [historical v2 migration](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-python-lld.md#python-governance-v2-migration)
 explains the former admission change without fabricating suite or generation
 fields. Its former readers and bootstrap helpers remain recoverable in pinned
 Git source, not as current runtime or resource-establishment callers.

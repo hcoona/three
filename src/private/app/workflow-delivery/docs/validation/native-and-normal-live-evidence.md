@@ -1,7 +1,7 @@
 # Retained Native and Normal-Live Evidence
 
 These extracts support the [operating handoff](../agent-handoff.md), the
-[native acceptance contract](../hcoona-release-smoke-npm-lld.md#186-observation-and-snapshot),
+[native acceptance contract](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-npm-lld.md#186-observation-and-snapshot),
 and the completed normal-Live proving claim. They preserve the retry-5
 non-reuse boundary, Environment removal, both failed native generations,
 active-lifecycle correction, admitted native v2 evidence, first real failure,

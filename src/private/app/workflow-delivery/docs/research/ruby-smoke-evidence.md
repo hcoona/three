@@ -259,7 +259,7 @@ authorizes probes.
 [credential-response]: https://github.com/rubygems/configure-rubygems-credentials/blob/8674aee7f9f9055a8b771794d6f1e66b5fad36a9/src/oidc/responses.ts
 [bootstrap02]: https://github.com/hcoona/three/actions/runs/36924998743
 [bootstrap02-review]: https://github.com/hcoona/three/issues/954#issuecomment-5940605940
-[redirect]: ../ruby-operation-protocol.md#github-gem-download-continuation
+[redirect]: https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/ruby-operation-protocol.md#github-gem-download-continuation
 [redirect-triage]: https://github.com/hcoona/three/issues/954#issuecomment-5940719795
 [postcreation-review]: https://github.com/hcoona/three/issues/954#issuecomment-5940722853
 [native-request]: https://github.com/ruby/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/request.rb#L142

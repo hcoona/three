@@ -138,7 +138,7 @@ promise an atomic wheel/sdist set or permanent registry retention.
 
 ### Ruby retained limits
 
-The [operation protocol](ruby-operation-protocol.md) and
+The [operation protocol](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/ruby-operation-protocol.md) and
 [normal-Live evidence](validation/ruby-normal-live-evidence.md) retain stopped
 destinations, original publication/consumer observations and spent bootstrap,
 native, normal and recovery slots. Linux caller qualification does not claim

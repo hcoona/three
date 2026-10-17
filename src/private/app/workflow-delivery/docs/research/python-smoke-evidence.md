@@ -172,7 +172,7 @@ source findings, not observed successful or denied calls in this slice.
 The implementation therefore preserves the accepted protected configuration
 attestation/runtime freshness split. A normal job does not enumerate the
 administrative configuration or substitute an empty inventory on failure.
-The [Python LLD](../hcoona-release-smoke-python-lld.md#hosted-integration)
+The [Python LLD](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-python-lld.md#hosted-integration)
 states the remaining runtime and attestation responsibilities. The later
 separately authorized normal publication must exercise the actual endpoints
 and native approval/deployment binding with the normal job token.
@@ -316,7 +316,7 @@ The design and implementation source rechecks re-read the cited service/build
 sources on 2026-09-24 when selecting the design and concrete profile. They still support one-file upload, PyPI filename
 non-reuse, TestPyPI pruning, distinct OIDC audiences and static Hatch metadata;
 no source establishes cross-file atomicity or implemented V3 compatibility.
-The [Python LLD](../hcoona-release-smoke-python-lld.md) selects a bounded
+The [Python LLD](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-python-lld.md) selects a bounded
 one-set/two-operation action and static staged metadata. Those are design
 choices whose disabled implementation is protected-delivered through
 [PR #849](https://github.com/hcoona/three/pull/849). The successor design removes

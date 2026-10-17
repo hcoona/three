@@ -13,7 +13,7 @@ The [success carrier](https://github.com/hcoona/three/issues/843#issuecomment-58
 and [independent public-packet/replay review](https://github.com/hcoona/three/issues/843#issuecomment-5883881292)
 retain the joined evidence. The V3 maintainer maintains this validation record;
 reviewers and future maintainers use it to interpret the result and historical
-artifacts. The [LLD](../hcoona-release-smoke-python-lld.md#temporary-hosted-recovery-proof)
+artifacts. The [LLD](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-python-lld.md#temporary-hosted-recovery-proof)
 owns retirement and ordinary runtime behavior.
 
 The campaign stopped at its first independently audited success. Temporary

@@ -1,7 +1,8 @@
 # Historical Evidence Readers
 
 Current auditors use this page to recover the original producer, request, fixture,
-helper and outcome of the closed Workflow V3 campaigns after source retirement.
+helper and outcome of the closed Workflow V3 campaigns after source retirement,
+and the commit-pinned text of [retired records](#retired-records).
 These commit-qualified locators identify historical source. They do not install
 a replay service, qualify current code, promise remote artifact retention or
 authorize any execution, authentication, publication or administrative repair.
@@ -40,3 +41,36 @@ are last-source navigation aids only. They do not replace any actual producer
 above or revive their deleted runtime admission, campaign workflows or commands.
 The original npm, Python and Ruby operation records retain their own immutable
 sources, observations, failed lifetimes and spent ceilings.
+
+## Retired records
+
+These Workflow Delivery records were deleted from the current tree. Their
+commit-pinned text remains available to the evidence records that cite them.
+Their former admission, approval-proof, witness and campaign machinery does not
+prescribe the current application, and none is an executable next step.
+
+| Retired record                                                                                                                                                                                | Retained historical role                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [Pre-contraction architecture glossary](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/architecture-glossary.md)        | Vocabulary of the pre-contraction implementation and its evidence                                     |
+| [npm slice LLD](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-npm-lld.md)                         | npm native acceptance contract and first-slice CI semantics                                           |
+| [NuGet slice LLD](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-github-packages-lld.md)           | NuGet fixture, observation, publication and terminal-evidence contracts                               |
+| [Python slice LLD](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-python-lld.md)                   | Python registry profiles, Governance v2 migration, hosted integration, observation and recovery proof |
+| [Ruby slice LLD](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-ruby-lld.md)                       | Ruby campaign design, including the original five-file package interpretation                         |
+| [NuGet research handoff](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/nuget-smoke-research-handoff.md)                | Original NuGet research and effects boundary                                                          |
+| [Ruby operation protocol](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/ruby-operation-protocol.md)                    | Ruby configuration, endpoint, phase and request-binding contract of the stopped destinations          |
+| [CI shadow evidence](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/validation/ci-shadow-evidence.md)                   | Pre-coexistence CI shadow observations and their one-time projection limits                           |
+| [NuGet delivery retrospective](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/nuget-delivery-retrospective.md) | Narrative of the first NuGet delivery's costs and lessons                                             |
+
+The former middle-level and migration records are also immutable historical
+sources:
+
+- Former middle-level designs, pinned at `72939154ab9ebfb8d313908c551fb66eeefae499`
+  for existing runtime and evidence readers:
+    - [Repository Model and Release Unit](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/repository-model-release-unit-mld.md)
+    - [Governance Integration](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/governance-integration-mld.md)
+    - [CI Qualification](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/ci-qualification-mld.md)
+    - [Release Delivery](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/release-delivery-mld.md)
+    - [Shared Foundation](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/shared-foundation-mld.md)
+- [Previous HLD](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md)
+  and [pre-contraction requirements](https://github.com/hcoona/three/blob/f1c3ec1039625464d76cf09a06bd2363fdaaf056/src/public/lib/three-workflow-delivery-v3/docs/requirements.md)
+- [Pre-contraction migration policy](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md)

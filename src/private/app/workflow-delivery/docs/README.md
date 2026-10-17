@@ -41,15 +41,15 @@ from local observations and from completed publication campaigns.
 
 ## Retained Campaign Evidence
 
-| Concern                                             | Original outcomes, controls and limits                                                                                                                                                      |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| npm native and normal publication                   | [Evidence](validation/native-and-normal-live-evidence.md), [registry support research](research/github-packages-supported-registries.md)                                                    |
-| NuGet profile, native and normal publication        | [Research/evidence](research/nuget-smoke-evidence.md), [normal-Live evidence](validation/nuget-normal-live-evidence.md), [delivery retrospective](research/nuget-delivery-retrospective.md) |
-| Python preparation and native failure               | [Readiness](validation/python-native-readiness.md), [native acceptance](validation/python-native-acceptance.md), [source evidence](research/python-smoke-evidence.md)                       |
-| Python bootstrap, publication and ordinary recovery | [Bootstrap](validation/python-bootstrap.md), [normal publication](validation/python-normal-live-evidence.md), [recovery](validation/python-hosted-recovery.md)                              |
-| Ruby operations and original publication            | [Operation protocol](ruby-operation-protocol.md), [normal-Live evidence](validation/ruby-normal-live-evidence.md), [research](research/ruby-smoke-evidence.md)                              |
-| Historical implementation recovery                  | [Actual producer-qualified readers](validation/historical-readers.md)                                                                                                                       |
-| Earlier CI and legacy boundary                      | [Shadow evidence](validation/ci-shadow-evidence.md), [legacy boundary](research/legacy-workflow-boundary.md)                                                                                |
+| Concern                                             | Original outcomes, controls and limits                                                                                                                                |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| npm native and normal publication                   | [Evidence](validation/native-and-normal-live-evidence.md), [registry support research](research/github-packages-supported-registries.md)                              |
+| NuGet profile, native and normal publication        | [Research/evidence](research/nuget-smoke-evidence.md), [normal-Live evidence](validation/nuget-normal-live-evidence.md)                                               |
+| Python preparation and native failure               | [Readiness](validation/python-native-readiness.md), [native acceptance](validation/python-native-acceptance.md), [source evidence](research/python-smoke-evidence.md) |
+| Python bootstrap, publication and ordinary recovery | [Bootstrap](validation/python-bootstrap.md), [normal publication](validation/python-normal-live-evidence.md), [recovery](validation/python-hosted-recovery.md)        |
+| Ruby original publication                           | [Normal-Live evidence](validation/ruby-normal-live-evidence.md), [research](research/ruby-smoke-evidence.md)                                                          |
+| Historical implementation and record recovery       | [Producer-qualified readers and retired records](validation/historical-readers.md)                                                                                    |
+| Legacy workflow boundary                            | [Legacy boundary](research/legacy-workflow-boundary.md)                                                                                                               |
 
 ## Historical Source Rule
 
@@ -59,28 +59,10 @@ historical source; they do not invoke a current compatibility/replay service.
 Unavailable required originals remain a limitation. Current source acceptance
 supplies no publication, dispatch, authentication or administrative authority.
 
-The [pre-contraction glossary](architecture-glossary.md) and slice LLDs
-([npm](hcoona-release-smoke-npm-lld.md),
-[NuGet](hcoona-release-smoke-github-packages-lld.md),
-[Python](hcoona-release-smoke-python-lld.md),
-[Ruby](hcoona-release-smoke-ruby-lld.md)) retain concrete historical-evidence
-interpretation consumers. Their former admission, approval-proof, witness and
-campaign machinery does not prescribe the current application. The
-[NuGet research handoff](nuget-smoke-research-handoff.md) remains an original
-research/effects boundary, not an executable next step.
-
-The former middle-level and migration records are immutable historical sources:
-
-- Former middle-level designs, pinned at `72939154ab9ebfb8d313908c551fb66eeefae499`
-  for existing runtime and evidence readers:
-    - [Repository Model and Release Unit](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/repository-model-release-unit-mld.md)
-    - [Governance Integration](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/governance-integration-mld.md)
-    - [CI Qualification](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/ci-qualification-mld.md)
-    - [Release Delivery](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/release-delivery-mld.md)
-    - [Shared Foundation](https://github.com/hcoona/three/blob/72939154ab9ebfb8d313908c551fb66eeefae499/src/public/lib/three-workflow-delivery-v3/docs/shared-foundation-mld.md)
-- [Previous HLD](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md)
-  and [pre-contraction requirements](https://github.com/hcoona/three/blob/f1c3ec1039625464d76cf09a06bd2363fdaaf056/src/public/lib/three-workflow-delivery-v3/docs/requirements.md)
-- [Pre-contraction migration policy](https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md)
+Retired Workflow Delivery records, including the pre-contraction glossary,
+slice LLDs, former designs, requirements, migration policy and campaign
+protocols, are indexed with commit-pinned links in the
+[historical record index](validation/historical-readers.md#retired-records).
 
 These records cannot fill a current design gap or revive a retired requirement.
 Use an explicitly admitted V3 extraction/revalidation before reusing any v1/v2
