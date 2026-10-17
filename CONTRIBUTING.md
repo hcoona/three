@@ -67,16 +67,12 @@ tools prepared, run Workflow Delivery's managed tests from the repository root:
 dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj
 ```
 
-The project's native MTP default excludes `NuGetNativePreparation` and
-`NuGetNativeScenarios`. Ordinary CI runs the two preparation rows when the
-existing .NET/Workflow scope selection selects them. The three sensitivity/recovery tests run through
-`workflow-delivery-v3-nuget-reproducibility.yml` on owner dispatch and on
-`main` build-infrastructure changes, because reproducibility was established
-once ([#948](https://github.com/hcoona/three/issues/948), [#952](https://github.com/hcoona/three/pull/952)). To run them locally, override the
-default with `--filter 'TestCategory=NuGetNativePreparation'
---minimum-expected-tests 2` or `--filter 'TestCategory=NuGetNativeScenarios'
---minimum-expected-tests 3`. An explicit filter replaces the default, so an
-unrestricted local run uses `--filter 'FullyQualifiedName~WorkflowDelivery'`.
+The project's native MTP default excludes the NuGet native preparation and
+reproducibility categories. Their CI and reproducibility-workflow triggers are
+owned by the
+[native .NET CI group contract](src/private/app/workflow-delivery/docs/integration/dotnet.md#planning-execution-and-collection),
+and the local override filters by the application's
+[validation section](src/private/app/workflow-delivery/README.md#validation-and-evidence-limits).
 
 `mise run test:python` runs the
 [native Python group](src/private/app/workflow-delivery/README.md#native-python-ci-caller)
