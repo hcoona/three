@@ -75,8 +75,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ### Contract Workflow Delivery records
 
-- **Work carrier:** the pull request proposing this entry and its linked
-  documentation PRs. The repository owner accepted the recommendations of a
+- **Work carrier:** [Issue #1227](https://github.com/hcoona/three/issues/1227)
+  coordinates the documentation PRs; the pull request proposing this entry is
+  the authorization proposal. The repository owner accepted the recommendations of a
   read-only structure review of the Workflow Delivery V3 records and requested
   contraction until they comply with the
   [record policy](governance/record-system.md) and
@@ -85,7 +86,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
   [portal](../src/private/app/workflow-delivery/docs/README.md),
   [application interface](../src/private/app/workflow-delivery/README.md),
   their linked requirements, design, integration, research and validation
-  records, and the [family catalog](governance/record-families.yaml). Commit
+  records, the root [agent instructions](../AGENTS.md), the
+  [agent execution guidance](engineering/agent-execution.md) and the
+  [family catalog](governance/record-families.yaml). Commit
   `eafd42b0453b265b12ef3791a0b117084aa5eec0` is the fidelity baseline.
 - **Advancement and outcome:** contract these records and their routing
   interfaces without changing product behavior:
@@ -105,8 +108,11 @@ ends a grant. Git and the proposing PR retain the reason and history.
       [agent execution guidance](engineering/agent-execution.md) when they apply
       beyond Workflow Delivery;
     - keep common contracts in the MLD and concrete ecosystem contracts in
-      per-ecosystem integration contract files replacing `migration-strategy.md`,
-      updating this Wave's links to it in the same change;
+      per-ecosystem integration contract files replacing `migration-strategy.md`;
+      one additional common integration file may hold only the Official
+      channel scope and CLI/boundary payload tables; update the
+      "integration contracts" link in the accepted inputs of the
+      CI-cost entry above in the same change;
     - define current terms in the HLD, add native helper containers to its C4
       container view and one CI cross-job sequence to the MLD, and divide dense
       rule paragraphs.
@@ -117,7 +123,12 @@ ends a grant. Git and the proposing PR retain the reason and history.
   for every removed, moved or reworded statement, its current location, or its
   commit-pinned historical location and the absence of a current consumer.
   Independently classify material findings before repair. A required meaning
-  change or an unpreservable evidence consumer returns to the owner.
+  change or an unpreservable evidence consumer returns to the owner. Changes
+  merged under the "Contract implemented Workflow Delivery architecture and CI
+  cost" entry are outside this entry's fidelity comparison: each PR rebases
+  onto current `main` and is reviewed against it, and the final whole-diff
+  fidelity audit compares against the baseline while excluding content merged
+  under that entry.
 - **Acceptance:** the record checker reports no diagnostics for the changed
   records, and a fresh independent audit of the whole record set per principle
   area plus a whole-diff fidelity audit from the baseline report no material
