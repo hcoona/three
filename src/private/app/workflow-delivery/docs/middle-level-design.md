@@ -19,19 +19,13 @@ implementation scope. Missing necessary native capabilities remain unsupported;
 implementation details cannot silently weaken these contracts. The
 [handoff](agent-handoff.md) retains the operating and evidence limits.
 
-The [first Node execution group](migration-strategy.md#first-node-execution-group)
-specifies the initial caller's endpoint responsibility, native control inputs,
-runtime/check ownership and atomic fixture relocation. The
-[native .NET CI group](migration-strategy.md#native-net-ci-group) defines the
-Windows extraction and caller contract. The
-[native Python planning facts](#native-python-planning-facts) and
-[CI group contract](#native-python-ci-group) own its implemented extraction,
-execution and caller mapping, with ordinary hosted qualification carried by
-[PR #1114](https://github.com/hcoona/three/pull/1114). The
-[native Ruby planning facts](#native-ruby-planning-facts) and
-[CI group contract](#native-ruby-ci-group) define its extraction, native composition and caller boundary.
-Each group requires its own applicable native and hosted qualification;
-source design acceptance does not establish those results.
+The per-ecosystem integration contracts for [.NET and NuGet](integration/dotnet.md),
+[Node and npm](integration/node.md), [Python](integration/python.md) and
+[Ruby](integration/ruby.md) own each ecosystem's native fact extraction, CI group,
+Release caller and destination conditions; the
+[common integration tables](integration/common.md) own the Official channel scope
+and CLI/boundary payloads (see [integration mapping](#integration-mapping)). Each group requires its own applicable native and
+hosted qualification; source design acceptance does not establish those results.
 
 ## Components and Native Responsibilities
 
@@ -68,6 +62,119 @@ are exposed. A helper is part of this application and its selected control
 revision, not another policy service. Transfer typed results only at an actual
 process or runner boundary; field spelling and internal interfaces may change
 with their producers and consumers without compatibility aliases.
+
+### Owned Projects
+
+| Owner                                                               | Responsibility                                                                                                             |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `src/private/app/workflow-delivery/WorkflowDelivery.csproj`         | Internal CI and Release entry point, native readers, selection, execution, package and destination operations              |
+| `tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj` | Managed scenario, algorithm, transfer and native integration tests                                                         |
+| `tests/private/app/workflow-delivery/Native/{Python,Ruby}/`         | Tests of the corresponding native-language helpers                                                                         |
+| `tests/private/app/workflow-delivery/fixtures/products/`            | Four ordinary npm, NuGet, Python and Ruby package inputs, with native manifests, versions and quality/release declarations |
+| `src/private/app/workflow-delivery/docs/`                           | Current requirements/design/contracts and retained research/evidence readers                                               |
+| `src/public/lib/nbgv-python/` and `src/sample/nbgv-hatch-demo/`     | Independent public NBGV component and sample, retaining their own consumers and authorities                                |
+
+Module names in this design are source organization, not additional applications.
+Native product fixtures retain their package coordinates but have no old/new
+byte or version continuity promise. Their placement must preserve deliberate
+native version bases, quality ancestry, workspace membership and build imports.
+Root traversal retains normal native project semantics; moving a fixture does
+not justify a separate discovery or scheduler service.
+
+### Native Helper and Caller Boundaries
+
+Complete .NET, Python and Ruby CI group execution owns its original plan's outcome.
+CLI exit and process receivers use that bound outcome, retaining comparison,
+candidate, scope, raw results and diagnostics. Receivers reject missing or malformed
+outcomes rather than launching the same control to reevaluate its unchanged results.
+Pre-execution plan validation and Node's join across independent runtime results
+remain distinct.
+
+The application owns ordinary Release job inputs, request subject binding,
+original transfer, phase configuration and required write-state output. Existing
+Ruby/Python/npm/NuGet workflows invoke `release job-inputs <ecosystem> <operation>` through
+their already distributed candidate control. They do not carry a separate
+language-specific Release caller implementation. Actions retains job ordering,
+Environment, credentials, concurrency and immutable artifact transfer. npm's
+single-job Official simulation creates a consumed typed request. Same-run
+immutable artifact IDs carry the producer run; each later job checks the received
+preparation once against the request subject rather than restating run and
+attempt in separate producer records. Live ref eligibility has one definition,
+applied where the request is formed and again by the privileged publisher.
+Every `complete-*` command (npm, NuGet, Python and Ruby) consumes the retained
+initial observation to distinguish legitimate no-write completion from missing
+required publication information. NuGet callers forward native process
+termination; typed completion owns result interpretation, without a shell enum
+mirror.
+
+Ruby helpers retain RubyGems/Bundler evaluation and native source reads; local
+installation/API qualification uses the native gem and Ruby commands. Python helpers retain PyPA/NBGV library bindings over
+the pinned UV CLI; .NET and Node use their supported native process interfaces.
+A helper is justified by a required library interface, not by the language label.
+Adding a distinct product can require a concrete recipe; no generic plugin or
+automatic adoption capability is implied by these four implemented products.
+
+[Native wire schemas](../Native/contracts/) are generated from the actual
+application serializer metadata by `native-message-schemas <directory>`.
+They describe retained Ruby fact/source messages with independent
+native consumers. Python helper responses are tested by their managed consumers;
+no unused schema export is retained. Managed tests require regeneration equivalence; native Ruby
+tests consume the static descriptions without building the application. These
+are shape descriptions, not a schema registry, runtime admission policy,
+upstream PNPM/MSBuild format mirror or compatibility lifecycle. Semantic native
+identity, path, version, producer and command checks remain required. Existing
+native command-argument interfaces need no invented JSON envelope.
+
+### Runtime and CLI Consumers
+
+The [application README](../README.md) owns current commands and supported
+options. The internal CLI has no historical Python command or record aliases.
+
+| Consumer                     | Native input/output boundary                                                                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Root CI planning             | Exact event candidate/comparison, native paired facts, quality declarations and selected required work                                             |
+| Ecosystem CI group wrappers  | Prepared current control, complete selected checks/variants and candidate-bound command/results                                                    |
+| Ordinary Release preparation | Selected revision, one release unit/channel/destination/mode, complete original package set and clean qualification                                |
+| Observation and publisher    | Bound preparation/original files, native destination state, upload-once command facts and required verification                                    |
+| Separate verification jobs   | No-write registry readback of exact coordinates and original bytes and business completion, retaining command abnormalities and unresolved effects |
+| Historical auditors          | Original producer-qualified Git source and retained evidence; no current campaign/replay entry point                                               |
+
+Native PNPM, MSBuild/NuGet, UV/Python and RubyGems/Bundler own ecosystem semantics.
+The application does not retain the old public Python control package, exclusive
+provider/authority/consumer projects, dependency scanner, runtime admission files
+or closed campaign operators as compatibility services.
+
+### Workflow Caller Boundaries
+
+| Caller                                                     | Required atomic boundary                                                                                                                                                                            |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/ci.yml` and the CI scope caller         | Actual native ownership, control preparation, group selection, complete results and retained originals                                                                                              |
+| Native Node, .NET, Python and Ruby group wrappers          | Paired endpoint facts, selected work, effective quality, original tool outputs and terminal process facts                                                                                           |
+| Windows NuGet preparation job and reproducibility workflow | Two preparation rows in CI and three sensitivity/recovery tests on dispatch or `main` changes, executed and passed, with original packages, separate PDBs, native diagnostics and failure retention |
+| Ordinary npm, NuGet, Python and Ruby release workflows     | Selected control/product revision, prepared artifact bindings, native authorization, upload-once behavior and separate no-write verification/results                                                |
+| Remaining platform-specific CI and independent projects    | Preserve their own ownership, runners, preparations and required checks                                                                                                                             |
+
+The Windows NuGet jobs' success cannot substitute for the complete ordinary CI
+gate. General C# checks use Windows; Python and Ruby callers use their supported
+Linux runner. Fixture and local successes do not establish live destination,
+authentication or publisher configuration. Closed bootstrap/acceptance workflows
+and exclusive setup/operation-record actions have no current execution consumer.
+Their actual historical producers remain recoverable through pinned readers.
+
+### Root Tooling, Declarations and Record Readers
+
+| Surface                                                                        | Retained responsibility                                                                                                |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Product release/quality declarations, native manifests, versions and locks     | Explicit native ownership, complete output/check scope and genuine shared inputs                                       |
+| `mise.toml`, `hk.pkl`, runtime projections and dependency-update configuration | Current tool preparation and conformance; no old control-package generators, scanner tasks or parser-only dependencies |
+| Root workspace/build manifests and locks                                       | Actual current projects and native fixture inheritance; native tools update their own locks                            |
+| Root selectors, attributes, ignore rules and CODEOWNERS                        | Current source/configuration paths and generated/output ownership                                                      |
+| Agent instructions, portals, family bindings and project interfaces            | One current application authority; fixture carrier paths remain distinct from owning namespace                         |
+
+Retire an exclusive dependency or helper only with its last current caller.
+Native version/build inputs and the public NBGV component remain when their real
+consumers need them. Historical evidence uses original source identities rather
+than a transplanted admission, approval-proof or replay implementation.
 
 ## Repository Facts and Impact Selection
 
@@ -128,294 +235,36 @@ selection and exclusion. An incomplete graph cannot certify that a changed path
 has no consumers. Release resolves its selected unit's complete input/build/check
 closure; it need not evaluate unrelated projects.
 
-### Native Python Planning Facts
+### Native Fact Integration
 
-`Native/Python` uses the repository-pinned UV metadata and synchronization CLI,
-passive PyPA build-requirement extraction and the bounded build association
-below. The [source assessment](research/python-native-planning.md) retains the
-evidence and recheck triggers. UV owns resolution, the resolved graph, workspace
-membership and `requires-python` enforcement; PyPA owns build-requirement
-strings and PEP 508 parsing; NBGV owns its semantics. Standard tomllib supplies
-physical key/shape guards only. There is no embedded UV library, settings
-interpreter, resolver or compatibility promise. A nonempty flattened
-dependency group whose every requirement has a marker disjoint from the
-workspace Python range can lack a metadata node; that valid UV
-shape remains an unsupported
-[group-transfer gap](research/python-native-graph-qualification.md#failed-captures-and-counterexamples)
-with its recorded review obligation.
+For each new integration, first identify its maintained native library or
+supported tool interface, the inputs/configuration it evaluates, the facts and
+errors it exposes, and the required facts still unavailable. Review that concrete
+boundary before implementation. Follow the HLD's
+[native integration boundary](high-level-design.md#native-integrations), including
+native-language helpers and owner disposition when a necessary capability is
+missing. Internal implementation and transfer formats have no compatibility
+obligation. Rewrite producers and consumers together instead of adding aliases
+or porting ecosystem parsing and resolution rules into C#.
 
-For each exact basis/candidate checkout, bind revision, workspace root,
-interpreter/tool identity and operation dimensions, then invoke
-`uv workspace metadata --frozen --python <interpreter>` at the workspace root
-without sync/active/script mode. The committed lock is consumed under the
-existing synchronized-lock guarantee; frozen mode does not revalidate it.
-Consume the pinned preview schema's member paths/names, structured sources,
-opaque graph IDs, ordinary edges, group/extra entry IDs and `requires_python`.
-Never decode IDs or infer owners from URLs, prefixes or caches.
+| Ecosystem | Native inputs and required initial coverage                                                                                                                    | Unsupported relevant shape                                                                                                    |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Node      | PNPM workspace membership and local dependency edges; package manifests/scripts; shared lock/toolchain consumers; NBGV project inputs; declared package output | Unknown workspace protocol or dynamic dependency/input relation that native metadata and explicit declarations cannot resolve |
+| .NET      | Evaluated MSBuild projects/imports and `ProjectReference` per selected configuration/TFM/RID; CPM/lock inputs; declared package outputs and supporting tests   | Missing evaluation runner, unresolved conditional/import inputs or an unmodeled relevant dimension                            |
+| Python    | UV workspace/project and local dependency facts; `pyproject.toml`, native lock/build-system inputs; wheel/sdist outputs and Git-free sdist build requirements  | Undeclared dynamic backend/source inputs or native metadata insufficient for affected closure                                 |
+| Ruby      | Evaluated gemspec/native dependency facts, locked build/check inputs and explicit repository-local relations unavailable from native metadata                  | Dynamic gemspec behavior whose input/ownership closure is not bounded                                                         |
 
-The request uses the default index with sources enabled. A manifest in a native
-context or above the workspace root may configure `tool.uv` only with
-`workspace` and `sources`; any other setting, or a project `uv.toml` at or
-above the workspace root, is unsupported rather than ignored. The child process
-is credential-free, with owned HOME/XDG/cache/temp roots, an explicit
-interpreter, downloads disabled, `UV_NO_SYSTEM_CONFIG` set, no inherited
-UV/PIP/index/credential settings and an owned absent `UV_PROJECT_ENVIRONMENT`.
-Unexpected environment facts fail the request. Bind project configuration and
-version-file inputs; do not port private CLI precedence or suppress
-configuration/sources.
+Analyze base and candidate as specified by the [selection algorithm](#selection-algorithm). Native evaluation is product
+execution and runs unprivileged. Initial graph scenarios must include real local
+references and transitive consumers, not just the current reference-free smoke
+projects. The fixtures do not define the limit of the repository model. Shared
+lockfile changes may select all actual consumers; unknown scope never selects a
+full-run fallback. New production-product onboarding needs its own accepted Wave entry.
 
-UV metadata stubs build nodes, so build requirements come from
-`ProjectBuilder.build_system_requires` for named package contexts with explicit
-Hatchling build tables and no backend-path/package override, parsed with PyPA
-`packaging.requirements.Requirement`; direct URL requirements are rejected. A
-requirement joins a workspace member by canonical name only when its
-`tool.uv.sources` entry (project table, else workspace root table) is absent or
-exactly `{ workspace = true }`. Every other source shape, a member requirement
-without that source and a non-member requirement with it fail planning. A
-registry requirement or an unsourced self-reference adds no local input; a
-workspace-sourced self-reference keeps its requested extras. This is
-the bounded HLD exception, a strict subset of UV lowering. Repeat the
-association for every necessary local build-requirement source; Workflow
-computes transitive/reverse closure and cycles. Association does not prove
-version satisfaction or build success. Tableless native quality/group contexts
-remain; forced package builds, default backends and undeclared dynamic inputs
-are unsupported. Malformed manifests remain errors.
-
-Treat every edge and build-requirement marker as active: the finite union over
-interpreters and platforms can only add consumers. Groups follow UV's default
-`dev` group unless no-dev is requested; the guard rejects `default-groups`,
-`dev-dependencies` and `dependency-groups`. Root pytest preparation includes
-root plus selected quality owners; no-dev operations and build-requirement
-ordinary legs select no groups. Operation extras start empty; build-requirement
-extras select producer extra entry IDs. Unknown necessary group/extra selection and nonempty native conflicts fail
-planning. Preserve
-endpoint, interpreter/platform, groups/extras and check/build variant before
-markerless `ProjectFacts.Dependencies`, and union both endpoints so removed or
-renamed producers retain consumers. `uv sync --frozen --python <interpreter>`
-during preparation enforces `requires-python` for the operation interpreter.
-
-Adapt into existing RepositoryFacts/ProjectFacts/SharedInput/CheckSpec and
-impact closure, keeping quality consumers separate from build inputs and root ownership
-explicit. Managed
-NBGV and passive plugin coordinates supply project-scoped version/generated
-input consumers. Missing or ambiguous ownership, native errors or unmodeled
-necessary scope fail planning; there is no reduced completeness, parser
-fallback or all-run.
-
-### Python Quality Owners and Input-Only Members
-
-Native workspace membership does not imply a build or test obligation. Keep the
-complete native producer graph, including tableless and unadopted members. Actual
-retained pytest targets and adopted package checks define runnable quality owners.
-Resolve nearest source ownership over all native members before restricting the
-result to runnable owners; an input-only nested member is not its ancestor's source.
-
-The paired assembler associates endpoint-native identities and unions resolved
-ordinary, build and quality relations from both comparison revisions before
-computing producer-to-runnable-owner closure. Do not compose only endpoint-local
-closures after removing intermediate producers. For example, a basis relation
-`A -> B` and candidate relation `B -> C`, expressed as producer-to-consumer, must
-select surviving runnable `C` for a changed `A` input even when `B` has no checks.
-Keep each endpoint's committed path association and initiating path/revision reason;
-resolve executable work against surviving candidate owners. Do not infer native
-identity matches from package names or opaque graph ID spelling.
-
-Keep same-endpoint exact input consumers in existing `SharedInput` and explicit
-`ProjectFacts.OwnedPaths` values. A paired input association may reach a runnable
-owner present only at the other endpoint. Transfer that direct selection through
-the existing `SelectionReason(Path, Revision, Project)` value: `Project` identifies
-the resolved quality consumer, while `Revision` identifies the committed input's
-initiating endpoint. It does not assert that consumer's presence at that endpoint.
-Only actual endpoint runnable owners become `ProjectFacts` with nonempty resolved
-checks; input-only members retain their graph role without synthetic builds,
-empty-check policy, candidate-only basis proxies or a new core origin. A path can enter
-`UnaffectedPaths` only when the complete paired analysis establishes no applicable
-owner. An endpoint-local empty closure, missing facts or unknown ownership cannot
-justify exclusion. The core selected-check guard remains unchanged.
-
-The shared selection operation accepts these paired direct reasons before its
-existing union relation and Release Unit closure. Validate each reason against a
-normalized changed path, an exact comparison revision and a real owner in the
-union of actual endpoint owners. Native Git/ownership binding establishes input
-presence and complete scope before this transfer. A valid reason resolves only
-its own path; other unresolved changed paths still fail, including in full mode.
-Do not clear the changed-path set, transfer an externally completed plan or bypass
-ordinary fact validation. Candidate survival, complete checks/variants, selected
-origins and prerequisite expansion remain the shared core's responsibilities.
-
-Read root pytest configuration through its public `pytest.main(..., plugins=[...])`
-and `pytest_cmdline_main` hook, using native `Config.getini`, `rootpath` and `inipath`.
-The initial request admits the current nonempty explicit committed `testpaths` and
-the existing import-mode option. Reject necessary unsupported glob, implicit
-invocation-directory fallback, escaping target, custom plugin or option behavior;
-do not copy pytest's configuration precedence or private target-selection algorithm.
-Configuration parsing can import explicit plugins and alter Python paths before
-the main hook: the query runs unprivileged with owned state, no inherited
-`PYTEST_ADDOPTS`/`PYTEST_PLUGINS`, disabled plugin autoload and conftest discovery.
-Those switches alone do not prove absence of explicit plugin processing. This
-finite native query supplies configuration facts, not successful test collection
-or execution. Its source basis is recorded in the
-[Python planning assessment](research/python-native-planning.md#pytest-configuration-source-basis).
-
-Associate configured targets under native members with their actual quality owners;
-standalone repository tests are concrete target consumers, not invented workspace
-members. Preparation uses root plus selected quality-member contexts and native
-operation groups. Input analysis does not require building every workspace package.
-Retain adopted package checks, complete outputs and their own prerequisites. The
-[caller mapping](migration-strategy.md#python-quality-and-caller-mapping) owns the
-concrete engineering relations that native package tools cannot discover.
-
-### Native Ruby Planning Facts
-
-The Ruby reader consumes unprivileged RubyGems and Bundler answers for each
-materialized endpoint. RubyGems owns evaluated source gem metadata; Bundler owns
-Gemfile/lock equivalence, group/platform selection, source identities and complete
-resolved dependency relations. Workflow does not parse these native declarations
-or resolve package versions. A small Ruby adapter may serialize native public
-answers to the managed process; it is not a second resolver or runtime service.
-
-A source gem, a Bundler environment and an installed dependency have distinct
-identities. Existing repository discovery identifies committed source gemspecs
-and actual bundle consumers. Source gemspec evaluation can be required even when
-its adjacent Gemfile does not load that gemspec. Each answer includes its original
-source location and native package coordinate. A failed or nil gemspec evaluation
-fails collection; it cannot silently remove a repository producer.
-
-Each bundle answer includes its original Gemfile/lock, activated native version
-and operation context, actual evaluated Gemfile inputs, selected direct and
-transitive dependencies, and native source identities. Keep registry dependency
-facts only as needed to recover repository-local relations; installed gems do not
-become repository projects. Consume the locked version through native
-launch/preparation and verify actual activation. A native
-fallback to another library cannot claim the requested lock context. The reader
-must obtain complete native answers for both existing lock-selected versions
-before their callers switch; this is finite supported integration, not a generic
-library compatibility layer.
-
-Join native local Path source identity and active local Git override identity to
-repository producers by their original source paths. Installed cache locations
-and names alone cannot establish these relations. Preserve native transitive
-edges and cross-ecosystem bundle consumers. A bundle-only consumer does not gain
-an invented gemspec or package identity. Missing required local owners, native
-incomplete dependency answers, or an unsupported relevant source shape fail
-collection instead of choosing full mode or maintaining a second input roster.
-
-Input ownership covers committed project inputs, native evaluated Gemfiles and
-locks, concrete project-owned gemspec helpers, and existing tool/NBGV/quality
-inputs. Package file membership describes packaged content, not a test-input
-inventory. Unknown dynamic Ruby IO or external input cannot be proven closed by
-loaded-feature enumeration; such a required shape remains unsupported. Native
-facts from both endpoints join the existing paired impact selection, including
-removed local producers and their previous consumers.
-
-### Native .NET Project Facts
-
-MSBuild owns .NET discovery, SDK resolution, evaluation, graph identity and
-reference propagation. The existing application supplies a task loaded by the
-endpoint's selected `dotnet msbuild` process; Workflow does not host a second
-resolver, parse project XML or schedule compilation nodes. The
-[integration contract](migration-strategy.md#native-net-ci-group) identifies
-the finite input roles and preparation stages supported by this operation.
-
-Keep each retained business or traversal node's project path and complete
-effective globals, including outer/inner identity and native reference edges.
-Business impact uses
-the committed project path as its project ID. Aggregate native relations for
-selection only; every surviving selected candidate project's supported inner
-variants expand their complete checks. A changed framework/global tuple must not
-make a surviving project's new variant disappear from execution.
-
-NBGV's native caching project is a finite tool adapter exception. Keep it in
-MSBuild's local graph and retain the default native caching mode. Identify it
-through the marked native reference and the consumer's validated restored NBGV package pin,
-not a general rule for external projects. Its internal configuration, physical
-globals and tool-only reference edges do not become portable business nodes or
-checks. Preserve its necessary observed inputs for its business consumers.
-Receiving checkouts let MSBuild/NBGV construct their own local helper context;
-Workflow does not replay helper coordinates or implement version caching.
-
-Native provider associations can include finite sibling inputs. The workload
-autoimport locator's successful returned `Sdk` directory and its actual
-`AutoImport.props` import associate that specific parent pack with the native SDK
-provider. This does not admit all installed packs, expand unrelated SDK roots or
-implement workload resolution. Preserve the native locator identity and version
-field without claiming an exact pack version; unknown external inputs remain
-unsupported. The [application entry](../README.md)
-retains the source basis and implementation boundary. Control inputs use the same native graph/provider contract, retaining
-explicit references, evaluated inputs and concrete configuration consumers.
-No separate build-task log interpreter is required.
-
-Exact native locked-restore configuration contributors remain source inputs when
-committed and invocation-local environment facts when outside the checkout.
-Require absolute existing files and preserve the restore role; this association
-adds no generic dependency membership or configuration-directory authority.
-
-Bind version-input discovery to each supported effective native
-`GitVersionBaseDirectory`, not necessarily the product directory. Union native
-business variant consumers. Traversal's unused self-version metadata does not
-widen product selection; genuine root configuration/provider/helper inputs retain
-their consumers. Business projects may use a root version subject.
-Keep this physical subject local to the endpoint; portable checks retain only
-product globals. Quality adoption continues to use the product directory.
-Unsupported external or ambiguous native version contexts remain unavailable.
-
-`ProjectFacts.OwnedPaths` is optional: null retains existing nearest-directory
-ownership; a populated array names exact committed endpoint coordinates. The
-.NET adapter derives ordinary regions from native project directories, preserving
-nearest-project ownership and multiple projects sharing a directory, and narrows
-them with native evaluated default excludes using the official MSBuild glob
-matcher. The traversal entry is a discovery input, never a repository-root owner.
-Explicit native input consumers remain additional relations even when ordinary
-ownership excludes a path. Union consumers from all native nodes and both
-endpoints; unsupported or ambiguous necessary facts fail planning.
-
-These ordinary regions are a business ownership policy, not complete compiler or
-custom-target I/O discovery. For example, ordinary npm fixture source excluded by
-the .NET test project's default excludes does not select that parent; its exact
-embedded `version.json` still selects the .NET resource consumer. Concrete
-repository producers outside ordinary ownership require a reviewed native
-adapter. Trust SDK/package behavior without an application task allowlist or
-dynamic admission policy.
-
-### Control-Test Resource Consumer
-
-The existing general .NET CI owner must be selected when a changed input is
-embedded by `tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj`.
-Read `EmbeddedResource` at both comparison revisions through supported native
-MSBuild evaluation. This is one concrete input-consumer projection, not a
-complete .NET graph or another resource declaration. Preserve the existing owner.
-
-Evaluate the owner's default property context in one query: set
-`Configuration=Debug`, with no TFM/RID global override, and request
-`MSBuildProjectFullPath`, `Configuration`, `TargetFramework`, `TargetFrameworks`,
-`RuntimeIdentifier`, `RuntimeIdentifiers` and `EmbeddedResource` together.
-Use `-noAutoResponse`; request no target, target result, restore or repair.
-The initial supported shape has one nonempty effective TFM, empty multiple-TFM
-and multiple-RID declarations and a possibly empty effective RID. Reject an
-unsupported relevant shape. Reuse the native reader's project/path/item
-validation and original committed spelling; do not build a dimension service.
-Each endpoint uses its own committed inputs, SDK and existing root locked native
-preparation. Do not restore the test project again. The full root graph uses
-additional CI/locked-restore globals; retain this query's default Debug context
-rather than claiming equivalent conditional resources.
-
-The response that the C# scope selector (`ci caller-dotnet select`) consumes in
-process carries the exact
-native comparison and each endpoint's revision, project, concrete effective
-dimension and committed resource array. Represent confirmed base-project absence
-explicitly; missing facts or failed evaluation are not absence. The candidate
-must retain the named owner; moving or replacing it requires an atomic reviewed
-owner change. An absent/nonregular candidate project, conflicting identity,
-missing materialized input or unavailable native preparation fails selection.
-
-The receiving selector binds the response to the checked-out candidate and
-Git-resolved basis, then intersects changed paths with both resource input sets.
-A hit adds the existing .NET owner with its changed path, project and revision
-reason to the final scope. Retain other selector reasons and owners. Emit
-successful scope outputs only after required response validation and final
-selection; no later executor override or automatic full fallback is permitted.
-Explicit manual full retains the native `basis == candidate` comparison identity.
-The process response is a consumed input, not an internal trust or approval record.
+Use Ubuntu runners for the Node/Python/Ruby groups and Windows for general
+.NET evaluation/build/consumption, with explicit product variants taking precedence.
+Tool versions come from `global.json`, `mise.toml`/`mise.lock` and native locks;
+do not introduce a second toolchain authority.
 
 ### GitHub Event Comparison
 
@@ -459,7 +308,8 @@ remain separate integration responsibilities.
    and relevant relations in the comparison basis and candidate. Changes to
    dependency declarations must not erase the evidence needed to select consumers.
 3. Select directly affected projects and shared-input consumers, including valid
-   paired direct-selection reasons above. Follow required
+   paired direct-selection reasons from the
+   [Python quality-owner contract](integration/python.md#python-quality-owners-and-input-only-members). Follow required
    transitive reverse dependencies and quality-consumer relations from both sides.
 4. Resolve surviving work against the candidate revision. A deleted project is
    not a runnable target; its surviving consumers and changed declarations still
@@ -564,116 +414,6 @@ one ordinary CI owner, selected by actual inputs/dependencies. CI never imports
 Release authority or exposes publication capability. General C# execution follows
 the repository's Windows default unless a declared variant selects another runner.
 
-### Native Python CI Group
-
-The existing Linux Python job selects and executes one original candidate-bound plan for
-configured pytest targets and adopted distribution checks. This group composes
-the native graph collector, pytest configuration/target binding, repository input
-associations and paired fact assembler already defined above. It adds no project,
-dependency, test-target or backend declaration. The
-[caller mapping](migration-strategy.md#python-quality-and-caller-mapping)
-retains the concrete repository and special-job consumers.
-
-The Windows scope job transfers the exact event comparison and explicit
-full/incremental mode, together with the complete candidate control distribution.
-The existing Linux Python job performs the first Python selection: it materializes
-both exact endpoints and collects their native facts for its actual Linux product
-interpreter and supported operation dimensions. Windows interpreter facts
-cannot substitute for that Linux context. The selected control distribution
-and native query tools must run in that context; unavailable necessary capability
-fails analysis rather than introducing platform emulation.
-
-Planning binds each materialized endpoint to its own native membership,
-configuration, interpreter/platform, operation groups and committed inputs.
-Prepare a separately owned query-tool environment for each endpoint with native
-`uv sync --frozen --only-group dev --only-group workflow-delivery-python --no-editable`,
-noneditable workspace dependency installation and default build isolation. Use
-that endpoint's committed root groups, lock and source configuration, and the
-bound Linux interpreter. UV owns the selected tool-group closure and any native
-backend preparation; no separate library or backend roster is maintained. The
-declared plugin may be built as a query-tool dependency without making unrelated
-workspace members product or quality owners. Passive query execution remains
-distinct from this tool installation. Keep the installed helper environment
-separate from product/test/package environments and from the owned absent
-`UV_PROJECT_ENVIRONMENT` required by native metadata queries.
-
-Supply the candidate control version's `Native/Python` helper sources from the
-transferred candidate control sources. Bind helper source and runtime identities
-to both endpoint queries; each query retains its own endpoint configuration,
-lock, groups and actual Linux interpreter facts. Preserve the configuration
-preflight and owned credential-free query state. Necessary tool preparation
-failure, timeout or cancellation stops analysis.
-The current native Python callers own this preparation. Affected preparation or
-caller changes require qualification of their actual source and environment;
-stopped graph/enrichment observations alone do not establish installation or
-caller success.
-
-Reuse the accepted native metadata, passive extraction, build-association join and pytest query;
-candidate facts cannot substitute for missing basis facts. Bind actual quality
-adoption and release declarations before complete paired selection. Existing
-shared-core closure selects surviving checks and supplies initiating path/revision
-reasons. Explicit full mode states the supported group it covers; an incremental
-analysis failure cannot become a full run.
-
-Begin that analysis for every valid comparison, independently of legacy Windows
-Python applicability, target, package or special-input heuristics. Successful
-incremental analysis may establish that no checks are affected: report the
-explainable no-work scope and perform no product/test/package preparation or
-execution. Query-tool preparation remains separate. Missing facts, failed
-transfer, cancellation or timeout cannot become successful non-applicability.
-For selected work, keep the existing nonempty selected-check requirement.
-
-The Linux job invokes shared selection once, then passes its original plan to
-the finite executor in the same job. At that boundary, preserve candidate-native
-membership
-and pytest target bindings, tool/operation context and complete candidate control
-distribution. Validate their agreement with the receiving exact candidate before
-product dispatch. Native member names come from metadata, and target/member
-coordinates come from the existing native target binding. This request validation
-must not resolve dependencies, choose targets again or introduce a trust record.
-Selected V3 consumers prepare mise's native configuration trust in their owned
-HOME before HK/Pkl queries. Mise owns that local tool state.
-
-The finite executor partitions that plan into native-retained `python/pytest-v1`
-checks and the registered Python distribution preset. Validate both supported
-partitions and their complete prerequisites before either executes. Keep one
-required result per original check and collect against the original mixed plan;
-neither executor may remove or substitute the other partition. Empty partitions
-need no preparation. This follows the existing .NET group composition rather
-than introducing a task scheduler.
-
-For a nonempty pytest partition, prepare a separate test environment with native
-`uv sync --frozen`, selecting the root context plus every selected quality-member
-context. Resolve names from supplied native membership, retain the interpreter
-and native default-group operation, and let UV own installation and dependency
-semantics. Standalone repository targets require the root context; member targets
-also require their bound member. Dependency producers do not become automatic
-quality owners. Do not substitute the distribution-tool environment or force
-unrelated input-only members to build.
-
-Execute each original selected target with
-`uv run --no-project --python <prepared-environment> python -m pytest`, retaining
-the supported native configuration/options. Set `UV_PROJECT_ENVIRONMENT` only
-for preparation and remove it from product execution so nested project-native
-UV calls do not retarget the prepared environment. Product preparation and
-execution retain ordinary Python import behavior; query-only `PYTHONSAFEPATH`
-is removed at that boundary while native query isolation remains unchanged.
-One invocation per target supplies its distinct required outcome while sharing
-preparation. A preparation failure, timeout or cancellation leaves every affected
-required target unsatisfied; it cannot produce an empty successful result. Keep
-independent package obligations visible even when pytest fails. The package
-partition retains its separate phase-specific preparation, original archives and
-four required distribution checks under the contract below.
-
-The root CI group and local full runner use the same native Python group and
-preparation contract. Affected producer/consumer changes preserve selected/full
-preparation and complete checks together. Controlled validation covers root-only
-and mixed member preparation, native name/target agreement, explicit full versus
-incremental selection, complete partition/result transfer and failures/cancellation.
-Ordinary authorized PR CI qualifies the complete affected caller group before
-delivery. No local package experiment, historical campaign, Release or publication
-authority follows from this integration contract.
-
 Finite `CI/Callers` composition assembles the existing .NET, Node, Python and Ruby
 requests and collects their original results, including retained-job scope and
 record-catalog responsibility. Actions owns SDK and locked tool setup, the
@@ -685,139 +425,7 @@ version/quality triggers, original reports and packages remain required. The
 test runner's filter, per-module `--minimum-expected-tests` (which excludes
 skipped rows) and exit code qualify them; missing, skipped or failed rows fail.
 
-### Native Ruby CI Group
-
-Plan complete adopted Ruby checks from the paired facts and quality declarations.
-Reuse the existing selected-work and original-result contracts. Preserve whole
-project RSpec invocation and its native configuration and external tools; Workflow
-does not choose examples. Request the supported native JSON formatter/output,
-retaining original examples, failure/pending counts and outside-example errors.
-Native command termination and complete result output remain separate facts.
-Missing/truncated output, incomplete examples or a failing native command cannot
-become a successful check. Apply project quality requirements to pending results;
-a universal extra quality policy is not introduced here.
-
-The registered `ruby/project-rspec-v1` check invokes that whole native RSpec
-recipe and is required by the `ruby/rspec-v1` preset. Latexmath adopts this preset
-in its source-local `workflow-delivery.quality.yml`, preserving its required suite
-and external tools. Check registration, the adopted preset and actual selection
-remain prerequisites for planning and caller qualification. Structural discovery does not supply a default
-quality selection. The smoke gem retains its separate content/clean-require
-preset; Hexo remains a bundle-only dependency consumer without an invented Ruby
-package or check owner.
-
-An explicitly quality-adopted bundle-only RSpec carrier can own a native suite
-without a synthetic gemspec or publishable unit. The Ruby helper carrier consumes
-its specs, native helpers, static wire descriptions and concrete gem fixtures.
-Native Bundler locks own all test dependencies and both Bundler contexts. C# tests
-its producer/reader/result side plus actual integration; pytest does not drive Ruby
-helper behavior. Selected Latexmath checks alone require its external TeX tools.
-
-An adopted gem distribution obligation does not require a Gemfile or spec
-folder. Use native gem build, RubyGems metadata/content inspection and the declared
-clean installed require consumer. Preserve original package associations and
-native outputs for result collection. Source version projection remains with
-NBGV and the project's native build integration. No custom complete-commit field,
-provenance admission chain or Release state machine is added to CI.
-
-The caller transfers exact endpoint/plan/control context and executes every
-selected variant against the original plan without replanning. Failed preparation,
-cancellation and absent required results retain failure. Explainable empty
-selection performs no product preparation. Root CI owns RSpec and adopted gem
-consumers as one complete Ruby group; their duplicate automated PR trigger is
-retired. Affected caller changes require ordinary hosted transfer/execution/result
-qualification. Manual Release and historical evidence consumers retain their
-distinct owning contracts. This contract does not reopen any completed Ruby campaign or authorize
-publication, dispatch or credential/configuration changes.
-
 ## Builds, Packages and Consumers
-
-### Native Python Package Execution
-
-Use the private C# application to expand adopted package checks, invoke native
-operations and join their outcomes through existing `CheckSpec`, `PackageTarget`
-and result contracts. UV owns frozen group/workspace selection, phase-specific native installation,
-PEP 517 backend requirements and build dispatch. The maintained
-`nbgv-python` plugin owns official NBGV invocation. Do not port these semantics,
-maintain a second backend-requirement declaration, rewrite project version
-metadata or inject a replacement version engine. The
-[source assessment](research/python-native-packaging.md) distinguishes these
-selected boundaries from unqualified runtime behavior.
-
-For the current adopted Python distribution contract, prepare an owned native
-project environment from the existing root `dev` and `workflow-delivery-python`
-groups and synchronized lock. Use one frozen sync selecting both groups with
-UV's default build isolation and the workspace's declared editability. UV owns
-declared and backend-reported auxiliary build requirements, including editable
-tool preparation. Do not precede it with a separate root-dev bootstrap, disable
-that native requirement preparation, maintain a backend roster or manually
-orchestrate requirement hooks. Keep the selected installed tools through
-completion of the original wheel/sdist set: native source-build requirements
-retain workspace source and editability semantics. Exact sync removes omitted
-tools, so selection includes the development backend tools as well as the
-build/plugin group. The root-dev footprint is existing infrastructure,
-not an application-maintained minimal backend roster. Actual selection and
-installation must establish that unrelated workspace products are not built.
-This package-tool preparation does not replace root pytest's selected/full
-member preparation obligations.
-
-Frozen group selection owns the installed tools; it does not promise that
-auxiliary isolated backend resolution is lock-frozen. Preserve the distinction
-and any relevant native builder/version input in qualification evidence. Product
-builds below use the prepared selected tools and shared native build mode.
-Neither a frozen sync nor the lock alone establishes same-input byte
-reproducibility or Release/recovery qualification.
-
-Build the complete declared wheel/sdist set with native `uv build`, the selected
-package and prepared interpreter. Enable the pinned native
-`build-dependency-check` preview with shared build mode; it checks declared,
-backend-reported and transitive requirements. Missing native prerequisites fail;
-there is no skip flag or application fallback. Frozen preparation remains the
-selected installation authority. Native Directory requirements still enforce
-editability equality under permissive checking; compatible-version checks do not
-prove original-archive identity. A changed tool or necessary
-backend shape requires the affected native-contract review before use.
-
-Consume normal native distribution metadata through maintained packaging and
-Python library interfaces. Preserve necessary archive path, size and ambiguous
-member checks without requiring a universal literal payload, tar encoding or
-V3 witness. Distribution spelling does not determine its import module. The
-registered project quality implementation retains actual payload and installed
-API expectations; those expectations are not universal package-format rules.
-
-Wheel consumption installs the original wheel in a fresh owned environment.
-Before Git-free sdist consumption, reconcile the same owned package-tool
-environment with one frozen native sync selecting both groups, shared build mode
-and `--no-editable`. Require successful reconciliation and unchanged original
-archive bytes before continuing; failure, cancellation or timeout fails the sdist
-check and prevents its downstream consumer operations. This does not erase an
-independently completed original-wheel result.
-
-Git-free sdist consumption builds the original archive file from a neutral
-directory outside Git using the reconciled noneditable backend/plugin
-distributions, then installs its resulting wheel into another clean environment.
-Pass the original archive file, rather than an extracted directory, to UV: its
-native archive path uses ordinary declared PEP 517 requirements without the
-source-directory workspace lowering. This source-supported distinction remains
-subject to complete native qualification. Neither consumer
-implicitly imports the source checkout. Native installed metadata, import origin
-and the applicable project API check must agree with the intended native version
-and outputs; command exit alone cannot satisfy them. A source finding about
-native Hatchling metadata reuse alone does not establish Git-free runtime
-qualification. The adopted composition retains its exact original-wheel and
-Git-free original-sdist [package observations](research/python-native-package-qualification.md);
-current caller qualification and affected changes remain scoped to their actual
-source, tools and environment. This establishes no universal backend/version
-support. Do not rewrite `pyproject.toml` to force success.
-
-Keep complete build, contents, wheel install/import and Git-free sdist
-build/install/import obligations individually visible even when one native
-build serves multiple checks. Native fact selection remains separate from
-execution. The exact tools/helper/harness, environment/download/cache effects,
-finite command/diagnostic/time/state bounds, stop and owned cleanup must receive
-independent review and protected protocol acceptance before native qualification.
-Earlier graph/enrichment campaigns supply no package allowance. Missing necessary
-native capability stops for owner disposition without reduced check coverage.
 
 Build and qualification operations receive the selected revision, native entry
 point, dimensions, expected native version projections and relevant locked inputs.
@@ -878,7 +486,7 @@ A request contains one immutable source/control revision, Release Unit, channel,
 destination and live/dry-run mode. Resolve the native version, complete output set
 and applicable quality conditions before execution. Live Official checks
 its eligible official ref under the
-[Official channel scope](migration-strategy.md#official-channel-scope); Buddy
+[Official channel scope](integration/common.md#official-channel-scope); Buddy
 permits configured development refs. Dry run
 can use development control code and has no write capability. Unsupported live job
 reruns are rejected; ordinary recovery uses a fresh dispatch.
@@ -989,6 +597,56 @@ administrative operations need a separate operator decision. Normal release does
 not delete, yank, restore, retarget, change access or compensate across registries. No
 historical run discovery, permanent ledger or general repair engine is required.
 
+### Registry Observation and Retention
+
+The integrations make no stock-client routing or resolution claim, including
+scoped-registry routing. The destination tables in the integration contracts
+distinguish the current mechanisms and required properties; they do not assert new platform guarantees or themselves enable any remote operation.
+
+Use the existing bounded native read mechanisms as extraction inputs, not the old
+Governance expiry/profile digests. Each integration closes endpoint, redirect and
+credential handling, metadata/response-body and archive-expansion bounds, read
+deadline/poll bound and cancellation before it is callable; registries own
+package size. No missing lower-layer guarantee
+may be replaced by an application reservation or probe ledger. A failed upload
+still permits bounded read-only evaluation; it never permits application resend or
+the next file write after the native invocation reports failure or ambiguity.
+Built-in bounded native retries remain within that one invocation, under the
+[destination contract](#destination-interface).
+The [NuGet source basis](research/nuget-native-publisher.md) closes the selected
+publisher retry boundary without supplying new runtime evidence.
+
+The npm, NuGet and Python registry observations share one standard HTTP client
+with no cookies, proxies, default credentials or automatic decompression. It
+follows at most five redirects under the platform's
+[documented redirect contract](https://learn.microsoft.com/dotnet/api/system.net.http.httpclienthandler.allowautoredirect?view=net-10.0#remarks)
+([runtime source](https://github.com/dotnet/runtime/blob/v10.0.12/src/libraries/System.Net.Http/src/System/Net/Http/SocketsHttpHandler/RedirectHandler.cs)),
+which clears the \`Authorization\` header on every automatic redirect, including
+a same-host redirect, and does not follow an HTTPS-to-HTTP redirect. The
+adapter validates the HTTPS origin of each URL it requests and attaches
+credentials only to the registry or API origin it selects. It does not
+validate redirect targets or implement its own redirect hop. A redirect target
+that requires the dropped credential, such as an authenticated path on the
+same registry host, therefore fails closed as an unknown read. An unfollowed
+redirect, including one beyond the limit, is a non-success response and cannot
+establish exact or absent state. Exact and conflicting original state rests on
+exact coordinate metadata and original size/SHA-256 equality, not on the
+serving host. Absence and metadata rely on the selected HTTPS origin and the
+redirects it issues. Each body-inclusive read deadline covers its redirects.
+Metadata bodies keep fixed limits because they are parsed in memory. Served
+originals have no application package-size limit; registries own package size.
+An original is compared by a streaming SHA-256, and its read stops one byte past
+the qualified original's size, because a longer body cannot match.
+
+Ordinary workflows request 45-day retention for required prepared CLI,
+qualified packages and request/results, matching the existing workflow setting.
+This is a workflow default, not a new policy expiry or platform-retention proof.
+If required inputs expire or the effective platform limit cannot cover the chosen
+operation, that operation cannot continue. Optional diagnostics may expire sooner.
+A fresh original-revision recovery rebuilds; it does not need a permanent ledger.
+Keep registry/package serialization over required verification jobs, with native
+concurrency and without automatic live cancellation.
+
 ## Workflow, Permission and Transfer Boundaries
 
 Build the CLI from the selected control revision before publication capability
@@ -1085,10 +743,52 @@ Local/controlled results do not establish live platform acceptance. The owner's
 remains accepted without a separate experiment gate. Completed campaigns remain
 closed; no implementation validation can silently consume a spent external grant.
 
+### Release Integration Review
+
+The [Concrete NuGet Buddy](integration/dotnet.md#concrete-nuget-buddy-integration),
+[Python Release](integration/python.md#concrete-python-release-integration) and
+[Ruby Release](integration/ruby.md#concrete-ruby-release-integration) integrations share one review
+core: review affected changes with independent engineering/OCR and
+record/research review before implementation, run complete affected suites, HK
+and record checks, and qualify the final caller subject in ordinary CI before
+delivery. These checks do not prove a new publication. Each section states its
+own controlled validation cases, runner, additional checks and non-claims.
+
 ### Integration Mapping
 
-The [integration contract](migration-strategy.md) owns the concrete project and
-CLI/workflow caller inventory, integration payloads and destination conditions.
-Keep that mapping with actual caller changes; do not maintain a second inventory
-here. Historical readers use pinned producer source through the
-[project portal](README.md#historical-source-rule).
+The per-ecosystem integration contracts for [.NET and NuGet](integration/dotnet.md),
+[Node and npm](integration/node.md), [Python](integration/python.md) and
+[Ruby](integration/ruby.md), with the [common integration tables](integration/common.md),
+own the concrete project and CLI/workflow caller inventory, integration payloads
+and destination conditions. These contracts govern current integrations and
+changes to them. Keep that mapping with actual caller changes; do not
+maintain a second inventory here. Implementers and reviewers use them to preserve
+complete journeys across actual process, permission and artifact transfers; they
+are not an execution or publication grant. The
+[Wave](../../../../../docs/delivery-wave.md) owns work authorization;
+[agent handoff](agent-handoff.md) retains operation and evidence limits.
+
+The former caller inventory and migration order remain at their
+[immutable source][former-plan]. Historical producer identities and their exact
+implementation, fixture and outcome readers are routed by
+[historical evidence readers](validation/historical-readers.md) through the
+[project portal](README.md#historical-source-rule). Current source
+acceptance does not requalify those originals or reopen their closed campaigns.
+
+The final private CLI/test projects own native facts, meaningful impact selection,
+complete selected CI checks and common Release behavior. Node, .NET, Python and
+Ruby groups use their native contracts and original candidate-bound plans.
+Ordinary destination callers retain their actual permission, transfer, readback
+and result boundaries. The fixtures, native helpers, root tooling and project
+records use their current private locations. Independently useful public
+components retain their own consumers.
+
+Closed campaign callers, the public Python control package, obsolete admission
+and scanner groups, and old-basis compatibility mappings are retired. Historical
+evidence readers use actual pinned producer source rather than a runtime fallback.
+Later changes reconcile actual callers, selectors, workspace/version inputs,
+record routing and complete affected validation together. Their source acceptance
+does not qualify new live destination behavior or reopen a stopped campaign;
+work and operation authorization remain with the accepted Wave and domain gates.
+
+[former-plan]: https://github.com/hcoona/three/blob/67f294cfd864a6376c14bee4a9f2ed0b92af9552/src/public/lib/three-workflow-delivery-v3/docs/migration-strategy.md

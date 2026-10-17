@@ -10,7 +10,7 @@ publication behavior or permission to reopen a completed campaign.
 
 The [middle-level design](middle-level-design.md) owns the component,
 selection, execution, transfer and outcome contracts for this architecture.
-The [integration contract](migration-strategy.md) maps concrete projects,
+The [integration contracts](middle-level-design.md#integration-mapping) map concrete projects,
 callers and integration contracts. The
 [Wave](../../../../../docs/delivery-wave.md) owns current work authorization;
 the [handoff](agent-handoff.md) retains operational limits. Historical records
@@ -153,7 +153,7 @@ format or compare it with the encoding of a known project/output identity. This
 does not authorize interpreting unresolved dependency declarations or guessing a
 missing producer from a protocol prefix. One bounded exception exists because
 native UV metadata stubs build nodes: the
-[Python planning contract](middle-level-design.md#native-python-planning-facts)
+[Python planning contract](integration/python.md#native-python-planning-facts)
 joins PyPA-parsed Hatchling build-requirement names to native workspace members
 only under an absent or exact workspace source, and fails on every other shape.
 It is not UV lowering and is rechecked under its research record. Reuse native
@@ -282,7 +282,7 @@ independent CI record genealogy.
 Buddy, Official and dry run share preparation and qualification code. Buddy can
 publish from allowed development refs. Official live publication requires an
 eligible reviewed official ref; the
-[Official channel scope](migration-strategy.md#official-channel-scope) states
+[Official channel scope](integration/common.md#official-channel-scope) states
 the refs and destinations the implemented callers support. Dry run can use
 development revisions and their release code without write capability; live
 ref restrictions do not block it.
@@ -416,7 +416,7 @@ old/new-format byte equality.
 
 The [middle-level design](middle-level-design.md) closes common selection,
 quality, package/consumer, Release-state and transfer behavior. The
-[integration contract](migration-strategy.md) specifies concrete command/transfer
+[integration contracts](middle-level-design.md#integration-mapping) specify concrete command/transfer
 fields, native fact extraction coverage, destination completion conditions/read
 bounds, runner mapping and retention. Changes validate/review these boundaries
 with their affected caller group. These are bounded implementation contracts,

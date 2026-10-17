@@ -61,7 +61,7 @@ Select the coherent official packaged 7.9.0 NuGet group instead of assuming
 equivalence with the SDK copy. Its NuGet.Packaging `net8.0` dependency group
 requires Newtonsoft.Json 13.0.3 or later. Package metadata establishes dependency
 shape, not integration compatibility. The
-[concrete integration contract](../migration-strategy.md#concrete-nuget-buddy-integration)
+[concrete integration contract](../integration/dotnet.md#concrete-nuget-buddy-integration)
 requires resolved assembly identities, NBGV/SDK binding and ordinary native
 restore/consumer validation. It retains SDK Microsoft.Build references and the
 official NBGV assembly while removing competing JSON copy sources. No native

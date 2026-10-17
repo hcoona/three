@@ -130,7 +130,7 @@ that unqualified remote code was safe to install with a read token.
 Public [ConfigFile][config-file] `initialize` reads configuration files before
 its `--norc` merge check. That option ignores their configured values and retains
 native platform defaults; it is not a guarantee those files are never read.
-The [concrete contract](../migration-strategy.md#concrete-ruby-release-integration)
+The [concrete contract](../integration/ruby.md#concrete-ruby-release-integration)
 selects owned state and native API composition within those limits.
 
 ## Recheck and Remaining Qualification

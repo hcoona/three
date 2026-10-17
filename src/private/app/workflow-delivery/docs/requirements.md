@@ -5,7 +5,7 @@
 This page defines the required behavior and scope of the repository-internal
 Workflow Delivery application. The [HLD](high-level-design.md),
 [middle-level design](middle-level-design.md) and
-[integration contract](migration-strategy.md) realize it; the
+[integration contracts](middle-level-design.md#integration-mapping) realize it; the
 [application README](../README.md) owns the implemented interface. The
 [Delivery Wave](../../../../../docs/delivery-wave.md) owns work authorization,
 and the [handoff](agent-handoff.md) owns operating entry points and retained
@@ -217,7 +217,7 @@ application must not claim isolation beyond that scope.
   the canonical product-version string and must reflect actual token reach.
 - **WD-CHN-002:** Official publication uses the canonical NBGV version and its
   correct native projection from an eligible, reviewed official ref. The
-  [current Official scope](migration-strategy.md#official-channel-scope) states
+  [current Official scope](integration/common.md#official-channel-scope) states
   the implemented set. NBGV can give different repository commits the
   same public product version when relevant version inputs are unchanged. A
   version label alone does not identify exact package bytes or prove two release

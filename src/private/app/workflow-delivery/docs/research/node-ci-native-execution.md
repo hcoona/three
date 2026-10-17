@@ -17,7 +17,7 @@ coverage. Windows feasibility remains the owner's accepted assumption in
 
 The [private application entry](../../README.md)
 describes the implemented components. The
-[migration plan](../migration-strategy.md) retains the remaining integration and
+[Node integration contract](../integration/node.md) retains the integration and
 retirement consumers. This observation adds no product policy or operation grant.
 
 ## Reproducible Subject and Original Evidence

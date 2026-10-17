@@ -10,7 +10,7 @@ design inference. The separate
 [completed corrected Linux observation](python-native-package-qualification.md#completed-corrected-linux-package-observation)
 qualifies the exact four-check integration, retaining the separately classified
 audit-method exception. Historical failures remain in that protocol/evidence record.
-The [MLD](../middle-level-design.md#native-python-package-execution) owns the selected
+The [Python integration contract](../integration/python.md#native-python-package-execution) owns the selected
 integration; actual root pytest, complete paired callers/Python CI and Release retain
 separate qualification requirements.
 

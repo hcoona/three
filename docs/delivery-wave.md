@@ -19,7 +19,7 @@ ends a grant. Git and the proposing PR retain the reason and history.
   [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
   [HLD](../src/private/app/workflow-delivery/docs/high-level-design.md),
   [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
-  [integration contracts](../src/private/app/workflow-delivery/docs/migration-strategy.md)
+  [integration contracts](../src/private/app/workflow-delivery/docs/middle-level-design.md#integration-mapping)
   and [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md).
   Completed ecosystem evidence retains its original scope and spent limits.
 - **Advancement and outcome:** reconcile affected execution and validation
