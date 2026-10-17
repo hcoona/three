@@ -41,15 +41,15 @@ from local observations and from completed publication campaigns.
 
 ## Retained Campaign Evidence
 
-| Concern                                             | Original outcomes, controls and limits                                                                                                                                |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| npm native and normal publication                   | [Evidence](validation/native-and-normal-live-evidence.md), [registry support research](research/github-packages-supported-registries.md)                              |
-| NuGet profile, native and normal publication        | [Research/evidence](research/nuget-smoke-evidence.md), [normal-Live evidence](validation/nuget-normal-live-evidence.md)                                               |
-| Python preparation and native failure               | [Readiness](validation/python-native-readiness.md), [native acceptance](validation/python-native-acceptance.md), [source evidence](research/python-smoke-evidence.md) |
-| Python bootstrap, publication and ordinary recovery | [Bootstrap](validation/python-bootstrap.md), [normal publication](validation/python-normal-live-evidence.md), [recovery](validation/python-hosted-recovery.md)        |
-| Ruby original publication                           | [Normal-Live evidence](validation/ruby-normal-live-evidence.md), [research](research/ruby-smoke-evidence.md)                                                          |
-| Historical implementation and record recovery       | [Producer-qualified readers and retired records](validation/historical-readers.md)                                                                                    |
-| Legacy workflow retirement                          | [Retained v1 boundary](research/legacy-workflow-boundary.md)                                                                                                          |
+| Concern                                             | Original outcomes, controls and limits                                                                                                                         |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| npm native and normal publication                   | [Evidence](validation/native-and-normal-live-evidence.md), [registry support research](research/github-packages-supported-registries.md)                       |
+| NuGet profile, native and normal publication        | [Research/evidence](research/nuget-smoke-evidence.md), [normal-Live evidence](validation/nuget-normal-live-evidence.md)                                        |
+| Python preparation and native failure               | [Retired native acceptance](validation/historical-readers.md#retired-python-native-acceptance), [source evidence](research/python-smoke-evidence.md)           |
+| Python bootstrap, publication and ordinary recovery | [Bootstrap](validation/python-bootstrap.md), [normal publication](validation/python-normal-live-evidence.md), [recovery](validation/python-hosted-recovery.md) |
+| Ruby original publication                           | [Normal-Live evidence](validation/ruby-normal-live-evidence.md), [research](research/ruby-smoke-evidence.md)                                                   |
+| Historical implementation and record recovery       | [Producer-qualified readers and retired records](validation/historical-readers.md)                                                                             |
+| Legacy workflow retirement                          | [Retained v1 boundary](research/legacy-workflow-boundary.md)                                                                                                   |
 
 ## Historical Source Rule
 

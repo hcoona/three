@@ -52,7 +52,7 @@ maintained plugin has its own static version and Hatchling backend. Reusing
 these declarations avoids a backend roster or lock parser. The candidate
 earlier bootstrap excluded local products first, then selected both existing
 groups with shared build mode and native workspace editability for source building.
-The [first native preparation failure](python-native-package-qualification.md#first-native-preparation-failure)
+The [first native preparation failure](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#first-native-preparation-failure)
 shows that selecting only the build/plugin group removes the previously installed
 backend tools. Shared build mode does not preserve an omitted group.
 The final failed observation established that noneditable sync before checked
@@ -86,7 +86,7 @@ editable `nbgv-python`: Hatchling could not import `editables`. Product build,
 contents and both original consumers were not reached. Independent triage
 classified `EDITABLE-PREPARATION-001` as a true positive, confidence 10/10 for the
 observed failure and 9/10 for the integration cause. The
-[actual observation](python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
+[actual observation](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
 retains the exact subject, failed results and remaining allowance.
 
 At pinned Hatchling `c4abc454f908bb4fc2a92452a82cb33dac14abf3`, the public
@@ -221,7 +221,7 @@ default represented by the command substitute, plus rejection of extra or missin
 outputs and retention of completed independent results on later failure. Source and
 controlled coverage do not establish actual corrected output adoption or consumers.
 Historical package lifetimes remain spent. The
-[fresh package reserve](python-native-package-qualification.md#fresh-output-option-package-reserve)
+[fresh package reserve](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#fresh-output-option-package-reserve)
 records the approved buffer and unchanged first subject. The
 [completed corrected Linux observation](python-native-package-qualification.md#completed-corrected-linux-package-observation)
 now qualifies exact native output adoption and both original consumers, with the
