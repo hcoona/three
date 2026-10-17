@@ -1,18 +1,34 @@
 # Ruby Configuration and Operation Protocol
 
+This retained baseline serves original historical evidence interpretation.
+Current application behavior follows [requirements](requirements.md),
+[HLD](high-level-design.md), [MLD](middle-level-design.md) and
+[concrete integration contracts](migration-strategy.md). Former admission,
+source-witness and campaign instructions are not current runtime requirements
+or execution authorization. Recover actual original producers through
+[historical readers](validation/historical-readers.md), rather than treating a
+last-source navigation link as a producer binding.
+
+> **Implementation baseline:** This record describes the pre-contraction
+> implementation. Its authority for retained evidence is defined by the
+> [historical source rule](README.md#historical-source-rule).
+> Current architecture and terminology are owned by the [HLD](high-level-design.md).
+> This record remains only for its existing implementation and evidence
+> consumers; it does not constrain the current application.
+
 ## Scope and Delivery Boundary
 
-This record implements the configuration and first-project admission portion of
+This record implemented the configuration and first-project admission portion of
 [the Ruby LLD](hcoona-release-smoke-ruby-lld.md#governance-and-first-project-protocol)
 for the completed [Issue #954](https://github.com/hcoona/three/issues/954)
 campaign. Further work requires the accepted
-[Delivery Wave](../../../../../docs/delivery-wave.md). The V3 maintainer maintains
-it for configuration-validator authors, the operator and independent
-admission reviewers. Its distinct consumer is the concrete endpoint, phase and
-request-binding contract; the LLD owns architecture and the Wave owns authority.
+[Delivery Wave](../../../../../docs/delivery-wave.md). It served
+configuration-validator authors, the operator and independent admission
+reviewers. Its distinct consumer was the concrete endpoint, phase and
+request-binding contract; the LLD owned architecture and the Wave owned authority.
 
-This protocol bounds configuration and the hosted/external operation callers.
-The current source delivery contains [first-project validators](https://github.com/hcoona/three/blob/d5aefae965e240c15b7b834ae4b04df40a31ea12/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/ruby_configuration.py)
+This protocol bounded configuration and the hosted/external operation callers.
+The source delivery at that time contained [first-project validators](https://github.com/hcoona/three/blob/d5aefae965e240c15b7b834ae4b04df40a31ea12/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/release/ruby_configuration.py)
 and a separate [RubyGems project observer](https://github.com/hcoona/three/blob/d5aefae965e240c15b7b834ae4b04df40a31ea12/src/public/lib/three-workflow-delivery-v3/src/three_workflow_delivery_v3/adapters/ruby_project.py).
 Their closed data contracts do not establish live configuration, source provenance,
 independent approval or an executable caller. Fixed GitHub control/package

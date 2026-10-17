@@ -2,8 +2,9 @@
 
 ## Purpose and Authority
 
-The V3 maintainer maintains this protocol for implementers, the smoke operator
-and independent auditors. It realizes `WD-PY-009` as a separate first-project
+This closed protocol served implementers, the smoke operator and independent
+auditors. It is retained for the [Python limits](../agent-handoff.md#python-retained-limits)
+in the handoff. It realized the now-retired `WD-PY-009` as a separate first-project
 resource operation, not a normal-Live Attempt or automatic normal admission.
 The retained failed TestPyPI bootstrap established owner-reviewed resource facts;
 it does not authorize repeating the absent-project path for that existing project.

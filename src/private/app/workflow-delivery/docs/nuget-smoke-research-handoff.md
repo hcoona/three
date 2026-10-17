@@ -18,15 +18,17 @@ last-source navigation link as a producer binding.
 
 ## Status and Authorization
 
-The current reproducible-build advancement is [Issue #948](https://github.com/hcoona/three/issues/948),
-selected by the accepted [Delivery Wave](../../../../../docs/delivery-wave.md).
-Its feasibility experiment and independent evidence review are complete;
-production integration and build-only acceptance follow the
-[LLD mechanism and gates](hcoona-release-smoke-github-packages-lld.md#reproducible-original-archive).
-This work preserves the completed go-live evidence and grants no new native
-operation or publication. The earlier go-live scope below is historical.
+The reproducible-build advancement was [Issue #948](https://github.com/hcoona/three/issues/948),
+selected by the then-accepted [Delivery Wave](../../../../../docs/delivery-wave.md).
+Its feasibility experiment and independent evidence review completed, and its
+production integration followed the
+[LLD mechanism and gates](hcoona-release-smoke-github-packages-lld.md#reproducible-original-archive)
+in [PR #952](https://github.com/hcoona/three/pull/952). That work preserved the
+completed go-live evidence and granted no new native operation or publication.
+The current Wave contains no entry for it. The earlier go-live scope below is
+also historical.
 
-This is an operating handoff. The research delivery and interactive
+This was the operating handoff. The research delivery and interactive
 requirements confirmation are complete. The canonical confirmed product,
 trust, and acceptance requirements are `WD-NUGET-*` in
 [Requirements](requirements.md#nuget-second-slice). The design extends the
@@ -48,7 +50,7 @@ audit, current-run Approval, or ambiguity stop conditions.
 
 Check the accepted [Delivery Wave](../../../../../docs/delivery-wave.md)
 before continuing. [Issue #676](https://github.com/hcoona/three/issues/676)
-coordinates the NuGet delivery units and their evidence under that grant;
+coordinated the NuGet delivery units and their evidence under that grant;
 domain-specific external-effect bounds remain separate.
 
 Close and record exact native fixtures, coordinates, operation budgets,
@@ -394,13 +396,14 @@ this summary routes the next agent to that authority.
 | Completion               | `WD-NUGET-007`: local/package evidence, an audited native suite, and one audited real publication with its own current-run authority and actual destination bytes.                                                                                                                                                                                                        |
 | Execution boundaries     | `WD-NUGET-008`: ordered design, subsequent implementation authorization, and separate concrete native and real-publication authorization.                                                                                                                                                                                                                                 |
 
-The subsequent implementation is authorized as described above. A descriptor
+The subsequent implementation was authorized as described above; that grant
+ended with the completed campaign. A descriptor
 alone cannot enable NuGet: native acceptance tooling and evidence, and
 protected activation remain necessary after disabled workflow integration.
 The [HLD extension](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md#nuget-second-slice-extension)
 assigns ownership. Local tests or historical package versions cannot supply
 missing native or real-publication evidence. The confirmed requirements alone
-are not authorization; the subsequent explicit delegation supplies execution
+are not authorization; the subsequent explicit delegation supplied execution
 authority within those boundaries.
 
 The [NuGet LLD](hcoona-release-smoke-github-packages-lld.md) follows the five

@@ -20,10 +20,10 @@ last-source navigation link as a producer binding.
 
 This design realizes the confirmed `WD-NUGET-*` [requirements](requirements.md#nuget-second-slice),
 the [HLD extension](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md#nuget-second-slice-extension), and
-the five current MLDs. It specifies the design and its remaining admission
+the five then-current MLDs. It specified the design and its remaining admission
 gates. No implementation, native probe, activation, or publication
 is authorized by this document. The [handoff](nuget-smoke-research-handoff.md)
-owns current operating status.
+owned the then-current operating status.
 
 ## Bounded Product and Identities
 

@@ -24,8 +24,9 @@ Architecture version: **v3**.
 This glossary describes the pre-contraction implementation and its retained
 evidence vocabulary. New-design terms are defined by the replacement HLD.
 
-Current first-slice activation, protected delivery, and proving status are
-maintained in the [operating handoff](agent-handoff.md).
+First-slice activation, protected delivery, and proving status were maintained
+in the then-current operating handoff. The current [handoff](agent-handoff.md)
+retains only the closed-campaign limits.
 
 Confirmed entries should remain stable. Any unresolved term is identified
 inline and must not be treated as settled architecture.

@@ -640,6 +640,16 @@ def test_github_mcp_configuration_is_classified(
     assert entry["classification"] == "configuration-source"
 
 
+def test_mtp_test_configuration_is_classified(repo: Repository) -> None:
+    """Recognize a Microsoft Testing Platform configuration as source."""
+    path = "tests/private/app/project/testconfig.json"
+    repo.write(path, '{"commandLineOptions": {}}' + "\n")
+    report = repo.check()
+    assert report["diagnostics"] == []
+    entry = next(item for item in report["manifest"] if item["path"] == path)
+    assert entry["classification"] == "configuration-source"
+
+
 @pytest.mark.parametrize(
     "path", ["src/private/app/project/unknown.json", ".github/unknown.json"]
 )

@@ -2,7 +2,7 @@
 
 ## Scope and Premise
 
-This source assessment supports the replacement application's
+This source assessment supports the application's
 [native fact integration](../migration-strategy.md#native-facts-and-first-supported-shapes).
 Its original interface assessment and native observations use PNPM 12.8.1;
 the [12.9.0 pin recheck](#pnpm-1290-pin-recheck) assesses the current repository pin.

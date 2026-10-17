@@ -2,7 +2,7 @@
 
 ## Scope and Authority
 
-This design refines the [replacement HLD](high-level-design.md) into module,
+This design refines the [HLD](high-level-design.md) into module,
 selection, execution, transfer and outcome contracts for the internal C# CLI.
 It implements the [requirements](requirements.md). Implementers and reviewers
 use it to determine the contracts the implementation must keep. Source/native/hosted

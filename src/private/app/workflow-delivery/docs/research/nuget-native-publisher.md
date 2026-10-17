@@ -2,7 +2,7 @@
 
 ## Scope and Accepted Boundary
 
-This source research informs the replacement NuGet Release integration. It is not
+This source research informs the NuGet Release integration. It is not
 runtime qualification, publication authorization or evidence of a newly executed
 Release request. Existing NuGet native and publication evidence retains its
 original client, source, protocol and run identities.

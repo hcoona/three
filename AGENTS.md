@@ -67,7 +67,7 @@ Workflow Delivery v3 is the only normative source for new workflow delivery
 work. Do not use v1 or v2 to fill a v3 decision gap unless the v3 documents
 explicitly require mechanism extraction and revalidation.
 
-The handoff's domain gates, including separate NuGet implementation, native-operation,
-and publication authorization, survive the move. Repository governance does not
-reopen the completed npm proving work or supply permission for publication,
-dispatch, authentication, or access changes.
+All Workflow Delivery proving campaigns are closed; the handoff's
+[closed-campaign limits](src/private/app/workflow-delivery/docs/agent-handoff.md#authorization-and-closed-campaigns)
+remain in force. Repository governance does not reopen them or supply permission
+for native operations, publication, dispatch, authentication, or access changes.

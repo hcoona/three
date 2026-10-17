@@ -2,7 +2,7 @@
 
 ## Question and Consumer
 
-Can the replacement application's repository analysis obtain committed identities,
+Can the application's repository analysis obtain committed identities,
 recursive path inventory and complete changed-name sets through supported Git
 interfaces, without implementing revision/tree/diff semantics or adding fetching?
 The internal [Git reader](../../Repository/GitReader.cs)

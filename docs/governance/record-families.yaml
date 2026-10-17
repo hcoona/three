@@ -573,6 +573,14 @@ bindings:
     carrier: repository-file
     path: tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby/README.md
     format: markdown
+  - id: workflow-delivery-native-ruby-suite-interface
+    family: project-interfaces
+    namespace: src/private/app/workflow-delivery
+    state: current
+    carrier: repository-file
+    path: tests/private/app/workflow-delivery/Native/Ruby/README.md
+    format: markdown
+    purpose: Native Ruby helper RSpec carrier usage and evidence limits
   - id: shared-engineering
     family: shared-engineering
     namespace: repository
