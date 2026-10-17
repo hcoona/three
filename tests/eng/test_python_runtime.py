@@ -120,6 +120,18 @@ def test_uv_workflow_and_renovate_consumers_use_mise_projection():
         assert {config_path, ".python-version"} <= set(tasks["fileFilters"])
 
 
+def test_renovate_holds_the_python_runtime_line():
+    """Keep Renovate on the 3.14 line until the 3.15 migration (#1247)."""
+    rules = json.loads((ROOT / "renovate.json").read_text())["packageRules"]
+    python_rules = [
+        rule
+        for rule in rules
+        if rule.get("matchManagers") == ["mise"]
+        and rule.get("matchDepNames") == ["python"]
+    ]
+    assert [rule.get("allowedVersions") for rule in python_rules] == ["<3.15"]
+
+
 @pytest.mark.parametrize(
     "defect", ["dirty", "option", "state", "source", "outside"]
 )
