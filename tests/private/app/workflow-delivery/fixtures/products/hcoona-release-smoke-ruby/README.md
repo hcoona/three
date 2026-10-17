@@ -21,7 +21,7 @@ archive inspection remain separate operations. Installed consumers need neither
 Git, NBGV nor .NET. The
 [ordinary Ruby integration](../../../../../../../src/private/app/workflow-delivery/README.md#ordinary-ruby-release)
 owns current build, qualification and destination behavior. The
-[historical Ruby contract](../../../../../../../src/private/app/workflow-delivery/docs/hcoona-release-smoke-ruby-lld.md)
+[historical Ruby contract](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-ruby-lld.md)
 retains the closed campaign's original five-file package interpretation; it does
 not prescribe current packaging or grant another operation. Source presence
 does not establish registry availability or a publication result.

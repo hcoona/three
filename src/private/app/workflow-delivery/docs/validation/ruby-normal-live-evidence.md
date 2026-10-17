@@ -6,8 +6,8 @@ served delivery, recovery and closure reviewers of the completed campaign and
 is retained for the handoff's [Ruby limits](../agent-handoff.md#ruby-retained-limits);
 it preserves the observed basis without granting another operation.
 
-The historical [Ruby LLD](../hcoona-release-smoke-ruby-lld.md) and
-[operation protocol](../ruby-operation-protocol.md) owned the operation contract
+The historical [Ruby LLD](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-ruby-lld.md) and
+[operation protocol](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/ruby-operation-protocol.md) owned the operation contract
 of the completed campaign.
 This record retains the actual smoke observations and their evidence limits.
 

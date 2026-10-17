@@ -5,7 +5,7 @@ This is the 2026-04-22 documentation observation retained from
 It supports ecosystem-boundary research, not current package grants, runtime
 isolation, a service guarantee, or publication authorization. Recheck the
 official sources before a newly authorized destination decision relies on
-this mutable support matrix. The historical [NuGet handoff](../nuget-smoke-research-handoff.md)
+this mutable support matrix. The historical [NuGet handoff](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/nuget-smoke-research-handoff.md)
 recorded the later NuGet-specific findings and the acceptance gates of its
 completed campaign.
 Workflow-delivery maintainers preserve this source and its limits; reviewers

@@ -9,7 +9,7 @@ record is not an executable protocol or authorization for another generation.
 Current validation and publication/consumer completion requirements follow the
 [requirements](../requirements.md#python-smoke-slice) and
 [concrete Python Release integration](../migration-strategy.md#concrete-python-release-integration).
-The [Python LLD](../hcoona-release-smoke-python-lld.md#evidence-and-delivery-gates)
+The [Python LLD](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-python-lld.md#evidence-and-delivery-gates)
 remains a historical interpretation source.
 
 The [original protocol at its accepted revision](https://github.com/hcoona/three/blob/4e840f3fe0090d6e5b209a27f98b4ae854b74a44/src/public/lib/three-workflow-delivery-v3/docs/validation/python-native-acceptance.md)
