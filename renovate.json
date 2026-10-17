@@ -517,9 +517,10 @@
       "automerge": true
     },
     {
-      "description": "Regenerate the shared Python runtime projections after mise Python updates.",
+      "description": "Regenerate the shared Python runtime projections after mise Python updates. Hold the 3.14 line until the Python 3.15 migration (#1247) lands.",
       "matchManagers": ["mise"],
       "matchDepNames": ["python"],
+      "allowedVersions": "<3.15",
       "postUpgradeTasks": {
         "commands": ["uv run --no-project python eng/scripts/sync_python_version.py --write"],
         "fileFilters": [".python-version", ".config/uv/uv.toml"],
