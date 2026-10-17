@@ -72,3 +72,38 @@ ends a grant. Git and the proposing PR retain the reason and history.
   historical-evidence consumers. Do not add a general application scheduler,
   cache, dynamic admission, approval mirror, trust-proof or recovery service, or
   weaken required coverage to obtain a shorter run.
+
+### Derive HK configuration responsibility from native imports
+
+- **Work carrier:** the pull request proposing this entry and one linked
+  implementation pull request. The repository owner requested a root-cause fix
+  after Renovate PR [#1066](https://github.com/hcoona/three/pull/1066), which
+  changes only the HK version pin in `src/private/lib/hk/Config.pkl` and its
+  mise tool entries, failed CI scope selection with
+  `Unresolved endpoint responsibility: src/private/lib/hk/Config.pkl`.
+- **Accepted inputs:** the Workflow Delivery
+  [endpoint responsibility contract](../src/private/app/workflow-delivery/docs/integration/node.md#endpoint-responsibility-and-selection),
+  the [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
+  the [HK execution guide](engineering/hk-execution.md), root `hk.pkl` and the
+  shared HK component under `src/private/lib/hk/`.
+- **Advancement and outcome:** CI scope selection gives source-conformance
+  responsibility to the root HK configuration and every repository-local Pkl
+  module in its import graph, read at each endpoint from native
+  `pkl analyze imports` output under the locked mise `pkl`, instead of a
+  hard-coded `hk.pkl` path. Remote package imports remain outside repository
+  responsibility. A failed or malformed native read fails planning. Update the
+  scope job's locked tool preparation, the owning integration contract and
+  tests in the same change. The outcome is accepted when an HK component change
+  such as #1066 selects conformance without an unresolved-responsibility failure.
+- **Ordering and gates:** follow the existing Workflow Delivery engineering,
+  OCR and record-system review gates. Independently classify material findings
+  before repair. Do not infer HK responsibility from directory names or a
+  repository-local Pkl parser.
+- **Effects:** permit source and repository/GitHub inspection, documentation,
+  workflow and implementation changes, locked tool preparation, isolated local
+  builds and credential-free tests, independent delegated review, ordinary
+  PR/check operations and their normal CI.
+- **Exclusions:** no change to HK step behavior, profiles or the conformance
+  job's checks; no general Pkl ownership for non-HK modules; no responsibility
+  for other unresolved paths; no release, dispatch, publication, credential or
+  access change. Delete this entry when the outcome is accepted.
