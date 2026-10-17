@@ -49,7 +49,7 @@ from local observations and from completed publication campaigns.
 | Python bootstrap, publication and ordinary recovery | [Bootstrap](validation/python-bootstrap.md), [normal publication](validation/python-normal-live-evidence.md), [recovery](validation/python-hosted-recovery.md)        |
 | Ruby original publication                           | [Normal-Live evidence](validation/ruby-normal-live-evidence.md), [research](research/ruby-smoke-evidence.md)                                                          |
 | Historical implementation and record recovery       | [Producer-qualified readers and retired records](validation/historical-readers.md)                                                                                    |
-| Legacy workflow boundary                            | [Legacy boundary](research/legacy-workflow-boundary.md)                                                                                                               |
+| Legacy workflow retirement                          | [Retained v1 boundary](research/legacy-workflow-boundary.md)                                                                                                          |
 
 ## Historical Source Rule
 

@@ -30,7 +30,7 @@ distinct service identities reported by the same owner.
 | `pypi`            | `Sherry7290`    | `workflow-delivery-v3-python-pypi`     | `pypi`     | `.github/workflow-delivery/bootstrap/python-pypi-request.json` |
 
 The [registry profiles](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-python-lld.md#registry-and-credential-profiles)
-own exact endpoints, file hosts and operation-profile digests. Username disclosure
+owned exact endpoints, file hosts and operation-profile digests. Username disclosure
 establishes neither account control nor project ownership. The [owner-reported](https://github.com/hcoona/three/issues/843#issuecomment-5894932481)
 production project `hcoona-release-smoke`, workflow `release-official.yml` and
 Environment `release` are different resources and supply no authority here;
@@ -48,7 +48,7 @@ generation or publisher registration is reopened by this extension.
 
 A later configuration request must specify the exact pending publisher tuple
 for the selected row above and Environment settings: sole reviewer `hcoona`, self-review permitted,
-the destination-specific administrator-bypass policy in
+the destination-specific administrator-bypass policy owned by
 [Python Governance](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/hcoona-release-smoke-python-lld.md#python-governance-v2-migration),
 zero wait, protected main only, and sentinel
 `WDV3_APPROVAL_ENVIRONMENT_MARKER=<selected-environment>/v1`.

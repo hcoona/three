@@ -153,6 +153,9 @@ platform trust does not invent missing guarantees. Add abstractions only for
 concrete independent responsibilities. Keep unsupported necessary shapes
 explicit, rather than adding an unbounded queue, cache, scheduler, dynamic
 policy/admission service or general recovery engine.
+The pinned [NuGet delivery retrospective](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/nuget-delivery-retrospective.md#next-agent-guide)
+retains practical Windows/PowerShell, timestamp, helper-basename and
+draft-path delivery lessons as historical lessons, not rules.
 
 Persist data for an actual permission/process/transfer/interruption consumer.
 Use typed values inside a trusted invocation and immutable native artifact
