@@ -208,7 +208,7 @@
       "workflowdelivery": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Extensions.FileSystemGlobbing": "[10.0.12, )",
+          "Microsoft.Extensions.FileSystemGlobbing": "[10.0.13, )",
           "Newtonsoft.Json": "[13.0.4, )",
           "NuGet.Commands": "[7.9.0, )",
           "NuGet.Configuration": "[7.9.0, )",
@@ -223,9 +223,9 @@
       },
       "Microsoft.Extensions.FileSystemGlobbing": {
         "type": "CentralTransitive",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "45cV+UeI0chPAIXrx9Wv7K4PJXuuIR2pnOur5MOAo6kOFclBHSLLDrvGAxMfWRMtUvpv/kQZkxlgaUN56jwzSQ=="
+        "requested": "[10.0.13, )",
+        "resolved": "10.0.13",
+        "contentHash": "vQVzmAbnzlhXSXA2caYnlxtG9GXxEwtj5bODiWLu06A6iqeJmfBtlfKjuOSJGRy0/CFaNUrm7u9nxEUlljc2Rg=="
       },
       "Microsoft.Testing.Platform.MSBuild": {
         "type": "CentralTransitive",
