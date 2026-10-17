@@ -70,7 +70,7 @@ jobs:
             -p:RestoreLockedMode=true --filter 'TestCategory=NuGetNativeScenarios' `
             --report-trx --results-directory "$env:WDV3_NUGET_REPRO_EVIDENCE" `
             "-bl:$env:WDV3_NUGET_REPRO_EVIDENCE/native-scenarios.binlog" `
-            -- --minimum-expected-tests 4
+            -- --minimum-expected-tests 3
           exit $LASTEXITCODE
       - name: Retain original archives and native evidence
         if: always()

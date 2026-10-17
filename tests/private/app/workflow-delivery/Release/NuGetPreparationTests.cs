@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Build.Evaluation;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
@@ -193,7 +194,20 @@ public sealed class NuGetPreparationTests(TestContext context)
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision);
         NuGetPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        // Preparation does not branch on DryRun; the request subject is carried unchanged.
+        Assert.AreEqual(fixture.Subject, result.Prepared.Subject);
+        Assert.IsTrue(result.Prepared.Subject.DryRun);
         Assert.IsNotEmpty(result.Commands);
+        // Every MSBuild projection maps the checkout root so originals carry no local path.
+        string pathMap = "-property:PathMap=" +
+            ProjectCollection.Escape(fixture.Repo.Directory + "=/_/");
+        NativeCommand[] queries = result.Commands.Select(command => command.Command)
+            .Where(command => command.Arguments.Any(argument =>
+                argument.StartsWith("-getResultOutputFile:", StringComparison.Ordinal)))
+            .ToArray();
+        Assert.IsNotEmpty(queries);
+        foreach (NativeCommand query in queries)
+            Assert.Contains(pathMap, query.Arguments);
         foreach (ReleaseCommand command in result.Commands)
         {
             Assert.IsFalse(command.Command.InheritEnvironment);
@@ -214,6 +228,8 @@ public sealed class NuGetPreparationTests(TestContext context)
         bool ownsRepository = true) : IDisposable
     {
         internal GitFixture Repo { get; } = repo;
+        internal ReleaseSubject Subject { get; } = new(revision, "refs/heads/development",
+            "product", DotNetPackageFixture.Declaration, "buddy", "github-packages-nuget", true);
         private readonly string scratch =
             Directory.CreateTempSubdirectory("nuget-release-").FullName;
         internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
@@ -258,9 +274,8 @@ public sealed class NuGetPreparationTests(TestContext context)
             return revision;
         }
         internal Task<NuGetPreparationResult> RunAsync(CancellationToken token) =>
-            NuGetPreparation.PrepareAsync(new(new(revision, "refs/heads/development", "product",
-                DotNetPackageFixture.Declaration, "buddy", "github-packages-nuget", true),
-                Repo.Directory, scratch), ExecuteAsync, token);
+            NuGetPreparation.PrepareAsync(new(Subject, Repo.Directory, scratch), ExecuteAsync,
+                token);
         private async Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
             CancellationToken token)
         {

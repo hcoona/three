@@ -199,7 +199,7 @@ invocation. A fresh registry observation and original-byte comparison run in a
 separate read-only verification job. A successful upload alone cannot satisfy
 the request.
 
-Ordinary CI's Windows `NuGet native preparation (Windows)` job runs the three
+Ordinary CI's Windows `NuGet native preparation (Windows)` job runs the two
 `NuGetNativePreparation` rows (real preparation, original package and clean
 consumer) when the existing .NET/Workflow scope selection selects it, which
 covers any Workflow Delivery source or test change, the fixture product and
@@ -209,8 +209,9 @@ Same-input .NET reproducibility was established once by
 [Issue #948](https://github.com/hcoona/three/issues/948) and [PR #952](https://github.com/hcoona/three/pull/952). By owner decision it is
 build-infrastructure behavior, not per-PR evidence. The
 [NuGet reproducibility workflow](../../../../.github/workflows/workflow-delivery-v3-nuget-reproducibility.yml)
-runs the four `NuGetNativeScenarios` rows (source and timestamp sensitivity,
-two fresh-recovery rows) on owner dispatch and on pushes to `main` that change
+runs the three `NuGetNativeScenarios` tests (source and timestamp sensitivity,
+one fresh-recovery test over exact and conflicting state) on owner dispatch and
+on pushes to `main` that change
 the SDK, shared MSBuild/NuGet/NBGV/Git inputs, NuGet Release/package adapter
 source or the fixture product. The run itself (run ID, source commit and 30-day
 artifact) is the evidence carrier; no additional record is needed. The author of
@@ -255,8 +256,8 @@ dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests
 The project's native MTP default excludes `NuGetNativePreparation` and
 `NuGetNativeScenarios`; the Windows jobs above own them. To run them locally,
 override the default with `--filter 'TestCategory=NuGetNativePreparation'
---minimum-expected-tests 3` or `--filter 'TestCategory=NuGetNativeScenarios'
---minimum-expected-tests 4`. An explicit filter replaces the default, so an
+--minimum-expected-tests 2` or `--filter 'TestCategory=NuGetNativeScenarios'
+--minimum-expected-tests 3`. An explicit filter replaces the default, so an
 unrestricted local run uses `--filter 'FullyQualifiedName~WorkflowDelivery'`.
 
 Use complete affected scenario/contract tests, HK, hooks and independent review
