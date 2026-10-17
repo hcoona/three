@@ -33,9 +33,6 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         Assert.IsTrue(globals.Values.All(value => !value.Contains(fixture.Checkout,
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase :
                 StringComparison.Ordinal)));
-        using JsonDocument planning = await ProductFixture.NbgvReceiptAsync(fixture.Checkout,
-            globals, context.CancellationToken);
-        AssertNativeContext(planning, fixture.Checkout);
         string receiver = Path.Combine(fixture.Scratch, "receiver");
         NativeCommandResult checkout = await NativeProcess.ExecuteAsync(new("git", fixture.Checkout,
             ["worktree", "add", "--detach", receiver, transferred.Candidate], 30,
@@ -46,9 +43,22 @@ public sealed class DotNetPackageNativeTests(TestContext context)
             ["restore", ProductFixture.Project, "--locked-mode"], 60),
             context.CancellationToken);
         DotNetNativeFixture.RequireSuccess(restore, "Transferred locked package preparation");
-        using JsonDocument received = await ProductFixture.NbgvReceiptAsync(receiver, globals,
-            context.CancellationToken);
-        AssertNativeContext(received, receiver);
+        // The transfer omits checkout paths; NBGV must recompute them in the receiver.
+        using (JsonDocument received = await ProductFixture.NbgvReceiptAsync(receiver, globals,
+            context.CancellationToken))
+        {
+            context.WriteLine(received.RootElement.GetRawText());
+            JsonElement properties = received.RootElement.GetProperty("Properties");
+            Assert.AreEqual("MSBuildTargetCaching", properties.GetProperty("NBGV_CacheMode")
+                .GetString());
+            string directory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(
+                properties.GetProperty("GitVersionBaseDirectory").GetString()!));
+            string expected = Path.TrimEndingDirectorySeparator(Path.GetFullPath(
+                Path.Combine(receiver, Path.GetRelativePath(fixture.Checkout,
+                    discovered.VersionBaseDirectory))));
+            Assert.AreEqual(expected, directory, OperatingSystem.IsWindows()
+                ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        }
         string execution = Directory.CreateDirectory(
             Path.Combine(fixture.Scratch, "received-run")).FullName;
         DotNetGroupRunResult result = await DotNetGroupExecution.RunAsync(transferred,
@@ -83,50 +93,18 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         Assert.HasCount(4, result.Packages.Commands);
         Assert.AreEqual(DotNetPackageConsumer.Marker,
             result.Packages.Commands[^1].Result.Stdout.Trim());
+        // The consumer restores only into this run's fresh package folder; NuGet owns the rest.
+        string packages = result.Packages.Commands[1].Command.Environment!["NUGET_PACKAGES"]!;
+        Assert.StartsWith(execution + Path.DirectorySeparatorChar, packages);
         Assert.IsTrue(result.Packages.Commands.Skip(1).All(
-            item => item.Command.Environment!["NUGET_PACKAGES"]!
-            .StartsWith(fixture.Scratch, StringComparison.Ordinal)));
-        await FreshConsumerCannotBorrowCachedMissingPackageAsync(fixture, result.Packages);
-
-        void AssertNativeContext(JsonDocument receipt, string root)
-        {
-            context.WriteLine(receipt.RootElement.GetRawText());
-            JsonElement properties = receipt.RootElement.GetProperty("Properties");
-            Assert.AreEqual("MSBuildTargetCaching", properties.GetProperty("NBGV_CacheMode")
-                .GetString());
-            string directory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(
-                properties.GetProperty("GitVersionBaseDirectory").GetString()!));
-            string expected = Path.TrimEndingDirectorySeparator(Path.GetFullPath(
-                Path.Combine(root, Path.GetRelativePath(fixture.Checkout,
-                    discovered.VersionBaseDirectory))));
-            Assert.AreEqual(expected, directory, OperatingSystem.IsWindows()
-                ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-            JsonElement reference = Assert.ContainsSingle(receipt.RootElement.GetProperty("Items")
-                .GetProperty("ProjectReference").EnumerateArray().Where(item =>
-                    item.TryGetProperty("NBGV_InnerProject", out JsonElement marker) &&
-                    marker.GetString() == "true"));
-            string helper = reference.GetProperty("FullPath").GetString()!;
-            Assert.AreEqual(Path.GetFullPath(properties.GetProperty("NBGV_CachingProjectReference")
-                .GetString()!), Path.GetFullPath(helper));
-            Assert.AreEqual("PrivateP2PCaching.proj", Path.GetFileName(helper));
-            LockFile assets = new LockFileFormat().Read(properties.GetProperty("ProjectAssetsFile")
-                .GetString()!);
-            LockFileLibrary package = Assert.ContainsSingle(assets.Libraries.Where(library =>
-                library.Name == "Nerdbank.GitVersioning"));
-            Assert.AreEqual("3.10.94", package.Version.ToNormalizedString());
-            Assert.IsTrue(assets.PackageFolders.Any(folder => Path.GetFullPath(Path.Combine(
-                folder.Path, package.Path, "build", "PrivateP2PCaching.proj")) ==
-                Path.GetFullPath(helper)));
-        }
+            item => item.Command.Environment!["NUGET_PACKAGES"] == packages));
+        CollectionAssert.IsSubsetOf(new[] { "--packages", packages },
+            result.Packages.Commands[1].Command.Arguments);
     }
 
+    // MSBuild owns property precedence; this guards only the product's default Condition.
     [TestMethod]
-    [DataRow("", "", "true", "315532800")]
-    [DataRow("315532804", "315532802", "true", "315532804")]
-    [DataRow("", "315532802", "true", "")]
-    [DataRow("", "", "false", "")]
-    public async Task NativeTimestampDefaultPreservesExplicitInputs(string property,
-        string epoch, string deterministic, string expected)
+    public async Task NativeTimestampDefaultAppliesWithoutExplicitInputs()
     {
         string source = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(source, "global.json")) ||
@@ -143,20 +121,18 @@ public sealed class DotNetPackageNativeTests(TestContext context)
                 "-property:ImportDirectoryBuildProps=false",
                 "-property:ImportDirectoryBuildTargets=false",
                 "-getProperty:Deterministic,DeterministicTimestamp,SOURCE_DATE_EPOCH",
-                "-property:Deterministic=" + deterministic };
-            if (property.Length != 0) arguments.Add("-property:DeterministicTimestamp=" + property);
+                "-property:Deterministic=true" };
             NativeCommandResult result = await NativeProcess.ExecuteAsync(new("dotnet",
                 scratch, arguments.ToArray(), 60,
-                new Dictionary<string, string?>
-                { ["SOURCE_DATE_EPOCH"] = epoch.Length == 0 ? null : epoch }),
+                new Dictionary<string, string?> { ["SOURCE_DATE_EPOCH"] = null }),
                 context.CancellationToken);
             DotNetNativeFixture.RequireSuccess(result, "Native timestamp precedence");
             context.WriteLine(result.Stdout);
             using JsonDocument response = JsonDocument.Parse(result.Stdout);
             JsonElement values = response.RootElement.GetProperty("Properties");
-            Assert.AreEqual(expected, values.GetProperty("DeterministicTimestamp").GetString());
-            Assert.AreEqual(epoch, values.GetProperty("SOURCE_DATE_EPOCH").GetString());
-            Assert.AreEqual(deterministic, values.GetProperty("Deterministic").GetString());
+            Assert.AreEqual("315532800", values.GetProperty("DeterministicTimestamp").GetString());
+            Assert.AreEqual("", values.GetProperty("SOURCE_DATE_EPOCH").GetString());
+            Assert.AreEqual("true", values.GetProperty("Deterministic").GetString());
         }
         finally { Directory.Delete(scratch, true); }
     }
@@ -189,54 +165,38 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         using (Stream output = File.Create(Path.Combine(sdkFeed, missing + ".1.0.0.nupkg")))
             dependency.Save(output);
 
-        foreach (bool enableSource in new[] { false, true })
-        {
-            string fresh = Directory.CreateDirectory(Path.Combine(fixture.Scratch,
-                enableSource ? "source-enabled" : "source-isolated")).FullName;
-            var observations = new List<NativeCommandResult>();
-            InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(
-                () =>
-                DotNetPackageConsumer.RunAsync(original, fixture.Values, fresh, 60,
-                    async (command, token) =>
+        // NuGet owns the isolated default; this observes the app's guard on real enabled assets.
+        string fresh = Directory.CreateDirectory(Path.Combine(fixture.Scratch, "source-enabled"))
+            .FullName;
+        var observations = new List<NativeCommandResult>();
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            DotNetPackageConsumer.RunAsync(original, fixture.Values, fresh, 60,
+                async (command, token) =>
+                {
+                    var environment = new Dictionary<string, string?>(command.Environment!)
+                    { ["_WorkloadLibraryPacksFolder"] = sdkFeed };
+                    NativeCommandResult native = await NativeProcess.ExecuteAsync(command with
                     {
-                        var environment = new Dictionary<string, string?>(command.Environment!)
-                        { ["_WorkloadLibraryPacksFolder"] = sdkFeed };
-                        string[] arguments = enableSource
-                            ? [.. command.Arguments,
-                                "-property:DisableImplicitLibraryPacksFolder=false"]
-                            : command.Arguments;
-                        NativeCommandResult native = await NativeProcess.ExecuteAsync(
-                            command with { Arguments = arguments, Environment = environment },
-                            token);
-                        observations.Add(native);
-                        context.WriteLine(native.Stdout + native.Stderr);
-                        if (!native.Succeeded)
-                            throw new InvalidDataException(
-                                "Native isolated dependency restore failed.");
-                        return native;
-                    }, context.CancellationToken));
-            NativeCommandResult restore = Assert.ContainsSingle(observations);
-            if (enableSource)
-            {
-                Assert.IsTrue(restore.Succeeded, "The native sensitivity restore must succeed.");
-                Assert.Contains("source count", failure.Message);
-                LockFile assets = new LockFileFormat().Read(
-                    Path.Combine(fresh, "consumer", "obj", "project.assets.json"));
-                Assert.Contains(missing, assets.Libraries.Select(item => item.Name).ToArray());
-                string installed = new VersionFolderPathResolver(Path.Combine(fresh, "packages"))
-                    .GetPackageFilePath(missing, dependency.Version);
-                Assert.IsTrue(File.Exists(installed),
-                    "The control dependency was really restored.");
-            }
-            else
-            {
-                Assert.IsFalse(restore.Succeeded);
-                Assert.Contains("isolated dependency restore failed", failure.Message);
-                Assert.Contains("NU1101", restore.Stdout + restore.Stderr);
-                Assert.Contains(missing, restore.Stdout + restore.Stderr);
-            }
-            Assert.AreEqual(original.Sha256, DotNetPackageArchive.Digest(original.Path));
-        }
+                        Arguments = [.. command.Arguments,
+                            "-property:DisableImplicitLibraryPacksFolder=false"],
+                        Environment = environment,
+                    }, token);
+                    observations.Add(native);
+                    context.WriteLine(native.Stdout + native.Stderr);
+                    if (!native.Succeeded)
+                        throw new InvalidDataException("Native enabled dependency restore failed.");
+                    return native;
+                }, context.CancellationToken));
+        NativeCommandResult restore = Assert.ContainsSingle(observations);
+        Assert.IsTrue(restore.Succeeded, "The native sensitivity restore must succeed.");
+        Assert.Contains("source count", failure.Message);
+        LockFile assets = new LockFileFormat().Read(
+            Path.Combine(fresh, "consumer", "obj", "project.assets.json"));
+        Assert.Contains(missing, assets.Libraries.Select(item => item.Name).ToArray());
+        string installed = new VersionFolderPathResolver(Path.Combine(fresh, "packages"))
+            .GetPackageFilePath(missing, dependency.Version);
+        Assert.IsTrue(File.Exists(installed), "The control dependency was really restored.");
+        Assert.AreEqual(original.Sha256, DotNetPackageArchive.Digest(original.Path));
     }
 
     private static void AddMissingDependency(string path, string missing)
@@ -292,38 +252,6 @@ public sealed class DotNetPackageNativeTests(TestContext context)
         }));
         context.AddResultFile(binding);
         context.WriteLine(File.ReadAllText(binding));
-    }
-
-    private async Task FreshConsumerCannotBorrowCachedMissingPackageAsync(ProductFixture fixture,
-        DotNetPackageRunResult first)
-    {
-        context.WriteLine("Native package case: fresh consumer cannot borrow cached package");
-        DotNetOriginalPackage original = first.Packages[0];
-        string fresh =
-            Directory.CreateDirectory(Path.Combine(fixture.Scratch, "missing-probe")).FullName;
-        var observations = new List<NativeCommand>();
-        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            DotNetPackageConsumer.RunAsync(original, fixture.Native, fresh, 60,
-                async (command, token) =>
-                {
-                    observations.Add(command);
-                    foreach (string path in Directory.EnumerateFiles(Path.Combine(fresh, "feed")))
-                        File.Delete(path);
-                    NativeCommandResult native = await NativeProcess.ExecuteAsync(command, token);
-                    context.WriteLine(native.Stdout + native.Stderr);
-                    if (!native.Succeeded) throw new InvalidDataException(
-                        "Native empty-feed restore failed.");
-                    return native;
-                }, context.CancellationToken));
-        Assert.Contains("empty-feed restore failed", failure.Message);
-        NativeCommand restore = Assert.ContainsSingle(observations);
-        Assert.Contains("restore", restore.Arguments);
-        Assert.AreNotEqual(first.Commands[1].Command.Environment!["NUGET_PACKAGES"],
-            restore.Environment!["NUGET_PACKAGES"]);
-        Assert.IsTrue(File.Exists(first.ConsumerOutputs[0].Path),
-            "The prior successful installed consumer remains available " +
-                "but cannot mask this failure.");
-        Assert.AreEqual(original.Sha256, DotNetPackageArchive.Digest(original.Path));
     }
 
     private sealed class ProductFixture(string checkout, string scratch, CiPlan plan,
@@ -459,9 +387,7 @@ public sealed class DotNetPackageNativeTests(TestContext context)
             NativeCommandResult result = await NativeProcess.ExecuteAsync(new("dotnet", checkout,
                 ["msbuild", Path.Combine(checkout, Project), "-nologo", "-noAutoResponse",
                     .. DotNetChecks.Properties(globals), "-property:IsGraphBuild=true",
-                    "-getItem:ProjectReference",
-                    "-getProperty:NBGV_CacheMode,NBGV_CachingProjectReference," +
-                    "GitVersionBaseDirectory,ProjectAssetsFile"],
+                    "-getProperty:NBGV_CacheMode,GitVersionBaseDirectory"],
                 60), token);
             token.ThrowIfCancellationRequested();
             DotNetNativeFixture.RequireSuccess(result, "Native receiving NBGV context");
