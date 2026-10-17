@@ -36,7 +36,9 @@ reason. Documentation lives in this private application namespace; portals and
 family bindings route its current consumers and retained historical readers.
 
 The following C4 container view shows applications and stores. CLI invocations
-are short-lived processes on Actions runners, not a persistent service.
+are short-lived processes on Actions runners, not a persistent service. The CLI
+starts the native Python and Ruby helpers as separate short-lived processes on
+the same runner when it needs their native library bindings.
 
 ```mermaid
 C4Container
@@ -47,11 +49,17 @@ C4Container
     System_Ext(registry, "Selected registry", "Native creation, identity and observable package state")
     ContainerDb(repository, "Git repository", "Git", "Source, product declarations and quality selections")
     Container(tool, "Workflow Delivery", "Internal C# CLI", "CI and Release use cases and native integrations")
+    Container(pyhelpers, "Native Python helpers", "Python processes", "PyPA, NBGV and pytest bindings in the prepared environment")
+    Container(rbhelpers, "Native Ruby helpers", "Ruby processes", "RubyGems/Bundler evaluation and source reads")
     ContainerDb(artifacts, "Artifacts and results", "GitHub storage", "Qualified files and cross-job business data")
     Rel(contributor, actions, "Submits candidate or explicit request")
     Rel(actions, tool, "Invokes selected-revision commands in scoped jobs")
     Rel(tool, repository, "Reads immutable source and declarations")
     Rel(tool, native, "Obtains facts; builds and checks without publication capability")
+    Rel(tool, pyhelpers, "Starts per query; receives typed native answers")
+    Rel(tool, rbhelpers, "Starts per query; receives typed native answers")
+    Rel(pyhelpers, native, "Calls maintained Python libraries; the CLI runs UV")
+    Rel(rbhelpers, native, "Calls RubyGems and Bundler")
     Rel(tool, artifacts, "Transfers required outputs and reports")
     Rel(tool, registry, "Observes; publishes only in an authorized invocation")
 ```
@@ -77,18 +85,27 @@ accepted writer's effective token.
 
 ### Domain Values
 
-| Value                   | Meaning and consumer                                                                                        |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Project                 | Native build/package unit, including non-published dependencies; used for ownership, impact and checks      |
-| Release unit            | Independently versioned product with explicit native entry points and complete publishable variants         |
-| Candidate               | Exact tree tested by CI and the event-appropriate comparison basis                                          |
-| Release request         | One release unit, full source commit, channel, destination and explicit live/dry-run mode                   |
-| Selected work           | Projects, variants, required/advisory checks and real prerequisites, with selection reasons                 |
-| Qualified output set    | Release's complete files, native coordinates, source/version bindings and successful required qualification |
-| Destination observation | Required native state: absent, exact, partial, conflicting or unknown                                       |
-| Release result          | Business satisfaction, attempted effects, command outcomes, verification and uncertainty                    |
+| Value                      | Meaning and consumer                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project                    | Native build/package unit, including non-published dependencies; used for ownership, impact and checks                                                                                                                                                                                                                                                                                                                                                                                             |
+| Release unit               | Independently versioned product with explicit native entry points and complete publishable variants                                                                                                                                                                                                                                                                                                                                                                                                |
+| Candidate                  | Exact tree tested by CI and the event-appropriate comparison basis                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Release request            | One release unit, full source commit, channel, destination and explicit live/dry-run mode                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Selected work              | Projects, variants, required/advisory checks and real prerequisites, with selection reasons                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Qualified output set       | Release's complete files, native coordinates, source/version bindings and successful required qualification                                                                                                                                                                                                                                                                                                                                                                                        |
+| Destination observation    | Required native state: absent, exact, partial, conflicting or unknown                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Release result             | Business satisfaction, attempted effects, command outcomes, verification and uncertainty                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Buddy channel              | Distributable previews from allowed development branches, distinct from Official ([WD-CHN-001](requirements.md#buddy-and-official-channels))                                                                                                                                                                                                                                                                                                                                                       |
+| Official channel           | Canonical NBGV version from an eligible, reviewed official ref ([WD-CHN-002](requirements.md#buddy-and-official-channels)); the [Official channel scope](integration/common.md#official-channel-scope) states the implemented set                                                                                                                                                                                                                                                                  |
+| Control                    | The Workflow Delivery application built from the selected control revision: the candidate in CI, the release revision in Release; transferred as a prepared CLI artifact                                                                                                                                                                                                                                                                                                                           |
+| Original                   | An exact qualified package file of a Release request; a request never substitutes another or older artifact for its qualified originals, and fresh recovery rebuilds and qualifies its own set ([WD-OPS-004](requirements.md#observation-retry-and-recovery))                                                                                                                                                                                                                                      |
+| Campaign                   | A closed, finitely authorized proving series for one ecosystem (npm, NuGet, Python or Ruby); retained only as historical evidence with spent limits                                                                                                                                                                                                                                                                                                                                                |
+| Generation, slot, lifetime | Historical campaign terms with record-specific meanings, including an attempt lifetime, a time window, a registry object or version's active lifetime and a request slot as a position; each record's own usage governs. Spent attempts are not refunded, and an audited success can end the remaining slots                                                                                                                                                                                       |
+| Original D                 | A historical npm native-acceptance fixture version that was deleted during the campaign; it and its active replacement remain an unresolved administrative matter. The [npm evidence](validation/native-and-normal-live-evidence.md) keeps its identities                                                                                                                                                                                                                                          |
+| Native R4                  | The historical independently accepted NuGet native-acceptance unit: outer lifetime `nuget-successor-suite-r4`, three runs, six captures and the clean destination consumer. It follows the failed suite R3 (outer lifetime `nuget-successor-suite-r3`) and is distinct from the normal-Live run and the postpublication R4 capture. The [NuGet evidence](research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation) and its linked audits keep its identities |
 
-These are values, not a required set of persistent aggregates. Product version,
+These are values, not a required set of persistent aggregates; the campaign
+terms describe historical evidence only. Product version,
 source commit and execution are distinct facts. Different commits can share an
 NBGV version without equal bytes or a global version-to-commit index.
 

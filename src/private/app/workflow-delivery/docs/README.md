@@ -24,14 +24,17 @@ remain unsupported. Internal historical formats need no compatibility reader.
 
 ## Native Integration Evidence
 
-| Integration                     | Source and bounded observations                                                                                                                                                                          |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Git and managed inputs          | [Git facts](research/git-native-facts.md), [MSBuild items](research/msbuild-native-items.md), [NBGV inputs](research/nbgv-native-inputs.md)                                                              |
-| PNPM and Node                   | [PNPM 12 planning](research/pnpm-native-planning.md), [native Node execution](research/node-ci-native-execution.md)                                                                                      |
-| Python planning and preparation | [Native planning](research/python-native-planning.md), [graph qualification](research/python-native-graph-qualification.md), [planning enrichment](research/python-planning-enrichment-qualification.md) |
-| Python package execution        | [Packaging assessment](research/python-native-packaging.md), [finite qualification](research/python-native-package-qualification.md)                                                                     |
-| Native publishers               | [NuGet](research/nuget-native-publisher.md), [Python](research/python-native-publisher.md), [Ruby](research/ruby-native-publisher.md)                                                                    |
-| Contraction assumptions         | [Feasibility](research/contraction-feasibility.md)                                                                                                                                                       |
+Read a record when changing or reviewing the integration it supports, or when
+its recheck trigger fires.
+
+| Integration                     | Source and bounded observations                                                                                                                                                                          | Read when                                                                                                               |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Git and managed inputs          | [Git facts](research/git-native-facts.md), [MSBuild items](research/msbuild-native-items.md), [NBGV inputs](research/nbgv-native-inputs.md)                                                              | Changing Git comparison/path reading, the control-test resource query or NBGV input mapping                             |
+| PNPM and Node                   | [PNPM 12 planning](research/pnpm-native-planning.md), [native Node execution](research/node-ci-native-execution.md)                                                                                      | Changing the [Node integration](integration/node.md) or the PNPM pin                                                    |
+| Python planning and preparation | [Native planning](research/python-native-planning.md), [graph qualification](research/python-native-graph-qualification.md), [planning enrichment](research/python-planning-enrichment-qualification.md) | Changing Python planning facts, the UV/PyPA pins or the pytest query in the [Python integration](integration/python.md) |
+| Python package execution        | [Packaging assessment](research/python-native-packaging.md), [finite qualification](research/python-native-package-qualification.md)                                                                     | Changing Python package preparation, build or consumers                                                                 |
+| Native publishers               | [NuGet](research/nuget-native-publisher.md), [Python](research/python-native-publisher.md), [Ruby](research/ruby-native-publisher.md)                                                                    | Changing that ecosystem's Release publisher, observation or completion                                                  |
+| Contraction assumptions         | [Feasibility](research/contraction-feasibility.md)                                                                                                                                                       | Questioning the owner's Windows assumption or native NBGV build execution                                               |
 
 The Python package record preserves failed output adoption and spent lifetimes
 beside later bounded success. Neither tool readiness nor corrected source
@@ -41,15 +44,20 @@ from local observations and from completed publication campaigns.
 
 ## Retained Campaign Evidence
 
-| Concern                                             | Original outcomes, controls and limits                                                                                                                         |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| npm native and normal publication                   | [Evidence](validation/native-and-normal-live-evidence.md), [registry support research](research/github-packages-supported-registries.md)                       |
-| NuGet profile, native and normal publication        | [Research/evidence](research/nuget-smoke-evidence.md), [normal-Live evidence](validation/nuget-normal-live-evidence.md)                                        |
-| Python preparation and native failure               | [Retired native acceptance](validation/historical-readers.md#retired-python-native-acceptance), [source evidence](research/python-smoke-evidence.md)           |
-| Python bootstrap, publication and ordinary recovery | [Bootstrap](validation/python-bootstrap.md), [normal publication](validation/python-normal-live-evidence.md), [recovery](validation/python-hosted-recovery.md) |
-| Ruby original publication                           | [Normal-Live evidence](validation/ruby-normal-live-evidence.md), [research](research/ruby-smoke-evidence.md)                                                   |
-| Historical implementation and record recovery       | [Producer-qualified readers and retired records](validation/historical-readers.md)                                                                             |
-| Legacy workflow retirement                          | [Retained v1 boundary](research/legacy-workflow-boundary.md)                                                                                                   |
+Read the campaign records only to interpret or audit a closed campaign, or when
+the [handoff](agent-handoff.md#authorization-and-closed-campaigns) limits route
+to them; they are not current behavior. The registry support research and the
+retained v1 boundary also listed here remain current source research.
+
+| Concern                                             | Original outcomes, controls and limits                                                                                                                         | Read when                                                                                                  |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| npm native and normal publication                   | [Evidence](validation/native-and-normal-live-evidence.md), [registry support research](research/github-packages-supported-registries.md)                       | Auditing npm publication or credential reach, or a destination decision relying on GitHub Packages support |
+| NuGet profile, native and normal publication        | [Research/evidence](research/nuget-smoke-evidence.md), [normal-Live evidence](validation/nuget-normal-live-evidence.md)                                        | Auditing NuGet Native R4 or normal-Live results                                                            |
+| Python preparation and native failure               | [Retired native acceptance](validation/historical-readers.md#retired-python-native-acceptance), [source evidence](research/python-smoke-evidence.md)           | Interpreting the failed Python native generation                                                           |
+| Python bootstrap, publication and ordinary recovery | [Bootstrap](validation/python-bootstrap.md), [normal publication](validation/python-normal-live-evidence.md), [recovery](validation/python-hosted-recovery.md) | Auditing Python bootstrap, publication or recovery outcomes                                                |
+| Ruby original publication                           | [Normal-Live evidence](validation/ruby-normal-live-evidence.md), [research](research/ruby-smoke-evidence.md)                                                   | Auditing Ruby publication outcomes                                                                         |
+| Historical implementation and record recovery       | [Producer-qualified readers and retired records](validation/historical-readers.md)                                                                             | Recovering an original producer or a retired record's text                                                 |
+| Legacy workflow retirement                          | [Retained v1 boundary](research/legacy-workflow-boundary.md)                                                                                                   | Reading old designs or touching the retained v1 Official/reusable workflows or their validator diagnostics |
 
 ## Historical Source Rule
 

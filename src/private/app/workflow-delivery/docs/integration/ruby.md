@@ -152,7 +152,9 @@ and [2.7.2 Definition](https://github.com/ruby/rubygems/blob/b463ced1459e03bf871
 expose `gemfiles` and requested dependency/resolve answers; their respective
 [2.4 SpecSet](https://github.com/ruby/rubygems/blob/de20c7e7b7d7cc7a9ef088684a2c742d5a651ebf/bundler/lib/bundler/spec_set.rb)
 and [2.7 SpecSet](https://github.com/ruby/rubygems/blob/b463ced1459e03bf871116fff3a09c5d287806c2/bundler/lib/bundler/spec_set.rb)
-implement different public `for` signatures. Bundler 2.7's
+implement different public `for` signatures.
+
+Bundler 2.7's
 [Path](https://github.com/ruby/rubygems/blob/b463ced1459e03bf871116fff3a09c5d287806c2/bundler/lib/bundler/source/path.rb)
 and [Git](https://github.com/ruby/rubygems/blob/b463ced1459e03bf871116fff3a09c5d287806c2/bundler/lib/bundler/source/git.rb)
 separate original Path locations from active local Git paths. RSpec 3.13.6's
