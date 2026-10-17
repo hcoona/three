@@ -189,7 +189,7 @@ executed for it.
 | `docs/concepts/configuration-files.md`                                    | Identical       | Documented settings search unchanged                      |
 | `docs/concepts/projects/dependencies.md` (default groups)                 | Identical       | Default `dev` group behavior unchanged                    |
 
-The metadata command (`crates/uv/src/commands/workspace/metadata.rs`), its
+The metadata command (`crates/uv-workspace-commands/src/metadata.rs`), its
 documentation (`docs/reference/internals/metadata.md`), the build frontend
 (`crates/uv-build-frontend/src/lib.rs`) and the workspace group sources
 (`crates/uv-workspace/src/dependency_groups.rs`,
