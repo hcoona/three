@@ -72,3 +72,67 @@ ends a grant. Git and the proposing PR retain the reason and history.
   historical-evidence consumers. Do not add a general application scheduler,
   cache, dynamic admission, approval mirror, trust-proof or recovery service, or
   weaken required coverage to obtain a shorter run.
+
+### Contract Workflow Delivery records
+
+- **Work carrier:** the pull request proposing this entry and its linked
+  documentation PRs. The repository owner accepted the recommendations of a
+  read-only structure review of the Workflow Delivery V3 records and requested
+  contraction until they comply with the
+  [record policy](governance/record-system.md) and
+  [engineering principles](engineering/engineering-principles.md).
+- **Accepted inputs:** the current Workflow Delivery
+  [portal](../src/private/app/workflow-delivery/docs/README.md),
+  [application interface](../src/private/app/workflow-delivery/README.md),
+  their linked requirements, design, integration, research and validation
+  records, and the [family catalog](governance/record-families.yaml). Commit
+  `eafd42b0453b265b12ef3791a0b117084aa5eec0` is the fidelity baseline.
+- **Advancement and outcome:** contract these records and their routing
+  interfaces without changing product behavior:
+    - correct historical text phrased as current, and bind or classify
+      uncovered Workflow Delivery paths;
+    - delete the historical architecture glossary, four slice LLDs, NuGet smoke
+      research handoff, Ruby operation protocol, CI shadow evidence and NuGet
+      delivery retrospective, and merge the retired Python native readiness and
+      acceptance boundaries, replacing them with commit-pinned links indexed by
+      the historical-readers record;
+    - after research-evidence review, reduce closed Python qualification
+      protocols to their conclusion, evidence limits, counterexamples, immutable
+      identities and commit-pinned full text;
+    - give Release completion and recovery, NuGet reproducibility triggers and
+      data-crossing checks one authority each; reduce the handoff to routing and
+      retained limits; move generic agent process rules to the
+      [agent execution guidance](engineering/agent-execution.md) when they apply
+      beyond Workflow Delivery;
+    - keep common contracts in the MLD and concrete ecosystem contracts in
+      per-ecosystem integration contract files replacing `migration-strategy.md`,
+      updating this Wave's links to it in the same change;
+    - define current terms in the HLD, add native helper containers to its C4
+      container view and one CI cross-job sequence to the MLD, and divide dense
+      rule paragraphs.
+- **Ordering and gates:** deliver focused pull requests one at a time. Each
+  receives independent record-system and engineering-principles review,
+  research-evidence review when evidence, research, validation or historical
+  records change, and an independent fidelity review. The fidelity review shows,
+  for every removed, moved or reworded statement, its current location, or its
+  commit-pinned historical location and the absence of a current consumer.
+  Independently classify material findings before repair. A required meaning
+  change or an unpreservable evidence consumer returns to the owner.
+- **Acceptance:** the record checker reports no diagnostics for the changed
+  records, and a fresh independent audit of the whole record set per principle
+  area plus a whole-diff fidelity audit from the baseline report no material
+  findings. Delete this entry when that outcome is accepted.
+- **Effects:** permit source and repository/GitHub inspection, documentation,
+  record-catalog and record-checker path-classification changes, credential-free
+  local validation, independent delegated review, ordinary PR/check operations
+  and their normal CI.
+  Repository delivery follows the existing protected merge process.
+- **Exclusions:** no Workflow Delivery product, implementation, test or
+  workflow behavior change; no change to requirement meaning or identifiers,
+  including realization statements in requirements; no new record family,
+  requirement-identifier check or other diagram; no release or proving
+  dispatch, publication, credential acquisition,
+  Environment/account/publisher/access change or retrospective
+  reclassification of evidence or spent limits. Preserve current
+  historical-evidence consumers; a commit-pinned link preserves such a
+  consumer.
