@@ -235,6 +235,14 @@ override the default with `--filter 'TestCategory=NuGetNativePreparation'
 --minimum-expected-tests 3`. An explicit filter replaces the default, so an
 unrestricted local run uses `--filter 'FullyQualifiedName~WorkflowDelivery'`.
 
+The managed test assembly points `TMPDIR`, `TMP` and `TEMP` at one
+`workflow-delivery-tests-<pid>-*` directory for the run and deletes it at
+assembly cleanup; a later run removes such directories left by killed runs.
+Ruby helper specs use Ruby's `Dir.tmpdir`, which follows the `TMPDIR` that the
+group runner already supplies. `mise run test:python` keeps its results under
+`${XDG_CACHE_HOME:-~/.cache}/three/python-full/` unless `--directory` is
+given, and prints the command that removes them.
+
 Use complete affected scenario/contract tests, HK, hooks and independent review
 for changes. Real transfers, supported native tool interfaces and required
 ordinary runner qualification need their actual evidence. Controlled/local

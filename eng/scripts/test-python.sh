@@ -36,7 +36,12 @@ repository=$(realpath "$repository")
   exit 2
 }
 candidate=$(git -C "$repository" rev-parse HEAD)
-if [[ -z $directory ]]; then directory=$(mktemp -d -t three-python-full-XXXXXXXX)/state; fi
+if [[ -z $directory ]]; then
+  # Results are retained for inspection, so keep them off memory-backed /tmp.
+  state_root=${XDG_CACHE_HOME:-$HOME/.cache}/three/python-full
+  mkdir -p "$state_root"
+  directory=$(mktemp -d "$state_root/$(date -u +%Y%m%dT%H%M%SZ)-XXXXXXXX")/state
+fi
 directory=$(realpath -m "$directory")
 [[ $directory != "$repository" && $directory != "$repository/"* && $repository != "$directory/"* ]] || {
   echo 'Full-group state must be outside the source checkout.' >&2
@@ -57,3 +62,6 @@ dotnet "$directory/control-build/transfer/control/WorkflowDelivery.dll" ci calle
   "$(command -v uv)" "$(command -v python)" "$(command -v dotnet)" \
   "$(command -v mise || printf '%s' '-')" \
   "$(command -v node || printf '%s' '-')" "$(command -v pwsh || printf '%s' '-')"
+echo "Retained full Python group state: $directory"
+printf 'Remove it when finished: git -C %q worktree remove --force %q && rm -rf %q\n' \
+  "$repository" "$directory/control-checkout" "$(dirname "$directory")"
