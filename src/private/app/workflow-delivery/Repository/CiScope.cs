@@ -20,6 +20,8 @@ internal static partial class CiScope
     internal const string FamilyCatalog = "docs/governance/record-families.yaml";
     // check_repository_records.py imports this matcher; the record-control task owns it.
     internal const string RecordMatcher = "eng/scripts/repository_path_patterns.py";
+    // The root HK configuration; native Pkl imports name the local modules it consumes.
+    internal const string HkConfiguration = "hk.pkl";
     private const string Azure = "src/private/app/azureauth-credprovider";
     private const string Scholarly = "src/private/lib/scholarly-publication";
     private const string Products = "tests/private/app/workflow-delivery/fixtures/products";
@@ -70,7 +72,8 @@ internal static partial class CiScope
 
     internal static async Task<ScopeCoordinate[]> OwnersAsync(GitMaterialization checkout,
         string[] changed, string[] resourceInputs,
-        Func<string, CancellationToken, Task<string>> miseTasks, CancellationToken token)
+        Func<string, CancellationToken, Task<string>> miseTasks,
+        Func<string, CancellationToken, Task<string>> hkImports, CancellationToken token)
     {
         var entries = checkout.Revision.Entries.ToDictionary(entry => entry.Path,
             StringComparer.Ordinal);
@@ -80,13 +83,16 @@ internal static partial class CiScope
         string? catalog = await checkout.ReadOptionalTextAsync(FamilyCatalog, token);
         RecordTaskOwner[] tasks = RecordTasks(await miseTasks(checkout.Root, token),
             checkout.Root);
+        string[] hk = checkout.Revision.Entries.Any(entry => entry.Path == HkConfiguration)
+            ? HkModules(await hkImports(checkout.Root, token), checkout.Root)
+            : [];
         return Owners(checkout.Revision, changed, resourceInputs,
-            catalog is null ? [] : Bindings(catalog), tasks);
+            catalog is null ? [] : Bindings(catalog), tasks, hk);
     }
 
     internal static ScopeCoordinate[] Owners(GitRevision revision, string[] changed,
         string[] resourceInputs, (string Id, string Pattern)[] bindings,
-        RecordTaskOwner[] tasks)
+        RecordTaskOwner[] tasks, string[] hkModules)
     {
         var entries = revision.Entries.ToDictionary(entry => entry.Path, StringComparer.Ordinal);
         string[] gems = GemRoots(revision);
@@ -111,7 +117,8 @@ internal static partial class CiScope
             }
             if (path == ".github/CODEOWNERS")
                 Add("github", path, "native-codeowners-routing", path);
-            if (path == "hk.pkl" && Regular(".github/workflows/ci.yml"))
+            if (hkModules.Contains(path, StringComparer.Ordinal) &&
+                Regular(".github/workflows/ci.yml"))
                 Add("conformance", ".github/workflows/ci.yml#conformance",
                     "native-hk-configuration", ".github/workflows/ci.yml", path);
             if (path == "eng/scripts/update_node_mise_lock.py" && Regular("hk.pkl") &&
@@ -254,6 +261,64 @@ internal static partial class CiScope
 
     internal static Task<string> MiseTasksAsync(string directory, CancellationToken token) =>
         NativeProcess.RunAsync("mise", directory, ["tasks", "ls", "--hidden", "--json"], token);
+
+    // The endpoint's locked Pkl reports the root HK configuration's complete import graph.
+    // '--root-dir' makes Pkl itself reject a file module outside the checkout.
+    internal static Task<string> HkImportsAsync(string directory, CancellationToken token) =>
+        NativeProcess.RunAsync("mise", directory, ["exec", "--locked", "pkl", "--", "pkl",
+            "analyze", "imports", "--format", "json", "--root-dir", directory,
+            HkConfiguration], token);
+
+    // Repository-local modules of the native HK import graph. Remote package and standard
+    // library modules are not repository coordinates. Any other or unreadable module fails.
+    internal static string[] HkModules(string json, string root)
+    {
+        using JsonDocument document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Object ||
+            !document.RootElement.TryGetProperty("imports", out JsonElement imports) ||
+            imports.ValueKind != JsonValueKind.Object ||
+            !document.RootElement.TryGetProperty("resolvedImports", out JsonElement resolved) ||
+            resolved.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("Native HK imports lack their module graph.");
+        var uris = new List<string>();
+        foreach (JsonProperty module in imports.EnumerateObject())
+        {
+            uris.Add(module.Name);
+            if (module.Value.ValueKind != JsonValueKind.Array)
+                throw new InvalidDataException("Native HK imports are not a module list.");
+            foreach (JsonElement import in module.Value.EnumerateArray())
+                uris.Add(import.ValueKind == JsonValueKind.Object &&
+                    import.TryGetProperty("uri", out JsonElement uri) &&
+                    uri.ValueKind == JsonValueKind.String
+                    ? uri.GetString()!
+                    : throw new InvalidDataException("A native HK import lacks its URI."));
+        }
+        foreach (JsonProperty module in resolved.EnumerateObject())
+            uris.Add(module.Value.ValueKind == JsonValueKind.String
+                ? module.Value.GetString()!
+                : throw new InvalidDataException("A resolved HK import lacks its URI."));
+        string full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        var paths = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (string text in uris)
+        {
+            if (!Uri.TryCreate(text, UriKind.Absolute, out Uri? uri))
+                throw new InvalidDataException("Unreadable native HK module: " + text);
+            if (uri.Scheme is "package" or "pkl") continue;
+            if (!uri.IsFile)
+                throw new InvalidDataException("Unsupported native HK module: " + text);
+            string relative = Path.GetRelativePath(full, uri.LocalPath);
+            if (Path.IsPathRooted(relative) || relative == ".." ||
+                relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                throw new InvalidDataException("Native HK module is outside the checkout: " +
+                    text);
+            relative = relative.Replace(Path.DirectorySeparatorChar, '/');
+            ImpactPlanner.ValidatePath(relative);
+            paths.Add(relative);
+        }
+        if (!paths.Contains(HkConfiguration))
+            throw new InvalidDataException("Native HK imports omit the root configuration.");
+        return paths.ToArray();
+    }
 
     internal static bool LegacyReleaseInput(string path) =>
         Under(path, ".github/workflows") ||

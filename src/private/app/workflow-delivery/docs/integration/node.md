@@ -90,6 +90,16 @@ resolve, so planning still fails closed. A present coordinate with neither respo
 consumer remains a planning failure, not a run-everything fallback. Actual
 product/control consumption remains independently native.
 
+Source-conformance responsibility for HK configuration comes from the
+endpoint's native import graph of root `hk.pkl`: the scope job prepares the
+locked mise `pkl` at each endpoint, and `pkl analyze imports` with the
+checkout as its root directory names every repository-local module it loads.
+Remote package and standard-library modules are not repository coordinates.
+The graph is read only when the endpoint commits `hk.pkl`; a failed,
+malformed or out-of-checkout read fails planning instead of dropping
+responsibility. Directory names and a repository-local Pkl parser do not infer
+this responsibility.
+
 The Node group joins native PNPM membership and reasons before final owner
 validation. Manifest/catalog reads used to
 discover an owner do not themselves make those files product execution inputs.
