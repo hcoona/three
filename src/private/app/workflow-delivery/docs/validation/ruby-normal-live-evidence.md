@@ -1,12 +1,14 @@
 # Ruby Normal Live Evidence
 
 Both destinations have independently accepted normal publication, exact remote
-originals, clean native consumers and durable campaign stops. This record is
-maintained by the V3 maintainer for delivery, recovery and closure reviewers;
+originals, clean native consumers and durable campaign stops. This record
+served delivery, recovery and closure reviewers of the completed campaign and
+is retained for the handoff's [Ruby limits](../agent-handoff.md#ruby-retained-limits);
 it preserves the observed basis without granting another operation.
 
-The [Ruby LLD](../hcoona-release-smoke-ruby-lld.md) and
-[operation protocol](../ruby-operation-protocol.md) own the operation contract.
+The historical [Ruby LLD](../hcoona-release-smoke-ruby-lld.md) and
+[operation protocol](../ruby-operation-protocol.md) owned the operation contract
+of the completed campaign.
 This record retains the actual smoke observations and their evidence limits.
 
 ## GitHub Packages

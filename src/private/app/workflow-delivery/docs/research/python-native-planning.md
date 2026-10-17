@@ -2,8 +2,9 @@
 
 ## Purpose and Scope
 
-This source assessment supports the next Python CI integration under the
-[implementation plan](../migration-strategy.md#native-facts-and-first-supported-shapes).
+This source assessment supported the Python CI integration, delivered in
+[PR #1114](https://github.com/hcoona/three/pull/1114) under the
+[integration contract](../migration-strategy.md#native-facts-and-first-supported-shapes).
 It identifies the native facts available at the repository's former UV 0.12.23
 pin and a specific missing relation. It is not an accepted reader, complete
 Python graph, implementation choice or complete runtime qualification. The later
@@ -240,9 +241,9 @@ exercise application adaptation without reopening that campaign. Any necessary
 later native experiment needs its own accepted concrete protocol and effects
 bounds; these results do not authorize it.
 
-## Next Evidence and Recheck
+## Later Evidence and Recheck
 
-Before selecting a complete runnable caller, the remaining questions are
+Before a complete runnable caller was selected, the remaining questions were
 complete endpoint operation/activity and runnable ownership assembly, integration
 of the qualified generated/version producer inputs into actual check consumers,
 Python check/prerequisite/execution mapping and caller cutover.
@@ -259,16 +260,22 @@ qualifies native pytest, committed NBGV/quality inputs and producer input mappin
 on those exact Linux subjects. It reused retained graph answers without another
 UV query; its campaign and cleanup are complete, and both unused diagnostics
 stopped. Complete runnable caller facts, package preparation/execution and
-caller cutover remain pending.
+caller cutover were pending at that time. They are now owned by the MLD's
+[Python planning facts](../middle-level-design.md#native-python-planning-facts),
+[CI group](../middle-level-design.md#native-python-ci-group) and
+[package execution](../middle-level-design.md#native-python-package-execution)
+contracts, with their own qualification.
 
 If further native execution is needed, its exact remaining subject first needs
 a concrete accepted isolated protocol. Reuse the retained primitive evidence
 for its qualified boundary; do not repeat it as a complete-reader test.
 
-Recheck these source findings when the repository UV pin changes or the next
-Python integration review relies on them. Its author checks the affected native
-interfaces and omissions; an independent evidence reviewer evaluates the result.
-The next Python integration review is the fallback event. Keep immutable source
+Recheck these source findings when the repository UV pin changes or a change to
+the Python planning facts or caller relies on them. The author of that pin change or
+Python planning-fact/caller change checks the affected native interfaces and omissions; an independent evidence reviewer evaluates the
+result. The review of the next change to the
+[Python planning facts](../middle-level-design.md#native-python-planning-facts)
+is the fallback event. Keep immutable source
 findings separate from later operation observations and support claims.
 
 [uv-pin]: https://github.com/astral-sh/uv/tree/46b84fd0bfec23b72f29e8e2185ba68a65052f48

@@ -2,10 +2,10 @@
 
 ## Scope and Premise
 
-This source assessment supports the replacement application's
+This source assessment supports the application's
 [native fact integration](../migration-strategy.md#native-facts-and-first-supported-shapes).
 Its original interface assessment and native observations use PNPM 12.8.1;
-the [12.9.0 pin recheck](#pnpm-1290-pin-recheck) assesses the current repository pin.
+the [12.9.0 pin recheck](#pnpm-1290-pin-recheck) assessed the repository pin of that time, 12.9.0.
 It does not audit
 the former V3 implementation or assert runtime coverage. The
 [implementation plan](../migration-strategy.md#native-facts-and-first-supported-shapes)
@@ -617,7 +617,7 @@ This is a bounded source assessment and integration inference, not complete
 upstream equivalence or a new 12.9.0 runtime observation. Earlier native results
 remain bound to their original 12.8.1/12.8.2 versions. Ordinary changed-code CI
 must still qualify the actual group transfer, selected native commands and
-adopted results with the current pin before caller replacement and retirement.
+adopted results with the then-current 12.9.0 pin before caller replacement and retirement.
 No completed native campaign is reopened.
 
 ## Actual Reader and Script Metadata Observation

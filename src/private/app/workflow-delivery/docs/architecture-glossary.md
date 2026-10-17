@@ -12,20 +12,20 @@ last-source navigation link as a producer binding.
 > **Implementation baseline:** This record describes the pre-contraction
 > implementation. Its authority for retained evidence is defined by the
 > [historical source rule](README.md#historical-source-rule).
-> New architecture, terminology and cutover direction are owned by the
-> [replacement HLD](high-level-design.md) and
-> [middle-level design](middle-level-design.md). This record remains only for its
-> existing implementation and evidence consumers; it does not constrain the replacement.
+> Current architecture and terminology are owned by the [HLD](high-level-design.md)
+> and [MLD](middle-level-design.md). This record remains only for its existing
+> implementation and evidence consumers; it does not constrain the current application.
 
 ## Status
 
 Architecture version: **v3**.
 
 This glossary describes the pre-contraction implementation and its retained
-evidence vocabulary. New-design terms are defined by the replacement HLD.
+evidence vocabulary. Current terms are defined by the HLD.
 
-Current first-slice activation, protected delivery, and proving status are
-maintained in the [operating handoff](agent-handoff.md).
+First-slice activation, protected delivery, and proving status were maintained
+in the then-current operating handoff. The current [handoff](agent-handoff.md)
+routes current work and retains the closed-campaign limits.
 
 Confirmed entries should remain stable. Any unresolved term is identified
 inline and must not be treated as settled architecture.

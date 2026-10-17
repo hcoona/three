@@ -2,7 +2,7 @@
 
 ## Question and Consumer
 
-Can the replacement tool obtain the control test project's embedded npm fixture
+Can the application obtain the control test project's embedded npm fixture
 version input through MSBuild's supported native interface, without maintaining
 another resource declaration or interpreting project XML?
 The internal [resource reader](../../Repository/MsBuildResourceReader.cs)

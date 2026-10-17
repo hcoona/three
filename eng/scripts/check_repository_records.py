@@ -530,6 +530,7 @@ def classify(path: str) -> str:  # noqa: C901, PLR0911, PLR0912 - Ordered indepe
         "launchSettings.json",
         "appsettings.json",
         "pyrightconfig.json",
+        "testconfig.json",
         "workflow-delivery.quality.yml",
         "workflow-delivery.release-unit.yml",
     }:

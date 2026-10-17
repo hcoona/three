@@ -12,18 +12,18 @@ last-source navigation link as a producer binding.
 > **Implementation baseline:** This record describes the pre-contraction
 > implementation. Its authority for retained evidence is defined by the
 > [historical source rule](README.md#historical-source-rule).
-> New architecture, terminology and cutover direction are owned by the
-> [replacement HLD](high-level-design.md). This record remains only for its
-> existing implementation and evidence consumers; it does not constrain the replacement.
+> Current architecture and terminology are owned by the [HLD](high-level-design.md).
+> This record remains only for its existing implementation and evidence
+> consumers; it does not constrain the current application.
 
 ## Status and Authority
 
 This design realizes the confirmed `WD-NUGET-*` [requirements](requirements.md#nuget-second-slice),
 the [HLD extension](https://github.com/hcoona/three/blob/c56b1efa64637f056b63a497aabbdaf33c1fbf1f/src/public/lib/three-workflow-delivery-v3/docs/high-level-design.md#nuget-second-slice-extension), and
-the five current MLDs. It specifies the design and its remaining admission
+the five then-current MLDs. It specified the design and its remaining admission
 gates. No implementation, native probe, activation, or publication
 is authorized by this document. The [handoff](nuget-smoke-research-handoff.md)
-owns current operating status.
+owned the then-current operating status.
 
 ## Bounded Product and Identities
 
