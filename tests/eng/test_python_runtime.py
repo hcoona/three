@@ -224,7 +224,13 @@ def test_native_full_launcher_reports_complete_worktree_cleanup(tmp_path):
     # A path Git would C-quote in plain porcelain output must still match.
     state = (tmp_path / 'st "äte').resolve()
     path = f"{tools}{os.pathsep}{os.environ['PATH']}"
-    environment = {**os.environ, "PATH": path}
+    # A UTF-8 locale keeps bash's %q output literal for shlex.
+    environment = {
+        **os.environ,
+        "PATH": path,
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+    }
     result = subprocess.run(  # noqa: S603 - Exact native launcher and fixture.
         [
             native_bash,

@@ -8,9 +8,6 @@ namespace WorkflowDelivery.Tests;
 [TestClass]
 public static class RunnerCommandFiles
 {
-    // Short on purpose (wdt-<pid>-<random>): Windows native fixtures nest deep repository
-    // paths under this root and must stay within the default 260-character path limit.
-    private const string ScratchPrefix = "wdt-";
     private static string? scratch;
     private static string? directory;
 
@@ -41,7 +38,7 @@ public static class RunnerCommandFiles
     [AssemblyCleanup]
     public static void Cleanup()
     {
-        if (scratch is not null) TryDelete(scratch);
+        if (scratch is not null) ScratchRoots.TryDelete(scratch);
     }
 
     // Test fixtures and native children (MSBuild, Git, package managers and .NET runtime IPC)
@@ -51,29 +48,53 @@ public static class RunnerCommandFiles
     private static void RedirectTemporaryFiles()
     {
         string parent = Path.GetTempPath();
-        // Assumes one PID namespace per temporary directory; a root shared across PID
-        // namespaces could make a live foreign run look exited.
-        foreach (string stale in Directory.EnumerateDirectories(parent, ScratchPrefix + "*"))
-        {
-            string[] parts = Path.GetFileName(stale)[ScratchPrefix.Length..].Split('-', 2);
-            if (parts.Length != 2 || !int.TryParse(parts[0], out int owner) || Running(owner))
-                continue;
-            TryDelete(stale);
-        }
+        ScratchRoots.Sweep(parent, ScratchRoots.Running);
         // The native random suffix keeps another user from pre-creating the root.
-        scratch = Directory.CreateTempSubdirectory(ScratchPrefix + Environment.ProcessId + "-")
-            .FullName;
+        scratch = Directory.CreateTempSubdirectory(
+            ScratchRoots.Prefix + Environment.ProcessId + "-").FullName;
         foreach (string name in new[] { "TMPDIR", "TMP", "TEMP" })
             Environment.SetEnvironmentVariable(name, scratch);
     }
+}
 
-    private static void TryDelete(string path)
+internal static class ScratchRoots
+{
+    // Short on purpose (wdt-<pid>-<random>): Windows native fixtures nest deep repository
+    // paths under this root and must stay within the default 260-character path limit.
+    internal const string Prefix = "wdt-";
+
+    private static readonly EnumerationOptions NoLinks = new()
+    {
+        RecurseSubdirectories = true,
+        AttributesToSkip = FileAttributes.ReparsePoint,
+        IgnoreInaccessible = true,
+    };
+
+    // Removes roots left by exited runs. Assumes one PID namespace per temporary directory;
+    // a root shared across PID namespaces could make a live foreign run look exited.
+    internal static void Sweep(string parent, Func<int, bool> running)
+    {
+        foreach (string stale in Directory.EnumerateDirectories(parent, Prefix + "*"))
+        {
+            string[] parts = Path.GetFileName(stale)[Prefix.Length..].Split('-', 2);
+            if (parts.Length != 2 || !int.TryParse(parts[0], out int owner) || running(owner))
+                continue;
+            TryDelete(stale);
+        }
+    }
+
+    // Deletes a real, writable root without following links: a symlinked or junctioned
+    // root is left alone, linked entries inside it are not traversed for attribute changes,
+    // and Directory.Delete removes reparse points themselves rather than recursing into them.
+    internal static void TryDelete(string path)
     {
         try
         {
-            if (!Directory.Exists(path)) return;
-            foreach (string file in Directory.EnumerateFiles(path, "*",
-                         SearchOption.AllDirectories))
+            var root = new DirectoryInfo(path);
+            if (!root.Exists || root.LinkTarget is not null ||
+                root.Attributes.HasFlag(FileAttributes.ReparsePoint) || !Writable(path))
+                return;
+            foreach (string file in Directory.EnumerateFiles(path, "*", NoLinks))
                 File.SetAttributes(file, FileAttributes.Normal);
             Directory.Delete(path, recursive: true);
         }
@@ -81,7 +102,7 @@ public static class RunnerCommandFiles
         catch (UnauthorizedAccessException) { }
     }
 
-    private static bool Running(int process)
+    internal static bool Running(int process)
     {
         try
         {
@@ -90,5 +111,19 @@ public static class RunnerCommandFiles
         }
         catch (ArgumentException) { return false; }
         catch (InvalidOperationException) { return false; }
+    }
+
+    // Require the root to be writable by this user; a foreign root (for example 0700 on Unix
+    // or an inaccessible ACL on Windows) is left alone. The probe creates and removes one file.
+    private static bool Writable(string path)
+    {
+        try
+        {
+            using var probe = new FileStream(Path.Combine(path, ".wdt-probe-" + Guid.NewGuid()),
+                FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
+            return true;
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 }
