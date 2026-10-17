@@ -49,7 +49,9 @@ Hatchling build tables and no backend-path/package override, parsed with PyPA
 requirement joins a workspace member by canonical name only when its
 `tool.uv.sources` entry (project table, else workspace root table) is absent or
 exactly `{ workspace = true }`. Every other source shape, a member requirement
-without that source and a non-member requirement with it fail planning. A
+without that source and a non-member requirement with it fail planning.
+
+A
 registry requirement or an unsourced self-reference adds no local input; a
 workspace-sourced self-reference keeps its requested extras. This is
 the bounded HLD exception, a strict subset of UV lowering. Repeat the
@@ -410,7 +412,9 @@ UV's default build isolation and the workspace's declared editability. UV owns
 declared and backend-reported auxiliary build requirements, including editable
 tool preparation. Do not precede it with a separate root-dev bootstrap, disable
 that native requirement preparation, maintain a backend roster or manually
-orchestrate requirement hooks. Keep the selected installed tools through
+orchestrate requirement hooks.
+
+Keep the selected installed tools through
 completion of the original wheel/sdist set: native source-build requirements
 retain workspace source and editability semantics. Exact sync removes omitted
 tools, so selection includes the development backend tools as well as the
@@ -459,7 +463,9 @@ Pass the original archive file, rather than an extracted directory, to UV: its
 native archive path uses ordinary declared PEP 517 requirements without the
 source-directory workspace lowering. This source-supported distinction remains
 subject to complete native qualification. Neither consumer
-implicitly imports the source checkout. Native installed metadata, import origin
+implicitly imports the source checkout.
+
+Native installed metadata, import origin
 and the applicable project API check must agree with the intended native version
 and outputs; command exit alone cannot satisfy them. A source finding about
 native Hatchling metadata reuse alone does not establish Git-free runtime
@@ -526,7 +532,9 @@ inside the private application. `CI/PythonPackageExecution` and
 plan/check and request/qualification decisions. Release does not consume `CiPlan`
 or `CheckSpec`. The common mechanisms cover native
 frozen tool preparation, metadata/output inspection, complete wheel/sdist build,
-original size/digest checks and clean consumers. Follow the
+original size/digest checks and clean consumers.
+
+Follow the
 [existing native package contract](#native-python-package-execution):
 one frozen sync selecting root `dev` and `workflow-delivery-python`, native
 backend-requirement preparation, shared product build with native dependency

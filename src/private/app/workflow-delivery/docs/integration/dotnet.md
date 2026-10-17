@@ -160,7 +160,9 @@ Consume primary and additional paths without an installed-pack inventory or a
 second workload resolver. Other SDK roots and unknown external hooks do not gain
 that expansion; native provider identity/version do not claim an exact pack pin.
 Control-build collection separately consumes the successful import's immediate
-parent, unexpanded text and native evaluation identity. The selected SDK's literal
+parent, unexpanded text and native evaluation identity.
+
+The selected SDK's literal
 autoimport seeds exact file membership for observed connected imports in that
 same evaluation and pack; no directory inventory or reconstructed SDK result
 supplies missing membership.
@@ -204,6 +206,7 @@ traversal lock; the managed-project lock requirement is unchanged. Do not borrow
 descendant assets or add a lock solely to fit a business-project validator.
 Native version-input subjects bind effective `GitVersionBaseDirectory` to the
 endpoint's committed directory and union business consumers across variants.
+
 Traversal's unused self-version metadata does not add semantic product inputs.
 Its genuine project/configuration/provider/helper inputs keep their native
 reachable consumers. Business projects may still consume a root version subject.
@@ -264,6 +267,7 @@ MSBuild owns references, ordering, parallelism and its invocation-local target
 cache. A thin task in the existing application projects native per-entry target
 outputs; it does not resolve dependencies or implement a scheduler. Retain one
 batch command observation and bind its outputs to the original selected entries.
+
 Preserve successful independent builds when another entry fails. Missing native
 outputs, interruption or failed extraction cannot establish a passed build.
 Tests follow their own satisfied build obligations. Retain Build in each test
@@ -271,13 +275,17 @@ request where native build-time properties or environment are required; do
 not substitute inferred paths or a test-binary launcher. Runnable tests enter
 one SDK-hosted `BuildManager` session as separate native submissions with their
 original globals and `Build`/`GetTargetPath`/test targets. MSBuild owns node
-scheduling and concurrency across them. Each completed submission records its own
+scheduling and concurrency across them.
+
+Each completed submission records its own
 overall/target result codes, outputs and submission-attributed diagnostics, bound
 to the original selected check; one failed test cannot mask another. A wrapper
 that failed for another reason cannot promote these results. After cancellation
 or timeout, completed entries are retained and unfinished entries take that
 termination; the one operation deadline covers the whole test session. Retain
-one test batch command observation. As with `dotnet test`, the session uses
+one test batch command observation.
+
+As with `dotnet test`, the session uses
 native terminal-logger mode and VSTest MSBuild output (the SDK selects its
 MSBuild-output VSTest task from that mode), so VSTest reports through its own
 submission's diagnostics rather than raw console text; a plain console logger
@@ -301,7 +309,9 @@ per-PR evidence. The Windows reproducibility workflow runs the three
 sensitivity/recovery tests (source and timestamp sensitivity, and one
 fresh-recovery test over exact and conflicting state) on owner dispatch and on
 `main` pushes changing the SDK, shared MSBuild/NuGet/NBGV/Git inputs, NuGet
-Release/package adapter source or the fixture product. Its run ID, source commit
+Release/package adapter source or the fixture product.
+
+Its run ID, source commit
 and 30-day artifact are the evidence carrier; no additional record is needed.
 The triggering PR's author, then the repository owner, owns a failed `main`
 run. Skipped intermediate `main` commits are acceptable because the next run
@@ -347,7 +357,9 @@ job additionally uploads that build output, together with a Git archive of the
 candidate Native/Python helper sources (`python-control.zip`), the Ruby facts
 helper and the original .NET plan, as the `ci-dotnet-plan` transfer that the
 later CI jobs consume. Resolve the native event comparison once with `ci
-comparison`, then resolve its actual Git objects. Confirm the named test
+comparison`, then resolve its actual Git objects.
+
+Confirm the named test
 project's committed entry, materialize exact endpoints outside the candidate
 source root, install each endpoint's selected `global.json` SDK, and perform
 necessary locked restore of that test project and its native reference closure

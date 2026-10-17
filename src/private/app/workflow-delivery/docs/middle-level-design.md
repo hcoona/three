@@ -97,7 +97,9 @@ Ruby/Python/npm/NuGet workflows invoke `release job-inputs <ecosystem> <operatio
 their already distributed candidate control. They do not carry a separate
 language-specific Release caller implementation. Actions retains job ordering,
 Environment, credentials, concurrency and immutable artifact transfer. npm's
-single-job Official simulation creates a consumed typed request. Same-run
+single-job Official simulation creates a consumed typed request.
+
+Same-run
 immutable artifact IDs carry the producer run; each later job checks the received
 preparation once against the request subject rather than restating run and
 attempt in separate producer records. Live ref eligibility has one definition,
@@ -410,6 +412,44 @@ supply runner matrices and selected lists; it does not create an arbitrary runti
 graph or queue. Native fact collection may use separate runners where ecosystem
 evaluation requires them. These are real transfers, not proof-only phases.
 
+The following UML sequence view is at the level of GitHub Actions jobs in the
+root [`ci.yml`](../../../../../.github/workflows/ci.yml) and the artifacts they
+transfer by same-run immutable artifact ID. It omits steps inside each job and
+the retained jobs that do not exchange Workflow Delivery artifacts. Job results
+reach Validate only through its declared `needs`, which also include the omitted
+`conformance` and `scholarly-tests` jobs; the group jobs' results are their own
+required checks rather than Validate inputs.
+
+```mermaid
+sequenceDiagram
+    participant Scope as scope (Windows)
+    participant Store as Actions artifacts
+    participant DotNet as dotnet-tests (Windows)
+    participant Ruby as ruby-group (Linux)
+    participant Node as node-group (Linux)
+    participant Python as python-tests (Linux)
+    participant Prep as native-preparation-tests (Linux)
+    participant NuGet as nuget-native-preparation (Windows)
+    participant Validate as Validate (Linux)
+    Scope->>Scope: Build candidate control, read paired native facts, select work
+    Scope->>Store: ci-scope (selection and reasons)
+    Scope->>Store: ci-dotnet-plan (control output, python-control.zip, Ruby facts helper, original .NET plan)
+    Scope-->>NuGet: nuget_native_preparation applicability output
+    Store->>DotNet: ci-dotnet-plan
+    DotNet->>Store: dotnet-group-results
+    Store->>Ruby: ci-scope, ci-dotnet-plan
+    Ruby->>Store: ruby-node-inputs, ruby-group-results
+    Store->>Node: ci-scope, ruby-node-inputs, ci-dotnet-plan
+    Node->>Store: node-group-results
+    Store->>Python: ci-scope, ci-dotnet-plan
+    Python->>Store: python-group-results
+    Store->>Prep: ci-scope, ci-dotnet-plan
+    Prep->>Store: native-preparation-results
+    NuGet->>Store: nuget-native-preparation-windows
+    Prep-->>Validate: job result
+    NuGet-->>Validate: job result
+```
+
 Native tool setup and queries consume each endpoint's committed locks without
 refreshing tracked inputs. Select a tool version compatible with both basis and
 candidate before loading its environment, and use native locked mode for setup
@@ -448,6 +488,7 @@ artifact transport: native Actions/shell bootstrap builds and transfers the
 complete control distribution once and prepares the declared native tools. The
 scope caller selects retained jobs and changed-coordinate responsibility in the
 same process as the .NET plan; it does not reproduce native planners.
+
 Control-resource prepare/query remain separate around endpoint SDK setup; the
 scope caller consumes the separate query response, which retains its default
 Debug context. The Linux-only Python and Ruby managed preparation scenarios
@@ -656,7 +697,9 @@ which clears the \`Authorization\` header on every automatic redirect, including
 a same-host redirect, and does not follow an HTTPS-to-HTTP redirect. The
 adapter validates the HTTPS origin of each URL it requests and attaches
 credentials only to the registry or API origin it selects. It does not
-validate redirect targets or implement its own redirect hop. A redirect target
+validate redirect targets or implement its own redirect hop.
+
+A redirect target
 that requires the dropped credential, such as an authenticated path on the
 same registry host, therefore fails closed as an unknown read. An unfollowed
 redirect, including one beyond the limit, is a non-success response and cannot
@@ -794,7 +837,9 @@ This design owns the shared inventories and common contracts: the
 integration contract ([.NET and NuGet](integration/dotnet.md),
 [Node and npm](integration/node.md), [Python](integration/python.md) and
 [Ruby](integration/ruby.md)) owns only its ecosystem-specific native facts, CI
-group, Release caller and destination conditions. The
+group, Release caller and destination conditions.
+
+The
 [common integration tables](integration/common.md) own only the Official channel
 scope and the CLI/boundary payload table. These contracts govern current
 integrations and changes to them. Keep each inventory with its actual caller
