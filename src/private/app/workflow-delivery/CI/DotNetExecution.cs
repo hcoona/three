@@ -107,7 +107,7 @@ internal static class DotNetExecution
                 var command = new NativeCommand("dotnet", checkout,
                     ["msbuild", DotNetCli.DisableBuildServers, wrapper, "-nologo",
                         "-noAutoResponse", "-target:BuildSelected"],
-                    request.DeadlineSeconds);
+                    request.DeadlineSeconds, DotNetCli.NestedBuildEnvironment());
                 NativeCommandResult native = await execute(command, token);
                 batch = new(builds.Select(build => build.Work.Key).ToArray(), command, native);
                 fallback = native.Termination switch
@@ -232,7 +232,8 @@ internal static class DotNetExecution
                         "-noAutoResponse", "-tl:true", "-noConsoleLogger",
                         "-logger:ConsoleLogger,Microsoft.Build;Verbosity=minimal",
                         "-target:TestSelected"],
-                    request.DeadlineSeconds, new Dictionary<string, string?>
+                    request.DeadlineSeconds,
+                    new Dictionary<string, string?>(DotNetCli.NestedBuildEnvironment())
                     { ["VsTestUseMSBuildOutput"] = "true" });
                 NativeCommandResult native = await execute(command, token);
                 testBatch = new(runnable.Select(test => test.Work.Key).ToArray(), command,
