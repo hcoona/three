@@ -221,7 +221,8 @@ def test_native_full_launcher_reports_complete_worktree_cleanup(tmp_path):
         "exit 3\n"
     )
     pwsh.chmod(0o755)
-    state = (tmp_path / "state").resolve()
+    # A path Git would C-quote in plain porcelain output must still match.
+    state = (tmp_path / 'st "äte').resolve()
     path = f"{tools}{os.pathsep}{os.environ['PATH']}"
     environment = {**os.environ, "PATH": path}
     result = subprocess.run(  # noqa: S603 - Exact native launcher and fixture.
@@ -245,9 +246,11 @@ def test_native_full_launcher_reports_complete_worktree_cleanup(tmp_path):
         for line in result.stdout.splitlines()
         if line.startswith("Remove it when finished: ")
     )
-    assert str(state / "control-checkout") in removal
-    assert str(state / "group" / "basis") in removal
-    assert removal.endswith(f"rm -rf {state}")
+    # Shell-quoted words must reproduce the literal worktree paths.
+    words = shlex.split(removal)
+    assert str(state / "control-checkout") in words
+    assert str(state / "group" / "basis") in words
+    assert words[-3:] == ["rm", "-rf", str(state)]
     subprocess.run([native_bash, "-c", removal], check=True)  # noqa: S603
     assert not state.exists()
     listed = git("worktree", "list", "--porcelain")

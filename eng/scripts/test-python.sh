@@ -60,12 +60,13 @@ mkdir -p "$directory"
 report_retained_state() {
   local line path removal=''
   echo "Retained full Python group state: $directory"
-  while IFS= read -r line; do
+  # NUL-delimited porcelain keeps paths literal (no C-quoting of special characters).
+  while IFS= read -r -d '' line; do
     [[ $line == 'worktree '* ]] || continue
     path=${line#worktree }
     [[ $path == "$directory/"* ]] || continue
     removal+=$(printf 'git -C %q worktree remove --force %q && ' "$repository" "$path")
-  done < <(git -C "$repository" worktree list --porcelain 2>/dev/null || true)
+  done < <(git -C "$repository" worktree list --porcelain -z 2>/dev/null || true)
   printf 'Remove it when finished: %sgit -C %q worktree prune && rm -rf %q\n' \
     "$removal" "$repository" "${created_root:-$directory}"
 }
