@@ -8,8 +8,8 @@ namespace WorkflowDelivery.Tests;
 [TestClass]
 public static class RunnerCommandFiles
 {
-    // Short on purpose: Windows native fixtures nest deep repository paths under this root and
-    // must stay within the default 260-character path limit.
+    // Short on purpose (wdt-<pid>-<random>): Windows native fixtures nest deep repository
+    // paths under this root and must stay within the default 260-character path limit.
     private const string ScratchPrefix = "wdt-";
     private static string? scratch;
     private static string? directory;
@@ -55,14 +55,14 @@ public static class RunnerCommandFiles
         // namespaces could make a live foreign run look exited.
         foreach (string stale in Directory.EnumerateDirectories(parent, ScratchPrefix + "*"))
         {
-            if (!int.TryParse(Path.GetFileName(stale)[ScratchPrefix.Length..], out int owner) ||
-                Running(owner))
+            string[] parts = Path.GetFileName(stale)[ScratchPrefix.Length..].Split('-', 2);
+            if (parts.Length != 2 || !int.TryParse(parts[0], out int owner) || Running(owner))
                 continue;
             TryDelete(stale);
         }
-        scratch = Path.Combine(parent, ScratchPrefix + Environment.ProcessId);
-        TryDelete(scratch);
-        Directory.CreateDirectory(scratch);
+        // The native random suffix keeps another user from pre-creating the root.
+        scratch = Directory.CreateTempSubdirectory(ScratchPrefix + Environment.ProcessId + "-")
+            .FullName;
         foreach (string name in new[] { "TMPDIR", "TMP", "TEMP" })
             Environment.SetEnvironmentVariable(name, scratch);
     }

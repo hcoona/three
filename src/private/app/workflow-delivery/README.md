@@ -236,7 +236,7 @@ override the default with `--filter 'TestCategory=NuGetNativePreparation'
 unrestricted local run uses `--filter 'FullyQualifiedName~WorkflowDelivery'`.
 
 The managed test assembly points `TMPDIR`, `TMP` and `TEMP` at one short
-`wdt-<pid>` directory for the run and tries to delete it at assembly cleanup;
+`wdt-<pid>-<random>` directory for the run and tries to delete it at assembly cleanup;
 a later run removes such directories whose process has exited, including ones
 left by killed runs or a failed cleanup.
 Ruby helper specs use Ruby's `Dir.tmpdir`, which follows the `TMPDIR` that the
