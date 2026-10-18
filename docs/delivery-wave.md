@@ -346,13 +346,19 @@ ends a grant. Git and the proposing PR retain the reason and history.
   are independently classified. A seam that cannot be fixture-tested without
   network, a live registry or OIDC stays a stated non-claim; do not add an
   application workaround. New feasibility or dependency-boundary questions
-  return to the owner.
+  return to the owner. The `uv publish` and loopback `gem push` feasibility
+  probes use fake identity values, call only loopback endpoints and stop on any
+  non-loopback request; they are credential-free contract tests, not native
+  experiments, and need no separate protocol. If that is not achievable, the
+  seam becomes a stated non-claim.
 - **Acceptance:** for each seam, a deliberate fixture mutation or simulated
   changed fact makes the named test fail; selection tests show each pin file
-  selects its contract tests; a routine Renovate patch bump of each pin passes
-  without code edits; no research record keeps a manual pin-recheck duty other
-  than named service and decision-time checks. Delete this entry when the
-  outcome is accepted.
+  selects its contract tests; contract tests assert consumed facts rather than
+  exact version strings, which each implementation PR shows with a local,
+  never-merged simulated pin bump or fact mutation (an independent Renovate PR
+  observed during this grant is optional extra evidence, not a requirement);
+  no research record keeps a manual pin-recheck duty other than named service
+  and decision-time checks. Delete this entry when the outcome is accepted.
 - **Effects:** permit source and repository/GitHub inspection, documentation,
   test, fixture and workflow changes, locked tool preparation, isolated local
   builds and credential-free tests including loopback-only servers,
