@@ -195,7 +195,9 @@ inspection and original local consumption inside the private application.
 while retaining distinct plan/check and request/qualification decisions. Release
 does not consume `CiPlan` or `CheckSpec`
 ([implementation types](../middle-level-design.md#implementation-type-names)). The common mechanisms use the selected
-Ruby/RubyGems/NBGV tools, closed environment and native builder. Exclude inherited `SOURCE_DATE_EPOCH` for this
+Ruby/RubyGems/NBGV tools, closed environment and native builder. The request also
+carries the caller's mise data directory; the prepared Ruby runtime must report
+the root [locked tool selection](common.md#locked-tool-selection) for `ruby`. Exclude inherited `SOURCE_DATE_EPOCH` for this
 fixture and use RubyGems' fixed native default; do not introduce a timestamp or
 archive engine. Native default timestamps do not promise byte identity across
 different tools, compression, file modes or source inputs.

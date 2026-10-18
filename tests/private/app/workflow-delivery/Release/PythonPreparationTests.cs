@@ -20,6 +20,8 @@ public sealed class PythonPreparationTests(TestContext context)
     private static string sharedRevision = "";
     private const string Revision = "0123456789abcdef0123456789abcdef01234567";
     private const string Identity = "Unsupported native Python Release identity.";
+    // Pure identity rows only need one interpreter answer; the root lock supplies it.
+    private static readonly string Interpreter = RepositoryToolSelection.Locked("python");
 
     [ClassInitialize]
     public static async Task InitializeAsync(TestContext classContext)
@@ -126,7 +128,7 @@ public sealed class PythonPreparationTests(TestContext context)
     [DataRow("version", "2.0.0")]
     [DataRow("commit", "0000000000000000000000000000000000000000")]
     [DataRow("implementation", "pypy")]
-    [DataRow("interpreter_version", "3.14.2")]
+    [DataRow("interpreter_version", "another-interpreter")]
     [DataRow("dependencies", "runtime")]
     [DataRow("local_version", "g1234567")]
     [DataRow("public_release", "false")]
@@ -139,7 +141,7 @@ public sealed class PythonPreparationTests(TestContext context)
         using JsonDocument document = JsonDocument.Parse(facts.ToJsonString());
         Assert.AreEqual(Identity, Assert.ThrowsExactly<InvalidDataException>(() =>
             PythonPreparation.QualifyNative(subject, official: true,
-                "hcoona-release-smoke-python", "1.0.0", "3.14.3", document.RootElement))
+                "hcoona-release-smoke-python", "1.0.0", Interpreter, document.RootElement))
             .Message);
     }
 
@@ -157,7 +159,7 @@ public sealed class PythonPreparationTests(TestContext context)
         if (field == "local_version") facts["public_release"] = false;
         using JsonDocument document = JsonDocument.Parse(facts.ToJsonString());
         Assert.AreEqual(publicRelease, PythonPreparation.QualifyNative(subject,
-            channel == "official", "hcoona-release-smoke-python", "1.0.0", "3.14.3",
+            channel == "official", "hcoona-release-smoke-python", "1.0.0", Interpreter,
             document.RootElement));
     }
 
@@ -170,7 +172,7 @@ public sealed class PythonPreparationTests(TestContext context)
         using JsonDocument document = JsonDocument.Parse(facts.ToJsonString());
         Assert.AreEqual(Identity, Assert.ThrowsExactly<InvalidDataException>(() =>
             PythonPreparation.QualifyNative(subject, official: false, "other", "1.0.0",
-                "3.14.3", document.RootElement)).Message);
+                Interpreter, document.RootElement)).Message);
     }
 
     private static void Change(JsonObject facts, string field, string value) =>
@@ -308,16 +310,40 @@ public sealed class PythonPreparationTests(TestContext context)
             result.Prepared.Checks.Select(check => check.Status).ToArray());
     }
 
+    // Each row breaks one distinct invariant between the native answer and the fixture's own
+    // committed root selection; the message names the tool and the failed condition.
     [TestMethod]
-    public async Task SelectedToolMismatchStopsPreparation()
+    [DataRow("python", "missing", "has no single locked selection")]
+    [DataRow("python", "inactive", "is not active")]
+    [DataRow("python", "source-type", "not the committed root")]
+    [DataRow("python", "source-path", "not the committed root")]
+    [DataRow("python", "inexact", "is not an exact release version")]
+    [DataRow("uv", "inactive", "is not active")]
+    [DataRow("uv", "readback", "differs from the committed locked selection")]
+    public async Task ToolOutsideCommittedSelectionStopsPreparation(string tool, string defect,
+        string condition)
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision);
-        fixture.Override = command => command.Arguments.Contains("ls") ?
-            Fixture.Success("[]") : null;
+        fixture.ToolDefect = (tool, defect);
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
+        string error = Assert.ContainsSingle(result.Errors);
+        Assert.Contains(" " + tool + " ", error);
+        Assert.Contains(condition, error);
+    }
+
+    // The committed selection, not an application version line, decides the interpreter.
+    [TestMethod]
+    public async Task AnotherCommittedPythonLineQualifies()
+    {
+        string other = RepositoryToolSelection.NextMajor(RepositoryToolSelection.Locked("python"));
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken, null,
+            (path, content) => RepositoryToolSelection.RaiseMajor(path, content, "python"));
+        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.IsEmpty(result.Errors);
+        Assert.AreEqual(other, result.Native["python"]);
     }
 
     [TestMethod]
@@ -345,12 +371,13 @@ public sealed class PythonPreparationTests(TestContext context)
         internal string Version { get; set; } = "1.0.0";
         internal Action<JsonObject>? ChangeFacts { get; set; }
         internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
+        internal (string Tool, string Defect)? ToolDefect { get; set; }
 
         internal static async Task<Fixture> CreateAsync(CancellationToken token,
-            string? defect = null)
+            string? defect = null, Func<string, string, string>? changeConfig = null)
         {
             GitFixture repo = await GitFixture.CreateAsync(token);
-            try { return new(repo, SubjectFor(await CommitAsync(repo, defect))); }
+            try { return new(repo, SubjectFor(await CommitAsync(repo, defect, changeConfig))); }
             catch { repo.Dispose(); throw; }
         }
 
@@ -363,21 +390,28 @@ public sealed class PythonPreparationTests(TestContext context)
         internal static ReleaseSubject SubjectFor(string revision) => new(revision,
             "refs/heads/development", "product", Declaration, "buddy", "testpypi", false);
 
-        internal static async Task<string> CommitAsync(GitFixture repo, string? defect)
+        internal static async Task<string> CommitAsync(GitFixture repo, string? defect,
+            Func<string, string, string>? changeConfig = null)
         {
             foreach ((string path, string content) in Files(defect))
-                await repo.SetAsync(path, content);
+                await repo.SetAsync(path, changeConfig is null ? content
+                    : changeConfig(path, content));
             string revision = await repo.CommitAsync();
             await repo.GitAsync("reset", "--hard", revision);
             return revision;
         }
 
-        // The committed files of the product, keyed by repository path.
+        // The committed files of the product, keyed by repository path. The root tool
+        // configuration is the actual committed one, so the fake follows its updates.
         internal static Dictionary<string, string> Files(string? defect)
         {
-            var files = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (string input in new[] { "pyproject.toml", "uv.lock", "mise.toml",
-                "mise.lock", "global.json", ".config/dotnet-tools.json",
+            var files = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["mise.toml"] = RepositoryToolSelection.MiseToml,
+                ["mise.lock"] = RepositoryToolSelection.MiseLock,
+            };
+            foreach (string input in new[] { "pyproject.toml", "uv.lock", "global.json",
+                ".config/dotnet-tools.json",
                 "src/private/app/workflow-delivery/Native/Python/packages.py",
                 "product/pyproject.toml" })
                 if (defect != "input" || input != "uv.lock") files.Add(input, "fixture");
@@ -408,13 +442,40 @@ public sealed class PythonPreparationTests(TestContext context)
             return files;
         }
 
-        internal static JsonObject Facts(string revision, string version) => new()
+        internal static JsonObject Facts(string revision, string version,
+            string? interpreter = null) => new()
         {
             ["name"] = "hcoona-release-smoke-python", ["version"] = version,
             ["commit"] = revision, ["public_release"] = true, ["local_version"] = null,
             ["dependencies"] = new JsonArray(), ["implementation"] = "cpython",
-            ["interpreter_version"] = "3.14.3",
+            ["interpreter_version"] = interpreter ?? Interpreter,
         };
+
+        // The native mise answer for the fixture's own committed root selection.
+        private string Selected(string tool) => RepositoryToolSelection.Locked(
+            File.ReadAllText(Path.Combine(Repo.Directory, "mise.lock")), tool);
+
+        private string ToolAnswer(string tool)
+        {
+            string? defect = ToolDefect?.Tool == tool ? ToolDefect.Value.Defect : null;
+            if (defect == "missing") return "[]";
+            string version = Selected(tool);
+            var value = new JsonObject
+            {
+                ["version"] = defect == "inexact" ? string.Join('.',
+                    version.Split('.').Take(2)) : version,
+                ["requested_version"] = RepositoryToolSelection.Requested(
+                    File.ReadAllText(Path.Combine(Repo.Directory, "mise.toml")), tool),
+                ["active"] = defect != "inactive",
+                ["source"] = new JsonObject
+                {
+                    ["type"] = defect == "source-type" ? ".tool-versions" : "mise.toml",
+                    ["path"] = Path.Combine(defect == "source-path"
+                        ? Path.Combine(Repo.Directory, "product") : Repo.Directory, "mise.toml"),
+                },
+            };
+            return new JsonArray(value).ToJsonString();
+        }
 
         internal Task<PythonPreparationResult> RunAsync(CancellationToken token) =>
             PythonPreparation.PrepareAsync(new(Subject, Repo.Directory, Scratch, Repo.Directory),
@@ -426,21 +487,15 @@ public sealed class PythonPreparationTests(TestContext context)
             if (Override?.Invoke(command) is { } result) return result;
             string[] arguments = command.Arguments;
             if (arguments.Contains("--is-shallow-repository")) return Success("false");
-            if (arguments.Contains("ls"))
-            {
-                string tool = arguments[^1], version = tool == "python" ? "3.14.3" : "0.12.24";
-                return Success(JsonSerializer.Serialize(new[] { new { version,
-                    requested_version = tool == "python" ? "3.14" : version, active = true,
-                    source = new { type = "mise.toml", path = Path.Combine(Repo.Directory,
-                        "mise.toml") } } }));
-            }
+            if (arguments.Contains("ls")) return Success(ToolAnswer(arguments[^1]));
             if (arguments.Contains("which")) return Success(Path.Combine(Scratch, arguments[^1]));
-            if (arguments.Contains("--short")) return Success("0.12.24");
+            if (arguments.Contains("--short"))
+                return Success(ToolDefect == ("uv", "readback") ? "0.0.0" : Selected("uv"));
             if (arguments.Contains("identity")) return Success(JsonSerializer.Serialize(new
                 { name = "hcoona-release-smoke-python", version = Version }));
             if (arguments.Contains("version-facts"))
             {
-                JsonObject facts = Facts(Subject.Revision, Version);
+                JsonObject facts = Facts(Subject.Revision, Version, Selected("python"));
                 ChangeFacts?.Invoke(facts);
                 return Success(facts.ToJsonString());
             }

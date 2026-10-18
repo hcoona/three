@@ -60,6 +60,7 @@ jobs:
           set -Eeuo pipefail
           mise exec --locked dotnet -- dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj -p:RestoreLockedMode=true -o "$RUNNER_TEMP/control"
           cp src/private/app/workflow-delivery/Native/Ruby/{facts.rb,source.rb} "$RUNNER_TEMP/control/"
+          export MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby request
       - name: Retain actual control results
         id: control

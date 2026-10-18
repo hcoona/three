@@ -7,7 +7,7 @@ namespace WorkflowDelivery.Release;
 
 internal sealed record RubyPreparationTools(string Ruby, string Gem, string Dotnet);
 internal sealed record RubyPreparationRequest(ReleaseSubject Subject, string Checkout,
-    string Scratch, RubyPreparationTools Tools);
+    string Scratch, RubyPreparationTools Tools, string MiseDataDirectory);
 internal sealed record RubyReleaseRecipe(ReleaseBuild Build, string Entry, string Directory);
 internal sealed record RubyPreparationResult(PreparedRelease Prepared,
     Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors);
@@ -18,6 +18,7 @@ internal static class RubyPreparation
     internal const string Preset = "ruby/hcoona-release-smoke-ruby-v1";
     internal static readonly string[] Required = ["native-input", "build", "contents",
         "consumer", "original-bytes"];
+    private static readonly string[] ToolConfiguration = ["mise.toml", "mise.lock"];
 
     internal static Task<RubyPreparationResult> PrepareAsync(RubyPreparationRequest request,
         CancellationToken token) => PrepareAsync(request, NativeProcess.ExecuteAsync, token);
@@ -31,7 +32,7 @@ internal static class RubyPreparation
         token = lifetime.Token;
         string checkout = Absolute(request.Checkout), scratch = Absolute(request.Scratch);
         foreach (string path in new[] { request.Tools.Ruby, request.Tools.Gem,
-                     request.Tools.Dotnet }) _ = Absolute(path);
+                     request.Tools.Dotnet, request.MiseDataDirectory }) _ = Absolute(path);
         if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
             OwnedPath.Overlap(scratch, checkout) ||
             Directory.EnumerateFileSystemEntries(scratch).Any())
@@ -56,6 +57,10 @@ internal static class RubyPreparation
             RubyReleaseRecipe recipe = await ReadRecipeAsync(subject, bound.Root,
                 bound.ReadOptionalTextAsync, token);
             (build, entry, directory) = (recipe.Build, recipe.Entry, recipe.Directory);
+            // The runtime selection query reads the checkout; the revision must commit it.
+            foreach (string input in ToolConfiguration)
+                if (await bound.ReadOptionalTextAsync(input, token) is null)
+                    throw new InvalidDataException("Missing committed native input: " + input);
             if ((await RunAsync(new("git", checkout,
                 ["rev-parse", "--is-shallow-repository"], 30))).Stdout.Trim() != "false")
                 throw new InvalidDataException("Native versioning requires complete Git history.");
@@ -86,9 +91,13 @@ internal static class RubyPreparation
                 .Stdout);
             string ruby = nativeTools.RootElement.GetProperty("ruby").GetString()!;
             string rubygems = nativeTools.RootElement.GetProperty("rubygems").GetString()!;
-            if (!Version.TryParse(ruby, out Version? runtime) || runtime.Major != 4 ||
-                string.IsNullOrWhiteSpace(rubygems))
-                throw new InvalidDataException("Unsupported native Ruby runtime.");
+            // The prepared runtime is the committed locked selection; no adapter floor applies.
+            LockedToolSelection.RequireReadback("ruby", LockedToolSelection.Selected("ruby",
+                checkout, (await RunAsync(new("mise", checkout,
+                    LockedToolSelection.Query("ruby"), 30, MiseEnvironment(environment,
+                        checkout, request.MiseDataDirectory)))).Stdout), ruby);
+            if (string.IsNullOrWhiteSpace(rubygems))
+                throw new InvalidDataException("Native Ruby runtime omits its RubyGems version.");
             string helper = Path.Combine(checkout,
                 "src/private/app/workflow-delivery/Native/Ruby/facts.rb");
             if (await bound.ReadOptionalTextAsync(
@@ -263,6 +272,22 @@ internal static class RubyPreparation
         string output = Path.Combine(scratch, "nbgv-environment");
         File.WriteAllText(output, "");
         values["GITHUB_ENV"] = output;
+        return values;
+    }
+
+    // Only the committed selection query sees the caller's tool installation and PATH.
+    private static Dictionary<string, string?> MiseEnvironment(
+        Dictionary<string, string?> environment, string checkout, string data)
+    {
+        var values = new Dictionary<string, string?>(environment, StringComparer.Ordinal)
+        {
+            ["PATH"] = Environment.GetEnvironmentVariable("PATH"),
+            ["MISE_DATA_DIR"] = data,
+            ["MISE_CACHE_DIR"] = Path.Combine(environment["HOME"]!, "mise-cache"),
+            ["MISE_TRUSTED_CONFIG_PATHS"] = checkout,
+            ["MISE_AUTO_INSTALL"] = "0",
+            ["MISE_EXEC_AUTO_INSTALL"] = "0",
+        };
         return values;
     }
 

@@ -39,7 +39,7 @@ public sealed class ReleaseJobInputsTests
         if (ecosystem == "ruby")
             Assert.AreEqual("selected-ruby", request.RootElement.GetProperty(
                 "tools").GetProperty("ruby").GetString());
-        else if (ecosystem == "python")
+        if (ecosystem is "ruby" or "python")
             Assert.AreEqual(fixture.Env["MISE_DATA_DIR"], request.RootElement.GetProperty(
                 "miseDataDirectory").GetString());
     }

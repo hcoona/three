@@ -174,17 +174,30 @@ public sealed class NpmPreparationTests(TestContext context)
         Assert.IsFalse(result.Commands.Any(command => command.Command.Arguments.Contains("pack")));
     }
 
+    // Each row breaks one distinct invariant between the native answer and the fixture's own
+    // committed root selection; the message names the tool and the failed condition.
     [TestMethod]
-    public async Task WrongNativeNodeMajorBlocksPreparationBeforeProductCode()
+    [DataRow("node", "missing", "has no single locked selection")]
+    [DataRow("node", "inactive", "is not active")]
+    [DataRow("node", "source-type", "not the committed root")]
+    [DataRow("node", "source-path", "not the committed root")]
+    [DataRow("node", "readback", "differs from the committed locked selection")]
+    [DataRow("pnpm", "inactive", "is not active")]
+    [DataRow("pnpm", "readback", "differs from the committed locked selection")]
+    public async Task ToolOutsideCommittedSelectionBlocksPreparationBeforeProductCode(
+        string tool, string defect, string condition)
     {
         using var fixture = Fixture.Shared(shared!, sharedCommit);
-        fixture.NodeVersion = "22.21.0";
+        fixture.ToolDefect = (tool, defect);
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Prepared.Files);
         Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
         Assert.IsTrue(result.Prepared.Checks.Skip(1).All(check =>
             check.Status == ReleaseCheckStatus.Skipped));
         Assert.IsFalse(result.Commands.Any(command => command.Check == "build"));
+        string error = Assert.ContainsSingle(result.Errors);
+        Assert.Contains(" " + tool + " ", error);
+        Assert.Contains(condition, error);
     }
 
     [TestMethod]
@@ -218,7 +231,7 @@ public sealed class NpmPreparationTests(TestContext context)
         internal bool MutateOriginal { get; set; }
         internal bool OmitArchive { get; set; }
         internal string? CancelCheck { get; set; }
-        internal string NodeVersion { get; set; } = "24.21.0";
+        internal (string Tool, string Defect)? ToolDefect { get; set; }
         internal NativeTermination? Termination { get; set; }
         internal string TerminationCheck { get; set; } = "build";
         private string? archive;
@@ -251,8 +264,10 @@ public sealed class NpmPreparationTests(TestContext context)
                   node:
                     preset: node/hcoona-release-smoke-npm-v1
                 """);
-            foreach (string path in new[] { "mise.toml", "mise.lock", "pnpm-lock.yaml",
-                "pnpm-workspace.yaml" })
+            // The fake answers from the actual committed root tool configuration.
+            await repository.SetAsync("mise.toml", RepositoryToolSelection.MiseToml);
+            await repository.SetAsync("mise.lock", RepositoryToolSelection.MiseLock);
+            foreach (string path in new[] { "pnpm-lock.yaml", "pnpm-workspace.yaml" })
                 await repository.SetAsync(path, "committed native fixture");
             string commit = await repository.CommitAsync();
             await repository.GitAsync("reset", "--hard", commit);
@@ -283,17 +298,28 @@ public sealed class NpmPreparationTests(TestContext context)
             if (command.Executable == "mise")
             {
                 string tool = args[^1];
-                output = JsonSerializer.Serialize(new[] { new
+                string? defect = ToolDefect?.Tool == tool ? ToolDefect.Value.Defect : null;
+                output = defect == "missing" ? "[]" : JsonSerializer.Serialize(new[] { new
                 {
-                    version = tool == "node" ? NodeVersion : "12.8.2",
-                    requested_version = tool == "node" ? "24" : "12.8.2",
-                    active = true,
-                    source = new { type = "mise.toml", path = Path.Combine(repository.Directory,
-                        "mise.toml") }
+                    version = Selected(tool),
+                    requested_version = RepositoryToolSelection.Requested(File.ReadAllText(
+                        Path.Combine(repository.Directory, "mise.toml")), tool),
+                    active = defect != "inactive",
+                    source = new
+                    {
+                        type = defect == "source-type" ? ".tool-versions" : "mise.toml",
+                        path = Path.Combine(defect == "source-path" ? Path.Combine(
+                            repository.Directory, "product") : repository.Directory,
+                            "mise.toml"),
+                    },
                 } });
             }
             else if (args.Contains("--version"))
-                output = command.Executable == "node" ? "v" + NodeVersion : "12.8.2";
+            {
+                string tool = command.Executable;
+                output = ToolDefect == (tool, "readback") ? "0.0.0"
+                    : (tool == "node" ? "v" : "") + Selected(tool);
+            }
             else if (args.Contains("pkg"))
                 output = args.Contains("publishConfig.directory")
                     ? """
@@ -311,6 +337,10 @@ public sealed class NpmPreparationTests(TestContext context)
                 File.AppendAllText(archive!, "changed original bytes");
             return Task.FromResult(NodeExecutionFixture.Success(output));
         }
+
+        // The fixture's own committed root lock selects each tool.
+        private string Selected(string tool) => RepositoryToolSelection.Locked(
+            File.ReadAllText(Path.Combine(repository.Directory, "mise.lock")), tool);
 
         public void Dispose() => Directory.Delete(Scratch, recursive: true);
     }

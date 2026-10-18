@@ -494,8 +494,11 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             var dependencies = locked.RootElement.GetProperty("dependencies").GetProperty("net10.0")
                 .EnumerateObject().Select(package => (Name: package.Name.ToLowerInvariant(),
                     Version: package.Value.GetProperty("resolved").GetString()!)).ToList();
-            dependencies.Add(("dotnet.reproduciblebuilds.isolated", "2.0.5"));
-            dependencies.Add(("microsoft.build.copyonwrite", "1.0.334"));
+            // The committed global.json selects the MSBuild SDK packages the product restores.
+            foreach (string sdk in new[] { "DotNet.ReproducibleBuilds.Isolated",
+                "Microsoft.Build.CopyOnWrite" })
+                dependencies.Add((sdk.ToLowerInvariant(), RepositoryToolSelection.MsBuildSdk(sdk,
+                    source)));
             var inputs = new List<object>();
             foreach ((string name, string version) in dependencies)
             {

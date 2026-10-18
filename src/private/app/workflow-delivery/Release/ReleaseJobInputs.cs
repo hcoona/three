@@ -115,7 +115,8 @@ internal static class ReleaseJobInputs
                     Write(Path.Combine(prepared, "request.json"), new RubyPreparationRequest(
                         subject,
                         Env("GITHUB_WORKSPACE"), scratch, new(Env("RUBY_EXECUTABLE"),
-                            Env("GEM_EXECUTABLE"), Env("DOTNET_EXECUTABLE"))),
+                            Env("GEM_EXECUTABLE"), Env("DOTNET_EXECUTABLE")),
+                        Env("MISE_DATA_DIR")),
                         TransferJson.Default.RubyPreparationRequest);
                 else if (ecosystem == "python")
                     Write(Path.Combine(prepared, "request.json"), new PythonPreparationRequest(
