@@ -26,10 +26,10 @@ for an architecture or requirement change, which changes a requirement's meaning
 or an HLD responsibility or boundary. Changing one destination's concrete
 conditions within those requirements uses the Release row. Use actual native
 sources for operations; the [source layout](../README.md#source-layout) maps
-the code. When several rows apply, read their union. For a shared file, first
-classify it as a native shared input, a retained-job list entry in
-`CiScope` or an ecosystem root input, using the
-[MLD classification](middle-level-design.md#shared-inputs-and-retained-job-scope).
+the code. When several rows apply, read their union. A shared file may
+act as a native shared input, a retained-job list entry in `CiScope` and an
+ecosystem root input at once; check each applicable
+[mechanism](middle-level-design.md#shared-inputs-and-retained-job-scope).
 
 | Change                                   | Read                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

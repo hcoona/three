@@ -384,8 +384,10 @@ origins and prerequisite expansion remain the shared core's responsibilities.
 
 ### Shared Inputs and Retained-Job Scope
 
-A changed shared file reaches work through one of three mechanisms; read the one
-that decides its effect:
+A changed shared file can reach work through several of these mechanisms at once;
+check every one that lists it. For example, root `pyproject.toml` is a native
+Python input consumed by every member, a `PythonInputs` entry in `CiScope` and a
+root input of the Python caller:
 
 - **Native shared inputs** (`SharedInput`): ecosystem facts name a file's actual
   consumers, such as a lock, toolchain or version input. Product selection and
