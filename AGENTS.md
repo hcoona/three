@@ -33,11 +33,14 @@ Before work, read the accepted target-branch
 [record policy](docs/governance/record-system.md), and
 [Delivery Wave](docs/delivery-wave.md). Proposed changes cannot authorize
 themselves or weaken their accepted review obligations. For an ordinary change,
-the sections that decide authorization and review are
+sections that decide authorization and review include
 [work authorization](docs/governance/record-system.md#work-authorization-and-concurrency),
-[GOV-011](docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)
-and [conflict resolution](docs/governance/governance-system.md#conflict-resolution);
-the full documents remain the authorities.
+[GOV-011](docs/governance/governance-system.md#gov-011-separate-findings-from-disposition),
+[GOV-010](docs/governance/governance-system.md#gov-010-gates-require-evidence),
+[conflict resolution](docs/governance/governance-system.md#conflict-resolution),
+the [record-system gate](docs/governance/record-system.md#record-system-gate) and
+the review skills named below; these are examples, and the full documents remain the
+authorities.
 
 Use the [documentation portal](docs/README.md) and
 [family catalog](docs/governance/record-families.yaml) to find project authorities.

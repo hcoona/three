@@ -239,7 +239,8 @@ Complete native collection/query qualification requires its own accepted exact
 protocol using the actual current tools and lock format; the stopped primitive
 campaign is not reused or repeated. Ordinary PR CI remains available for its
 authorized caller-integration qualification after contract acceptance. A change
-to Python selection or caller code is qualified by ordinary PR CI; only a new
+to Python selection or caller code is qualified, after contract acceptance, by
+ordinary PR CI together with the tests with controlled fixtures above; only a new
 native collection or query experiment needs its own accepted protocol.
 
 The shared core owns the
@@ -274,7 +275,7 @@ Git inputs. Native backend builds may compute version again; agreement, rather
 than a single invocation, is required. No generated backend roster, alternate
 version injection, smoke witness or static-project rewrite is introduced.
 
-Tests with controlled fixtures covers complete declared outputs and version agreement,
+Tests with controlled fixtures cover complete declared outputs and version agreement,
 failed/missing required checks, native preparation/build failure, installed
 consumer origin, Git-free sdist invocation, cancellation and original result
 transfer. Native qualification additionally observes actual selected frozen
@@ -393,7 +394,7 @@ four required distribution checks under the contract below.
 
 The root CI group and local full runner use the same native Python group and
 preparation contract. Affected producer/consumer changes preserve selected/full
-preparation and complete checks together. Tests with controlled fixtures covers root-only
+preparation and complete checks together. Tests with controlled fixtures cover root-only
 and mixed member preparation, native name/target agreement, explicit full versus
 incremental selection, complete partition/result transfer and failures/cancellation.
 Ordinary authorized PR CI qualifies the complete affected caller group before
