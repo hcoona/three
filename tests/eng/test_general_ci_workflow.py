@@ -1625,8 +1625,7 @@ def test_retired_buddy_routes_stay_absent_and_v3_buddy_stays_dedicated():
     assert not any("uses" in job for job in buddy["jobs"].values())
 
 
-def test_hk_actionlint_keeps_covering_root_workflows(workflow):
-    """CiScope's root-workflow conformance owner copies this HK step glob."""
+def _hk_check_steps() -> dict[str, Any]:
     mise = shutil.which("mise")
     assert mise is not None
     evaluated = subprocess.run(  # noqa: S603 - Locked native Pkl evaluation.
@@ -1647,14 +1646,84 @@ def test_hk_actionlint_keeps_covering_root_workflows(workflow):
         text=True,
         check=True,
     )
-    step = json.loads(evaluated.stdout)["hooks"]["check"]["steps"]["actionlint"]
+    return json.loads(evaluated.stdout)["hooks"]["check"]["steps"]
+
+
+def _ci_hk_profiles(workflow: dict[str, Any]) -> set[str]:
     runs = " ".join(
         step.get("run", "") for step in workflow["jobs"]["conformance"]["steps"]
     )
-    ci_profiles = set(re.findall(r"--profile (\w+)", runs))
-    assert ci_profiles
-    assert set(step["profiles"]) & ci_profiles
+    profiles = set(re.findall(r"--profile (\w+)", runs))
+    assert profiles
+    return profiles
+
+
+def test_hk_actionlint_keeps_covering_root_workflows(workflow):
+    """CiScope's root-workflow conformance owner copies this HK step glob."""
+    step = _hk_check_steps()["actionlint"]
+    assert set(step["profiles"]) & _ci_hk_profiles(workflow)
     for name in ("ci.yml", "codeql.yaml"):
         path = PurePosixPath(".github/workflows", name)
         assert any(path.full_match(glob) for glob in step["glob"]), name
         assert not any(path.full_match(glob) for glob in step["exclude"])
+
+
+# CiScope.LintedShell copies these shellcheck/shfmt exclusions.
+COPIED_SHELL_EXCLUSIONS = {
+    "**/.github/**",
+    "**/.specify/**",
+    "**/generated/**",
+    ".agents/**",
+}
+
+
+def _can_exclude_shell(pattern: str) -> bool:
+    """Report whether an exclusion can match a shell script.
+
+    A final ``**`` matches any file; otherwise the final segment must itself
+    match a ``.sh`` or ``.bash`` name.
+    """
+    last = pattern.rsplit("/", 1)[-1]
+    return (
+        last == "**"
+        or last.endswith((".sh", ".bash"))
+        or any(
+            PurePosixPath(name).full_match(last) for name in ("x.sh", "x.bash")
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("pattern", "expected"),
+    [
+        ("**/.github/**", True),
+        (".agents/**", True),
+        ("**/*.sh", True),
+        ("tools/build.bash", True),
+        ("**/specs/**/*.md", False),
+        ("global.json", False),
+        ("**/mise.lock", False),
+    ],
+)
+def test_shell_exclusion_relevance(pattern, expected):
+    """Only exclusions whose final segment can name a shell script count."""
+    assert _can_exclude_shell(pattern) is expected
+
+
+def test_hk_shell_linters_keep_covering_copied_scripts(workflow):
+    """CiScope's shell conformance owner copies this HK glob and exclusions."""
+    steps = _hk_check_steps()
+    profiles = _ci_hk_profiles(workflow)
+    for name in ("shellcheck", "shfmt"):
+        step = steps[name]
+        assert set(step["profiles"]) & profiles, name
+        for path in ("x.sh", "x.bash", "a/b/x.sh", "a/b/x.bash"):
+            assert any(
+                PurePosixPath(path).full_match(glob) for glob in step["glob"]
+            ), (name, path)
+        relevant = {
+            pattern
+            for pattern in step["exclude"]
+            if _can_exclude_shell(pattern)
+        }
+        assert relevant == COPIED_SHELL_EXCLUSIONS, name

@@ -100,7 +100,7 @@ malformed or out-of-checkout read fails planning instead of dropping
 responsibility. Directory names and a repository-local Pkl parser do not infer
 this responsibility.
 
-Three finite rules cover repository tooling configuration. `renovate.json`,
+Four finite rules cover repository tooling configuration. `renovate.json`,
 `.github/renovate/**` and `.github/workflows/renovate.yml` receive owner
 `renovate`, target `.github/workflows/renovate.yml` and rule
 `native-renovate-configuration`. A present coordinate whose repository-relative
@@ -120,7 +120,16 @@ these files; its glob covers workflow YAML under any `.github/workflows/`
 directory, and this rule is a fixed copy for the root directory only. A drift
 test in `tests/eng/test_general_ci_workflow.py` evaluates root `hk.pkl` with the
 locked Pkl and fails unless the `check` hook keeps an `actionlint` step in a
-profile `ci.yml` runs whose glob still matches these files. No rule selects a
+profile `ci.yml` runs whose glob still matches these files. A present `*.sh` or
+`*.bash` file that the shared `shellcheck`/`shfmt` exclusions do not match
+(`**/.github/**`, `**/.specify/**`, `**/generated/**` and the root-only
+`.agents/**`) receives owner `conformance`, target
+`.github/workflows/ci.yml#conformance` and rule `native-hk-shell-lint` under the
+same `hk.pkl` and `ci.yml` condition. This is a fixed copy of those steps' shared
+glob and exclusions; a second drift test fails unless both steps stay in a
+profile `ci.yml` runs, their glob still matches `*.sh` and `*.bash`, and their
+exclusions whose final segment can name a shell script equal this set. The rule
+adds to, and does not replace, a script's existing owner. No rule selects a
 retained job.
 
 The Node group joins native PNPM membership and reasons before final owner

@@ -366,6 +366,55 @@ public sealed class CiScopeTests
     }
 
     [TestMethod]
+    [DataRow("eng/scripts/test-python.sh", true)]
+    [DataRow("tools/build.bash", false)]
+    [DataRow("x/.agents/y.sh", false)]
+    public void LintedShellScriptsReceiveHkShellLintResponsibility(string path, bool python)
+    {
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk));
+        string rows = string.Join(", ", row.Reasons.Select(item => item.Owner + ":" + item.Rule));
+        ScopeResponsibility lint = Assert.ContainsSingle(row.Reasons.Where(reason =>
+            reason.Rule == "native-hk-shell-lint"), rows);
+        Assert.AreEqual("conformance", lint.Owner);
+        Assert.AreEqual(".github/workflows/ci.yml#conformance", lint.Target);
+        CollectionAssert.AreEquivalent(WorkflowLintSources, lint.Sources);
+        Assert.AreEqual(python, row.Reasons.Any(reason => reason.Owner == "python"), rows);
+        // The shell rule adds no retained job; only the existing Python input selects AzureAuth.
+        CiScopeApplicability jobs = CiScope.Select([path], Comparison(path), false, []);
+        Assert.AreEqual(python, jobs.AzureAuth, rows);
+        Assert.IsFalse(jobs.Mise || jobs.Scholarly || jobs.NuGetNativePreparation);
+    }
+
+    [TestMethod]
+    [DataRow(".github/x.sh")]
+    [DataRow(".agents/x.sh")]
+    [DataRow("a/generated/x.sh")]
+    [DataRow(".specify/x.sh")]
+    [DataRow("eng/scripts/notes.shell")]
+    public void HkExcludedShellPathsReceiveNoShellLintResponsibility(string path)
+    {
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk));
+        Assert.IsFalse(row.Reasons.Any(reason => reason.Rule == "native-hk-shell-lint"));
+    }
+
+    [TestMethod]
+    public void DeletedScriptResolvesAtTheBasisAndConfirmsAbsenceAtTheCandidate()
+    {
+        const string path = "eng/scripts/publish_node_gpr_idempotent.sh";
+        ScopeCoordinate basis = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk));
+        ScopeResponsibility reason = Assert.ContainsSingle(basis.Reasons);
+        Assert.AreEqual("native-hk-shell-lint", reason.Rule);
+        Assert.IsFalse(Assert.ContainsSingle(CiScope.Owners(Revision(), [path], [], [], Tasks,
+            Hk)).Present);
+        var bare = new GitRevision(Basis, [new(path, "100644", "blob")]);
+        Assert.IsEmpty(Assert.ContainsSingle(CiScope.Owners(bare, [path], [], [], Tasks, Hk))
+            .Reasons);
+    }
+
+    [TestMethod]
     public void HkWorkflowLintRequiresCommittedHkAndCiWorkflow()
     {
         const string path = ".github/workflows/lint.yaml";

@@ -147,7 +147,8 @@ internal static class PythonRepositoryInputs
                 // Retired guard script; a comparison deleting it still needs an owner.
                 "eng/scripts/update_node_mise_lock.py");
 
-    // The actionlint drift guard in tests/eng/test_general_ci_workflow.py evaluates root HK.
+    // The actionlint and shell-lint drift guards in tests/eng/test_general_ci_workflow.py
+    // evaluate root HK.
     internal static bool HkInput(string path) =>
         path == "hk.pkl" || path.StartsWith("src/private/lib/hk/", StringComparison.Ordinal);
 

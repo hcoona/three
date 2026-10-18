@@ -137,6 +137,12 @@ internal static partial class CiScope
                 Regular(".github/workflows/ci.yml"))
                 Add("conformance", ".github/workflows/ci.yml#conformance",
                     "native-hk-workflow-lint", ".github/workflows/ci.yml", HkConfiguration);
+            // Fixed copy of HK's shellcheck/shfmt glob and shell-relevant exclusions; the
+            // drift test in tests/eng/test_general_ci_workflow.py keeps them aligned.
+            if (LintedShell(path) && Regular(HkConfiguration) &&
+                Regular(".github/workflows/ci.yml"))
+                Add("conformance", ".github/workflows/ci.yml#conformance",
+                    "native-hk-shell-lint", ".github/workflows/ci.yml", HkConfiguration);
             if (path == "renovate.json" && Regular("pyproject.toml") &&
                 Regular("tests/eng/test_python_runtime.py"))
                 Add("python", "pytest:tests/eng/test_python_runtime.py",
@@ -388,6 +394,17 @@ internal static partial class CiScope
         path.IndexOf('/', ".github/workflows/".Length) < 0 &&
         (path.EndsWith(".yml", StringComparison.Ordinal) ||
             path.EndsWith(".yaml", StringComparison.Ordinal));
+
+    // HK excludes **/.github/**, **/.specify/**, **/generated/** and root-only .agents/**.
+    internal static bool LintedShell(string path)
+    {
+        if (!path.EndsWith(".sh", StringComparison.Ordinal) &&
+            !path.EndsWith(".bash", StringComparison.Ordinal))
+            return false;
+        string[] directories = path.Split('/')[..^1];
+        return !directories.Any(name => name is ".github" or ".specify" or "generated") &&
+            !path.StartsWith(".agents/", StringComparison.Ordinal);
+    }
 
     private static bool PythonResponsibility(string path) =>
         path.EndsWith(".py", StringComparison.Ordinal) ||
