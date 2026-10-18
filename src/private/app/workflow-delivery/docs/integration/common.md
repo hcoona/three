@@ -72,9 +72,11 @@ reports its last unsuccessful native command. Native failure text names the
 stage, termination and exit code, followed by the last 4,096 characters of each
 of the native error and stderr, trimmed and marked when truncated. Because
 MSBuild reports errors on stdout, the .NET graph query also includes a stdout
-tail with the same bound. The complete
-command results stay in the retained result artifacts. Every message line
-written to stderr, including application failure messages, starts with an indented `|` marker.
+tail with the same bound. The .NET graph query has no retained artifact, so it
+keeps only these bounded stdout and stderr tails; other complete command results
+stay in the retained result artifacts. Every message line written to stderr,
+including application failure messages, starts with an indented `|` marker,
+and check header lines are neutralized the same way.
 Each `##[` becomes `#\#[`, so native text cannot start an Actions workflow
 command ([`RunnerLog`](../../Platform/RunnerLog.cs)).
 The finite [GitHub comparison

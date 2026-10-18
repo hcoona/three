@@ -155,6 +155,41 @@ public sealed class RubyRSpecExecutionTests
     [TestMethod]
     public async Task StartupFailureWithoutReportKeepsBoundedNativeDiagnostic()
     {
+        await StartupFailure();
+    }
+
+    [TestMethod]
+    [DataRow("TimedOut", null)]
+    [DataRow("Exited", 1)]
+    public async Task EmptyReportAfterFailedCommandKeepsBoundedNativeDiagnostic(
+        string termination, int? code)
+    {
+        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        try
+        {
+            RubyRSpecRequest request = Request(root);
+            RubyRSpecRun run = await RubyRSpecExecution.RunAsync(Check, request,
+                async (command, token) =>
+                {
+                    // rspec-core created the report at formatter setup and never wrote it.
+                    await File.WriteAllTextAsync(command.Arguments[^1], "", token);
+                    return new NativeCommandResult(Enum.Parse<NativeTermination>(termination),
+                        code, "", "controlled rspec crash", 0.1,
+                        termination == "TimedOut" ? "Command timed out." : null);
+                }, TestContext.CancellationToken);
+            Assert.IsNull(run.Report);
+            Assert.StartsWith("Native RSpec result could not be read: ", run.ReportError);
+            Assert.EndsWith(" Native RSpec command failed: " + termination + ", exit " +
+                (code?.ToString() ?? "unknown") + "." +
+                (termination == "TimedOut" ? " Command timed out." : "") +
+                " stderr: controlled rspec crash", run.ReportError);
+            Assert.IsEmpty(Directory.EnumerateFileSystemEntries(request.Scratch));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    private async Task StartupFailure()
+    {
         string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         try
         {

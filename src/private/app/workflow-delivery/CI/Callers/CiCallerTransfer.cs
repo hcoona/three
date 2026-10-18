@@ -169,9 +169,9 @@ internal static class CiCallerTransfer
                 NativeDiagnostic.Describe(group.Last().Result));
         foreach (CheckOutcome check in outcome.Checks.Where(check => check.Status != "passed"))
         {
-            diagnostics.WriteLine($"Check {check.Status} " +
+            diagnostics.WriteLine(RunnerLog.Neutralize($"Check {check.Status} " +
                 $"({(check.Required ? "required" : "advisory")}): {check.Key.Target} " +
-                $"{check.Key.Check} {check.Key.Variant}");
+                $"{check.Key.Check} {check.Key.Variant}"));
             string[] messages = text[check.Key].ToArray();
             if (messages.Length == 0 && unsuccessful.TryGetValue(check.Key, out string? command))
                 messages = [command];

@@ -55,15 +55,17 @@ internal static class RubyRSpecExecution
                     report = RubyRSpecResult.Read(await File.ReadAllTextAsync(output,
                         new UTF8Encoding(false, true), token));
                 else
-                    error = "Native RSpec did not produce its required JSON result." +
-                        (result.Succeeded && result.Error is null ? "" :
-                            " Native RSpec command failed: " + NativeDiagnostic.Describe(result));
+                    error = "Native RSpec did not produce its required JSON result.";
             }
             catch (Exception exception) when (exception is IOException or
                 UnauthorizedAccessException or DecoderFallbackException or InvalidDataException)
             {
                 error = "Native RSpec result could not be read: " + exception.Message;
             }
+            // rspec-core creates the report at formatter setup, so a timeout or crash can leave
+            // it empty or partial; keep the bounded native diagnostic with either report error.
+            if (error is not null && (!result.Succeeded || result.Error is not null))
+                error += " Native RSpec command failed: " + NativeDiagnostic.Describe(result);
             CheckStatus status = token.IsCancellationRequested ? CheckStatus.Cancelled :
                 RubyRSpecResult.Status(result, report);
             return new(command, result, report, status, error);

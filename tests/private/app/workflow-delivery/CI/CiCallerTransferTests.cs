@@ -41,6 +41,22 @@ public sealed class CiCallerTransferTests(TestContext context)
     }
 
     [TestMethod]
+    public void ReportedCheckHeaderCannotStartWorkflowCommands()
+    {
+        // A committed directory name is a valid target and reaches the check header line.
+        var key = new CheckKey("src/ruby/##[add-mask]native", "ruby/project-rspec-v1",
+            "default");
+        var outcome = new CiOutcome("a", "a", "scope", false, [new(key, true, "failed")], []);
+        using var log = new StringWriter();
+
+        CiCallerTransfer.Report(outcome, [], [], log);
+
+        AssertNoWorkflowCommand(log.ToString());
+        Assert.StartsWith("Check failed (required): src/ruby/#\\#[add-mask]native " +
+            "ruby/project-rspec-v1 default", log.ToString());
+    }
+
+    [TestMethod]
     public void TypedReadRejectsMissingUnknownAndDuplicateFields()
     {
         using var files = new CiCallerFiles();
