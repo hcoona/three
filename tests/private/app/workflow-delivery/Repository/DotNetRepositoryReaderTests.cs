@@ -241,15 +241,25 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
             Path.Combine(fixture.Scratch, "failed.proj"),
             Path.Combine(fixture.Scratch, "failed.request.json"),
             Path.Combine(fixture.Scratch, "failed.response.json"), 30);
+        string stderr = "task load head " + new string('x', NativeDiagnostic.TailLength) +
+            " task load failed";
+        // MSBuild reports its errors on stdout, so the graph query keeps a bounded stdout tail.
+        string stdout = "partial graph head " + new string('y', NativeDiagnostic.TailLength) +
+            " error MSB4057: controlled target";
         var reader = new DotNetRepositoryReader(fixture.Checkout, files, (_, _) =>
             Task.FromResult(new NativeCommandResult(NativeTermination.Exited, 1,
-                "partial graph output", "task load failed", 0, "native failure detail")));
+                stdout, stderr, 0, "native failure detail")));
         InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             reader.ReadAsync(context.CancellationToken));
-        Assert.Contains("task load failed", failure.Message);
-        Assert.Contains("partial graph output", failure.Message);
-        Assert.Contains("native failure detail", failure.Message);
-        Assert.Contains("Native graph Exited, exit 1", failure.Message);
+        // Stage, termination, native error, then bounded stdout and stderr tails.
+        Assert.Contains("Native graph query failed: Exited, exit 1. native failure detail " +
+            "stdout: [truncated] ", failure.Message);
+        Assert.Contains(" error MSB4057: controlled target stderr: [truncated] ",
+            failure.Message);
+        Assert.EndsWith(" task load failed", failure.Message);
+        Assert.DoesNotContain("task load head", failure.Message);
+        Assert.DoesNotContain("partial graph head", failure.Message);
+        Assert.IsLessThan(2 * NativeDiagnostic.TailLength + 1000, failure.Message.Length);
         Assert.Contains("role Invocation", failure.Message);
         Assert.Contains(fixture.Revision.Commit, failure.Message);
         Assert.Contains(fixture.Root, failure.Message);

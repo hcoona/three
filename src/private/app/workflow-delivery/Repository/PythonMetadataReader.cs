@@ -33,7 +33,8 @@ internal sealed class PythonMetadataReader
             ["workspace", "metadata", "--frozen", "--python", interpreter], 30, environment),
             token);
         if (!result.Succeeded || result.Error is not null)
-            throw new InvalidDataException("Python metadata extraction failed.");
+            throw new InvalidDataException("Python metadata extraction failed: " +
+                NativeDiagnostic.Describe(result));
         return Parse(result.Stdout, root);
     }
 

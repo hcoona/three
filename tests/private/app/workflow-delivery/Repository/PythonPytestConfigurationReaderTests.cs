@@ -151,7 +151,9 @@ public sealed class PythonPytestConfigurationReaderTests
         {
             InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(
                 Call);
-            Assert.AreEqual("Native pytest configuration extraction failed.", error.Message);
+            Assert.AreEqual("Native pytest configuration extraction failed: StartFailed, " +
+                "exit unknown. private-native-error stderr: private-native-diagnostic",
+                error.Message);
             Assert.IsTrue(executed);
         }
     }

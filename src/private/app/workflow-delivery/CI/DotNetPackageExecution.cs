@@ -134,8 +134,8 @@ internal static class DotNetPackageExecution
                             NativeTermination.Cancelled => CheckStatus.Cancelled,
                             NativeTermination.TimedOut => CheckStatus.TimedOut,
                             _ => CheckStatus.Failed,
-                        }, result.Error ??
-                            $"Native command {result.Termination}, exit {result.ExitCode}.");
+                        }, $"Native command {NativeDiagnostic.Operation(command)} failed: " +
+                            NativeDiagnostic.Describe(result));
                     return result;
                 }
             }

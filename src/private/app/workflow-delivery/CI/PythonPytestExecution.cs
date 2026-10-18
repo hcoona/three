@@ -83,7 +83,7 @@ internal static class PythonPytestExecution
         if (!preparation.Succeeded || preparation.Error is not null ||
             token.IsCancellationRequested)
         {
-            foreach (CheckKey key in keys) Add(key, preparation);
+            foreach (CheckKey key in keys) Add(key, preparation, PreparationStage);
             return Finish();
         }
         var executionEnvironment = new Dictionary<string, string?>(environment,
@@ -98,7 +98,7 @@ internal static class PythonPytestExecution
                 Add(item.Work.Key, await RunAsync([item.Work.Key], ["run", "--no-project",
                     "--python", testEnvironment, "python", "-m", "pytest", "-c",
                     request.Configuration.ConfigurationFile, "--junitxml=" + junit,
-                    item.Work.Dimensions["testPath"]], executionEnvironment));
+                    item.Work.Dimensions["testPath"]], executionEnvironment), TargetStage);
         }
         return Finish();
 
@@ -120,7 +120,7 @@ internal static class PythonPytestExecution
             commands.Add(new(checks, command, result));
             return result;
         }
-        void Add(CheckKey key, NativeCommandResult result)
+        void Add(CheckKey key, NativeCommandResult result, string stage)
         {
             CheckStatus status = token.IsCancellationRequested ? CheckStatus.Cancelled :
                 result.Termination switch
@@ -134,8 +134,7 @@ internal static class PythonPytestExecution
             if (status != CheckStatus.Passed)
                 failures.Add(new(key, token.IsCancellationRequested ?
                     "Pytest execution cancelled." :
-                    result.Error ??
-                    $"Native pytest command {result.Termination}, exit {result.ExitCode}."));
+                    $"{stage} failed: {NativeDiagnostic.Describe(result)}"));
         }
         PythonPytestRunResult Finish() => new(plan.Candidate, results.ToArray(),
             commands.ToArray(), failures.ToArray());
@@ -232,4 +231,6 @@ internal static class PythonPytestExecution
     }
 
     private const string PathMessage = "Pytest execution paths must be absolute.";
+    private const string PreparationStage = "Shared uv sync preparation";
+    private const string TargetStage = "Native pytest command";
 }

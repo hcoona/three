@@ -387,7 +387,9 @@ execution retain ordinary Python import behavior; query-only `PYTHONSAFEPATH`
 is removed at that boundary while native query isolation remains unchanged.
 One invocation per target supplies its distinct required outcome while sharing
 preparation. A preparation failure, timeout or cancellation leaves every affected
-required target unsatisfied; it cannot produce an empty successful result. Keep
+required target unsatisfied; it cannot produce an empty successful result. Each
+affected target's failure text names the shared `uv sync` preparation stage
+with its bounded native diagnostic rather than a pytest failure. Keep
 independent package obligations visible even when pytest fails. The package
 partition retains its separate phase-specific preparation, original archives and
 four required distribution checks under the contract below.

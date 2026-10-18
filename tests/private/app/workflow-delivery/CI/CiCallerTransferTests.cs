@@ -10,6 +10,52 @@ namespace WorkflowDelivery.Tests.CI;
 [TestClass]
 public sealed class CiCallerTransferTests(TestContext context)
 {
+    internal const string WorkflowCommandText = "native failure\n::add-mask::x\r\n" +
+        "  ##[add-mask]x\nwarning ##[error]inline";
+
+    // Actions parses "::" after leading whitespace and "##[" anywhere in a line.
+    internal static void AssertNoWorkflowCommand(string log)
+    {
+        foreach (string line in log.ReplaceLineEndings("\n").Split('\n'))
+        {
+            Assert.IsFalse(line.TrimStart().StartsWith("::", StringComparison.Ordinal), line);
+            Assert.DoesNotContain("##[", line);
+        }
+    }
+
+    [TestMethod]
+    public void ReportedNativeTextCannotStartWorkflowCommands()
+    {
+        var key = new CheckKey("src/ruby", "ruby/project-rspec-v1", "default");
+        var outcome = new CiOutcome("a", "a", "scope", false,
+            [new(key, true, "failed")], []);
+        using var log = new StringWriter();
+
+        CiCallerTransfer.Report(outcome, [new(key, WorkflowCommandText)], [], log);
+
+        AssertNoWorkflowCommand(log.ToString());
+        Assert.AreEqual(string.Join(Environment.NewLine,
+            "Check failed (required): src/ruby ruby/project-rspec-v1 default",
+            "  | native failure", "  | ::add-mask::x", "  |   #\\#[add-mask]x",
+            "  | warning #\\#[error]inline", ""), log.ToString());
+    }
+
+    [TestMethod]
+    public void ReportedCheckHeaderCannotStartWorkflowCommands()
+    {
+        // A committed directory name is a valid target and reaches the check header line.
+        var key = new CheckKey("src/ruby/##[add-mask]native", "ruby/project-rspec-v1",
+            "default");
+        var outcome = new CiOutcome("a", "a", "scope", false, [new(key, true, "failed")], []);
+        using var log = new StringWriter();
+
+        CiCallerTransfer.Report(outcome, [], [], log);
+
+        AssertNoWorkflowCommand(log.ToString());
+        Assert.StartsWith("Check failed (required): src/ruby/#\\#[add-mask]native " +
+            "ruby/project-rspec-v1 default", log.ToString());
+    }
+
     [TestMethod]
     public void TypedReadRejectsMissingUnknownAndDuplicateFields()
     {

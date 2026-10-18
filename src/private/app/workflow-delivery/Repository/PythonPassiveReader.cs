@@ -37,7 +37,8 @@ internal sealed class PythonPassiveReader
         NativeCommandResult result = await execute(new(helperPython, directory,
             [passiveScript, directory], 30, environment), token);
         if (!result.Succeeded || result.Error is not null)
-            throw new InvalidDataException("Python passive extraction failed.");
+            throw new InvalidDataException("Python passive extraction failed: " +
+                NativeDiagnostic.Describe(result));
         try
         {
             using JsonDocument document = JsonDocument.Parse(result.Stdout);
@@ -99,7 +100,8 @@ internal sealed class PythonPassiveReader
         NativeCommandResult preflight = await execute(new(helperPython, root,
             [passiveScript, "--configuration-only", .. ordered], 30, environment), token);
         if (!preflight.Succeeded || preflight.Error is not null)
-            throw new InvalidDataException("Python configuration preflight failed.");
+            throw new InvalidDataException("Python configuration preflight failed: " +
+                NativeDiagnostic.Describe(preflight));
         try
         {
             using JsonDocument result = JsonDocument.Parse(preflight.Stdout);

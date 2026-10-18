@@ -65,6 +65,20 @@ Do not build an envelope registry or independent schema version service.
 | `release complete-*` in collection                                                                   | Preparation, initial and final observations and publication result (`-` only when omitted)              | Satisfied/unsatisfied/unknown with command abnormality and unresolved effects kept distinct                                                                          |
 
 In-process callers use the same typed operations without serializing each row.
+The `ci caller-<ecosystem> execute` commands keep stdout as the unchanged
+`CiOutcome` JSON. They also write each non-passed check's key, status and
+recorded failure text to stderr, the step log. A check without failure text
+reports its last unsuccessful native command. Native failure text names the
+stage, termination and exit code, followed by the last 4,096 characters of each
+of the native error and stderr, trimmed and marked when truncated. Because
+MSBuild reports errors on stdout, the .NET graph query also includes a stdout
+tail with the same bound. The .NET graph query has no retained artifact, so it
+keeps only these bounded stdout and stderr tails; other complete command results
+stay in the retained result artifacts. Every message line written to stderr,
+including application failure messages, starts with an indented `|` marker,
+and check header lines are neutralized the same way.
+Each `##[` becomes `#\#[`, so native text cannot start an Actions workflow
+command ([`RunnerLog`](../../Platform/RunnerLog.cs)).
 The finite [GitHub comparison
 mapping](../middle-level-design.md#github-event-comparison) reads native payload
 fields directly rather than adding another event declaration. Its implementation

@@ -146,7 +146,66 @@ public sealed class RubyRSpecExecutionTests
             Assert.AreEqual(CheckStatus.Failed, run.Status);
             Assert.IsNull(run.Report);
             Assert.IsNotNull(run.ReportError);
+            Assert.DoesNotContain("command failed", run.ReportError);
             Assert.IsEmpty(Directory.EnumerateFileSystemEntries(request.Scratch));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [TestMethod]
+    public async Task StartupFailureWithoutReportKeepsBoundedNativeDiagnostic()
+    {
+        await StartupFailure();
+    }
+
+    [TestMethod]
+    [DataRow("TimedOut", null)]
+    [DataRow("Exited", 1)]
+    public async Task EmptyReportAfterFailedCommandKeepsBoundedNativeDiagnostic(
+        string termination, int? code)
+    {
+        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        try
+        {
+            RubyRSpecRequest request = Request(root);
+            RubyRSpecRun run = await RubyRSpecExecution.RunAsync(Check, request,
+                async (command, token) =>
+                {
+                    // rspec-core created the report at formatter setup and never wrote it.
+                    await File.WriteAllTextAsync(command.Arguments[^1], "", token);
+                    return new NativeCommandResult(Enum.Parse<NativeTermination>(termination),
+                        code, "", "controlled rspec crash", 0.1,
+                        termination == "TimedOut" ? "Command timed out." : null);
+                }, TestContext.CancellationToken);
+            Assert.IsNull(run.Report);
+            Assert.StartsWith("Native RSpec result could not be read: ", run.ReportError);
+            Assert.EndsWith(" Native RSpec command failed: " + termination + ", exit " +
+                (code?.ToString() ?? "unknown") + "." +
+                (termination == "TimedOut" ? " Command timed out." : "") +
+                " stderr: controlled rspec crash", run.ReportError);
+            Assert.IsEmpty(Directory.EnumerateFileSystemEntries(request.Scratch));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    private async Task StartupFailure()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        try
+        {
+            RubyRSpecRequest request = Request(root);
+            string stderr = "omitted head " + new string('x', NativeDiagnostic.TailLength) +
+                " bundler: command not found: rspec";
+            RubyRSpecRun run = await RubyRSpecExecution.RunAsync(Check, request,
+                (_, _) => Task.FromResult(new NativeCommandResult(NativeTermination.Exited, 127,
+                    "", stderr, 0.1, null)), TestContext.CancellationToken);
+            Assert.AreEqual(CheckStatus.Failed, run.Status);
+            Assert.IsNull(run.Report);
+            Assert.StartsWith("Native RSpec did not produce its required JSON result. " +
+                "Native RSpec command failed: Exited, exit 127. stderr: [truncated] ",
+                run.ReportError);
+            Assert.EndsWith(" bundler: command not found: rspec", run.ReportError);
+            Assert.DoesNotContain("omitted head", run.ReportError);
         }
         finally { Directory.Delete(root, true); }
     }

@@ -47,8 +47,9 @@ internal static class Program
             if (NativePreparationQualification.Run(args, output) is { } nativeStatus)
                 return nativeStatus;
             if (ControlCiCaller.Run(args, output) is { } controlStatus) return controlStatus;
-            if (LocalPythonCiCaller.Run(args, output) is { } localStatus) return localStatus;
-            if (CiCallerCli.Run(args, output) is { } callerStatus) return callerStatus;
+            if (LocalPythonCiCaller.Run(args, output, error) is { } localStatus)
+                return localStatus;
+            if (CiCallerCli.Run(args, output, error) is { } callerStatus) return callerStatus;
             if (args is ["ci", "prepare-ruby-group", var rubyPreparationPath])
             {
                 RubyGroupPreparationRequest request = JsonSerializer.Deserialize(
@@ -265,7 +266,7 @@ internal static class Program
         }
         catch (PythonGroupPreparationException exception)
         {
-            error.WriteLine(exception.Message);
+            RunnerLog.Write(error, exception.Message, CiCallerTransfer.MessagePrefix);
             try
             {
                 using var diagnostics = new FileStream(exception.DiagnosticsPath,
@@ -282,7 +283,7 @@ internal static class Program
             JsonException or ArgumentException or UnauthorizedAccessException or TimeoutException or
             Nerdbank.GitVersioning.GitException or KeyNotFoundException)
         {
-            error.WriteLine(exception.Message);
+            RunnerLog.Write(error, exception.Message, CiCallerTransfer.MessagePrefix);
             return 2;
         }
     }

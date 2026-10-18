@@ -69,7 +69,8 @@ internal static class RubyCiCaller
     }
 
     internal static async Task<CiOutcome> ExecuteAsync(string directory, CancellationToken token,
-        Func<CiPlan, RubyGroupRunRequest, CancellationToken, Task<RubyGroupRun>>? execute = null)
+        Func<CiPlan, RubyGroupRunRequest, CancellationToken, Task<RubyGroupRun>>? execute = null,
+        TextWriter? diagnostics = null)
     {
         RubyCiCallerContext context = Context(directory);
         CiPlan plan = CiCallerTransfer.Read(Path.Combine(directory, "plan.json"),
@@ -77,6 +78,8 @@ internal static class RubyCiCaller
         CiCallerTransfer.Plan(plan, context.Basis.Reference, context.Candidate.Reference, Scope);
         CheckResult[] results;
         CiOutcome outcome;
+        CiCallerFailure[] failures = [];
+        (CheckKey, Platform.NativeCommand, Platform.NativeCommandResult)[] commands = [];
         if (plan.Checks.Length == 0)
         {
             results = [];
@@ -112,11 +115,20 @@ internal static class RubyCiCaller
                 TransferJson.Default.RubyGroupRun);
             results = result.Results;
             outcome = CiCallerTransfer.Outcome(plan, result.Outcome);
+            failures = [.. result.RSpec.Where(run => run.Run.ReportError is not null)
+                    .Select(run => new CiCallerFailure(run.Check, run.Run.ReportError!)),
+                .. result.Packages.Failures.Select(failure => new CiCallerFailure(failure.Check,
+                    failure.Error))];
+            commands = [.. result.RSpec.Select(run => (run.Check, run.Run.Command,
+                    run.Run.Result)),
+                .. result.Packages.Commands.Select(command => (command.Check, command.Command,
+                    command.Result))];
         }
         CiCallerTransfer.Write(Path.Combine(directory, "results.json"), results,
             TransferJson.Default.CheckResultArray);
         CiCallerTransfer.Write(Path.Combine(directory, "outcome.json"), outcome,
             TransferJson.Default.CiOutcome);
+        CiCallerTransfer.Report(outcome, failures, commands, diagnostics);
         return outcome;
     }
 

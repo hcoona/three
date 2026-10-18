@@ -163,6 +163,10 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         Assert.IsTrue(result.Results.All(item => item.Status == Enum.Parse<CheckStatus>(expected) &&
             item.Candidate == fixture.Plan.Candidate));
         Assert.HasCount(3, result.Failures);
+        // The stage, native termination and controlled stderr reach every failure text.
+        foreach (PythonPytestFailure failure in result.Failures)
+            Assert.AreEqual($"Shared uv sync preparation failed: {termination}, exit 1. " +
+                "stderr: controlled failure", failure.Error);
         Assert.HasCount(1, result.Commands);
         Assert.HasCount(1, fixture.Commands);
         Assert.HasCount(3, result.Commands[0].Checks);
