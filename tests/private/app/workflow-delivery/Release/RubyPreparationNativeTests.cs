@@ -151,11 +151,15 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                 Destination,
                 false
             );
+            string miseData = Environment.GetEnvironmentVariable("MISE_DATA_DIR") ??
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".local", "share", "mise");
             var request = new RubyPreparationRequest(
                 subject,
                 checkout,
                 scratch,
-                new(ruby, gem, dotnet)
+                new(ruby, gem, dotnet),
+                miseData
             );
             RubyPreparationResult result = await RubyPreparation.PrepareAsync(
                 request,
@@ -218,7 +222,7 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                 "true",
                 result.Native["public-release"]
             );
-            Assert.AreEqual("4.0.7", result.Native["ruby"]);
+            Assert.AreEqual(RepositoryToolSelection.Locked("ruby"), result.Native["ruby"]);
             Assert.IsFalse(result.Native["version"].Contains('+', StringComparison.Ordinal));
             ReleaseFile file = Assert.ContainsSingle(result.Prepared.Files);
             Assert.AreEqual("ruby-gem", file.Kind);

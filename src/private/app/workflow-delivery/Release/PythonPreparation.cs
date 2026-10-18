@@ -64,15 +64,14 @@ internal static class PythonPreparation
             if ((await RunAsync(new("git", checkout,
                 ["rev-parse", "--is-shallow-repository"], 30))).Stdout.Trim() != "false")
                 throw new InvalidDataException("Native versioning requires complete Git history.");
-            string uvVersion = await ToolAsync("uv", null);
-            string pythonVersion = await ToolAsync("python", "3.14");
+            string uvVersion = await ToolAsync("uv");
+            string pythonVersion = await ToolAsync("python");
             string interpreter = Absolute((await RunAsync(new("mise", checkout,
                 ["which", "python"], 30))).Stdout.Trim());
             string uv = Absolute((await RunAsync(new("mise", checkout,
                 ["which", "uv"], 30))).Stdout.Trim());
-            if ((await RunAsync(new(uv, checkout, ["self", "version", "--short"], 30))).Stdout
-                .Trim() != uvVersion)
-                throw new InvalidDataException("Actual UV differs from committed tool selection.");
+            LockedToolSelection.RequireReadback("uv", uvVersion, (await RunAsync(new(uv,
+                checkout, ["self", "version", "--short"], 30))).Stdout.Trim());
             await RunAsync(new("dotnet", checkout, ["tool", "restore"], 300));
             operations = new(new(checkout, scratch, uv, interpreter, helper, 300, environment,
                 false), Path.Combine(scratch, "package"));
@@ -158,25 +157,9 @@ internal static class PythonPreparation
             { checks.Add(new(id, ReleaseCheckStatus.Failed)); errors.Add(failure.Message); }
         }
 
-        async Task<string> ToolAsync(string tool, string? requested)
-        {
-            using JsonDocument json = JsonDocument.Parse((await RunAsync(new("mise", checkout,
-                ["ls", "--json", "--current", "--locked", tool], 30))).Stdout);
-            if (json.RootElement.ValueKind != JsonValueKind.Array ||
-                json.RootElement.GetArrayLength() != 1)
-                throw new InvalidDataException("Unavailable selected native tool: " + tool);
-            JsonElement value = json.RootElement[0];
-            string selected = value.GetProperty("version").GetString()!;
-            if (!Version.TryParse(selected, out Version? parsed) || parsed.Build < 0 ||
-                tool == "python" && (parsed.Major != 3 || parsed.Minor != 14) ||
-                value.GetProperty("requested_version").GetString() != (requested ?? selected) ||
-                value.GetProperty("active").ValueKind != JsonValueKind.True ||
-                value.GetProperty("source").GetProperty("type").GetString() != "mise.toml" ||
-                value.GetProperty("source").GetProperty("path").GetString() !=
-                    Path.Combine(checkout, "mise.toml"))
-                throw new InvalidDataException("Native tool differs from committed authority.");
-            return selected;
-        }
+        async Task<string> ToolAsync(string tool) => LockedToolSelection.Selected(tool,
+            checkout, (await RunAsync(new("mise", checkout, LockedToolSelection.Query(tool),
+                30))).Stdout);
     }
 
     // Pure subject admission, before any Git or native work. Returns whether it is Official.

@@ -314,6 +314,10 @@ changes. Changes follow the
   ([`ReadAsync`](../../Destinations/GithubNpmObservation.cs)); npmjs reads
   are public. Both use the shared registry client and redirect contract in the
   [MLD](../middle-level-design.md#registry-observation-and-retention).
+- **Preparation tools.** Node and PNPM follow the root
+  [locked tool selection](common.md#locked-tool-selection)
+  ([NpmPreparation](../../Release/NpmPreparation.cs);
+  [NpmPreparationTests.cs](../../../../../../tests/private/app/workflow-delivery/Release/NpmPreparationTests.cs)).
 - **Publication.** After a fresh observation finds the version absent and the
   original unchanged, the publisher runs one
   `npm publish <original> --registry https://npm.pkg.github.com --tag buddy-sha-<revision> --ignore-scripts --fetch-retries=0`

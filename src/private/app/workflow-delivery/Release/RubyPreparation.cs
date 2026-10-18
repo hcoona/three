@@ -7,7 +7,7 @@ namespace WorkflowDelivery.Release;
 
 internal sealed record RubyPreparationTools(string Ruby, string Gem, string Dotnet);
 internal sealed record RubyPreparationRequest(ReleaseSubject Subject, string Checkout,
-    string Scratch, RubyPreparationTools Tools);
+    string Scratch, RubyPreparationTools Tools, string MiseDataDirectory);
 internal sealed record RubyReleaseRecipe(ReleaseBuild Build, string Entry, string Directory);
 internal sealed record RubyPreparationResult(PreparedRelease Prepared,
     Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors);
@@ -31,7 +31,7 @@ internal static class RubyPreparation
         token = lifetime.Token;
         string checkout = Absolute(request.Checkout), scratch = Absolute(request.Scratch);
         foreach (string path in new[] { request.Tools.Ruby, request.Tools.Gem,
-                     request.Tools.Dotnet }) _ = Absolute(path);
+                     request.Tools.Dotnet, request.MiseDataDirectory }) _ = Absolute(path);
         if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
             OwnedPath.Overlap(scratch, checkout) ||
             Directory.EnumerateFileSystemEntries(scratch).Any())
@@ -86,9 +86,13 @@ internal static class RubyPreparation
                 .Stdout);
             string ruby = nativeTools.RootElement.GetProperty("ruby").GetString()!;
             string rubygems = nativeTools.RootElement.GetProperty("rubygems").GetString()!;
-            if (!Version.TryParse(ruby, out Version? runtime) || runtime.Major != 4 ||
-                string.IsNullOrWhiteSpace(rubygems))
-                throw new InvalidDataException("Unsupported native Ruby runtime.");
+            // The prepared runtime is the committed locked selection; no adapter floor applies.
+            LockedToolSelection.RequireReadback("ruby", LockedToolSelection.Selected("ruby",
+                checkout, (await RunAsync(new("mise", checkout,
+                    LockedToolSelection.Query("ruby"), 30, MiseEnvironment(environment,
+                        checkout, request.MiseDataDirectory)))).Stdout), ruby);
+            if (string.IsNullOrWhiteSpace(rubygems))
+                throw new InvalidDataException("Native Ruby runtime omits its RubyGems version.");
             string helper = Path.Combine(checkout,
                 "src/private/app/workflow-delivery/Native/Ruby/facts.rb");
             if (await bound.ReadOptionalTextAsync(
@@ -263,6 +267,22 @@ internal static class RubyPreparation
         string output = Path.Combine(scratch, "nbgv-environment");
         File.WriteAllText(output, "");
         values["GITHUB_ENV"] = output;
+        return values;
+    }
+
+    // Only the committed selection query sees the caller's tool installation and PATH.
+    private static Dictionary<string, string?> MiseEnvironment(
+        Dictionary<string, string?> environment, string checkout, string data)
+    {
+        var values = new Dictionary<string, string?>(environment, StringComparer.Ordinal)
+        {
+            ["PATH"] = Environment.GetEnvironmentVariable("PATH"),
+            ["MISE_DATA_DIR"] = data,
+            ["MISE_CACHE_DIR"] = Path.Combine(environment["HOME"]!, "mise-cache"),
+            ["MISE_TRUSTED_CONFIG_PATHS"] = checkout,
+            ["MISE_AUTO_INSTALL"] = "0",
+            ["MISE_EXEC_AUTO_INSTALL"] = "0",
+        };
         return values;
     }
 

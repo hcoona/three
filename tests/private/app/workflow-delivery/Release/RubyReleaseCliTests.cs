@@ -19,7 +19,7 @@ public sealed class RubyReleaseCliTests(TestContext context)
         var request = new RubyPreparationRequest(fixture.Prepared.Subject, fixture.Root,
             fixture.Directory("preparation"),
             new(Path.Combine(fixture.Root, "ruby"), Path.Combine(fixture.Root, "gem"),
-                Path.Combine(fixture.Root, "dotnet")));
+                Path.Combine(fixture.Root, "dotnet")), Path.Combine(fixture.Root, "mise"));
         string path = fixture.Write("request.json", request,
             TransferJson.Default.RubyPreparationRequest);
         RubyPreparationResult native = fixture.Preparation;

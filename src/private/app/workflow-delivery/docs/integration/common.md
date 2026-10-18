@@ -29,6 +29,18 @@ further; they do not replace this check. Adding another Official ref, a live
 npm Official caller or a NuGet Official destination is a caller change that
 updates this table and its tests together.
 
+## Locked Tool Selection
+
+Root `mise.toml` and `mise.lock` are the only tool and runtime version authority
+for Release preparation. Python, npm and Ruby preparation query
+`mise ls --json --current --locked <tool>` in the checkout and accept its single
+answer only when the version is an exact release, the tool is active in the
+prepared tool data and the source is the checkout's root `mise.toml`. The
+actual tool must then report that version. The application keeps no version
+literal, major line or floor; there is no documented native adapter limit, so a
+routine committed update needs no code change. Each failure names the tool and
+the failed condition ([`LockedToolSelection`](../../Release/LockedToolSelection.cs)).
+
 ## CLI and Boundary Payloads
 
 The application is `WorkflowDelivery.dll`, run with `dotnet`; these are internal

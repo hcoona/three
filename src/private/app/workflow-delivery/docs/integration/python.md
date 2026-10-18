@@ -505,7 +505,8 @@ Preparation reads the exact committed release declaration, project entry and
 quality selection using existing Git/declaration readers. Unsupported builds,
 outputs, quality recipes or required tests remain unavailable. Resolve native
 metadata through the maintained backend and `nbgv-python`; use the selected
-CPython/UV and the synchronized root lock. Live Official requires the native public-release
+CPython/UV and the synchronized root lock. [Locked tool selection](common.md#locked-tool-selection)
+accepts whichever CPython and UV the root lock selects. Live Official requires the native public-release
 projection; ref eligibility follows the [Official channel scope](common.md#official-channel-scope).
 The Buddy Environment `workflow-delivery-v3-python-testpypi` allows
 every branch (`**`) and keeps its required reviewer; the Official

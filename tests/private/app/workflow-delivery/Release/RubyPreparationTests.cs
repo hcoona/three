@@ -38,7 +38,7 @@ public sealed class RubyPreparationTests(TestContext context)
     private static string sharedRevision = "";
     // RubySourceCollector writes <product>/lib/.../version.rb into the checkout, so every
     // shared row that can reach source reading gets its own committed product directory.
-    private const int LaneCount = 59;
+    private const int LaneCount = 64;
     private static int nextLane = -1;
     private const string Revision = "0123456789abcdef0123456789abcdef01234567";
 
@@ -113,8 +113,8 @@ public sealed class RubyPreparationTests(TestContext context)
         Assert.AreEqual("ruby", result.Native["platform"]);
         Assert.AreEqual(fixture.Subject.Revision, result.Native["commit"]);
         Assert.AreEqual("true", result.Native["public-release"]);
-        Assert.AreEqual("4.0.7", result.Native["ruby"]);
-        Assert.AreEqual("4.0.7", result.Native["rubygems"]);
+        Assert.AreEqual(RepositoryToolSelection.Locked("ruby"), result.Native["ruby"]);
+        Assert.AreEqual(Fixture.RubyGems, result.Native["rubygems"]);
         Assert.AreEqual("3.10.94", result.Native["nbgv"]);
         Assert.IsFalse(
             result.Native.Values.Any(value =>
@@ -364,7 +364,6 @@ public sealed class RubyPreparationTests(TestContext context)
 
     [TestMethod]
     [DataRow("commit")]
-    [DataRow("ruby")]
     [DataRow("rubygems")]
     [DataRow("name")]
     [DataRow("version")]
@@ -455,6 +454,46 @@ public sealed class RubyPreparationTests(TestContext context)
             ("1.2.3+g1234567", publicRelease),
             RubyPreparation.QualifyNative(subject, channel == "official", projection.RootElement)
         );
+    }
+
+    // Each row breaks one distinct invariant between the native answers and the fixture's own
+    // committed root selection; the message names the tool and the failed condition.
+    [TestMethod]
+    [DataRow("missing", "has no single locked selection")]
+    [DataRow("inactive", "is not active")]
+    [DataRow("source-type", "not the committed root")]
+    [DataRow("source-path", "not the committed root")]
+    [DataRow("readback", "differs from the committed locked selection")]
+    public async Task RuntimeOutsideCommittedSelectionStopsBeforeBuild(string defect,
+        string condition)
+    {
+        using var fixture = SharedLane();
+        fixture.ToolDefect = defect;
+        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
+        Assert.DoesNotContain("build", result.Commands.Select(command => command.Check).ToArray());
+        string error = Assert.ContainsSingle(result.Errors);
+        Assert.Contains(" ruby ", error);
+        Assert.Contains(condition, error);
+        NativeCommand query = Assert.ContainsSingle(result.Commands.Where(command =>
+            command.Command.Executable == "mise")).Command;
+        Assert.AreEqual(fixture.Request.MiseDataDirectory, query.Environment!["MISE_DATA_DIR"]);
+        Assert.AreEqual(fixture.Repo.Directory, query.Environment["MISE_TRUSTED_CONFIG_PATHS"]);
+    }
+
+    // The committed selection, not an application runtime line, decides the runtime.
+    [TestMethod]
+    public async Task AnotherCommittedRubyLineQualifies()
+    {
+        string locked = RepositoryToolSelection.Locked("ruby");
+        var parsed = System.Version.Parse(locked);
+        string other = (parsed.Major + 1) + "." + parsed.Minor + "." + parsed.Build;
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken, "",
+            lockText => lockText.Replace("version = \"" + locked + "\"",
+                "version = \"" + other + "\"", StringComparison.Ordinal));
+        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
+        Assert.AreEqual(other, result.Native["ruby"]);
     }
 
     [TestMethod]
@@ -683,6 +722,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [TestMethod]
     [DataRow("relative-checkout")]
     [DataRow("relative-tool")]
+    [DataRow("relative-mise-data")]
     [DataRow("nested-scratch")]
     [DataRow("nonempty-scratch")]
     public async Task UnownedOrUnpreparedPathsFailBeforeCommands(string defect)
@@ -693,6 +733,8 @@ public sealed class RubyPreparationTests(TestContext context)
             request = request with { Checkout = "relative" };
         if (defect == "relative-tool")
             request = request with { Tools = request.Tools with { Gem = "gem" } };
+        if (defect == "relative-mise-data")
+            request = request with { MiseDataDirectory = "mise-data" };
         if (defect == "nested-scratch")
             request = request with { Scratch = fixture.Repo.Directory };
         if (defect == "nonempty-scratch")
@@ -765,17 +807,21 @@ public sealed class RubyPreparationTests(TestContext context)
                 Path.Combine(Repo.Directory, "gem"),
                 Path.Combine(Repo.Directory, "dotnet")
             );
-        internal RubyPreparationRequest Request => new(Subject, Repo.Directory, Scratch, Tools);
+        internal const string RubyGems = "fixture-rubygems";
+        internal RubyPreparationRequest Request => new(Subject, Repo.Directory, Scratch, Tools,
+            Path.Combine(Repo.Directory, "mise-data"));
         internal string Defect { get; set; } = "";
+        internal string ToolDefect { get; set; } = "";
         internal string ArchiveDefect { get; set; } = "";
         internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
 
-        internal static async Task<Fixture> CreateAsync(CancellationToken token, string defect = "")
+        internal static async Task<Fixture> CreateAsync(CancellationToken token, string defect = "",
+            Func<string, string>? changeLock = null)
         {
             GitFixture repo = await GitFixture.CreateAsync(token);
             try
             {
-                await StageRootAsync(repo, defect);
+                await StageRootAsync(repo, defect, changeLock);
                 await StageProductAsync(repo, "product", defect);
                 string revision = await repo.CommitAsync();
                 await repo.GitAsync("reset", "--hard", revision);
@@ -811,8 +857,13 @@ public sealed class RubyPreparationTests(TestContext context)
                 false
             );
 
-        internal static async Task StageRootAsync(GitFixture repo, string defect)
+        internal static async Task StageRootAsync(GitFixture repo, string defect,
+            Func<string, string>? changeLock = null)
         {
+            // The fake answers from the actual committed root tool configuration.
+            await repo.SetAsync("mise.toml", RepositoryToolSelection.MiseToml);
+            await repo.SetAsync("mise.lock", (changeLock ?? (text => text))(
+                RepositoryToolSelection.MiseLock));
             if (defect != "helper")
                 await repo.SetAsync(HelperPath);
             if (defect != "manifest")
@@ -939,6 +990,8 @@ public sealed class RubyPreparationTests(TestContext context)
             if (Override?.Invoke(command) is { } result)
                 return result;
             string[] args = command.Arguments;
+            if (command.Executable == "mise")
+                return Success(ToolAnswer());
             if (args.Contains("--is-shallow-repository"))
                 return Success(Defect == "history" ? "true" : "false");
             if (args[0] == "--version")
@@ -960,8 +1013,8 @@ public sealed class RubyPreparationTests(TestContext context)
                     JsonSerializer.Serialize(
                         new
                         {
-                            ruby = Defect == "ruby" ? "3.4.0" : "4.0.7",
-                            rubygems = Defect == "rubygems" ? "" : "4.0.7",
+                            ruby = ToolDefect == "readback" ? "0.0.0" : Selected(),
+                            rubygems = Defect == "rubygems" ? "" : RubyGems,
                         }
                     )
                 );
@@ -1085,6 +1138,28 @@ public sealed class RubyPreparationTests(TestContext context)
 
         internal static NativeCommandResult Success(string stdout) =>
             new(NativeTermination.Exited, 0, stdout, "", 0.1, null);
+
+        // The fixture's own committed root lock selects the runtime.
+        private string Selected() => RepositoryToolSelection.Locked(
+            File.ReadAllText(Path.Combine(Repo.Directory, "mise.lock")), "ruby");
+
+        private string ToolAnswer()
+        {
+            if (ToolDefect == "missing") return "[]";
+            return new JsonArray(new JsonObject
+            {
+                ["version"] = Selected(),
+                ["requested_version"] = RepositoryToolSelection.Requested(
+                    File.ReadAllText(Path.Combine(Repo.Directory, "mise.toml")), "ruby"),
+                ["active"] = ToolDefect != "inactive",
+                ["source"] = new JsonObject
+                {
+                    ["type"] = ToolDefect == "source-type" ? ".tool-versions" : "mise.toml",
+                    ["path"] = Path.Combine(ToolDefect == "source-path"
+                        ? Path.Combine(Repo.Directory, "product") : Repo.Directory, "mise.toml"),
+                },
+            }).ToJsonString();
+        }
 
         public void Dispose()
         {

@@ -1,11 +1,13 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
 namespace WorkflowDelivery.Tests;
 
-// Projects the repository's committed tool selection into native fixtures, so fixtures follow
-// root configuration upgrades instead of copying their versions.
-internal static class RepositoryToolSelection
+// Reads tool and runtime selections from the committed root configuration, so tests and
+// native fixtures follow a routine version update without their own copies of the versions.
+internal static partial class RepositoryToolSelection
 {
     private static readonly Lazy<string> Root = new(() =>
     {
@@ -44,6 +46,48 @@ internal static class RepositoryToolSelection
             (string?)element.Attribute("Include") == id)
         .Attribute("Version")!.Value;
 
+    internal static string MiseToml => File.ReadAllText(Path.Combine(SourceRoot, "mise.toml"));
+
+    internal static string MiseLock => File.ReadAllText(Path.Combine(SourceRoot, "mise.lock"));
+
+    // The root mise.lock version of a simply named tool, such as "ruby" or "python".
+    internal static string Locked(string tool) => Locked(MiseLock, tool);
+
+    // The global.json msbuild-sdks version of one SDK, from the source root by default.
+    internal static string MsBuildSdk(string name, string? root = null)
+    {
+        using JsonDocument global = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(root ?? SourceRoot, "global.json")));
+        return global.RootElement.GetProperty("msbuild-sdks").GetProperty(name).GetString()
+            ?? throw new InvalidDataException("Missing global.json SDK: " + name);
+    }
+
+    // The single version a mise.lock text records for a tool.
+    internal static string Locked(string miseLock, string tool)
+    {
+        string[] versions = LockEntry().Matches(miseLock)
+            .Where(match => match.Groups["tool"].Value == tool)
+            .Select(match => match.Groups["version"].Value).Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return versions.Length == 1 ? versions[0]
+            : throw new InvalidDataException("No single locked version for " + tool + ".");
+    }
+
+    // The request a mise.toml [tools] table writes for a simply named tool.
+    internal static string Requested(string miseToml, string tool)
+    {
+        Match match = Regex.Match(miseToml, "^" + Regex.Escape(tool) +
+            "\\s*=\\s*\"(?<request>[^\"]+)\"\\s*$", RegexOptions.Multiline |
+            RegexOptions.CultureInvariant);
+        return match.Success ? match.Groups["request"].Value
+            : throw new InvalidDataException("No committed request for " + tool + ".");
+    }
+
     private static JsonObject GlobalJsonNode() => JsonNode.Parse(File.ReadAllText(
         Path.Combine(SourceRoot, "global.json")))!.AsObject();
+
+    [GeneratedRegex(
+        "^\\[\\[tools\\.(?<tool>[A-Za-z0-9_-]+)\\]\\]\\r?\\nversion = \"(?<version>[^\"]+)\"",
+        RegexOptions.Multiline | RegexOptions.CultureInvariant)]
+    private static partial Regex LockEntry();
 }

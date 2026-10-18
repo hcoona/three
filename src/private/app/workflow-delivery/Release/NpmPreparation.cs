@@ -99,12 +99,12 @@ internal static class NpmPreparation
             nativeVersion = version(checkout, bound.Revision, product, token);
             if (string.IsNullOrWhiteSpace(nativeVersion))
                 throw new InvalidDataException("Missing native NBGV npm projection.");
-            string node = await ToolAsync("node", "24");
-            string pnpm = await ToolAsync("pnpm", null);
-            if (await QueryAsync(new("node", checkout, ["--version"], 30)) != "v" + node ||
-                await QueryAsync(new("pnpm", checkout, ["--version"], 30)) != pnpm)
-                throw new InvalidDataException(
-                    "Actual native tools differ from selected locked tools.");
+            string node = await ToolAsync("node");
+            string pnpm = await ToolAsync("pnpm");
+            LockedToolSelection.RequireReadback("node", "v" + node,
+                await QueryAsync(new("node", checkout, ["--version"], 30)));
+            LockedToolSelection.RequireReadback("pnpm", pnpm,
+                await QueryAsync(new("pnpm", checkout, ["--version"], 30)));
             using (JsonDocument metadata = JsonDocument.Parse(await QueryAsync(new("pnpm", checkout,
                 ["--dir", Path.Combine(checkout, product), "pkg", "get", "--json", "name",
                     "publishConfig.directory", "scripts"], 30))))
@@ -202,26 +202,9 @@ internal static class NpmPreparation
             { checks.Add(new(id, ReleaseCheckStatus.Failed)); errors.Add(failure.Message); }
         }
 
-        async Task<string> ToolAsync(string tool, string? requested)
-        {
-            using JsonDocument json = JsonDocument.Parse(await QueryAsync(new("mise", checkout,
-                ["ls", "--json", "--current", "--locked", tool], 30)));
-            if (json.RootElement.ValueKind != JsonValueKind.Array ||
-                json.RootElement.GetArrayLength() != 1)
-                throw new InvalidDataException("Unavailable selected native tool: " + tool);
-            JsonElement value = json.RootElement[0];
-            string selected = value.GetProperty("version").GetString()!;
-            if (!System.Version.TryParse(selected, out System.Version? parsed) ||
-                parsed.Build < 0 ||
-                (tool == "node" && parsed.Major != 24) ||
-                value.GetProperty("requested_version").GetString() != (requested ?? selected) ||
-                value.GetProperty("active").ValueKind != JsonValueKind.True ||
-                value.GetProperty("source").GetProperty("type").GetString() != "mise.toml" ||
-                value.GetProperty("source").GetProperty("path").GetString() !=
-                    Path.Combine(checkout, "mise.toml"))
-                throw new InvalidDataException("Native tool differs from committed authority.");
-            return selected;
-        }
+        async Task<string> ToolAsync(string tool) => LockedToolSelection.Selected(tool,
+            checkout, await QueryAsync(new("mise", checkout, LockedToolSelection.Query(tool),
+                30)));
     }
 
     private const string PathMessage = "Release execution paths must be absolute.";
