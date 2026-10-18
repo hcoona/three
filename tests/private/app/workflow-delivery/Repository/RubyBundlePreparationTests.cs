@@ -24,7 +24,7 @@ public sealed class RubyBundlePreparationTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task NativePreparationUsesFrozenOriginalLocksAndOwnedState()
+    public async Task PlanningPreparationActivatesLockedBundlerWithoutInstallingTheBundle()
     {
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
         await repo.SetAsync("src/a/Gemfile", "original declaration");
@@ -39,13 +39,8 @@ public sealed class RubyBundlePreparationTests(TestContext context)
                     command.Environment!["GEM_HOME"]);
                 if (command.Arguments[0] == tools.Gem) return Success;
                 string gemfile = Path.Combine(repo.Directory, "src/a/Gemfile");
-                if (command.Arguments[0] == tools.Bundle)
-                {
-                    Assert.AreEqual("_2.4.20_", command.Arguments[1]);
-                    Assert.AreEqual(gemfile, command.Environment["BUNDLE_GEMFILE"]);
-                    Assert.AreEqual("1", command.Environment["BUNDLE_FROZEN"]);
-                    return Success;
-                }
+                Assert.AreNotEqual(tools.Bundle, command.Arguments[0],
+                    "Planning reads the lock; only selected execution installs the bundle.");
                 using JsonDocument request = JsonDocument.Parse(
                     await File.ReadAllTextAsync(command.Arguments[^1], token));
                 Assert.AreEqual("bundle-context",
@@ -54,10 +49,9 @@ public sealed class RubyBundlePreparationTests(TestContext context)
                     lockfile = gemfile + ".lock", bundler_version = "2.7.2",
                     locked_bundler_version = "2.4.20" }) };
             }, context.CancellationToken);
-        Assert.HasCount(3, result.Commands);
+        Assert.HasCount(2, result.Commands);
         Assert.AreEqual("2.7.2", result.Commands[0].Command.Arguments[4]);
         Assert.AreEqual("2.4.20", result.Commands[1].Command.Arguments[4]);
-        Assert.AreEqual(tools.Bundle, result.Commands[2].Command.Arguments[0]);
         Assert.AreEqual("2.4.20", Assert.ContainsSingle(result.Contexts).LockedBundlerVersion);
         Assert.AreEqual("original lock", await File.ReadAllTextAsync(
             Path.Combine(repo.Directory, "src/a/Gemfile.lock"), context.CancellationToken));
@@ -87,25 +81,16 @@ public sealed class RubyBundlePreparationTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task MissingOriginalLockOrFailedBundleCannotCompletePreparation(bool failedBundle)
+    public async Task MissingOriginalLockCannotCompletePreparation()
     {
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
         await repo.SetAsync("src/a/Gemfile");
-        if (failedBundle) await repo.SetAsync("src/a/Gemfile.lock");
         GitMaterialization checkout = await BindAsync(repo);
         RubyBundleTools tools = Tools(repo.Directory);
         async Task<RubyPreparedBundles> RunAsync() => await RubyBundlePreparation.PrepareAsync(
             checkout, tools, async (command, token) =>
             {
                 if (command.Arguments[0] == tools.Gem) return Success;
-                if (command.Arguments[0] == tools.Bundle)
-                {
-                    Assert.IsTrue(failedBundle,
-                        "A missing committed lock must prevent native bundle installation.");
-                    return Success with { ExitCode = 9, Stderr = "native frozen bundle failed" };
-                }
                 string gemfile = Path.Combine(repo.Directory, "src/a/Gemfile");
                 using JsonDocument request = JsonDocument.Parse(
                     await File.ReadAllTextAsync(command.Arguments[^1], token));
@@ -115,15 +100,7 @@ public sealed class RubyBundlePreparationTests(TestContext context)
                     lockfile = gemfile + ".lock", bundler_version = "2.7.2",
                     locked_bundler_version = "2.7.2" }) };
             }, context.CancellationToken);
-        if (!failedBundle) await Assert.ThrowsExactlyAsync<InvalidDataException>(RunAsync);
-        else
-        {
-            RubyBundlePreparationException error = await Assert.ThrowsExactlyAsync<
-                RubyBundlePreparationException>(RunAsync);
-            Assert.AreEqual(9, error.Commands[^1].Result.ExitCode);
-            Assert.AreEqual(tools.Bundle, error.Commands[^1].Command.Arguments[0]);
-            Assert.Contains("native frozen bundle failed", error.Message);
-        }
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(RunAsync);
     }
 
     [TestMethod]

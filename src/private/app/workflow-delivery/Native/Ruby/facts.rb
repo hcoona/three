@@ -25,19 +25,32 @@ def specification_facts(spec)
   }
 end
 
+# Bundler 2.4 lock specifications expose only `dependencies`; select their runtime edges.
+def locked_specification_facts(spec)
+  {
+    "name" => spec.name,
+    "version" => spec.version.to_s,
+    "platform" => spec.platform.to_s,
+    "runtime_dependencies" => spec.dependencies.select { |dependency| dependency.type == :runtime }
+      .map { |dependency| { "name" => dependency.name, "requirement" => dependency.requirement.to_s } }
+  }
+end
+
 def bundle_source_facts(spec)
   source = spec.source
   case source
   when Bundler::Source::Git
     if source.local?
+      local = local_specification(spec)
       { "kind" => "local_git", "path" => source.path.expand_path.to_s,
-        "gemspec" => spec.loaded_from, "directory" => spec.full_gem_path }
+        "gemspec" => local.loaded_from, "directory" => local.full_gem_path }
     else
       { "kind" => "git", "uri" => source.uri, "revision" => source.revision }
     end
   when Bundler::Source::Path
+    local = local_specification(spec)
     { "kind" => "path", "path" => source.expanded_original_path.to_s,
-      "gemspec" => spec.loaded_from, "directory" => spec.full_gem_path }
+      "gemspec" => local.loaded_from, "directory" => local.full_gem_path }
   when Bundler::Source::Rubygems
     { "kind" => "rubygems" }
   when Bundler::Source::Metadata
@@ -45,6 +58,42 @@ def bundle_source_facts(spec)
   else
     raise "Unsupported native Bundler source: #{source.class}"
   end
+end
+
+# Local Path/Git sources evaluate their original gemspec; no installed gem is involved.
+def local_specification(spec)
+  local = spec.materialize_for_installation
+  raise "Missing native local gem specification" unless local.respond_to?(:loaded_from) && local.loaded_from
+
+  local
+end
+
+def selected_bundle_specs(definition)
+  # Frozen Bundler answers its locked resolution. Select the requested groups for this
+  # platform without materializing installed gems; the two locked versions differ only
+  # in SpecSet#for's public signature.
+  resolved = definition.resolve
+  dependencies = definition.requested_dependencies
+  platforms = [Bundler.local_platform]
+  selected = if Bundler::SpecSet.instance_method(:for).parameters.include?([:opt, :check])
+    resolved.for(dependencies, true, platforms)
+  else
+    resolved.for(dependencies, platforms)
+  end
+  incomplete = resolved.incomplete_specs
+  raise "Incomplete native locked resolution: #{incomplete.map(&:full_name).join(", ")}" unless incomplete.empty?
+
+  bundler = Gem.loaded_specs["bundler"]
+  raise "Missing activated native Bundler" unless bundler && bundler.version.to_s == Bundler::VERSION
+
+  selected.map do |spec|
+    facts = locked_specification_facts(spec).merge("source" => bundle_source_facts(spec))
+    if %w[path local_git].include?(facts.dig("source", "kind"))
+      # A local gemspec owns its current runtime edges, as Bundler converges them.
+      facts.merge!(locked_specification_facts(local_specification(spec)).slice("runtime_dependencies"))
+    end
+    facts
+  end + [locked_specification_facts(bundler).merge("source" => { "kind" => "metadata" })]
 end
 
 def bundle_facts(gemfile)
@@ -62,7 +111,6 @@ def bundle_facts(gemfile)
     raise "Activated Bundler differs from the locked version"
   end
 
-  selected = definition.requested_specs.to_a
   {
     "gemfile" => actual_gemfile,
     "lockfile" => Bundler.default_lockfile.expand_path.to_s,
@@ -70,9 +118,7 @@ def bundle_facts(gemfile)
     "locked_bundler_version" => locked_version.to_s,
     "gemfiles" => definition.gemfiles.map { |path| File.expand_path(path) },
     "direct_dependencies" => definition.requested_dependencies.map(&:name),
-    "specifications" => selected.map do |spec|
-      specification_facts(spec).merge("source" => bundle_source_facts(spec))
-    end
+    "specifications" => selected_bundle_specs(definition)
   }
 end
 

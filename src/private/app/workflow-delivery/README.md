@@ -157,8 +157,9 @@ retained result location before execution.
 
 Unprivileged RubyGems/Bundler and RSpec interfaces own gemspec evaluation,
 installed identities and test result interpretation. Root CI receives exact
-scope/control transfers, prepares each committed lock context and executes the
-original selected RSpec/gem checks. Source gems and installed dependency
+scope/control transfers, plans from each committed lock context without installing
+registry dependencies, and executes the original selected RSpec/gem checks, which
+install their own frozen bundles. Source gems and installed dependency
 identities remain distinct. Unknown dynamic input relationships are unsupported.
 
 ## Release

@@ -80,7 +80,10 @@ internal static class RubyGroupExecution
             {
                 try
                 {
-                    RubyRSpecRun run = await RubyRSpecExecution.RunAsync(suite.Check.Work.Key,
+                    // Planning reads only locks; a selected suite installs every frozen bundle
+                    // it governs, including nested lock contexts its specs consume.
+                    RubyRSpecRun run = await InstallAsync(suite.Check.Work.Key.Target) ??
+                        await RubyRSpecExecution.RunAsync(suite.Check.Work.Key,
                         new(checkout, request.Facts.Ruby, request.Bundle,
                             suite.Bundle.BundlerVersion, suite.Bundle.Gemfile, scratch,
                             request.Facts.DeadlineSeconds, request.Facts.Environment), execute,
@@ -92,6 +95,38 @@ internal static class RubyGroupExecution
                 { status = CheckStatus.Cancelled; }
             }
             results.Add(new(plan.Candidate, suite.Check.Work.Key, status));
+        }
+        async Task<RubyRSpecRun?> InstallAsync(string target)
+        {
+            string[] native = request.Candidate.Facts.Native.Graph.Projects
+                .Select(project => project.Directory).ToArray();
+            foreach (RubyBundleFacts bundle in request.Candidate.Bundles.Where(bundle =>
+                         RubyFactsAssembler.Governs(target, Path.GetRelativePath(checkout,
+                             Path.GetDirectoryName(Path.GetFullPath(bundle.Gemfile))!)
+                             .Replace('\\', '/'), native))
+                         .OrderBy(bundle => bundle.Gemfile, StringComparer.Ordinal))
+                if (await InstallBundleAsync(bundle) is { } failed) return failed;
+            return null;
+        }
+        async Task<RubyRSpecRun?> InstallBundleAsync(RubyBundleFacts bundle)
+        {
+            var environment = new Dictionary<string, string?>(request.Facts.Environment,
+                StringComparer.Ordinal)
+            {
+                ["BUNDLE_GEMFILE"] = bundle.Gemfile,
+                ["BUNDLE_FROZEN"] = "1",
+            };
+            var command = new NativeCommand(request.Facts.Ruby,
+                Path.GetDirectoryName(bundle.Gemfile)!,
+                [request.Bundle, "_" + bundle.BundlerVersion + "_", "install"],
+                request.Facts.DeadlineSeconds, environment, InheritEnvironment: false);
+            NativeCommandResult result = await execute(command, token);
+            if (token.IsCancellationRequested)
+                return new(command, result, null, CheckStatus.Cancelled,
+                    "Native Ruby bundle installation was cancelled.");
+            return result.Succeeded && result.Error is null ? null : new(command, result, null,
+                CheckStatus.Failed, "Native Ruby bundle installation failed: " +
+                NativeDiagnostic.Describe(result));
         }
         RubyPackageRun gem;
         if (packages.Count == 0) gem = new([], [], [], []);

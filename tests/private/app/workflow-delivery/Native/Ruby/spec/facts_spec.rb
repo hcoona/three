@@ -149,6 +149,35 @@ module NativeHelpers
           expect(locked.binread).to eq(before)
         end
 
+        # Planning reads the committed lock; registry members are never installed for facts.
+        def registry_lock(native, specs:, platforms:)
+          gemfile = write(@scratch / "Gemfile", "source \"https://rubygems.org\"\ngem \"absent_fixture\"\n")
+          write(@scratch / "Gemfile.lock", "GEM\n  remote: https://rubygems.org/\n  specs:\n#{specs}\nPLATFORMS\n#{platforms.map { |platform| "  #{platform}\n" }.join}\nDEPENDENCIES\n  absent_fixture\n\nBUNDLED WITH\n   #{native[0]}\n")
+          {"BUNDLE_GEMFILE" => gemfile.to_s}
+        end
+
+        it "locked_registry_members_need_no_installation" do
+          environment = registry_lock(native, specs: "    absent_fixture (1.0.0)\n      absent_edge (~> 2.0)\n    absent_edge (2.1.0)\n", platforms: ["ruby"])
+          locked = @scratch / "Gemfile.lock"
+          before = locked.binread
+          selected = answer(facts(native, "bundle", @scratch / "Gemfile", environment: environment))["specifications"].to_h { |spec| [spec["name"], spec] }
+          expect(selected.keys).to contain_exactly("absent_fixture", "absent_edge", "bundler")
+          expect(selected["absent_fixture"]).to eq({"name" => "absent_fixture", "version" => "1.0.0", "platform" => "ruby", "runtime_dependencies" => [{"name" => "absent_edge", "requirement" => "~> 2.0"}], "source" => {"kind" => "rubygems"}})
+          expect(Dir.glob(@scratch.join("**/absent_*").to_s)).to eq([])
+          expect(locked.binread).to eq(before)
+        end
+
+        # A lock that cannot answer this platform or omits a locked edge is not an empty selection.
+        [["foreign_platform", "    absent_fixture (1.0.0-java)\n", ["java"]],
+         ["missing_edge", "    absent_fixture (1.0.0)\n      absent_edge (~> 2.0)\n", ["ruby"]]].each do |defect, specs, platforms|
+          it "incomplete_locked_resolution_cannot_return_facts [#{defect}]" do
+            environment = registry_lock(native, specs: specs, platforms: platforms)
+            result = facts(native, "bundle", @scratch / "Gemfile", environment: environment)
+            expect(result.returncode).not_to eq(0)
+            expect(result.stdout).to eq("")
+          end
+        end
+
         # Helper-owned frozen, locked-version and explicit lock-equivalence checks. The
         # helper-requested Gemfile/lock equivalence is version-independent, so one context
         # covers [changed].
