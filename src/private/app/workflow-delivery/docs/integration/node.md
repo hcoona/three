@@ -117,19 +117,13 @@ import route. A present direct child of the root `.github/workflows/` ending in
 `.github/workflows/ci.yml#conformance` and rule `native-hk-workflow-lint` when
 the endpoint commits root `hk.pkl` and `ci.yml`. HK's `actionlint` step checks
 these files; its glob covers workflow YAML under any `.github/workflows/`
-directory, and this rule is a fixed copy for the root directory only. A drift
-test in `tests/eng/test_general_ci_workflow.py` evaluates root `hk.pkl` with the
-locked Pkl and fails unless the `check` hook keeps an `actionlint` step in a
-profile `ci.yml` runs whose glob still matches these files. A present `*.sh` or
+directory, and this rule is a fixed copy for the root directory only. A present `*.sh` or
 `*.bash` file that the shared `shellcheck`/`shfmt` exclusions do not match
 (`**/.github/**`, `**/.specify/**`, `**/generated/**` and the root-only
 `.agents/**`) receives owner `conformance`, target
 `.github/workflows/ci.yml#conformance` and rule `native-hk-shell-lint` under the
 same `hk.pkl` and `ci.yml` condition. This is a fixed copy of those steps' shared
-glob and exclusions; a second drift test fails unless both steps stay in a
-profile `ci.yml` runs, their glob still matches `*.sh` and `*.bash`, and their
-exclusions whose final segment can name a shell script equal this set. The rule
-adds to, and does not replace, a script's existing owner. A committed `*.py`
+glob and exclusions. The rule adds to, and does not replace, a script's existing owner. A committed `*.py`
 file whose first line is `# /// script` with a later closing `# ///` line (PEP
 723 inline script metadata) has its `native-python-caller-responsibility`
 reason replaced, never added to, by owner `conformance`, target
@@ -140,10 +134,18 @@ AzureAuth input, enclosing non-root `pyproject.toml` or record task), the shared
 `ruff`/`ruff_format` exclusions that can match a Python file (`**/.github/**`,
 `**/.specify/**`, `**/generated/**`, the root-only `.agents/**` and
 `src/private/lib/scan-restoration/skills/**`) do not match it, and the endpoint
-commits `hk.pkl` and `ci.yml`. A third drift test fails unless both steps stay
-in a profile `ci.yml` runs, their glob still matches `*.py`, and those
-exclusions equal this copied set. Other owners are kept. No rule selects a
+commits `hk.pkl` and `ci.yml`. Other owners are kept. No rule selects a
 retained job or adds Python execution.
+
+The last three rules read one committed copy of their HK step names, globs and
+exclusions, `Repository/resources/hk-scope-copies.json`, embedded in the control
+application. The HK conformance step `hk-scope-drift`
+(`eng/scripts/hk_scope_drift.py`, profile `small`, also run by `--all`)
+evaluates root `hk.pkl` with the locked Pkl and fails unless each named `check`
+step stays in a profile `ci.yml` runs, its glob still matches the copied
+suffixes, and its exclusions whose final segment can name such a file equal the
+copied set. Changes to `hk.pkl`, `src/private/lib/hk/**`, the copy, `ci.yml` or
+the script select that step.
 
 The Node group joins native PNPM membership and reasons before final owner
 validation. Manifest/catalog reads used to

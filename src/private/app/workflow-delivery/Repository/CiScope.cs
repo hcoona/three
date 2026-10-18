@@ -145,18 +145,13 @@ internal static partial class CiScope
                 Regular(".github/workflows/ci.yml"))
                 Add("conformance", ".github/workflows/ci.yml#conformance",
                     "native-hk-configuration", ".github/workflows/ci.yml", path);
-            // Fixed copy of HK's actionlint glob for the root workflow directory; the drift
-            // test in tests/eng/test_general_ci_workflow.py keeps the step in place.
-            if (RootWorkflow(path) && Regular(HkConfiguration) &&
-                Regular(".github/workflows/ci.yml"))
-                Add("conformance", ".github/workflows/ci.yml#conformance",
-                    "native-hk-workflow-lint", ".github/workflows/ci.yml", HkConfiguration);
-            // Fixed copy of HK's shellcheck/shfmt glob and shell-relevant exclusions; the
-            // drift test in tests/eng/test_general_ci_workflow.py keeps them aligned.
-            if (LintedShell(path) && Regular(HkConfiguration) &&
-                Regular(".github/workflows/ci.yml"))
-                Add("conformance", ".github/workflows/ci.yml#conformance",
-                    "native-hk-shell-lint", ".github/workflows/ci.yml", HkConfiguration);
+            // Fixed copies of HK step globs and exclusions (hk-scope-copies.json); the HK
+            // step hk-scope-drift keeps them aligned with the evaluated hk.pkl.
+            foreach (string rule in new[] { WorkflowLint, ShellLint })
+                if (HkCopy(rule, path) && Regular(HkConfiguration) &&
+                    Regular(".github/workflows/ci.yml"))
+                    Add("conformance", ".github/workflows/ci.yml#conformance", rule,
+                        ".github/workflows/ci.yml", HkConfiguration);
             if (path == "renovate.json" && Regular("pyproject.toml") &&
                 Regular("tests/eng/test_python_runtime.py"))
                 Add("python", "pytest:tests/eng/test_python_runtime.py",
@@ -190,15 +185,14 @@ internal static partial class CiScope
                 Under(path, Parent(manifest))).ToArray();
             bool pythonInput = python.Length != 0 || PythonResponsibility(path);
             // A standalone PEP 723 script has no Python group consumer; HK's fixed ruff copy
-            // owns it instead. The drift test in tests/eng/test_general_ci_workflow.py keeps
-            // the copy aligned.
+            // owns it instead.
             if (recordTasks.Length == 0 && !pythonInput &&
                 path.EndsWith(".py", StringComparison.Ordinal) &&
                 (inlineScripts ?? []).Contains(path, StringComparer.Ordinal) &&
                 LintedStandalonePython(path) && Regular(HkConfiguration) &&
                 Regular(".github/workflows/ci.yml"))
-                Add("conformance", ".github/workflows/ci.yml#conformance",
-                    "native-hk-python-lint", ".github/workflows/ci.yml", HkConfiguration);
+                Add("conformance", ".github/workflows/ci.yml#conformance", PythonLint,
+                    ".github/workflows/ci.yml", HkConfiguration);
             else if (recordTasks.Length == 0 && (pythonInput ||
                     path.EndsWith(".py", StringComparison.Ordinal)))
                 Add("python", ".github/workflows/ci.yml#python-tests",
@@ -415,33 +409,47 @@ internal static partial class CiScope
             ? DotNetInheritedInputs.Consumes(path, [NuGetProduct])
             : DotNetInheritedInputs.Consumes(path, NuGetPreparationRoots));
 
-    internal static bool RootWorkflow(string path) =>
-        path.StartsWith(".github/workflows/", StringComparison.Ordinal) &&
-        path.IndexOf('/', ".github/workflows/".Length) < 0 &&
-        (path.EndsWith(".yml", StringComparison.Ordinal) ||
-            path.EndsWith(".yaml", StringComparison.Ordinal));
+    internal const string WorkflowLint = "native-hk-workflow-lint";
+    internal const string ShellLint = "native-hk-shell-lint";
+    internal const string PythonLint = "native-hk-python-lint";
 
-    // HK excludes **/.github/**, **/.specify/**, **/generated/** and root-only .agents/**.
-    internal static bool LintedShell(string path)
+    private sealed record HkScopeCopy(string? Directory, string[] Suffixes, string[] Exclusions);
+
+    // The single committed copy of the HK steps' globs and relevant exclusions.
+    private static readonly Lazy<Dictionary<string, HkScopeCopy>> HkCopies = new(() =>
     {
-        if (!path.EndsWith(".sh", StringComparison.Ordinal) &&
-            !path.EndsWith(".bash", StringComparison.Ordinal))
-            return false;
-        string[] directories = path.Split('/')[..^1];
-        return !directories.Any(name => name is ".github" or ".specify" or "generated") &&
-            !path.StartsWith(".agents/", StringComparison.Ordinal);
+        using Stream stream = typeof(CiScope).Assembly.GetManifestResourceStream(
+            "HkScopeCopies") ?? throw new InvalidDataException("Missing HK scope copies.");
+        using JsonDocument document = JsonDocument.Parse(stream);
+        var copies = new Dictionary<string, HkScopeCopy>(StringComparer.Ordinal);
+        foreach (JsonProperty rule in document.RootElement.GetProperty("rules")
+            .EnumerateObject())
+        {
+            JsonElement directory = rule.Value.GetProperty("directory");
+            copies.Add(rule.Name, new(directory.ValueKind == JsonValueKind.Null ? null :
+                    directory.GetString(), Strings(rule.Value, "suffixes"),
+                Strings(rule.Value, "exclusions")));
+        }
+        return copies;
+
+        static string[] Strings(JsonElement value, string name) => value.GetProperty(name)
+            .EnumerateArray().Select(item => item.GetString() ??
+                throw new InvalidDataException("Invalid HK scope copy.")).ToArray();
+    });
+
+    // A path the copied HK step selects: suffix, optional direct parent and no exclusion.
+    internal static bool HkCopy(string rule, string path)
+    {
+        HkScopeCopy copy = HkCopies.Value[rule];
+        return copy.Suffixes.Any(suffix => path.EndsWith(suffix, StringComparison.Ordinal)) &&
+            (copy.Directory is null || Parent(path) == copy.Directory) &&
+            !copy.Exclusions.Any(pattern => Matches(path, pattern));
     }
 
-    // Not a pytest file and not excluded by HK ruff: **/.github/**, **/.specify/**,
-    // **/generated/**, root-only .agents/** and src/private/lib/scan-restoration/skills/**.
-    internal static bool LintedStandalonePython(string path)
-    {
-        string[] segments = path.Split('/');
-        return segments[^1] != "conftest.py" && !Under(path, "tests") &&
-            !segments[..^1].Any(name => name is ".github" or ".specify" or "generated") &&
-            !Under(path, ".agents") &&
-            !Under(path, "src/private/lib/scan-restoration/skills");
-    }
+    // Not a pytest file and selected by the copied HK ruff steps.
+    internal static bool LintedStandalonePython(string path) =>
+        path.Split('/')[^1] != "conftest.py" && !Under(path, "tests") &&
+        HkCopy(PythonLint, path);
 
     // Python responsibility other than the .py suffix itself.
     private static bool PythonResponsibility(string path) =>
@@ -450,7 +458,7 @@ internal static partial class CiScope
         path is ".github/workflows/workflow-delivery-v3-python-smoke.yml" or
             ".github/workflows/workflow-delivery-v3-ruby-smoke.yml" or ".typos.toml" ||
         PythonRepositoryInputs.BuddyGuardInputs.Contains(path, StringComparer.Ordinal) ||
-        PythonRepositoryInputs.IsWorkflow(path) || PythonRepositoryInputs.HkInput(path) ||
+        PythonRepositoryInputs.IsWorkflow(path) ||
         AzureInput(path);
 
     private static string[] GemRoots(GitRevision revision) => revision.Entries

@@ -536,6 +536,31 @@ public sealed class CiScopeTests
     }
 
     [TestMethod]
+    [DataRow("eng/scripts/hk_scope_drift.py", true)]
+    [DataRow("src/private/app/workflow-delivery/Repository/resources/hk-scope-copies.json", false)]
+    public void HkScopeDriftInputsResolveAgainstCommittedHk(string path, bool python)
+    {
+        var tooling = new ToolingConfiguration(
+            File.ReadAllText(Path.Combine(Root(), CiScope.HkConfiguration)), null);
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk, tooling));
+        string rows = string.Join(", ", row.Reasons.Select(item => item.Owner + ":" + item.Rule));
+        Assert.IsTrue(row.Reasons.Any(reason => reason.Owner == "conformance" &&
+            reason.Rule == "literal-tooling-reference"), rows);
+        Assert.AreEqual(python, row.Reasons.Any(reason => reason.Owner == "python"), rows);
+    }
+
+    [TestMethod]
+    [DataRow(CiScope.WorkflowLint, ".github/workflows/ci.yml", true)]
+    [DataRow(CiScope.WorkflowLint, ".github/ci.yml", false)]
+    [DataRow(CiScope.ShellLint, "x/.agents/y.sh", true)]
+    [DataRow(CiScope.ShellLint, ".agents/y.sh", false)]
+    [DataRow(CiScope.PythonLint, "src/private/lib/scan-restoration/skills/a/b.py", false)]
+    [DataRow(CiScope.PythonLint, "src/private/lib/scan-restoration/x.py", true)]
+    public void EmbeddedHkCopiesSelectTheirFiles(string rule, string path, bool expected) =>
+        Assert.AreEqual(expected, CiScope.HkCopy(rule, path));
+
+    [TestMethod]
     public void CurrentToolingReferencesResolveTheirOwnersInCommittedConfiguration()
     {
         string root = Root();

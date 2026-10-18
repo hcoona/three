@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
-import re
 import shutil
-import subprocess
 import tomllib
-from pathlib import Path, PurePosixPath
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import yaml
 
 from .ci_workflow_shell import executable, resolve, run_step
+
+if TYPE_CHECKING:
+    import subprocess
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHILD_FAILURE = 73
@@ -1625,162 +1627,70 @@ def test_retired_buddy_routes_stay_absent_and_v3_buddy_stays_dedicated():
     assert not any("uses" in job for job in buddy["jobs"].values())
 
 
-def _hk_check_steps() -> dict[str, Any]:
-    mise = shutil.which("mise")
-    assert mise is not None
-    evaluated = subprocess.run(  # noqa: S603 - Locked native Pkl evaluation.
-        [
-            mise,
-            "exec",
-            "--locked",
-            "pkl",
-            "--",
-            "pkl",
-            "eval",
-            "-f",
-            "json",
-            "hk.pkl",
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return json.loads(evaluated.stdout)["hooks"]["check"]["steps"]
-
-
-def _ci_hk_profiles(workflow: dict[str, Any]) -> set[str]:
-    runs = " ".join(
-        step.get("run", "") for step in workflow["jobs"]["conformance"]["steps"]
-    )
-    profiles = set(re.findall(r"--profile (\w+)", runs))
-    assert profiles
-    return profiles
-
-
-def test_hk_actionlint_keeps_covering_root_workflows(workflow):
-    """CiScope's root-workflow conformance owner copies this HK step glob."""
-    step = _hk_check_steps()["actionlint"]
-    assert set(step["profiles"]) & _ci_hk_profiles(workflow)
-    for name in ("ci.yml", "codeql.yaml"):
-        path = PurePosixPath(".github/workflows", name)
-        assert any(path.full_match(glob) for glob in step["glob"]), name
-        assert not any(path.full_match(glob) for glob in step["exclude"])
-
-
-# CiScope.LintedShell copies these shellcheck/shfmt exclusions.
-COPIED_SHELL_EXCLUSIONS = {
-    "**/.github/**",
-    "**/.specify/**",
-    "**/generated/**",
-    ".agents/**",
-}
-
-
-def _can_exclude_shell(pattern: str) -> bool:
-    """Report whether an exclusion can match a shell script.
-
-    A final ``**`` matches any file; otherwise the final segment must itself
-    match a ``.sh`` or ``.bash`` name.
-    """
-    last = pattern.rsplit("/", 1)[-1]
-    return (
-        last == "**"
-        or last.endswith((".sh", ".bash"))
-        or any(
-            PurePosixPath(name).full_match(last) for name in ("x.sh", "x.bash")
-        )
-    )
+DRIFT = importlib.util.spec_from_file_location(
+    "hk_scope_drift", REPO_ROOT / "eng/scripts/hk_scope_drift.py"
+)
+assert DRIFT is not None
+assert DRIFT.loader is not None
+hk_scope_drift = importlib.util.module_from_spec(DRIFT)
+DRIFT.loader.exec_module(hk_scope_drift)
 
 
 @pytest.mark.parametrize(
-    ("pattern", "expected"),
+    ("pattern", "suffixes", "expected"),
     [
-        ("**/.github/**", True),
-        (".agents/**", True),
-        ("**/*.sh", True),
-        ("tools/build.bash", True),
-        ("**/specs/**/*.md", False),
-        ("global.json", False),
-        ("**/mise.lock", False),
+        ("**/.github/**", [".sh", ".bash"], True),
+        (".agents/**", [".sh", ".bash"], True),
+        ("**/*.sh", [".sh", ".bash"], True),
+        ("tools/build.bash", [".sh", ".bash"], True),
+        ("**/specs/**/*.md", [".sh", ".bash"], False),
+        ("global.json", [".sh", ".bash"], False),
+        ("**/mise.lock", [".sh", ".bash"], False),
+        ("src/private/lib/scan-restoration/skills/**", [".py"], True),
+        ("**/*.py", [".py"], True),
+        ("tools/build.py", [".py"], True),
+        ("**/*.sh", [".py"], False),
+        ("uv.lock", [".py"], False),
     ],
 )
-def test_shell_exclusion_relevance(pattern, expected):
-    """Only exclusions whose final segment can name a shell script count."""
-    assert _can_exclude_shell(pattern) is expected
+def test_hk_scope_exclusion_relevance(pattern, suffixes, expected):
+    """Only exclusions whose final segment can name a copied file count."""
+    assert hk_scope_drift.can_exclude(pattern, suffixes) is expected
 
 
-def test_hk_shell_linters_keep_covering_copied_scripts(workflow):
-    """CiScope's shell conformance owner copies this HK glob and exclusions."""
-    steps = _hk_check_steps()
-    profiles = _ci_hk_profiles(workflow)
-    for name in ("shellcheck", "shfmt"):
-        step = steps[name]
-        assert set(step["profiles"]) & profiles, name
-        for path in ("x.sh", "x.bash", "a/b/x.sh", "a/b/x.bash"):
-            assert any(
-                PurePosixPath(path).full_match(glob) for glob in step["glob"]
-            ), (name, path)
-        relevant = {
-            pattern
-            for pattern in step["exclude"]
-            if _can_exclude_shell(pattern)
+def _step(profiles, globs, excludes=()):
+    return {"profiles": profiles, "glob": globs, "exclude": list(excludes)}
+
+
+def test_hk_scope_drift_reports_each_difference():
+    """Profile, glob and exclusion drift each fail the conformance step."""
+    rules = {
+        "shell": {
+            "steps": ["shellcheck"],
+            "directory": None,
+            "suffixes": [".sh"],
+            "exclusions": ["**/generated/**"],
         }
-        assert relevant == COPIED_SHELL_EXCLUSIONS, name
+    }
+    good = _step(["small"], ["**/*.sh"], ["**/generated/**", "uv.lock"])
+    assert hk_scope_drift.drift({"shellcheck": good}, rules, {"small"}) == []
+    for steps, profiles in (
+        ({}, {"small"}),
+        ({"shellcheck": good}, {"large"}),
+        (
+            {"shellcheck": _step(["small"], ["**/*.bash"], good["exclude"])},
+            {"small"},
+        ),
+        (
+            {"shellcheck": _step(["small"], ["**/*.sh"], ["**/.github/**"])},
+            {"small"},
+        ),
+    ):
+        assert hk_scope_drift.drift(steps, rules, profiles)
 
 
-# CiScope.LintedStandalonePython copies these ruff/ruff_format exclusions.
-COPIED_PYTHON_EXCLUSIONS = {
-    "**/.github/**",
-    "**/.specify/**",
-    "**/generated/**",
-    ".agents/**",
-    "src/private/lib/scan-restoration/skills/**",
-}
-
-
-def _can_exclude_python(pattern: str) -> bool:
-    """Report whether an exclusion can match a Python file.
-
-    A final ``**`` matches any file; otherwise the final segment must itself
-    match a ``.py`` name.
-    """
-    last = pattern.rsplit("/", 1)[-1]
-    return (
-        last == "**"
-        or last.endswith(".py")
-        or PurePosixPath("x.py").full_match(last)
-    )
-
-
-@pytest.mark.parametrize(
-    ("pattern", "expected"),
-    [
-        ("src/private/lib/scan-restoration/skills/**", True),
-        ("**/*.py", True),
-        ("tools/build.py", True),
-        ("**/specs/**/*.md", False),
-        ("uv.lock", False),
-    ],
-)
-def test_python_exclusion_relevance(pattern, expected):
-    """Only exclusions whose final segment can name a Python file count."""
-    assert _can_exclude_python(pattern) is expected
-
-
-def test_hk_python_linters_keep_covering_copied_scripts(workflow):
-    """CiScope's standalone-script owner copies this HK glob and exclusions."""
-    steps = _hk_check_steps()
-    profiles = _ci_hk_profiles(workflow)
-    for name in ("ruff", "ruff_format"):
-        step = steps[name]
-        assert set(step["profiles"]) & profiles, name
-        assert any(
-            PurePosixPath("x.py").full_match(glob) for glob in step["glob"]
-        ), name
-        relevant = {
-            pattern
-            for pattern in step["exclude"]
-            if _can_exclude_python(pattern)
-        }
-        assert relevant == COPIED_PYTHON_EXCLUSIONS, name
+def test_hk_scope_drift_reads_the_profiles_ci_runs():
+    """Only profiles on ci.yml hk check commands count."""
+    text = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
+    assert {"small", "medium", "large"} <= hk_scope_drift.ci_profiles(text)
+    assert hk_scope_drift.ci_profiles("run: other --profile x\n") == set()
