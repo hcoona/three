@@ -321,53 +321,6 @@ local dotenv_linter = new Mapping<String, Step> {
   }
 }
 
-local ci = read?("prop:CI")?.toBoolean() ?? false
-local function getTestPklEvalSyncCommand(
-  source: String,
-  target: String,
-  format: String,
-  properties: List<String>,
-): String =
-  (
-    List(
-      "pwsh",
-      "-NoLogo",
-      "-NoProfile",
-      if (ci) "-NonInteractive" else "",
-      "-File",
-      "eng/linter/Test-PklEvalSync.ps1",
-      "-Source",
-      source,
-      "-Target",
-      target,
-      "-Format",
-      format,
-      if (properties.isEmpty) "" else "-Properties " + properties.join(","),
-    )
-  ).join(" ")
-
-local code_generation_guard = new Mapping<String, Step> {
-  ["global-json"] {
-    local file_list =
-      List(
-        "global.pkl",
-        "global.json",
-        "mise.lock",
-      )
-    profiles = List("small")
-    glob = file_list
-    stage = file_list
-    check =
-      getTestPklEvalSyncCommand(
-        "global.pkl",
-        "global.json",
-        "json",
-        List(),
-      )
-    fix = "pkl eval -f json global.pkl -o global.json"
-  }
-}
-
 local commit_message_linters = new Mapping<String, Step> {
   ["commitlint"] = (Steps.commitlint) { check_first = true }
 }
@@ -400,7 +353,6 @@ local configured_steps = (file_steps) {
   }
   ...workflow_delivery_v3_validation
   ...scholarly_publication_validation
-  ...code_generation_guard
   ["uv-lock"] = (Steps.uv_lock) {
     profiles = List("small")
   }

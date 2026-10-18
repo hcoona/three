@@ -74,14 +74,22 @@
       "automerge": true
     },
     {
-      "description": "Do not update generated global.json .NET SDK through NuGet.",
+      "description": "global.json is the .NET SDK authority. Skip the native NuGet restore, which would run with the old SDK under rollForward disable; the post-upgrade task installs the new SDK, refreshes mise.lock and restores .NET lockfiles.",
       "matchManagers": ["nuget"],
       "matchFileNames": ["global.json"],
       "matchDepTypes": ["dotnet-sdk"],
-      "enabled": false
+      "skipArtifactsUpdate": true,
+      "postUpgradeTasks": {
+        "commands": [
+          "pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts.ps1"
+        ],
+        "fileFilters": ["mise.lock", "global.json", "**/packages.lock.json"],
+        "executionMode": "branch"
+      },
+      "automerge": true
     },
     {
-      "description": "Use Renovate's native NuGet global.json MSBuild SDK support, then sync generated sources and .NET lockfiles.",
+      "description": "Use Renovate's native NuGet global.json MSBuild SDK support, then refresh mise.lock and .NET lockfiles.",
       "matchManagers": ["nuget"],
       "matchFileNames": ["global.json"],
       "matchDepTypes": ["msbuild-sdk"],
@@ -90,7 +98,7 @@
         "commands": [
           "pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts.ps1"
         ],
-        "fileFilters": ["mise.lock", "global.pkl", "global.json", "**/packages.lock.json"],
+        "fileFilters": ["mise.lock", "global.json", "**/packages.lock.json"],
         "executionMode": "branch"
       },
       "automerge": true
@@ -465,7 +473,7 @@
         "commands": [
           "pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts.ps1"
         ],
-        "fileFilters": ["mise.lock", "global.pkl", "global.json", "**/packages.lock.json"],
+        "fileFilters": ["mise.lock", "global.json", "**/packages.lock.json"],
         "executionMode": "branch"
       }
     },
@@ -485,7 +493,7 @@
         "commands": [
           "pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts.ps1"
         ],
-        "fileFilters": ["mise.lock", "global.pkl", "global.json", "**/packages.lock.json"],
+        "fileFilters": ["mise.lock", "global.json", "**/packages.lock.json"],
         "executionMode": "branch"
       }
     },
@@ -512,7 +520,7 @@
     {
       "description": "Group language runtime mise updates.",
       "matchManagers": ["mise"],
-      "matchDepNames": ["core:dotnet", "dotnet", "go", "java", "node", "powershell", "python", "ruby"],
+      "matchDepNames": ["go", "java", "node", "powershell", "python", "ruby"],
       "groupName": "Mise Language Runtimes",
       "automerge": true
     },
@@ -528,27 +536,13 @@
       }
     },
     {
-      "description": "Regenerate global.json after mise .NET SDK updates.",
-      "matchManagers": ["mise"],
-      "matchDepNames": ["core:dotnet", "dotnet"],
-      "postUpgradeTasks": {
-        "commands": ["pkl eval -f json global.pkl -o global.json"],
-        "fileFilters": ["global.json"],
-        "executionMode": "update"
-      },
-      "automerge": true
-    },
-    {
       "description": "Regenerate runtime projections when mise lock maintenance refreshes resolved versions.",
       "matchManagers": ["mise"],
       "matchFileNames": ["mise.toml"],
       "matchUpdateTypes": ["lockFileMaintenance"],
       "postUpgradeTasks": {
-        "commands": [
-          "pkl eval -f json global.pkl -o global.json",
-          "uv run --no-project python eng/scripts/sync_python_version.py --write"
-        ],
-        "fileFilters": ["global.json", ".python-version", ".config/uv/uv.toml"],
+        "commands": ["uv run --no-project python eng/scripts/sync_python_version.py --write"],
+        "fileFilters": [".python-version", ".config/uv/uv.toml"],
         "executionMode": "update"
       }
     },

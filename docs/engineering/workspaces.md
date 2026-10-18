@@ -105,8 +105,11 @@ refresh drops Ruby from the lockfile. Locked installs and lockfile validation
 work on both platforms.
 
 The repository requires MISE 2026.10.11 or later through `min_version` in
-`mise.toml`. MISE provides the built-in `core:dotnet` backend used by this
-repository. Do not install `version-fox/vfox-dotnet` manually. If that legacy
+`mise.toml`. `global.json` is the .NET SDK authority: MISE reads its
+`sdk.version` as an idiomatic version file with its built-in `core:dotnet`
+backend, and `mise.lock` records that selection. Upgrade the SDK by editing
+`global.json` (keep `rollForward` as `disable`) and then run
+`mise lock dotnet`. Do not install `version-fox/vfox-dotnet` manually. If that legacy
 plugin is already installed, remove it before installing the repository tools:
 
 ```bash
