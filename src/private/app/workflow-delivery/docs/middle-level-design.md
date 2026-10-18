@@ -246,15 +246,18 @@ closure; it need not evaluate unrelated projects.
 The integration contracts name these application types; each carries the concept
 defined in this section or the next.
 
-| Type              | Meaning                                                                                                                       |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `RepositoryFacts` | One revision's resolved native facts: projects, shared inputs, unaffected paths and errors                                    |
-| `ProjectFacts`    | One project's identity, dependencies, quality consumers, Release Unit, checks and optional `OwnedPaths`                       |
-| `SharedInput`     | A shared input path and its actual consumers                                                                                  |
-| `SelectionReason` | A direct selection's path, initiating revision and resolved project ([paired reasons](#paired-direct-selection-reasons))      |
-| `CheckSpec`       | One check: key, dimensions, runner, required flag, prerequisites and optional package subject                                 |
-| `PackageTarget`   | A check's package subject: unit, declaration, build, entry point, expected version and outputs                                |
-| `CiPlan`          | The original candidate-bound plan of selected checks with their reasons and origins, produced by `ImpactPlanner.PlanSelected` |
+| Type              | Meaning                                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RepositoryFacts` | One revision's resolved native facts: projects, shared inputs, unaffected paths and errors                                                                |
+| `UnaffectedPaths` | Paths a complete analysis proved to have no applicable owner; anything else unresolved fails planning                                                     |
+| `ProjectFacts`    | One project's identity, dependencies, quality consumers, Release Unit, checks and optional `OwnedPaths`                                                   |
+| `SharedInput`     | A shared input path and its actual consumers                                                                                                              |
+| `SelectionReason` | A direct selection's path, initiating revision and resolved project ([paired reasons](#paired-direct-selection-reasons))                                  |
+| `CheckSpec`       | One check: key, dimensions, runner, required flag, prerequisites and optional package subject                                                             |
+| `NativeRetained`  | A check origin for existing native general-CI behavior of an unadopted project, besides `Preset` ([quality autonomy](#declarations-and-quality-autonomy)) |
+| `PackageTarget`   | A check's package subject: unit, declaration, build, entry point, expected version and outputs                                                            |
+| `CiPlan`          | The original candidate-bound plan of selected checks with their reasons and origins, produced by `ImpactPlanner.PlanSelected`                             |
+| `PlanSelected`    | `ImpactPlanner.PlanSelected`, the shared selection operation that builds a `CiPlan` from paired facts                                                     |
 
 ### Native Fact Integration
 

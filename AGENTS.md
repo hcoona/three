@@ -32,7 +32,12 @@ Before work, read the accepted target-branch
 [governance policy](docs/governance/governance-system.md),
 [record policy](docs/governance/record-system.md), and
 [Delivery Wave](docs/delivery-wave.md). Proposed changes cannot authorize
-themselves or weaken their accepted review obligations.
+themselves or weaken their accepted review obligations. For an ordinary change,
+the sections that decide authorization and review are
+[work authorization](docs/governance/record-system.md#work-authorization-and-concurrency),
+[GOV-011](docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)
+and [conflict resolution](docs/governance/governance-system.md#conflict-resolution);
+the full documents remain the authorities.
 
 Use the [documentation portal](docs/README.md) and
 [family catalog](docs/governance/record-families.yaml) to find project authorities.

@@ -26,7 +26,10 @@ for an architecture or requirement change, which changes a requirement's meaning
 or an HLD responsibility or boundary. Changing one destination's concrete
 conditions within those requirements uses the Release row. Use actual native
 sources for operations; the [source layout](../README.md#source-layout) maps
-the code.
+the code. When several rows apply, read their union. For a shared file, first
+classify it as a native shared input, a retained-job list entry in
+`CiScope` or an ecosystem root input, using the
+[MLD classification](middle-level-design.md#shared-inputs-and-retained-job-scope).
 
 | Change                                   | Read                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -114,8 +117,8 @@ retains exact identities, external observations, accepted reach and counterexamp
 
 ### NuGet retained limits
 
-Native R4, ready historical configuration, actual publication and joined
-postpublication audit retain their original source and support scope. The
+Native R4, ready historical configuration, actual publication and the joined
+postpublication audit ([domain values](high-level-design.md#domain-values)) retain their original source and support scope. The
 [normal-Live evidence](validation/nuget-normal-live-evidence.md) and
 [research evidence](research/nuget-smoke-evidence.md) preserve separate profile,
 fixture/provider, prebuilt consumer, native suite and normal-run lifetimes.

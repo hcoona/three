@@ -85,6 +85,9 @@ fallback or all-run.
 
 ## Python Quality Owners and Input-Only Members
 
+Terms such as endpoint, paired and input-only member are defined in the
+[HLD domain values](../high-level-design.md#domain-values).
+
 Native workspace membership does not imply a build or test obligation. Keep the
 complete native producer graph, including tableless members (a `pyproject.toml`
 without a `[build-system]` table, which has no package build) and unadopted members. Actual
@@ -235,7 +238,9 @@ transfer. The existing core nonempty selected-check contract remains intact.
 Complete native collection/query qualification requires its own accepted exact
 protocol using the actual current tools and lock format; the stopped primitive
 campaign is not reused or repeated. Ordinary PR CI remains available for its
-authorized caller-integration qualification after contract acceptance.
+authorized caller-integration qualification after contract acceptance. A change
+to Python selection or caller code is qualified by ordinary PR CI; only a new
+native collection or query experiment needs its own accepted protocol.
 
 The shared core owns the
 [paired direct-reason transfer](../middle-level-design.md#paired-direct-selection-reasons)

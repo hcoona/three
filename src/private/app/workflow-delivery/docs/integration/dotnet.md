@@ -402,8 +402,8 @@ separate qualification responsibilities of the complete group.
 
 This contract selects the existing declared
 `Hcoona.ReleaseSmoke.GithubPackages` product, one `net10.0` `.nupkg`, no symbols
-or runtime dependencies, and GitHub Packages NuGet Buddy with development dry
-runs. It adds no product, destination or native-operation authorization.
+or runtime dependencies, and GitHub Packages NuGet
+[Buddy](../high-level-design.md#domain-values) with development dry runs. It adds no product, destination or native-operation authorization.
 
 Preparation reads the exact committed release declaration, entry and quality
 selection through the existing Git materialization and declaration readers.
@@ -507,6 +507,6 @@ The MLD's [post-publication completion](../middle-level-design.md#post-publicati
 contract applies to these destinations; this table owns their concrete
 conditions and observation.
 
-| Existing destination/use    | Native completion conditions to preserve                                                  | Post-publication observation                                                                                                                               |
-| --------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub Packages NuGet Buddy | Normalized package/version, intended owner/feed/repository and visibility, exact `.nupkg` | Package control, GitHub and flat-container version sets containing the version, downloaded `.nupkg` size/SHA-256 equal to the original and native identity |
+| Existing destination/use    | Native completion conditions to preserve                                                  | Post-publication observation                                                                                                                                                                        |
+| --------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub Packages NuGet Buddy | Normalized package/version, intended owner/feed/repository and visibility, exact `.nupkg` | [Package control](../high-level-design.md#domain-values), GitHub and flat-container version sets containing the version, downloaded `.nupkg` size/SHA-256 equal to the original and native identity |
