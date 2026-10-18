@@ -261,16 +261,15 @@ ends a grant. Git and the proposing PR retain the reason and history.
   `pytest:tests/eng/test_python_runtime.py`. Record the rule in the owning
   endpoint responsibility contract and cover a deleted workflow, a workflow with
   no Python reader and a Python-read workflow in tests.
-  Retirement also deletes shell scripts that no current rule owns at the basis.
+  Retirement also deletes shell scripts whose only basis owner is the retired legacy route, or that have none.
   CI scope selection therefore gives every committed `*.sh` or `*.bash` file
-  outside `.github/`, `.agents/` and `generated/` directories a finite owner:
+  that the shared shellcheck and shfmt exclusions do not match (`**/.github/**`, `**/.specify/**`, `**/generated/**` and the root-only `.agents/**`) a finite owner:
   owner `conformance`, target `.github/workflows/ci.yml#conformance` and
   rule `native-hk-shell-lint`, applied only when that endpoint commits root
   `hk.pkl` and `ci.yml`. HK's `shellcheck` and `shfmt` steps also check
   these files; this owner is a fixed copy of their shared glob and exclusions,
   and a drift test evaluates the endpoint's `hk.pkl` with the locked Pkl and
-  fails unless both steps stay in a profile `ci.yml` runs and still match
-  these files. The rule selects no retained job and does not replace a script's
+  fails unless both steps stay in a profile `ci.yml` runs, their shared glob still matches `*.sh` and `*.bash`, and their exclusions that can match a shell script equal this copied set. The rule selects no retained job and does not replace a script's
   existing owner. Record it in the same contract and cover a deleted script, a
   current script and an excluded path in tests.
 - **Ordering and gates:** follow the record-system, engineering and Workflow
