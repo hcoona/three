@@ -17,7 +17,7 @@ config_roots = [
 # Runtimes
 go = "latest"
 java = "temurin-25"
-node = "24.21.0"
+node = "24.22.0"
 pkl = "0.32.1"
 powershell = "7"
 python = "3.14"
