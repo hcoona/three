@@ -4,6 +4,8 @@ monorepo_root = true
 
 [settings]
 experimental = true
+# global.json is the .NET SDK authority; mise reads it as an idiomatic version file.
+idiomatic_version_file_enable_tools = ["dotnet"]
 
 [monorepo]
 config_roots = [
@@ -13,7 +15,6 @@ config_roots = [
 
 [tools]
 # Runtimes
-"core:dotnet" = "10"
 go = "latest"
 java = "temurin-25"
 node = "24"
@@ -144,12 +145,6 @@ run = "uv run --script tests/eng/test_repository_records.py"
 [tasks.slngen]
 description = "Generate .NET solution file for local development"
 run = 'dotnet slngen --nologo --ignoreMainProject --launch false --loadprojects false --folders true --collapsefolders true -o main.sln'
-
-[tasks.update-global-json]
-description = "Update global.json from global.pkl and mise.lock"
-run = 'pkl eval -f json global.pkl -o global.json'
-sources = ["global.pkl", "mise.lock"]
-outputs = ["global.json"]
 
 [tasks.update-pnpm-lockfiles]
 description = "Refresh tracked pnpm lockfiles"
