@@ -250,6 +250,11 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_python_runtime.py",
         ".github/workflows/workflow-delivery-v3-python-smoke.yml")]
     [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/renovate.yml")]
+    [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/codeql.yml")]
+    [DataRow("tests/eng/test_python_runtime.py",
+        ".github/workflows/workflow-delivery-v3-official-simulate.yml")]
+    [DataRow("tests/eng/test_general_ci_workflow.py", "hk.pkl")]
+    [DataRow("tests/eng/test_general_ci_workflow.py", "src/private/lib/hk/Steps.pkl")]
     [DataRow("tests/eng/test_python_runtime.py", "global.json")]
     [DataRow("tests/eng/test_python_release_caller.py", "global.json")]
     public void SpecialInputsReachTheirActualTargets(string target, string path)

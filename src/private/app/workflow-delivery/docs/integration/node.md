@@ -100,7 +100,7 @@ malformed or out-of-checkout read fails planning instead of dropping
 responsibility. Directory names and a repository-local Pkl parser do not infer
 this responsibility.
 
-Two finite rules cover repository tooling configuration. `renovate.json`,
+Three finite rules cover repository tooling configuration. `renovate.json`,
 `.github/renovate/**` and `.github/workflows/renovate.yml` receive owner
 `renovate`, target `.github/workflows/renovate.yml` and rule
 `native-renovate-configuration`. A present coordinate whose repository-relative
@@ -112,7 +112,16 @@ A complete token is not preceded or followed by a path character, so
 reference, not proof that a step reads the file, and it parses no shell
 commands: locked HK 2.6.0 `check --plan --json` reports step status, reasons
 and file counts but no per-step files. Imported HK modules keep their native
-import route. Neither rule selects a retained job.
+import route. A present direct child of the root `.github/workflows/` ending in
+`.yml` or `.yaml` receives owner `conformance`, target
+`.github/workflows/ci.yml#conformance` and rule `native-hk-workflow-lint` when
+the endpoint commits root `hk.pkl` and `ci.yml`. HK's `actionlint` step checks
+these files; its glob covers workflow YAML under any `.github/workflows/`
+directory, and this rule is a fixed copy for the root directory only. A drift
+test in `tests/eng/test_general_ci_workflow.py` evaluates root `hk.pkl` with the
+locked Pkl and fails unless the `check` hook keeps an `actionlint` step in a
+profile `ci.yml` runs whose glob still matches these files. No rule selects a
+retained job.
 
 The Node group joins native PNPM membership and reasons before final owner
 validation. Manifest/catalog reads used to

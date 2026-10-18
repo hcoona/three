@@ -131,6 +131,12 @@ internal static partial class CiScope
                 Regular(".github/workflows/ci.yml"))
                 Add("conformance", ".github/workflows/ci.yml#conformance",
                     "native-hk-configuration", ".github/workflows/ci.yml", path);
+            // Fixed copy of HK's actionlint glob for the root workflow directory; the drift
+            // test in tests/eng/test_general_ci_workflow.py keeps the step in place.
+            if (RootWorkflow(path) && Regular(HkConfiguration) &&
+                Regular(".github/workflows/ci.yml"))
+                Add("conformance", ".github/workflows/ci.yml#conformance",
+                    "native-hk-workflow-lint", ".github/workflows/ci.yml", HkConfiguration);
             if (path == "renovate.json" && Regular("pyproject.toml") &&
                 Regular("tests/eng/test_python_runtime.py"))
                 Add("python", "pytest:tests/eng/test_python_runtime.py",
@@ -377,6 +383,12 @@ internal static partial class CiScope
             ? DotNetInheritedInputs.Consumes(path, [NuGetProduct])
             : DotNetInheritedInputs.Consumes(path, NuGetPreparationRoots));
 
+    internal static bool RootWorkflow(string path) =>
+        path.StartsWith(".github/workflows/", StringComparison.Ordinal) &&
+        path.IndexOf('/', ".github/workflows/".Length) < 0 &&
+        (path.EndsWith(".yml", StringComparison.Ordinal) ||
+            path.EndsWith(".yaml", StringComparison.Ordinal));
+
     private static bool PythonResponsibility(string path) =>
         path.EndsWith(".py", StringComparison.Ordinal) ||
         AllInputs.Contains(path, StringComparer.Ordinal) ||
@@ -384,6 +396,7 @@ internal static partial class CiScope
         path is ".github/workflows/workflow-delivery-v3-python-smoke.yml" or
             ".github/workflows/workflow-delivery-v3-ruby-smoke.yml" or ".typos.toml" ||
         PythonRepositoryInputs.BuddyGuardInputs.Contains(path, StringComparer.Ordinal) ||
+        PythonRepositoryInputs.IsWorkflow(path) || PythonRepositoryInputs.HkInput(path) ||
         AzureInput(path);
 
     private static string[] GemRoots(GitRevision revision) => revision.Entries

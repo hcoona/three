@@ -136,7 +136,7 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_general_ci_workflow.py" &&
             (path is "tests/eng/ci_workflow_shell.py" or
                 ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml" ||
-             BuddyGuardInputs.Contains(path, StringComparer.Ordinal))) ||
+             BuddyGuardInputs.Contains(path, StringComparer.Ordinal) || HkInput(path))) ||
         (target == "tests/eng/test_typos_config.py" && path == ".typos.toml") ||
         (target == "tests/eng/test_python_release_caller.py" &&
             path is ".github/workflows/workflow-delivery-v3-python-smoke.yml" or
@@ -147,8 +147,12 @@ internal static class PythonRepositoryInputs
                 // Retired guard script; a comparison deleting it still needs an owner.
                 "eng/scripts/update_node_mise_lock.py");
 
+    // The actionlint drift guard in tests/eng/test_general_ci_workflow.py evaluates root HK.
+    internal static bool HkInput(string path) =>
+        path == "hk.pkl" || path.StartsWith("src/private/lib/hk/", StringComparison.Ordinal);
+
     // The committed tool-version guard reads every workflow definition.
-    private static bool IsWorkflow(string path) =>
+    internal static bool IsWorkflow(string path) =>
         path.StartsWith(".github/workflows/", StringComparison.Ordinal) &&
         path.IndexOf('/', ".github/workflows/".Length) < 0 &&
         path.EndsWith(".yml", StringComparison.Ordinal);

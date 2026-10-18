@@ -4,18 +4,17 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
+import subprocess
 import tomllib
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 import pytest
 import yaml
 
 from .ci_workflow_shell import executable, resolve, run_step
-
-if TYPE_CHECKING:
-    import subprocess
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHILD_FAILURE = 73
@@ -1624,3 +1623,38 @@ def test_retired_buddy_routes_stay_absent_and_v3_buddy_stays_dedicated():
     )
     assert "workflow_dispatch" in buddy.get("on", buddy.get(True))
     assert not any("uses" in job for job in buddy["jobs"].values())
+
+
+def test_hk_actionlint_keeps_covering_root_workflows(workflow):
+    """CiScope's root-workflow conformance owner copies this HK step glob."""
+    mise = shutil.which("mise")
+    assert mise is not None
+    evaluated = subprocess.run(  # noqa: S603 - Locked native Pkl evaluation.
+        [
+            mise,
+            "exec",
+            "--locked",
+            "pkl",
+            "--",
+            "pkl",
+            "eval",
+            "-f",
+            "json",
+            "hk.pkl",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    step = json.loads(evaluated.stdout)["hooks"]["check"]["steps"]["actionlint"]
+    runs = " ".join(
+        step.get("run", "") for step in workflow["jobs"]["conformance"]["steps"]
+    )
+    ci_profiles = set(re.findall(r"--profile (\w+)", runs))
+    assert ci_profiles
+    assert set(step["profiles"]) & ci_profiles
+    for name in ("ci.yml", "codeql.yaml"):
+        path = PurePosixPath(".github/workflows", name)
+        assert any(path.full_match(glob) for glob in step["glob"]), name
+        assert not any(path.full_match(glob) for glob in step["exclude"])

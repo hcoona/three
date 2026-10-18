@@ -334,6 +334,63 @@ public sealed class CiScopeTests
     }
 
     [TestMethod]
+    // The committed tool-version guard (test_python_runtime.py) reads every root *.yml.
+    [DataRow(".github/workflows/lint.yaml", false)]
+    [DataRow(".github/workflows/codeql.yml", true)]
+    [DataRow(".github/workflows/workflow-delivery-v3-official-simulate.yml", true)]
+    public void RootWorkflowsReceiveHkWorkflowLintResponsibility(string path, bool python)
+    {
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk));
+        string rows = string.Join(", ", row.Reasons.Select(item => item.Owner + ":" + item.Rule));
+        ScopeResponsibility lint = Assert.ContainsSingle(row.Reasons.Where(reason =>
+            reason.Rule == "native-hk-workflow-lint"), rows);
+        Assert.AreEqual("conformance", lint.Owner);
+        Assert.AreEqual(".github/workflows/ci.yml#conformance", lint.Target);
+        CollectionAssert.AreEquivalent(WorkflowLintSources, lint.Sources);
+        Assert.AreEqual(python, row.Reasons.Any(reason => reason.Owner == "python"), rows);
+        Assert.AreEqual(python ? 2 : 1, row.Reasons.Length, rows);
+        CiScopeApplicability jobs = CiScope.Select([path], Comparison(path), false, []);
+        Assert.IsFalse(jobs.Mise || jobs.AzureAuth || jobs.Scholarly ||
+            jobs.NuGetNativePreparation);
+    }
+
+    [TestMethod]
+    [DataRow(".github/workflows/nested/caller.yml")]
+    [DataRow(".github/workflows/README.md")]
+    public void OnlyRootWorkflowYamlReceivesHkWorkflowLintResponsibility(string path)
+    {
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk));
+        Assert.IsFalse(row.Reasons.Any(reason => reason.Rule == "native-hk-workflow-lint"));
+    }
+
+    [TestMethod]
+    public void HkWorkflowLintRequiresCommittedHkAndCiWorkflow()
+    {
+        const string path = ".github/workflows/lint.yaml";
+        var revision = new GitRevision(Basis, [new(path, "100644", "blob")]);
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(revision, [path], [], [],
+            Tasks, Hk));
+        Assert.IsEmpty(row.Reasons);
+    }
+
+    [TestMethod]
+    public void DeletedWorkflowResolvesAtTheBasisAndConfirmsAbsenceAtTheCandidate()
+    {
+        const string path = ".github/workflows/official.yml";
+        ScopeCoordinate basis = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk));
+        Assert.IsTrue(basis.Present);
+        Assert.IsTrue(basis.Reasons.Any(reason => reason.Owner == "conformance" &&
+            reason.Rule == "native-hk-workflow-lint"));
+        ScopeCoordinate candidate = Assert.ContainsSingle(CiScope.Owners(Revision(), [path],
+            [], [], Tasks, Hk));
+        Assert.IsFalse(candidate.Present);
+        Assert.IsEmpty(candidate.Reasons);
+    }
+
+    [TestMethod]
     public void DeletedToolingReferencesKeepConfirmedAbsence()
     {
         ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(), ["global.pkl"],
@@ -356,6 +413,8 @@ public sealed class CiScopeTests
         Assert.IsFalse(CiScope.ReferencesPath(tooling.Hk!, ".editorconfig"));
     }
 
+    private static readonly string[] WorkflowLintSources = [".github/workflows/ci.yml",
+        "hk.pkl"];
     private const string HkSource = "hk.pkl";
     private const string RenovateSource = "renovate.json";
     private const string ToolingHk = """
