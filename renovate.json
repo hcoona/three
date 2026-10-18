@@ -74,11 +74,11 @@
       "automerge": true
     },
     {
-      "description": "global.json is the .NET SDK authority; refresh mise.lock and .NET lockfiles after SDK updates.",
+      "description": "global.json is the .NET SDK authority. Skip the native NuGet restore, which would run with the old SDK under rollForward disable; the post-upgrade task installs the new SDK, refreshes mise.lock and restores .NET lockfiles.",
       "matchManagers": ["nuget"],
       "matchFileNames": ["global.json"],
       "matchDepTypes": ["dotnet-sdk"],
-      "groupName": "Mise Language Runtimes",
+      "skipArtifactsUpdate": true,
       "postUpgradeTasks": {
         "commands": [
           "pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts.ps1"
