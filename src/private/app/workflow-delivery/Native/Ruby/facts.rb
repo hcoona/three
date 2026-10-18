@@ -71,8 +71,9 @@ end
 def selected_bundle_specs(definition)
   # Frozen Bundler answers its locked resolution. Select the requested groups for this
   # platform without materializing installed gems. Only the two qualified lock-selected
-  # versions, whose SpecSet#for signatures differ, are supported. An explicit local platform matches Bundler's own selection except on TruffleRuby, whose
-  # default ruby-platform forcing is outside the supported runtime.
+  # versions, whose SpecSet#for signatures differ, are supported. An explicit local
+  # platform matches Bundler's own selection except on TruffleRuby, whose default
+  # ruby-platform forcing is outside the supported runtime.
   resolved = definition.resolve
   dependencies = definition.requested_dependencies
   platforms = [Bundler.local_platform]
