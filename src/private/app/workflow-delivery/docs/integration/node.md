@@ -100,6 +100,20 @@ malformed or out-of-checkout read fails planning instead of dropping
 responsibility. Directory names and a repository-local Pkl parser do not infer
 this responsibility.
 
+Two finite rules cover repository tooling configuration. `renovate.json`,
+`.github/renovate/**` and `.github/workflows/renovate.yml` receive owner
+`renovate`, target `.github/workflows/renovate.yml` and rule
+`native-renovate-configuration`. A present coordinate whose repository-relative
+path occurs as a complete path token in the endpoint's committed root
+`hk.pkl` or `renovate.json` receives owner `conformance`, target
+`.github/workflows/ci.yml#conformance` and rule `literal-tooling-reference`.
+A complete token is not preceded or followed by a path character, so
+`PklProject` does not match `PklProject.deps.json`. This is a literal
+reference, not proof that a step reads the file, and it parses no shell
+commands: locked HK 2.6.0 `check --plan --json` reports step status, reasons
+and file counts but no per-step files. Imported HK modules keep their native
+import route. Neither rule selects a retained job.
+
 The Node group joins native PNPM membership and reasons before final owner
 validation. Manifest/catalog reads used to
 discover an owner do not themselves make those files product execution inputs.
