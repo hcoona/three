@@ -46,8 +46,8 @@ from local observations and from completed publication campaigns.
 
 Read the campaign records only to interpret or audit a closed campaign, or when
 the [handoff](agent-handoff.md#authorization-and-closed-campaigns) limits route
-to them; they are not current behavior. The registry support research and the
-retained v1 boundary also listed here remain current source research.
+to them; they are not current behavior. The registry support research also
+listed here remains current source research.
 
 | Concern                                             | Original outcomes, controls and limits                                                                                                                         | Read when                                                                                                  |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -57,7 +57,6 @@ retained v1 boundary also listed here remain current source research.
 | Python bootstrap, publication and ordinary recovery | [Bootstrap](validation/python-bootstrap.md), [normal publication](validation/python-normal-live-evidence.md), [recovery](validation/python-hosted-recovery.md) | Auditing Python bootstrap, publication or recovery outcomes                                                |
 | Ruby original publication                           | [Normal-Live evidence](validation/ruby-normal-live-evidence.md), [research](research/ruby-smoke-evidence.md)                                                   | Auditing Ruby publication outcomes                                                                         |
 | Historical implementation and record recovery       | [Producer-qualified readers and retired records](validation/historical-readers.md)                                                                             | Recovering an original producer or a retired record's text                                                 |
-| Legacy workflow retirement                          | [Retained v1 boundary](research/legacy-workflow-boundary.md)                                                                                                   | Reading old designs or touching the retained v1 Official/reusable workflows or their validator diagnostics |
 
 ## Historical Source Rule
 

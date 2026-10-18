@@ -274,6 +274,19 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       )
     check = "python eng/scripts/hk_exec.py python eng/scripts/sync_python_version.py"
   }
+  // CiScope's fixed copies of HK step globs and exclusions stay aligned with this file.
+  ["hk-scope-drift"] {
+    profiles = List("small")
+    glob =
+      List(
+        "hk.pkl",
+        "src/private/lib/hk/**",
+        "src/private/app/workflow-delivery/Repository/resources/hk-scope-copies.json",
+        ".github/workflows/ci.yml",
+        "eng/scripts/hk_scope_drift.py",
+      )
+    check = "python eng/scripts/hk_exec.py python eng/scripts/hk_scope_drift.py"
+  }
 }
 
 local scholarly_publication_validation = new Mapping<String, Step> {

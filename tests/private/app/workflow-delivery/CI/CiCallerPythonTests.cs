@@ -9,18 +9,15 @@ namespace WorkflowDelivery.Tests.CI;
 public sealed class CiCallerPythonTests(TestContext context)
 {
     [TestMethod]
-    public void AuxiliarySelectsOnlyActualRetainedNativeConsumers()
+    public void AzureBundleSelectsOnlyTheActualNativeConsumer()
     {
         CiPlan plan = Plan("tests/private/app/workflow-delivery/Native/Python",
-            "tests/eng/test_legacy_release_contract.py",
-                "src/private/app/azureauth-credprovider/python/tests");
-        Assert.AreEqual(new PythonCiAuxiliary(true, true), PythonCiCaller.Auxiliary(plan));
-        Assert.AreEqual(new PythonCiAuxiliary(false, false), PythonCiCaller.Auxiliary(Plan(
+            "src/private/app/azureauth-credprovider/python/tests");
+        Assert.IsTrue(PythonCiCaller.AzureBundle(plan));
+        Assert.IsFalse(PythonCiCaller.AzureBundle(Plan(
             "tests/private/app/workflow-delivery/Native/Ruby",
-                "tests/eng/test_python_release_preparation_gate.py",
-            "tests/eng/test_ruby_release_preparation_gate.py")));
-        Assert.AreEqual(new PythonCiAuxiliary(false, false),
-            PythonCiCaller.Auxiliary(plan with { Checks = [] }));
+            "tests/eng/test_general_ci_workflow.py")));
+        Assert.IsFalse(PythonCiCaller.AzureBundle(plan with { Checks = [] }));
     }
 
     [TestMethod]
@@ -33,7 +30,7 @@ public sealed class CiCallerPythonTests(TestContext context)
             PythonGraphRequest graph, Dictionary<string, string?> environment,
             PythonGroupEndpoint preparedEndpoint, PythonGroupPreparationResult preparation,
             CiPlan plan) = Arrange(files);
-        CiOutcome outcome = await PythonCiCaller.ExecuteAsync(files.Root, null, null, null, null,
+        CiOutcome outcome = await PythonCiCaller.ExecuteAsync(files.Root, null,
             context.CancellationToken, (received, request, _) =>
             {
                 Assert.AreEqual(plan.Checks[0].Work.Key, received.Checks[0].Work.Key);
@@ -64,7 +61,7 @@ public sealed class CiCallerPythonTests(TestContext context)
             }
         }, TransferJson.Default.PythonGroupPreparationResult);
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => PythonCiCaller.ExecuteAsync(
-            files.Root, null, null, null, null, context.CancellationToken));
+            files.Root, null, context.CancellationToken));
     }
 
     [TestMethod]
@@ -76,7 +73,7 @@ public sealed class CiCallerPythonTests(TestContext context)
             "stderr: error: controlled lock mismatch";
         using var diagnostics = new StringWriter();
 
-        CiOutcome outcome = await PythonCiCaller.ExecuteAsync(files.Root, null, null, null, null,
+        CiOutcome outcome = await PythonCiCaller.ExecuteAsync(files.Root, null,
             context.CancellationToken, (received, request, _) =>
             {
                 CheckKey key = received.Checks[0].Work.Key;
@@ -105,7 +102,7 @@ public sealed class CiCallerPythonTests(TestContext context)
         string tail = new string('x', NativeDiagnostic.TailLength - 18) + "controlled stderr";
         using var diagnostics = new StringWriter();
 
-        await PythonCiCaller.ExecuteAsync(files.Root, null, null, null, null,
+        await PythonCiCaller.ExecuteAsync(files.Root, null,
             context.CancellationToken, (received, request, _) =>
             {
                 CheckKey key = received.Checks[0].Work.Key;

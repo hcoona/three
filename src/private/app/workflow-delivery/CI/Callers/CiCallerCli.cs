@@ -49,11 +49,8 @@ internal static class CiCallerCli
                 Write(PythonCiCaller.PlanAsync(directory, scope, new(uv, interpreter, dotnet),
                     token).GetAwaiter().GetResult(), TransferJson.Default.PythonGroupReadback);
                 return 0;
-            case ["ci", "caller-python", "execute", var directory, var miseData, var mise,
-                var node, var pwsh]:
-                return Outcome(PythonCiCaller.ExecuteAsync(directory, Optional(miseData),
-                    Optional(mise),
-                    Optional(node), Optional(pwsh), token,
+            case ["ci", "caller-python", "execute", var directory, var pwsh]:
+                return Outcome(PythonCiCaller.ExecuteAsync(directory, Optional(pwsh), token,
                     diagnostics: diagnostics).GetAwaiter().GetResult());
             case ["ci", "caller-node", "plan", var directory, var scope, var rubyInputs]:
                 Write(NodeCiCaller.PlanAsync(directory, scope, Optional(rubyInputs),

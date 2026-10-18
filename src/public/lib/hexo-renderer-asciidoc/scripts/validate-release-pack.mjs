@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   assert,
@@ -45,8 +45,6 @@ import {
 const PACKAGE_JSON_PATH = path.join(PACKAGE_ROOT, 'package.json');
 const README_NPM_PATH = path.join(PACKAGE_ROOT, 'README.npm.md');
 const DIST_DIRECTORY = path.join(PACKAGE_ROOT, 'dist');
-const PREPARE_NPM_PUBLISH_SCRIPT = path.join(MONOREPO_ROOT, 'eng', 'scripts', 'prepare_npm_publish.py');
-const EXPECTED_SCOPE = '@hcoona';
 
 const readExpectedAsciidoctorCoreVersion = () => {
   const version = readJsonFile(PACKAGE_JSON_PATH).dependencies?.['@asciidoctor/core'];
@@ -132,32 +130,6 @@ const verifyTarballCommon = (tarballPath, expectedName, expectedVersion, expecte
   };
 };
 
-const verifyEquivalentTarballContent = (gprTarballPath, npmjsTarballPath, gprSummary, npmjsSummary) => {
-  assert(
-    JSON.stringify(gprSummary.entries) === JSON.stringify(npmjsSummary.entries),
-    'GPR and npmjs tarball inventories differ.',
-  );
-  const normalizedGprManifest = { ...gprSummary.manifest, name: npmjsSummary.manifest.name };
-  assert(
-    JSON.stringify(normalizedGprManifest) === JSON.stringify(npmjsSummary.manifest),
-    'GPR and npmjs package manifests differ beyond the expected package name.',
-  );
-  for (const entry of gprSummary.entries) {
-    if (entry === 'package/package.json') {
-      continue;
-    }
-    assert(
-      Buffer.compare(readTarEntryBuffer(gprTarballPath, entry), readTarEntryBuffer(npmjsTarballPath, entry)) === 0,
-      `GPR and npmjs tarball content differs at ${entry}.`,
-    );
-  }
-  return {
-    identicalEntries: gprSummary.entries.length - 1,
-    inventoryEqual: true,
-    manifestsEqualExceptName: true,
-  };
-};
-
 const main = () => {
   const args = parseArgs(process.argv.slice(2));
   const evidenceDirectory = args.get('--evidence-dir');
@@ -176,7 +148,6 @@ const main = () => {
   let initialDistState;
   let tempRoot;
   let artifactsDirectory;
-  let stateFilePath;
   let prepackAttempted = false;
   let postpackCompleted = false;
   let normalPackCleanupVerified = false;
@@ -225,22 +196,21 @@ const main = () => {
     tempRoot = createTempDirectory('hexo-renderer-asciidoc-release-pack-');
     injectValidationFault('release-pack:after-temp-directory');
     artifactsDirectory = path.join(tempRoot, 'artifacts');
-    stateFilePath = path.join(tempRoot, 'npm-publish-state.json');
     mkdirSync(artifactsDirectory, { recursive: true });
     const packEnvironment = getPackEnvironment();
 
     removePath(DIST_DIRECTORY);
     assert(!existsSync(DIST_DIRECTORY), 'dist/ must be absent before the fresh release build.');
     runner.run('pnpm', ['run', 'build'], {
-      label: 'workflow-release-build-fresh',
-      phase: 'existing-release-workflow',
+      label: 'release-build-fresh',
+      phase: 'release-pack',
     });
     const freshDistFiles = verifyDistInventory(DIST_DIRECTORY);
 
     prepackAttempted = true;
     runner.run('pnpm', ['run', 'prepack'], {
-      label: 'workflow-single-prepack',
-      phase: 'existing-release-workflow',
+      label: 'release-single-prepack',
+      phase: 'release-pack',
     });
     prepackCount += 1;
     stampedVersion = readJsonFile(PACKAGE_JSON_PATH).version;
@@ -249,42 +219,6 @@ const main = () => {
       'The single prepack/NBGV operation did not stamp a non-placeholder package version.',
     );
 
-    runner.run(
-      'uv',
-      [
-        'run',
-        '--script',
-        PREPARE_NPM_PUBLISH_SCRIPT,
-        '--package-dir',
-        PACKAGE_ROOT,
-        '--scope',
-        EXPECTED_SCOPE.slice(1),
-        '--state-file',
-        stateFilePath,
-      ],
-      { cwd: MONOREPO_ROOT, label: 'workflow-prepare-gpr-name', phase: 'existing-release-workflow' },
-    );
-    runner.run('npm', ['pack', '--ignore-scripts', '--pack-destination', artifactsDirectory], {
-      cwd: PACKAGE_ROOT,
-      env: packEnvironment,
-      label: 'workflow-pack-gpr-ignore-scripts',
-      phase: 'existing-release-workflow',
-    });
-
-    runner.run(
-      'uv',
-      [
-        'run',
-        '--script',
-        PREPARE_NPM_PUBLISH_SCRIPT,
-        '--package-dir',
-        PACKAGE_ROOT,
-        '--state-file',
-        stateFilePath,
-        '--restore',
-      ],
-      { cwd: MONOREPO_ROOT, label: 'workflow-restore-public-name', phase: 'existing-release-workflow' },
-    );
     runner.run(
       'node',
       [
@@ -298,47 +232,29 @@ if (pkg.private) {
       ],
       {
         cwd: PACKAGE_ROOT,
-        label: 'workflow-verify-package-not-private-npmjs',
-        phase: 'existing-release-workflow',
+        label: 'release-verify-package-not-private',
+        phase: 'release-pack',
       },
     );
     runner.run('npm', ['pack', '--ignore-scripts', '--pack-destination', artifactsDirectory], {
       cwd: PACKAGE_ROOT,
       env: packEnvironment,
-      label: 'workflow-pack-npmjs-ignore-scripts',
-      phase: 'existing-release-workflow',
+      label: 'release-pack-ignore-scripts',
+      phase: 'release-pack',
     });
-    const releaseWorkflowCommands = runner.commands.filter((command) => command.phase === 'existing-release-workflow');
-    assert(
-      releaseWorkflowCommands.at(-1)?.label === 'workflow-pack-npmjs-ignore-scripts',
-      'The modeled existing release workflow must end after the second npm pack --ignore-scripts.',
-    );
+    const releasePackCommands = runner.commands.filter((command) => command.phase === 'release-pack');
 
     const tarballs = listDirectoryFiles(artifactsDirectory)
       .filter((entry) => entry.endsWith('.tgz'))
       .sort();
-    assert(tarballs.length === 2, `Expected two release tarballs, found ${tarballs.length}.`);
-    const gprTarballPath = path.join(artifactsDirectory, tarballs.find((entry) => entry.startsWith('hcoona-')) ?? '');
-    const npmjsTarballPath = path.join(
-      artifactsDirectory,
-      tarballs.find((entry) => entry.startsWith('hexo-renderer-asciidoc-')) ?? '',
-    );
-    assert(existsSync(gprTarballPath), 'GitHub Packages tarball was not produced.');
-    assert(existsSync(npmjsTarballPath), 'npmjs tarball was not produced.');
-
-    const gprSummary = verifyTarballCommon(
-      gprTarballPath,
-      `${EXPECTED_SCOPE}/hexo-renderer-asciidoc`,
-      stampedVersion,
-      initialReadmeNpm,
-    );
+    assert(tarballs.length === 1, `Expected one release tarball, found ${tarballs.length}.`);
+    const npmjsTarballPath = path.join(artifactsDirectory, tarballs[0]);
     const npmjsSummary = verifyTarballCommon(
       npmjsTarballPath,
       'hexo-renderer-asciidoc',
       stampedVersion,
       initialReadmeNpm,
     );
-    const contentIdentity = verifyEquivalentTarballContent(gprTarballPath, npmjsTarballPath, gprSummary, npmjsSummary);
     const npmjsProbeEvidenceDirectory = recorder.directory
       ? path.join(recorder.directory, 'npmjs-tarball-probe')
       : undefined;
@@ -362,7 +278,7 @@ if (pkg.private) {
     );
     assert(
       npmjsProbeSummary.packedArtifact.sha256 === npmjsSummary.sha256,
-      'npmjs probe must execute against the exact npmjs dry-run tarball.',
+      'The consumer probe must execute against the exact release tarball.',
     );
     assert(
       npmjsProbeSummary.packedArtifact.version === stampedVersion,
@@ -374,7 +290,6 @@ if (pkg.private) {
       phase: 'local-validation-harness-cleanup',
     });
     postpackCompleted = true;
-    rmSync(stateFilePath, { force: true });
     verifyPackCleanup({
       expectedLifecycleState: initialLifecycleState,
       expectedPackageJson: initialPackageJson,
@@ -397,23 +312,19 @@ if (pkg.private) {
         initialWorktreeStatus: [],
         initialWorktreeStatusSha256: sha256Buffer(initialWorktreeStatus),
       },
-      contentIdentity,
-      expectedScope: EXPECTED_SCOPE,
-      npmjsPrivateGuard: {
-        label: 'workflow-verify-package-not-private-npmjs',
+      privateGuard: {
+        label: 'release-verify-package-not-private',
         outcome: 'passed',
       },
       prepackCount,
       releaseSequence: {
         artifactValidation: {
-          contentIdentity: true,
-          inventories: true,
+          inventory: true,
           licenseBytes: true,
           npmjsConsumerProbe: true,
         },
-        commands: releaseWorkflowCommands,
-        endsAfterSecondIgnoreScriptsPack: true,
-        label: 'exact-existing-release-workflow-sequence',
+        commands: releasePackCommands,
+        label: 'single-prepack-ignore-scripts-release-pack',
         postpackIncluded: false,
       },
       localValidationHarnessOnly: {
@@ -423,10 +334,6 @@ if (pkg.private) {
       },
       stampedVersion,
       tarballs: {
-        gpr: {
-          filename: path.basename(gprTarballPath),
-          ...gprSummary,
-        },
         npmjs: {
           filename: path.basename(npmjsTarballPath),
           ...npmjsSummary,
@@ -456,32 +363,6 @@ if (pkg.private) {
   } finally {
     let emergencyRestoreAttempted = false;
     if (operationError !== undefined) {
-      if (stateFilePath && lexistsSync(stateFilePath) && runner) {
-        emergencyRestoreAttempted = true;
-        captureCleanupFailure(cleanupErrors, () => {
-          runner.run(
-            'uv',
-            [
-              'run',
-              '--script',
-              PREPARE_NPM_PUBLISH_SCRIPT,
-              '--package-dir',
-              PACKAGE_ROOT,
-              '--state-file',
-              stateFilePath,
-              '--restore',
-            ],
-            {
-              cwd: MONOREPO_ROOT,
-              label: 'local-validation-emergency-restore-public-name',
-              phase: 'local-validation-harness-cleanup',
-            },
-          );
-        });
-      }
-      if (stateFilePath) {
-        captureCleanupFailure(cleanupErrors, () => rmSync(stateFilePath, { force: true }));
-      }
       if (prepackAttempted && !postpackCompleted && runner) {
         emergencyRestoreAttempted = true;
         captureCleanupFailure(cleanupErrors, () => {
@@ -591,7 +472,6 @@ if (pkg.private) {
         readmeNpmRestored:
           initialReadmeNpm && finalReadmeNpm ? Buffer.compare(initialReadmeNpm, finalReadmeNpm) === 0 : null,
         readmeRestored: initialReadme && finalReadme ? Buffer.compare(initialReadme, finalReadme) === 0 : null,
-        stateFileRemoved: stateFilePath ? !lexistsSync(stateFilePath) : null,
         temporaryDirectoryRemoved: tempRoot ? !lexistsSync(tempRoot) : null,
       };
     });
@@ -606,7 +486,6 @@ if (pkg.private) {
       [initialPackageJson ? cleanupSummary?.packageJsonRestored : true, 'package.json was not restored byte-for-byte.'],
       [initialReadme ? cleanupSummary?.readmeRestored : true, 'README.md was not restored byte-for-byte.'],
       [initialReadmeNpm ? cleanupSummary?.readmeNpmRestored : true, 'README.npm.md was not restored byte-for-byte.'],
-      [stateFilePath ? cleanupSummary?.stateFileRemoved : true, 'The npm publish state file was not removed.'],
       [tempRoot ? cleanupSummary?.temporaryDirectoryRemoved : true, 'The temporary directory was not removed.'],
       [
         initialWorktreeStatus ? cleanupSummary?.cleanAtEnd : true,

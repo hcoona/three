@@ -60,9 +60,10 @@ Neither this portal nor an old plan adds work to the accepted Wave.
 | Options change deduplication              | [Package](../src/public/lib/MicrosoftExtensions.Options.DedupChangeExtensions/README.md), [release notes](../src/public/lib/MicrosoftExtensions.Options.DedupChangeExtensions/ReleaseNotes.md)                                                                                                                        |
 | WebHDFS file provider                     | [Package](../src/public/lib/WebHdfs.Extensions.FileProviders/README.md), [release notes](../src/public/lib/WebHdfs.Extensions.FileProviders/ReleaseNotes.md)                                                                                                                                                          |
 
-The v3 [legacy boundary](../src/private/app/workflow-delivery/docs/research/legacy-workflow-boundary.md)
-routes retained diagnostic interfaces at their existing workflow paths. Those
-interfaces do not restore earlier workflow authority.
+The v1 Official release workflow stack is retired; its former boundary record is
+listed with the Workflow Delivery
+[retired records](../src/private/app/workflow-delivery/docs/validation/historical-readers.md#retired-records)
+as history, not a current route.
 
 ## Applications
 

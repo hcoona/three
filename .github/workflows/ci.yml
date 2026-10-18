@@ -912,21 +912,10 @@ jobs:
           dotnet "$RUNNER_TEMP/python-control/control/WorkflowDelivery.dll" ci caller-python plan \
             "$RUNNER_TEMP/python-group" "$RUNNER_TEMP/python-scope/ci-scope.json" \
             "$(command -v uv)" "$(command -v python)" "$(command -v dotnet)"
-      - name: Setup selected MISE adapters
-        if: steps.plan.outputs.native_node == 'true'
-        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
-        env:
-          MISE_DATA_DIR: ${{ runner.temp }}/python-auxiliary-mise
-        with:
-          version: '2026.10.11'
-          experimental: true
-          install_args: node
       - name: Execute and collect original Python plan
         run: |
-          optional_tool() { command -v "$1" || printf '%s' '-'; }
           dotnet "$RUNNER_TEMP/python-control/control/WorkflowDelivery.dll" ci caller-python execute \
-            "$RUNNER_TEMP/python-group" "$RUNNER_TEMP/python-auxiliary-mise" \
-            "$(optional_tool mise)" "$(optional_tool node)" "$(optional_tool pwsh)"
+            "$RUNNER_TEMP/python-group" "$(command -v pwsh || printf '%s' '-')"
       - name: Retain original Python plan and actual results
         if: always()
         uses: actions/upload-artifact@v7

@@ -1,0 +1,29 @@
+{
+  "$comment": "Fixed copies of root hk.pkl check-hook steps that CiScope uses as finite conformance owners. eng/scripts/hk_scope_drift.py (HK step hk-scope-drift) keeps them aligned with the evaluated hk.pkl.",
+  "rules": {
+    "native-hk-workflow-lint": {
+      "steps": ["actionlint"],
+      "directory": ".github/workflows",
+      "suffixes": [".yml", ".yaml"],
+      "exclusions": []
+    },
+    "native-hk-shell-lint": {
+      "steps": ["shellcheck", "shfmt"],
+      "directory": null,
+      "suffixes": [".sh", ".bash"],
+      "exclusions": ["**/.github/**", "**/.specify/**", "**/generated/**", ".agents/**"]
+    },
+    "native-hk-python-lint": {
+      "steps": ["ruff", "ruff_format"],
+      "directory": null,
+      "suffixes": [".py"],
+      "exclusions": [
+        "**/.github/**",
+        "**/.specify/**",
+        "**/generated/**",
+        ".agents/**",
+        "src/private/lib/scan-restoration/skills/**"
+      ]
+    }
+  }
+}

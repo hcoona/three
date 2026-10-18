@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHILD_FAILURE = 73
+RETIRED_BUDDY_WORKFLOWS = ("buddy", "release-buddy", "legacy-buddy")
 NODE_PACKAGE_DIR = "src/public/lib/hexo-renderer-asciidoc"
 NODE_RETAINED = [NODE_PACKAGE_DIR, "src/retained"]
 NODE_ADOPTED = (
@@ -113,13 +115,6 @@ def _required_step(scope: dict[str, Any]) -> None:
     assert scope.get("continue-on-error", False) is False
 
 
-def _python_adapter_condition(step: dict[str, Any]) -> str:
-    if step.get("uses", "").startswith("jdx/mise-action@"):
-        return "steps.plan.outputs.native_node == 'true'"
-    message = "Unexpected selected Python adapter"
-    raise AssertionError(message)
-
-
 def _python_retention_step(step: dict[str, Any]) -> None:
     if step["with"]["name"] == "python-release-preparation":
         assert step["if"] == (
@@ -211,9 +206,6 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
         assert not step.get("continue-on-error", False)
     elif key == "python-tests" and "Retain" in step["name"]:
         _python_retention_step(step)
-    elif key == "python-tests" and "adapter" in step["name"].lower():
-        assert step["if"] == _python_adapter_condition(step)
-        assert not step.get("continue-on-error", False)
     elif "Retain" not in step["name"] and step.get("if") != "cancelled()":
         _required_step(step)
 
@@ -712,25 +704,18 @@ def test_python_check_has_consumed_toolchain_prerequisites(workflow):
             0
         ]["version"]
     )
-    adapter = _action(job, "jdx/mise-action")
-    assert steps.index(plan) < steps.index(adapter)
-    assert adapter["if"] == _python_adapter_condition(adapter)
-    assert adapter["with"]["experimental"] is True
-    assert adapter["with"]["install_args"] == "node"
-    assert (
-        adapter["env"]["MISE_DATA_DIR"]
-        == "${{ runner.temp }}/python-auxiliary-mise"
-    )
     assert not any(
-        step.get("uses", "").startswith("ruby/setup-ruby@") for step in steps
+        step.get("uses", "").startswith(
+            ("ruby/setup-ruby@", "jdx/mise-action@")
+        )
+        for step in steps
     )
     execute = next(
         step
         for step in steps
         if "ci caller-python execute" in step.get("run", "")
     )
-    assert steps.index(adapter) < steps.index(execute)
-    assert '"$RUNNER_TEMP/python-auxiliary-mise"' in execute["run"]
+    assert steps.index(plan) < steps.index(execute)
 
 
 def _run_dotnet(
@@ -1343,9 +1328,6 @@ def test_python_group_requires_native_comparison_not_legacy_flags(
     plan = next(step for step in steps if step.get("id") == "plan")
     assert "ci caller-python plan " in plan["run"]
     assert "if" not in plan
-    for step in steps:
-        if "adapter" in step.get("name", "").lower():
-            assert step["if"] == _python_adapter_condition(step)
     receivers = [
         step
         for step in steps
@@ -1630,3 +1612,111 @@ def test_nuget_reproducibility_runs_on_dispatch_and_main_changes(workflow):
         if "uses" in step
     }
     assert all(step["uses"] in pins for step in job["steps"] if "uses" in step)
+
+
+def test_retired_buddy_routes_stay_absent_and_v3_buddy_stays_dedicated():
+    """Retired v1 Buddy entries have no compatibility route."""
+    workflows = REPO_ROOT / ".github/workflows"
+    for name in RETIRED_BUDDY_WORKFLOWS:
+        for suffix in (".yml", ".yaml"):
+            assert not (workflows / (name + suffix)).exists(), name + suffix
+    buddy = yaml.safe_load(
+        (workflows / "workflow-delivery-v3-buddy-smoke.yml").read_text()
+    )
+    assert "workflow_dispatch" in buddy.get("on", buddy.get(True))
+    assert not any("uses" in job for job in buddy["jobs"].values())
+
+
+DRIFT = importlib.util.spec_from_file_location(
+    "hk_scope_drift", REPO_ROOT / "eng/scripts/hk_scope_drift.py"
+)
+assert DRIFT is not None
+assert DRIFT.loader is not None
+hk_scope_drift = importlib.util.module_from_spec(DRIFT)
+DRIFT.loader.exec_module(hk_scope_drift)
+
+
+@pytest.mark.parametrize(
+    ("pattern", "suffixes", "expected"),
+    [
+        ("**/.github/**", [".sh", ".bash"], True),
+        (".agents/**", [".sh", ".bash"], True),
+        ("**/*.sh", [".sh", ".bash"], True),
+        ("tools/build.bash", [".sh", ".bash"], True),
+        ("**/specs/**/*.md", [".sh", ".bash"], False),
+        ("global.json", [".sh", ".bash"], False),
+        ("**/mise.lock", [".sh", ".bash"], False),
+        ("eng/scripts/release_*", [".sh", ".bash"], True),
+        ("legacy-*", [".sh", ".bash"], True),
+        ("eng/x?", [".sh", ".bash"], True),
+        ("foo.sh*", [".sh", ".bash"], True),
+        ("*.s?", [".sh", ".bash"], True),
+        ("**/gen-*.[sb]*", [".sh", ".bash"], True),
+        ("**/*.md", [".sh", ".bash"], False),
+        ("**/*.sh.bak", [".sh", ".bash"], False),
+        ("src/private/lib/scan-restoration/skills/**", [".py"], True),
+        ("**/*.py", [".py"], True),
+        ("tools/build.py", [".py"], True),
+        ("**/*.sh", [".py"], False),
+        ("uv.lock", [".py"], False),
+    ],
+)
+def test_hk_scope_exclusion_relevance(pattern, suffixes, expected):
+    """Only exclusions whose final segment can name a copied file count."""
+    assert hk_scope_drift.can_exclude(pattern, suffixes) is expected
+
+
+def _step(profiles, globs, excludes=()):
+    return {"profiles": profiles, "glob": globs, "exclude": list(excludes)}
+
+
+def test_hk_scope_drift_reports_each_difference():
+    """Profile, glob and exclusion drift each fail the conformance step."""
+    rules = {
+        "shell": {
+            "steps": ["shellcheck"],
+            "directory": None,
+            "suffixes": [".sh"],
+            "exclusions": ["**/generated/**"],
+        }
+    }
+    good = _step(["small"], ["**/*.sh"], ["**/generated/**", "uv.lock"])
+    assert hk_scope_drift.drift({"shellcheck": good}, rules, {"small"}) == []
+    for steps, profiles in (
+        ({}, {"small"}),
+        ({"shellcheck": good}, {"large"}),
+        (
+            {"shellcheck": _step(["small"], ["**/*.bash"], good["exclude"])},
+            {"small"},
+        ),
+        (
+            {"shellcheck": _step(["small"], ["**/*.sh"], ["**/.github/**"])},
+            {"small"},
+        ),
+    ):
+        assert hk_scope_drift.drift(steps, rules, profiles)
+
+
+def test_hk_scope_drift_reports_a_wildcard_shell_exclusion():
+    """A new wildcard exclusion such as release_* can hide copied scripts."""
+    rules = {
+        "native-hk-shell-lint": {
+            "steps": ["shellcheck"],
+            "directory": None,
+            "suffixes": [".sh", ".bash"],
+            "exclusions": ["**/generated/**"],
+        }
+    }
+    step = _step(
+        ["small"],
+        ["**/*.sh", "**/*.bash"],
+        ["**/generated/**", "eng/scripts/release_*"],
+    )
+    assert hk_scope_drift.drift({"shellcheck": step}, rules, {"small"})
+
+
+def test_hk_scope_drift_reads_the_profiles_ci_runs():
+    """Only profiles on ci.yml hk check commands count."""
+    text = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
+    assert {"small", "medium", "large"} <= hk_scope_drift.ci_profiles(text)
+    assert hk_scope_drift.ci_profiles("run: other --profile x\n") == set()

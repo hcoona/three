@@ -122,9 +122,8 @@ def test_uv_workflow_and_renovate_consumers_use_mise_projection():
         assert {config_path, ".python-version"} <= set(tasks["fileFilters"])
 
 
-# Retired campaign callers and the separately owned legacy release stack.
+# Retired campaign callers.
 UNGUARDED_WORKFLOWS = {
-    "official.yml",
     "workflow-delivery-v3-nuget-live-attempt.yml",
 }
 # Tools whose exact committed version a workflow could duplicate. Go and Java
@@ -166,7 +165,6 @@ def guarded_workflows():
         path
         for path in sorted((ROOT / ".github/workflows").glob("*.yml"))
         if path.name not in UNGUARDED_WORKFLOWS
-        and not path.name.startswith("release-")
     ]
 
 

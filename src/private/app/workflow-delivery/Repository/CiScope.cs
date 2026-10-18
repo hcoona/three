@@ -39,12 +39,6 @@ internal static partial class CiScope
     private static readonly string[] NuGetPreparationRoots = ["src/private/app/workflow-delivery",
         "tests/private/app/workflow-delivery", NuGetProduct];
     private static readonly string[] RubyInputs = ["Gemfile", "Gemfile.lock", ".ruby-version"];
-    // Release scripts and workflow sources read by tests/eng/test_legacy_release_contract.py.
-    private static readonly string[] LegacyReleaseScripts = [
-        "eng/scripts/publish_node_gpr_idempotent.sh",
-        "eng/scripts/publish_node_npmjs_idempotent.sh",
-        "eng/scripts/release_orchestrate_lint_caller_completeness.sh",
-        "eng/scripts/release_orchestrate_policy_validate_inputs.sh"];
 
     internal static CiScopeApplicability Select(string[] changed, GitComparison comparison,
         bool full, string[] resourceInputs)
@@ -93,13 +87,27 @@ internal static partial class CiScope
         var tooling = new ToolingConfiguration(
             await checkout.ReadOptionalTextAsync(HkConfiguration, token),
             await checkout.ReadOptionalTextAsync(RenovateConfiguration, token));
+        var scripts = new List<string>();
+        foreach (string path in changed.Where(path => entries.ContainsKey(path) &&
+                path.EndsWith(".py", StringComparison.Ordinal)))
+            if (InlineScriptMetadata(await checkout.ReadOptionalTextAsync(path, token)))
+                scripts.Add(path);
         return Owners(checkout.Revision, changed, resourceInputs,
-            catalog is null ? [] : Bindings(catalog), tasks, hk, tooling);
+            catalog is null ? [] : Bindings(catalog), tasks, hk, tooling, [.. scripts]);
+    }
+
+    // PEP 723 inline script metadata: line 1 opens the block and a later line closes it.
+    internal static bool InlineScriptMetadata(string? text)
+    {
+        if (text is null) return false;
+        string[] lines = text.Split('\n').Select(line => line.TrimEnd('\r')).ToArray();
+        return lines[0] == "# /// script" && lines.Skip(1).Contains("# ///");
     }
 
     internal static ScopeCoordinate[] Owners(GitRevision revision, string[] changed,
         string[] resourceInputs, (string Id, string Pattern)[] bindings,
-        RecordTaskOwner[] tasks, string[] hkModules, ToolingConfiguration? tooling = null)
+        RecordTaskOwner[] tasks, string[] hkModules, ToolingConfiguration? tooling = null,
+        string[]? inlineScripts = null)
     {
         var entries = revision.Entries.ToDictionary(entry => entry.Path, StringComparer.Ordinal);
         string[] gems = GemRoots(revision);
@@ -137,6 +145,13 @@ internal static partial class CiScope
                 Regular(".github/workflows/ci.yml"))
                 Add("conformance", ".github/workflows/ci.yml#conformance",
                     "native-hk-configuration", ".github/workflows/ci.yml", path);
+            // Fixed copies of HK step globs and exclusions (hk-scope-copies.json); the HK
+            // step hk-scope-drift keeps them aligned with the evaluated hk.pkl.
+            foreach (string rule in new[] { WorkflowLint, ShellLint })
+                if (HkCopy(rule, path) && Regular(HkConfiguration) &&
+                    Regular(".github/workflows/ci.yml"))
+                    Add("conformance", ".github/workflows/ci.yml#conformance", rule,
+                        ".github/workflows/ci.yml", HkConfiguration);
             if (path == "renovate.json" && Regular("pyproject.toml") &&
                 Regular("tests/eng/test_python_runtime.py"))
                 Add("python", "pytest:tests/eng/test_python_runtime.py",
@@ -168,7 +183,18 @@ internal static partial class CiScope
             string[] python = manifests.Where(manifest =>
                 manifest.EndsWith("/pyproject.toml", StringComparison.Ordinal) &&
                 Under(path, Parent(manifest))).ToArray();
-            if (recordTasks.Length == 0 && (python.Length != 0 || PythonResponsibility(path)))
+            bool pythonInput = python.Length != 0 || PythonResponsibility(path);
+            // A standalone PEP 723 script has no Python group consumer; HK's fixed ruff copy
+            // owns it instead.
+            if (recordTasks.Length == 0 && !pythonInput &&
+                path.EndsWith(".py", StringComparison.Ordinal) &&
+                (inlineScripts ?? []).Contains(path, StringComparer.Ordinal) &&
+                LintedStandalonePython(path) && Regular(HkConfiguration) &&
+                Regular(".github/workflows/ci.yml"))
+                Add("conformance", ".github/workflows/ci.yml#conformance", PythonLint,
+                    ".github/workflows/ci.yml", HkConfiguration);
+            else if (recordTasks.Length == 0 && (pythonInput ||
+                    path.EndsWith(".py", StringComparison.Ordinal)))
                 Add("python", ".github/workflows/ci.yml#python-tests",
                     "native-python-caller-responsibility", ["pyproject.toml", .. python]);
             if (resourceInputs.Contains(path, StringComparer.Ordinal))
@@ -357,10 +383,6 @@ internal static partial class CiScope
     private static bool PathCharacter(char value) => char.IsAsciiLetterOrDigit(value) ||
         value is '.' or '_' or '-' or '/' or '@' or '+' or '~';
 
-    internal static bool LegacyReleaseInput(string path) =>
-        Under(path, ".github/workflows") ||
-        LegacyReleaseScripts.Contains(path, StringComparer.Ordinal);
-
     private static string[] Jobs(string path, string[] gems)
     {
         if (AllInputs.Contains(path, StringComparer.Ordinal))
@@ -387,13 +409,57 @@ internal static partial class CiScope
             ? DotNetInheritedInputs.Consumes(path, [NuGetProduct])
             : DotNetInheritedInputs.Consumes(path, NuGetPreparationRoots));
 
+    internal const string WorkflowLint = "native-hk-workflow-lint";
+    internal const string ShellLint = "native-hk-shell-lint";
+    internal const string PythonLint = "native-hk-python-lint";
+
+    private sealed record HkScopeCopy(string? Directory, string[] Suffixes, string[] Exclusions);
+
+    // The single committed copy of the HK steps' globs and relevant exclusions.
+    private static readonly Lazy<Dictionary<string, HkScopeCopy>> HkCopies = new(() =>
+    {
+        using Stream stream = typeof(CiScope).Assembly.GetManifestResourceStream(
+            "HkScopeCopies") ?? throw new InvalidDataException("Missing HK scope copies.");
+        using JsonDocument document = JsonDocument.Parse(stream);
+        var copies = new Dictionary<string, HkScopeCopy>(StringComparer.Ordinal);
+        foreach (JsonProperty rule in document.RootElement.GetProperty("rules")
+            .EnumerateObject())
+        {
+            JsonElement directory = rule.Value.GetProperty("directory");
+            copies.Add(rule.Name, new(directory.ValueKind == JsonValueKind.Null ? null :
+                    directory.GetString(), Strings(rule.Value, "suffixes"),
+                Strings(rule.Value, "exclusions")));
+        }
+        return copies;
+
+        static string[] Strings(JsonElement value, string name) => value.GetProperty(name)
+            .EnumerateArray().Select(item => item.GetString() ??
+                throw new InvalidDataException("Invalid HK scope copy.")).ToArray();
+    });
+
+    // A path the copied HK step selects: suffix, optional direct parent and no exclusion.
+    internal static bool HkCopy(string rule, string path)
+    {
+        HkScopeCopy copy = HkCopies.Value[rule];
+        return copy.Suffixes.Any(suffix => path.EndsWith(suffix, StringComparison.Ordinal)) &&
+            (copy.Directory is null || Parent(path) == copy.Directory) &&
+            !copy.Exclusions.Any(pattern => Matches(path, pattern));
+    }
+
+    // Not a pytest file and selected by the copied HK ruff steps.
+    internal static bool LintedStandalonePython(string path) =>
+        path.Split('/')[^1] != "conftest.py" && !Under(path, "tests") &&
+        HkCopy(PythonLint, path);
+
+    // Python responsibility other than the .py suffix itself.
     private static bool PythonResponsibility(string path) =>
-        path.EndsWith(".py", StringComparison.Ordinal) ||
         AllInputs.Contains(path, StringComparer.Ordinal) ||
         PythonInputs.Contains(path, StringComparer.Ordinal) || Under(path, "tests/eng") ||
         path is ".github/workflows/workflow-delivery-v3-python-smoke.yml" or
             ".github/workflows/workflow-delivery-v3-ruby-smoke.yml" or ".typos.toml" ||
-        AzureInput(path) || LegacyReleaseInput(path);
+        PythonRepositoryInputs.BuddyGuardInputs.Contains(path, StringComparer.Ordinal) ||
+        PythonRepositoryInputs.IsWorkflow(path) ||
+        AzureInput(path);
 
     private static string[] GemRoots(GitRevision revision) => revision.Entries
         .Select(entry => entry.Path).Where(path => path.EndsWith(".gemspec",

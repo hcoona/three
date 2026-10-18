@@ -100,7 +100,7 @@ malformed or out-of-checkout read fails planning instead of dropping
 responsibility. Directory names and a repository-local Pkl parser do not infer
 this responsibility.
 
-Two finite rules cover repository tooling configuration. `renovate.json`,
+Five finite rules cover repository tooling configuration. `renovate.json`,
 `.github/renovate/**` and `.github/workflows/renovate.yml` receive owner
 `renovate`, target `.github/workflows/renovate.yml` and rule
 `native-renovate-configuration`. A present coordinate whose repository-relative
@@ -112,7 +112,43 @@ A complete token is not preceded or followed by a path character, so
 reference, not proof that a step reads the file, and it parses no shell
 commands: locked HK 2.6.0 `check --plan --json` reports step status, reasons
 and file counts but no per-step files. Imported HK modules keep their native
-import route. Neither rule selects a retained job.
+import route. A present direct child of the root `.github/workflows/` ending in
+`.yml` or `.yaml` receives owner `conformance`, target
+`.github/workflows/ci.yml#conformance` and rule `native-hk-workflow-lint` when
+the endpoint commits root `hk.pkl` and `ci.yml`. HK's `actionlint` step checks
+these files; its glob covers workflow YAML under any `.github/workflows/`
+directory, and this rule is a fixed copy for the root directory only. A present `*.sh` or
+`*.bash` file that the shared `shellcheck`/`shfmt` exclusions do not match
+(`**/.github/**`, `**/.specify/**`, `**/generated/**` and the root-only
+`.agents/**`) receives owner `conformance`, target
+`.github/workflows/ci.yml#conformance` and rule `native-hk-shell-lint` under the
+same `hk.pkl` and `ci.yml` condition. This is a fixed copy of those steps' shared
+glob and exclusions. The rule adds to, and does not replace, a script's existing owner. A committed `*.py`
+file whose first line is `# /// script` with a later closing `# ///` line (PEP
+723 inline script metadata) has its `native-python-caller-responsibility`
+reason replaced, never added to, by owner `conformance`, target
+`.github/workflows/ci.yml#conformance` and rule `native-hk-python-lint` when the
+file is not `conftest.py` or under `tests/`, nothing but its `.py` suffix would
+give it a Python reason (no retained-job or Python input list, `tests/eng`,
+AzureAuth input, enclosing non-root `pyproject.toml` or record task), the shared
+`ruff`/`ruff_format` exclusions that can match a Python file (`**/.github/**`,
+`**/.specify/**`, `**/generated/**`, the root-only `.agents/**` and
+`src/private/lib/scan-restoration/skills/**`) do not match it, and the endpoint
+commits `hk.pkl` and `ci.yml`. Other owners are kept. No rule selects a
+retained job or adds Python execution.
+
+The last three rules read one committed copy of their HK step names, globs and
+exclusions, `Repository/resources/hk-scope-copies.json`, embedded in the control
+application. The HK conformance step `hk-scope-drift`
+(`eng/scripts/hk_scope_drift.py`, profile `small`, also run by `--all`)
+evaluates root `hk.pkl` with the locked Pkl and fails unless each named `check`
+step stays in a profile `ci.yml` runs, its glob still matches the copied
+suffixes, and its exclusions that can match such a file equal the copied set.
+That relevance is conservative and reads only the final segment: `**` counts, a
+literal segment counts when it ends with a copied suffix, and a wildcard segment
+counts unless the text after its last `.` is a literal ending other than a
+copied suffix. Changes to `hk.pkl`, `src/private/lib/hk/**`, the copy, `ci.yml` or
+the script select that step.
 
 The Node group joins native PNPM membership and reasons before final owner
 validation. Manifest/catalog reads used to

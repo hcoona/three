@@ -7,6 +7,10 @@ namespace WorkflowDelivery.Tests.Repository;
 [TestClass]
 public sealed class PythonRepositoryInputsTests
 {
+    // An exact retained special workflow input and its standalone pytest owner.
+    private static readonly (string Target, string Path) Workflow = (
+        "tests/eng/test_general_ci_workflow.py",
+        ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml");
     private static readonly bool[] PairedInputPresence = [true, false];
     private static readonly string[] PairedRevisions = ["before", "after"];
     private static readonly (bool Before, bool After)[] QualityPresence =
@@ -235,6 +239,9 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_general_ci_workflow.py", "tests/eng/ci_workflow_shell.py")]
     [DataRow("tests/eng/test_general_ci_workflow.py",
         ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml")]
+    [DataRow("tests/eng/test_general_ci_workflow.py", ".github/workflows/release-buddy.yml")]
+    [DataRow("tests/eng/test_general_ci_workflow.py",
+        ".github/workflows/workflow-delivery-v3-buddy-smoke.yml")]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/workflow_delivery_v3_hk.py")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/locked_tool_versions.py")]
@@ -243,11 +250,12 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_python_runtime.py",
         ".github/workflows/workflow-delivery-v3-python-smoke.yml")]
     [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/renovate.yml")]
+    [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/codeql.yml")]
+    [DataRow("tests/eng/test_python_runtime.py",
+        ".github/workflows/workflow-delivery-v3-official-simulate.yml")]
+    [DataRow("tests/eng/test_general_ci_workflow.py", "eng/scripts/hk_scope_drift.py")]
     [DataRow("tests/eng/test_python_runtime.py", "global.json")]
     [DataRow("tests/eng/test_python_release_caller.py", "global.json")]
-    [DataRow("tests/eng/test_legacy_release_contract.py", ".github/workflows/official.yml")]
-    [DataRow("tests/eng/test_legacy_release_contract.py",
-        "eng/scripts/publish_node_npmjs_idempotent.sh")]
     public void SpecialInputsReachTheirActualTargets(string target, string path)
     {
         var endpoint = Endpoint([target, "tests/unrelated.py"], [path, "docs/unrelated.md"]);
@@ -266,10 +274,6 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/private/app/workflow-delivery/Native/Python",
         "src/public/lib/nbgv-python-other/source.py")]
     [DataRow("src/private/app/azureauth-credprovider/tests", "src/other/Directory.Build.props")]
-    [DataRow("tests/eng/test_legacy_release_contract.py", "src/product/three.release.yml")]
-    [DataRow("tests/eng/test_legacy_release_contract.py", "src/product/three.release.yaml")]
-    [DataRow("tests/eng/test_legacy_release_contract.py",
-        "eng/scripts/workflow_release_control.py")]
     public void NeighboringInputsDoNotSelectSpecialTargets(string target, string path)
     {
         var endpoint = Endpoint([target], [path]);
@@ -437,16 +441,14 @@ public sealed class PythonRepositoryInputsTests
     [TestMethod]
     public void PairedDeletedInputRetainsOriginalRevisionAndSurvivingOwner()
     {
-        var basis = Endpoint(["tests/eng/test_legacy_release_contract.py"],
-            [".github/workflows/removed.yml"], "before");
-        var candidate = Endpoint(["tests/eng/test_legacy_release_contract.py"], [], "after");
+        var basis = Endpoint([Workflow.Target], [Workflow.Path], "before");
+        var candidate = Endpoint([Workflow.Target], [], "after");
         PythonFactAssembly assembly = PythonFactsAssembler.Assemble(Facts(basis), Facts(candidate),
-            [".github/workflows/removed.yml"], false);
+            [Workflow.Path], false);
         PlannedCheck check = Assert.ContainsSingle(ImpactPlanner.Plan(assembly.Request,
             assembly.PairedReasons).Checks);
-        Assert.AreEqual("pytest:tests/eng/test_legacy_release_contract.py", check.Work.Key.Target);
-        Assert.AreEqual(new SelectionReason(".github/workflows/removed.yml", "before",
-            "pytest:tests/eng/test_legacy_release_contract.py"),
+        Assert.AreEqual("pytest:" + Workflow.Target, check.Work.Key.Target);
+        Assert.AreEqual(new SelectionReason(Workflow.Path, "before", "pytest:" + Workflow.Target),
             Assert.ContainsSingle(check.Reasons));
         Assert.IsEmpty(assembly.Request.Basis.UnaffectedPaths);
     }
@@ -458,10 +460,9 @@ public sealed class PythonRepositoryInputsTests
     [DataRow(false, false)]
     public void PairedSpecialInputsReachOppositeEndpointOwners(bool plugin, bool inputAtBasis)
     {
-        string path = plugin ? "src/public/lib/nbgv-python/src/removed.py" :
-            ".github/workflows/removed.yml";
+        string path = plugin ? "src/public/lib/nbgv-python/src/removed.py" : Workflow.Path;
         string target = plugin ? "tests/private/app/workflow-delivery/Native/Python" :
-            "tests/eng/test_legacy_release_contract.py";
+            Workflow.Target;
         PythonProjectDependencies[] members = plugin ?
             [Member("."), Member("src/public/lib/nbgv-python")] : [Member(".")];
         PythonFactsEndpoint basis = Facts(Endpoint(inputAtBasis ? ["tests/unrelated.py"] :

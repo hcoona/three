@@ -230,7 +230,7 @@ ends a grant. Git and the proposing PR retain the reason and history.
   retained v1 Official release stack if it is no longer usable; an independent
   read-only investigation found it unusable as a maintained route: the current chain has never run, its Ruby path cannot succeed, its declared reviewer gates are absent, and the Python and Node paths are unvalidated.
 - **Accepted inputs:** the
-  [retained legacy workflow boundary](../src/private/app/workflow-delivery/docs/research/legacy-workflow-boundary.md),
+  [retained legacy workflow boundary](https://github.com/hcoona/three/blob/0f83aa3649ff84c5e305a4f824b1da6c8e7eaba6/src/private/app/workflow-delivery/docs/research/legacy-workflow-boundary.md),
   the Workflow Delivery
   [integration contracts](../src/private/app/workflow-delivery/docs/middle-level-design.md#integration-mapping),
   the [record-family catalog](governance/record-families.yaml) and the

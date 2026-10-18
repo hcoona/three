@@ -10,7 +10,6 @@ internal sealed record PythonCiCallerContext(MaterializedEndpoint Basis,
 internal sealed record PythonCiCallerReadback(PythonMetadataMember[] Members, string Interpreter,
     PythonPytestConfiguration Configuration, PythonPytestTargetSet Targets,
         PythonPytestOperation Operation);
-internal sealed record PythonCiAuxiliary(bool NativeNode, bool AzureBundle);
 
 internal static class PythonCiCaller
 {
@@ -72,24 +71,20 @@ internal static class PythonCiCaller
                 readback.Targets, readback.Operation), TransferJson.Default.PythonCiCallerReadback);
         CiCallerTransfer.Write(Path.Combine(directory, "plan.json"), readback.Plan,
             TransferJson.Default.CiPlan);
-        PythonCiAuxiliary auxiliary = Auxiliary(readback.Plan);
         CiCallerTransfer.Output("selected", (readback.Plan.Checks.Length !=
             0).ToString().ToLowerInvariant());
-        CiCallerTransfer.Output("native_node", auxiliary.NativeNode.ToString().ToLowerInvariant());
         return readback;
     }
 
-    internal static PythonCiAuxiliary Auxiliary(CiPlan plan)
-    {
-        string[] targets = plan.Checks.Where(item => item.Work.Key.Check == "python/pytest-v1")
-            .Select(item => item.Work.Dimensions.TryGetValue("testPath", out string? path) ? path :
-                throw new InvalidDataException("Selected pytest check has no target.")).ToArray();
-        return new(targets.Contains("tests/eng/test_legacy_release_contract.py"),
-            targets.Contains("src/private/app/azureauth-credprovider/python/tests"));
-    }
+    // The Azure credential-provider tests are the only target with a native adapter need.
+    internal static bool AzureBundle(CiPlan plan) => plan.Checks
+        .Where(item => item.Work.Key.Check == "python/pytest-v1")
+        .Select(item => item.Work.Dimensions.TryGetValue("testPath", out string? path) ? path :
+            throw new InvalidDataException("Selected pytest check has no target."))
+        .Contains("src/private/app/azureauth-credprovider/python/tests");
 
-    internal static async Task<CiOutcome> ExecuteAsync(string directory, string? miseData,
-        string? mise, string? node, string? pwsh, CancellationToken token,
+    internal static async Task<CiOutcome> ExecuteAsync(string directory, string? pwsh,
+        CancellationToken token,
         Func<CiPlan, PythonGroupRunRequest, CancellationToken, Task<PythonGroupRunResult>>?
             execute = null, TextWriter? diagnostics = null)
     {
@@ -108,28 +103,14 @@ internal static class PythonCiCaller
             preparation.Request.Basis.Checkout != context.Basis || preparation.Request.Full !=
                 context.Full)
             throw new InvalidDataException("Prepared Python candidate differs from execution.");
-        PythonCiAuxiliary selected = Auxiliary(plan);
         var environment = new Dictionary<string, string?>(candidate.Environment,
             StringComparer.Ordinal);
-        if (selected.AzureBundle)
+        if (AzureBundle(plan))
         {
             Prepend(environment, pwsh);
             foreach (string name in new[] { "DOTNET_ROOT", "DOTNET_ROOT_X64", "DOTNET_ROOT_ARM64" })
                 if (Environment.GetEnvironmentVariable(name) is { } value) environment[name] =
                     value;
-        }
-        if (selected.NativeNode)
-        {
-            if (miseData is null || !Directory.Exists(CiCallerTransfer.Absolute(miseData)))
-                throw new InvalidDataException("Selected tests require prepared native mise data.");
-            Prepend(environment, mise); Prepend(environment, node);
-            environment["MISE_DATA_DIR"] = miseData;
-            environment["MISE_TASK_RUN_AUTO_INSTALL"] = "false";
-            environment["MISE_EXEC_AUTO_INSTALL"] = "0";
-            await CiCallerTransfer.RunAsync(new(CiCallerTransfer.Absolute(mise!),
-                context.Candidate.Directory,
-                ["trust", Path.Combine(context.Candidate.Directory, "mise.toml")], 30,
-                environment, InheritEnvironment: false), directory, "mise-trust", token);
         }
         environment["PYTHONSAFEPATH"] = null;
         PythonRepositoryRequest collection = candidate.Collection;

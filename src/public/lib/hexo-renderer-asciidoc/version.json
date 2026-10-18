@@ -9,10 +9,7 @@
     ":/LICENSE",
     ":/COPYING",
     ":/COPYING.LESSER",
-    ":/LICENSES/LGPL-3.0-linking-exception.txt",
-    ":/.github/workflows/release-build-node-pack.yml",
-    ":/.github/workflows/release-orchestrate.yml",
-    ":/eng/scripts/prepare_npm_publish.py"
+    ":/LICENSES/LGPL-3.0-linking-exception.txt"
   ],
   "inherit": true
 }

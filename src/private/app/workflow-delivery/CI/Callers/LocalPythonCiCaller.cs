@@ -9,33 +9,16 @@ internal static class LocalPythonCiCaller
     internal static int? Run(string[] args, TextWriter output, TextWriter? diagnostics = null)
     {
         if (args is not ["ci", "caller-local-python", var root, var directory, var transfer,
-                var workingDirectory,
-                var data, var uv, var python, var dotnet, var mise,
-                var node, var pwsh]) return null;
+                var uv, var python, var dotnet, var pwsh]) return null;
         if (!OperatingSystem.IsLinux())
             throw new InvalidDataException("The current local Python group supports Linux.");
-        return ExecuteAsync(root, directory, transfer, workingDirectory, data == "-" ? null : data,
-            new(uv, python, dotnet), mise, node, pwsh, output, diagnostics,
-            CancellationToken.None).GetAwaiter().GetResult();
-    }
-
-    internal static string ToolData(string? selected, string workingDirectory)
-    {
-        selected ??= Environment.GetEnvironmentVariable("MISE_DATA_DIR");
-        if (selected is null)
-        {
-            string shared = Environment.GetEnvironmentVariable("XDG_DATA_HOME") ??
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    ".local", "share");
-            selected = Path.Combine(shared, "mise");
-        }
-        return Path.GetFullPath(selected, CiCallerTransfer.Absolute(workingDirectory));
+        return ExecuteAsync(root, directory, transfer, new(uv, python, dotnet), pwsh, output,
+            diagnostics, CancellationToken.None).GetAwaiter().GetResult();
     }
 
     internal static async Task<int> ExecuteAsync(string root, string directory, string transfer,
-        string workingDirectory, string? data, PythonQueryTools tools, string mise,
-        string node, string pwsh,
-        TextWriter output, TextWriter? diagnostics, CancellationToken token)
+        PythonQueryTools tools, string pwsh, TextWriter output, TextWriter? diagnostics,
+        CancellationToken token)
     {
         CiCallerTransfer.External(root, directory);
         GitRevision head = (await GitMaterialization.BindHeadAsync(root, token)).Revision;
@@ -64,8 +47,6 @@ internal static class LocalPythonCiCaller
         await PythonCiCaller.MaterializeAsync(root, scopePath, transfer, state, token);
         await PythonCiCaller.PlanAsync(state, scopePath, tools, token);
         CiOutcome outcome = await PythonCiCaller.ExecuteAsync(state,
-            ToolData(data, workingDirectory),
-            mise == "-" ? null : mise, node == "-" ? null : node,
             pwsh == "-" ? null : pwsh, token, diagnostics: diagnostics);
         output.WriteLine(JsonSerializer.Serialize(outcome, TransferJson.Default.CiOutcome));
         return outcome.Satisfied ? 0 : 1;
