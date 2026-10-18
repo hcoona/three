@@ -83,6 +83,12 @@ internal sealed class NodeRepositoryReader
             RequireFile(path);
             Add(path, directories);
         }
+        // The root hooks are checked even when PNPM reports no other member: a root hook can
+        // narrow the membership query to the root alone.
+        foreach (string file in HookFiles)
+            if (File.Exists(Path.Combine(checkout.Root, file)))
+                throw new InvalidDataException("Unsupported additional Node configuration: " +
+                    file);
         foreach (string directory in directories)
         {
             string ancestor = directory;

@@ -767,10 +767,11 @@ missing fact. The hook-filter limit is guarded instead of rechecked, by two
 guards. `PnpmGraphReader` reads `pnpmfile`, `config-dependencies` and
 `node-linker` through `pnpm config get --json` and fails planning unless the
 first two are unset and the linker is unset or `isolated`; `PnpmGraphReaderTests`
-covers each rejection. A default pnpmfile is discovered without any setting, so
+covers each rejection. It also requires `global-pnpmfile` to be unset, because a
+user-level pnpmfile loads ahead of the project's and can narrow the same queries. A default pnpmfile is discovered without any setting, so
 `config get pnpmfile` stays `null` for it. `NodeRepositoryReader` therefore
-fails planning when `.npmrc` or a hook file exists at the workspace root or a
-member ancestor: `.pnpmfile.mjs` and `.pnpmfile.cjs`, the two names the
+fails planning when `.npmrc` or a hook file exists at the workspace root, checked
+even when PNPM reports no other member, or at a member ancestor: `.pnpmfile.mjs` and `.pnpmfile.cjs`, the two names the
 12.14.0 [finder](https://github.com/pnpm/pnpm/blob/fe4a0c232384289de82be3d502896ca7e070050c/pnpm/crates/hooks/src/finder.rs#L17-L27)
 probes, and the retained undotted `pnpmfile.cjs`, which 12.14.0 does not load.
 `NodeRepositoryReaderTests` covers each name. The file list is a source reading

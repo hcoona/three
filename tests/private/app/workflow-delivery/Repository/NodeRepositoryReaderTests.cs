@@ -130,6 +130,32 @@ public sealed class NodeRepositoryReaderTests(TestContext context)
             : "Missing committed Node setup input: mise.lock", error.Message);
     }
 
+    // A root hook can narrow PNPM membership to the root alone; the root hook files are still
+    // checked when no other member is reported.
+    [TestMethod]
+    public async Task ReadRejectsRootHookWhenMembershipIsRootOnly()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        foreach (string path in SetupInputs)
+            await repo.SetAsync(path);
+        await repo.SetAsync(Project + "/package.json", "{}");
+        await repo.SetAsync(".pnpmfile.mjs", "export const hooks = {}");
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+        GitRevision revision = await new GitReader(repo.Directory).ReadAsync(commit,
+            context.CancellationToken);
+        GitMaterialization checkout = await GitMaterialization.BindAsync(repo.Directory, revision,
+            context.CancellationToken);
+        var reader = new NodeRepositoryReader(checkout, (arguments, token) =>
+            NativeAnswer(repo.Directory, Array.Empty<string>(), arguments, token));
+
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            reader.ReadAsync(context.CancellationToken));
+
+        Assert.AreEqual("Unsupported additional Node configuration: .pnpmfile.mjs",
+            error.Message);
+    }
+
     // The reader identifies the fixture by package name, so only its current location runs.
     [TestMethod]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm")]

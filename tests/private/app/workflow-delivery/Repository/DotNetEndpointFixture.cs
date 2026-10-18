@@ -63,7 +63,8 @@ internal sealed class DotNetEndpointFixture : IDisposable
         return new(PathOf(project), globals);
     }
 
-    internal DotNetGraphResponse Response(bool includeB = true)
+    // testProject adds an MTP test project, discovered by dirs.proj like the products.
+    internal DotNetGraphResponse Response(bool includeB = true, string? testProject = null)
     {
         DotNetNodeIdentity traversal = Identity("dirs.proj");
         DotNetNodeIdentity outer = Identity("product/A.csproj");
@@ -85,6 +86,12 @@ internal sealed class DotNetEndpointFixture : IDisposable
             nodes.Add(Node(dependency, false, [PathOf("product/B.csproj")]));
             edges.Add(new(first, dependency));
             edges.Add(new(second, dependency));
+        }
+        if (testProject is not null)
+        {
+            DotNetNodeIdentity test = Identity(testProject, "net10.0");
+            nodes.Add(Node(test, false, [PathOf(testProject)]) with { TestCapability = "MTP" });
+            edges.Add(new(traversal, test));
         }
         DotNetGraphInput[] inputs = nodes.Select(node => new DotNetGraphInput(
             node.Identity.Project, "Project", "Evaluation", node.Identity)).Concat(

@@ -48,9 +48,11 @@ internal sealed class PnpmGraphReader
             Absolute(RequiredString(lockDirectory.RootElement), root) != root)
             throw new InvalidDataException(
                 "PNPM analysis requires the lockfile at its workspace root.");
-        // A pnpmfile or config dependency can narrow these queries through hooks, and another
-        // linker changes installed layout. Neither is qualified; PNPM resolves the settings.
-        foreach (string setting in new[] { "pnpmfile", "config-dependencies", "node-linker" })
+        // A project or global pnpmfile or a config dependency can narrow these queries through
+        // hooks, and another linker changes installed layout. Neither is qualified; PNPM
+        // resolves the settings.
+        foreach (string setting in new[] { "pnpmfile", "global-pnpmfile", "config-dependencies",
+                     "node-linker" })
         {
             using JsonDocument value = await ReadJsonAsync(["config", "get", setting, "--json"],
                 cancellationToken);

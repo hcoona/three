@@ -235,6 +235,7 @@ public sealed class PnpmGraphReaderTests
     [DataRow("dedicated-lock")]
     [DataRow("relocated-lock")]
     [DataRow("pnpmfile")]
+    [DataRow("global-pnpmfile")]
     [DataRow("config-dependencies")]
     [DataRow("hoisted-linker")]
     public async Task ReadRejectsUnsupportedOrIncompleteNativeScope(string defect)
@@ -260,6 +261,7 @@ public sealed class PnpmGraphReaderTests
             case "dedicated-lock": native.SharedLock = "false"; break;
             case "relocated-lock": native.LockDirectory = "\"elsewhere\""; break;
             case "pnpmfile": native.Settings["pnpmfile"] = "\"hooks.cjs\""; break;
+            case "global-pnpmfile": native.Settings["global-pnpmfile"] = "\"/g.cjs\""; break;
             case "config-dependencies":
                 native.Settings["config-dependencies"] = "{\"hooks\":\"1.0.0\"}"; break;
             case "hoisted-linker": native.Settings["node-linker"] = "\"hoisted\""; break;
