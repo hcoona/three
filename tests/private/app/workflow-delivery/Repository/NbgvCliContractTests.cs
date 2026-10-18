@@ -16,14 +16,16 @@ public sealed class NbgvCliContractTests(TestContext context)
     private const string Project = "product";
     private const string Main = "refs/heads/main";
     private const string Tag = "refs/tags/release/product/v1.2.3";
-    // Every variable through which the pinned CLI reads a cloud-build context or a public
-    // release override. The CI job itself runs under GitHub Actions, so each row starts from
-    // none of them and adds only its own.
+    // The variables NBGV 3.10.94 reads to detect a cloud-build context, override public
+    // release or select its git engine (NBGV_GitEngine, and DEPENDABOT or a GITHUB_ACTOR
+    // naming a bot, which disable it). The CI job itself runs under GitHub Actions, so each
+    // row starts from none of them and adds only its own. A provider's other variables matter
+    // only after its detection variable is set.
     private static readonly string[] AmbientContext = ["GITHUB_ACTIONS", "GITHUB_REF",
-        "GITHUB_SHA", "GITHUB_ENV", "GITHUB_EVENT_NAME", "IGNORE_GITHUB_REF", "PublicRelease",
-        "APPVEYOR", "SYSTEM_TEAMPROJECTID", "BUILD_VCS_NUMBER", "bamboo.buildKey",
-        "JENKINS_URL", "GITLAB_CI", "TRAVIS", "JB_SPACE_GIT_REVISION",
-        "BITBUCKET_PIPELINE_UUID"];
+        "GITHUB_SHA", "GITHUB_ENV", "GITHUB_EVENT_NAME", "GITHUB_ACTOR", "IGNORE_GITHUB_REF",
+        "PublicRelease", "NBGV_GitEngine", "DEPENDABOT", "APPVEYOR", "SYSTEM_TEAMPROJECTID",
+        "BUILD_VCS_NUMBER", "bamboo.buildKey", "JENKINS_URL", "GITLAB_CI", "TRAVIS",
+        "JB_SPACE_GIT_REVISION", "BITBUCKET_PIPELINE_UUID"];
     [ClassInitialize]
     public static async Task RestoreAsync(TestContext classContext)
     {
@@ -100,8 +102,14 @@ public sealed class NbgvCliContractTests(TestContext context)
             environment["GITHUB_SHA"] = commit;
         }
 
-        NativeCommandResult answer = await RunAsync(["get-version", "--project",
-            Path.Combine(repo.Directory, Project), "--format", "json"], environment);
+        // Production runs the CLI in the project directory without --project. The fixture
+        // sits outside the source checkout, so the tool manifest is copied above it.
+        string manifest = Path.Combine(Path.GetDirectoryName(repo.Directory)!, ".config");
+        Directory.CreateDirectory(manifest);
+        File.Copy(Path.Combine(RepositoryToolSelection.SourceRoot, ".config",
+            "dotnet-tools.json"), Path.Combine(manifest, "dotnet-tools.json"));
+        NativeCommandResult answer = await RunAsync(["get-version", "--format", "json"],
+            environment, Path.Combine(repo.Directory, Project));
         using JsonDocument cli = JsonDocument.Parse(answer.Stdout);
         using (GitContext git = GitContext.Create(repo.Directory,
                    engine: GitContext.Engine.ReadOnly))
@@ -123,20 +131,27 @@ public sealed class NbgvCliContractTests(TestContext context)
             // The rows must exercise the release decision, not agree on a constant.
             Assert.AreEqual(publicRelease, library.PublicRelease);
             Assert.AreEqual(2, library.VersionHeight);
+            // The fixture's own answer: version 1.2-beta at height 2 is 1.2.2-beta on a
+            // public release, with the commit suffix otherwise.
+            Assert.AreEqual(publicRelease ? "1.2.2-beta" : "1.2.2-beta.g" +
+                commit[..10], cli.RootElement.GetProperty("SemVer2").GetString());
             context.WriteLine(row + " SemVer2=" + library.SemVer2);
         }
     }
 
     private async Task<NativeCommandResult> RunAsync(string[] arguments,
-        Dictionary<string, string?> environment)
+        Dictionary<string, string?> environment, string? directory = null)
     {
         var values = AmbientContext.ToDictionary(name => name, _ => (string?)null,
             StringComparer.Ordinal);
         foreach ((string name, string? value) in environment) values[name] = value;
         NativeCommandResult result = await NativeProcess.ExecuteAsync(new("dotnet",
-            RepositoryToolSelection.SourceRoot, ["tool", "run", "nbgv", "--", .. arguments], 120,
-            values), context.CancellationToken);
-        Assert.IsTrue(result.Succeeded, NativeDiagnostic.Describe(result));
+            directory ?? RepositoryToolSelection.SourceRoot,
+            ["tool", "run", "nbgv", "--", .. arguments], 120, values),
+            context.CancellationToken);
+        // NBGV can exit 0 with no output when it finds no repository, so require an answer.
+        Assert.IsTrue(result.Succeeded && result.Stdout.Trim().Length != 0,
+            NativeDiagnostic.Describe(result));
         return result;
     }
 

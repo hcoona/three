@@ -122,6 +122,7 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
         Assert.IsFalse(result.ReturnedSuccessfully);
         Assert.AreEqual(3, handler.Sends);
         Assert.IsNotNull(result.FailureType);
+        CollectionAssert.AreEqual(fixture.Original, File.ReadAllBytes(fixture.Path));
     }
 
     // The pinned client also retries transport failures and its own request timeout inside
