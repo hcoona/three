@@ -54,10 +54,6 @@ with Path(os.environ["COMMAND_LOG"]).open("a", encoding="utf-8") as stream:
 failure = json.loads(os.environ.get("FAIL_COMMAND", "[]"))
 if failure and command[:len(failure)] == failure:
     sys.exit(73)
-if command[:2] == ["mise", "link"]:
-    # Preexisting bindings require the caller to request replacement.
-    if "--force" not in command:
-        sys.exit(74)
 if "--version" in command:
     print("fixture-version")
 """
@@ -74,6 +70,34 @@ def _action(job: dict[str, Any], action: str) -> dict[str, Any]:
         step
         for step in job["steps"]
         if step.get("uses", "").split("@", 1)[0] == action
+    )
+
+
+def _locked(tool: str) -> str:
+    entries = tomllib.loads((REPO_ROOT / "mise.lock").read_text())["tools"]
+    (version,) = {entry["version"] for entry in entries[tool]}
+    return version
+
+
+def _committed_versions(job: dict[str, Any]) -> dict[str, str]:
+    """Run the job's version reader against the checked-out root."""
+    step = next(step for step in job["steps"] if step.get("id") == "tools")
+    result = run_step(
+        {"run": step["run"].replace('"$GITHUB_OUTPUT"', "/dev/stdout")},
+        cwd=REPO_ROOT,
+        env={},
+        bindings={},
+    )
+    assert result.returncode == 0, result.stderr
+    return dict(line.split("=", 1) for line in result.stdout.splitlines())
+
+
+def _setup_input(
+    job: dict[str, Any], action: str, key: str, versions: dict[str, str]
+) -> str:
+    value = _action(job, action)["with"][key]
+    return resolve(
+        value, {f"steps.tools.outputs.{k}": v for k, v in versions.items()}
     )
 
 
@@ -226,7 +250,7 @@ def _bindings(tmp_path: Path) -> dict[str, str]:
     }
 
 
-def _commands(tmp_path: Path, *, missing: str | None = None) -> dict[str, str]:
+def _commands(tmp_path: Path) -> dict[str, str]:
     tools = tmp_path / "setup tools"
     tools.mkdir()
     for name in {
@@ -238,8 +262,7 @@ def _commands(tmp_path: Path, *, missing: str | None = None) -> dict[str, str]:
         "hk",
         "python",
     }:
-        if name != missing:
-            executable(tools / name, COMMAND_RECORDER)
+        executable(tools / name, COMMAND_RECORDER)
     bash = shutil.which("bash")
     assert bash is not None
     (tools / "bash").symlink_to(bash)
@@ -247,6 +270,7 @@ def _commands(tmp_path: Path, *, missing: str | None = None) -> dict[str, str]:
         "PATH": str(tools),
         "COMMAND_LOG": str(tmp_path / "commands.jsonl"),
         "GITHUB_ENV": str(tmp_path / "github-env"),
+        "GITHUB_OUTPUT": str(tmp_path / "github-output"),
         "GITHUB_EVENT_NAME": "pull_request",
         "RUNNER_TEMP": str(tmp_path / "runner-state"),
         "GITHUB_WORKSPACE": str(tmp_path),
@@ -316,16 +340,6 @@ def _run_validation(
     assert mise["with"]["experimental"] is True
     assert mise["with"]["install"] is False
     boundary = job["steps"].index(mise)
-    capture = _run_bash_steps(
-        job["steps"][:boundary], workflow, job, tmp_path, env
-    )
-    if capture.returncode:
-        return capture
-    shims = tmp_path / "competing shims"
-    shims.mkdir()
-    for command in TOOL_COMMANDS.values():
-        executable(shims / command, "raise SystemExit(91)")
-    env["PATH"] = f"{shims}{os.pathsep}{env['PATH']}"
     return _run_bash_steps(
         job["steps"][boundary + 1 :], workflow, job, tmp_path, env
     )
@@ -361,7 +375,7 @@ def test_required_general_ci_checks_remain_eligible(
     required = {
         "Validate": "validation",
         "Build & Test (.NET 10)": "dotnet-tests",
-        "Test (Python 3.14)": "python-tests",
+        "Test (Python)": "python-tests",
         "Test & Build (Node.js 22.x)": "node-tests",
         "Test & Build (Node.js 24.x)": "node-tests",
     }
@@ -406,28 +420,16 @@ def test_required_general_ci_checks_remain_eligible(
         pending.extend([needs] if isinstance(needs, str) else needs)
 
 
-def test_validation_uses_captured_tools_before_install_and_hk(
+def test_validation_installs_locked_tools_before_bootstrap_and_hk(
     workflow: dict[str, Any],
     tmp_path: Path,
 ) -> None:
-    """Bind the setup executables despite new shims and stale mise bindings."""
+    """Locked mise tools install before bootstrap and HK, without relabels."""
     env = _commands(tmp_path)
     result = _run_validation(workflow, tmp_path, env)
     assert result.returncode == 0, result.stderr
     calls = [item["command"] for item in _observations(env)]
-    links = [command for command in calls if command[:2] == ["mise", "link"]]
-    bound = {}
-    for command in links:
-        assert "--force" in command
-        selector, path = [arg for arg in command[2:] if not arg.startswith("-")]
-        bound[selector.split("@", 1)[0].removeprefix("core:")] = path
-        assert calls.index(command) < calls.index(
-            ["mise", "install", "--locked"]
-        )
-    assert bound == {
-        role: str(tmp_path / "setup tools" / command)
-        for role, command in TOOL_COMMANDS.items()
-    }
+    assert not any(command[:2] == ["mise", "link"] for command in calls)
     install = calls.index(["mise", "install", "--locked"])
     bootstrap = calls.index(["mise", "bootstrap"])
     hk = next(index for index, call in enumerate(calls) if call[0] == "hk")
@@ -444,26 +446,48 @@ def test_validation_uses_captured_tools_before_install_and_hk(
     assert install < bootstrap < hk
     for item in _observations(env):
         if item["command"][0] in {"mise", "hk"}:
-            assert "gopass" in item["disabled_tools"].split(",")
+            disabled = item["disabled_tools"].split(",")
+            assert "gopass" in disabled
+            # The locked mise Pkl serves HK; no second Pkl setup exists.
+            assert "pkl" not in disabled
 
 
-@pytest.mark.parametrize("failure", ["capture", "link", "install"])
+def test_validation_setup_runtimes_follow_committed_versions(
+    workflow: dict[str, Any],
+) -> None:
+    """Setup actions receive the root mise.lock selection, read once."""
+    job = workflow["jobs"]["conformance"]
+    assert not any(
+        step.get("uses", "").startswith("pkl-community/setup-pkl@")
+        for step in job["steps"]
+    )
+    versions = _committed_versions(job)
+    assert _setup_input(job, "pnpm/action-setup", "version", versions) == (
+        _locked("pnpm")
+    )
+    assert _setup_input(
+        job, "actions/setup-node", "node-version", versions
+    ) == (_locked("node"))
+    assert _setup_input(job, "ruby/setup-ruby", "ruby-version", versions) == (
+        _locked("ruby")
+    )
+
+
+@pytest.mark.parametrize("failure", ["install", "bootstrap"])
 def test_validation_bootstrap_failure_stops_hk(
     workflow: dict[str, Any],
     tmp_path: Path,
     failure: str,
 ) -> None:
-    """Keep validation blocked when setup capture or installation fails."""
-    env = _commands(tmp_path, missing="ruby" if failure == "capture" else None)
-    if failure != "capture":
-        env["FAIL_COMMAND"] = json.dumps(["mise", failure])
+    """Keep validation blocked when tool installation or bootstrap fails."""
+    env = _commands(tmp_path)
+    env["FAIL_COMMAND"] = json.dumps(["mise", failure])
     result = _run_validation(workflow, tmp_path, env)
-    assert result.returncode == (1 if failure == "capture" else 73)
+    assert result.returncode == CHILD_FAILURE
     calls = [item["command"] for item in _observations(env)]
-    assert ["mise", "bootstrap"] not in calls
     assert not any(command[0] == "hk" for command in calls)
-    if failure in ("capture", "link"):
-        assert not any(command[:2] == ["mise", "install"] for command in calls)
+    if failure == "install":
+        assert ["mise", "bootstrap"] not in calls
 
 
 @pytest.mark.parametrize("full", [True, False])
@@ -1392,8 +1416,10 @@ def test_native_ruby_transfers_original_control_and_complete_plan(workflow):
 def test_native_ruby_retains_failed_outcomes_and_uses_native_runtime(workflow):
     """Native runtime and failure carriers remain visible."""
     job = workflow["jobs"]["ruby-group"]
-    ruby = _action(job, "ruby/setup-ruby")
-    assert ruby["with"] == {"ruby-version": "4.0.7"}
+    versions = _committed_versions(job)
+    assert _setup_input(job, "ruby/setup-ruby", "ruby-version", versions) == (
+        _locked("ruby")
+    )
     assert not any(
         step.get("uses", "").startswith("actions/setup-python@")
         for step in job["steps"]
@@ -1475,17 +1501,25 @@ def test_node_receives_only_successful_original_ruby_artifact(
 
 def test_retained_hexo_prepares_only_its_selected_native_bundle(workflow):
     """Bundler owns the locked environment for selected Hexo checks."""
-    ruby = _action(workflow["jobs"]["node-tests"], "ruby/setup-ruby")
+    job = workflow["jobs"]["node-tests"]
+    ruby = _action(job, "ruby/setup-ruby")
     assert "steps.scope.outputs.run == 'true'" in ruby["if"]
     assert (
         "contains(fromJSON(needs.node-group.outputs.retained_directories), "
         "'src/public/lib/hexo-renderer-asciidoc')" in ruby["if"]
     )
     assert ruby["with"] == {
-        "ruby-version": "4.0.7",
+        "ruby-version": "$" + "{{ steps.tools.outputs.ruby }}",
         "working-directory": NODE_PACKAGE_DIR,
         "bundler-cache": True,
     }
+    versions = _committed_versions(job)
+    assert _setup_input(job, "ruby/setup-ruby", "ruby-version", versions) == (
+        _locked("ruby")
+    )
+    assert _setup_input(job, "pnpm/action-setup", "version", versions) == (
+        _locked("pnpm")
+    )
 
 
 CONTROL_PROJECT = (

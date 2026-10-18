@@ -7,12 +7,14 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+EXPRESSION = re.compile(r"\$\{\{\s*(\S+)\s*\}\}")
 _PHYSICAL_CONCURRENCY_GROUP = (
     "${{ format('workflow-delivery-{0}-hcoona-release-smoke-python', "
     "inputs.registry == 'testpypi' && 'test.pypi.org' || 'pypi.org') }}"
@@ -233,17 +235,57 @@ def test_workflow_frozen_recipe_and_registry_package_concurrency(
     )
 
 
+def committed_versions(workflow):
+    """Run prepare's version reader against the checked-out root."""
+    step = next(
+        step
+        for step in workflow["jobs"]["prepare"]["steps"]
+        if step.get("id") == "tools"
+    )
+    result = subprocess.run(  # noqa: S603
+        [
+            shutil.which("bash"),
+            "-ec",
+            step["run"].replace('"$GITHUB_OUTPUT"', "/dev/stdout"),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    versions = dict(line.split("=", 1) for line in result.stdout.splitlines())
+    lock = tomllib.loads((ROOT / "mise.lock").read_text())["tools"]
+    sdk = json.loads((ROOT / "global.json").read_text())["sdk"]["version"]
+    assert versions == {
+        "dotnet": sdk,
+        "python": lock["python"][0]["version"],
+        "uv": lock["uv"][0]["version"],
+    }
+    return versions
+
+
+def bound_version(workflow, job_name, value, versions):
+    """Bind prepare's step outputs, directly or through its job outputs."""
+    expression = EXPRESSION.fullmatch(value)[1]
+    if job_name != "prepare":
+        output = expression.removeprefix("needs.prepare.outputs.")
+        declared = workflow["jobs"]["prepare"]["outputs"][output]
+        expression = EXPRESSION.fullmatch(declared)[1]
+    return versions[expression.removeprefix("steps.tools.outputs.")]
+
+
 @pytest.mark.parametrize(
     "job_name", ["prepare", "observe", "publish", "verify-result"]
 )
 def test_workflow_selected_control_executable_reaches_caller(
     workflow, tmp_path, job_name
 ):
-    """Selected runtime setup supplies each job's first control invocation."""
+    """Committed runtime setup supplies each job's first control invocation."""
     job = workflow["jobs"][job_name]
     setup = next(
         step for step in job["steps"] if "mise install" in step.get("run", "")
     )
+    versions = committed_versions(workflow)
     command = next(
         line.strip()
         for step in job["steps"]
@@ -261,7 +303,10 @@ def test_workflow_selected_control_executable_reaches_caller(
     selected.chmod(0o755)
     mise = tools / "mise"
     mise.write_text(
-        f"#!{sys.executable}\nimport os, sys\n"
+        f"#!{sys.executable}\nimport json, os, sys\n"
+        "from pathlib import Path\n"
+        "with Path(os.environ['MISE_LOG']).open('a') as log:\n"
+        "    log.write(json.dumps(sys.argv[1:]) + '\\n')\n"
         "if sys.argv[1] == 'which': print(os.environ['SELECTED_DOTNET'])\n"
     )
     mise.chmod(0o755)
@@ -278,6 +323,14 @@ def test_workflow_selected_control_executable_reaches_caller(
         GITHUB_PATH=str(tmp_path / "github-path"),
         RUNNER_TEMP=str(tmp_path),
         COMMAND_LOG=str(tmp_path / "command.json"),
+        MISE_LOG=str(tmp_path / "mise.jsonl"),
+    )
+    # The install step receives the committed versions read once in prepare.
+    environment.update(
+        {
+            key: bound_version(workflow, job_name, value, versions)
+            for key, value in setup.get("env", {}).items()
+        }
     )
     result = subprocess.run(  # noqa: S603
         [
@@ -297,6 +350,14 @@ def test_workflow_selected_control_executable_reaches_caller(
         timeout=20,
     )
     assert result.returncode == 0, result.stderr
+    calls = [
+        json.loads(line)
+        for line in (tmp_path / "mise.jsonl").read_text().splitlines()
+    ]
+    install = next(call for call in calls if call[0] == "install")
+    assert sorted(item for item in install if "@" in item) == sorted(
+        f"{tool}@{version}" for tool, version in versions.items()
+    )
     environment.update(
         line.split("=", 1)
         for line in (tmp_path / "github-env").read_text().splitlines()

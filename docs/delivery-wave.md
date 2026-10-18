@@ -250,6 +250,17 @@ ends a grant. Git and the proposing PR retain the reason and history.
   to the stack; and move any still-needed guard against reintroducing the retired
   Buddy routes into an existing test. Shared helpers with another current
   consumer stay. Before or with the merge, the owner disables the `Official Release` (`official.yml`) and `Release Official` (`release-official.yml`) workflow identities, so neither a pushed `release/*/v*` tag nor a dispatch at an old ref can run a retired workflow.
+  Because removing the legacy stack also removes the only scope owner every
+  workflow file had, CI scope selection gives direct children of
+  `.github/workflows/` ending in `.yml` or `.yaml` a finite owner: owner
+  `conformance`, target `.github/workflows/ci.yml#conformance` and rule
+  `native-hk-workflow-lint`, applied only when that endpoint commits root
+  `hk.pkl` and `ci.yml`; HK's actionlint step also checks these files; its glob covers every workflow YAML under any `.github/workflows/` directory, and this owner is a fixed copy for the root directory only. A drift test evaluates the endpoint's `hk.pkl` with the locked Pkl and fails unless its `check` hook keeps an `actionlint` step in a profile `ci.yml` runs whose glob still matches these files.
+  The rule selects no retained job. Bind
+  `.github/workflows/workflow-delivery-v3-*.yml` to its real Python reader,
+  `pytest:tests/eng/test_python_runtime.py`. Record the rule in the owning
+  endpoint responsibility contract and cover a deleted workflow, a workflow with
+  no Python reader and a Python-read workflow in tests.
 - **Ordering and gates:** follow the record-system, engineering and Workflow
   Delivery review gates; independently classify material findings before
   repair. Preserve evidence consumers through commit-pinned links.

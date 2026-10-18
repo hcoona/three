@@ -36,6 +36,9 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Read committed tool versions
+        id: tools
+        run: python3 eng/scripts/locked_tool_versions.py dotnet python uv >> "$GITHUB_OUTPUT"
       - name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
@@ -43,15 +46,20 @@ jobs:
           install: false
           working_directory: ${{ runner.temp }}
       - name: Install selected runtimes
+        env:
+          DOTNET_VERSION: ${{ steps.tools.outputs.dotnet }}
+          PYTHON_VERSION: ${{ steps.tools.outputs.python }}
+          UV_VERSION: ${{ steps.tools.outputs.uv }}
         run: |
           set -Eeuo pipefail
-          mise install --yes dotnet@10.0.401 python@3.14.3 uv@0.12.24
+          mise install --yes "dotnet@$DOTNET_VERSION" "python@$PYTHON_VERSION" "uv@$UV_VERSION"
           {
-            printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)"
-            printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)"
-            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+            printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
+            printf 'UV_EXECUTABLE=%s\n' "$(mise which --tool "uv@$UV_VERSION" uv)"
+            printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which --tool "python@$PYTHON_VERSION" python)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
           } >> "$GITHUB_ENV"
-          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+          printf '%s\n' "$(dirname "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
       - name: Build complete control and frozen tool recipe before product execution
         run: |
@@ -74,7 +82,7 @@ jobs:
       - name: Qualify complete selected original pair
         run: |
           set -Eeuo pipefail
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python "$RUNNER_TEMP/prepared/request.json" > "$RUNNER_TEMP/prepared/preparation.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python "$RUNNER_TEMP/prepared/request.json" > "$RUNNER_TEMP/prepared/preparation.json"
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python originals
       - name: Retain actual prepared results
         id: retain
@@ -88,6 +96,9 @@ jobs:
           overwrite: false
     outputs:
       control-id: ${{ steps.control.outputs.artifact-id }}
+      dotnet: ${{ steps.tools.outputs.dotnet }}
+      python: ${{ steps.tools.outputs.python }}
+      uv: ${{ steps.tools.outputs.uv }}
       preparation-id: ${{ steps.retain.outputs.artifact-id }}
   observe:
     runs-on: ubuntu-24.04
@@ -116,15 +127,20 @@ jobs:
           install: false
           working_directory: ${{ runner.temp }}
       - name: Install selected runtimes
+        env:
+          DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          PYTHON_VERSION: ${{ needs.prepare.outputs.python }}
+          UV_VERSION: ${{ needs.prepare.outputs.uv }}
         run: |
           set -Eeuo pipefail
-          mise install --yes dotnet@10.0.401 python@3.14.3 uv@0.12.24
+          mise install --yes "dotnet@$DOTNET_VERSION" "python@$PYTHON_VERSION" "uv@$UV_VERSION"
           {
-            printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)"
-            printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)"
-            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+            printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
+            printf 'UV_EXECUTABLE=%s\n' "$(mise which --tool "uv@$UV_VERSION" uv)"
+            printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which --tool "python@$PYTHON_VERSION" python)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
           } >> "$GITHUB_ENV"
-          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+          printf '%s\n' "$(dirname "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
       - name: Receive transferred preparation
         run: |
@@ -134,18 +150,18 @@ jobs:
         run: |
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python tool-request
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
       - name: Observe public destination and qualified originals
         run: |
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python index-config initial-observation-scratch
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/index-tools.json" > "$RUNNER_TEMP/observation/observation.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/index-tools.json" > "$RUNNER_TEMP/observation/observation.json"
       - name: Expose required writes and describe dry run
         run: |
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python state
           if [ "$DRY_RUN" = true ]; then
-            mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/observation/dry-run.json"
+            mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/observation/dry-run.json"
             cat "$RUNNER_TEMP/observation/dry-run.json" >> "$GITHUB_STEP_SUMMARY"
           fi
         id: state
@@ -185,15 +201,20 @@ jobs:
           install: false
           working_directory: ${{ runner.temp }}
       - name: Install selected runtimes
+        env:
+          DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          PYTHON_VERSION: ${{ needs.prepare.outputs.python }}
+          UV_VERSION: ${{ needs.prepare.outputs.uv }}
         run: |
           set -Eeuo pipefail
-          mise install --yes dotnet@10.0.401 python@3.14.3 uv@0.12.24
+          mise install --yes "dotnet@$DOTNET_VERSION" "python@$PYTHON_VERSION" "uv@$UV_VERSION"
           {
-            printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)"
-            printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)"
-            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+            printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
+            printf 'UV_EXECUTABLE=%s\n' "$(mise which --tool "uv@$UV_VERSION" uv)"
+            printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which --tool "python@$PYTHON_VERSION" python)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
           } >> "$GITHUB_ENV"
-          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+          printf '%s\n' "$(dirname "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
       - name: Receive transferred preparation
         run: |
@@ -203,13 +224,13 @@ jobs:
         run: |
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python tool-request
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
       - name: Refresh complete state and invoke native UV for remaining originals
         run: |
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python index-config publication-observation-scratch
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python publisher-config
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/index-tools.json" "$RUNNER_TEMP/publisher-tools.json" > "$RUNNER_TEMP/publication/publication.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/index-tools.json" "$RUNNER_TEMP/publisher-tools.json" > "$RUNNER_TEMP/publication/publication.json"
       - name: Retain actual publication results
         id: retain
         if: always()
@@ -256,15 +277,20 @@ jobs:
           install: false
           working_directory: ${{ runner.temp }}
       - name: Install selected runtimes
+        env:
+          DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          PYTHON_VERSION: ${{ needs.prepare.outputs.python }}
+          UV_VERSION: ${{ needs.prepare.outputs.uv }}
         run: |
           set -Eeuo pipefail
-          mise install --yes dotnet@10.0.401 python@3.14.3 uv@0.12.24
+          mise install --yes "dotnet@$DOTNET_VERSION" "python@$PYTHON_VERSION" "uv@$UV_VERSION"
           {
-            printf 'UV_EXECUTABLE=%s\n' "$(mise which uv@0.12.24)"
-            printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which python@3.14.3)"
-            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+            printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
+            printf 'UV_EXECUTABLE=%s\n' "$(mise which --tool "uv@$UV_VERSION" uv)"
+            printf 'PYTHON_EXECUTABLE=%s\n' "$(mise which --tool "python@$PYTHON_VERSION" python)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
           } >> "$GITHUB_ENV"
-          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+          printf '%s\n' "$(dirname "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
       - name: Receive transferred preparation
         run: |
@@ -274,18 +300,18 @@ jobs:
         run: |
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python tool-request
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
       - name: Verify both index files and original bytes in final public state
         run: |
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python index-config final-observation-scratch
           # A handled conflicting or unknown observation remains typed completion input.
           status=0
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/index-tools.json" > "$RUNNER_TEMP/verification/final.json" || status=$?
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/index-tools.json" > "$RUNNER_TEMP/verification/final.json" || status=$?
           if [ "$status" -gt 1 ]; then exit "$status"; fi
           publication=-
           if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
       - name: Show actual available business result
         run: |
           set -Eeuo pipefail

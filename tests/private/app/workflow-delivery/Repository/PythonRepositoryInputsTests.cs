@@ -237,6 +237,14 @@ public sealed class PythonRepositoryInputsTests
         ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml")]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/workflow_delivery_v3_hk.py")]
+    [DataRow("tests/eng/test_other.py", "eng/scripts/locked_tool_versions.py")]
+    [DataRow("tests/eng/test_python_runtime.py",
+        ".github/workflows/workflow-delivery-v3-buddy-smoke.yml")]
+    [DataRow("tests/eng/test_python_runtime.py",
+        ".github/workflows/workflow-delivery-v3-python-smoke.yml")]
+    [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/renovate.yml")]
+    [DataRow("tests/eng/test_python_runtime.py", "global.json")]
+    [DataRow("tests/eng/test_python_release_caller.py", "global.json")]
     [DataRow("tests/eng/test_legacy_release_contract.py", ".github/workflows/official.yml")]
     [DataRow("tests/eng/test_legacy_release_contract.py",
         "eng/scripts/publish_node_npmjs_idempotent.sh")]
@@ -251,6 +259,8 @@ public sealed class PythonRepositoryInputsTests
 
     [TestMethod]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml.backup")]
+    [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/README.md")]
+    [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/nested/caller.yml")]
     [DataRow("tests/eng/test_general_ci_workflow.py",
         ".github/workflows/workflow-delivery-v3-nuget-buddy-smoke.yml")]
     [DataRow("tests/private/app/workflow-delivery/Native/Python",
@@ -266,6 +276,25 @@ public sealed class PythonRepositoryInputsTests
         PythonInputBinding[] bindings = PythonRepositoryInputs.Map(endpoint.Revision,
             endpoint.Projects, endpoint.Targets, []);
         Assert.DoesNotContain(path, bindings.Select(binding => binding.Path));
+    }
+
+    [TestMethod]
+    public void DeletedEngineeringScriptSelectsTheEngineeringTestsAtItsBasis()
+    {
+        const string path = "eng/scripts/update_node_mise_lock.py";
+        const string target = "tests/eng/test_python_runtime.py";
+        PythonFactsEndpoint basis = Facts(Endpoint([target, "tests/unrelated.py"], [path],
+            "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"], [],
+            "after"));
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        Assert.AreEqual(new SelectionReason(path, "before", "pytest:" + target),
+            Assert.ContainsSingle(paired));
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, paired);
+        PlannedCheck selected = Assert.ContainsSingle(
+            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+        Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
     }
 
     [TestMethod]
