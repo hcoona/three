@@ -255,7 +255,7 @@ ends a grant. Git and the proposing PR retain the reason and history.
   `.github/workflows/` ending in `.yml` or `.yaml` a finite owner: owner
   `conformance`, target `.github/workflows/ci.yml#conformance` and rule
   `native-hk-workflow-lint`, applied only when that endpoint commits root
-  `hk.pkl` and `ci.yml`; HK's actionlint step checks exactly these files.
+  `hk.pkl` and `ci.yml`; HK's actionlint step also checks these files; its glob covers every workflow YAML under any `.github/workflows/` directory, and this owner is a fixed copy for the root directory only. A drift test evaluates the endpoint's `hk.pkl` with the locked Pkl and fails unless its `check` hook keeps an `actionlint` step in a profile `ci.yml` runs whose glob still matches these files.
   The rule selects no retained job. Bind
   `.github/workflows/workflow-delivery-v3-*.yml` to its real Python reader,
   `pytest:tests/eng/test_python_runtime.py`. Record the rule in the owning
