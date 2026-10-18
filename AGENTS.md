@@ -61,7 +61,9 @@ present. It is private, machine-specific, gitignored, and must not be committed.
 ## Workflow Delivery v3
 
 Before acting on any Workflow Delivery v3 request, read
-`src/private/app/workflow-delivery/docs/agent-handoff.md`.
+`src/private/app/workflow-delivery/docs/agent-handoff.md`. Its change routing table
+decides which project sections to read; the governance documents above still
+apply for their authorization and review rules.
 
 Workflow Delivery v3 is the only normative source for new workflow delivery
 work. Do not use v1 or v2 to fill a v3 decision gap unless the v3 documents

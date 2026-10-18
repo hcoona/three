@@ -416,7 +416,7 @@ package and assembly version projections. Native reproducibility configuration
 remains authoritative. Inject neither frozen versions nor a package witness.
 
 Share concrete archive inspection, original size/digest comparison and clean
-local consumption in `Ecosystems`; CI adapts its own plan/results to them.
+local consumption in the [Ecosystems module](../middle-level-design.md#components-and-native-responsibilities); CI adapts its own plan/results to them.
 Release does not consume `CiPlan` or `CheckSpec`. Complete preparation requires
 native inputs/version, build, pack, contents, local consumer and original-byte
 results, plus any actual applicable declared tests. Retain command termination

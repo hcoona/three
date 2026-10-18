@@ -86,7 +86,8 @@ fallback or all-run.
 ## Python Quality Owners and Input-Only Members
 
 Native workspace membership does not imply a build or test obligation. Keep the
-complete native producer graph, including tableless and unadopted members. Actual
+complete native producer graph, including tableless members (a `pyproject.toml`
+without a `[build-system]` table, which has no package build) and unadopted members. Actual
 retained pytest targets and adopted package checks define runnable quality owners.
 Resolve nearest source ownership over all native members before restricting the
 result to runnable owners; an input-only nested member is not its ancestor's source.

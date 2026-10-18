@@ -379,6 +379,26 @@ Do not clear the changed-path set, transfer an externally completed plan or bypa
 ordinary fact validation. Candidate survival, complete checks/variants, selected
 origins and prerequisite expansion remain the shared core's responsibilities.
 
+### Shared Inputs and Retained-Job Scope
+
+A changed shared file reaches work through one of three mechanisms; read the one
+that decides its effect:
+
+- **Native shared inputs** (`SharedInput`): ecosystem facts name a file's actual
+  consumers, such as a lock, toolchain or version input. Product selection and
+  exclusion come from these facts and the [paired reasons](#paired-direct-selection-reasons).
+- **Retained-job scope** (`Repository/CiScope.cs`): fixed path lists decide which
+  retained CI jobs apply and give each changed coordinate a responsibility row.
+  `AllInputs` (the CI workflow, control bootstrap script, `mise.toml` and
+  `mise.lock`) applies every retained job; `PythonInputs` (root Python
+  configuration, lock and Python CI scripts) and `RubyInputs` add their
+  caller and special-job responsibilities. These lists select retained jobs and
+  report responsibility only; native facts still own product consumption.
+- **Root shared inputs of an ecosystem caller**: root files that one ecosystem's
+  caller treats as inputs of its root owner, such as root pytest configuration;
+  the ecosystem's integration file owns them, for example the
+  [Python caller mapping](integration/python.md#python-quality-and-caller-mapping).
+
 ### Declarations and Quality Autonomy
 
 Keep project YAML selection of registered ecosystem presets. Resolve it from the
