@@ -615,14 +615,14 @@
       "automerge": true
     },
     {
-      "description": "Keep exact Node workflow pins and the authoritative root Mise lock in one reviewed update.",
-      "matchManagers": ["github-actions", "mise"],
+      "description": "Bump the authoritative root Mise lock for Node in one reviewed update.",
+      "matchManagers": ["mise"],
       "matchDatasources": ["github-releases", "node-version"],
       "matchDepNames": ["node"],
-      "matchFileNames": [".github/workflows/ci.yml", "mise.toml"],
+      "matchFileNames": ["mise.toml"],
       "groupName": "Node Runtime",
       "postUpgradeTasks": {
-        "commands": ["uv run --no-project python eng/scripts/update_node_mise_lock.py --expected-node {{newVersion}}"],
+        "commands": ["mise lock --bump --minimum-release-age 3d node"],
         "fileFilters": ["mise.lock"],
         "executionMode": "branch"
       },

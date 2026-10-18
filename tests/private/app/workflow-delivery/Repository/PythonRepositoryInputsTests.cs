@@ -237,6 +237,14 @@ public sealed class PythonRepositoryInputsTests
         ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml")]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/workflow_delivery_v3_hk.py")]
+    [DataRow("tests/eng/test_other.py", "eng/scripts/locked_tool_versions.py")]
+    [DataRow("tests/eng/test_python_runtime.py",
+        ".github/workflows/workflow-delivery-v3-buddy-smoke.yml")]
+    [DataRow("tests/eng/test_python_runtime.py",
+        ".github/workflows/workflow-delivery-v3-python-smoke.yml")]
+    [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/renovate.yml")]
+    [DataRow("tests/eng/test_python_runtime.py", "global.json")]
+    [DataRow("tests/eng/test_python_release_caller.py", "global.json")]
     [DataRow("tests/eng/test_legacy_release_contract.py", ".github/workflows/official.yml")]
     [DataRow("tests/eng/test_legacy_release_contract.py",
         "eng/scripts/publish_node_npmjs_idempotent.sh")]
@@ -251,6 +259,8 @@ public sealed class PythonRepositoryInputsTests
 
     [TestMethod]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml.backup")]
+    [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/README.md")]
+    [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/nested/caller.yml")]
     [DataRow("tests/eng/test_general_ci_workflow.py",
         ".github/workflows/workflow-delivery-v3-nuget-buddy-smoke.yml")]
     [DataRow("tests/private/app/workflow-delivery/Native/Python",

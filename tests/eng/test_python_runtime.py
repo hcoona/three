@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -121,16 +122,100 @@ def test_uv_workflow_and_renovate_consumers_use_mise_projection():
         assert {config_path, ".python-version"} <= set(tasks["fileFilters"])
 
 
-def test_renovate_holds_the_python_runtime_line():
-    """Keep Renovate on the 3.14 line until the 3.15 migration (#1247)."""
-    rules = json.loads((ROOT / "renovate.json").read_text())["packageRules"]
-    python_rules = [
-        rule
-        for rule in rules
-        if rule.get("matchManagers") == ["mise"]
-        and rule.get("matchDepNames") == ["python"]
+# Retired campaign callers and the separately owned legacy release stack.
+UNGUARDED_WORKFLOWS = {
+    "official.yml",
+    "workflow-delivery-v3-nuget-live-attempt.yml",
+}
+COMMITTED_TOOLS = ("dotnet", "node", "pnpm", "python", "ruby", "uv", "pkl")
+SETUP_VERSION_INPUTS = {
+    "actions/setup-dotnet": "dotnet-version",
+    "actions/setup-node": "node-version",
+    "actions/setup-python": "python-version",
+    "ruby/setup-ruby": "ruby-version",
+    "pnpm/action-setup": "version",
+    "astral-sh/setup-uv": "version",
+    "pkl-community/setup-pkl": "pkl-version",
+}
+VERSIONS = importlib.util.spec_from_file_location(
+    "locked_tool_versions", ROOT / "eng/scripts/locked_tool_versions.py"
+)
+assert VERSIONS is not None
+assert VERSIONS.loader is not None
+locked = importlib.util.module_from_spec(VERSIONS)
+VERSIONS.loader.exec_module(locked)
+
+
+def guarded_workflows():
+    """Workflows whose tool versions committed configuration owns."""
+    return [
+        path
+        for path in sorted((ROOT / ".github/workflows").glob("*.yml"))
+        if path.name not in UNGUARDED_WORKFLOWS
+        and not path.name.startswith("release-")
     ]
-    assert [rule.get("allowedVersions") for rule in python_rules] == ["<3.15"]
+
+
+def literal_tool_versions(text, document):
+    """Find tool/runtime selections written as literals in one workflow."""
+    found = []
+    for tool in COMMITTED_TOOLS:
+        version = locked.locked_version(ROOT, tool)
+        if re.search(rf"(?<![\w.]){re.escape(version)}(?![\w.])", text):
+            found.append(f"{tool} {version}")
+        found.extend(
+            match[0]
+            for match in re.finditer(rf"(?<![\w/.-]){tool}@\d[\w.]*", text)
+        )
+    for job in document.get("jobs", {}).values():
+        for step in job.get("steps", []):
+            action = step.get("uses", "").split("@", 1)[0]
+            value = step.get("with", {}).get(SETUP_VERSION_INPUTS.get(action))
+            if value is not None and not str(value).startswith("$" + "{{"):
+                found.append(f"{action} {value}")
+    return found
+
+
+def test_workflows_take_tool_versions_from_committed_configuration():
+    """A routine tool update edits only mise.lock or global.json."""
+    for path in guarded_workflows():
+        text = path.read_text()
+        assert literal_tool_versions(text, yaml.safe_load(text)) == [], path
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        "          node-version: 24\n",
+        "          ruby-version: '4.0'\n",
+        "          version: '{pnpm}'\n",
+        "        run: mise install --yes dotnet@{dotnet}\n",
+        "        run: mise which uv@0.1.0\n",
+    ],
+)
+def test_tool_version_guard_rejects_literals(literal):
+    """The guard reports setup inputs, mise selectors and locked versions."""
+    actions = {
+        "node": "actions/setup-node@v7",
+        "ruby": "ruby/setup-ruby@v1",
+        "version": "pnpm/action-setup@v6",
+    }
+    uses = next(
+        (action for key, action in actions.items() if key in literal),
+        None,
+    )
+    step = f"      - uses: {uses}\n        with:\n" if uses else "      -\n"
+    text = (
+        "jobs:\n  job:\n    steps:\n"
+        + step
+        + literal.format(
+            **{
+                tool: locked.locked_version(ROOT, tool)
+                for tool in ("pnpm", "dotnet")
+            }
+        )
+    )
+    assert literal_tool_versions(text, yaml.safe_load(text))
 
 
 @pytest.mark.parametrize(

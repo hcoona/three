@@ -282,6 +282,8 @@ public sealed class BashWorkflowCallerTests(TestContext context)
             ["GITHUB_RUN_ID"] = "123",
             ["GITHUB_RUN_ATTEMPT"] = "1",
             ["DOTNET_EXECUTABLE"] = "workflow_dotnet",
+            // The selected runtime setup exports the committed SDK selection.
+            ["DOTNET_VERSION"] = RepositoryToolSelection.DotNetSdkVersion,
             ["RUBY_EXECUTABLE"] = "controlled-ruby",
             ["CONTROLLED_OPERATION"] = "observe-" + (ecosystem == "npm" ? "github-npm" :
                 ecosystem),

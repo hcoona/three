@@ -11,8 +11,6 @@ on:
 env:
   DESTINATION: github-packages-npm
   DRY_RUN: ${{ inputs.dry-run }}
-  RELEASE_NODE_VERSION: '24.19.0'
-  RELEASE_NPM_VERSION: '11.17.0'
 
 permissions:
   contents: read
@@ -29,6 +27,8 @@ jobs:
     outputs:
       control-id: ${{ steps.control.outputs.artifact-id }}
       preparation-id: ${{ steps.originals.outputs.artifact-id }}
+      dotnet: ${{ steps.tools.outputs.dotnet }}
+      node: ${{ steps.tools.outputs.node }}
     steps:
       - name: Check out selected source and control
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -36,6 +36,9 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Read committed tool versions
+        id: tools
+        run: python3 eng/scripts/locked_tool_versions.py dotnet node >> "$GITHUB_OUTPUT"
       - name: Prepare selected native tools
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
@@ -88,6 +91,8 @@ jobs:
   observe:
     needs: prepare
     runs-on: ubuntu-24.04
+    env:
+      DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -109,7 +114,7 @@ jobs:
           working_directory: ${{ runner.temp }}
       - name: Install selected native runtime
         working-directory: ${{ runner.temp }}
-        run: mise install --yes dotnet@10.0.401
+        run: mise install --yes "dotnet@$DOTNET_VERSION"
       - name: Download complete preparation by immutable artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -118,21 +123,21 @@ jobs:
           digest-mismatch: error
       - name: Receive transferred preparation
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm receive observation
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm receive observation
       - name: Observe native package and original bytes
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-npm \
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-npm \
             "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/observation/observation.json"
       - name: Describe native state
         id: state
         env:
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm state
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm state
           if test "$DRY_RUN" = true; then
-            mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-github-npm \
+            mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-github-npm \
               "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" \
               > "$RUNNER_TEMP/observation/dry-run.json"
           fi
@@ -167,6 +172,9 @@ jobs:
     if: inputs.dry-run == false && needs.observe.outputs.write-needed == 'true'
     needs: [prepare, observe]
     runs-on: ubuntu-24.04
+    env:
+      DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+      NODE_VERSION: ${{ needs.prepare.outputs.node }}
     timeout-minutes: 15
     environment: workflow-delivery-v3-buddy-approval
     permissions:
@@ -188,7 +196,7 @@ jobs:
           working_directory: ${{ runner.temp }}
       - name: Install selected native runtime
         working-directory: ${{ runner.temp }}
-        run: mise install --yes dotnet@10.0.401
+        run: mise install --yes "dotnet@$DOTNET_VERSION"
       - name: Download complete preparation by immutable artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -197,28 +205,29 @@ jobs:
           digest-mismatch: error
       - name: Receive transferred preparation
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm receive publication
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm receive publication
       - name: Prepare qualified native npm toolchain
         working-directory: ${{ runner.temp }}
         run: |
-          mise install --yes "node@$RELEASE_NODE_VERSION"
-          node_root="$(mise where "node@$RELEASE_NODE_VERSION")"
+          mise install --yes "node@$NODE_VERSION"
+          node_root="$(mise where "node@$NODE_VERSION")"
           toolchain="$RUNNER_TEMP/npm-tools"
           mkdir -p "$toolchain/bin" "$toolchain/home"
           ln -s "$node_root/bin/node" "$toolchain/bin/node"
-          jq -n --arg node "$RELEASE_NODE_VERSION" --arg npm "$RELEASE_NPM_VERSION" \
-            '{node: $node, npm: $npm}' > "$toolchain/bin/selected-tools.json"
+          # The publisher uses the npm CLI bundled with the locked Node.
+          ln -s "$node_root/lib/node_modules/npm/bin/npm-cli.js" "$toolchain/bin/npm"
           touch "$toolchain/user.npmrc" "$toolchain/global.npmrc"
-          env -i PATH="$toolchain/bin:/usr/bin:/bin" HOME="$toolchain/home" \
+          npm_version="$(env -i PATH="$toolchain/bin:/usr/bin:/bin" HOME="$toolchain/home" \
             NPM_CONFIG_USERCONFIG="$toolchain/user.npmrc" NPM_CONFIG_GLOBALCONFIG="$toolchain/global.npmrc" \
-            "$node_root/bin/npm" install --global --prefix "$toolchain" \
-            --ignore-scripts --registry=https://registry.npmjs.org "npm@$RELEASE_NPM_VERSION"
+            "$toolchain/bin/npm" --version)"
+          jq -n --arg node "$NODE_VERSION" --arg npm "$npm_version" \
+            '{node: $node, npm: $npm}' > "$toolchain/bin/selected-tools.json"
       - name: Publish once after fresh native observation
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/publisher-runtime"
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-github-npm \
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-github-npm \
             "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" \
             "$RUNNER_TEMP/publisher-runtime" "$RUNNER_TEMP/npm-tools/bin" \
             > "$RUNNER_TEMP/publication/publication.json"
@@ -240,6 +249,8 @@ jobs:
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     needs: [prepare, observe, publish]
     runs-on: ubuntu-24.04
+    env:
+      DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -258,7 +269,7 @@ jobs:
           working_directory: ${{ runner.temp }}
       - name: Install selected native runtime
         working-directory: ${{ runner.temp }}
-        run: mise install --yes dotnet@10.0.401
+        run: mise install --yes "dotnet@$DOTNET_VERSION"
       - name: Download complete preparation by immutable artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -267,7 +278,7 @@ jobs:
           digest-mismatch: error
       - name: Receive transferred preparation
         run: |
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm receive verification
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm receive verification
       - name: Download initial observation by immutable artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -290,12 +301,12 @@ jobs:
           prepared="$RUNNER_TEMP/prepared/preparation.json"
           # A handled conflicting or unknown observation remains typed completion input.
           status=0
-          mise exec dotnet@10.0.401 -- dotnet "$control" release observe-github-npm \
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$control" release observe-github-npm \
             "$prepared" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/verification/final.json" || status=$?
           if [ "$status" -gt 1 ]; then exit "$status"; fi
           publication=-
           if test "$WRITE_NEEDED" = true; then publication="$RUNNER_TEMP/publication/publication.json"; fi
-          mise exec dotnet@10.0.401 -- dotnet "$control" release complete-github-npm \
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$control" release complete-github-npm \
             "$prepared" "$RUNNER_TEMP/observation/observation.json" \
             "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
       - name: Show actual available business results

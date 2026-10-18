@@ -74,10 +74,14 @@ jobs:
           New-Item -ItemType Directory -Path (Split-Path -Parent $repositoryPath) -Force | Out-Null
           git clone --no-local $env:GITHUB_WORKSPACE $repositoryPath
 
+      - name: Read committed tool versions
+        id: tools
+        run: python3 eng/scripts/locked_tool_versions.py node >> "$GITHUB_OUTPUT"
+
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: ${{ steps.tools.outputs.node }}
 
       - name: Set up .NET SDK
         uses: actions/setup-dotnet@v6

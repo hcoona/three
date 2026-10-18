@@ -137,10 +137,6 @@ internal static partial class CiScope
                 Regular(".github/workflows/ci.yml"))
                 Add("conformance", ".github/workflows/ci.yml#conformance",
                     "native-hk-configuration", ".github/workflows/ci.yml", path);
-            if (path == "eng/scripts/update_node_mise_lock.py" && Regular("hk.pkl") &&
-                Regular(".github/workflows/ci.yml"))
-                Add("conformance", ".github/workflows/ci.yml#conformance",
-                    "native-hk-node-mise-authority", ".github/workflows/ci.yml", "hk.pkl", path);
             if (path == "renovate.json" && Regular("pyproject.toml") &&
                 Regular("tests/eng/test_python_runtime.py"))
                 Add("python", "pytest:tests/eng/test_python_runtime.py",
@@ -392,8 +388,7 @@ internal static partial class CiScope
             : DotNetInheritedInputs.Consumes(path, NuGetPreparationRoots);
 
     private static bool PythonResponsibility(string path) =>
-        (path.EndsWith(".py", StringComparison.Ordinal) &&
-            path != "eng/scripts/update_node_mise_lock.py") ||
+        path.EndsWith(".py", StringComparison.Ordinal) ||
         AllInputs.Contains(path, StringComparer.Ordinal) ||
         PythonInputs.Contains(path, StringComparer.Ordinal) || Under(path, "tests/eng") ||
         path is ".github/workflows/workflow-delivery-v3-python-smoke.yml" or

@@ -198,7 +198,7 @@ jobs:
     name: Source conformance
     runs-on: ubuntu-latest
     env:
-      MISE_DISABLE_TOOLS: dotnet,go,java,node,powershell,python,ruby,pkl,gopass
+      MISE_DISABLE_TOOLS: dotnet,java,node,powershell,python,ruby,gopass
 
     needs: scope
     if: ${{ !cancelled() }}
@@ -223,36 +223,28 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Read committed tool versions
+        id: tools
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        run: python3 eng/scripts/locked_tool_versions.py node pnpm ruby >> "$GITHUB_OUTPUT"
+
       - name: Setup .NET SDK
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
-      - name: Setup Go
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: actions/setup-go@v7
-        with:
-          go-version: '1.*'
-
-      - name: Setup Java
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: actions/setup-java@v6
-        with:
-          distribution: 'temurin'
-          java-version: '25'
-
       - name: Set up PNPM
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 12.13.0
+          version: ${{ steps.tools.outputs.pnpm }}
 
       - name: Set up Node.js
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-node@v7
         with:
-          node-version: '24.21.0'
+          node-version: ${{ steps.tools.outputs.node }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
@@ -266,38 +258,8 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1.329.0
         with:
-          ruby-version: '4.0.7'
+          ruby-version: ${{ steps.tools.outputs.ruby }}
           bundler-cache: true
-
-      - name: Install pkl
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        uses: pkl-community/setup-pkl@0bffd1602015ccf46333e880f81087e73fd1a361 # v0
-        with:
-          pkl-version: 0.31.1
-
-      - name: Capture setup tool paths
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          dotnet_path="$(command -v dotnet)"
-          go_path="$(command -v go)"
-          java_path="$(command -v java)"
-          node_path="$(command -v node)"
-          powershell_path="$(command -v pwsh)"
-          python_path="$(command -v python3)"
-          ruby_path="$(command -v ruby)"
-
-          {
-            printf 'MISE_LINK_DOTNET=%s\n' "$dotnet_path"
-            printf 'MISE_LINK_GO=%s\n' "$go_path"
-            printf 'MISE_LINK_JAVA=%s\n' "$java_path"
-            printf 'MISE_LINK_NODE=%s\n' "$node_path"
-            printf 'MISE_LINK_POWERSHELL=%s\n' "$powershell_path"
-            printf 'MISE_LINK_PYTHON=%s\n' "$python_path"
-            printf 'MISE_LINK_RUBY=%s\n' "$ruby_path"
-          } >> "$GITHUB_ENV"
 
       - name: Mise Install Tools
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
@@ -314,14 +276,7 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          mise link --force core:dotnet@10 "$MISE_LINK_DOTNET"
-          mise link --force go@1 "$MISE_LINK_GO"
-          mise link --force java@25 "$MISE_LINK_JAVA"
-          mise link --force node@24 "$MISE_LINK_NODE"
-          mise link --force powershell@7 "$MISE_LINK_POWERSHELL"
-          mise link --force python@3.14 "$MISE_LINK_PYTHON"
-          mise link --force ruby@3.3 "$MISE_LINK_RUBY"
-
+          # Disabled runtimes come from the setup actions above on PATH.
           mise install --locked
           mise bootstrap
 
@@ -533,7 +488,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Setup Python 3.14 for deployment validation
+      - name: Setup Python for deployment validation
         if: success() && !cancelled() && steps.scope.outputs.run == 'true' && (matrix.run-deployment-validation)
         uses: actions/setup-python@v7
         with:
@@ -731,6 +686,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Read committed tool versions
+        id: tools
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        run: python3 eng/scripts/locked_tool_versions.py pnpm ruby >> "$GITHUB_OUTPUT"
+
       - name: Setup .NET SDK
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: actions/setup-dotnet@v6
@@ -741,7 +701,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 12.13.0
+          version: ${{ steps.tools.outputs.pnpm }}
 
       - name: Set up Node.js
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
@@ -755,7 +715,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true' && contains(fromJSON(needs.node-group.outputs.retained_directories), 'src/public/lib/hexo-renderer-asciidoc')
         uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1.329.0
         with:
-          ruby-version: '4.0.7'
+          ruby-version: ${{ steps.tools.outputs.ruby }}
           working-directory: src/public/lib/hexo-renderer-asciidoc
           bundler-cache: true
 
@@ -876,7 +836,7 @@ jobs:
           exit 1
 
   python-tests:
-    name: Test (Python 3.14)
+    name: Test (Python)
     runs-on: ubuntu-latest
     needs: scope
     if: ${{ !cancelled() }}
@@ -1118,10 +1078,13 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+      - name: Read committed tool versions
+        id: tools
+        run: python3 eng/scripts/locked_tool_versions.py ruby >> "$GITHUB_OUTPUT"
       - name: Setup native Ruby
         uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1.329.0
         with:
-          ruby-version: '4.0.7'
+          ruby-version: ${{ steps.tools.outputs.ruby }}
       - name: Materialize exact committed endpoints
         id: endpoints
         run: |

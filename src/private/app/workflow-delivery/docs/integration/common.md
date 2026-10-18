@@ -41,6 +41,17 @@ literal, major line or floor; there is no documented native adapter limit, so a
 routine committed update needs no code change. Each failure names the tool and
 the failed condition ([`LockedToolSelection`](../../Release/LockedToolSelection.cs)).
 
+The ordinary Release and CI workflows follow the same authority. Each reads
+the versions it installs once from the checked-out root `mise.lock` (the .NET
+SDK from `global.json`) through
+[`locked_tool_versions.py`](../../../../../../eng/scripts/locked_tool_versions.py);
+Release jobs without a checkout receive them as the preparing job's outputs and
+still install outside the checkout. The npm Buddy publisher uses the npm CLI
+bundled with the locked Node; no record documents a publisher npm limit.
+[`test_python_runtime.py`](../../../../../../tests/eng/test_python_runtime.py)
+rejects literal tool versions in workflows other than the retired NuGet Live
+attempt and the separately owned `release-*.yml`/`official.yml` stack.
+
 ## CLI and Boundary Payloads
 
 The application is `WorkflowDelivery.dll`, run with `dotnet`; these are internal
