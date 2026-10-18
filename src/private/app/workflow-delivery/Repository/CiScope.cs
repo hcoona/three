@@ -87,13 +87,27 @@ internal static partial class CiScope
         var tooling = new ToolingConfiguration(
             await checkout.ReadOptionalTextAsync(HkConfiguration, token),
             await checkout.ReadOptionalTextAsync(RenovateConfiguration, token));
+        var scripts = new List<string>();
+        foreach (string path in changed.Where(path => entries.ContainsKey(path) &&
+                path.EndsWith(".py", StringComparison.Ordinal)))
+            if (InlineScriptMetadata(await checkout.ReadOptionalTextAsync(path, token)))
+                scripts.Add(path);
         return Owners(checkout.Revision, changed, resourceInputs,
-            catalog is null ? [] : Bindings(catalog), tasks, hk, tooling);
+            catalog is null ? [] : Bindings(catalog), tasks, hk, tooling, [.. scripts]);
+    }
+
+    // PEP 723 inline script metadata: line 1 opens the block and a later line closes it.
+    internal static bool InlineScriptMetadata(string? text)
+    {
+        if (text is null) return false;
+        string[] lines = text.Split('\n').Select(line => line.TrimEnd('\r')).ToArray();
+        return lines[0] == "# /// script" && lines.Skip(1).Contains("# ///");
     }
 
     internal static ScopeCoordinate[] Owners(GitRevision revision, string[] changed,
         string[] resourceInputs, (string Id, string Pattern)[] bindings,
-        RecordTaskOwner[] tasks, string[] hkModules, ToolingConfiguration? tooling = null)
+        RecordTaskOwner[] tasks, string[] hkModules, ToolingConfiguration? tooling = null,
+        string[]? inlineScripts = null)
     {
         var entries = revision.Entries.ToDictionary(entry => entry.Path, StringComparer.Ordinal);
         string[] gems = GemRoots(revision);
@@ -174,7 +188,19 @@ internal static partial class CiScope
             string[] python = manifests.Where(manifest =>
                 manifest.EndsWith("/pyproject.toml", StringComparison.Ordinal) &&
                 Under(path, Parent(manifest))).ToArray();
-            if (recordTasks.Length == 0 && (python.Length != 0 || PythonResponsibility(path)))
+            bool pythonInput = python.Length != 0 || PythonResponsibility(path);
+            // A standalone PEP 723 script has no Python group consumer; HK's fixed ruff copy
+            // owns it instead. The drift test in tests/eng/test_general_ci_workflow.py keeps
+            // the copy aligned.
+            if (recordTasks.Length == 0 && !pythonInput &&
+                path.EndsWith(".py", StringComparison.Ordinal) &&
+                (inlineScripts ?? []).Contains(path, StringComparer.Ordinal) &&
+                LintedStandalonePython(path) && Regular(HkConfiguration) &&
+                Regular(".github/workflows/ci.yml"))
+                Add("conformance", ".github/workflows/ci.yml#conformance",
+                    "native-hk-python-lint", ".github/workflows/ci.yml", HkConfiguration);
+            else if (recordTasks.Length == 0 && (pythonInput ||
+                    path.EndsWith(".py", StringComparison.Ordinal)))
                 Add("python", ".github/workflows/ci.yml#python-tests",
                     "native-python-caller-responsibility", ["pyproject.toml", .. python]);
             if (resourceInputs.Contains(path, StringComparer.Ordinal))
@@ -406,8 +432,19 @@ internal static partial class CiScope
             !path.StartsWith(".agents/", StringComparison.Ordinal);
     }
 
+    // Not a pytest file and not excluded by HK ruff: **/.github/**, **/.specify/**,
+    // **/generated/**, root-only .agents/** and src/private/lib/scan-restoration/skills/**.
+    internal static bool LintedStandalonePython(string path)
+    {
+        string[] segments = path.Split('/');
+        return segments[^1] != "conftest.py" && !Under(path, "tests") &&
+            !segments[..^1].Any(name => name is ".github" or ".specify" or "generated") &&
+            !Under(path, ".agents") &&
+            !Under(path, "src/private/lib/scan-restoration/skills");
+    }
+
+    // Python responsibility other than the .py suffix itself.
     private static bool PythonResponsibility(string path) =>
-        path.EndsWith(".py", StringComparison.Ordinal) ||
         AllInputs.Contains(path, StringComparer.Ordinal) ||
         PythonInputs.Contains(path, StringComparer.Ordinal) || Under(path, "tests/eng") ||
         path is ".github/workflows/workflow-delivery-v3-python-smoke.yml" or

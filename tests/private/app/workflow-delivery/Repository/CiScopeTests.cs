@@ -415,6 +415,93 @@ public sealed class CiScopeTests
     }
 
     [TestMethod]
+    [DataRow("eng/scripts/find_node_project_path.py")]
+    [DataRow("x/.agents/tool.py")]
+    public void StandaloneScriptsReceiveHkPythonLintInsteadOfPython(string path)
+    {
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk, null, [path]));
+        string rows = string.Join(", ", row.Reasons.Select(item => item.Owner + ":" + item.Rule));
+        ScopeResponsibility reason = Assert.ContainsSingle(row.Reasons, rows);
+        Assert.AreEqual("conformance", reason.Owner);
+        Assert.AreEqual(".github/workflows/ci.yml#conformance", reason.Target);
+        Assert.AreEqual("native-hk-python-lint", reason.Rule);
+        CollectionAssert.AreEquivalent(WorkflowLintSources, reason.Sources);
+        CiScopeApplicability jobs = CiScope.Select([path], Comparison(path), false, []);
+        Assert.IsFalse(jobs.Mise || jobs.AzureAuth || jobs.Scholarly ||
+            jobs.NuGetNativePreparation);
+    }
+
+    [TestMethod]
+    public void DeletedStandaloneScriptResolvesAtTheBasis()
+    {
+        const string path = "eng/scripts/find_project_path.py";
+        ScopeCoordinate basis = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk, null, [path]));
+        Assert.AreEqual("native-hk-python-lint", Assert.ContainsSingle(basis.Reasons).Rule);
+        ScopeCoordinate candidate = Assert.ContainsSingle(CiScope.Owners(Revision(), [path], [],
+            [], Tasks, Hk));
+        Assert.IsFalse(candidate.Present);
+        Assert.IsEmpty(candidate.Reasons);
+        var bare = new GitRevision(Basis, [new(path, "100644", "blob")]);
+        // Without committed hk.pkl and ci.yml the endpoint has no HK lint owner.
+        Assert.IsFalse(Assert.ContainsSingle(CiScope.Owners(bare, [path], [], [], Tasks, Hk,
+            null, [path])).Reasons.Any(reason => reason.Rule == "native-hk-python-lint"));
+    }
+
+    [TestMethod]
+    [DataRow("src/conftest.py")]
+    [DataRow("tests/eng/helper.py")]
+    [DataRow("tests/tools/script.py")]
+    [DataRow("eng/scripts/sync_python_version.py")]
+    [DataRow("src/private/lib/scholarly-publication/tool.py")]
+    [DataRow(".agents/tool.py")]
+    [DataRow(".github/scripts/tool.py")]
+    [DataRow("a/generated/tool.py")]
+    [DataRow("src/private/lib/scan-restoration/skills/x/tool.py")]
+    public void NonStandaloneOrExcludedScriptsKeepPythonResponsibility(string path)
+    {
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk, null, [path]));
+        string rows = string.Join(", ", row.Reasons.Select(item => item.Owner + ":" + item.Rule));
+        Assert.IsTrue(row.Reasons.Any(reason => reason.Owner == "python"), rows);
+        Assert.IsFalse(row.Reasons.Any(reason => reason.Rule == "native-hk-python-lint"), rows);
+    }
+
+    [TestMethod]
+    public void ScriptsWithoutInlineMetadataKeepPythonResponsibility()
+    {
+        const string path = "eng/scripts/hk_exec.py";
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk));
+        Assert.AreEqual("python", Assert.ContainsSingle(row.Reasons).Owner);
+    }
+
+    [TestMethod]
+    public void RecordTaskScriptsKeepRecordOwnerWithoutPythonLint()
+    {
+        const string path = "eng/scripts/check_repository_records.py";
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk, null, [path]));
+        Assert.AreEqual("record-system", Assert.ContainsSingle(row.Reasons).Owner);
+    }
+
+    [TestMethod]
+    [DataRow("# /// script\n# dependencies = []\n# ///\n", true)]
+    [DataRow("# /// script\r\n# ///\r\n", true)]
+    [DataRow("# /// script\n# dependencies = []\n", false)]
+    [DataRow("#!/usr/bin/env python\n# /// script\n# ///\n", false)]
+    [DataRow("", false)]
+    [DataRow(null, false)]
+    public void InlineScriptMetadataRequiresTheOpeningFirstLineAndAClosingLine(string? text,
+        bool expected) => Assert.AreEqual(expected, CiScope.InlineScriptMetadata(text));
+
+    [TestMethod]
+    public void CurrentStandaloneScriptCarriesInlineMetadata() =>
+        Assert.IsTrue(CiScope.InlineScriptMetadata(File.ReadAllText(Path.Combine(Root(),
+            "eng/scripts/find_node_project_path.py"))));
+
+    [TestMethod]
     public void HkWorkflowLintRequiresCommittedHkAndCiWorkflow()
     {
         const string path = ".github/workflows/lint.yaml";

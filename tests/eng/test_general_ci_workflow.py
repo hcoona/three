@@ -1727,3 +1727,60 @@ def test_hk_shell_linters_keep_covering_copied_scripts(workflow):
             if _can_exclude_shell(pattern)
         }
         assert relevant == COPIED_SHELL_EXCLUSIONS, name
+
+
+# CiScope.LintedStandalonePython copies these ruff/ruff_format exclusions.
+COPIED_PYTHON_EXCLUSIONS = {
+    "**/.github/**",
+    "**/.specify/**",
+    "**/generated/**",
+    ".agents/**",
+    "src/private/lib/scan-restoration/skills/**",
+}
+
+
+def _can_exclude_python(pattern: str) -> bool:
+    """Report whether an exclusion can match a Python file.
+
+    A final ``**`` matches any file; otherwise the final segment must itself
+    match a ``.py`` name.
+    """
+    last = pattern.rsplit("/", 1)[-1]
+    return (
+        last == "**"
+        or last.endswith(".py")
+        or PurePosixPath("x.py").full_match(last)
+    )
+
+
+@pytest.mark.parametrize(
+    ("pattern", "expected"),
+    [
+        ("src/private/lib/scan-restoration/skills/**", True),
+        ("**/*.py", True),
+        ("tools/build.py", True),
+        ("**/specs/**/*.md", False),
+        ("uv.lock", False),
+    ],
+)
+def test_python_exclusion_relevance(pattern, expected):
+    """Only exclusions whose final segment can name a Python file count."""
+    assert _can_exclude_python(pattern) is expected
+
+
+def test_hk_python_linters_keep_covering_copied_scripts(workflow):
+    """CiScope's standalone-script owner copies this HK glob and exclusions."""
+    steps = _hk_check_steps()
+    profiles = _ci_hk_profiles(workflow)
+    for name in ("ruff", "ruff_format"):
+        step = steps[name]
+        assert set(step["profiles"]) & profiles, name
+        assert any(
+            PurePosixPath("x.py").full_match(glob) for glob in step["glob"]
+        ), name
+        relevant = {
+            pattern
+            for pattern in step["exclude"]
+            if _can_exclude_python(pattern)
+        }
+        assert relevant == COPIED_PYTHON_EXCLUSIONS, name

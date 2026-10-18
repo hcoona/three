@@ -100,7 +100,7 @@ malformed or out-of-checkout read fails planning instead of dropping
 responsibility. Directory names and a repository-local Pkl parser do not infer
 this responsibility.
 
-Four finite rules cover repository tooling configuration. `renovate.json`,
+Five finite rules cover repository tooling configuration. `renovate.json`,
 `.github/renovate/**` and `.github/workflows/renovate.yml` receive owner
 `renovate`, target `.github/workflows/renovate.yml` and rule
 `native-renovate-configuration`. A present coordinate whose repository-relative
@@ -129,8 +129,21 @@ same `hk.pkl` and `ci.yml` condition. This is a fixed copy of those steps' share
 glob and exclusions; a second drift test fails unless both steps stay in a
 profile `ci.yml` runs, their glob still matches `*.sh` and `*.bash`, and their
 exclusions whose final segment can name a shell script equal this set. The rule
-adds to, and does not replace, a script's existing owner. No rule selects a
-retained job.
+adds to, and does not replace, a script's existing owner. A committed `*.py`
+file whose first line is `# /// script` with a later closing `# ///` line (PEP
+723 inline script metadata) has its `native-python-caller-responsibility`
+reason replaced, never added to, by owner `conformance`, target
+`.github/workflows/ci.yml#conformance` and rule `native-hk-python-lint` when the
+file is not `conftest.py` or under `tests/`, nothing but its `.py` suffix would
+give it a Python reason (no retained-job or Python input list, `tests/eng`,
+AzureAuth input, enclosing non-root `pyproject.toml` or record task), the shared
+`ruff`/`ruff_format` exclusions that can match a Python file (`**/.github/**`,
+`**/.specify/**`, `**/generated/**`, the root-only `.agents/**` and
+`src/private/lib/scan-restoration/skills/**`) do not match it, and the endpoint
+commits `hk.pkl` and `ci.yml`. A third drift test fails unless both steps stay
+in a profile `ci.yml` runs, their glob still matches `*.py`, and those
+exclusions equal this copied set. Other owners are kept. No rule selects a
+retained job or adds Python execution.
 
 The Node group joins native PNPM membership and reasons before final owner
 validation. Manifest/catalog reads used to
