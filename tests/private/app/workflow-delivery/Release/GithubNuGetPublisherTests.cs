@@ -61,6 +61,26 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
         Assert.DoesNotContain(Credential, JsonSerializer.Serialize(result));
     }
 
+    // Client errors other than the throttling statuses end the invocation after one send.
+    [TestMethod]
+    [DataRow(HttpStatusCode.BadRequest)]
+    [DataRow(HttpStatusCode.Unauthorized)]
+    [DataRow(HttpStatusCode.Forbidden)]
+    [DataRow(HttpStatusCode.NotFound)]
+    public async Task OfficialClientErrorsAreNotResent(HttpStatusCode status)
+    {
+        using var fixture = new Fixture();
+        using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
+            status) { Content = new ByteArrayContent([]) }));
+        NuGetPushResult result = await GithubNuGetPublisher.PushAsync(fixture.Prepared,
+            fixture.Root, GithubNuGetPublisher.Endpoint, Credential, context.CancellationToken,
+            handler);
+
+        Assert.IsFalse(result.ReturnedSuccessfully);
+        Assert.IsNotNull(result.FailureType);
+        Assert.AreEqual(1, handler.Sends);
+    }
+
     [TestMethod]
     public async Task ParentCancellationReachesActualNativeSendAndIsAwaited()
     {
@@ -83,12 +103,18 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
         Assert.AreEqual(1, handler.Sends);
     }
 
+    // Every status the pinned client retries (5xx, 408 and, by default, 429) stays within
+    // the same three-send bound.
     [TestMethod]
-    public async Task OfficialBoundedRetriesRemainInsideOneInvocation()
+    [DataRow(HttpStatusCode.ServiceUnavailable)]
+    [DataRow(HttpStatusCode.InternalServerError)]
+    [DataRow(HttpStatusCode.RequestTimeout)]
+    [DataRow(HttpStatusCode.TooManyRequests)]
+    public async Task OfficialBoundedRetriesRemainInsideOneInvocation(HttpStatusCode status)
     {
         using var fixture = new Fixture();
         using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
-            HttpStatusCode.ServiceUnavailable) { Content = new ByteArrayContent([]) }));
+            status) { Content = new ByteArrayContent([]) }));
         NuGetPushResult result = await GithubNuGetPublisher.PushAsync(fixture.Prepared,
             fixture.Root, GithubNuGetPublisher.Endpoint, Credential, context.CancellationToken,
             handler);
@@ -96,6 +122,35 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
         Assert.IsFalse(result.ReturnedSuccessfully);
         Assert.AreEqual(3, handler.Sends);
         Assert.IsNotNull(result.FailureType);
+        CollectionAssert.AreEqual(fixture.Original, File.ReadAllBytes(fixture.Path));
+    }
+
+    // The pinned client also retries transport failures and its own request timeout inside
+    // the same bound, and the publisher returns the terminal failure as handled data. A real
+    // SocketsHttpHandler wraps socket errors in HttpRequestException.
+    [TestMethod]
+    [DataRow("http", "HttpRequestException")]
+    [DataRow("io", "IOException")]
+    [DataRow("timeout", "TimeoutException")]
+    public async Task OfficialTransportFailuresRetryInsideTheSameBound(string failure,
+        string type)
+    {
+        using var fixture = new Fixture();
+        using var handler = new Handler((_, _) => throw (failure switch
+        {
+            "http" => new HttpRequestException("controlled transport failure"),
+            "io" => new IOException("controlled transport failure"),
+            _ => (Exception)new TimeoutException("controlled transport failure"),
+        }));
+        NuGetPushResult result = await GithubNuGetPublisher.PushAsync(fixture.Prepared,
+            fixture.Root, GithubNuGetPublisher.Endpoint, Credential, context.CancellationToken,
+            handler);
+
+        Assert.IsFalse(result.ReturnedSuccessfully);
+        Assert.IsFalse(result.Cancelled);
+        Assert.AreEqual(3, handler.Sends);
+        Assert.AreEqual(type, result.FailureType);
+        CollectionAssert.AreEqual(fixture.Original, File.ReadAllBytes(fixture.Path));
     }
 
     [TestMethod]

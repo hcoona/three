@@ -91,12 +91,22 @@ CLI's behavior, actual GitHub Packages response or live publication. Controlled
 integration tests and ordinary CI qualify only their stated scope; any live
 validation remains separately authorized.
 
-Recheck the relevant source when the selected publisher/NuGet version changes.
-The implementation reviewer evaluates whether retries remain built-in and
-bounded, whether new options alter the accepted integration, and whether affected
-contracts and validation need adjustment. The next publisher implementation or
-dependency update is the fallback review event. Missing evidence blocks the
-changed capability rather than adding an application retry mechanism.
+`GithubNuGetPublisherTests` guards these findings against the pinned
+NuGet.Protocol, which CI selects when `Directory.Packages.props` changes. A
+controlled transport replaces only the network. The pinned client sends at most
+three times for 500, 503, 408 and 429 responses and for `HttpRequestException`,
+`IOException` and its own request `TimeoutException`. Each ends as a handled
+failure with the original bytes unchanged. A 409 duplicate and 400, 401, 403 and
+404 responses are not resent,
+credentials are not forwarded on a redirect, and parent cancellation reaches the
+send and the response stream. The timeout row found that the publisher let
+`TimeoutException` escape; it is now handled like the other transport
+failures. A bare `SocketException` is not covered because the real
+`SocketsHttpHandler` wraps socket errors in `HttpRequestException`. The
+`NUGET_RETRY_HTTP_429` and `NUGET_ENHANCED_*` environment settings are outside
+the guard: CI sets none of them, and the guard asserts the defaults. Live GitHub
+Packages behavior remains bound to the recorded runs. A change that alters the
+bound fails CI; it does not add an application retry mechanism.
 
 [commit]: https://github.com/NuGet/NuGet.Client/tree/977537e19c6be57fead1411e6cf05f936bf1baf4
 [push]: https://github.com/NuGet/NuGet.Client/blob/977537e19c6be57fead1411e6cf05f936bf1baf4/src/NuGet.Core/NuGet.Protocol/Resources/PackageUpdateResource.cs#L505

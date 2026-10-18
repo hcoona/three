@@ -237,15 +237,31 @@ limits; no operation is repeated or budget renewed by this observation.
 Consumer mapping, complete native fact assembly, quality/check expansion and
 workflow cutover still require implementation and their own ordinary validation.
 
-## Recheck Trigger
+## Pin Guard
 
-Before relying on these findings after an NBGV pin/engine/package change or a PNPM
-pin/reader-query change, the integration author rechecks affected native APIs,
-package delivery and read/output semantics. An independent engineering/evidence
-reviewer evaluates the retained comparison and required qualification scope in
-the governing PR. The next affected integration/caller review is the fallback.
-Existing observations keep their original pins and limits; a recheck neither
-renews spent budgets nor supplies runtime evidence by source comparison alone.
+NBGV pin changes are guarded by tests in the default WorkflowDelivery test run,
+which CI selects when `.config/dotnet-tools.json`, `Directory.Build.props` or
+`global.json` changes:
+
+- `NbgvInputReaderTests` and the `DotNetGraphTaskTests` NBGV helper rows run the
+  pinned library and its packaged MSBuild assets.
+- `RepositoryPinContractsTests.NbgvToolPinEqualsTheNbgvPackagePin` requires the
+  CLI and package pins to be equal.
+- `NbgvCliContractTests` restores the manifest-pinned CLI and runs
+  `get-version --format json` against the library's `VersionOracle` on the same
+  commit. Its rows cover a local main branch, another branch, a detached tag and
+  detached GitHub Actions branch, tag and non-release refs. They require equal
+  `SemVer2`, `PublicRelease`, `NuGetPackageVersion` and `NpmPackageVersion`,
+  and the exact `GitCommitId`.
+
+These tests do not cover cloud-build providers other than GitHub Actions, the
+`PublicRelease` and `IGNORE_GITHUB_REF` overrides, or the git-engine switches
+`NBGV_GitEngine`, `DEPENDABOT` and a bot `GITHUB_ACTOR`. The rows clear all of
+them, and the Ruby callers launch the CLI with a constructed, non-inherited
+environment. Shallow clones (preparation rejects them) and Windows paths beyond
+the Windows CI run are not covered either. PNPM reader queries remain covered by
+the [PNPM pin trigger](pnpm-native-planning.md) until the PNPM native contract
+tests land. Existing observations keep their original pins and limits.
 
 [cli]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/nbgv/Program.cs#L597-L657
 [oracle]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/NerdBank.GitVersioning/VersionOracle.cs#L44-L82
