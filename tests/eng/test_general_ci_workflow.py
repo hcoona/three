@@ -1646,6 +1646,14 @@ DRIFT.loader.exec_module(hk_scope_drift)
         ("**/specs/**/*.md", [".sh", ".bash"], False),
         ("global.json", [".sh", ".bash"], False),
         ("**/mise.lock", [".sh", ".bash"], False),
+        ("eng/scripts/release_*", [".sh", ".bash"], True),
+        ("legacy-*", [".sh", ".bash"], True),
+        ("eng/x?", [".sh", ".bash"], True),
+        ("foo.sh*", [".sh", ".bash"], True),
+        ("*.s?", [".sh", ".bash"], True),
+        ("**/gen-*.[sb]*", [".sh", ".bash"], True),
+        ("**/*.md", [".sh", ".bash"], False),
+        ("**/*.sh.bak", [".sh", ".bash"], False),
         ("src/private/lib/scan-restoration/skills/**", [".py"], True),
         ("**/*.py", [".py"], True),
         ("tools/build.py", [".py"], True),
@@ -1687,6 +1695,24 @@ def test_hk_scope_drift_reports_each_difference():
         ),
     ):
         assert hk_scope_drift.drift(steps, rules, profiles)
+
+
+def test_hk_scope_drift_reports_a_wildcard_shell_exclusion():
+    """A new wildcard exclusion such as release_* can hide copied scripts."""
+    rules = {
+        "native-hk-shell-lint": {
+            "steps": ["shellcheck"],
+            "directory": None,
+            "suffixes": [".sh", ".bash"],
+            "exclusions": ["**/generated/**"],
+        }
+    }
+    step = _step(
+        ["small"],
+        ["**/*.sh", "**/*.bash"],
+        ["**/generated/**", "eng/scripts/release_*"],
+    )
+    assert hk_scope_drift.drift({"shellcheck": step}, rules, {"small"})
 
 
 def test_hk_scope_drift_reads_the_profiles_ci_runs():

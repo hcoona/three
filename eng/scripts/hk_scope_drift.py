@@ -16,17 +16,33 @@ CI_WORKFLOW = Path(".github/workflows/ci.yml")
 PKL = ("mise", "exec", "--locked", "pkl", "--", "pkl", "eval", "-f", "json")
 
 
-def can_exclude(pattern: str, suffixes: list[str]) -> bool:
-    """Report whether an exclusion can match a file with one of the suffixes.
+GLOB_CHARACTERS = frozenset("*?[]{}")
 
-    A final ``**`` matches any file; otherwise the final segment must itself
-    name, or match a name with, one of the suffixes.
+
+def _has_glob(text: str) -> bool:
+    return any(character in GLOB_CHARACTERS for character in text)
+
+
+def can_exclude(pattern: str, suffixes: list[str]) -> bool:
+    """Conservatively report whether an exclusion can match a copied file.
+
+    Only the final path segment is read. ``**`` is relevant. A literal
+    segment is relevant only when it ends with a copied suffix. A segment with
+    glob characters is relevant unless the text after its last ``.`` is a
+    literal ending that matches no copied suffix.
     """
     last = pattern.rsplit("/", 1)[-1]
-    return last == "**" or any(
-        last.endswith(suffix) or PurePosixPath("x" + suffix).full_match(last)
-        for suffix in suffixes
-    )
+    if last == "**":
+        return True
+    if not _has_glob(last):
+        return last.endswith(tuple(suffixes))
+    if any(PurePosixPath("x" + suffix).full_match(last) for suffix in suffixes):
+        return True
+    dot = last.rfind(".")
+    tail = last[dot:] if dot >= 0 else None
+    if tail is None or _has_glob(tail):
+        return True
+    return tail in suffixes
 
 
 def ci_profiles(text: str) -> set[str]:

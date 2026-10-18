@@ -50,8 +50,8 @@ still install outside the checkout. Root `mise.toml` selects Node exactly, like
 UV, PNPM and Ruby, so the Renovate mise manager proposes each patch with its
 lock update. The npm Buddy publisher uses the npm CLI bundled with the locked Node; no record documents a publisher npm limit.
 [`test_python_runtime.py`](../../../../../../tests/eng/test_python_runtime.py)
-rejects literal tool versions in workflows other than the retired NuGet Live
-attempt and the separately owned `release-*.yml`/`official.yml` stack.
+rejects literal tool versions in every workflow except the retired NuGet Live
+attempt.
 
 ## CLI and Boundary Payloads
 

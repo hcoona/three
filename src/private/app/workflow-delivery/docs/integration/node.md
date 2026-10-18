@@ -143,8 +143,11 @@ application. The HK conformance step `hk-scope-drift`
 (`eng/scripts/hk_scope_drift.py`, profile `small`, also run by `--all`)
 evaluates root `hk.pkl` with the locked Pkl and fails unless each named `check`
 step stays in a profile `ci.yml` runs, its glob still matches the copied
-suffixes, and its exclusions whose final segment can name such a file equal the
-copied set. Changes to `hk.pkl`, `src/private/lib/hk/**`, the copy, `ci.yml` or
+suffixes, and its exclusions that can match such a file equal the copied set.
+That relevance is conservative and reads only the final segment: `**` counts, a
+literal segment counts when it ends with a copied suffix, and a wildcard segment
+counts unless the text after its last `.` is a literal ending other than a
+copied suffix. Changes to `hk.pkl`, `src/private/lib/hk/**`, the copy, `ci.yml` or
 the script select that step.
 
 The Node group joins native PNPM membership and reasons before final owner
