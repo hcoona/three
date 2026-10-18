@@ -197,7 +197,11 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
         string sdk = capability == "MTP" ? "MSTest.Sdk" : "Microsoft.NET.Sdk";
         string packages = capability == "MTP" ? """
             <ItemGroup>
-              <PackageReference Include="Microsoft.Testing.Platform.MSBuild" Version="2.4.0" />
+              <!-- The TestingPlatformEnvironmentVariable item needs MTP.MSBuild 2.4.0 or later;
+                   raise only an older MSTest.Sdk default to avoid a downgrade. -->
+              <PackageReference Include="Microsoft.Testing.Platform.MSBuild" Version="2.4.0"
+                Condition="$([MSBuild]::VersionLessThan(
+                  $(MicrosoftTestingPlatformVersion), 2.4.0))" />
             </ItemGroup>
             """ : """
             <ItemGroup>
