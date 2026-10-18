@@ -88,6 +88,20 @@ public sealed class PythonPreparationNativeTests(TestContext context)
                 context.AddResultFile(archive);
                 Assert.AreEqual(result.Native["version"], file.Version);
             }
+            // UV writes no .gitignore marker into the original output directory, and the
+            // wheel, the sdist and the Git-free wheel rebuilt from that sdist carry one version.
+            string archives = Path.GetDirectoryName(Path.Combine(scratch,
+                result.Prepared.Files[0].Path))!;
+            CollectionAssert.AreEquivalent(result.Prepared.Files.Select(file =>
+                Path.GetFileName(file.Path)).ToArray(), Directory.GetFileSystemEntries(archives)
+                .Select(Path.GetFileName).ToArray());
+            string[] rebuilt = Directory.GetFiles(Path.Combine(scratch, "package",
+                "python-sdist-consumer", "rebuilt"));
+            Assert.HasCount(1, rebuilt);
+            string[] versions = [.. result.Prepared.Files.Select(file =>
+                ArchiveVersion(Path.Combine(scratch, file.Path))), ArchiveVersion(rebuilt[0])];
+            Assert.IsTrue(versions.All(item => item == result.Native["version"]),
+                string.Join(", ", versions));
             Assert.HasCount(2, result.Commands.Where(command =>
                 command.Command.Arguments.Contains("consume")));
             Assert.IsTrue(result.Commands.All(command => command.Result.Succeeded &&
@@ -104,6 +118,37 @@ public sealed class PythonPreparationNativeTests(TestContext context)
                 File.SetAttributes(file, FileAttributes.Normal);
             Directory.Delete(root, true);
         }
+    }
+
+    // The core-metadata Version of a wheel (METADATA) or sdist (PKG-INFO).
+    private static string ArchiveVersion(string path)
+    {
+        string text;
+        if (path.EndsWith(".whl", StringComparison.Ordinal))
+        {
+            using System.IO.Compression.ZipArchive wheel =
+                System.IO.Compression.ZipFile.OpenRead(path);
+            System.IO.Compression.ZipArchiveEntry metadata = wheel.Entries.Single(entry =>
+                entry.FullName.EndsWith(".dist-info/METADATA", StringComparison.Ordinal) &&
+                entry.FullName.Count(c => c == '/') == 1);
+            using var reader = new StreamReader(metadata.Open());
+            text = reader.ReadToEnd();
+        }
+        else
+        {
+            using var gzip = new System.IO.Compression.GZipStream(File.OpenRead(path),
+                System.IO.Compression.CompressionMode.Decompress);
+            using var tar = new System.Formats.Tar.TarReader(gzip);
+            System.Formats.Tar.TarEntry? entry;
+            while ((entry = tar.GetNextEntry()) is not null &&
+                !(entry.Name.EndsWith("/PKG-INFO", StringComparison.Ordinal) &&
+                    entry.Name.Count(c => c == '/') == 1)) { }
+            Assert.IsNotNull(entry?.DataStream, path);
+            using var reader = new StreamReader(entry.DataStream);
+            text = reader.ReadToEnd();
+        }
+        return text.Split('\n').Single(line => line.StartsWith("Version: ",
+            StringComparison.Ordinal))["Version: ".Length..].Trim();
     }
 
     private async Task VerifyCallerTransferAsync(PythonPreparationResult preparation,

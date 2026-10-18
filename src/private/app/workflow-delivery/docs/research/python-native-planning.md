@@ -166,11 +166,18 @@ Limits: future marker-gated local edges are over-selected rather than
 platform-exact. Admitting other source shapes, default-group settings or a
 project `uv.toml` requires a new explicit rule. This recheck does not establish
 Windows behavior or different-commit renamed producers; the paired union
-consumes the same association records. Recheck these findings when the UV pin,
-the PyPA `packaging` or `build` pin changes, or metadata gains build nodes. The
-author of that pin change checks the cited interfaces and reruns the replay test;
-an independent evidence reviewer evaluates the result. If the recheck fails or is
-skipped, the join is no longer admitted and the gap returns to the owner.
+consumes the same association records. The join premises are guarded instead of
+rechecked. `PythonNativeContractTests.MetadataAndPassiveExtractionKeepTheGuardedJoinPremises`
+runs the locked UV, CPython, PyPA `build`, `packaging`, Hatchling and
+`nbgv-python` on a committed fixture workspace through the application readers.
+It asserts that metadata gives a build-only member no edge, gives an empty or
+marker-disjoint group no node and stays inside the reader's admitted shape, and
+that passive extraction and the guarded join yield exactly the build association.
+CI runs it in the Linux native-preparation job whenever `uv.lock`, `mise.toml`,
+`mise.lock`, `.config/uv/uv.toml` or `.python-version` changes. A pin change
+that alters one of these facts fails CI, and the gap returns to the owner.
+`GuardedNameJoinMatchesRecordedNativeLowering` remains a replay of the retained
+PR #1063 lowering.
 
 ## UV 0.13.1 Pin Recheck
 
@@ -231,6 +238,11 @@ necessary behaviors; it does not port the private selection algorithm.
 
 These are public-source findings and a bounded integration inference, not a helper
 runtime observation. No pytest query/helper was executed for this assessment.
+`Native/Python/test_pytest_configuration_contract.py` now runs the helper under
+the locked pytest: the early hook returns the consumed fields without importing a
+conftest or collecting a test, ambient `PYTEST_ADDOPTS`/`PYTEST_PLUGINS` do not
+reach it, a `pythonpath` is reported for rejection, and a missing required plugin
+fails the query.
 Actual complete fact/caller qualification still needs its separately accepted
 concrete protocol and complete operation/ownership/check mapping.
 
@@ -305,12 +317,11 @@ If further native execution is needed, its exact remaining subject first needs
 a concrete accepted isolated protocol. Reuse the retained primitive evidence
 for its qualified boundary; do not repeat it as a complete-reader test.
 
-Recheck these source findings when the repository UV pin changes or a change to
-the Python planning facts or caller relies on them. The author of that pin change or
-Python planning-fact/caller change checks the affected native interfaces and omissions; an independent evidence reviewer evaluates the
-result. The review of the next change to the
-[Python planning facts](../integration/python.md#native-python-planning-facts)
-is the fallback event. Keep immutable source
+The metadata, passive-extraction and identity facts these findings rely on are
+guarded by `PythonNativeContractTests` at the locked pins. The pytest query is guarded by
+`Native/Python/test_pytest_configuration_contract.py`, which runs the locked
+pytest. A change to the Python planning facts or caller that relies on other
+native behavior still evaluates it in that change. Keep immutable source
 findings separate from later operation observations and support claims.
 
 [uv-pin]: https://github.com/astral-sh/uv/tree/46b84fd0bfec23b72f29e8e2185ba68a65052f48

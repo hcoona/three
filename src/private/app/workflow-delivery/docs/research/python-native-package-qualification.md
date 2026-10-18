@@ -123,13 +123,16 @@ qualification in any row. The accepted observation above used campaign 3
 
 ## Recheck
 
-Recheck native contracts when tool, backend or preparation pins change or at the
-next Python integration review. Do not turn this single observation into future
+Tool, backend and preparation pins are guarded by the contract tests named below.
+Do not turn this single observation into future
 compatibility, arbitrary-backend, Windows, publication or complete contraction
 acceptance. Missing necessary native capability stops for owner disposition
 rather than skipping a check, adding a duplicate declaration or weakening
 required coverage.
 
-The repository UV pin later moved to 0.13.x. That change is not evaluated for
-this UV 0.12.23 record; it falls to the record's stated fallback, the next
-integration review.
+This observation stays bound to UV 0.12.23. Later pins are guarded by contract
+tests rather than a recheck: `PythonNativeContractTests` and the extended
+`PythonPreparationNativeTests` run the locked tools in the Linux
+native-preparation job, and `test_pytest_configuration_contract.py` runs the
+locked pytest. A pin change that alters a consumed fact fails CI. Windows remains
+the owner's assumption.

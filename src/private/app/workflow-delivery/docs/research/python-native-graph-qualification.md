@@ -122,16 +122,18 @@ qualification, managed NBGV query binding, quality preset expansion,
 preparation/install/build/check execution, package consumers, full paired caller
 behavior, caller cutover, Windows or release readiness.
 
-Recheck affected source/operation contracts when tools, lock format, source or
-necessary environment changes, or the next integration review relies on them.
-The author evaluates affected interfaces; independent domain/evidence review
-checks the result. Necessary material effects or product changes outside this
+A change to the lock format, source or necessary environment that the contract
+tests do not exercise is evaluated by its author and checked by independent
+domain/evidence review. Necessary material effects or product changes outside this
 protocol stop for owner disposition. Routine repetitions within its accepted
 finite boundary need no repeated owner approval.
 
-The repository UV pin later moved to 0.13.x. That change is not evaluated for
-this UV 0.12.23 record; it falls to the record's stated fallback, the next
-integration review.
+This observation stays bound to UV 0.12.23. Later pins are guarded by contract
+tests rather than a recheck: `PythonNativeContractTests` and the extended
+`PythonPreparationNativeTests` run the locked tools in the Linux
+native-preparation job, and `test_pytest_configuration_contract.py` runs the
+locked pytest. A pin change that alters a consumed fact fails CI. Windows remains
+the owner's assumption.
 
 [uv-group-owner]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-workspace/src/workspace.rs#L2331
 [uv-group-install]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/project/install_target.rs#L138

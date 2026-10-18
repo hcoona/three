@@ -178,11 +178,11 @@ belong to its registered quality implementation. No V3 witness, mandatory full
 commit field, universal file roster or physical tar encoding is required.
 Package-name spelling is not an import-name contract.
 
-Review changed UV/Hatchling/NBGV versions, native backend/source shapes, shared
-preparation or consumer requirements when they change, and at the next package
-integration review. The integration author evaluates affected native contracts;
-independent engineering/evidence review checks the conclusion before relying on
-it. Missing necessary native capability stops for owner disposition. Exact
+UV, Hatchling and NBGV version changes are guarded by the contract tests named
+below, including the absent `.gitignore` marker and equal wheel, sdist and
+rebuilt-wheel versions. Changed backend/source shapes or shared preparation and
+consumer requirements are evaluated by their integration author and checked by
+independent engineering/evidence review. Missing necessary native capability stops for owner disposition. Exact
 helper/tool/runtime/Git identities, finite command/diagnostic/time/state bounds,
 public-only dependency/cache effects, owned cleanup and original evidence must
 be accepted in the concrete protocol before execution. Completed graph and
@@ -190,9 +190,12 @@ enrichment campaigns remain stopped. Windows remains the owner's feasibility
 assumption. No registry publication, dispatch or credentials/access/Environment
 operation follows from this design evidence.
 
-The repository UV pin later moved to 0.13.x. That change is not evaluated for
-this UV 0.12.23 record; it falls to the record's stated fallback, the next
-integration review.
+This observation stays bound to UV 0.12.23. Later pins are guarded by contract
+tests rather than a recheck: `PythonNativeContractTests` and the extended
+`PythonPreparationNativeTests` run the locked tools in the Linux
+native-preparation job, and `test_pytest_configuration_contract.py` runs the
+locked pytest. A pin change that alters a consumed fact fails CI. Windows remains
+the owner's assumption.
 
 ## Native Output Directory Metadata
 
