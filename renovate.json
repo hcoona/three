@@ -615,20 +615,6 @@
       "automerge": true
     },
     {
-      "description": "Bump the authoritative root Mise lock for Node in one reviewed update.",
-      "matchManagers": ["mise"],
-      "matchDatasources": ["github-releases", "node-version"],
-      "matchDepNames": ["node"],
-      "matchFileNames": ["mise.toml"],
-      "groupName": "Node Runtime",
-      "postUpgradeTasks": {
-        "commands": ["mise lock --bump --minimum-release-age 3d node"],
-        "fileFilters": ["mise.lock"],
-        "executionMode": "branch"
-      },
-      "automerge": false
-    },
-    {
       "description": "Require manual approval for .NET test platform major updates until the MTP 2 runner migration is ready.",
       "matchManagers": ["nuget"],
       "matchPackageNames": [

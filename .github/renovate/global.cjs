@@ -10,6 +10,5 @@ module.exports = {
     String.raw`^mise install --locked uv$`,
     String.raw`^mise run --skip-tools --force update-uv-lock$`,
     String.raw`^uv run --no-project python eng/scripts/sync_python_version\.py --write$`,
-    String.raw`^mise lock --bump --minimum-release-age 3d node$`,
   ],
 };

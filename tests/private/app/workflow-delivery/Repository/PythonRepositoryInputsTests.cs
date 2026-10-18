@@ -279,6 +279,25 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
+    public void DeletedEngineeringScriptSelectsTheEngineeringTestsAtItsBasis()
+    {
+        const string path = "eng/scripts/update_node_mise_lock.py";
+        const string target = "tests/eng/test_python_runtime.py";
+        PythonFactsEndpoint basis = Facts(Endpoint([target, "tests/unrelated.py"], [path],
+            "before"));
+        PythonFactsEndpoint candidate = Facts(Endpoint([target, "tests/unrelated.py"], [],
+            "after"));
+        SelectionReason[] paired = PythonRepositoryInputs.Pair(basis, candidate, [path]);
+        Assert.AreEqual(new SelectionReason(path, "before", "pytest:" + target),
+            Assert.ContainsSingle(paired));
+        PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
+            [path], false, paired);
+        PlannedCheck selected = Assert.ContainsSingle(
+            ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons).Checks);
+        Assert.AreEqual("pytest:" + target, selected.Work.Key.Target);
+    }
+
+    [TestMethod]
     [DataRow(true, true)]
     [DataRow(true, false)]
     [DataRow(false, true)]

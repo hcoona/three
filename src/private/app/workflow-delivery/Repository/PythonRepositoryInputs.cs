@@ -138,7 +138,9 @@ internal static class PythonRepositoryInputs
                 "global.json") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
             path is "eng/scripts/sync_python_version.py" or
-                "eng/scripts/workflow_delivery_v3_hk.py" or "eng/scripts/locked_tool_versions.py");
+                "eng/scripts/workflow_delivery_v3_hk.py" or "eng/scripts/locked_tool_versions.py" or
+                // Retired guard script; a comparison deleting it still needs an owner.
+                "eng/scripts/update_node_mise_lock.py");
 
     // The committed tool-version guard reads every workflow definition.
     private static bool IsWorkflow(string path) =>

@@ -127,15 +127,29 @@ UNGUARDED_WORKFLOWS = {
     "official.yml",
     "workflow-delivery-v3-nuget-live-attempt.yml",
 }
+# Tools whose exact committed version a workflow could duplicate. Go and Java
+# lock entries are not exact release versions, so only their keys are guarded.
 COMMITTED_TOOLS = ("dotnet", "node", "pnpm", "python", "ruby", "uv", "pkl")
 SETUP_VERSION_INPUTS = {
     "actions/setup-dotnet": "dotnet-version",
+    "actions/setup-go": "go-version",
+    "actions/setup-java": "java-version",
     "actions/setup-node": "node-version",
     "actions/setup-python": "python-version",
     "ruby/setup-ruby": "ruby-version",
     "pnpm/action-setup": "version",
     "astral-sh/setup-uv": "version",
     "pkl-community/setup-pkl": "pkl-version",
+}
+VERSION_KEY = re.compile(
+    r"(?i)(?:\A|[_-])(NODE|PYTHON|RUBY|PNPM|UV|DOTNET|PKL|GO|JAVA|POWERSHELL)"
+    r"[\w-]*VERSION\Z"
+)
+NUMERIC = re.compile(r"\A\d+(?:\.(?:\d+|x|\*))*\Z")
+# The Node CI matrix is the retained packages' engines compatibility roster,
+# not a tool selection; the committed Node selection must occur in it.
+COMPATIBILITY_MATRICES = {
+    ("ci.yml", ("jobs", "node-tests", "strategy", "matrix", "node-version")),
 }
 VERSIONS = importlib.util.spec_from_file_location(
     "locked_tool_versions", ROOT / "eng/scripts/locked_tool_versions.py"
@@ -156,7 +170,32 @@ def guarded_workflows():
     ]
 
 
-def literal_tool_versions(text, document):
+def _version_keys(name, node, path=()):
+    """Yield literal numeric values of tool-version keys anywhere in YAML."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            child = (*path, str(key))
+            if (
+                VERSION_KEY.search(str(key))
+                and (
+                    name,
+                    child,
+                )
+                not in COMPATIBILITY_MATRICES
+            ):
+                values = value if isinstance(value, list) else [value]
+                yield from (
+                    f"{key} {item}"
+                    for item in values
+                    if NUMERIC.fullmatch(str(item).strip())
+                )
+            yield from _version_keys(name, value, child)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _version_keys(name, item, path)
+
+
+def literal_tool_versions(text, document, name="workflow.yml"):
     """Find tool/runtime selections written as literals in one workflow."""
     found = []
     for tool in COMMITTED_TOOLS:
@@ -173,49 +212,77 @@ def literal_tool_versions(text, document):
             value = step.get("with", {}).get(SETUP_VERSION_INPUTS.get(action))
             if value is not None and not str(value).startswith("$" + "{{"):
                 found.append(f"{action} {value}")
-    return found
+    found.extend(_version_keys(name, document))
+    return sorted(set(found))
 
 
 def test_workflows_take_tool_versions_from_committed_configuration():
     """A routine tool update edits only mise.lock or global.json."""
     for path in guarded_workflows():
         text = path.read_text()
-        assert literal_tool_versions(text, yaml.safe_load(text)) == [], path
+        found = literal_tool_versions(text, yaml.safe_load(text), path.name)
+        assert found == [], path
+
+
+def _step(uses, inputs):
+    step = f"      - uses: {uses}\n        with:\n" if uses else "      -\n"
+    return "jobs:\n  job:\n    steps:\n" + step + inputs
 
 
 @pytest.mark.parametrize(
-    "literal",
+    "text",
     [
-        "          node-version: 24\n",
-        "          ruby-version: '4.0'\n",
-        "          version: '{pnpm}'\n",
-        "        run: mise install --yes dotnet@{dotnet}\n",
-        "        run: mise which uv@0.1.0\n",
+        _step("actions/setup-node@v7", "          node-version: 24\n"),
+        _step("ruby/setup-ruby@v1", "          ruby-version: '4.0'\n"),
+        _step("pnpm/action-setup@v6", "          version: '{pnpm}'\n"),
+        _step("actions/setup-go@v7", "          go-version: '1.*'\n"),
+        _step("actions/setup-java@v6", "          java-version: '25'\n"),
+        _step(None, "        run: mise install --yes dotnet@{dotnet}\n"),
+        _step(None, "        run: mise which uv@0.1.0\n"),
+        "env:\n  RELEASE_NODE_VERSION: '24.19.0'\njobs: {{}}\n",
+        "jobs:\n  job:\n    env:\n      PYTHON_VERSION: 3.13\n    steps: []\n",
+        (
+            "jobs:\n  job:\n    strategy:\n      matrix:\n"
+            "        node-version: [22.x, 24.x]\n    steps: []\n"
+        ),
     ],
 )
-def test_tool_version_guard_rejects_literals(literal):
-    """The guard reports setup inputs, mise selectors and locked versions."""
-    actions = {
-        "node": "actions/setup-node@v7",
-        "ruby": "ruby/setup-ruby@v1",
-        "version": "pnpm/action-setup@v6",
-    }
-    uses = next(
-        (action for key, action in actions.items() if key in literal),
-        None,
-    )
-    step = f"      - uses: {uses}\n        with:\n" if uses else "      -\n"
-    text = (
-        "jobs:\n  job:\n    steps:\n"
-        + step
-        + literal.format(
-            **{
-                tool: locked.locked_version(ROOT, tool)
-                for tool in ("pnpm", "dotnet")
-            }
-        )
+def test_tool_version_guard_rejects_literals(text):
+    """The guard reports setup inputs, version keys and mise selectors."""
+    text = text.format(
+        **{
+            tool: locked.locked_version(ROOT, tool)
+            for tool in ("pnpm", "dotnet")
+        }
     )
     assert literal_tool_versions(text, yaml.safe_load(text))
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        _step(
+            "actions/setup-node@v7",
+            "          node-version: $" + "{{ steps.tools.outputs.node }}\n",
+        ),
+        "env:\n  NODE_VERSION: $" + "{{ needs.prepare.outputs.node }}\n"
+        "jobs: {}\n",
+        _step("jdx/mise-action@v5", "          version: '2026.10.11'\n"),
+        "env:\n  RENOVATE_VERSION: 43.200.1\njobs: {}\n",
+        _step("actions/setup-python@v7", "          python-version-file: x\n"),
+    ],
+)
+def test_tool_version_guard_accepts_committed_and_unrelated_values(text):
+    """Derived tool versions and versions of unrelated tools remain allowed."""
+    assert literal_tool_versions(text, yaml.safe_load(text)) == []
+
+
+def test_tool_version_guard_exempts_only_the_node_compatibility_matrix():
+    """The retained engines matrix is not a tool selection."""
+    text = (ROOT / ".github/workflows/ci.yml").read_text()
+    document = yaml.safe_load(text)
+    assert literal_tool_versions(text, document, "ci.yml") == []
+    assert literal_tool_versions(text, document, "other.yml")
 
 
 @pytest.mark.parametrize(
