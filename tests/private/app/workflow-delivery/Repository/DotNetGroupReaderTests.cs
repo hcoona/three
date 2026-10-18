@@ -185,12 +185,18 @@ public sealed class DotNetGroupReaderTests(TestContext context)
         }
     }
 
+    // Caller sources include the pin files of the repository pin contracts, so a pin change
+    // selects the default control test run that asserts them.
     [TestMethod]
-    public async Task ControlInputsReachAllActualDotNetConsumers()
+    [DataRow("src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs")]
+    [DataRow(".config/dotnet-tools.json")]
+    [DataRow("mise.toml")]
+    [DataRow("mise.lock")]
+    [DataRow(".github/workflows/ci.yml")]
+    public async Task ControlInputsReachAllActualDotNetConsumers(string caller)
     {
         using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
         const string source = "control/Source.cs";
-        const string caller = "src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs";
         await fixture.Repo.SetAsync(NodeGroupReader.ControlProject, "<Project />");
         await fixture.Repo.SetAsync(source);
         await fixture.Repo.SetAsync(caller);

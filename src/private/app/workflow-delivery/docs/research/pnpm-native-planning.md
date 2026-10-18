@@ -763,15 +763,12 @@ and application-qualification sections remain bound to 12.8.1/12.8.2. The
 sanitized runner, inventory comparison, output hashes and summaries are retained
 in this recheck's pull request; the disposable fixtures were then removed.
 The next trigger is unchanged: a repository PNPM pin change or a concrete
-missing fact. The new hook-filter limit adds a separate trigger: a change that
-adopts a pnpmfile or `configDependencies`, or changes `nodeLinker`, in the
-repository workspace. The evaluator is the author of that change, checked by its
-reviewers. Before merge, the change reruns the reader's membership query and the
-per-project closure and singleton coordinate queries on the changed workspace,
-and records the result here. If any query is narrowed or returns a different
-identity shape, the change returns that gap to the owner instead of merging.
-Nothing detects such an adoption automatically. If the adopting change misses
-this check, the only remaining fallback is the existing PNPM pin trigger.
+missing fact. The hook-filter limit is guarded instead of rechecked:
+`PnpmGraphReader` reads `pnpmfile`, `config-dependencies` and `node-linker`
+through `pnpm config get --json` and fails planning unless the first two are
+unset and the linker is unset or `isolated`. `PnpmGraphReaderTests` covers each
+rejection. Adopting a hook or another linker therefore returns to the owner as a
+reader change rather than a merge-time recheck.
 
 ## Actual Reader and Script Metadata Observation
 
