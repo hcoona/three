@@ -615,6 +615,13 @@
       "automerge": true
     },
     {
+      "description": "Review Node major updates manually.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["node"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
       "description": "Require manual approval for .NET test platform major updates until the MTP 2 runner migration is ready.",
       "matchManagers": ["nuget"],
       "matchPackageNames": [

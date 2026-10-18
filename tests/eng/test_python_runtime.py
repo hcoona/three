@@ -283,6 +283,10 @@ def test_tool_version_guard_exempts_only_the_node_compatibility_matrix():
     document = yaml.safe_load(text)
     assert literal_tool_versions(text, document, "ci.yml") == []
     assert literal_tool_versions(text, document, "other.yml")
+    # The committed Node selection must occur in the compatibility matrix.
+    node = locked.locked_version(ROOT, "node")
+    matrix = document["jobs"]["node-tests"]["strategy"]["matrix"]
+    assert f"{node.split('.', 1)[0]}.x" in matrix["node-version"]
 
 
 @pytest.mark.parametrize(
