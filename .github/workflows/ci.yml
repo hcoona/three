@@ -40,6 +40,10 @@ jobs:
       artifact_id: ${{ steps.retain.outputs.artifact-id }}
       dotnet_artifact_id: ${{ steps.retain-dotnet.outputs.artifact-id }}
     steps:
+      # Locked restores are slow in the default profile package folder on C:. The runner
+      # temporary folder is outside both endpoint checkouts.
+      - name: Place NuGet packages in the runner temporary folder
+        run: printf 'NUGET_PACKAGES=%s\n' "$RUNNER_TEMP/nuget-packages" >> "$GITHUB_ENV"
       - name: Checkout tested candidate
         uses: actions/checkout@v7
         with:

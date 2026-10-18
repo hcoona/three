@@ -392,6 +392,14 @@ root input of the Python caller:
 - **Native shared inputs** (`SharedInput`): ecosystem facts name a file's actual
   consumers, such as a lock, toolchain or version input. Product selection and
   exclusion come from these facts and the [paired reasons](#paired-direct-selection-reasons).
+- **Control-run inputs**: every CI run executes the candidate control application,
+  so the .NET and Node groups add its native control sources and their concrete
+  caller files as inputs of every group member. This relation is defined by the
+  application, not by a native fact. It deliberately selects all members, and
+  `ci-scope` reports a consumer reached only through it with the rule
+  `control-run-input` and the control project as its source, never as
+  `native-consumer`. The control's inert `docs/` subtree and `README.md` are not
+  control-run inputs.
 - **Retained-job scope** (`Repository/CiScope.cs`): fixed path lists decide which
   retained CI jobs apply and give each changed coordinate a responsibility row.
   `AllInputs` (the CI workflow, control bootstrap script, `mise.toml` and

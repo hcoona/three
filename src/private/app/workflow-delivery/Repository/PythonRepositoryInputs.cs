@@ -92,7 +92,7 @@ internal static class PythonRepositoryInputs
         foreach (string path in Pytest)
             foreach (PythonPytestTarget target in targets.Targets)
                 Add(path, "pytest:" + target.Target);
-        foreach (string path in paths.Where(InertControlDocument)) Add(path, null);
+        foreach (string path in paths.Where(ControlInputs.InertDocument)) Add(path, null);
         foreach (PythonPytestTarget target in targets.Targets)
         {
             string owner = "pytest:" + target.Target;
@@ -143,11 +143,7 @@ internal static class PythonRepositoryInputs
         Under(path, "eng/scripts/azureauth-credprovider") ||
         Under(path, "src/public/lib/nbgv-python");
 
-    private static bool InertControlDocument(string path) =>
-        path == "src/private/app/workflow-delivery/README.md" ||
-        path.StartsWith("src/private/app/workflow-delivery/docs/", StringComparison.Ordinal);
-
     private static bool Under(string path, string root) =>
-        !(root == "src/private/app/workflow-delivery" && InertControlDocument(path)) &&
+        !(root == "src/private/app/workflow-delivery" && ControlInputs.InertDocument(path)) &&
         (path == root || path.StartsWith(root + "/", StringComparison.Ordinal));
 }

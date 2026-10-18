@@ -137,6 +137,52 @@ public sealed class DotNetGroupReaderTests(TestContext context)
     }
 
     [TestMethod]
+    public void ControlRunInputsReportTheirRuleWithoutChangingSelection()
+    {
+        const string source = "src/private/app/workflow-delivery/Repository/CiScope.cs";
+        var scenario = new GroupScenario(source, NodeGroupReader.ControlProject);
+        scenario.Native = new(scenario.Native.Basis, scenario.Native.Candidate, [source]);
+        scenario.Scope = scenario.Coordinates();
+        var native = new NativeGroupFacts(scenario.DotNetBasis, scenario.DotNetCandidate,
+            scenario.NodeBasis, scenario.NodeCandidate);
+        foreach (bool candidate in new[] { false, true })
+        {
+            RepositoryFacts dotnet = candidate ? scenario.DotNetCandidate : scenario.DotNetBasis;
+            RepositoryFacts node = candidate ? scenario.NodeCandidate : scenario.NodeBasis;
+            dotnet = dotnet with { SharedInputs = [new(source, [Parent])] };
+            node = node with { SharedInputs = [new(source, [Fixture])] };
+            if (candidate) (scenario.DotNetCandidate, scenario.NodeCandidate) = (dotnet, node);
+            else (scenario.DotNetBasis, scenario.NodeBasis) = (dotnet, node);
+        }
+
+        ScopeInputs labelled = DotNetGroupReader.Join(scenario.Scope, scenario.Native,
+            scenario.DotNetBasis, scenario.DotNetCandidate, scenario.NodeBasis,
+            scenario.NodeCandidate, native);
+        ScopeInputs unlabelled = scenario.Join();
+
+        foreach (ScopeCoordinate row in labelled.Basis.Concat(labelled.Candidate))
+        {
+            CollectionAssert.AreEquivalent(NativeOwners,
+                row.Reasons.Select(reason => reason.Owner).ToArray());
+            foreach (ScopeResponsibility reason in row.Reasons)
+            {
+                Assert.AreEqual("control-run-input", reason.Rule);
+                CollectionAssert.AreEqual(new[] { source, NodeGroupReader.ControlProject }
+                    .Order(StringComparer.Ordinal).ToArray(), reason.Sources);
+            }
+        }
+        Assert.IsTrue(unlabelled.Basis.Concat(unlabelled.Candidate).SelectMany(row =>
+            row.Reasons).All(reason => reason.Rule == "native-consumer"));
+        var selected = ImpactPlanner.SelectProjects(labelled.Bind(scenario.DotNetBasis,
+            scenario.DotNetCandidate));
+        var previous = ImpactPlanner.SelectProjects(unlabelled.Bind(scenario.DotNetBasis,
+            scenario.DotNetCandidate));
+        CollectionAssert.AreEquivalent(previous.Keys.ToArray(), selected.Keys.ToArray());
+        CollectionAssert.AreEquivalent(previous[Parent].ToArray(), selected[Parent].ToArray());
+        Assert.AreEqual(Parent, Assert.ContainsSingle(selected).Key);
+    }
+
+    [TestMethod]
     public async Task ReusedEndpointsMustStillBeCleanBeforeNativeEvaluation()
     {
         using var repo = await WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture

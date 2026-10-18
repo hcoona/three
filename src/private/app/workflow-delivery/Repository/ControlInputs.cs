@@ -10,6 +10,13 @@ internal sealed record ControlInputFacts(string Revision, string Project,
 // tasks.
 internal static class ControlInputs
 {
+    private const string Root = "src/private/app/workflow-delivery";
+
+    // The control project's DefaultItemExcludes remove its docs subtree and README from the
+    // native item region; they are records, not control-run inputs.
+    internal static bool InertDocument(string path) => path == Root + "/README.md" ||
+        path.StartsWith(Root + "/docs/", StringComparison.Ordinal);
+
     internal static ControlInputFacts? Read(DotNetRevisionInputs inputs, bool required)
     {
         DotNetBoundNode[] control = inputs.Nodes.Where(node =>
