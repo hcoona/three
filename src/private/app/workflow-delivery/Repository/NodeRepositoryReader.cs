@@ -8,6 +8,10 @@ internal sealed class NodeRepositoryReader
     internal const string FixtureName = "@hcoona/hcoona-release-smoke-npm";
     private const string Hexo = "src/public/lib/hexo-renderer-asciidoc";
     private const string Steam = "src/public/lib/steam-account-history-to-csv";
+    // .npmrc, the default pnpmfiles PNPM 12.14.0 discovers in its root (hooks/finder.rs probes
+    // .pnpmfile.mjs, then .pnpmfile.cjs) and the retained undotted pnpmfile.cjs.
+    internal static readonly string[] HookFiles =
+        [".npmrc", ".pnpmfile.mjs", ".pnpmfile.cjs", "pnpmfile.cjs"];
     private readonly GitMaterialization checkout;
     private readonly Func<string[], CancellationToken, Task<string>> query;
 
@@ -79,12 +83,18 @@ internal sealed class NodeRepositoryReader
             RequireFile(path);
             Add(path, directories);
         }
+        // The root hooks are checked even when PNPM reports no other member: a root hook can
+        // narrow the membership query to the root alone.
+        foreach (string file in HookFiles)
+            if (File.Exists(Path.Combine(checkout.Root, file)))
+                throw new InvalidDataException("Unsupported additional Node configuration: " +
+                    file);
         foreach (string directory in directories)
         {
             string ancestor = directory;
             while (true)
             {
-                foreach (string file in new[] { ".npmrc", ".pnpmfile.cjs", "pnpmfile.cjs" })
+                foreach (string file in HookFiles)
                 {
                     string path = ancestor.Length == 0 ? file : ancestor + "/" + file;
                     // Unknown hooks can read arbitrary external inputs; the current

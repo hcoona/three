@@ -185,27 +185,42 @@ public sealed class DotNetGroupReaderTests(TestContext context)
         }
     }
 
+    // Caller sources include the pin files of the repository pin contracts, so a pin change
+    // selects the control test project and its default test work, which asserts them.
     [TestMethod]
-    public async Task ControlInputsReachAllActualDotNetConsumers()
+    [DataRow("src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs")]
+    [DataRow(".config/dotnet-tools.json")]
+    [DataRow("mise.toml")]
+    [DataRow("mise.lock")]
+    [DataRow(".github/workflows/ci.yml")]
+    public async Task ControlInputsReachAllActualDotNetConsumers(string caller)
     {
         using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
         const string source = "control/Source.cs";
-        const string caller = "src/private/app/workflow-delivery/CI/Callers/DotNetCiCaller.cs";
         await fixture.Repo.SetAsync(NodeGroupReader.ControlProject, "<Project />");
+        await fixture.Repo.SetAsync(ControlTestInputs.Project, "<Project />");
         await fixture.Repo.SetAsync(source);
         await fixture.Repo.SetAsync(caller);
         await fixture.CommitAsync();
-        fixture.Graph = fixture.Response();
+        fixture.Graph = fixture.Response(testProject: ControlTestInputs.Project);
         DotNetRevisionInputs inputs = await fixture.BindAsync();
         var control = new ControlInputFacts(inputs.Revision.Commit, NodeGroupReader.ControlProject,
             [new(source, "Sources", true)]);
         DotNetRevisionInputs joined = DotNetGroupReader.WithControlInputs(inputs, control, true);
         RepositoryFacts facts = DotNetFactsAssembler.Assemble(joined, []);
+        string[] consumers = [.. NativeProjects, ControlTestInputs.Project];
         foreach (string path in new[] { source, caller })
         {
-            CollectionAssert.AreEquivalent(NativeProjects,
+            CollectionAssert.AreEquivalent(consumers,
                 ImpactPlanner.DirectConsumers(facts, path));
         }
+        CiPlan plan = DotNetFactsAssembler.Complete(DotNetFactsAssembler.Select(joined, joined,
+            [caller], false, [], []), context.CancellationToken);
+        PlannedCheck test = Assert.ContainsSingle(plan.Checks.Where(item =>
+            item.Work.Key.Target == ControlTestInputs.Project &&
+            item.Work.Key.Check == DotNetChecks.Test));
+        Assert.Contains(new SelectionReason(caller, inputs.Revision.Commit,
+            ControlTestInputs.Project), test.Reasons);
         Assert.ThrowsExactly<InvalidDataException>(() =>
             DotNetGroupReader.WithControlInputs(inputs, null, true));
         Assert.ThrowsExactly<InvalidDataException>(() => DotNetGroupReader.WithControlInputs(inputs,

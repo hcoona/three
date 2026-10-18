@@ -763,15 +763,22 @@ and application-qualification sections remain bound to 12.8.1/12.8.2. The
 sanitized runner, inventory comparison, output hashes and summaries are retained
 in this recheck's pull request; the disposable fixtures were then removed.
 The next trigger is unchanged: a repository PNPM pin change or a concrete
-missing fact. The new hook-filter limit adds a separate trigger: a change that
-adopts a pnpmfile or `configDependencies`, or changes `nodeLinker`, in the
-repository workspace. The evaluator is the author of that change, checked by its
-reviewers. Before merge, the change reruns the reader's membership query and the
-per-project closure and singleton coordinate queries on the changed workspace,
-and records the result here. If any query is narrowed or returns a different
-identity shape, the change returns that gap to the owner instead of merging.
-Nothing detects such an adoption automatically. If the adopting change misses
-this check, the only remaining fallback is the existing PNPM pin trigger.
+missing fact. The hook-filter limit is guarded instead of rechecked, by two
+guards. `PnpmGraphReader` reads `pnpmfile`, `config-dependencies` and
+`node-linker` through `pnpm config get --json` and fails planning unless the
+first two are unset and the linker is unset or `isolated`; `PnpmGraphReaderTests`
+covers each rejection. It also requires `global-pnpmfile` to be unset, because a
+user-level pnpmfile loads ahead of the project's and can narrow the same queries. A default pnpmfile is discovered without any setting, so
+`config get pnpmfile` stays `null` for it. `NodeRepositoryReader` therefore
+fails planning when `.npmrc` or a hook file exists at the workspace root, checked
+even when PNPM reports no other member, or at a member ancestor: `.pnpmfile.mjs` and `.pnpmfile.cjs`, the two names the
+12.14.0 [finder](https://github.com/pnpm/pnpm/blob/fe4a0c232384289de82be3d502896ca7e070050c/pnpm/crates/hooks/src/finder.rs#L17-L27)
+probes, and the retained undotted `pnpmfile.cjs`, which 12.14.0 does not load.
+`NodeRepositoryReaderTests` covers each name. The file list is a source reading
+at 12.14.0, so the PNPM pin trigger covers it until the planned PNPM native
+contract tests assert, with the pinned PNPM, which default hook files narrow the
+membership query. Adopting a hook or another linker therefore returns
+to the owner as a reader change rather than a merge-time recheck.
 
 ## Actual Reader and Script Metadata Observation
 

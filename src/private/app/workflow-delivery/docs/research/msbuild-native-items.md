@@ -89,9 +89,11 @@ owner routing, cross-runner transfer or CI group cutover. Retained Python consum
 and wider facts remain integration prerequisites. No registry operation, release
 dispatch, new dependency declaration, credentials, native buffer generation,
 generic fact service or application trust protocol follows from this projection.
-Reassess the native switches/output when the selected SDK or required input shape
-changes; the evaluator is the integration author and the fallback is its next
-native-integration review.
+The `Native*` rows of `MsBuildResourceReaderTests` guard the native switches and
+JSON output: their fixture commits the root `global.json` SDK selection, and
+`NativeRowsResolveThePinnedSdk` asserts that the pinned SDK answers. CI selects
+them when `global.json` changes, so an SDK change that alters a consumed fact
+fails CI. A change to the required input shape changes the reader and its tests.
 
 [evaluation]: https://github.com/MicrosoftDocs/visualstudio-docs/blob/653cd6e4ffe7e1ff69ba2c4eade3c29ed49a4336/docs/msbuild/evaluate-items-and-properties.md#L31
 [properties]: https://github.com/MicrosoftDocs/visualstudio-docs/blob/653cd6e4ffe7e1ff69ba2c4eade3c29ed49a4336/docs/msbuild/msbuild-reserved-and-well-known-properties.md#L66

@@ -234,6 +234,10 @@ public sealed class PnpmGraphReaderTests
     [DataRow("selector-pattern")]
     [DataRow("dedicated-lock")]
     [DataRow("relocated-lock")]
+    [DataRow("pnpmfile")]
+    [DataRow("global-pnpmfile")]
+    [DataRow("config-dependencies")]
+    [DataRow("hoisted-linker")]
     public async Task ReadRejectsUnsupportedOrIncompleteNativeScope(string defect)
     {
         var native = new NativeQueries(".", "packages/library", "packages/app");
@@ -256,6 +260,11 @@ public sealed class PnpmGraphReaderTests
             case "selector-pattern": native.Directories.Add("packages/[pattern]"); break;
             case "dedicated-lock": native.SharedLock = "false"; break;
             case "relocated-lock": native.LockDirectory = "\"elsewhere\""; break;
+            case "pnpmfile": native.Settings["pnpmfile"] = "\"hooks.cjs\""; break;
+            case "global-pnpmfile": native.Settings["global-pnpmfile"] = "\"/g.cjs\""; break;
+            case "config-dependencies":
+                native.Settings["config-dependencies"] = "{\"hooks\":\"1.0.0\"}"; break;
+            case "hoisted-linker": native.Settings["node-linker"] = "\"hoisted\""; break;
         }
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(
@@ -317,6 +326,7 @@ public sealed class PnpmGraphReaderTests
         internal Dictionary<string, string[]> Closures { get; } = new(StringComparer.Ordinal);
         internal string SharedLock { get; set; } = "null";
         internal string LockDirectory { get; set; } = "null";
+        internal Dictionary<string, string> Settings { get; } = new(StringComparer.Ordinal);
         internal string? OmitFullProject { get; set; }
         internal string? ExtraFullProject { get; set; }
         internal string? MembershipOverride { get; set; }
@@ -345,8 +355,12 @@ public sealed class PnpmGraphReaderTests
             Calls++;
             if (Failure is not null) throw Failure;
             if (arguments[0] == "config")
-                return Task.FromResult(arguments[2] == "shared-workspace-lockfile"
-                    ? SharedLock : LockDirectory);
+                return Task.FromResult(arguments[2] switch
+                {
+                    "shared-workspace-lockfile" => SharedLock,
+                    "lockfile-dir" => LockDirectory,
+                    _ => Settings.GetValueOrDefault(arguments[2], "null"),
+                });
             if (arguments[0] == "--dir")
             {
                 string identity = Path.GetRelativePath(root, arguments[1])

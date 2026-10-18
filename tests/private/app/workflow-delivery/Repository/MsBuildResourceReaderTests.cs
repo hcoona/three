@@ -464,6 +464,16 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
         CollectionAssert.AreEqual(DebugNativeInputs, debug.Inputs);
     }
 
+    // The native rows above contract the switches and JSON output of the pinned SDK only if
+    // their fixture resolves that SDK rather than whatever the host would choose.
+    [TestMethod]
+    public async Task NativeRowsResolveThePinnedSdk()
+    {
+        string version = await WorkflowDelivery.Platform.NativeProcess.RunAsync("dotnet",
+            sharedCheckout!.Root, ["--version"], context.CancellationToken);
+        Assert.AreEqual(RepositoryToolSelection.DotNetSdkVersion, version.Trim());
+    }
+
     [TestMethod]
     public async Task NativeEvaluationFailureReturnsNoFacts()
     {
@@ -508,6 +518,8 @@ public sealed class MsBuildResourceReaderTests(TestContext context)
         GitFixture repo = await GitFixture.CreateAsync(token);
         try
         {
+            // The committed root SDK selection, so native rows run the pinned SDK on any host.
+            await repo.SetAsync("global.json", RepositoryToolSelection.GlobalJson());
             await repo.SetAsync(Project, "<Project />");
             await repo.SetAsync("shared/Version 雪.json", "{}");
             await repo.SetAsync("shared/executable.txt", "executable resource", "100755");
