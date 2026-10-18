@@ -241,15 +241,20 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
             Path.Combine(fixture.Scratch, "failed.proj"),
             Path.Combine(fixture.Scratch, "failed.request.json"),
             Path.Combine(fixture.Scratch, "failed.response.json"), 30);
+        string stderr = "task load head " + new string('x', NativeDiagnostic.TailLength) +
+            " task load failed";
         var reader = new DotNetRepositoryReader(fixture.Checkout, files, (_, _) =>
             Task.FromResult(new NativeCommandResult(NativeTermination.Exited, 1,
-                "partial graph output", "task load failed", 0, "native failure detail")));
+                "partial graph output", stderr, 0, "native failure detail")));
         InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             reader.ReadAsync(context.CancellationToken));
-        Assert.Contains("task load failed", failure.Message);
-        Assert.Contains("partial graph output", failure.Message);
-        Assert.Contains("native failure detail", failure.Message);
-        Assert.Contains("Native graph Exited, exit 1", failure.Message);
+        // Stage, termination, native error and a bounded stderr tail; stdout stays retained.
+        Assert.Contains("Native graph query failed: Exited, exit 1. native failure detail " +
+            "stderr: [truncated] ", failure.Message);
+        Assert.EndsWith(" task load failed", failure.Message);
+        Assert.DoesNotContain("task load head", failure.Message);
+        Assert.DoesNotContain("partial graph output", failure.Message);
+        Assert.IsLessThan(NativeDiagnostic.TailLength + 1000, failure.Message.Length);
         Assert.Contains("role Invocation", failure.Message);
         Assert.Contains(fixture.Revision.Commit, failure.Message);
         Assert.Contains(fixture.Root, failure.Message);

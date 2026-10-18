@@ -170,11 +170,17 @@ public sealed class PythonGroupPreparationTests(TestContext context)
         }
         else
         {
-            Assert.AreEqual("Controlled failure", failure.Commands[^1].Result.Stderr);
+            Assert.AreEqual(Fixture.FailureStderr, failure.Commands[^1].Result.Stderr);
             Assert.AreEqual(NativeTermination.Exited, failure.Commands[^1].Result.Termination);
             Assert.AreEqual(1, failure.Commands[^1].Result.ExitCode);
-            Assert.Contains(Path.GetFileName(fixture.Commands[^1].Executable), failure.Message);
-            Assert.DoesNotContain("Controlled failure", failure.Message);
+            // The stage and a bounded stderr tail reach the message; the head stays retained.
+            Assert.StartsWith("Python query preparation failed: " +
+                $"{Path.GetFileName(fixture.Commands[^1].Executable)} " +
+                $"{fixture.Commands[^1].Arguments[0]}, Exited, exit 1. stderr: [truncated] ",
+                failure.Message);
+            Assert.EndsWith("Controlled failure tail", failure.Message);
+            Assert.DoesNotContain("Controlled head", failure.Message);
+            Assert.IsLessThan(NativeDiagnostic.TailLength + 200, failure.Message.Length);
         }
         Assert.IsNotEmpty(fixture.Commands);
         if (phase.StartsWith("candidate-", StringComparison.Ordinal))
@@ -338,6 +344,9 @@ public sealed class PythonGroupPreparationTests(TestContext context)
         internal Task<PythonGroupPreparationResult> PrepareAsync(CancellationToken token) =>
             PythonGroupPreparation.PrepareAsync(Request, ExecuteAsync, token);
 
+        internal static readonly string FailureStderr = "Controlled head " +
+            new string('x', NativeDiagnostic.TailLength) + " Controlled failure tail";
+
         private async Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
             CancellationToken token)
         {
@@ -346,7 +355,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
             string phase = command.Executable == Request.Tools.Dotnet ? "restore" : "sync";
             if (Failure == phase || Failure == "candidate-" + phase &&
                 command.Directory == Request.Candidate.Directory)
-                return new(NativeTermination.Exited, 1, "", "Controlled failure", 0, null);
+                return new(NativeTermination.Exited, 1, "", FailureStderr, 0, null);
             if (phase == "sync" && Failure != "missing-query" &&
                 !(Failure == "candidate-missing-query" &&
                     command.Directory == Request.Candidate.Directory))

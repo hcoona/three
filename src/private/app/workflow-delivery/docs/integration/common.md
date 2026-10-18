@@ -69,8 +69,9 @@ The `ci caller-<ecosystem> execute` commands keep stdout as the unchanged
 `CiOutcome` JSON. They also write each non-passed check's key, status and
 recorded failure text to stderr, the step log. A check without failure text
 reports its last unsuccessful native command. Native failure text names the
-stage, termination, exit code, native error and the trimmed last 4 KiB of
-stderr. The complete command results stay in the retained result artifacts.
+stage, termination and exit code, followed by the last 4,096 characters of each
+of the native error and stderr, trimmed and marked when truncated. The complete
+command results stay in the retained result artifacts.
 The finite [GitHub comparison
 mapping](../middle-level-design.md#github-event-comparison) reads native payload
 fields directly rather than adding another event declaration. Its implementation

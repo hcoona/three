@@ -69,13 +69,21 @@ public sealed class RubyBundlePreparationTests(TestContext context)
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
         await repo.SetAsync("src/a/Gemfile");
         GitMaterialization checkout = await BindAsync(repo);
+        string stderr = "native installation head " + new string('x', NativeDiagnostic.TailLength) +
+            " native installation error";
         RubyBundlePreparationException error = await Assert.ThrowsExactlyAsync<
             RubyBundlePreparationException>(() => RubyBundlePreparation.PrepareAsync(checkout,
                 Tools(repo.Directory), (_, _) => Task.FromResult(Success with
-                    { ExitCode = 7, Stderr = "native installation error" }),
+                    { ExitCode = 7, Stderr = stderr }),
                 context.CancellationToken));
-        Assert.AreEqual(7, Assert.ContainsSingle(error.Commands).Result.ExitCode);
-        Assert.Contains("native installation error", error.Message);
+        RubyPreparationCommand command = Assert.ContainsSingle(error.Commands);
+        Assert.AreEqual(7, command.Result.ExitCode);
+        Assert.AreEqual(stderr, command.Result.Stderr);
+        Assert.StartsWith("Native Ruby dependency preparation failed: Exited, exit 7. " +
+            "stderr: [truncated] ", error.Message);
+        Assert.EndsWith(" native installation error", error.Message);
+        Assert.DoesNotContain("native installation head", error.Message);
+        Assert.IsLessThan(NativeDiagnostic.TailLength + 200, error.Message.Length);
     }
 
     [TestMethod]

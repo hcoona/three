@@ -9,8 +9,7 @@ internal sealed record RubyPreparedBundles(RubyBundleContext[] Contexts,
     RubyPreparationCommand[] Commands);
 internal sealed class RubyBundlePreparationException(RubyPreparationCommand[] commands)
     : IOException("Native Ruby dependency preparation failed: " +
-        $"{commands[^1].Result.Termination}, exit {commands[^1].Result.ExitCode}. " +
-        $"{commands[^1].Result.Error} {commands[^1].Result.Stderr}")
+        NativeDiagnostic.Describe(commands[^1].Result))
 {
     internal RubyPreparationCommand[] Commands { get; } = commands;
 }

@@ -95,9 +95,12 @@ public sealed class PythonGroupProgramTests(TestContext context)
 
             Assert.AreEqual(2, exit);
             Assert.AreEqual("", output.ToString());
-            Assert.Contains(missingOutput ?? "uv sync, Exited, exit 7", error.ToString());
+            // The stage, termination and bounded stderr are caller-visible; stdout and the
+            // command environment stay in the retained diagnostics file only.
+            Assert.Contains(missingOutput ?? "uv sync, Exited, exit 7. stderr: " + result.Stderr,
+                error.ToString());
             Assert.DoesNotContain(result.Stdout, error.ToString());
-            Assert.DoesNotContain(result.Stderr, error.ToString());
+            if (missingOutput is not null) Assert.DoesNotContain(result.Stderr, error.ToString());
             Assert.DoesNotContain("/owned/home", error.ToString());
             if (existingFile)
             {

@@ -15,8 +15,8 @@ internal sealed class PythonGroupPreparationException(string scratch,
         missingOutput is not null ? $"Python query preparation failed: {missingOutput}." :
             "Python query preparation failed: " +
             $"{Path.GetFileName(commands[^1].Command.Executable)} " +
-            $"{commands[^1].Command.Arguments[0]}, {commands[^1].Result.Termination}, " +
-            $"exit {commands[^1].Result.ExitCode}.")
+            $"{commands[^1].Command.Arguments[0]}, " +
+            NativeDiagnostic.Describe(commands[^1].Result))
 {
     internal string DiagnosticsPath { get; } = Path.Combine(scratch, "preparation-failure.json");
     internal PythonPreparationCommand[] Commands { get; } = commands;
