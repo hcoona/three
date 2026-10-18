@@ -9,7 +9,9 @@ internal sealed record RubyGemFacts(string Name, string Version, string Platform
 internal sealed record RubySourceGemFacts(string Gemspec, RubyGemFacts Gem);
 internal sealed record RubyNativeSource(string Kind, string? Path = null,
     string? Gemspec = null, string? Directory = null, string? Uri = null, string? Revision = null);
-internal sealed record RubyBundleSpecification(RubyGemFacts Gem, RubyNativeSource Source);
+internal sealed record RubyLockedGem(string Name, string Version, string Platform,
+    RubyDependency[] RuntimeDependencies);
+internal sealed record RubyBundleSpecification(RubyLockedGem Gem, RubyNativeSource Source);
 internal sealed record RubyBundleFacts(string Gemfile, string Lockfile, string BundlerVersion,
     string[] Gemfiles, string[] DirectDependencies, RubyBundleSpecification[] Specifications);
 internal sealed record RubyArchiveFacts(string Archive, RubyGemFacts Gem, string[] Contents)
@@ -76,16 +78,20 @@ internal static class RubyNativeFactsReader
         return new(gemfile, Absolute(Text(value.Lockfile)), Text(value.BundlerVersion),
             gemfiles, Strings(value.DirectDependencies), value.Specifications.Select(
                 specification =>
-                new RubyBundleSpecification(Gem(specification), Source(
-                    specification.Source))).ToArray());
+                new RubyBundleSpecification(new(Text(specification.Name),
+                    Text(specification.Version), Text(specification.Platform),
+                    Dependencies(specification.RuntimeDependencies)),
+                    Source(specification.Source))).ToArray());
     }
 
     private static RubyGemFacts Gem(RubyGemMessage value) => new(Text(value.Name), Text(
         value.Version),
         Text(value.Platform), Strings(value.RequirePaths), Strings(value.Files),
-            value.RuntimeDependencies
-            .Select(dependency => new RubyDependency(Text(dependency.Name), Text(
-                dependency.Requirement))).ToArray());
+            Dependencies(value.RuntimeDependencies));
+
+    private static RubyDependency[] Dependencies(RubyDependency[] values) => values
+        .Select(dependency => new RubyDependency(Text(dependency.Name), Text(
+            dependency.Requirement))).ToArray();
 
     private static RubyNativeSource Source(RubyNativeSource value) => value.Kind switch
     {

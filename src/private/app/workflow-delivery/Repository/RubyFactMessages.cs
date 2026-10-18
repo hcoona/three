@@ -23,10 +23,9 @@ internal sealed record RubyArchiveMessage : RubyGemMessage
     public required string Archive { get; init; }
     public required string[] Contents { get; init; }
 }
-internal sealed record RubySpecificationMessage : RubyGemMessage
-{
-    public required RubyNativeSource Source { get; init; }
-}
+// Locked bundle members: Bundler's lock resolution, not installed specifications.
+internal sealed record RubySpecificationMessage(string Name, string Version, string Platform,
+    RubyDependency[] RuntimeDependencies, RubyNativeSource Source);
 internal sealed record RubyContextMessage(string Gemfile, string Lockfile,
     string BundlerVersion, string LockedBundlerVersion);
 internal sealed record RubyVersionMessage(string Gemspec, string Raw, string Version,

@@ -17,10 +17,13 @@ public sealed class RubyDependencyProjectionTests
     private static RubyGemFacts Gem(string name, params string[] dependencies) =>
         new(name, "1.2.3", "ruby", ["lib"], ["lib/native.rb"],
             dependencies.Select(name => new RubyDependency(name, ">= 1.0")).ToArray());
+    private static RubyLockedGem Locked(string name, params string[] dependencies) =>
+        new(name, "1.2.3", "ruby",
+            dependencies.Select(name => new RubyDependency(name, ">= 1.0")).ToArray());
     private static RubySourceGemFacts Source(string name) =>
         new(Absolute("src/" + name + "/" + name + ".gemspec"), Gem(name));
     private static RubyBundleSpecification Local(string name, string kind = "path",
-        params string[] dependencies) => new(Gem(name, dependencies), new(kind,
+        params string[] dependencies) => new(Locked(name, dependencies), new(kind,
             Absolute("src/" + name), Source(name).Gemspec,
             Path.GetFullPath(Path.Combine(Root, "..", "installed", name))));
     private static RubyBundleFacts Bundle(string directory,
@@ -36,9 +39,9 @@ public sealed class RubyDependencyProjectionTests
     {
         RubySourceGemFacts[] sources = [Source("a"), Source("b"), Source("c")];
         RubyBundleFacts bundle = Bundle("node/client", ["wrapper"],
-            new(Gem("wrapper", "a"), new("rubygems")),
+            new(Locked("wrapper", "a"), new("rubygems")),
             Local("a", kind, "b"), Local("b", "path", "c"), Local("c"),
-            new(Gem("bundler"), new("metadata")));
+            new(Locked("bundler"), new("metadata")));
         RubyDependencyGraph result = RubyDependencyProjection.Project(Root, sources, [bundle]);
         Assert.HasCount(3, result.Projects);
         CollectionAssert.AreEqual(FromA,
@@ -75,7 +78,7 @@ public sealed class RubyDependencyProjectionTests
     {
         RubySourceGemFacts[] sources = [Source("a") with { Gem = Gem("a", "b") }, Source("b")];
         RubyBundleFacts bundle = Bundle("node/client", ["a"],
-            new(Gem("a", "b"), new("rubygems")), new(Gem("b"), new("rubygems")));
+            new(Locked("a", "b"), new("rubygems")), new(Locked("b"), new("rubygems")));
         RubyDependencyGraph result = RubyDependencyProjection.Project(Root, sources, [bundle]);
         Assert.IsEmpty(result.Bundles[0].Producers);
         Assert.IsTrue(result.Projects.All(project => project.Ordinary.Length == 0));
@@ -136,7 +139,7 @@ public sealed class RubyDependencyProjectionTests
                 local = local with { Source = local.Source with
                     { Path = Absolute("src/unrelated") } }; break;
             case "missing-direct": bundle = bundle with { DirectDependencies = ["missing"] }; break;
-            case "missing-edge": local = local with { Gem = Gem("a", "missing") }; break;
+            case "missing-edge": local = local with { Gem = Locked("a", "missing") }; break;
             case "duplicate-spec": bundle = bundle with { Specifications = [local, local] }; break;
             case "outside-gemfile": bundle = bundle with
                 { Gemfile = Path.GetFullPath(Path.Combine(Root, "..", "Gemfile")) }; break;

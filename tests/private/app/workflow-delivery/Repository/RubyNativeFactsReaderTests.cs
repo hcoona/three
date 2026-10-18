@@ -25,7 +25,10 @@ public sealed class RubyNativeFactsReaderTests
 
     private static JsonObject Bundle(string kind = "rubygems")
     {
+        // Locked bundle members carry Bundler lock facts, not installed file metadata.
         JsonObject specification = Gem();
+        specification.Remove("require_paths");
+        specification.Remove("files");
         var source = new JsonObject { ["kind"] = kind };
         if (kind is "path" or "local_git")
         {

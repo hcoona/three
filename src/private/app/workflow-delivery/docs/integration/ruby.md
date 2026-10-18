@@ -25,8 +25,11 @@ Each bundle answer includes its original Gemfile/lock, activated native version
 and operation context, actual evaluated Gemfile inputs, selected direct and
 transitive dependencies, and native source identities. Keep registry dependency
 facts only as needed to recover repository-local relations; installed gems do not
-become repository projects. Consume the locked version through native
-launch/preparation and verify actual activation. A native
+become repository projects. Activate the locked Bundler version and verify it.
+Planning reads frozen Bundler's locked resolution for the requested groups and
+current platform, and evaluates local Path/Git gemspecs, without installing
+registry dependencies. An incomplete locked resolution fails collection. Only a
+selected check installs its frozen bundles. A native
 fallback to another library cannot claim the requested lock context. The reader
 must obtain complete native answers for both existing lock-selected versions
 before their callers switch; this is finite supported integration, not a generic
@@ -85,7 +88,8 @@ NBGV and the project's native build integration. No custom complete-commit field
 provenance admission chain or Release state machine is added to CI.
 
 The caller transfers exact endpoint/plan/control context and executes every
-selected variant against the original plan without replanning. Failed preparation,
+selected variant against the original plan without replanning. A selected RSpec
+suite first installs each frozen bundle it governs. Failed preparation,
 cancellation and absent required results retain failure. Explainable empty
 selection performs no product preparation. Root CI owns RSpec and adopted gem
 consumers as one complete Ruby group; their duplicate automated PR trigger is

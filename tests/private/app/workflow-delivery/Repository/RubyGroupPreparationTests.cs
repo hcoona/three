@@ -103,14 +103,8 @@ public sealed class RubyGroupPreparationTests(TestContext context)
             Assert.AreEqual("bundler", command.Arguments[2]);
             return Answer(new { });
         }
-        if (command.Arguments[0] == request.Tools.Bundle)
-        {
-            Assert.AreEqual("_2.4.20_", command.Arguments[1]);
-            Assert.AreEqual("1", command.Environment["BUNDLE_FROZEN"]);
-            Assert.AreEqual(Path.GetFullPath(Path.Combine(request.Candidate.Directory,
-                "node/Gemfile")), Path.GetFullPath(command.Environment["BUNDLE_GEMFILE"]!));
-            return Answer(new { });
-        }
+        Assert.AreNotEqual(request.Tools.Bundle, command.Arguments[0],
+            "Planning preparation cannot install product bundles.");
         using JsonDocument input = JsonDocument.Parse(
             await File.ReadAllTextAsync(command.Arguments[^1], token));
         string operation = input.RootElement.GetProperty("operation").GetString()!;

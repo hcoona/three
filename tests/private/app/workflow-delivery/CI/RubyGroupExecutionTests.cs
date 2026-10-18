@@ -97,6 +97,16 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     {
         Assert.IsFalse(command.InheritEnvironment);
         if (command.Executable == request.Nbgv) return Answer(new { SemVer2 = "1.2.3" });
+        if (command.Arguments is [_, _, "install"])
+        {
+            // Selected execution, not planning, installs the suite's frozen locked bundle.
+            Assert.AreEqual(request.Bundle, command.Arguments[0]);
+            Assert.AreEqual("_2.4.20_", command.Arguments[1]);
+            Assert.AreEqual(request.Candidate.Bundles[0].Gemfile,
+                command.Environment!["BUNDLE_GEMFILE"]);
+            Assert.AreEqual("1", command.Environment["BUNDLE_FROZEN"]);
+            return Answer(new { });
+        }
         if (command.Arguments.Contains("rspec", StringComparer.Ordinal))
         {
             Assert.Contains("_2.4.20_", command.Arguments);
@@ -152,6 +162,63 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         Assert.AreEqual(failedSuite ? CheckStatus.Failed : CheckStatus.Passed,
             Assert.ContainsSingle(result.RSpec).Run.Status);
         Assert.IsTrue(result.Results.All(check => check.Candidate == plan.Candidate));
+    }
+
+    [TestMethod]
+    public async Task SelectedSuiteInstallsItsGovernedBundlesBeforeRSpecAndRetainsThem()
+    {
+        using var scratch = new Scratch();
+        var (plan, request) = await SharedAsync(scratch.Directory);
+        string Gemfile(string directory) => Path.GetFullPath(Path.Combine(request.Checkout,
+            directory, "Gemfile"));
+        RubyBundleFacts suite = request.Candidate.Bundles[0];
+        // A nested lock context belongs to the suite; a nested native gem's bundle does not.
+        RubyBundleFacts nested = suite with { Gemfile = Gemfile(Suite + "/contexts/b") };
+        RubyBundleFacts native = suite with { Gemfile = Gemfile(Suite + "/vendor/gem") };
+        request = request with { Candidate = request.Candidate with
+        {
+            Bundles = [native, nested, suite],
+            Facts = request.Candidate.Facts with { Native = request.Candidate.Facts.Native with
+            {
+                Graph = new([new(Suite + "/vendor/gem", "vendored", [])], [])
+            } }
+        } };
+        var order = new List<string>();
+        RubyGroupRun result = await RubyGroupExecution.RunAsync(plan with
+            { Checks = plan.Checks[..1] }, request, (command, token) =>
+            {
+                order.Add(command.Arguments is [_, _, "install"]
+                    ? command.Environment!["BUNDLE_GEMFILE"]! : "rspec");
+                return command.Arguments is [_, _, "install"] ? Task.FromResult(Answer(new { }))
+                    : NativeAsync(request, command, false, token);
+            }, context.CancellationToken);
+        Assert.IsTrue(result.Outcome.Satisfied);
+        CollectionAssert.AreEqual(new[] { suite.Gemfile, nested.Gemfile, "rspec" }, order);
+        CollectionAssert.AreEqual(new[] { suite.Gemfile, nested.Gemfile },
+            Assert.ContainsSingle(result.RSpec).Installs.Select(install =>
+                install.Command.Environment!["BUNDLE_GEMFILE"]).ToArray());
+    }
+
+    [TestMethod]
+    public async Task FailedSelectedBundleInstallationFailsItsSuiteWithoutRunningRSpec()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        var (plan, request) = await PrepareAsync(repo);
+        RubyGroupRun result = await RubyGroupExecution.RunAsync(plan, request,
+            (command, token) =>
+            {
+                Assert.DoesNotContain("rspec", command.Arguments);
+                return command.Arguments is [_, _, "install"]
+                    ? Task.FromResult(Answer(new { }) with
+                        { ExitCode = 5, Stderr = "native frozen bundle failed" })
+                    : NativeAsync(request, command, false, token);
+            }, context.CancellationToken);
+        Assert.IsFalse(result.Outcome.Satisfied);
+        RubyGroupRSpec suite = Assert.ContainsSingle(result.RSpec);
+        Assert.AreEqual(CheckStatus.Failed, suite.Run.Status);
+        Assert.AreEqual(5, suite.Run.Result.ExitCode);
+        Assert.Contains("native frozen bundle failed", suite.Run.ReportError!);
+        Assert.IsTrue(result.Packages.Results.All(check => check.Status == CheckStatus.Passed));
     }
 
     [TestMethod]

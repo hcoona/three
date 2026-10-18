@@ -73,7 +73,8 @@ public sealed class RubyInputConsumersTests
         RubyBundleFacts bundle = new(Absolute("node/client/Gemfile"),
             Absolute("node/client/Gemfile.lock"), "2.7.2",
             [Absolute("node/client/Gemfile"), Absolute("shared/dependencies.rb")], ["native"],
-            [new(source.Gem, new("path", Absolute("src/gem"), source.Gemspec,
+            [new(new(source.Gem.Name, source.Gem.Version, source.Gem.Platform,
+                source.Gem.RuntimeDependencies), new("path", Absolute("src/gem"), source.Gemspec,
                 Absolute("installed/cache/native")))]);
         RubyRepositoryInputs result = Map(Revision("node/client/Gemfile",
             "node/client/Gemfile.lock", "shared/dependencies.rb"), bundles: [bundle]);

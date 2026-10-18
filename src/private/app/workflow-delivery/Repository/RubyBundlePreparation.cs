@@ -14,7 +14,7 @@ internal sealed class RubyBundlePreparationException(RubyPreparationCommand[] co
     internal RubyPreparationCommand[] Commands { get; } = commands;
 }
 
-// Native gem/Bundler own installation. The caller owns tools, environment and disposable state.
+// Native gem/Bundler own activation. Planning reads locks; selected execution installs bundles.
 internal static class RubyBundlePreparation
 {
     internal static Task<RubyPreparedBundles> PrepareAsync(GitMaterialization checkout,
@@ -47,20 +47,11 @@ internal static class RubyBundlePreparation
             if (!Path.GetFullPath(expectedLock).Equals(context.Lockfile, OperatingSystem.IsWindows()
                     ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
                 throw new InvalidDataException("Unsupported native Ruby lockfile coordinate.");
-            // Require the actual original lock input before installation; never create a lock.
+            // Require the actual original lock input; never create a lock.
             if (await checkout.ReadOptionalTextAsync(Path.GetRelativePath(checkout.Root,
                     context.Lockfile).Replace('\\', '/'), token) is null)
                 throw new InvalidDataException("Native Ruby dependency lock is not committed.");
             await InstallAsync(context.LockedBundlerVersion);
-            var environment = new Dictionary<string, string?>(tools.Facts.Environment,
-                StringComparer.Ordinal)
-            {
-                ["BUNDLE_GEMFILE"] = gemfile,
-                ["BUNDLE_FROZEN"] = "1",
-            };
-            await RunAsync(new(tools.Facts.Ruby, Path.GetDirectoryName(gemfile)!,
-                [tools.Bundle, "_" + context.LockedBundlerVersion + "_", "install"],
-                tools.Facts.DeadlineSeconds, environment, InheritEnvironment: false));
             contexts.Add(context);
         }
         return new(contexts.ToArray(), commands.ToArray());
