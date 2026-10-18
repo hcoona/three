@@ -193,7 +193,8 @@ smoke product recipe, concrete build, native archive
 inspection and original local consumption inside the private application.
 `CI/RubyPackageExecution` and `Release/RubyPreparation` consume those operations
 while retaining distinct plan/check and request/qualification decisions. Release
-does not consume `CiPlan` or `CheckSpec`. The common mechanisms use the selected
+does not consume `CiPlan` or `CheckSpec`
+([implementation types](../middle-level-design.md#implementation-type-names)). The common mechanisms use the selected
 Ruby/RubyGems/NBGV tools, closed environment and native builder. Exclude inherited `SOURCE_DATE_EPOCH` for this
 fixture and use RubyGems' fixed native default; do not introduce a timestamp or
 archive engine. Native default timestamps do not promise byte identity across

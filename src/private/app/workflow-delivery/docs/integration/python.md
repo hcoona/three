@@ -74,7 +74,8 @@ markerless `ProjectFacts.Dependencies`, and union both endpoints so removed or
 renamed producers retain consumers. `uv sync --frozen --python <interpreter>`
 during preparation enforces `requires-python` for the operation interpreter.
 
-Adapt into existing RepositoryFacts/ProjectFacts/SharedInput/CheckSpec and
+Adapt into the existing [implementation types](../middle-level-design.md#implementation-type-names)
+`RepositoryFacts`/`ProjectFacts`/`SharedInput`/`CheckSpec` and
 impact closure, keeping quality consumers separate from build inputs and root ownership
 explicit. Managed
 NBGV and passive plugin coordinates supply project-scoped version/generated
@@ -84,8 +85,12 @@ fallback or all-run.
 
 ## Python Quality Owners and Input-Only Members
 
+Terms such as endpoint, paired and input-only member are defined in the
+[HLD domain values](../high-level-design.md#domain-values).
+
 Native workspace membership does not imply a build or test obligation. Keep the
-complete native producer graph, including tableless and unadopted members. Actual
+complete native producer graph, including tableless members (a `pyproject.toml`
+without a `[build-system]` table, which has no package build) and unadopted members. Actual
 retained pytest targets and adopted package checks define runnable quality owners.
 Resolve nearest source ownership over all native members before restricting the
 result to runnable owners; an input-only nested member is not its ancestor's source.
@@ -130,7 +135,7 @@ concrete engineering relations that native package tools cannot discover.
 
 ## Python Planning Integration
 
-The private application's auxiliary code follows the finite planning-fact contract.
+The private application's auxiliary code follows the planning-fact contract.
 Planning extraction is separate from Python preparation/build/check execution. It selects source
 impact from native facts; it neither installs local build requirements nor proves successful
 wheel/sdist consumers. The [source assessment](../research/python-native-planning.md) supplies its evidence
@@ -203,7 +208,7 @@ Reuse the current process/artifact transfer pattern; no additional workflow, job
 public library or target roster is needed.
 
 Root CI, explicit local full preparation and the ordinary fixture's PR checks
-share this native consumer group. Affected changes require controlled validation
+share this native consumer group. Affected changes require tests with controlled fixtures
 and ordinary PR CI for the complete group. Independent special jobs and Release
 callers retain their own responsibilities. Historical evidence readers use their
 actual pinned producers, without retired selection, preparation or constraint
@@ -224,7 +229,7 @@ per-module `--minimum-expected-tests` and exit code, retains reports and
 original packages, and contributes to required Validate completion. Retired pytest
 gates and their wrapper-only tests have no continuing consumer.
 
-Controlled validation must include a mixed-endpoint `A -> B -> C` closure through
+Tests with controlled fixtures must include a mixed-endpoint `A -> B -> C` closure through
 input-only `B`, nested native ownership, changed/deleted producer edges, a known
 input with no consumers versus unresolved scope, tableless quality owners,
 native pytest endpoint/configuration/target errors and cancellation, root shared
@@ -233,7 +238,10 @@ transfer. The existing core nonempty selected-check contract remains intact.
 Complete native collection/query qualification requires its own accepted exact
 protocol using the actual current tools and lock format; the stopped primitive
 campaign is not reused or repeated. Ordinary PR CI remains available for its
-authorized caller-integration qualification after contract acceptance.
+authorized caller-integration qualification after contract acceptance. A change
+to Python selection or caller code is qualified, after contract acceptance, by
+ordinary PR CI together with the tests with controlled fixtures above; only a new
+native collection or query experiment needs its own accepted protocol.
 
 The shared core owns the
 [paired direct-reason transfer](../middle-level-design.md#paired-direct-selection-reasons)
@@ -267,7 +275,7 @@ Git inputs. Native backend builds may compute version again; agreement, rather
 than a single invocation, is required. No generated backend roster, alternate
 version injection, smoke witness or static-project rewrite is introduced.
 
-Controlled validation covers complete declared outputs and version agreement,
+Tests with controlled fixtures cover complete declared outputs and version agreement,
 failed/missing required checks, native preparation/build failure, installed
 consumer origin, Git-free sdist invocation, cancellation and original result
 transfer. Native qualification additionally observes actual selected frozen
@@ -343,7 +351,7 @@ transfer, cancellation or timeout cannot become successful non-applicability.
 For selected work, keep the existing nonempty selected-check requirement.
 
 The Linux job invokes shared selection once, then passes its original plan to
-the finite executor in the same job. At that boundary, preserve candidate-native
+the executor in the same job. At that boundary, preserve candidate-native
 membership
 and pytest target bindings, tool/operation context and complete candidate control
 distribution. Validate their agreement with the receiving exact candidate before
@@ -353,7 +361,7 @@ must not resolve dependencies, choose targets again or introduce a trust record.
 Selected V3 consumers prepare mise's native configuration trust in their owned
 HOME before HK/Pkl queries. Mise owns that local tool state.
 
-The finite executor partitions that plan into native-retained `python/pytest-v1`
+The executor partitions that plan into native-retained `python/pytest-v1`
 checks and the registered Python distribution preset. Validate both supported
 partitions and their complete prerequisites before either executes. Keep one
 required result per original check and collect against the original mixed plan;
@@ -386,7 +394,7 @@ four required distribution checks under the contract below.
 
 The root CI group and local full runner use the same native Python group and
 preparation contract. Affected producer/consumer changes preserve selected/full
-preparation and complete checks together. Controlled validation covers root-only
+preparation and complete checks together. Tests with controlled fixtures cover root-only
 and mixed member preparation, native name/target agreement, explicit full versus
 incremental selection, complete partition/result transfer and failures/cancellation.
 Ordinary authorized PR CI qualifies the complete affected caller group before

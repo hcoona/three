@@ -65,6 +65,19 @@ its single job. Each `complete-*` command takes preparation, initial observation
 final observation and publication (`-` only when omitted) paths. Missing
 required publication information remains unknown even when final bytes match.
 
+### Source Layout
+
+| Directory       | Contents                                                                        |
+| --------------- | ------------------------------------------------------------------------------- |
+| `CI/`           | Contracts, impact planning, per-ecosystem group execution and result collection |
+| `CI/Callers/`   | Typed CI callers composing each ecosystem's requests and transfers              |
+| `Repository/`   | Native fact readers and assemblers, CI scope and Git materialization            |
+| `Release/`      | Release requests, preparation, job inputs, state and completion                 |
+| `Destinations/` | Registry observation, publication and the shared registry HTTP client           |
+| `Ecosystems/`   | Shared package build, inspection and clean consumption used by CI and Release   |
+| `Platform/`     | Git, native processes, bounded paths and the .NET CLI                           |
+| `Native/`       | Python and Ruby helper scripts and their generated message schemas              |
+
 ## Implemented Scope
 
 Native package recipes currently cover the four real products under

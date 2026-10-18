@@ -32,7 +32,15 @@ Before work, read the accepted target-branch
 [governance policy](docs/governance/governance-system.md),
 [record policy](docs/governance/record-system.md), and
 [Delivery Wave](docs/delivery-wave.md). Proposed changes cannot authorize
-themselves or weaken their accepted review obligations.
+themselves or weaken their accepted review obligations. For an ordinary change,
+sections that decide authorization and review include
+[work authorization](docs/governance/record-system.md#work-authorization-and-concurrency),
+[GOV-011](docs/governance/governance-system.md#gov-011-separate-findings-from-disposition),
+[GOV-010](docs/governance/governance-system.md#gov-010-gates-require-evidence),
+[conflict resolution](docs/governance/governance-system.md#conflict-resolution),
+the [record-system gate](docs/governance/record-system.md#record-system-gate) and
+the review skills named below; these are examples, and the full documents remain the
+authorities.
 
 Use the [documentation portal](docs/README.md) and
 [family catalog](docs/governance/record-families.yaml) to find project authorities.
@@ -61,7 +69,9 @@ present. It is private, machine-specific, gitignored, and must not be committed.
 ## Workflow Delivery v3
 
 Before acting on any Workflow Delivery v3 request, read
-`src/private/app/workflow-delivery/docs/agent-handoff.md`.
+`src/private/app/workflow-delivery/docs/agent-handoff.md`. Its change routing table
+decides which project sections to read; the governance documents above still
+apply for their authorization and review rules.
 
 Workflow Delivery v3 is the only normative source for new workflow delivery
 work. Do not use v1 or v2 to fill a v3 decision gap unless the v3 documents

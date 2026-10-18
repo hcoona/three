@@ -241,6 +241,24 @@ selection and exclusion. An incomplete graph cannot certify that a changed path
 has no consumers. Release resolves its selected unit's complete input/build/check
 closure; it need not evaluate unrelated projects.
 
+### Implementation Type Names
+
+The integration contracts name these application types; each carries the concept
+defined in this section or the next.
+
+| Type                                  | Meaning                                                                                                                                                   |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RepositoryFacts`                     | One revision's resolved native facts: projects, shared inputs, unaffected paths and errors                                                                |
+| `UnaffectedPaths`                     | Paths a complete analysis proved to have no applicable owner; anything else unresolved fails planning                                                     |
+| `ProjectFacts`                        | One project's identity, dependencies, quality consumers, Release Unit, checks and optional `OwnedPaths`                                                   |
+| `SharedInput`                         | A shared input path and its actual consumers                                                                                                              |
+| `SelectionReason`                     | A direct selection's path, initiating revision and resolved project ([paired reasons](#paired-direct-selection-reasons))                                  |
+| `CheckSpec`                           | One check: key, dimensions, runner, required flag, prerequisites and optional package subject                                                             |
+| `NativeRetained`                      | A check origin for existing native general-CI behavior of an unadopted project, besides `Preset` ([quality autonomy](#declarations-and-quality-autonomy)) |
+| `PackageTarget`                       | A check's package subject: unit, declaration, build, entry point, expected version and outputs                                                            |
+| `CiPlan`                              | The original candidate-bound plan of selected checks with their reasons and origins, produced by `ImpactPlanner.PlanSelected`                             |
+| `ImpactPlanner.PlanSelected` (method) | The shared selection operation that builds a `CiPlan` from paired facts                                                                                   |
+
 ### Native Fact Integration
 
 For each new integration, first identify its maintained native library or
@@ -363,6 +381,28 @@ its own path; other unresolved changed paths still fail, including in full mode.
 Do not clear the changed-path set, transfer an externally completed plan or bypass
 ordinary fact validation. Candidate survival, complete checks/variants, selected
 origins and prerequisite expansion remain the shared core's responsibilities.
+
+### Shared Inputs and Retained-Job Scope
+
+A changed shared file can reach work through several of these mechanisms at once;
+check every one that lists it. For example, root `pyproject.toml` is a native
+Python input consumed by every member, a `PythonInputs` entry in `CiScope` and a
+root input of the Python caller:
+
+- **Native shared inputs** (`SharedInput`): ecosystem facts name a file's actual
+  consumers, such as a lock, toolchain or version input. Product selection and
+  exclusion come from these facts and the [paired reasons](#paired-direct-selection-reasons).
+- **Retained-job scope** (`Repository/CiScope.cs`): fixed path lists decide which
+  retained CI jobs apply and give each changed coordinate a responsibility row.
+  `AllInputs` (the CI workflow, control bootstrap script, `mise.toml` and
+  `mise.lock`) applies every retained job; `PythonInputs` (root Python
+  configuration, lock and Python CI scripts) and `RubyInputs` add their
+  caller and special-job responsibilities. These lists select retained jobs and
+  report responsibility only; native facts still own product consumption.
+- **Root shared inputs of an ecosystem caller**: root files that one ecosystem's
+  caller treats as inputs of its root owner, such as root pytest configuration;
+  the ecosystem's integration file owns them, for example the
+  [Python caller mapping](integration/python.md#python-quality-and-caller-mapping).
 
 ### Declarations and Quality Autonomy
 
@@ -832,7 +872,7 @@ core: review affected changes with independent engineering/OCR and
 record/research review before implementation, run complete affected suites, HK
 and record checks, and qualify the final caller subject in ordinary CI before
 delivery. These checks do not prove a new publication. Each section states its
-own controlled validation cases, runner, additional checks and non-claims.
+own controlled-fixture test cases, runner, additional checks and non-claims.
 
 ### Integration Mapping
 

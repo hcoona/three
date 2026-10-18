@@ -423,7 +423,9 @@ operation or evidence records. They confer no special publication trust.
 These nonnormative markers keep established identifiers and the section anchors
 cited by retained evidence. The named authority owns any retained behavior. The
 [pre-contraction requirements][pre-contraction-requirements] hold the original
-text for historical readers.
+text for historical readers. A slice was one closed campaign's per-ecosystem
+delivery increment, such as the npm first slice or the NuGet second slice;
+`WD-SLICE-*` and the slice headings below keep their identifiers.
 
 - **WD-SYS-003:** Retired - current authority: WD-SYS-001
 - **WD-CI-009:** Retired - current authority: WD-CI-011
