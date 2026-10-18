@@ -870,7 +870,7 @@ core: review affected changes with independent engineering/OCR and
 record/research review before implementation, run complete affected suites, HK
 and record checks, and qualify the final caller subject in ordinary CI before
 delivery. These checks do not prove a new publication. Each section states its
-own controlled validation cases, runner, additional checks and non-claims.
+own controlled-fixture test cases, runner, additional checks and non-claims.
 
 ### Integration Mapping
 
