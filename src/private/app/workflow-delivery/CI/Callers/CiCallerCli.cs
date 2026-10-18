@@ -7,7 +7,8 @@ namespace WorkflowDelivery.CI.Callers;
 // Finite positional commands for current CI callers.
 internal static class CiCallerCli
 {
-    internal static int? Run(string[] args, TextWriter output)
+    // Outcomes stay on output; per-check failure text goes to diagnostics (the step log).
+    internal static int? Run(string[] args, TextWriter output, TextWriter? diagnostics = null)
     {
         if (args.Length < 2 || args[0] != "ci" || !args[1].StartsWith("caller-",
             StringComparison.Ordinal))
@@ -29,7 +30,7 @@ internal static class CiCallerCli
             case ["ci", "caller-dotnet", "execute", var root, var transfer, var directory,
                 var basis, var candidate]:
                 return Outcome(DotNetCiCaller.ExecuteAsync(root, transfer, directory, basis,
-                    candidate, token).GetAwaiter().GetResult());
+                    candidate, token, diagnostics: diagnostics).GetAwaiter().GetResult());
             case ["ci", var caller, "materialize", var root, var scope, var transfer, var directory]
                 when caller is "caller-python" or "caller-ruby" or "caller-node":
                 Materialize(caller, root, scope, transfer, directory);
@@ -42,7 +43,7 @@ internal static class CiCallerCli
                 return 0;
             case ["ci", "caller-ruby", "execute", var directory]:
                 return Outcome(RubyCiCaller.ExecuteAsync(directory,
-                    token).GetAwaiter().GetResult());
+                    token, diagnostics: diagnostics).GetAwaiter().GetResult());
             case ["ci", "caller-python", "plan", var directory, var scope, var uv, var interpreter,
                 var dotnet]:
                 Write(PythonCiCaller.PlanAsync(directory, scope, new(uv, interpreter, dotnet),
@@ -52,7 +53,8 @@ internal static class CiCallerCli
                 var node, var pwsh]:
                 return Outcome(PythonCiCaller.ExecuteAsync(directory, Optional(miseData),
                     Optional(mise),
-                    Optional(node), Optional(pwsh), token).GetAwaiter().GetResult());
+                    Optional(node), Optional(pwsh), token,
+                    diagnostics: diagnostics).GetAwaiter().GetResult());
             case ["ci", "caller-node", "plan", var directory, var scope, var rubyInputs]:
                 Write(NodeCiCaller.PlanAsync(directory, scope, Optional(rubyInputs),
                     token).GetAwaiter().GetResult(),
@@ -65,7 +67,7 @@ internal static class CiCallerCli
                 return 0;
             case ["ci", "caller-node", "execute", var directory, var runtime]:
                 return Outcome(NodeCiCaller.ExecuteRuntimeAsync(directory, runtime,
-                    token).GetAwaiter().GetResult());
+                    token, diagnostics: diagnostics).GetAwaiter().GetResult());
             case ["ci", "caller-node", "join", var directory]:
                 return Outcome(NodeCiCaller.Join(directory));
             case ["ci", "caller-node", "retained", var root, var directory, var members,

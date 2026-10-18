@@ -158,7 +158,8 @@ public sealed class PythonPassiveReaderTests
         InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             reader.ReadAsync(Directory, "python-helper", "passive-script", Environment,
                 CancellationToken.None));
-        Assert.AreEqual("Python passive extraction failed.", failure.Message);
+        Assert.AreEqual("Python passive extraction failed: Exited, exit 1. private-error " +
+            "stderr: private-diagnostic", failure.Message);
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => reader.ReadAsync(
             Directory, "python-helper", "passive-script", Environment, new(canceled: true)));
     }

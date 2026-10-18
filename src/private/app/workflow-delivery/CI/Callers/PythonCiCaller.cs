@@ -91,7 +91,7 @@ internal static class PythonCiCaller
     internal static async Task<CiOutcome> ExecuteAsync(string directory, string? miseData,
         string? mise, string? node, string? pwsh, CancellationToken token,
         Func<CiPlan, PythonGroupRunRequest, CancellationToken, Task<PythonGroupRunResult>>?
-            execute = null)
+            execute = null, TextWriter? diagnostics = null)
     {
         PythonCiCallerContext context = Context(directory);
         PythonCiCallerReadback readback = CiCallerTransfer.Read(Path.Combine(directory,
@@ -150,6 +150,15 @@ internal static class PythonCiCaller
         CiOutcome outcome = CiCallerTransfer.Outcome(plan, result.Outcome);
         CiCallerTransfer.Write(Path.Combine(directory, "outcome.json"), outcome,
             TransferJson.Default.CiOutcome);
+        CiCallerTransfer.Report(outcome, [
+            .. result.Pytest.Failures.Select(failure => new CiCallerFailure(failure.Check,
+                failure.Error)),
+            .. result.Packages.Failures.Select(failure => new CiCallerFailure(failure.Check,
+                failure.Error))], [
+            .. result.Pytest.Commands.SelectMany(command => command.Checks.Select(key =>
+                (key, command.Command, command.Result))),
+            .. result.Packages.Commands.Select(command => (command.Check, command.Command,
+                command.Result))], diagnostics);
         return outcome;
     }
 

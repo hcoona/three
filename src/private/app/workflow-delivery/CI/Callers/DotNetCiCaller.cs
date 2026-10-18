@@ -152,7 +152,7 @@ internal static class DotNetCiCaller
     internal static async Task<CiOutcome> ExecuteAsync(string root, string transfer,
         string directory, string basis, string candidate, CancellationToken token,
         Func<CiPlan, DotNetRunRequest, CancellationToken, Task<DotNetGroupRunResult>>? execute =
-            null)
+            null, TextWriter? diagnostics = null)
     {
         CiCallerTransfer.External(root, directory);
         _ = CiCallerTransfer.Application(transfer);
@@ -179,6 +179,13 @@ internal static class DotNetCiCaller
         CiOutcome outcome = CiCallerTransfer.Outcome(plan, result.Outcome);
         CiCallerTransfer.Write(Path.Combine(directory, "outcome.json"), outcome,
             TransferJson.Default.CiOutcome);
+        CiCallerTransfer.Report(outcome, [
+            .. result.Retained.Failures.Select(failure => new CiCallerFailure(failure.Key,
+                failure.Error)),
+            .. result.Packages.Failures.Select(failure => new CiCallerFailure(failure.Key,
+                failure.Error))],
+            result.Packages.Commands.Select(command => (command.Key, command.Command,
+                command.Result)), diagnostics);
         return outcome;
     }
 }

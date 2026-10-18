@@ -244,6 +244,9 @@ public sealed class PythonPackageExecutionTests(TestContext context)
         Assert.HasCount(4, result.Results);
         if (failure == "prepare")
         {
+            // The failed native stage and its controlled stderr reach the failure text.
+            Assert.Contains(" sync failed: ", result.Failures[0].Error);
+            Assert.EndsWith("stderr: controlled failure", result.Failures[0].Error);
             Assert.IsEmpty(result.Distributions);
             Assert.IsEmpty(result.Commands.Where(item => item.Command.Arguments[0] != "sync"));
         }

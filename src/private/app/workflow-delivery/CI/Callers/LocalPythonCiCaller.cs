@@ -6,7 +6,7 @@ namespace WorkflowDelivery.CI.Callers;
 
 internal static class LocalPythonCiCaller
 {
-    internal static int? Run(string[] args, TextWriter output)
+    internal static int? Run(string[] args, TextWriter output, TextWriter? diagnostics = null)
     {
         if (args is not ["ci", "caller-local-python", var root, var directory, var transfer,
                 var workingDirectory,
@@ -15,7 +15,7 @@ internal static class LocalPythonCiCaller
         if (!OperatingSystem.IsLinux())
             throw new InvalidDataException("The current local Python group supports Linux.");
         return ExecuteAsync(root, directory, transfer, workingDirectory, data == "-" ? null : data,
-            new(uv, python, dotnet), mise, node, pwsh, output,
+            new(uv, python, dotnet), mise, node, pwsh, output, diagnostics,
             CancellationToken.None).GetAwaiter().GetResult();
     }
 
@@ -35,7 +35,7 @@ internal static class LocalPythonCiCaller
     internal static async Task<int> ExecuteAsync(string root, string directory, string transfer,
         string workingDirectory, string? data, PythonQueryTools tools, string mise,
         string node, string pwsh,
-        TextWriter output, CancellationToken token)
+        TextWriter output, TextWriter? diagnostics, CancellationToken token)
     {
         CiCallerTransfer.External(root, directory);
         GitRevision head = (await GitMaterialization.BindHeadAsync(root, token)).Revision;
@@ -66,7 +66,7 @@ internal static class LocalPythonCiCaller
         CiOutcome outcome = await PythonCiCaller.ExecuteAsync(state,
             ToolData(data, workingDirectory),
             mise == "-" ? null : mise, node == "-" ? null : node,
-            pwsh == "-" ? null : pwsh, token);
+            pwsh == "-" ? null : pwsh, token, diagnostics: diagnostics);
         output.WriteLine(JsonSerializer.Serialize(outcome, TransferJson.Default.CiOutcome));
         return outcome.Satisfied ? 0 : 1;
     }

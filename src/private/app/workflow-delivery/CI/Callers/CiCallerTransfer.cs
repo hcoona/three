@@ -10,6 +10,7 @@ internal sealed record CiCallerEndpoints(MaterializedEndpoint Basis,
     MaterializedEndpoint Candidate, bool Full);
 internal sealed record CiCallerControl(string Application, string Root, string Transfer);
 internal sealed record CiCallerCommand(NativeCommand Command, NativeCommandResult Result);
+internal sealed record CiCallerFailure(CheckKey Key, string Error);
 
 // Shared process/transfer mechanics for the four concrete callers, not a scheduler.
 internal static class CiCallerTransfer
@@ -148,6 +149,38 @@ internal static class CiCallerTransfer
             reported.Scope != plan.Scope)
             throw new InvalidDataException("Group outcome lacks its original plan binding.");
         return reported;
+    }
+
+    // Caller-visible failure text beside the unchanged outcome contract: one header per
+    // non-passed check, then its recorded messages. Every message line carries a prefix so
+    // native text cannot start a runner workflow command.
+    // A check without recorded failure text falls back to its last unsuccessful command.
+    internal static void Report(CiOutcome outcome, IEnumerable<CiCallerFailure> failures,
+        IEnumerable<(CheckKey Key, NativeCommand Command, NativeCommandResult Result)> commands,
+        TextWriter? diagnostics)
+    {
+        if (diagnostics is null) return;
+        ILookup<CheckKey, string> text = failures.ToLookup(failure => failure.Key,
+            failure => failure.Error);
+        Dictionary<CheckKey, string> unsuccessful = commands.Where(command =>
+                !command.Result.Succeeded || command.Result.Error is not null)
+            .GroupBy(command => command.Key).ToDictionary(group => group.Key, group =>
+                $"Native command {NativeDiagnostic.Operation(group.Last().Command)} failed: " +
+                NativeDiagnostic.Describe(group.Last().Result));
+        foreach (CheckOutcome check in outcome.Checks.Where(check => check.Status != "passed"))
+        {
+            diagnostics.WriteLine($"Check {check.Status} " +
+                $"({(check.Required ? "required" : "advisory")}): {check.Key.Target} " +
+                $"{check.Key.Check} {check.Key.Variant}");
+            string[] messages = text[check.Key].ToArray();
+            if (messages.Length == 0 && unsuccessful.TryGetValue(check.Key, out string? command))
+                messages = [command];
+            if (messages.Length == 0)
+                diagnostics.WriteLine("  | No failure text was recorded for this check.");
+            foreach (string message in messages)
+                foreach (string line in message.ReplaceLineEndings("\n").Split('\n'))
+                    diagnostics.WriteLine("  | " + line);
+        }
     }
 
     internal static async Task<NativeCommandResult> RunAsync(NativeCommand command,

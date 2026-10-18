@@ -35,7 +35,8 @@ internal sealed class PythonPytestConfigurationReader
         NativeCommandResult result = await execute(new(helperPython, directory,
             [queryScript, directory], 30, child), token);
         if (!result.Succeeded || result.Error is not null)
-            throw new InvalidDataException("Native pytest configuration extraction failed.");
+            throw new InvalidDataException("Native pytest configuration extraction failed: " +
+                NativeDiagnostic.Describe(result));
         try
         {
             using JsonDocument document = JsonDocument.Parse(result.Stdout);

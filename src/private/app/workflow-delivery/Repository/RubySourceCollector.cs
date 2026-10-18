@@ -52,7 +52,8 @@ internal static class RubySourceCollector
             environment, InheritEnvironment: false), token);
         token.ThrowIfCancellationRequested();
         if (!result.Succeeded || result.Error is not null)
-            throw new InvalidDataException("Native Ruby source version query failed.");
+            throw new InvalidDataException("Native Ruby source version query failed: " +
+                NativeDiagnostic.Describe(result));
         string raw = SemVer2(result.Stdout);
         RubyVersionProjection version = await collector.VersionAsync(gemspec, raw, token);
         if (name == "hcoona-release-smoke-ruby")

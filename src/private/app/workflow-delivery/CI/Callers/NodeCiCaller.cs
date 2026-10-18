@@ -93,7 +93,8 @@ internal static class NodeCiCaller
 
     internal static async Task<CiOutcome> ExecuteRuntimeAsync(string directory, string key,
         CancellationToken token,
-        Func<CiPlan, NodeRunRequest, CancellationToken, Task<NodeRunResult>>? execute = null)
+        Func<CiPlan, NodeRunRequest, CancellationToken, Task<NodeRunResult>>? execute = null,
+        TextWriter? diagnostics = null)
     {
         NodeGroupReadback group = Group(directory);
         NodeCiCallerContext context = Context(directory);
@@ -113,8 +114,13 @@ internal static class NodeCiCaller
             TransferJson.Default.NodeRunResult);
         if (result.Candidate != group.Adopted.Candidate || result.Runtime != key)
             throw new InvalidDataException("Runtime result has a different original subject.");
-        return ResultCollector.Collect(NodeExecution.SelectRuntime(group.Adopted, key),
-            result.Results);
+        CiOutcome outcome = ResultCollector.Collect(NodeExecution.SelectRuntime(group.Adopted,
+            key), result.Results);
+        CiCallerTransfer.Report(outcome, result.Failures.Select(failure =>
+                new CiCallerFailure(failure.Key, failure.Error)),
+            result.Commands.Select(command => (command.Key, command.Command, command.Result)),
+            diagnostics);
+        return outcome;
     }
 
     internal static CiOutcome Join(string directory)

@@ -65,6 +65,12 @@ Do not build an envelope registry or independent schema version service.
 | `release complete-*` in collection                                                                   | Preparation, initial and final observations and publication result (`-` only when omitted)              | Satisfied/unsatisfied/unknown with command abnormality and unresolved effects kept distinct                                                                          |
 
 In-process callers use the same typed operations without serializing each row.
+The `ci caller-<ecosystem> execute` commands keep stdout as the unchanged
+`CiOutcome` JSON. They also write each non-passed check's key, status and
+recorded failure text to stderr, the step log. A check without failure text
+reports its last unsuccessful native command. Native failure text names the
+stage, termination, exit code, native error and the trimmed last 4 KiB of
+stderr. The complete command results stay in the retained result artifacts.
 The finite [GitHub comparison
 mapping](../middle-level-design.md#github-event-comparison) reads native payload
 fields directly rather than adding another event declaration. Its implementation

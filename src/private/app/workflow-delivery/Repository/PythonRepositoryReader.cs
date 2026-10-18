@@ -132,7 +132,8 @@ internal sealed class PythonRepositoryReader
                 Path.Combine(checkout.Root, member.Directory)],
             30, environment), token);
         if (!result.Succeeded || result.Error is not null)
-            throw new InvalidDataException("Native Python distribution identity failed.");
+            throw new InvalidDataException("Native Python distribution identity failed: " +
+                NativeDiagnostic.Describe(result));
         try
         {
             using JsonDocument identity = JsonDocument.Parse(result.Stdout);
