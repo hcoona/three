@@ -481,16 +481,27 @@ public sealed class RubyPreparationTests(TestContext context)
         Assert.AreEqual(fixture.Repo.Directory, query.Environment["MISE_TRUSTED_CONFIG_PATHS"]);
     }
 
+    // The mise query reads the checkout, so the selected revision must commit its inputs.
+    [TestMethod]
+    [DataRow("mise.toml")]
+    [DataRow("mise.lock")]
+    public async Task MissingCommittedToolConfigurationStopsBeforeMiseQuery(string path)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken, path);
+        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        RequireStopped(result, "native-input", ReleaseCheckStatus.Failed);
+        Assert.AreEqual("Missing committed native input: " + path,
+            Assert.ContainsSingle(result.Errors));
+        Assert.IsFalse(result.Commands.Any(command => command.Command.Executable == "mise"));
+    }
+
     // The committed selection, not an application runtime line, decides the runtime.
     [TestMethod]
     public async Task AnotherCommittedRubyLineQualifies()
     {
-        string locked = RepositoryToolSelection.Locked("ruby");
-        var parsed = System.Version.Parse(locked);
-        string other = (parsed.Major + 1) + "." + parsed.Minor + "." + parsed.Build;
+        string other = RepositoryToolSelection.NextMajor(RepositoryToolSelection.Locked("ruby"));
         using var fixture = await Fixture.CreateAsync(context.CancellationToken, "",
-            lockText => lockText.Replace("version = \"" + locked + "\"",
-                "version = \"" + other + "\"", StringComparison.Ordinal));
+            (path, content) => RepositoryToolSelection.RaiseMajor(path, content, "ruby"));
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
         Assert.AreEqual(other, result.Native["ruby"]);
@@ -816,12 +827,12 @@ public sealed class RubyPreparationTests(TestContext context)
         internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
 
         internal static async Task<Fixture> CreateAsync(CancellationToken token, string defect = "",
-            Func<string, string>? changeLock = null)
+            Func<string, string, string>? changeConfig = null)
         {
             GitFixture repo = await GitFixture.CreateAsync(token);
             try
             {
-                await StageRootAsync(repo, defect, changeLock);
+                await StageRootAsync(repo, defect, changeConfig);
                 await StageProductAsync(repo, "product", defect);
                 string revision = await repo.CommitAsync();
                 await repo.GitAsync("reset", "--hard", revision);
@@ -858,12 +869,17 @@ public sealed class RubyPreparationTests(TestContext context)
             );
 
         internal static async Task StageRootAsync(GitFixture repo, string defect,
-            Func<string, string>? changeLock = null)
+            Func<string, string, string>? changeConfig = null)
         {
             // The fake answers from the actual committed root tool configuration.
-            await repo.SetAsync("mise.toml", RepositoryToolSelection.MiseToml);
-            await repo.SetAsync("mise.lock", (changeLock ?? (text => text))(
-                RepositoryToolSelection.MiseLock));
+            foreach ((string path, string content) in new[]
+            {
+                ("mise.toml", RepositoryToolSelection.MiseToml),
+                ("mise.lock", RepositoryToolSelection.MiseLock),
+            })
+                if (defect != path)
+                    await repo.SetAsync(path, changeConfig is null ? content
+                        : changeConfig(path, content));
             if (defect != "helper")
                 await repo.SetAsync(HelperPath);
             if (defect != "manifest")

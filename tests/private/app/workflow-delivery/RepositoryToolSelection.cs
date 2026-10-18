@@ -62,6 +62,30 @@ internal static partial class RepositoryToolSelection
             ?? throw new InvalidDataException("Missing global.json SDK: " + name);
     }
 
+    // Rewrites one committed tool selection to the next major line in both mise.toml and
+    // mise.lock, so a positive fixture models a consistent routine committed update.
+    internal static string RaiseMajor(string path, string content, string tool)
+    {
+        string request = Requested(MiseToml, tool), locked = Locked(MiseLock, tool);
+        return path switch
+        {
+            "mise.toml" => content.Replace(tool + " = \"" + request + "\"",
+                tool + " = \"" + NextMajor(request) + "\"", StringComparison.Ordinal),
+            "mise.lock" => content.Replace("version = \"" + locked + "\"",
+                "version = \"" + NextMajor(locked) + "\"", StringComparison.Ordinal),
+            _ => content,
+        };
+    }
+
+    internal static string NextMajor(string version)
+    {
+        int dot = version.IndexOf('.', StringComparison.Ordinal);
+        string major = dot < 0 ? version : version[..dot];
+        return (int.Parse(major, System.Globalization.CultureInfo.InvariantCulture) + 1)
+            .ToString(System.Globalization.CultureInfo.InvariantCulture) +
+            (dot < 0 ? "" : version[dot..]);
+    }
+
     // The single version a mise.lock text records for a tool.
     internal static string Locked(string miseLock, string tool)
     {

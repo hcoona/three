@@ -338,12 +338,9 @@ public sealed class PythonPreparationTests(TestContext context)
     [TestMethod]
     public async Task AnotherCommittedPythonLineQualifies()
     {
-        string locked = RepositoryToolSelection.Locked("python");
-        var parsed = System.Version.Parse(locked);
-        string other = (parsed.Major + 1) + "." + parsed.Minor + "." + parsed.Build;
+        string other = RepositoryToolSelection.NextMajor(RepositoryToolSelection.Locked("python"));
         using var fixture = await Fixture.CreateAsync(context.CancellationToken, null,
-            lockText => lockText.Replace("version = \"" + locked + "\"",
-                "version = \"" + other + "\"", StringComparison.Ordinal));
+            (path, content) => RepositoryToolSelection.RaiseMajor(path, content, "python"));
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors);
         Assert.AreEqual(other, result.Native["python"]);
@@ -377,10 +374,10 @@ public sealed class PythonPreparationTests(TestContext context)
         internal (string Tool, string Defect)? ToolDefect { get; set; }
 
         internal static async Task<Fixture> CreateAsync(CancellationToken token,
-            string? defect = null, Func<string, string>? changeLock = null)
+            string? defect = null, Func<string, string, string>? changeConfig = null)
         {
             GitFixture repo = await GitFixture.CreateAsync(token);
-            try { return new(repo, SubjectFor(await CommitAsync(repo, defect, changeLock))); }
+            try { return new(repo, SubjectFor(await CommitAsync(repo, defect, changeConfig))); }
             catch { repo.Dispose(); throw; }
         }
 
@@ -394,11 +391,11 @@ public sealed class PythonPreparationTests(TestContext context)
             "refs/heads/development", "product", Declaration, "buddy", "testpypi", false);
 
         internal static async Task<string> CommitAsync(GitFixture repo, string? defect,
-            Func<string, string>? changeLock = null)
+            Func<string, string, string>? changeConfig = null)
         {
             foreach ((string path, string content) in Files(defect))
-                await repo.SetAsync(path, path == "mise.lock" && changeLock is not null
-                    ? changeLock(content) : content);
+                await repo.SetAsync(path, changeConfig is null ? content
+                    : changeConfig(path, content));
             string revision = await repo.CommitAsync();
             await repo.GitAsync("reset", "--hard", revision);
             return revision;

@@ -18,6 +18,7 @@ internal static class RubyPreparation
     internal const string Preset = "ruby/hcoona-release-smoke-ruby-v1";
     internal static readonly string[] Required = ["native-input", "build", "contents",
         "consumer", "original-bytes"];
+    private static readonly string[] ToolConfiguration = ["mise.toml", "mise.lock"];
 
     internal static Task<RubyPreparationResult> PrepareAsync(RubyPreparationRequest request,
         CancellationToken token) => PrepareAsync(request, NativeProcess.ExecuteAsync, token);
@@ -56,6 +57,10 @@ internal static class RubyPreparation
             RubyReleaseRecipe recipe = await ReadRecipeAsync(subject, bound.Root,
                 bound.ReadOptionalTextAsync, token);
             (build, entry, directory) = (recipe.Build, recipe.Entry, recipe.Directory);
+            // The runtime selection query reads the checkout; the revision must commit it.
+            foreach (string input in ToolConfiguration)
+                if (await bound.ReadOptionalTextAsync(input, token) is null)
+                    throw new InvalidDataException("Missing committed native input: " + input);
             if ((await RunAsync(new("git", checkout,
                 ["rev-parse", "--is-shallow-repository"], 30))).Stdout.Trim() != "false")
                 throw new InvalidDataException("Native versioning requires complete Git history.");
