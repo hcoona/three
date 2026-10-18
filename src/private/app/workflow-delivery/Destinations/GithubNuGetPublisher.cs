@@ -72,8 +72,11 @@ internal static class GithubNuGetPublisher
             return new(true, cancellation.IsCancellationRequested, null,
                 elapsed.Elapsed.TotalSeconds);
         }
+        // The client raises TimeoutException when its request timeout elapses (TimeoutUtility);
+        // that is a handled upload abnormality like the transport failures beside it.
         catch (Exception error) when (error is HttpRequestException or IOException or
-            OperationCanceledException or InvalidOperationException or ArgumentException)
+            TimeoutException or OperationCanceledException or InvalidOperationException or
+            ArgumentException)
         {
             return new(false, cancellation.IsCancellationRequested, error.GetType().Name,
                 elapsed.Elapsed.TotalSeconds);
