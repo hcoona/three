@@ -59,8 +59,8 @@ root development tools using uv's frozen package selection, including each
 selected member's default development groups. Tests then use that prepared
 environment without another sync. Engineering tests declare their own root
 dependencies. The native Python caller prepares only the adapters required by
-its selected targets: native Node for the legacy release-contract test and
-PowerShell with the .NET runtime for the Azure credential-provider tests.
+its selected targets: PowerShell with the .NET runtime for the Azure
+credential-provider tests.
 Selected NBGV consumers also use .NET tools.
 Keep native preparation and execution bound to the original selected plan and
 its prepared environment. New test consumers must declare any additional native needs

@@ -9,9 +9,9 @@ authority of the integration contracts.
 ## Official Channel Scope
 
 WD-CHN-002 requires an eligible reviewed official ref. The implemented Workflow
-Delivery callers support a narrower set, which this table owns. The retained v1
-Official stack ([legacy boundary](../research/legacy-workflow-boundary.md)) is
-outside this table.
+Delivery callers support a narrower set, which this table owns. The retired v1
+Official stack ([retired records](../validation/historical-readers.md#retired-records))
+is not an Official route.
 
 | Ecosystem | Official destination | Implemented Official scope                       |
 | --------- | -------------------- | ------------------------------------------------ |

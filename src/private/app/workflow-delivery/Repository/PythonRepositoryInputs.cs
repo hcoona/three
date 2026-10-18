@@ -17,6 +17,12 @@ internal static class PythonRepositoryInputs
     private static readonly string[] Pytest = [
         "conftest.py", "pytest.ini", "eng/scripts/test-python.sh",
         "src/private/app/workflow-delivery/CI/Callers/LocalPythonCiCaller.cs"];
+    // Read by the retired-Buddy guard in tests/eng/test_general_ci_workflow.py.
+    internal static readonly string[] BuddyGuardInputs = [
+        ".github/workflows/buddy.yml", ".github/workflows/buddy.yaml",
+        ".github/workflows/release-buddy.yml", ".github/workflows/release-buddy.yaml",
+        ".github/workflows/legacy-buddy.yml", ".github/workflows/legacy-buddy.yaml",
+        ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"];
     private static readonly string[] AzureRoots = [
         "src/private/app/azureauth-credprovider", "tests/private/app/azureauth-credprovider"];
     internal static PythonInputBinding[] Map(GitRevision revision,
@@ -127,11 +133,10 @@ internal static class PythonRepositoryInputs
             (Under(path, "src/private/app/workflow-delivery/Native/Python") ||
              Under(path, "src/public/lib/nbgv-python"))) ||
         (target.StartsWith(AzureRoots[0] + "/", StringComparison.Ordinal) && Azure(path)) ||
-        (target == "tests/eng/test_legacy_release_contract.py" &&
-            CiScope.LegacyReleaseInput(path)) ||
         (target == "tests/eng/test_general_ci_workflow.py" &&
-            path is "tests/eng/ci_workflow_shell.py" or
-                ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml") ||
+            (path is "tests/eng/ci_workflow_shell.py" or
+                ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml" ||
+             BuddyGuardInputs.Contains(path, StringComparer.Ordinal))) ||
         (target == "tests/eng/test_typos_config.py" && path == ".typos.toml") ||
         (target == "tests/eng/test_python_release_caller.py" &&
             path is ".github/workflows/workflow-delivery-v3-python-smoke.yml" or

@@ -186,14 +186,14 @@ families:
     failure_mode: Package readers lose the existing usage interface or follow stale internal record paths.
     review_point: Changes to this interface or its owning project records
   - id: nbgv-python-changelog
-    concern: Published library change history and release-note input
+    concern: Published library change history
     producer: Project maintainers
     maintainer: Repository owner
     consumers:
       - Package users comparing released versions
-      - Existing release-resolve and release-prepare-release-notes workflows reading CHANGELOG.md
+      - Package metadata and README changelog links
     creation_trigger: The named consumers need the retained concern at its review or use point.
-    failure_mode: Release-note consumers lose version identifiers, anchors, or their expected source path.
+    failure_mode: Package users lose version identifiers, anchors, or the linked source path.
     review_point: Changes to this interface or its owning project records
   - id: nbgv-hatch-demo-interface
     concern: Separate sample usage and its library dependency
@@ -251,15 +251,6 @@ families:
       - Agents coordinating recoverable work and rechecking mutable execution interfaces
     creation_trigger: The named consumers require this existing concern at its use or review point.
     failure_mode: Shared setup and execution assumptions drift or project details become repository policy.
-    review_point: Changes to the retained concern or its consumers
-  - id: legacy-workflow-retirement-interface
-    concern: Retained retirement interface at the path consumed by workflow diagnostics
-    producer: Project authors
-    maintainer: Repository owner
-    consumers:
-      - V3 legacy-boundary diagnostics and retirement checks
-    creation_trigger: The named consumers require this existing concern at its use or review point.
-    failure_mode: A required diagnostic interface disappears or the legacy workflow is treated as current authority.
     review_point: Changes to the retained concern or its consumers
   - id: project-interfaces
     concern: Project-local usage, package-reader interfaces, provenance and release history
@@ -587,13 +578,6 @@ bindings:
     state: current
     carrier: repository-files
     path: docs/engineering/*.md
-    format: markdown
-  - id: legacy-workflow-retirement-interface
-    family: legacy-workflow-retirement-interface
-    namespace: src/private/app/workflow-delivery
-    state: current
-    carrier: repository-file
-    path: .github/workflows/REFACTOR_PLAN.md
     format: markdown
   - id: src-private-app-oxforddictextractor-interfaces
     family: project-interfaces

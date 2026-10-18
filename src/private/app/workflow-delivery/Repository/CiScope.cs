@@ -39,12 +39,6 @@ internal static partial class CiScope
     private static readonly string[] NuGetPreparationRoots = ["src/private/app/workflow-delivery",
         "tests/private/app/workflow-delivery", NuGetProduct];
     private static readonly string[] RubyInputs = ["Gemfile", "Gemfile.lock", ".ruby-version"];
-    // Release scripts and workflow sources read by tests/eng/test_legacy_release_contract.py.
-    private static readonly string[] LegacyReleaseScripts = [
-        "eng/scripts/publish_node_gpr_idempotent.sh",
-        "eng/scripts/publish_node_npmjs_idempotent.sh",
-        "eng/scripts/release_orchestrate_lint_caller_completeness.sh",
-        "eng/scripts/release_orchestrate_policy_validate_inputs.sh"];
 
     internal static CiScopeApplicability Select(string[] changed, GitComparison comparison,
         bool full, string[] resourceInputs)
@@ -357,10 +351,6 @@ internal static partial class CiScope
     private static bool PathCharacter(char value) => char.IsAsciiLetterOrDigit(value) ||
         value is '.' or '_' or '-' or '/' or '@' or '+' or '~';
 
-    internal static bool LegacyReleaseInput(string path) =>
-        Under(path, ".github/workflows") ||
-        LegacyReleaseScripts.Contains(path, StringComparer.Ordinal);
-
     private static string[] Jobs(string path, string[] gems)
     {
         if (AllInputs.Contains(path, StringComparer.Ordinal))
@@ -393,7 +383,8 @@ internal static partial class CiScope
         PythonInputs.Contains(path, StringComparer.Ordinal) || Under(path, "tests/eng") ||
         path is ".github/workflows/workflow-delivery-v3-python-smoke.yml" or
             ".github/workflows/workflow-delivery-v3-ruby-smoke.yml" or ".typos.toml" ||
-        AzureInput(path) || LegacyReleaseInput(path);
+        PythonRepositoryInputs.BuddyGuardInputs.Contains(path, StringComparer.Ordinal) ||
+        AzureInput(path);
 
     private static string[] GemRoots(GitRevision revision) => revision.Entries
         .Select(entry => entry.Path).Where(path => path.EndsWith(".gemspec",

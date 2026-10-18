@@ -203,7 +203,6 @@ testpaths = [
   "tests/eng/test_python_release_caller.py",
   "tests/eng/test_general_ci_workflow.py",
   "tests/eng/test_python_runtime.py",
-  "tests/eng/test_legacy_release_contract.py",
   "tests/eng/test_typos_config.py",
   "src/private/app/azureauth-credprovider/python/tests",
   "src/private/app/git-commit-heatmap/tests",

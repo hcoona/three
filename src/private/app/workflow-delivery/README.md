@@ -149,7 +149,7 @@ substituting a worktree snapshot.
 The current local full entry supports Linux. Its native launcher builds the exact
 committed control once; `ci caller-local-python` composes the explicit full group.
 Static tools and dependencies come from MISE and native manifests/locks. The
-launcher accepts `--repository`, `--directory` and `--mise-data-directory`;
+launcher accepts `--repository` and `--directory`;
 state must be fresh and outside the source checkout. It prints the source and
 retained result location before execution.
 
