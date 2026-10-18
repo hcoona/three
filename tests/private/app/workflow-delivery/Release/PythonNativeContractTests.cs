@@ -25,8 +25,9 @@ namespace WorkflowDelivery.Tests.Release;
 public sealed class PythonNativeContractTests(TestContext context)
 {
     private const string DeadProxy = "http://127.0.0.1:9";
-    private static readonly string[] Contexts = [".", "a", "b"];
+    private static readonly string[] Contexts = [".", "a", "b", "c"];
     private static readonly string[] Groups = ["tools"];
+    private static readonly string[] ToolsReach = ["b"];
     private static readonly string[] BuildNames = ["b", "hatchling", "nbgv-python"];
     private static readonly string[] BuildExtras = ["cli"];
     private static readonly string[] Exchange = ["GET /_/oidc/audience", "GET /token",
@@ -64,9 +65,11 @@ public sealed class PythonNativeContractTests(TestContext context)
 
     private static string Helper => Path.Combine(tools!, "env", "bin", "python");
 
-    // Planning premises: UV metadata has no build edge (a member needed only to build another
-    // gets none), no node for an empty or marker-disjoint group, and only the node kinds and
-    // sources the reader admits. The build edge comes from PyPA passive extraction instead.
+    // Planning premises: UV metadata reports ordinary, extra and group edges with their
+    // markers, but no build edge (a member needed only to build another gets none) and no node
+    // for an empty or marker-disjoint group, in only the node kinds and sources the reader
+    // admits. The build edge comes from PyPA passive extraction instead. The projection the
+    // planner consumes is asserted on the composed answers.
     [TestMethod]
     [OSCondition(OperatingSystems.Linux)]
     public async Task MetadataAndPassiveExtractionKeepTheGuardedJoinPremises()
@@ -86,17 +89,18 @@ public sealed class PythonNativeContractTests(TestContext context)
             tools = ["b"]
 
             [tool.uv.workspace]
-            members = ["a", "b"]
+            members = ["a", "b", "c"]
 
             [tool.uv.sources]
             b = { workspace = true }
+            c = { workspace = true }
             """);
         Write(root, "a/pyproject.toml", """
             [project]
             name = "a"
             version = "2.0.0"
             requires-python = ">=3.14"
-            dependencies = []
+            dependencies = ["c[feat] ; sys_platform != 'emscripten'"]
 
             [build-system]
             requires = ["hatchling", "B", "nbgv-python[cli]"]
@@ -122,6 +126,20 @@ public sealed class PythonNativeContractTests(TestContext context)
             requires = ["hatchling"]
             build-backend = "hatchling.build"
             """);
+        Write(root, "c/pyproject.toml", """
+            [project]
+            name = "c"
+            version = "3.0.0"
+            requires-python = ">=3.14"
+            dependencies = []
+
+            [project.optional-dependencies]
+            feat = ["b"]
+
+            [build-system]
+            requires = ["hatchling"]
+            build-backend = "hatchling.build"
+            """);
         Dictionary<string, string?> environment = Isolated(workspace);
         NativeCommandResult locked = await NativeProcess.ExecuteAsync(new(uv!, root,
             ["lock", "--offline", "--python", interpreter!], 120, environment),
@@ -134,19 +152,32 @@ public sealed class PythonNativeContractTests(TestContext context)
             metadata.Members.Select(member => member.Directory).ToArray());
         PythonMetadataMember a = metadata.Members.Single(member => member.Name == "a");
         PythonMetadataMember b = metadata.Members.Single(member => member.Name == "b");
-        Assert.IsEmpty(metadata.Nodes[a.Id].Dependencies, "UV now reports build edges.");
+        PythonMetadataMember c = metadata.Members.Single(member => member.Name == "c");
+        // a's only edge is its ordinary marked dependency on c's extra; b, needed only to
+        // build a, has none.
+        PythonMetadataEdge ordinary = Assert.ContainsSingle(metadata.Nodes[a.Id].Dependencies,
+            "UV now reports a build edge or drops the ordinary one.");
+        Assert.AreEqual("sys_platform != 'emscripten'", ordinary.Marker);
+        PythonMetadataEntry extra = Assert.ContainsSingle(metadata.Nodes[c.Id].Extras);
+        Assert.AreEqual("feat", extra.Name);
+        Assert.AreEqual(extra.Id, ordinary.Id);
+        Assert.AreEqual("extra", metadata.Nodes[extra.Id].Kind);
+        CollectionAssert.AreEquivalent(new[] { c.Id, b.Id }.Order().ToArray(), metadata.Nodes[
+            extra.Id].Dependencies.Select(edge => edge.Id).Order().ToArray());
         string[] groups = metadata.Nodes.Values.Where(node => node.Kind == "group")
             .Select(node => node.Dimension!).ToArray();
         CollectionAssert.AreEqual(Groups, groups,
             "UV now reports an empty or marker-disjoint group.");
+        PythonMetadataEntry tools = Assert.ContainsSingle(metadata.Nodes[
+            metadata.Members.Single(member => member.Directory == ".").Id].Groups);
+        Assert.AreEqual(b.Id, Assert.ContainsSingle(metadata.Nodes[tools.Id].Dependencies).Id);
 
         var reader = new PythonPassiveReader();
         string[] configuration = await reader.ReadConfigurationAsync(root, Helper,
-            Path.Combine(Sources, "passive.py"), [root, Path.Combine(root, "a"),
-                Path.Combine(root, "b")], environment, context.CancellationToken);
-        Assert.HasCount(3, configuration);
-        PythonPassiveInputs[] passive = await Task.WhenAll(new[] { root,
-            Path.Combine(root, "a"), Path.Combine(root, "b") }.Select(directory =>
+            Path.Combine(Sources, "passive.py"), Directories(root), environment,
+            context.CancellationToken);
+        Assert.HasCount(4, configuration);
+        PythonPassiveInputs[] passive = await Task.WhenAll(Directories(root).Select(directory =>
                 reader.ReadAsync(directory, Helper, Path.Combine(Sources, "passive.py"),
                     environment, context.CancellationToken)));
         PythonPassiveInputs consumer = passive.Single(item => item.Project.Directory ==
@@ -161,14 +192,37 @@ public sealed class PythonNativeContractTests(TestContext context)
         Assert.IsNull(passive.Single(item => item.Project.Directory == root).Project
             .BuildRequirements);
 
-        PythonBuildAssociation association = Assert.ContainsSingle(
-            PythonDependencyProjection.ReadBuildAssociations(metadata,
-                passive.Select(item => item.Project).ToArray()));
-        Assert.AreEqual(new PythonBuildAssociation("a", "b", []) with
-            { Extras = association.Extras }, association);
+        PythonBuildAssociation[] builds = PythonDependencyProjection.ReadBuildAssociations(
+            metadata, passive.Select(item => item.Project).ToArray());
+        PythonBuildAssociation association = Assert.ContainsSingle(builds);
+        Assert.AreEqual(("a", "b"), (association.Consumer, association.Producer));
         Assert.IsEmpty(association.Extras);
-        Assert.AreEqual(b.Directory, association.Producer);
+
+        // The graph the planner consumes: ordinary edges through the extra, the default dev
+        // group (declared but empty, so no entry) and the build leg.
+        PythonGroupOperation[] operations = Directories(root).Select(directory =>
+            new PythonGroupOperation(directory, directory, [], false)).ToArray();
+        PythonProjectDependencies[] projected = PythonDependencyProjection.Project(metadata,
+            PythonDependencyProjection.SelectGroups(metadata, operations), builds);
+        string Edges(string directory)
+        {
+            PythonProjectDependencies project = projected.Single(item =>
+                item.Directory == directory);
+            return string.Join(",", project.Ordinary) + "|" + string.Join(",", project.Build);
+        }
+        Assert.AreEqual("b,c|b", Edges("a"));
+        Assert.AreEqual("|", Edges("b"));
+        Assert.AreEqual("|", Edges("c"));
+        Assert.AreEqual("|", Edges("."));
+        // A root operation that selects the tools group reaches b through the group edge.
+        PythonProjectDependencies withTools = PythonDependencyProjection.Project(metadata,
+            [.. PythonDependencyProjection.SelectGroups(metadata, operations),
+                new(".", ["tools"])], builds).Single(item => item.Directory == ".");
+        CollectionAssert.AreEqual(ToolsReach, withTools.Ordinary);
     }
+
+    private static string[] Directories(string root) => [root, Path.Combine(root, "a"),
+        Path.Combine(root, "b"), Path.Combine(root, "c")];
 
     // The planning identity reads the real Hatchling metadata through the package helper.
     [TestMethod]
@@ -263,67 +317,132 @@ public sealed class PythonNativeContractTests(TestContext context)
     [OSCondition(OperatingSystems.Linux)]
     public async Task TrustedPublishingUploadsOnceAndForwardsTheTokenMask()
     {
-        using var scratch = new Scratch();
-        using var authority = new LoopbackAuthority(scratch.Path);
-        await using var registry = new LoopbackRegistry(authority.Leaf);
-        string originals = Directory.CreateDirectory(Path.Combine(scratch.Path, "originals"))
-            .FullName;
-        string wheel = Wheel(originals, "hcoona_release_smoke_python", "0.1.0b1");
-        string sdist = Path.Combine(originals, "hcoona_release_smoke_python-0.1.0b1.tar.gz");
-        System.IO.File.WriteAllBytes(sdist, [1, 2, 3]);
-        ReleaseFile Original(string output, string kind, string path) => new("python-distributions",
-            output, kind, "hcoona-release-smoke-python", "0.1.0b1",
-            System.IO.Path.GetFileName(path),
-            new FileInfo(path).Length, Convert.ToHexStringLower(SHA256.HashData(
-                System.IO.File.ReadAllBytes(path))));
-        var prepared = new PreparedRelease(new(new string('a', 40), "refs/heads/development",
-            "hcoona-release-smoke-python", "unit.yml", "buddy", "testpypi", false),
-            [Original("wheel", "python-wheel", wheel), Original("sdist", "python-sdist", sdist)],
-            ["qualified"], [new("qualified", ReleaseCheckStatus.Passed)]);
-        string upload = "https://127.0.0.1:" + registry.Port + "/legacy/";
-        var platform = new Dictionary<string, string?>
-        {
-            ["GITHUB_ACTIONS"] = "true",
-            ["ACTIONS_ID_TOKEN_REQUEST_URL"] = "https://127.0.0.1:" + registry.Port +
-                "/token?api-version=2.0",
-            ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"] = LoopbackRegistry.RequestToken,
-        };
-        using var masks = new StringWriter();
-        string state = Directory.CreateDirectory(Path.Combine(scratch.Path, "publisher"))
-            .FullName;
-
-        PythonPublishResult result = await PythonNativePublisher.PublishAsync(prepared,
-            originals, "wheel", new(uv!, state), platform, masks, (command, token) =>
-            {
-                // The production command, retargeted to the loopback registry only.
-                int url = Array.IndexOf(command.Arguments, "--publish-url") + 1;
-                Assert.AreEqual("https://test.pypi.org/legacy/", command.Arguments[url]);
-                string[] arguments = [.. command.Arguments];
-                arguments[url] = upload;
-                var environment = new Dictionary<string, string?>(command.Environment!,
-                    StringComparer.Ordinal) { ["SSL_CERT_FILE"] = authority.Bundle };
-                return NativeProcess.ExecuteAsync(command with
-                {
-                    Arguments = arguments,
-                    Environment = Loopback(environment),
-                }, token);
-            }, context.CancellationToken);
+        using var publication = await Publication.RunAsync(uv!, "accept",
+            context.CancellationToken);
+        PythonPublishResult result = publication.Result;
 
         Assert.IsTrue(result.Upload.Command.Succeeded, NativeDiagnostic.Describe(
             result.Upload.Command));
         Assert.AreEqual("::add-mask::" + LoopbackRegistry.Minted + Environment.NewLine,
-            masks.ToString());
-        LoopbackRegistry.Request[] requests = registry.Requests;
+            publication.Masks);
+        LoopbackRegistry.Request[] requests = publication.Requests;
         CollectionAssert.AreEqual(Exchange, requests.Select(request =>
             request.Method + " " + request.Path).ToArray());
         Assert.AreEqual("Bearer " + LoopbackRegistry.RequestToken, requests[1].Authorization);
         Assert.Contains("audience=" + LoopbackRegistry.Audience, requests[1].Query);
         LoopbackRegistry.Request posted = requests[3];
-        Assert.AreEqual("Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes(
-            "__token__:" + LoopbackRegistry.Minted)), posted.Authorization);
-        Assert.IsTrue(posted.Body.AsSpan().IndexOf(System.IO.File.ReadAllBytes(wheel)) >= 0);
-        Assert.IsFalse(posted.Body.AsSpan().IndexOf(Encoding.UTF8.GetBytes(
-            System.IO.Path.GetFileName(sdist))) >= 0);
+        Assert.AreEqual(Publication.Credential, posted.Authorization);
+        Assert.IsTrue(posted.Body.AsSpan().IndexOf(publication.Wheel) >= 0);
+        Assert.IsFalse(posted.Body.AsSpan().IndexOf(publication.SdistName) >= 0);
+    }
+
+    // UV's native upload handling the publisher relies on instead of an application retry:
+    // a returned failure status, including the registry's existing-file answer, ends the
+    // invocation after one upload; a transport failure is retried a bounded number of times;
+    // a same-realm redirect is followed with the token and another realm is refused. Every
+    // failure is a failed command, never a success.
+    [TestMethod]
+    [OSCondition(OperatingSystems.Linux)]
+    [DataRow("unavailable", 1, false)]
+    [DataRow("server-error", 1, false)]
+    [DataRow("existing-file", 1, false)]
+    [DataRow("reset", 4, false)]
+    [DataRow("same-realm-redirect", 2, true)]
+    [DataRow("other-realm-redirect", 1, false)]
+    public async Task NativeUploadHandlingStaysBoundedAndFailsClosed(string answer, int uploads,
+        bool succeeds)
+    {
+        using var publication = await Publication.RunAsync(uv!, answer,
+            context.CancellationToken);
+        NativeCommandResult command = publication.Result.Upload.Command;
+
+        Assert.AreEqual(succeeds, command.Succeeded, NativeDiagnostic.Describe(command));
+        LoopbackRegistry.Request[] posts = publication.Requests.Where(request =>
+            request.Method == "POST" && request.Path.StartsWith("/legacy",
+                StringComparison.Ordinal)).ToArray();
+        Assert.HasCount(uploads, posts);
+        Assert.IsTrue(posts.All(post => post.Authorization == Publication.Credential &&
+            post.Body.AsSpan().IndexOf(publication.Wheel) >= 0));
+        // Another realm (here "localhost" on the same port) never receives the token.
+        Assert.IsTrue(publication.Requests.All(request => request.Host.StartsWith(
+            "127.0.0.1:", StringComparison.Ordinal)));
+    }
+
+    // One publisher invocation against the loopback registry, retargeted only in its URL.
+    private sealed class Publication : IDisposable
+    {
+        internal static readonly string Credential = "Basic " + Convert.ToBase64String(
+            Encoding.UTF8.GetBytes("__token__:" + LoopbackRegistry.Minted));
+        private readonly Scratch scratch = new();
+        internal PythonPublishResult Result { get; private set; } = null!;
+        internal string Masks { get; private set; } = "";
+        internal LoopbackRegistry.Request[] Requests { get; private set; } = [];
+        internal byte[] Wheel { get; private set; } = [];
+        internal byte[] SdistName { get; private set; } = [];
+
+        internal static async Task<Publication> RunAsync(string uv, string answer,
+            CancellationToken token)
+        {
+            var publication = new Publication();
+            try { await publication.PublishAsync(uv, answer, token); }
+            catch { publication.Dispose(); throw; }
+            return publication;
+        }
+
+        private async Task PublishAsync(string uv, string answer, CancellationToken token)
+        {
+            using var authority = new LoopbackAuthority(scratch.Path);
+            await using var registry = new LoopbackRegistry(authority.Leaf, answer);
+            string originals = Directory.CreateDirectory(System.IO.Path.Combine(scratch.Path,
+                "originals")).FullName;
+            string wheel = PythonNativeContractTests.Wheel(originals,
+                "hcoona_release_smoke_python", "0.1.0b1");
+            string sdist = System.IO.Path.Combine(originals,
+                "hcoona_release_smoke_python-0.1.0b1.tar.gz");
+            File.WriteAllBytes(sdist, [1, 2, 3]);
+            Wheel = File.ReadAllBytes(wheel);
+            SdistName = Encoding.UTF8.GetBytes(System.IO.Path.GetFileName(sdist));
+            static ReleaseFile Original(string output, string kind, string path) =>
+                new("python-distributions", output, kind, "hcoona-release-smoke-python",
+                    "0.1.0b1", System.IO.Path.GetFileName(path), new FileInfo(path).Length,
+                    Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))));
+            var prepared = new PreparedRelease(new(new string('a', 40),
+                "refs/heads/development", "hcoona-release-smoke-python", "unit.yml", "buddy",
+                "testpypi", false), [Original("wheel", "python-wheel", wheel),
+                    Original("sdist", "python-sdist", sdist)], ["qualified"],
+                [new("qualified", ReleaseCheckStatus.Passed)]);
+            string upload = "https://127.0.0.1:" + registry.Port + "/legacy/";
+            var platform = new Dictionary<string, string?>
+            {
+                ["GITHUB_ACTIONS"] = "true",
+                ["ACTIONS_ID_TOKEN_REQUEST_URL"] = "https://127.0.0.1:" + registry.Port +
+                    "/token?api-version=2.0",
+                ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"] = LoopbackRegistry.RequestToken,
+            };
+            using var masks = new StringWriter();
+            string state = Directory.CreateDirectory(System.IO.Path.Combine(scratch.Path,
+                "publisher")).FullName;
+            Result = await PythonNativePublisher.PublishAsync(prepared, originals, "wheel",
+                new(uv, state), platform, masks, (command, cancellation) =>
+                {
+                    // The production command, retargeted to the loopback registry only.
+                    int url = Array.IndexOf(command.Arguments, "--publish-url") + 1;
+                    Assert.AreEqual("https://test.pypi.org/legacy/", command.Arguments[url]);
+                    string[] arguments = [.. command.Arguments];
+                    arguments[url] = upload;
+                    var environment = new Dictionary<string, string?>(command.Environment!,
+                        StringComparer.Ordinal) { ["SSL_CERT_FILE"] = authority.Bundle };
+                    return NativeProcess.ExecuteAsync(command with
+                    {
+                        Arguments = arguments,
+                        Environment = Loopback(environment),
+                    }, cancellation);
+                }, token);
+            Masks = masks.ToString();
+            Requests = registry.Requests;
+        }
+
+        public void Dispose() => scratch.Dispose();
     }
 
     private static Dictionary<string, string?> Loopback(
@@ -334,7 +453,7 @@ public sealed class PythonNativeContractTests(TestContext context)
         foreach (string name in new[] { "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY",
                      "https_proxy", "http_proxy", "all_proxy" })
             values[name] = DeadProxy;
-        values["NO_PROXY"] = values["no_proxy"] = "127.0.0.1";
+        values["NO_PROXY"] = values["no_proxy"] = "127.0.0.1,localhost";
         return values;
     }
 
@@ -371,7 +490,7 @@ public sealed class PythonNativeContractTests(TestContext context)
         File.WriteAllText(full, text);
     }
 
-    private static string Wheel(string directory, string name, string version)
+    internal static string Wheel(string directory, string name, string version)
     {
         string path = Path.Combine(directory, $"{name}-{version}-py3-none-any.whl");
         using ZipArchive zip = ZipFile.Open(path, ZipArchiveMode.Create);
@@ -462,16 +581,18 @@ public sealed class PythonNativeContractTests(TestContext context)
         internal const string Audience = "fake-audience";
         internal const string Minted = "pypi-fake-minted-token";
         internal sealed record Request(string Method, string Path, string Query,
-            string? Authorization, byte[] Body);
+            string? Authorization, string Host, byte[] Body);
 
         private readonly TcpListener listener = new(IPAddress.Loopback, 0);
         private readonly CancellationTokenSource stop = new();
         private readonly List<Request> requests = [];
         private readonly List<Task> connections = [];
         private readonly Task loop;
+        private readonly string answer;
 
-        internal LoopbackRegistry(X509Certificate2 certificate)
+        internal LoopbackRegistry(X509Certificate2 certificate, string answer)
         {
+            this.answer = answer;
             listener.Start();
             Port = ((IPEndPoint)listener.LocalEndpoint).Port;
             loop = Task.Run(async () =>
@@ -506,20 +627,13 @@ public sealed class PythonNativeContractTests(TestContext context)
                     while (await ReadAsync(secure) is { } request)
                     {
                         lock (requests) requests.Add(request);
-                        byte[] body = Encoding.UTF8.GetBytes(request.Path switch
-                        {
-                            "/_/oidc/audience" => "{\"audience\":\"" + Audience + "\"}",
-                            "/token" => "{\"value\":\"fake-oidc-jwt\"}",
-                            "/_/oidc/mint-token" => "{\"success\":true,\"token\":\"" + Minted +
-                                "\"}",
-                            _ => "OK",
-                        });
-                        string status = request.Path is "/_/oidc/audience" or "/token" or
-                            "/_/oidc/mint-token" or "/legacy/" ? "200 OK" : "404 Not Found";
+                        (string status, string body, string headers) = Answer(request);
+                        if (status == "reset") return;
+                        byte[] content = Encoding.UTF8.GetBytes(body);
                         await secure.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 " + status +
-                            "\r\nContent-Type: application/json\r\nContent-Length: " +
-                            body.Length + "\r\n\r\n"), stop.Token);
-                        await secure.WriteAsync(body, stop.Token);
+                            "\r\nContent-Type: application/json\r\n" + headers +
+                            "Content-Length: " + content.Length + "\r\n\r\n"), stop.Token);
+                        await secure.WriteAsync(content, stop.Token);
                     }
                 }
                 catch (Exception error) when (error is IOException or
@@ -527,6 +641,33 @@ public sealed class PythonNativeContractTests(TestContext context)
                         .AuthenticationException) { }
             }
         }
+
+        // The token service always succeeds; the upload answers with the row's behavior.
+        private (string Status, string Body, string Headers) Answer(Request request) =>
+            request.Path switch
+            {
+                "/_/oidc/audience" => ("200 OK", "{\"audience\":\"" + Audience + "\"}", ""),
+                "/token" => ("200 OK", "{\"value\":\"fake-oidc-jwt\"}", ""),
+                "/_/oidc/mint-token" => ("200 OK", "{\"success\":true,\"token\":\"" + Minted +
+                    "\"}", ""),
+                "/_/oidc/burn-token" => ("200 OK", "{}", ""),
+                "/legacy/" => answer switch
+                {
+                    "accept" => ("200 OK", "OK", ""),
+                    "unavailable" => ("503 Service Unavailable", "unavailable", ""),
+                    "server-error" => ("500 Internal Server Error", "error", ""),
+                    "existing-file" => ("400 File already exists", "400 File already " +
+                        "exists. See https://pypi.org/help/#file-name-reuse", ""),
+                    "reset" => ("reset", "", ""),
+                    "same-realm-redirect" => ("307 Temporary Redirect", "", "Location: " +
+                        "https://127.0.0.1:" + Port + "/legacy/moved/\r\n"),
+                    "other-realm-redirect" => ("307 Temporary Redirect", "", "Location: " +
+                        "https://localhost:" + Port + "/legacy/moved/\r\n"),
+                    _ => throw new InvalidOperationException(answer),
+                },
+                "/legacy/moved/" => ("200 OK", "OK", ""),
+                _ => ("404 Not Found", "", ""),
+            };
 
         private async Task<Request?> ReadAsync(Stream stream)
         {
@@ -548,7 +689,8 @@ public sealed class PythonNativeContractTests(TestContext context)
                 System.Globalization.CultureInfo.InvariantCulture)];
             await stream.ReadExactlyAsync(body, stop.Token);
             return new(start[0], query < 0 ? target : target[..query],
-                query < 0 ? "" : target[(query + 1)..], Field("Authorization"), body);
+                query < 0 ? "" : target[(query + 1)..], Field("Authorization"),
+                Field("Host") ?? "", body);
         }
 
         public async ValueTask DisposeAsync()

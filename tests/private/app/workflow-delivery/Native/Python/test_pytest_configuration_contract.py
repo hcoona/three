@@ -70,6 +70,8 @@ def test_pinned_pytest_answers_configuration_before_any_collection(tmp_path):
         tmp_path,
         PYTEST_ADDOPTS="--definitely-not-an-option",
         PYTEST_PLUGINS="definitely_missing_plugin",
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD="0",
+        PYTEST_DEBUG="1",
     )
 
     assert result.returncode == 0, result.stderr

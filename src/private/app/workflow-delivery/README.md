@@ -245,7 +245,8 @@ dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests
 The project's native MTP default excludes `NuGetNativePreparation` and
 `NuGetNativeScenarios`; the Windows jobs named above own them. It also excludes
 `PythonNativeContract`, which the Linux native-preparation job runs under
-`mise exec --locked dotnet python uv` with `--filter 'TestCategory=PythonNativeContract'`. To run them locally,
+`mise exec --locked dotnet python uv` with
+`--filter 'TestCategory=PythonNativeContract'`. To run them locally,
 override the default with `--filter 'TestCategory=NuGetNativePreparation'
 --minimum-expected-tests 2` or `--filter 'TestCategory=NuGetNativeScenarios'
 --minimum-expected-tests 3`. An explicit filter replaces the default, so an

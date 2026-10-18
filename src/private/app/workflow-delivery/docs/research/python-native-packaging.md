@@ -182,7 +182,8 @@ UV, Hatchling and NBGV version changes are guarded by the contract tests named
 below, including the absent `.gitignore` marker and equal wheel, sdist and
 rebuilt-wheel versions. Changed backend/source shapes or shared preparation and
 consumer requirements are evaluated by their integration author and checked by
-independent engineering/evidence review. Missing necessary native capability stops for owner disposition. Exact
+independent engineering/evidence review. Missing necessary native capability
+stops for owner disposition. Exact
 helper/tool/runtime/Git identities, finite command/diagnostic/time/state bounds,
 public-only dependency/cache effects, owned cleanup and original evidence must
 be accepted in the concrete protocol before execution. Completed graph and

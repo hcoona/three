@@ -167,9 +167,19 @@ registry and token service with fake identities, and a closed proxy for any
 non-loopback request. It asserts that the flags are accepted and that the exchange
 is audience, OIDC token request, mint, exactly one upload of the selected original
 bytes with the minted token, then token invalidation. It also asserts that the
-forwarded runner output is exactly the minted token's `::add-mask::` line. Warehouse
-token minting and acceptance, the real GitHub OIDC provider and runner masking
-remain non-claims, bound to the recorded runs. A change to runner command
+forwarded runner output is exactly the minted token's `::add-mask::` line.
+`NativeUploadHandlingStaysBoundedAndFailsClosed` guards the native upload handling
+the publisher relies on instead of an application retry. A 503, a 500 and the
+registry's `400 File already exists` answer each end the command as a failure
+after one upload. A connection reset is retried a bounded four uploads in total
+before failing. A same-realm redirect is followed with the token, and a redirect
+to another realm fails without sending it there. The existing-file row covers
+UV's handling of a registry rejection; the optional pre-upload
+`--check-url` check is not selected and is not guarded. The publisher passes one
+file per invocation, so stopping at the first failure across several files is
+outside the consumed contract. Warehouse token minting and acceptance, the real
+GitHub OIDC provider and runner masking remain non-claims, bound to the recorded
+runs. A change to runner command
 handling is evaluated by its author. Missing capability evidence blocks the
 changed path rather than expanding the application into another publisher.
 
