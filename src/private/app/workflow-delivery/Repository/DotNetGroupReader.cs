@@ -7,9 +7,9 @@ internal sealed record DotNetGroupRequest(MaterializedEndpoint Basis,
     MaterializedEndpoint Candidate, bool Full,
     DotNetReadFiles BasisFiles, DotNetReadFiles CandidateFiles,
     DotNetRunRequest Completion);
-// Endpoint facts from native readers alone, before control-run inputs are joined.
-internal sealed record NativeGroupFacts(RepositoryFacts DotNetBasis,
-    RepositoryFacts DotNetCandidate, RepositoryFacts NodeBasis, RepositoryFacts NodeCandidate);
+// One endpoint's .NET and Node facts, with and without the control-run inputs.
+internal sealed record GroupEndpointFacts(RepositoryFacts DotNet, RepositoryFacts Node,
+    RepositoryFacts NativeDotNet, RepositoryFacts NativeNode);
 internal sealed record DotNetGroupReadback(CiPlan Plan, ScopeCoordinate[] Basis,
     ScopeCoordinate[] Candidate);
 
@@ -59,22 +59,12 @@ internal static class DotNetGroupReader
         ControlInputFacts? controlBasis = ControlInputs.Read(before, false);
         ControlInputFacts controlCandidate = ControlInputs.Read(after, true) ??
             throw new InvalidDataException("Missing candidate control inputs.");
-        NodeRevisionInputs nodeBefore = await NodeReader(basis).ReadAsync(token);
-        NodeRevisionInputs nodeAfter = await NodeReader(candidate).ReadAsync(token);
-        // Native facts before the application-defined control-run inputs are joined.
-        var native = new NativeGroupFacts(DotNetFactsAssembler.Assemble(before, []),
-            DotNetFactsAssembler.Assemble(after, []), NodeFactsAssembler.Assemble(nodeBefore),
-            NodeFactsAssembler.Assemble(nodeAfter));
-        nodeBefore = NodeGroupReader.WithControlInputs(nodeBefore, controlBasis, false);
-        nodeAfter = NodeGroupReader.WithControlInputs(nodeAfter, controlCandidate, true);
-        before = WithControlInputs(before, controlBasis, false);
-        after = WithControlInputs(after, controlCandidate, true);
-        RepositoryFacts dotnetBefore = DotNetFactsAssembler.Assemble(before, []);
-        RepositoryFacts dotnetAfter = DotNetFactsAssembler.Assemble(after, []);
-        ScopeInputs joined = Join(scope, comparison, dotnetBefore, dotnetAfter,
-            NodeFactsAssembler.Assemble(nodeBefore), NodeFactsAssembler.Assemble(nodeAfter),
-            native);
-        PlanRequest bound = joined.Bind(dotnetBefore, dotnetAfter);
+        (GroupEndpointFacts first, _) = Facts(before,
+            await NodeReader(basis).ReadAsync(token), controlBasis, false);
+        (GroupEndpointFacts second, after) = Facts(after,
+            await NodeReader(candidate).ReadAsync(token), controlCandidate, true);
+        ScopeInputs joined = Join(scope, comparison, first, second);
+        PlanRequest bound = joined.Bind(first.DotNet, second.DotNet);
         CiPlan plan = await DotNetFactsAssembler.CompleteAsync(
             DotNetFactsAssembler.Select(bound, after), request.Completion, token);
         return new(plan, joined.Basis, joined.Candidate);
@@ -84,36 +74,43 @@ internal static class DotNetGroupReader
         new(endpoint, (arguments, token) => NativeProcess.RunAsync("mise", endpoint.Root,
             ["exec", "--locked", "node", "pnpm", "--", "pnpm", .. arguments], token));
 
-    // Planning facts include the control-run inputs; native facts omit them. A consumer reached
-    // only through a control-run input is reported as that application-defined relation.
-    internal static ScopeInputs Join(ScopeInputs scope, GitComparison comparison,
-        RepositoryFacts dotnetBasis, RepositoryFacts dotnetCandidate,
-        RepositoryFacts nodeBasis, RepositoryFacts nodeCandidate,
-        NativeGroupFacts? native = null)
+    internal static (GroupEndpointFacts Facts, DotNetRevisionInputs DotNet) Facts(
+        DotNetRevisionInputs dotnet, NodeRevisionInputs node, ControlInputFacts? control,
+        bool candidate)
     {
-        native ??= new(dotnetBasis, dotnetCandidate, nodeBasis, nodeCandidate);
+        DotNetRevisionInputs joined = WithControlInputs(dotnet, control, candidate);
+        return (new(DotNetFactsAssembler.Assemble(joined, []),
+            NodeFactsAssembler.Assemble(NodeGroupReader.WithControlInputs(node, control,
+                candidate)),
+            DotNetFactsAssembler.Assemble(dotnet, []), NodeFactsAssembler.Assemble(node)),
+            joined);
+    }
+
+    // Selection uses the joined facts. A consumer absent from the native facts is reached only
+    // through the application-defined control-run inputs and is reported as such.
+    internal static ScopeInputs Join(ScopeInputs scope, GitComparison comparison,
+        GroupEndpointFacts basis, GroupEndpointFacts candidate)
+    {
         // Validate complete relations, including unselected and removed members.
-        ImpactPlanner.SelectProjects(new(dotnetBasis, dotnetCandidate, [], false));
-        ImpactPlanner.SelectProjects(new(nodeBasis, nodeCandidate, [], false));
+        ImpactPlanner.SelectProjects(new(basis.DotNet, candidate.DotNet, [], false));
+        ImpactPlanner.SelectProjects(new(basis.Node, candidate.Node, [], false));
         return scope.WithResponsibilities(comparison,
-            Endpoint(scope.Basis, comparison.Basis, dotnetBasis, native.DotNetBasis, nodeBasis,
-                native.NodeBasis),
-            Endpoint(scope.Candidate, comparison.Candidate, dotnetCandidate,
-                native.DotNetCandidate, nodeCandidate, native.NodeCandidate));
+            Endpoint(scope.Basis, comparison.Basis, basis),
+            Endpoint(scope.Candidate, comparison.Candidate, candidate));
 
         static ScopeCoordinate[] Endpoint(ScopeCoordinate[] rows, GitRevision revision,
-            RepositoryFacts dotnet, RepositoryFacts dotnetNative, RepositoryFacts node,
-            RepositoryFacts nodeNative)
+            GroupEndpointFacts facts)
         {
-            if (new[] { dotnet, dotnetNative, node, nodeNative }.Any(facts =>
-                    facts.Revision != revision.Commit))
+            if (new[] { facts.DotNet, facts.NativeDotNet, facts.Node, facts.NativeNode }.Any(
+                    item => item.Revision != revision.Commit))
                 throw new InvalidDataException("Native responsibility has a different endpoint.");
             bool control = revision.Entries.Any(entry =>
                 entry.Path == NodeGroupReader.ControlProject);
             return rows.Select(row => row.Present ? row with
             {
-                Reasons = [.. row.Reasons, .. Reasons(dotnet, dotnetNative, "dotnet", row.Path),
-                    .. Reasons(node, nodeNative, "node", row.Path)],
+                Reasons = [.. row.Reasons,
+                    .. Reasons(facts.DotNet, facts.NativeDotNet, "dotnet", row.Path),
+                    .. Reasons(facts.Node, facts.NativeNode, "node", row.Path)],
             } : row).ToArray();
 
             ScopeResponsibility[] Reasons(RepositoryFacts facts, RepositoryFacts nativeFacts,

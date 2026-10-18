@@ -305,8 +305,8 @@ The Workflow Delivery test project's native MTP configuration excludes the
 The Windows `NuGet native preparation (Windows)` CI job owns the two
 preparation rows (real preparation, original package and clean consumer). Its
 applicability follows the existing .NET/Workflow scope selection, which covers
-any Workflow Delivery source or test change except the inert control `docs/`
-subtree and `README.md`, the fixture product and shared
+any Workflow Delivery source or test change (except the inert control `docs/`
+subtree and `README.md`), the fixture product and shared
 .NET/CI inputs; Validate requires its result. Same-input .NET
 reproducibility was established once ([Issue #948](https://github.com/hcoona/three/issues/948),
 [PR #952](https://github.com/hcoona/three/pull/952)); by owner decision it is build-infrastructure behavior, not
