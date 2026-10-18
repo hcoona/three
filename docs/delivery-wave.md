@@ -172,3 +172,53 @@ ends a grant. Git and the proposing PR retain the reason and history.
   publication, credential, Environment, account, publisher or other access
   change; no change to the retained legacy `release-orchestrate.yml` stack
   beyond an owner decision recorded separately; no new runtime matrix.
+
+### Give repository tooling configuration CI scope responsibility
+
+- **Work carrier:** the pull request proposing this entry and one linked
+  implementation pull request. PR
+  [#1253](https://github.com/hcoona/three/pull/1253) (global.json as the .NET
+  SDK authority) failed CI scope selection with
+  `Unresolved endpoint responsibility: .github/renovate/global.cjs`; the
+  repository owner approved a bounded fix through a Wave entry.
+- **Accepted inputs:** the Workflow Delivery
+  [endpoint responsibility contract](../src/private/app/workflow-delivery/docs/integration/node.md#endpoint-responsibility-and-selection),
+  the [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
+  `renovate.json`, `.github/renovate/`, `.github/workflows/renovate.yml`,
+  `.github/workflows/ci.yml` and root `hk.pkl`.
+- **Advancement and outcome:** CI scope selection gives a present changed
+  coordinate finite, native responsibility in two cases, evaluated against each
+  endpoint's own committed bytes (deleted coordinates keep confirmed absence):
+    - **Renovate configuration:** `renovate.json`, `.github/renovate/**` and
+      `.github/workflows/renovate.yml` receive owner `renovate` with target
+      `.github/workflows/renovate.yml` and rule `native-renovate-configuration`.
+    - **Literal tooling reference:** a coordinate whose repository-relative path
+      occurs as a complete path token (quoted or bounded by non-path characters,
+      never as a substring of a longer name) in the endpoint's root `hk.pkl` or
+      `renovate.json` receives owner `conformance` with target
+      `.github/workflows/ci.yml#conformance` and rule
+      `literal-tooling-reference`. This is a reference, not proof that a step
+      reads the file; it includes paths HK excludes. Only root `hk.pkl` and
+      `renovate.json` are scanned; imported HK modules keep the existing
+      `native-hk-configuration` route.
+
+    These reasons select no retained job. Do not parse shell commands or depend
+    on HK plan output: locked HK 2.6.0 `check --plan --json` reports step status,
+    reasons and file counts but no per-step files. Update the owning integration
+    contract and tests in the same change, including tests that substrings such
+    as `.editorconfig` in `Steps.editorconfig_check` and `PklProject` in
+    `PklProject.deps.json` do not match. The outcome is accepted when #1253
+    passes scope selection.
+
+- **Ordering and gates:** follow the existing Workflow Delivery engineering,
+  OCR and record-system review gates. Independently classify material findings
+  before repair. Do not add a blanket fallback owner or infer responsibility
+  from directory names.
+- **Effects:** permit source and repository/GitHub inspection, documentation
+  and implementation changes, locked tool preparation, isolated local builds
+  and credential-free tests, independent delegated review, ordinary PR/check
+  operations and their normal CI.
+- **Exclusions:** no change to Renovate or HK behavior; no retained-job
+  selection from these reasons; no responsibility for other unresolved path
+  classes; no release, dispatch, publication,
+  credential or access change. Delete this entry when the outcome is accepted.
