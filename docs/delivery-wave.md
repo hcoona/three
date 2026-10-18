@@ -272,6 +272,25 @@ ends a grant. Git and the proposing PR retain the reason and history.
   fails unless both steps stay in a profile `ci.yml` runs, their shared glob still matches `*.sh` and `*.bash`, and their exclusions that can match a shell script equal this copied set. The rule selects no retained job and does not replace a script's
   existing owner. Record it in the same contract and cover a deleted script, a
   current script and an excluded path in tests.
+  Retirement also deletes standalone Python scripts that belong to no Python
+  workspace member and that no Python test reads, which planning cannot resolve
+  as Python inputs. CI scope selection therefore gives a committed `*.py` or
+  `*.pyi` file that lies outside every Python workspace member and has no
+  explicit Python input binding a finite owner instead of the extension-only
+  Python responsibility: owner `conformance`, target
+  `.github/workflows/ci.yml#conformance` and rule `native-hk-python-lint`,
+  applied only when that endpoint commits root `hk.pkl` and `ci.yml`. HK's
+  `ruff` and `ruff_format` steps also check these files; this owner is a fixed
+  copy of their shared glob and of their exclusions that can match a Python file
+  (`**/.github/**`, `**/.specify/**`, `**/generated/**`, the root-only
+  `.agents/**` and `src/private/lib/scan-restoration/skills/**`), and a drift
+  test evaluates the endpoint's `hk.pkl` with the locked Pkl and fails unless
+  both steps stay in a profile `ci.yml` runs, their glob still matches these
+  files and those exclusions equal this copied set. Files the exclusions match,
+  workspace members and explicitly bound Python inputs keep their current
+  responsibility. The rule selects no retained job and adds no Python execution.
+  Record it in the same contract and cover a deleted standalone script, a
+  current standalone script, a bound script and an excluded path in tests.
 - **Ordering and gates:** follow the record-system, engineering and Workflow
   Delivery review gates; independently classify material findings before
   repair. Preserve evidence consumers through commit-pinned links.
