@@ -165,6 +165,41 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task SelectedSuiteInstallsItsGovernedBundlesBeforeRSpecAndRetainsThem()
+    {
+        using var scratch = new Scratch();
+        var (plan, request) = await SharedAsync(scratch.Directory);
+        string Gemfile(string directory) => Path.GetFullPath(Path.Combine(request.Checkout,
+            directory, "Gemfile"));
+        RubyBundleFacts suite = request.Candidate.Bundles[0];
+        // A nested lock context belongs to the suite; a nested native gem's bundle does not.
+        RubyBundleFacts nested = suite with { Gemfile = Gemfile(Suite + "/contexts/b") };
+        RubyBundleFacts native = suite with { Gemfile = Gemfile(Suite + "/vendor/gem") };
+        request = request with { Candidate = request.Candidate with
+        {
+            Bundles = [native, nested, suite],
+            Facts = request.Candidate.Facts with { Native = request.Candidate.Facts.Native with
+            {
+                Graph = new([new(Suite + "/vendor/gem", "vendored", [])], [])
+            } }
+        } };
+        var order = new List<string>();
+        RubyGroupRun result = await RubyGroupExecution.RunAsync(plan with
+            { Checks = plan.Checks[..1] }, request, (command, token) =>
+            {
+                order.Add(command.Arguments is [_, _, "install"]
+                    ? command.Environment!["BUNDLE_GEMFILE"]! : "rspec");
+                return command.Arguments is [_, _, "install"] ? Task.FromResult(Answer(new { }))
+                    : NativeAsync(request, command, false, token);
+            }, context.CancellationToken);
+        Assert.IsTrue(result.Outcome.Satisfied);
+        CollectionAssert.AreEqual(new[] { suite.Gemfile, nested.Gemfile, "rspec" }, order);
+        CollectionAssert.AreEqual(new[] { suite.Gemfile, nested.Gemfile },
+            Assert.ContainsSingle(result.RSpec).Installs.Select(install =>
+                install.Command.Environment!["BUNDLE_GEMFILE"]).ToArray());
+    }
+
+    [TestMethod]
     public async Task FailedSelectedBundleInstallationFailsItsSuiteWithoutRunningRSpec()
     {
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);

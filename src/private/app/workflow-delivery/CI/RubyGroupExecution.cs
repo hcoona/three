@@ -5,7 +5,9 @@ namespace WorkflowDelivery.CI;
 
 internal sealed record RubyGroupRunRequest(string Checkout, string Scratch, RubyFactTools Facts,
     string Gem, string Bundle, string Nbgv, RubyRevisionInputs Candidate);
-internal sealed record RubyGroupRSpec(CheckKey Check, RubyRSpecRun Run);
+// Installs retain each selected suite's native bundle preparation, including successes.
+internal sealed record RubyGroupRSpec(CheckKey Check, RubyRSpecRun Run,
+    RubyPreparationCommand[] Installs);
 internal sealed record RubyGroupRun(CheckResult[] Results, RubyGroupRSpec[] RSpec,
     RubyPackageRun Packages, CiOutcome Outcome);
 
@@ -82,13 +84,15 @@ internal static class RubyGroupExecution
                 {
                     // Planning reads only locks; a selected suite installs every frozen bundle
                     // it governs, including nested lock contexts its specs consume.
-                    RubyRSpecRun run = await InstallAsync(suite.Check.Work.Key.Target) ??
+                    var installs = new List<RubyPreparationCommand>();
+                    RubyRSpecRun run = await InstallAsync(suite.Check.Work.Key.Target,
+                        installs) ??
                         await RubyRSpecExecution.RunAsync(suite.Check.Work.Key,
                         new(checkout, request.Facts.Ruby, request.Bundle,
                             suite.Bundle.BundlerVersion, suite.Bundle.Gemfile, scratch,
                             request.Facts.DeadlineSeconds, request.Facts.Environment), execute,
                         token);
-                    runs.Add(new(suite.Check.Work.Key, run));
+                    runs.Add(new(suite.Check.Work.Key, run, installs.ToArray()));
                     status = run.Status;
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -96,7 +100,8 @@ internal static class RubyGroupExecution
             }
             results.Add(new(plan.Candidate, suite.Check.Work.Key, status));
         }
-        async Task<RubyRSpecRun?> InstallAsync(string target)
+        async Task<RubyRSpecRun?> InstallAsync(string target,
+            List<RubyPreparationCommand> installs)
         {
             string[] native = request.Candidate.Facts.Native.Graph.Projects
                 .Select(project => project.Directory).ToArray();
@@ -105,10 +110,11 @@ internal static class RubyGroupExecution
                              Path.GetDirectoryName(Path.GetFullPath(bundle.Gemfile))!)
                              .Replace('\\', '/'), native))
                          .OrderBy(bundle => bundle.Gemfile, StringComparer.Ordinal))
-                if (await InstallBundleAsync(bundle) is { } failed) return failed;
+                if (await InstallBundleAsync(bundle, installs) is { } failed) return failed;
             return null;
         }
-        async Task<RubyRSpecRun?> InstallBundleAsync(RubyBundleFacts bundle)
+        async Task<RubyRSpecRun?> InstallBundleAsync(RubyBundleFacts bundle,
+            List<RubyPreparationCommand> installs)
         {
             var environment = new Dictionary<string, string?>(request.Facts.Environment,
                 StringComparer.Ordinal)
@@ -121,6 +127,7 @@ internal static class RubyGroupExecution
                 [request.Bundle, "_" + bundle.BundlerVersion + "_", "install"],
                 request.Facts.DeadlineSeconds, environment, InheritEnvironment: false);
             NativeCommandResult result = await execute(command, token);
+            installs.Add(new(command, result));
             if (token.IsCancellationRequested)
                 return new(command, result, null, CheckStatus.Cancelled,
                     "Native Ruby bundle installation was cancelled.");

@@ -70,15 +70,16 @@ end
 
 def selected_bundle_specs(definition)
   # Frozen Bundler answers its locked resolution. Select the requested groups for this
-  # platform without materializing installed gems; the two locked versions differ only
-  # in SpecSet#for's public signature.
+  # platform without materializing installed gems. Only the two qualified lock-selected
+  # versions, whose SpecSet#for signatures differ, are supported. An explicit local platform matches Bundler's own selection except on TruffleRuby, whose
+  # default ruby-platform forcing is outside the supported runtime.
   resolved = definition.resolve
   dependencies = definition.requested_dependencies
   platforms = [Bundler.local_platform]
-  selected = if Bundler::SpecSet.instance_method(:for).parameters.include?([:opt, :check])
-    resolved.for(dependencies, true, platforms)
-  else
-    resolved.for(dependencies, platforms)
+  selected = case Bundler::VERSION
+  when "2.4.20" then resolved.for(dependencies, true, platforms)
+  when "2.7.2" then resolved.for(dependencies, platforms)
+  else raise "Unsupported native Bundler lock interface: #{Bundler::VERSION}"
   end
   incomplete = resolved.incomplete_specs
   raise "Incomplete native locked resolution: #{incomplete.map(&:full_name).join(", ")}" unless incomplete.empty?

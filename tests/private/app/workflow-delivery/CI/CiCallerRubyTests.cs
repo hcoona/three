@@ -68,7 +68,7 @@ public sealed class CiCallerRubyTests(TestContext context)
                     "omitted rspec head " + tail, 2, null);
                 CheckResult[] results = [new(Candidate, key, CheckStatus.Failed)];
                 return Task.FromResult(new RubyGroupRun(results,
-                    [new(key, new(command, result, null, CheckStatus.Failed, null))],
+                    [new(key, new(command, result, null, CheckStatus.Failed, null), [])],
                     new([], [], [], []), ResultCollector.Collect(received, results)));
             }, diagnostics);
 

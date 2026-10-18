@@ -119,7 +119,9 @@ internal static class RubyCiCaller
                     .Select(run => new CiCallerFailure(run.Check, run.Run.ReportError!)),
                 .. result.Packages.Failures.Select(failure => new CiCallerFailure(failure.Check,
                     failure.Error))];
-            commands = [.. result.RSpec.Select(run => (run.Check, run.Run.Command,
+            commands = [.. result.RSpec.SelectMany(run => run.Installs.Select(install =>
+                    (run.Check, install.Command, install.Result))),
+                .. result.RSpec.Select(run => (run.Check, run.Run.Command,
                     run.Run.Result)),
                 .. result.Packages.Commands.Select(command => (command.Check, command.Command,
                     command.Result))];

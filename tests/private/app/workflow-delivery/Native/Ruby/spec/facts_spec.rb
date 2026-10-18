@@ -168,13 +168,16 @@ module NativeHelpers
         end
 
         # A lock that cannot answer this platform or omits a locked edge is not an empty selection.
-        [["foreign_platform", "    absent_fixture (1.0.0-java)\n", ["java"]],
-         ["missing_edge", "    absent_fixture (1.0.0)\n      absent_edge (~> 2.0)\n", ["ruby"]]].each do |defect, specs, platforms|
+        # Each row names the native or helper check that must reject it.
+        [["unlocked_platform", "    absent_fixture (1.0.0-java)\n", ["java"], /Your bundle only supports platforms/],
+         ["missing_edge", "    absent_fixture (1.0.0)\n      absent_edge (~> 2.0)\n", ["ruby"], /lockfile can't be updated|frozen mode/],
+         ["platform_variant_absent", "    absent_fixture (1.0.0-java)\n", ["java", "ruby"], /Incomplete native locked resolution: absent_fixture-1.0.0-java/]].each do |defect, specs, platforms, reason|
           it "incomplete_locked_resolution_cannot_return_facts [#{defect}]" do
             environment = registry_lock(native, specs: specs, platforms: platforms)
             result = facts(native, "bundle", @scratch / "Gemfile", environment: environment)
             expect(result.returncode).not_to eq(0)
             expect(result.stdout).to eq("")
+            expect(result.stderr).to match(reason)
           end
         end
 
