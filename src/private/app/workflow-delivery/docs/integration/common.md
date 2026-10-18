@@ -70,7 +70,9 @@ The `ci caller-<ecosystem> execute` commands keep stdout as the unchanged
 recorded failure text to stderr, the step log. A check without failure text
 reports its last unsuccessful native command. Native failure text names the
 stage, termination and exit code, followed by the last 4,096 characters of each
-of the native error and stderr, trimmed and marked when truncated. The complete
+of the native error and stderr, trimmed and marked when truncated. Because
+MSBuild reports errors on stdout, the .NET graph query also includes a stdout
+tail with the same bound. The complete
 command results stay in the retained result artifacts. Every message line
 written to stderr, including application failure messages, starts with an indented `|` marker.
 Each `##[` becomes `#\#[`, so native text cannot start an Actions workflow

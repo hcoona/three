@@ -13,11 +13,14 @@ internal static class NativeDiagnostic
                 !Path.IsPathRooted(argument)).Take(1)));
 
     // "<termination>, exit <code>." followed by the native error and a bounded stderr tail.
-    internal static string Describe(NativeCommandResult result)
+    // Tools that report errors on stdout (MSBuild) may add a bounded stdout tail as well.
+    internal static string Describe(NativeCommandResult result, bool includeStdout = false)
     {
         string text = $"{result.Termination}, exit {result.ExitCode?.ToString(
             System.Globalization.CultureInfo.InvariantCulture) ?? "unknown"}.";
         if (!string.IsNullOrWhiteSpace(result.Error)) text += " " + Tail(result.Error);
+        string stdout = includeStdout ? Tail(result.Stdout) : "";
+        if (stdout.Length != 0) text += " stdout: " + stdout;
         string stderr = Tail(result.Stderr);
         return stderr.Length == 0 ? text : text + " stderr: " + stderr;
     }

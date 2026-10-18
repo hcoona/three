@@ -96,7 +96,7 @@ internal sealed class DotNetRepositoryReader
         token.ThrowIfCancellationRequested();
         if (!result.Succeeded)
             throw Unavailable("Invocation", "Native graph query failed: " +
-                NativeDiagnostic.Describe(result));
+                NativeDiagnostic.Describe(result, includeStdout: true));
         await using var response = File.OpenRead(files.Response);
         DotNetGraphResponse graph = await JsonSerializer.DeserializeAsync(response,
             TransferJson.Default.DotNetGraphResponse, token)
