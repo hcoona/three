@@ -160,7 +160,7 @@ public sealed class RubyPackageExecutionTests(TestContext context)
             if (command.Arguments[1] == "build")
             {
                 if (defect == "failed-build")
-                    return Answer(new { }) with { ExitCode = 7 };
+                    return Answer(new { }) with { ExitCode = 7, Stderr = LongGemStderr };
                 if (defect != "missing-output")
                     await File.WriteAllTextAsync(command.Arguments[^1], "original gem", token);
             }
@@ -317,6 +317,16 @@ public sealed class RubyPackageExecutionTests(TestContext context)
         );
         Assert.IsFalse(ResultCollector.Collect(plan, result.Results).Satisfied);
         Assert.IsNotEmpty(result.Failures);
+        if (defect == "failed-build")
+        {
+            // The gem stage and a bounded stderr tail reach the failure; the head is omitted.
+            string failure = Assert.ContainsSingle(result.Failures).Error;
+            Assert.StartsWith("Native gem command failed: Exited, exit 7. stderr: [truncated] ",
+                failure);
+            Assert.EndsWith(" controlled gem build error", failure);
+            Assert.DoesNotContain("controlled gem head", failure);
+            Assert.IsLessThan(NativeDiagnostic.TailLength + 100, failure.Length);
+        }
         if (defect != "consumer-failed")
         {
             Assert.AreEqual(CheckStatus.Failed, result.Results[0].Status);
@@ -330,6 +340,9 @@ public sealed class RubyPackageExecutionTests(TestContext context)
             Assert.AreEqual(CheckStatus.Failed, result.Results[2].Status);
         }
     }
+
+    private static readonly string LongGemStderr = "controlled gem head " +
+        new string('x', NativeDiagnostic.TailLength) + " controlled gem build error";
 
     [TestMethod]
     public async Task EmptySelectionPerformsNoProductPreparation()

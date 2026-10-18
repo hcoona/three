@@ -55,7 +55,9 @@ internal static class RubyRSpecExecution
                     report = RubyRSpecResult.Read(await File.ReadAllTextAsync(output,
                         new UTF8Encoding(false, true), token));
                 else
-                    error = "Native RSpec did not produce its required JSON result.";
+                    error = "Native RSpec did not produce its required JSON result." +
+                        (result.Succeeded && result.Error is null ? "" :
+                            " Native RSpec command failed: " + NativeDiagnostic.Describe(result));
             }
             catch (Exception exception) when (exception is IOException or
                 UnauthorizedAccessException or DecoderFallbackException or InvalidDataException)

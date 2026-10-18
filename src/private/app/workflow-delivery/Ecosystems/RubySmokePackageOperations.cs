@@ -138,7 +138,6 @@ internal sealed class RubySmokePackageOperations(RubyFactTools tools, string gem
         token.ThrowIfCancellationRequested();
         if (!result.Succeeded || result.Error is not null)
             throw new IOException("Native gem command failed: " +
-                $"{result.Termination}, exit {result.ExitCode}. " +
-                $"{result.Error} {result.Stderr}");
+                NativeDiagnostic.Describe(result));
     }
 }

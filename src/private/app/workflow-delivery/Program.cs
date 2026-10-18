@@ -266,7 +266,7 @@ internal static class Program
         }
         catch (PythonGroupPreparationException exception)
         {
-            error.WriteLine(exception.Message);
+            RunnerLog.Write(error, exception.Message, CiCallerTransfer.MessagePrefix);
             try
             {
                 using var diagnostics = new FileStream(exception.DiagnosticsPath,
@@ -283,7 +283,7 @@ internal static class Program
             JsonException or ArgumentException or UnauthorizedAccessException or TimeoutException or
             Nerdbank.GitVersioning.GitException or KeyNotFoundException)
         {
-            error.WriteLine(exception.Message);
+            RunnerLog.Write(error, exception.Message, CiCallerTransfer.MessagePrefix);
             return 2;
         }
     }

@@ -178,10 +178,11 @@ internal static class CiCallerTransfer
             if (messages.Length == 0)
                 diagnostics.WriteLine("  | No failure text was recorded for this check.");
             foreach (string message in messages)
-                foreach (string line in message.ReplaceLineEndings("\n").Split('\n'))
-                    diagnostics.WriteLine("  | " + line);
+                RunnerLog.Write(diagnostics, message, MessagePrefix);
         }
     }
+
+    internal const string MessagePrefix = "  | ";
 
     internal static async Task<NativeCommandResult> RunAsync(NativeCommand command,
         string directory, string label, CancellationToken token,

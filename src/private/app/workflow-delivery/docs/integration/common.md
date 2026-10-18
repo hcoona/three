@@ -71,7 +71,10 @@ recorded failure text to stderr, the step log. A check without failure text
 reports its last unsuccessful native command. Native failure text names the
 stage, termination and exit code, followed by the last 4,096 characters of each
 of the native error and stderr, trimmed and marked when truncated. The complete
-command results stay in the retained result artifacts.
+command results stay in the retained result artifacts. Every message line
+written to stderr, including application failure messages, starts with an indented `|` marker.
+Each `##[` becomes `#\#[`, so native text cannot start an Actions workflow
+command ([`RunnerLog`](../../Platform/RunnerLog.cs)).
 The finite [GitHub comparison
 mapping](../middle-level-design.md#github-event-comparison) reads native payload
 fields directly rather than adding another event declaration. Its implementation

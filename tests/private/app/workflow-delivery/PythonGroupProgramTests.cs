@@ -128,6 +128,49 @@ public sealed class PythonGroupProgramTests(TestContext context)
     [DataRow(true)]
     public void PreparationTransferRetainsOriginalEndpointAndToolContext(bool full)
     {
+        PreparationTransfer(full);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void ProgramFailureTextCannotStartWorkflowCommands(bool preparation)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "python workflow command " +
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            PythonGroupRequest prepared = Request(false);
+            string path = Path.Combine(directory, "request.json");
+            File.WriteAllText(path, JsonSerializer.Serialize(new PythonGroupPreparationRequest(
+                prepared.Basis.Checkout, prepared.Candidate.Checkout, false, prepared.ScopePath,
+                "/control", directory, new("/tools/uv", "/runtime/python", "/tools/dotnet"),
+                prepared.Candidate.Collection.Operation, 600),
+                TransferJson.Default.PythonGroupPreparationRequest));
+            NativeCommandResult result = new(NativeTermination.Exited, 7, "",
+                WorkflowDelivery.Tests.CI.CiCallerTransferTests.WorkflowCommandText, 1, null);
+            Exception failure = preparation
+                ? new PythonGroupPreparationException(directory,
+                    [new(new("/tools/uv", "/endpoint", ["sync"], 600), result)])
+                : new InvalidDataException("Native query failed: " +
+                    NativeDiagnostic.Describe(result));
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+
+            int exit = Program.Run(["ci", "prepare-python-group", path], output, error,
+                preparePythonGroup: (_, _) => throw failure);
+
+            Assert.AreEqual(2, exit);
+            Assert.Contains("add-mask]x", error.ToString());
+            WorkflowDelivery.Tests.CI.CiCallerTransferTests.AssertNoWorkflowCommand(
+                error.ToString());
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    private static void PreparationTransfer(bool full)
+    {
         PythonGroupRequest prepared = Request(full);
         var request = new PythonGroupPreparationRequest(prepared.Basis.Checkout,
             prepared.Candidate.Checkout, full, prepared.ScopePath, "/control/python sources",
