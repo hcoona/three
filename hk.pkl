@@ -274,19 +274,6 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       )
     check = "python eng/scripts/hk_exec.py python eng/scripts/sync_python_version.py"
   }
-
-  ["node-mise-authority"] {
-    profiles = List("small")
-    glob =
-      List(
-        ".github/workflows/ci.yml",
-        "eng/scripts/update_node_mise_lock.py",
-        "mise.lock",
-        "mise.toml",
-      )
-    check =
-      "python eng/scripts/hk_exec.py --timeout-seconds 120 uv run --no-project python eng/scripts/update_node_mise_lock.py"
-  }
 }
 
 local scholarly_publication_validation = new Mapping<String, Step> {

@@ -38,6 +38,9 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Read committed tool versions
+        id: tools
+        run: python3 eng/scripts/locked_tool_versions.py dotnet ruby >> "$GITHUB_OUTPUT"
       - name: Prepare selected runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
@@ -45,15 +48,19 @@ jobs:
           install: false
           working_directory: ${{ runner.temp }}
       - name: Install selected native tools
+        env:
+          DOTNET_VERSION: ${{ steps.tools.outputs.dotnet }}
+          RUBY_VERSION: ${{ steps.tools.outputs.ruby }}
         run: |
           set -Eeuo pipefail
-          mise install --yes dotnet@10.0.401 ruby@4.0.7
+          mise install --yes "dotnet@$DOTNET_VERSION" "ruby@$RUBY_VERSION"
           {
-            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which ruby@4.0.7)"
-            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec ruby@4.0.7 -- which gem)"
-            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+            printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
+            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which --tool "ruby@$RUBY_VERSION" ruby)"
+            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec "ruby@$RUBY_VERSION" -- which gem)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
           } >> "$GITHUB_ENV"
-          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+          printf '%s\n' "$(dirname "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
       - name: Build complete control before product execution
         run: |-
@@ -75,7 +82,7 @@ jobs:
       - name: Qualify complete selected native original
         run: |-
           set -Eeuo pipefail
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-ruby "$RUNNER_TEMP/prepared/request.json" > "$RUNNER_TEMP/prepared/preparation.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-ruby "$RUNNER_TEMP/prepared/request.json" > "$RUNNER_TEMP/prepared/preparation.json"
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby originals
       - name: Retain actual prepared results
         id: retain
@@ -89,6 +96,8 @@ jobs:
           overwrite: false
     outputs:
       control-id: ${{ steps.control.outputs.artifact-id }}
+      dotnet: ${{ steps.tools.outputs.dotnet }}
+      ruby: ${{ steps.tools.outputs.ruby }}
       preparation-id: ${{ steps.retain.outputs.artifact-id }}
   observe:
     runs-on: ubuntu-24.04
@@ -116,15 +125,19 @@ jobs:
           install: false
           working_directory: ${{ runner.temp }}
       - name: Install selected native tools
+        env:
+          DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          RUBY_VERSION: ${{ needs.prepare.outputs.ruby }}
         run: |
           set -Eeuo pipefail
-          mise install --yes dotnet@10.0.401 ruby@4.0.7
+          mise install --yes "dotnet@$DOTNET_VERSION" "ruby@$RUBY_VERSION"
           {
-            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which ruby@4.0.7)"
-            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec ruby@4.0.7 -- which gem)"
-            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+            printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
+            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which --tool "ruby@$RUBY_VERSION" ruby)"
+            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec "ruby@$RUBY_VERSION" -- which gem)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
           } >> "$GITHUB_ENV"
-          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+          printf '%s\n' "$(dirname "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
       - name: Receive transferred preparation
         run: |-
@@ -134,13 +147,13 @@ jobs:
         run: |-
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby source-config initial-observation-scratch
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/observation/observation.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/observation/observation.json"
       - name: Expose required write and describe dry run
         run: |-
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby state
           if [ "$DRY_RUN" = true ]; then
-            mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/observation/dry-run.json"
+            mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/observation/dry-run.json"
             cat "$RUNNER_TEMP/observation/dry-run.json" >> "$GITHUB_STEP_SUMMARY"
           fi
         id: state
@@ -192,15 +205,19 @@ jobs:
           install: false
           working_directory: ${{ runner.temp }}
       - name: Install selected native tools
+        env:
+          DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          RUBY_VERSION: ${{ needs.prepare.outputs.ruby }}
         run: |
           set -Eeuo pipefail
-          mise install --yes dotnet@10.0.401 ruby@4.0.7
+          mise install --yes "dotnet@$DOTNET_VERSION" "ruby@$RUBY_VERSION"
           {
-            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which ruby@4.0.7)"
-            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec ruby@4.0.7 -- which gem)"
-            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+            printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
+            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which --tool "ruby@$RUBY_VERSION" ruby)"
+            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec "ruby@$RUBY_VERSION" -- which gem)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
           } >> "$GITHUB_ENV"
-          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+          printf '%s\n' "$(dirname "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
       - name: Receive transferred preparation
         run: |-
@@ -211,7 +228,7 @@ jobs:
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby source-config publication-observation-scratch
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby publisher-config publisher-scratch
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/source-tools.json" "$RUNNER_TEMP/publisher-tools.json" > "$RUNNER_TEMP/publication/publication.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/source-tools.json" "$RUNNER_TEMP/publisher-tools.json" > "$RUNNER_TEMP/publication/publication.json"
       - name: Retain actual publication results
         id: retain
         if: always()
@@ -264,15 +281,19 @@ jobs:
           install: false
           working_directory: ${{ runner.temp }}
       - name: Install selected native tools
+        env:
+          DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          RUBY_VERSION: ${{ needs.prepare.outputs.ruby }}
         run: |
           set -Eeuo pipefail
-          mise install --yes dotnet@10.0.401 ruby@4.0.7
+          mise install --yes "dotnet@$DOTNET_VERSION" "ruby@$RUBY_VERSION"
           {
-            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which ruby@4.0.7)"
-            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec ruby@4.0.7 -- which gem)"
-            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+            printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
+            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which --tool "ruby@$RUBY_VERSION" ruby)"
+            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec "ruby@$RUBY_VERSION" -- which gem)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
           } >> "$GITHUB_ENV"
-          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+          printf '%s\n' "$(dirname "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
       - name: Receive transferred preparation
         run: |-
@@ -295,7 +316,7 @@ jobs:
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby source-config publication-observation-scratch
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby publisher-config publisher-scratch
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/source-tools.json" "$RUNNER_TEMP/publisher-tools.json" > "$RUNNER_TEMP/publication/publication.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/source-tools.json" "$RUNNER_TEMP/publisher-tools.json" > "$RUNNER_TEMP/publication/publication.json"
       - name: Retain actual publication results
         id: retain
         if: always()
@@ -355,15 +376,19 @@ jobs:
           install: false
           working_directory: ${{ runner.temp }}
       - name: Install selected native tools
+        env:
+          DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          RUBY_VERSION: ${{ needs.prepare.outputs.ruby }}
         run: |
           set -Eeuo pipefail
-          mise install --yes dotnet@10.0.401 ruby@4.0.7
+          mise install --yes "dotnet@$DOTNET_VERSION" "ruby@$RUBY_VERSION"
           {
-            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which ruby@4.0.7)"
-            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec ruby@4.0.7 -- which gem)"
-            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which dotnet@10.0.401)"
+            printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
+            printf 'RUBY_EXECUTABLE=%s\n' "$(mise which --tool "ruby@$RUBY_VERSION" ruby)"
+            printf 'GEM_EXECUTABLE=%s\n' "$(mise exec "ruby@$RUBY_VERSION" -- which gem)"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
           } >> "$GITHUB_ENV"
-          printf '%s\n' "$(dirname "$(mise which dotnet@10.0.401)")" >> "$GITHUB_PATH"
+          printf '%s\n' "$(dirname "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}
       - name: Receive transferred preparation
         run: |-
@@ -386,11 +411,11 @@ jobs:
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby source-config final-observation-scratch
           # A handled conflicting or unknown observation remains typed completion input.
           status=0
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/verification/final.json" || status=$?
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/verification/final.json" || status=$?
           if [ "$status" -gt 1 ]; then exit "$status"; fi
           publication=-
           if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
-          mise exec dotnet@10.0.401 -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
       - name: Show actual available business result
         run: |-
           set -Eeuo pipefail
