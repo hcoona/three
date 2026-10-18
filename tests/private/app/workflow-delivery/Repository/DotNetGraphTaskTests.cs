@@ -115,9 +115,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                 Assert.IsTrue(inputs.All(input => input.Stage == "Evaluation" &&
                     input.Provider is
                     {
-                        Kind: "LockedPackage",
-                        Identity: "Nerdbank.GitVersioning", Version: "3.10.94"
-                    }));
+                        Kind: "LockedPackage", Identity: "Nerdbank.GitVersioning"
+                    } && input.Provider.Version == GraphFixture.NbgvVersion));
             }
         }
         Assert.IsTrue(response.Edges.All(edge => response.Nodes.Any(node =>
@@ -148,9 +147,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         Assert.IsTrue(response.Inputs.Any(input => SameIdentity(input.Consumer, root.Identity) &&
             input.Path == helper && input.Provider is
             {
-                Kind: "TraversalPackage",
-                Identity: "Nerdbank.GitVersioning", Version: "3.10.94"
-            }));
+                Kind: "TraversalPackage", Identity: "Nerdbank.GitVersioning"
+            } && input.Provider.Version == GraphFixture.NbgvVersion));
         Assert.IsTrue(response.Inputs.Any(input => SameIdentity(input.Consumer, root.Identity) &&
             input.Provider?.Kind == "RestoreGenerated"));
         Assert.IsTrue(response.Inputs.Any(input => SameIdentity(input.Consumer, root.Identity) &&
@@ -200,6 +198,29 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     }
 
     [TestMethod]
+    [Timeout(360000, CooperativeCancellation = true)]
+    public async Task NbgvHelperFromADifferentRestoredVersionFailsWithoutAResponse()
+    {
+        using var fixture = new GraphFixture();
+        fixture.ConfigureNbgv(rootVersionBase: true);
+        await fixture.PrepareAsync(context.CancellationToken);
+        // The restored package supplies the helper; the consumer now declares another version.
+        const string declared = "0.0.1-declared";
+        // NuGet adds the global reference after project bodies, so update it from targets.
+        fixture.Write("Directory.Build.targets", $"""
+            <Project><ItemGroup Condition="'$(MSBuildProjectName)' == 'consumer'">
+              <PackageReference Update="Nerdbank.GitVersioning" VersionOverride="{declared}" />
+            </ItemGroup></Project>
+            """);
+        InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(context.CancellationToken));
+        foreach (string expected in new[] { "NbgvCachingHelper", "declared " + declared,
+            "restored " + GraphFixture.NbgvVersion })
+            Assert.Contains(expected, error.Message);
+        Assert.IsFalse(File.Exists(fixture.PathOf("response.json")));
+    }
+
+    [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
     [Timeout(60000, CooperativeCancellation = true)]
@@ -220,10 +241,10 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             """);
         fixture.Write("PrivateP2PCaching.proj", "<Project />");
         if (!packageMissing)
-            fixture.Write("Directory.Build.targets", """
+            fixture.Write("Directory.Build.targets", $"""
                 <Project><ItemGroup>
-                  <PackageReference Include="Nerdbank.GitVersioning" Version="3.10.94"
-                    PrivateAssets="all" />
+                  <PackageReference Include="Nerdbank.GitVersioning"
+                    Version="{GraphFixture.NbgvVersion}" PrivateAssets="all" />
                 </ItemGroup></Project>
                 """);
         fixture.CommittedPaths = [fixture.PathOf("dirs.proj"),
@@ -889,11 +910,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     {
         using var fixture = new GraphFixture();
         fixture.EnableTraversalRestore();
-        fixture.Write("global.json", """
-            {"sdk":{"version":"10.0.401","rollForward":"disable"},
-             "msbuild-sdks":{"Microsoft.Build.Traversal":"4.1.82",
-             "MSTest.Sdk":"4.3.3","Microsoft.Build.Artifacts":"6.1.63"}}
-            """);
+        fixture.Write("global.json", RepositoryToolSelection.GlobalJson(
+            "Microsoft.Build.Traversal", "MSTest.Sdk", "Microsoft.Build.Artifacts"));
         fixture.Write("dirs.proj", """
             <Project Sdk="Microsoft.Build.Traversal"><ItemGroup>
               <ProjectReference Include="main.csproj" />
@@ -1096,6 +1114,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     private sealed class GraphFixture : IDisposable
     {
         internal const string Revision = "1111111111111111111111111111111111111111";
+        internal static string NbgvVersion =>
+            RepositoryToolSelection.GlobalPackageVersion("Nerdbank.GitVersioning");
         internal const string Project = """
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
@@ -1155,10 +1175,7 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             const string auxiliaryPath = "$(MSBuildThisFileDirectory)shared/nbgv-aux.targets";
             const string sourceLinkCommon = "$(PkgMicrosoft_SourceLink_Common)/" +
                 "build/Microsoft.SourceLink.Common.props";
-            Write("global.json", """
-                {"sdk":{"version":"10.0.401","rollForward":"disable"},
-                 "msbuild-sdks":{"Microsoft.Build.Traversal":"4.1.82"}}
-                """);
+            Write("global.json", RepositoryToolSelection.GlobalJson("Microsoft.Build.Traversal"));
             Write("Directory.Build.props", $$"""
                 <Project><PropertyGroup>
                   <BaseIntermediateOutputPath
@@ -1174,7 +1191,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
                     >{{auxiliaryPath}}</NBGV_PrivateP2PAuxTargets>
                 </PropertyGroup><ItemGroup>
                   <GlobalPackageReference Include="DotNet.ReproducibleBuilds" Version="2.0.5" />
-                  <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.10.94" />
+                  <GlobalPackageReference Include="Nerdbank.GitVersioning"
+                    Version="{{NbgvVersion}}" />
                   <GlobalPackageReference Include="Microsoft.SourceLink.GitHub"
                     Version="10.0.401" />
                 </ItemGroup></Project>

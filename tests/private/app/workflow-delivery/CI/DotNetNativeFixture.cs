@@ -14,10 +14,7 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
         Directory.CreateTempSubdirectory("workflow-native-check-").FullName;
     internal string RunScratch => Directory.CreateDirectory(Path.Combine(Scratch, "run")).FullName;
     internal const string Project = "tests/NativeTests.csproj";
-    internal const string SdkSelection = """
-        {"sdk":{"version":"10.0.401","rollForward":"disable"},
-         "msbuild-sdks":{"MSTest.Sdk":"4.3.3"}}
-        """;
+    internal static string SdkSelection => RepositoryToolSelection.GlobalJson("MSTest.Sdk");
 
     internal static async Task<DotNetNativeFixture> CreateAsync(string capability,
         CancellationToken token, bool nbgv = false, bool failNet8Test = false)
@@ -138,11 +135,13 @@ internal sealed class DotNetNativeFixture(GitFixture repo, string candidate) : I
             };
             if (nbgv)
             {
+                string version =
+                    RepositoryToolSelection.GlobalPackageVersion("Nerdbank.GitVersioning");
                 files["version.json"] = """{"version":"0.1"}""";
                 files["Directory.Build.props"] = files["Directory.Build.props"].Replace(
-                    "</Project>", """
+                    "</Project>", $"""
                     <ItemGroup><PackageReference Include="Nerdbank.GitVersioning"
-                      Version="3.10.94" PrivateAssets="all" /></ItemGroup></Project>
+                      Version="{version}" PrivateAssets="all" /></ItemGroup></Project>
                     """, StringComparison.Ordinal);
             }
             // A genuine assertion failure in the net8.0 inner variant only.

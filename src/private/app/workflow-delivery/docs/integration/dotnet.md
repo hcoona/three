@@ -25,8 +25,10 @@ make a surviving project's new variant disappear from execution.
 
 NBGV's native caching project is a finite tool adapter exception. Keep it in
 MSBuild's local graph and retain the default native caching mode. Identify it
-through the marked native reference and the consumer's validated restored NBGV package pin,
-not a general rule for external projects. Its internal configuration, physical
+through the marked native reference and the consumer's restored NBGV package,
+not a general rule for external projects. The restored package version must
+equal the consumer's own evaluated NBGV declaration; Workflow pins no second
+NBGV version. Its internal configuration, physical
 globals and tool-only reference edges do not become portable business nodes or
 checks. Preserve its necessary observed inputs for its business consumers.
 Receiving checkouts let MSBuild/NBGV construct their own local helper context;
@@ -174,8 +176,9 @@ projects/references and rename coordinates; selected surviving projects expand
 all supported candidate inner variants.
 
 Retain NBGV's default `MSBuildTargetCaching`. The native
-`NBGV_InnerProject` reference and the consuming project's validated restored NBGV
-package pin identify its `build/PrivateP2PCaching.proj` helper. Adapt this concrete
+`NBGV_InnerProject` reference and the consuming project's restored NBGV package,
+whose version equals that project's evaluated declaration, identify its
+`build/PrivateP2PCaching.proj` helper; a mismatch reports both versions. Adapt this concrete
 tool dependency separately from business projects: leave the native graph
 unchanged, omit the helper's internal identity and edges from portable business
 facts, and preserve its observed input responsibilities for each business

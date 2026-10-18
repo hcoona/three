@@ -312,9 +312,7 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
             <Project><ItemGroup><ProjectReference Include="product/A.csproj" />
               <ProjectReference Include="product/B.csproj" /></ItemGroup></Project>
             """);
-        await fixture.Repo.SetAsync("global.json", """
-            {"sdk":{"version":"10.0.401","rollForward":"disable"}}
-            """);
+        await fixture.Repo.SetAsync("global.json", RepositoryToolSelection.GlobalJson());
         await fixture.Repo.SetAsync("nuget.config", """
             <configuration><packageSources><clear />
               <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
