@@ -172,3 +172,37 @@ ends a grant. Git and the proposing PR retain the reason and history.
   publication, credential, Environment, account, publisher or other access
   change; no change to the retained legacy `release-orchestrate.yml` stack
   beyond an owner decision recorded separately; no new runtime matrix.
+
+### Give repository tooling configuration CI scope responsibility
+
+- **Work carrier:** the pull request proposing this entry and one linked
+  implementation pull request. PR
+  [#1253](https://github.com/hcoona/three/pull/1253) (global.json as the .NET
+  SDK authority) failed CI scope selection with
+  `Unresolved endpoint responsibility: .github/renovate/global.cjs`; the
+  repository owner approved a bounded fix through a Wave entry.
+- **Accepted inputs:** the Workflow Delivery
+  [endpoint responsibility contract](../src/private/app/workflow-delivery/docs/integration/node.md#endpoint-responsibility-and-selection),
+  the [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
+  `renovate.json`, `.github/renovate/`, `.github/workflows/renovate.yml` and
+  root `hk.pkl`.
+- **Advancement and outcome:** CI scope selection gives positive responsibility
+  to repository tooling configuration whose consumer is native and
+  repository-owned: Renovate's configuration (`renovate.json`,
+  `.github/renovate/**`, `.github/workflows/renovate.yml`) and the scripts its
+  committed `postUpgradeTasks` commands invoke, read from the endpoint's
+  `renovate.json`; and files that an HK step reads, as reported by HK's native
+  plan for the endpoint. Deleted coordinates keep confirmed absence. Update the
+  owning integration contract and tests in the same change. The outcome is
+  accepted when #1253 passes scope selection.
+- **Ordering and gates:** follow the existing Workflow Delivery engineering,
+  OCR and record-system review gates. Independently classify material findings
+  before repair. Do not add a blanket fallback owner or infer responsibility
+  from directory names.
+- **Effects:** permit source and repository/GitHub inspection, documentation
+  and implementation changes, locked tool preparation, isolated local builds
+  and credential-free tests, independent delegated review, ordinary PR/check
+  operations and their normal CI.
+- **Exclusions:** no change to Renovate or HK behavior; no responsibility for
+  other unresolved path classes; no release, dispatch, publication,
+  credential or access change. Delete this entry when the outcome is accepted.
