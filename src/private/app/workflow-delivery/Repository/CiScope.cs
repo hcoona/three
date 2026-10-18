@@ -9,6 +9,8 @@ using YamlDotNet.Serialization;
 namespace WorkflowDelivery.Repository;
 
 internal sealed record RecordTaskOwner(string Script, string Rule);
+// Committed root HK and Renovate configuration text read at one endpoint.
+internal sealed record ToolingConfiguration(string? Hk, string? Renovate);
 internal sealed record CiScopeApplicability(bool Mise, bool AzureAuth, bool Scholarly,
     bool NuGetNativePreparation, SortedDictionary<string, string[]> Reasons);
 
@@ -22,6 +24,8 @@ internal static partial class CiScope
     internal const string RecordMatcher = "eng/scripts/repository_path_patterns.py";
     // The root HK configuration; native Pkl imports name the local modules it consumes.
     internal const string HkConfiguration = "hk.pkl";
+    internal const string RenovateConfiguration = "renovate.json";
+    private const string RenovateWorkflow = ".github/workflows/renovate.yml";
     private const string Azure = "src/private/app/azureauth-credprovider";
     private const string Scholarly = "src/private/lib/scholarly-publication";
     private const string Products = "tests/private/app/workflow-delivery/fixtures/products";
@@ -86,13 +90,16 @@ internal static partial class CiScope
         string[] hk = checkout.Revision.Entries.Any(entry => entry.Path == HkConfiguration)
             ? HkModules(await hkImports(checkout.Root, token), checkout.Root)
             : [];
+        var tooling = new ToolingConfiguration(
+            await checkout.ReadOptionalTextAsync(HkConfiguration, token),
+            await checkout.ReadOptionalTextAsync(RenovateConfiguration, token));
         return Owners(checkout.Revision, changed, resourceInputs,
-            catalog is null ? [] : Bindings(catalog), tasks, hk);
+            catalog is null ? [] : Bindings(catalog), tasks, hk, tooling);
     }
 
     internal static ScopeCoordinate[] Owners(GitRevision revision, string[] changed,
         string[] resourceInputs, (string Id, string Pattern)[] bindings,
-        RecordTaskOwner[] tasks, string[] hkModules)
+        RecordTaskOwner[] tasks, string[] hkModules, ToolingConfiguration? tooling = null)
     {
         var entries = revision.Entries.ToDictionary(entry => entry.Path, StringComparer.Ordinal);
         string[] gems = GemRoots(revision);
@@ -117,6 +124,15 @@ internal static partial class CiScope
             }
             if (path == ".github/CODEOWNERS")
                 Add("github", path, "native-codeowners-routing", path);
+            if (RenovateInput(path))
+                Add("renovate", RenovateWorkflow, "native-renovate-configuration", path);
+            if (tooling is not null)
+                foreach ((string source, string? text) in new[] {
+                    (HkConfiguration, tooling.Hk), (RenovateConfiguration, tooling.Renovate) })
+                    if (text is not null && ReferencesPath(text, path) &&
+                        Regular(".github/workflows/ci.yml"))
+                        Add("conformance", ".github/workflows/ci.yml#conformance",
+                            "literal-tooling-reference", ".github/workflows/ci.yml", source);
             if (hkModules.Contains(path, StringComparer.Ordinal) &&
                 Regular(".github/workflows/ci.yml"))
                 Add("conformance", ".github/workflows/ci.yml#conformance",
@@ -319,6 +335,31 @@ internal static partial class CiScope
             throw new InvalidDataException("Native HK imports omit the root configuration.");
         return paths.ToArray();
     }
+
+    // Renovate's committed configuration and its dedicated workflow.
+    private static bool RenovateInput(string path) =>
+        path == RenovateConfiguration || path == RenovateWorkflow ||
+        Under(path, ".github/renovate");
+
+    // A complete repository-path token in committed tooling configuration: the characters
+    // around it are not path characters, so 'PklProject' does not match
+    // 'PklProject.deps.json' and '.editorconfig' does not match 'Steps.editorconfig_check'.
+    // This records a literal reference; it does not interpret commands or prove a read.
+    internal static bool ReferencesPath(string text, string path)
+    {
+        for (int index = text.IndexOf(path, StringComparison.Ordinal); index >= 0;
+            index = text.IndexOf(path, index + 1, StringComparison.Ordinal))
+        {
+            int end = index + path.Length;
+            if ((index == 0 || !PathCharacter(text[index - 1])) &&
+                (end == text.Length || !PathCharacter(text[end])))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool PathCharacter(char value) => char.IsAsciiLetterOrDigit(value) ||
+        value is '.' or '_' or '-' or '/' or '@' or '+' or '~';
 
     internal static bool LegacyReleaseInput(string path) =>
         Under(path, ".github/workflows") ||

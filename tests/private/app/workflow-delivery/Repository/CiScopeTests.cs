@@ -278,6 +278,92 @@ public sealed class CiScopeTests
     private static readonly string[] Hk = ["hk.pkl", "src/private/lib/hk/Config.pkl",
         "src/private/lib/hk/steps/Typos.pkl"];
 
+    [TestMethod]
+    [DataRow("renovate.json")]
+    [DataRow(".github/renovate/global.cjs")]
+    [DataRow(".github/workflows/renovate.yml")]
+    public void RenovateConfigurationHasItsNativeOwner(string path)
+    {
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk));
+        Assert.IsTrue(row.Reasons.Any(reason => reason.Owner == "renovate" &&
+            reason.Target == ".github/workflows/renovate.yml" &&
+            reason.Rule == "native-renovate-configuration"),
+            string.Join(", ", row.Reasons.Select(reason => reason.Owner + ":" + reason.Rule)));
+    }
+
+    [TestMethod]
+    [DataRow("eng/scripts/update.ps1", HkSource)]
+    [DataRow("eng/linter/check.ps1", HkSource)]
+    [DataRow("global.pkl", RenovateSource)]
+    [DataRow("eng/scripts/update.ps1", RenovateSource)]
+    public void LiteralToolingReferencesReceiveConformanceResponsibility(string path,
+        string source)
+    {
+        var tooling = source == HkSource
+            ? new ToolingConfiguration(ToolingHk, null)
+            : new ToolingConfiguration(null, ToolingRenovate);
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk, tooling));
+        ScopeResponsibility reason = Assert.ContainsSingle(row.Reasons,
+            string.Join(", ", row.Reasons.Select(item => item.Owner + ":" + item.Rule)));
+        Assert.AreEqual("conformance", reason.Owner);
+        Assert.AreEqual(".github/workflows/ci.yml#conformance", reason.Target);
+        Assert.AreEqual("literal-tooling-reference", reason.Rule);
+        CollectionAssert.Contains(reason.Sources, source);
+    }
+
+    [TestMethod]
+    [DataRow("PklProject")]
+    [DataRow(".editorconfig")]
+    [DataRow("eng/scripts/update")]
+    [DataRow("scripts/update.ps1")]
+    [DataRow("docs/unreferenced.md")]
+    public void PartialOrAbsentTokensReceiveNoToolingResponsibility(string path)
+    {
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk, new ToolingConfiguration(ToolingHk, ToolingRenovate)));
+        Assert.IsFalse(row.Reasons.Any(reason => reason.Rule == "literal-tooling-reference"),
+            string.Join(", ", row.Reasons.Select(reason => reason.Owner + ":" + reason.Rule)));
+    }
+
+    [TestMethod]
+    public void DeletedToolingReferencesKeepConfirmedAbsence()
+    {
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(), ["global.pkl"],
+            [], [], Tasks, Hk, new ToolingConfiguration(ToolingHk, ToolingRenovate)));
+        Assert.IsFalse(row.Present);
+        Assert.IsEmpty(row.Reasons);
+    }
+
+    [TestMethod]
+    public void CurrentToolingReferencesResolveTheirOwnersInCommittedConfiguration()
+    {
+        string root = Root();
+        var tooling = new ToolingConfiguration(
+            File.ReadAllText(Path.Combine(root, CiScope.HkConfiguration)),
+            File.ReadAllText(Path.Combine(root, CiScope.RenovateConfiguration)));
+        foreach (string path in new[] { "eng/scripts/Update-RenovateGlobalJsonArtifacts.ps1",
+            "eng/scripts/sync_python_version.py" })
+            Assert.IsTrue(CiScope.ReferencesPath(tooling.Renovate!, path), path);
+        Assert.IsFalse(CiScope.ReferencesPath(tooling.Hk!, "PklProject"));
+        Assert.IsFalse(CiScope.ReferencesPath(tooling.Hk!, ".editorconfig"));
+    }
+
+    private const string HkSource = "hk.pkl";
+    private const string RenovateSource = "renovate.json";
+    private const string ToolingHk = """
+        local steps = new Mapping<String, Step> {
+          ["guard"] { check = "pwsh -File eng/linter/check.ps1 -Source global.pkl" }
+          ["editorconfig"] = (Steps.editorconfig_check) { glob = List("PklProject.deps.json") }
+          ["update"] { fix = "pwsh -File eng/scripts/update.ps1" }
+        }
+        """;
+    private const string ToolingRenovate = """
+        {"postUpgradeTasks": {"commands": ["pwsh -File eng/scripts/update.ps1"],
+          "fileFilters": ["global.pkl", "global.json"]}}
+        """;
+
     private static readonly RecordTaskOwner[] Tasks = [
         new("eng/scripts/check_repository_records.py",
             "record-control:repository-record-validation"),
@@ -288,6 +374,7 @@ public sealed class CiScopeTests
                 "tests/eng/test_python_runtime.py", "Gemfile", "src/lib/gem/gem.gemspec",
                 "dirs.proj", "apm.yml", ControlTestInputs.Project,
                 "src/private/lib/hk/Config.pkl", "src/private/lib/hk/steps/Typos.pkl",
+                CiScope.RenovateConfiguration,
                 "src/private/lib/scholarly-publication/pyproject.toml",
                 CiScope.FamilyCatalog }
             .Concat(paths).Distinct(StringComparer.Ordinal)
