@@ -5,11 +5,9 @@
 Read this page before Workflow Delivery work. It routes work and retained
 operation limits; it is not a second specification. The [portal](README.md)
 identifies the owning records, and the [application interface](../README.md)
-owns current commands, callers and local validation. Read
-[requirements](requirements.md), [HLD](high-level-design.md),
-[MLD](middle-level-design.md) and [integration contracts](middle-level-design.md#integration-mapping)
-before affected design, implementation or caller changes, and use actual native
-sources for operations.
+owns current commands, callers and local validation. The
+[change routing](#change-routing) table names the sections to read before a
+change.
 
 The accepted [Wave](../../../../../docs/delivery-wave.md) is the sole positive
 work authority. Further substantive work requires an accepted entry. A PR,
@@ -20,6 +18,23 @@ in the new core. Historical readers use
 [actual producer-qualified source](validation/historical-readers.md); no
 compatibility tree, runtime replay service or parallel source authority is
 retained.
+
+## Change Routing
+
+Read the sections for the change; read the whole requirements, HLD and MLD only
+for an architecture or requirement change. Use actual native sources for
+operations.
+
+| Change                                   | Read                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| One ecosystem's CI group or native facts | That ecosystem's integration file: [.NET](integration/dotnet.md#native-net-ci-group), [Node](integration/node.md#native-node-ci-group), [Python](integration/python.md#native-python-ci-group), [Ruby](integration/ruby.md#native-ruby-ci-group); MLD [CI work and results](middle-level-design.md#ci-work-and-result-contract); [CI qualification](requirements.md#ci-qualification)                                                                                                                                                                                    |
+| Shared selection or planning             | MLD [repository facts and impact selection](middle-level-design.md#repository-facts-and-impact-selection); HLD [repository facts](high-level-design.md#repository-facts-and-selection); [CI qualification](requirements.md#ci-qualification)                                                                                                                                                                                                                                                                                                                             |
+| Package build or consumer                | MLD [builds, packages and consumers](middle-level-design.md#builds-packages-and-consumers); HLD [versions and original bytes](high-level-design.md#versions-original-bytes-and-provenance); the ecosystem's package section                                                                                                                                                                                                                                                                                                                                              |
+| Release caller or destination            | The ecosystem's concrete Release section and destination table; MLD [Release operations](middle-level-design.md#release-operations-and-state), [registry observation](middle-level-design.md#registry-observation-and-retention) and [review core](middle-level-design.md#release-integration-review); [Official channel scope](integration/common.md#official-channel-scope); requirements [Release delivery](requirements.md#release-delivery), [channels](requirements.md#buddy-and-official-channels) and [recovery](requirements.md#observation-retry-and-recovery) |
+| CI workflow or job wiring                | MLD [CI cross-job view](middle-level-design.md#ci-work-and-result-contract), [workflow callers](middle-level-design.md#workflow-caller-boundaries), [permission and transfer boundaries](middle-level-design.md#workflow-permission-and-transfer-boundaries); [CLI payloads](integration/common.md#cli-and-boundary-payloads); HLD [execution boundaries](high-level-design.md#execution-and-permission-boundaries)                                                                                                                                                      |
+| Research recheck                         | The record's recheck section, routed by the [portal](README.md#native-integration-evidence)                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Records or docs only                     | The [portal](README.md) and the [record policy](../../../../../docs/governance/record-system.md); [historical readers](validation/historical-readers.md) for retired records                                                                                                                                                                                                                                                                                                                                                                                             |
+| Architecture or requirement change       | [Requirements](requirements.md) including its [change review](requirements.md#requirement-change-review), [HLD](high-level-design.md) and [MLD](middle-level-design.md)                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ## Starting Work
 
@@ -54,8 +69,8 @@ draft-path delivery lessons as historical lessons, not rules.
 ## Authorization and Closed Campaigns
 
 All npm, NuGet, Python and Ruby proving campaigns are complete and stopped.
-[Domain values](high-level-design.md#domain-values) define campaign, original D
-and Native R4 and note how generation, slot and lifetime are used. Their operation slots, failed lifetimes and dispatch/recovery ceilings remain
+[Domain values](high-level-design.md#domain-values) define campaign, original D,
+Native R4 and normal-Live, and note how generation, slot and lifetime are used. Their operation slots, failed lifetimes and dispatch/recovery ceilings remain
 spent. No source change, artifact download, requirements revision, Wave
 contraction or evidence acceptance authorizes a new campaign generation, rerun,
 release/proving dispatch, publication, authentication, Environment, account,

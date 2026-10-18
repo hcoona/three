@@ -253,7 +253,8 @@ The old coarse .NET Boolean is not selected-plan authority.
 
 Resolve adopted presets and explicit native-retained checks under the MLD's
 [quality-origin contract](../middle-level-design.md#declarations-and-quality-autonomy).
-Emit the original .NET `CiPlan` as a distinct artifact for the existing
+Emit the original .NET
+[`CiPlan`](../middle-level-design.md#implementation-type-names) as a distinct artifact for the existing
 `dotnet-tests` execution/collection consumer, with native artifact ID and resolved
 applicability. Failed/missing/cancelled planning cannot become a successful skip.
 Successful empty work remains valid; required CI composition still accounts for

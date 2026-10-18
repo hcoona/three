@@ -103,6 +103,7 @@ accepted writer's effective token.
 | Generation, slot, lifetime | Historical campaign terms with record-specific meanings, including an attempt lifetime, a time window, a registry object or version's active lifetime and a request slot as a position; each record's own usage governs. Spent attempts are not refunded, and an audited success can end the remaining slots                                                                                                                                                                                       |
 | Original D                 | A historical npm native-acceptance fixture version that was deleted during the campaign; it and its active replacement remain an unresolved administrative matter. The [npm evidence](validation/native-and-normal-live-evidence.md) keeps its identities                                                                                                                                                                                                                                          |
 | Native R4                  | The historical independently accepted NuGet native-acceptance unit: outer lifetime `nuget-successor-suite-r4`, three runs, six captures and the clean destination consumer. It follows the failed suite R3 (outer lifetime `nuget-successor-suite-r3`) and is distinct from the normal-Live run and the postpublication R4 capture. The [NuGet evidence](research/nuget-smoke-evidence.md#2026-09-15-query--native-acceptance-and-governance-activation) and its linked audits keep its identities |
+| Normal-Live                | Historical campaign term: a campaign's real publication run through its normal Live caller, distinct from its native-acceptance probes and first-project bootstrap; the [evidence records](README.md#retained-campaign-evidence) keep the runs                                                                                                                                                                                                                                                     |
 
 These are values, not a required set of persistent aggregates; the campaign
 terms describe historical evidence only. Product version,
@@ -261,7 +262,7 @@ Jobs/processes separate publication permissions, project-code execution,
 runner/toolchain needs and transfers with independent lifetime. An internal
 method or conceptual phase does not require a job, record or proof. General C#
 builds continue on Windows unless a declared variant selects another runner;
-Python and JavaScript/TypeScript may use Ubuntu. Runner choices do not require
+Python, JavaScript/TypeScript and Ruby may use Ubuntu. Runner choices do not require
 matching CI and Release graphs.
 
 Project evaluation, build, package scripts and consumers run without publication

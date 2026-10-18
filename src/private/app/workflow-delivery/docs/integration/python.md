@@ -74,7 +74,8 @@ markerless `ProjectFacts.Dependencies`, and union both endpoints so removed or
 renamed producers retain consumers. `uv sync --frozen --python <interpreter>`
 during preparation enforces `requires-python` for the operation interpreter.
 
-Adapt into existing RepositoryFacts/ProjectFacts/SharedInput/CheckSpec and
+Adapt into the existing [implementation types](../middle-level-design.md#implementation-type-names)
+`RepositoryFacts`/`ProjectFacts`/`SharedInput`/`CheckSpec` and
 impact closure, keeping quality consumers separate from build inputs and root ownership
 explicit. Managed
 NBGV and passive plugin coordinates supply project-scoped version/generated

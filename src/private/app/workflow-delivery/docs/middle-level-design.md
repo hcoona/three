@@ -241,6 +241,21 @@ selection and exclusion. An incomplete graph cannot certify that a changed path
 has no consumers. Release resolves its selected unit's complete input/build/check
 closure; it need not evaluate unrelated projects.
 
+### Implementation Type Names
+
+The integration contracts name these application types; each carries the concept
+defined in this section or the next.
+
+| Type              | Meaning                                                                                                                       |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `RepositoryFacts` | One revision's resolved native facts: projects, shared inputs, unaffected paths and errors                                    |
+| `ProjectFacts`    | One project's identity, dependencies, quality consumers, Release Unit, checks and optional `OwnedPaths`                       |
+| `SharedInput`     | A shared input path and its actual consumers                                                                                  |
+| `SelectionReason` | A direct selection's path, initiating revision and resolved project ([paired reasons](#paired-direct-selection-reasons))      |
+| `CheckSpec`       | One check: key, dimensions, runner, required flag, prerequisites and optional package subject                                 |
+| `PackageTarget`   | A check's package subject: unit, declaration, build, entry point, expected version and outputs                                |
+| `CiPlan`          | The original candidate-bound plan of selected checks with their reasons and origins, produced by `ImpactPlanner.PlanSelected` |
+
 ### Native Fact Integration
 
 For each new integration, first identify its maintained native library or
