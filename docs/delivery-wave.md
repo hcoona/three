@@ -222,3 +222,43 @@ ends a grant. Git and the proposing PR retain the reason and history.
   selection from these reasons; no responsibility for other unresolved path
   classes; no release, dispatch, publication,
   credential or access change. Delete this entry when the outcome is accepted.
+
+### Retire the legacy v1 release workflow stack
+
+- **Work carrier:** the pull request proposing this entry and one linked
+  implementation pull request. The repository owner asked to retire the
+  retained v1 Official release stack if it is no longer usable; an independent
+  read-only investigation found it unusable as a maintained route: the current chain has never run, its Ruby path cannot succeed, its declared reviewer gates are absent, and the Python and Node paths are unvalidated.
+- **Accepted inputs:** the
+  [retained legacy workflow boundary](../src/private/app/workflow-delivery/docs/research/legacy-workflow-boundary.md),
+  the Workflow Delivery
+  [integration contracts](../src/private/app/workflow-delivery/docs/middle-level-design.md#integration-mapping),
+  the [record-family catalog](governance/record-families.yaml) and the
+  investigation evidence in the proposing pull request.
+- **Owner decision:** retire the stack. It is the v1 Official route
+  (`official.yml` → `release-orchestrate.yml` → `release-resolve.yml`, the
+  `release-build-*.yml`, `release-prepare-release-notes.yml` and
+  `release-create-github-release.yml` reusable workflows) plus the v2-era
+  `release-official.yml` stub. Their products currently have no in-repository
+  replacement release route; that gap is accepted until a separately authorized
+  Workflow Delivery adoption.
+- **Advancement and outcome:** delete those workflows,
+  `.github/workflows/REFACTOR_PLAN.md`, the scripts and tests used only by them,
+  and the CI scope and Python selection associations that exist only for them;
+  retire the legacy boundary record and its catalog family and route, adding its commit-pinned link to the [retired records](../src/private/app/workflow-delivery/docs/validation/historical-readers.md#retired-records) index; update
+  the product READMEs, NBGV path filters and release-pack validators that point
+  to the stack; and move any still-needed guard against reintroducing the retired
+  Buddy routes into an existing test. Shared helpers with another current
+  consumer stay. Before or with the merge, the owner disables the `Official Release` (`official.yml`) and `Release Official` (`release-official.yml`) workflow identities, so neither a pushed `release/*/v*` tag nor a dispatch at an old ref can run a retired workflow.
+- **Ordering and gates:** follow the record-system, engineering and Workflow
+  Delivery review gates; independently classify material findings before
+  repair. Preserve evidence consumers through commit-pinned links.
+- **Acceptance:** no current file, test, record, path filter or workflow treats the retired stack as a current or executable route (commit-pinned historical links, the reintroduction guard and evidence text that names the stack only as history are allowed); ordinary CI passes; both workflow identities are disabled. Delete this entry when accepted.
+- **Effects:** permit source and repository/GitHub inspection, documentation,
+  workflow, test and implementation changes, isolated local tests, independent
+  delegated review, ordinary PR/check operations and their normal CI, and the
+  owner-authorized disabling of the retired workflow identities.
+- **Exclusions:** no deletion of tags, GitHub Releases, Environments, registry
+  trusted-publisher entries or repository variables (they are listed for the
+  owner's separate disposition); no new release route; no release, dispatch,
+  publication or credential change.
