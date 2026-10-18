@@ -98,17 +98,21 @@ public sealed class NodeRepositoryReaderTests(TestContext context)
 
 
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public async Task ReadRejectsMissingSetupOrAdditionalConfiguration(bool additionalConfiguration)
+    [DataRow(null)]
+    [DataRow(".npmrc")]
+    [DataRow(".pnpmfile.mjs")]
+    [DataRow(".pnpmfile.cjs")]
+    [DataRow("pnpmfile.cjs")]
+    public async Task ReadRejectsMissingSetupOrAdditionalConfiguration(string? configuration)
     {
+        bool additionalConfiguration = configuration is not null;
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
         foreach (string path in SetupInputs)
             if (additionalConfiguration || path != "mise.lock")
                 await repo.SetAsync(path);
         await repo.SetAsync(Project + "/package.json", "{}");
         if (additionalConfiguration)
-            await repo.SetAsync(".npmrc", "opaque unsupported configuration");
+            await repo.SetAsync(configuration!, "opaque unsupported configuration");
         string commit = await repo.CommitAsync();
         await repo.GitAsync("reset", "--hard", commit);
         GitRevision revision = await new GitReader(repo.Directory).ReadAsync(commit,
@@ -121,7 +125,9 @@ public sealed class NodeRepositoryReaderTests(TestContext context)
         InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             reader.ReadAsync(context.CancellationToken));
 
-        Assert.Contains(additionalConfiguration ? ".npmrc" : "mise.lock", error.Message);
+        Assert.AreEqual(additionalConfiguration
+            ? "Unsupported additional Node configuration: " + configuration
+            : "Missing committed Node setup input: mise.lock", error.Message);
     }
 
     // The reader identifies the fixture by package name, so only its current location runs.
