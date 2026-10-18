@@ -217,6 +217,12 @@ public sealed class CiScopeTests
     [DataRow(".github/workflows/ci.yml", true)]
     [DataRow("pyproject.toml", false)]
     [DataRow("docs/README.md", false)]
+    [DataRow("src/private/app/workflow-delivery/README.md", false)]
+    [DataRow("src/private/app/workflow-delivery/docs/requirements.md", false)]
+    [DataRow("src/private/app/workflow-delivery/docs/integration/dotnet.md", false)]
+    [DataRow("src/private/app/workflow-delivery/Native/Ruby/README.md", true)]
+    [DataRow("src/private/app/workflow-delivery/Native/x.cs", true)]
+    [DataRow("tests/private/app/workflow-delivery/docs/notes.md", true)]
     [DataRow("eng/native-resource.json", true)]
     public void NuGetNativePreparationFollowsItsManagedAndProductInputs(string path,
         bool selected)

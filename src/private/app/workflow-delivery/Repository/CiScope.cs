@@ -383,9 +383,9 @@ internal static partial class CiScope
         PythonInputs.Contains(path, StringComparer.Ordinal);
 
     private static bool NuGetPreparationInput(string path) =>
-        Under(path, Products) && !Under(path, NuGetProduct)
+        !ControlInputs.InertDocument(path) && (Under(path, Products) && !Under(path, NuGetProduct)
             ? DotNetInheritedInputs.Consumes(path, [NuGetProduct])
-            : DotNetInheritedInputs.Consumes(path, NuGetPreparationRoots);
+            : DotNetInheritedInputs.Consumes(path, NuGetPreparationRoots));
 
     private static bool PythonResponsibility(string path) =>
         path.EndsWith(".py", StringComparison.Ordinal) ||

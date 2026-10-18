@@ -212,6 +212,77 @@ public sealed class DotNetGroupReaderTests(TestContext context)
             control with { Revision = NodeScenario.Basis }, true));
     }
 
+    [TestMethod]
+    public async Task ControlRunInputsAreReportedApartFromNativeConsumers()
+    {
+        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+        const string source = "control/Source.cs";
+        const string caller = "mise.toml";
+        const string node = "src/adopted";
+        await fixture.Repo.SetAsync(NodeGroupReader.ControlProject, "<Project />");
+        await fixture.Repo.SetAsync(source);
+        await fixture.Repo.SetAsync(caller);
+        await fixture.CommitAsync();
+        fixture.Graph = fixture.Response();
+        // Product A natively consumes the control source; B and Node reach it only as a
+        // control-run input.
+        DotNetRevisionInputs inputs = await fixture.BindAsync();
+        GitRevision candidate = inputs.Revision with
+        {
+            Entries = [.. inputs.Revision.Entries, .. NodeScenario.Inputs(inputs.Revision.Commit,
+                NodeScenario.Project(node)).Revision.Entries.Where(entry =>
+                    !inputs.Revision.Entries.Any(item => item.Path == entry.Path))]
+        };
+        inputs = inputs with
+        { Revision = candidate, SelectionInputs = [new(source, ["product/A.csproj"])] };
+        // The basis has no control project, so it has no control-run sources.
+        GitRevision basis = candidate with
+        {
+            Entries = candidate.Entries.Where(entry =>
+                entry.Path != NodeGroupReader.ControlProject).ToArray()
+        };
+        NodeRevisionInputs Node(GitRevision revision)
+        {
+            NodeRevisionInputs value = NodeScenario.Inputs(revision.Commit,
+                NodeScenario.Project(node));
+            return value with { Revision = value.Revision with { Entries = revision.Entries } };
+        }
+        var control = new ControlInputFacts(candidate.Commit, NodeGroupReader.ControlProject,
+            [new(source, "Sources", true)]);
+        (GroupEndpointFacts before, _) = DotNetGroupReader.Facts(inputs with { Revision = basis },
+            Node(basis), null, false);
+        (GroupEndpointFacts after, _) = DotNetGroupReader.Facts(inputs, Node(candidate), control,
+            true);
+        string[] changed = [caller, source];
+        var native = new GitComparison(basis, candidate, changed);
+        ScopeCoordinate[] Rows(GitRevision revision) => changed.Select(path =>
+            new ScopeCoordinate(path, true, "100644", [])).ToArray();
+        ScopeInputs joined = DotNetGroupReader.Join(new(new(candidate.Commit, candidate.Commit,
+            false), changed, Rows(basis), Rows(candidate)), native, before, after);
+
+        string Rules(ScopeCoordinate[] rows, string path) => string.Join("; ", rows
+            .Single(row => row.Path == path).Reasons.Select(reason => reason.Target + " " +
+                reason.Rule + " [" + string.Join(",", reason.Sources) + "]"));
+        Assert.AreEqual("product/A.csproj native-consumer [control/Source.cs,product/A.csproj]",
+            Rules(joined.Basis, source));
+        Assert.AreEqual("product/A.csproj native-consumer [control/Source.cs,product/A.csproj]; " +
+            "product/B.csproj control-run-input [control/Source.cs," +
+            NodeGroupReader.ControlProject + "]; " + node + " control-run-input [" +
+            "control/Source.cs," + NodeGroupReader.ControlProject + "]",
+            Rules(joined.Candidate, source));
+        // mise.toml is a .NET caller source only; Node does not list it.
+        Assert.AreEqual("product/A.csproj control-run-input [mise.toml]; " +
+            "product/B.csproj control-run-input [mise.toml]", Rules(joined.Basis, caller));
+        // Selection still uses the joined facts, as before the rules were distinguished.
+        PlanRequest bound = joined.Bind(before.DotNet, after.DotNet);
+        var selected = ImpactPlanner.SelectProjects(bound);
+        var direct = ImpactPlanner.SelectProjects(new(before.DotNet, after.DotNet, changed,
+            false));
+        CollectionAssert.AreEquivalent(NativeProjects, selected.Keys.ToArray());
+        foreach (string project in NativeProjects)
+            CollectionAssert.AreEquivalent(direct[project].ToArray(), selected[project].ToArray());
+    }
+
     private sealed class GroupScenario
     {
         internal GitComparison Native { get; set; }
@@ -243,8 +314,10 @@ public sealed class DotNetGroupReaderTests(TestContext context)
             GitEntry? entry = revision.Entries.SingleOrDefault(entry => entry.Path == path);
             return new ScopeCoordinate(path, entry is not null, entry?.Mode, []);
         }).ToArray();
-        internal ScopeInputs Join() => DotNetGroupReader.Join(Scope, Native, DotNetBasis,
-            DotNetCandidate, NodeBasis, NodeCandidate);
+        // These facts have no control-run inputs, so native and joined facts are equal.
+        internal ScopeInputs Join() => DotNetGroupReader.Join(Scope, Native,
+            new(DotNetBasis, NodeBasis, DotNetBasis, NodeBasis),
+            new(DotNetCandidate, NodeCandidate, DotNetCandidate, NodeCandidate));
         private static RepositoryFacts DotNet(string revision) => new(revision,
             DotNetFactsAssembler.Scope, [new(Parent, "tests/control", [], [], null, null, [],
                 [Parent], CheckOrigin.NativeRetained)], [], [], []);

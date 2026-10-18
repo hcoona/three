@@ -63,9 +63,7 @@ internal static class NativePreparationQualification
 
     private static bool Input(string path, bool python)
     {
-        if (path == "src/private/app/workflow-delivery/README.md" ||
-            path.StartsWith("src/private/app/workflow-delivery/docs/", StringComparison.Ordinal))
-            return false;
+        if (ControlInputs.InertDocument(path)) return false;
         if (Shared.Contains(path, StringComparer.Ordinal)) return true;
         if (python && path is "pyproject.toml" or "uv.lock" or "uv.toml" or
                 ".config/uv/uv.toml" or ".python-version") return true;

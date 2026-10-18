@@ -7,6 +7,9 @@ internal sealed record DotNetGroupRequest(MaterializedEndpoint Basis,
     MaterializedEndpoint Candidate, bool Full,
     DotNetReadFiles BasisFiles, DotNetReadFiles CandidateFiles,
     DotNetRunRequest Completion);
+// One endpoint's .NET and Node facts, with and without the control-run inputs.
+internal sealed record GroupEndpointFacts(RepositoryFacts DotNet, RepositoryFacts Node,
+    RepositoryFacts NativeDotNet, RepositoryFacts NativeNode);
 internal sealed record DotNetGroupReadback(CiPlan Plan, ScopeCoordinate[] Basis,
     ScopeCoordinate[] Candidate);
 
@@ -56,17 +59,12 @@ internal static class DotNetGroupReader
         ControlInputFacts? controlBasis = ControlInputs.Read(before, false);
         ControlInputFacts controlCandidate = ControlInputs.Read(after, true) ??
             throw new InvalidDataException("Missing candidate control inputs.");
-        NodeRevisionInputs nodeBefore = NodeGroupReader.WithControlInputs(
+        (GroupEndpointFacts first, _) = Facts(before,
             await NodeReader(basis).ReadAsync(token), controlBasis, false);
-        NodeRevisionInputs nodeAfter = NodeGroupReader.WithControlInputs(
+        (GroupEndpointFacts second, after) = Facts(after,
             await NodeReader(candidate).ReadAsync(token), controlCandidate, true);
-        before = WithControlInputs(before, controlBasis, false);
-        after = WithControlInputs(after, controlCandidate, true);
-        RepositoryFacts dotnetBefore = DotNetFactsAssembler.Assemble(before, []);
-        RepositoryFacts dotnetAfter = DotNetFactsAssembler.Assemble(after, []);
-        ScopeInputs joined = Join(scope, comparison, dotnetBefore, dotnetAfter,
-            NodeFactsAssembler.Assemble(nodeBefore), NodeFactsAssembler.Assemble(nodeAfter));
-        PlanRequest bound = joined.Bind(dotnetBefore, dotnetAfter);
+        ScopeInputs joined = Join(scope, comparison, first, second);
+        PlanRequest bound = joined.Bind(first.DotNet, second.DotNet);
         CiPlan plan = await DotNetFactsAssembler.CompleteAsync(
             DotNetFactsAssembler.Select(bound, after), request.Completion, token);
         return new(plan, joined.Basis, joined.Candidate);
@@ -76,39 +74,66 @@ internal static class DotNetGroupReader
         new(endpoint, (arguments, token) => NativeProcess.RunAsync("mise", endpoint.Root,
             ["exec", "--locked", "node", "pnpm", "--", "pnpm", .. arguments], token));
 
+    internal static (GroupEndpointFacts Facts, DotNetRevisionInputs DotNet) Facts(
+        DotNetRevisionInputs dotnet, NodeRevisionInputs node, ControlInputFacts? control,
+        bool candidate)
+    {
+        DotNetRevisionInputs joined = WithControlInputs(dotnet, control, candidate);
+        return (new(DotNetFactsAssembler.Assemble(joined, []),
+            NodeFactsAssembler.Assemble(NodeGroupReader.WithControlInputs(node, control,
+                candidate)),
+            DotNetFactsAssembler.Assemble(dotnet, []), NodeFactsAssembler.Assemble(node)),
+            joined);
+    }
+
+    // Selection uses the joined facts. A consumer absent from the native facts is reached only
+    // through the application-defined control-run inputs and is reported as such.
     internal static ScopeInputs Join(ScopeInputs scope, GitComparison comparison,
-        RepositoryFacts dotnetBasis, RepositoryFacts dotnetCandidate,
-        RepositoryFacts nodeBasis, RepositoryFacts nodeCandidate)
+        GroupEndpointFacts basis, GroupEndpointFacts candidate)
     {
         // Validate complete relations, including unselected and removed members.
-        ImpactPlanner.SelectProjects(new(dotnetBasis, dotnetCandidate, [], false));
-        ImpactPlanner.SelectProjects(new(nodeBasis, nodeCandidate, [], false));
+        ImpactPlanner.SelectProjects(new(basis.DotNet, candidate.DotNet, [], false));
+        ImpactPlanner.SelectProjects(new(basis.Node, candidate.Node, [], false));
         return scope.WithResponsibilities(comparison,
-            Endpoint(scope.Basis, comparison.Basis, dotnetBasis, nodeBasis),
-            Endpoint(scope.Candidate, comparison.Candidate, dotnetCandidate, nodeCandidate));
+            Endpoint(scope.Basis, comparison.Basis, basis),
+            Endpoint(scope.Candidate, comparison.Candidate, candidate));
 
         static ScopeCoordinate[] Endpoint(ScopeCoordinate[] rows, GitRevision revision,
-            RepositoryFacts dotnet, RepositoryFacts node)
+            GroupEndpointFacts facts)
         {
-            if (dotnet.Revision != revision.Commit || node.Revision != revision.Commit)
+            if (new[] { facts.DotNet, facts.NativeDotNet, facts.Node, facts.NativeNode }.Any(
+                    item => item.Revision != revision.Commit))
                 throw new InvalidDataException("Native responsibility has a different endpoint.");
+            bool control = revision.Entries.Any(entry =>
+                entry.Path == NodeGroupReader.ControlProject);
             return rows.Select(row => row.Present ? row with
             {
-                Reasons = [.. row.Reasons, .. Reasons(dotnet, "dotnet", row.Path),
-                    .. Reasons(node, "node", row.Path)],
+                Reasons = [.. row.Reasons,
+                    .. Reasons(facts.DotNet, facts.NativeDotNet, "dotnet", row.Path),
+                    .. Reasons(facts.Node, facts.NativeNode, "node", row.Path)],
             } : row).ToArray();
 
-            ScopeResponsibility[] Reasons(RepositoryFacts facts, string owner, string path) =>
-                ImpactPlanner.DirectConsumers(facts, path).Order(StringComparer.Ordinal)
+            ScopeResponsibility[] Reasons(RepositoryFacts facts, RepositoryFacts nativeFacts,
+                string owner, string path)
+            {
+                var consumers = ImpactPlanner.DirectConsumers(nativeFacts, path)
+                    .ToHashSet(StringComparer.Ordinal);
+                return ImpactPlanner.DirectConsumers(facts, path).Order(StringComparer.Ordinal)
                     .Select(id =>
                     {
                         ProjectFacts project = facts.Projects.Single(project => project.Id == id);
+                        if (!consumers.Contains(id))
+                            return new ScopeResponsibility(owner, id, "control-run-input",
+                                Sources(control ? NodeGroupReader.ControlProject : path, path));
                         string source = owner == "dotnet" ? project.Id :
                             project.Directory + "/package.json";
-                        string[] origins = new[] { source, path }.Distinct(StringComparer.Ordinal)
-                            .Order(StringComparer.Ordinal).ToArray();
-                        return new ScopeResponsibility(owner, id, "native-consumer", origins);
+                        return new ScopeResponsibility(owner, id, "native-consumer",
+                            Sources(source, path));
                     }).ToArray();
+            }
+
+            static string[] Sources(string source, string path) => new[] { source, path }
+                .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
         }
     }
 
