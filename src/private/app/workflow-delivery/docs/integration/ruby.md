@@ -171,19 +171,24 @@ complete current-project graph identity, activated-version or execution behavior
 
 ## Concrete Ruby Release Integration
 
-This contract selects the existing `hcoona-release-smoke-ruby` unit under
-`tests/private/app/workflow-delivery/fixtures/products`, its declared single gem
-and adopted quality selection. GitHub Packages at
+This contract selects one of two statically registered units through the
+`unit` input of `.github/workflows/workflow-delivery-v3-ruby-release.yml`: the
+`hcoona-release-smoke-ruby` fixture under
+`tests/private/app/workflow-delivery/fixtures/products` and the
+`asciidoctor-latexmath` product under `src/public/lib/asciidoctor-latexmath`,
+each with its declared single gem and adopted quality selection. GitHub Packages at
 `https://rubygems.pkg.github.com/hcoona` is Buddy; `https://rubygems.org` is
 Official. The [native assessment](../research/ruby-native-publisher.md) supplies
 the source basis. This adds no product, destination, publication authority or
 native experiment and reopens no completed campaign.
 
 Read the exact committed declaration, native gemspec and quality selection
-through existing repository readers. Support the declared dependency-free
-`ruby`-platform gem with no extensions. Another dependency/build/quality shape
-needs a concrete adapter, rather than a generic resolver or task framework.
-Ref eligibility follows the [Official channel scope](common.md#official-channel-scope).
+through existing repository readers. Support only each registered unit's
+`ruby`-platform gem with no extensions: the dependency-free smoke gem and the
+latexmath gem with its declared `asciidoctor` runtime dependency. Another
+dependency/build/quality shape needs a concrete adapter, rather than a generic
+resolver or task framework. Unit and ref eligibility follow the
+[Official channel scope](common.md#official-channel-scope).
 The Buddy Environment `workflow-delivery-v3-ruby-github-packages`
 allows every branch (`**`) and keeps its required reviewer; the Official
 Environment remains limited to `main`. Keep one faithful
@@ -192,9 +197,11 @@ unsupported native facts block the request. Use the existing NBGV `SemVer2` and
 maintained RubyGems version projection, without an application suffix stripper,
 publication-only version override or injected commit witness.
 
-Shared `Ecosystems/RubySmokePackageOperations` owns the explicitly registered
-smoke product recipe, concrete build, native archive
-inspection and original local consumption inside the private application.
+`Ecosystems/RubyReleaseUnits` statically registers the two units.
+`Ecosystems/RubySmokePackageOperations` and
+`Ecosystems/RubyLatexmathPackageOperations` own their concrete product recipes,
+build, native archive inspection and original local consumption inside the
+private application.
 `CI/RubyPackageExecution` and `Release/RubyPreparation` consume those operations
 while retaining distinct plan/check and request/qualification decisions. Release
 does not consume `CiPlan` or `CheckSpec`
@@ -206,10 +213,15 @@ fixture and use RubyGems' fixed native default; do not introduce a timestamp or
 archive engine. Native default timestamps do not promise byte identity across
 different tools, compression, file modes or source inputs.
 
-Qualification requires native name/version/platform, declared contents, no
-runtime dependencies/extensions, GitHub repository metadata, complete original
-size/digest, original local installation and a clean installed API/origin check,
-plus any adopted required tests. Retain actual reached command termination and
+Qualification requires native name/version/platform, declared contents, the
+declared runtime dependencies (none for smoke) and no extensions, GitHub
+repository metadata, complete original size/digest, original local installation
+and a clean installed API/origin check, plus any adopted required tests. The
+latexmath consumer installs its runtime dependencies with the Bundler version
+and frozen resolution of the committed product `Gemfile.lock`, without
+development gems, then installs the original locally; RubyGems/Bundler own that
+resolution. Its clean `require` uses RubyGems' native default path, so gems
+bundled with the selected Ruby remain loadable. Retain actual reached command termination and
 failed/missing/cancelled checks. Portable native identity and original bytes bind
 the request; checkout paths and a version string alone do not. A fresh recovery
 rebuilds and qualifies its own original at the same revision. A conflicting

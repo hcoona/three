@@ -27,6 +27,7 @@ Offline `latexmath` rendering for Asciidoctor documents powered by your local La
     - [Statistics Line](#statistics-line)
     - [Troubleshooting](#troubleshooting)
     - [Contributing](#contributing)
+    - [Releasing](#releasing)
     - [Author](#author)
     - [License](#license)
 
@@ -258,6 +259,17 @@ Choose `asciidoctor-latexmath` when you already depend on a LaTeX distribution a
 ## Contributing
 
 Bug reports, feature requests, and patches are welcome. Please open an issue describing the use case before submitting large changes. If you plan to contribute code, follow the established Ruby style guidelines and add documentation or samples for new behaviors.
+
+## Releasing
+
+Workflow Delivery releases this gem to the GitHub Packages (Buddy) RubyGems
+registry through the manually dispatched
+`.github/workflows/workflow-delivery-v3-ruby-release.yml` caller with
+`unit: asciidoctor-latexmath`, as declared by `workflow-delivery.release-unit.yml`.
+Preparation builds the gem at the selected revision, checks its native facts and
+installs it locally with the runtime dependencies locked by `Gemfile.lock`.
+RubyGems.org (Official) release is not supported for this gem and is rejected
+before preparation.
 
 ## Author
 

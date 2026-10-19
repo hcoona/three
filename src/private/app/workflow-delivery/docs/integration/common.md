@@ -13,19 +13,22 @@ Delivery callers support a narrower set, which this table owns. The retired v1
 Official stack ([retired records](../validation/historical-readers.md#retired-records))
 is not an Official route.
 
-| Ecosystem | Official destination | Implemented Official scope                       |
-| --------- | -------------------- | ------------------------------------------------ |
-| Python    | PyPI                 | Live publication only from `refs/heads/main`     |
-| Ruby      | RubyGems.org         | Live publication only from `refs/heads/main`     |
-| npm       | npmjs                | Dry-run simulation only; no live Official caller |
-| NuGet     | None                 | No Official channel; GitHub Packages Buddy only  |
+| Ecosystem | Official destination | Implemented Official scope                                    |
+| --------- | -------------------- | ------------------------------------------------------------- |
+| Python    | PyPI                 | Live publication only from `refs/heads/main`                  |
+| Ruby      | RubyGems.org         | Smoke unit only; live publication only from `refs/heads/main` |
+| npm       | npmjs                | Dry-run simulation only; no live Official caller              |
+| NuGet     | None                 | No Official channel; GitHub Packages Buddy only               |
 
-`ReleasePolicy.RequireEligible` is the one application check. Python and Ruby
+`ReleasePolicy.RequireEligible` is the one application ref check. Python and Ruby
 apply it during preparation and again in the privileged publisher; live
 Buddy there requires a branch ref under `refs/heads/`. The npm and NuGet Buddy
 requests carry the dispatched ref in their subject without a ref-class check. Dry run needs no live
 ref eligibility. Native Environment branch policies may constrain a channel
-further; they do not replace this check. Adding another Official ref, a live
+further; they do not replace this check. Ruby Official accepts only the
+`hcoona-release-smoke-ruby` unit; `RubyReleaseUnits.Admit` rejects a production unit such
+as `asciidoctor-latexmath` with Official before preparation. Adding another
+Official ref or Ruby Official unit, a live
 npm Official caller or a NuGet Official destination is a caller change that
 updates this table and its tests together.
 
