@@ -119,10 +119,10 @@ class OilChainViewModel:
         icon_catalog = build_icon_catalog(
             data_raw,
             data_dir_path,
-            recipes,
-            machines,
-            modules,
-            beacon_spec,
+            recipes=recipes,
+            machines=machines,
+            modules=modules,
+            beacon=beacon_spec,
         )
         if not icon_catalog:
             warnings.append(

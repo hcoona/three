@@ -67,6 +67,7 @@ def extract_icon_from_payload(payload: object) -> tuple[str | None, int | None]:
 def build_icon_catalog(  # noqa: PLR0913
     data_raw: FactorioDataRaw,
     data_dir_path: str,
+    *,
     recipes: Mapping[str, Recipe],
     machines: Mapping[str, Machine],
     modules: Mapping[str, ModuleSpec],

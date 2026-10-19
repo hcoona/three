@@ -163,8 +163,9 @@ def main():  # noqa: ANN201, C901, PLR0912, PLR0915
     svg_unique_image_counter = 0
     for svg_data_image in document.find_all(
         "img",
-        src=lambda src: isinstance(src, str)
-        and src.startswith("data:image/svg+xml;base64"),
+        src=lambda src: (
+            isinstance(src, str) and src.startswith("data:image/svg+xml;base64")
+        ),
     ):
         if not isinstance(svg_data_image, Tag):
             continue

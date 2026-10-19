@@ -1,13 +1,10 @@
 """This module contains specialized splitters for book Caring for Your Baby and Young Child."""  # noqa: E501
 
 from collections.abc import Callable, Iterable
-from typing import TypeVar
 
 from bs4 import BeautifulSoup, Tag
 from bs4._typing import _OneElement
 from pydantic import BaseModel, Field
-
-T = TypeVar("T")
 
 
 class Metadata(BaseModel):
@@ -37,7 +34,7 @@ class ExtractResult(BaseModel):
     )
 
 
-def _split_by(
+def _split_by[T](
     elements: Iterable[T], predicate: Callable[[T], bool]
 ) -> list[str]:
     """Split an iterable of elements into sections. A new section starts when predicate(el) is True.
@@ -125,9 +122,11 @@ def _split_chapter_to_sections(soup: BeautifulSoup) -> SplitResult:
 
     sections = _split_by(
         soup.body.children,
-        lambda el: isinstance(el, Tag)
-        and el.name == "h1"
-        and _tag_has_class(el, "sec"),
+        lambda el: (
+            isinstance(el, Tag)
+            and el.name == "h1"
+            and _tag_has_class(el, "sec")
+        ),
     )
 
     return SplitResult(
@@ -202,10 +201,12 @@ def split_section_to_subsections(text: str) -> SplitResult:
 
     subsections = _split_by(
         soup.body.children,
-        lambda el: isinstance(el, Tag)
-        and el.name == "h1"
-        and _tag_has_class(el, "sec1")
-        and el.get("id", None) is not None,
+        lambda el: (
+            isinstance(el, Tag)
+            and el.name == "h1"
+            and _tag_has_class(el, "sec1")
+            and el.get("id", None) is not None
+        ),
     )
 
     return SplitResult(
@@ -265,9 +266,11 @@ def split_subsection_into_paragraph_groups(text: str) -> SplitResult:
 
     chunks = _split_by(
         soup.body.children,
-        lambda el: isinstance(el, Tag)
-        and el.name == "p"
-        and _tag_has_class(el, "parast"),
+        lambda el: (
+            isinstance(el, Tag)
+            and el.name == "p"
+            and _tag_has_class(el, "parast")
+        ),
     )
 
     return SplitResult(
