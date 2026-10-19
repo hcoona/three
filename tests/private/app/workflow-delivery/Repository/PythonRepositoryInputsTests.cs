@@ -157,7 +157,7 @@ public sealed class PythonRepositoryInputsTests
     }
 
     [TestMethod]
-    [DataRow(".github/workflows/workflow-delivery-v3-python-smoke.yml")]
+    [DataRow(".github/workflows/workflow-delivery-v3-python-release.yml")]
     public void PythonReleaseCallerInputsSelectTheirDeclaredPytestTarget(string path)
     {
         const string target = "tests/eng/test_python_release_caller.py";
@@ -248,7 +248,7 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_python_runtime.py",
         ".github/workflows/workflow-delivery-v3-buddy-smoke.yml")]
     [DataRow("tests/eng/test_python_runtime.py",
-        ".github/workflows/workflow-delivery-v3-python-smoke.yml")]
+        ".github/workflows/workflow-delivery-v3-python-release.yml")]
     [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/renovate.yml")]
     [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/codeql.yml")]
     [DataRow("tests/eng/test_python_runtime.py",

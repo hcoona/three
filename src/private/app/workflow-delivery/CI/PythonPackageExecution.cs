@@ -68,7 +68,8 @@ internal static class PythonPackageExecution
             string name = request.Members.Single(member =>
                 member.Directory == subject.Directory).Name;
             string root = Path.Combine(scratch, "package-" + ordinal++);
-            var operations = new PythonSmokePackageOperations(tools, root);
+            PythonSmokePackageOperations operations = PythonReleaseUnits.Package(name, tools,
+                root);
             PythonDistribution[] originals = [];
             foreach (string kind in PythonPackageChecks.Kinds)
             {

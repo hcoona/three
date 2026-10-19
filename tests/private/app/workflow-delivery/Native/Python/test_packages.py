@@ -322,6 +322,149 @@ def test_native_identity_uses_maintained_backend_without_version_engine(
     factory.assert_called_once_with(str(tmp_path.resolve()))
 
 
+NBGV = "nbgv-python"
+NBGV_VERSION = "2.1.0.dev1"
+NBGV_STEM = "nbgv_python-" + NBGV_VERSION
+NBGV_MODULES = ["__init__.py", "cli.py", "hatch_plugin.py"]
+NBGV_METADATA = (
+    f"Metadata-Version: 2.4\nName: {NBGV}\nVersion: {NBGV_VERSION}\n"
+    "Requires-Dist: packaging>=24.0\n"
+).encode()
+
+
+def nbgv_wheel(directory, metadata=NBGV_METADATA):
+    """Wheel carrying the registered nbgv-python payload."""
+    path = directory / (NBGV_STEM + "-py3-none-any.whl")
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(NBGV_STEM + ".dist-info/METADATA", metadata)
+        for module in NBGV_MODULES:
+            archive.writestr("nbgv_python/" + module, b"product")
+    return path
+
+
+def nbgv_sdist(directory, metadata=NBGV_METADATA):
+    """Sdist carrying the registered nbgv-python payload."""
+    path = directory / (NBGV_STEM + ".tar.gz")
+    files = {"PKG-INFO": metadata, "pyproject.toml": b"p", "README.md": b"r"}
+    files.update({"src/nbgv_python/" + module: b"m" for module in NBGV_MODULES})
+    with tarfile.open(path, "w:gz") as archive:
+        for name, data in files.items():
+            info = tarfile.TarInfo(NBGV_STEM + "/" + name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    return path
+
+
+@pytest.mark.parametrize("requires", [None, "", "packaging>=99\n"])
+def test_nbgv_originals_require_their_payload_and_declared_dependency(
+    tmp_path, requires
+):
+    """Nbgv originals require their payload and declared dependency."""
+    metadata = NBGV_METADATA
+    if requires is not None:
+        metadata = metadata.replace(b"packaging>=24.0\n", b"")
+        metadata = metadata.replace(b"Requires-Dist: ", b"")
+        if requires:
+            metadata += b"Requires-Dist: " + requires.encode()
+    nbgv_wheel(tmp_path, metadata)
+    nbgv_sdist(tmp_path, metadata)
+    if requires is None:
+        outputs = packages.inspect_outputs(
+            tmp_path, NBGV, NBGV_VERSION, packages.QUALITY
+        )
+        assert [output["kind"] for output in outputs] == [
+            "python-sdist",
+            "python-wheel",
+        ]
+    else:
+        with pytest.raises(ValueError, match="identity"):
+            packages.inspect_outputs(
+                tmp_path, NBGV, NBGV_VERSION, packages.QUALITY
+            )
+
+
+def test_unregistered_product_is_unsupported(tmp_path):
+    """Unregistered product is unsupported."""
+    with pytest.raises(ValueError, match="Unsupported registered"):
+        packages.inspect_archive(
+            nbgv_wheel(tmp_path), "other", NBGV_VERSION, packages.QUALITY
+        )
+
+
+@pytest.mark.parametrize("dynamic", [False, True])
+def test_static_version_facts_come_from_the_maintained_backend(
+    tmp_path, monkeypatch, dynamic
+):
+    """Static version facts come from the maintained backend."""
+    core = SimpleNamespace(
+        name=NBGV,
+        dynamic=["version"] if dynamic else [],
+        dependencies=["packaging>=24.0"],
+    )
+    factory = Mock(
+        return_value=SimpleNamespace(
+            metadata=SimpleNamespace(core=core, version=NBGV_VERSION)
+        )
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "hatchling.builders.wheel",
+        SimpleNamespace(WheelBuilder=factory),
+    )
+    if dynamic:
+        with pytest.raises(ValueError, match="version source"):
+            packages.native_static_version_facts(tmp_path)
+        return
+    facts = packages.native_static_version_facts(tmp_path)
+    assert facts["name"] == NBGV
+    assert facts["version"] == NBGV_VERSION
+    assert facts["local_version"] is None
+    assert facts["dependencies"] == ["packaging>=24.0"]
+    factory.assert_called_once_with(str(tmp_path.resolve()))
+
+
+@pytest.mark.parametrize("defect", [None, "base-dependency", "api"])
+def test_nbgv_consumer_requires_api_and_dependency_from_its_venv(
+    tmp_path, monkeypatch, defect
+):
+    """Nbgv consumer requires api and dependency from its venv."""
+    root = tmp_path / "venv"
+    origin = root / "lib/nbgv_python/__init__.py"
+    installed = SimpleNamespace(
+        metadata={"Name": NBGV},
+        version=NBGV_VERSION,
+        files=["lib/nbgv_python/__init__.py"],
+        locate_file=lambda file: root / file,
+    )
+    dependency_root = tmp_path if defect == "base-dependency" else root / "lib"
+    dependency = SimpleNamespace(locate_file=lambda _file: dependency_root)
+    distributions = {NBGV: installed, "packaging": dependency}
+    api = {
+        name: (lambda: None)
+        for name in ["get_version", "forward", "NbgvRunner", "GitVersion"]
+    }
+    if defect == "api":
+        del api["forward"]
+    module = SimpleNamespace(__file__=str(origin), **api)
+    monkeypatch.setattr(
+        packages.importlib.metadata, "distribution", distributions.__getitem__
+    )
+    monkeypatch.setattr(
+        packages.importlib, "import_module", lambda _name: module
+    )
+    monkeypatch.setattr(sys, "prefix", str(root))
+    monkeypatch.setattr(sys, "base_prefix", str(tmp_path / "base"))
+    if defect is None:
+        assert packages.consume(NBGV, NBGV_VERSION, packages.QUALITY) == {
+            "name": NBGV,
+            "version": NBGV_VERSION,
+            "origin": str(origin),
+        }
+    else:
+        with pytest.raises(ValueError, match="registered API"):
+            packages.consume(NBGV, NBGV_VERSION, packages.QUALITY)
+
+
 @pytest.mark.parametrize(
     "defect",
     [None, "source-origin", "unlisted-origin", "version", "api", "no-venv"],
@@ -355,7 +498,7 @@ def test_installed_consumer_requires_native_metadata_origin_and_registered_api(
         sys, "base_prefix", str(root if defect == "no-venv" else tmp_path)
     )
     if defect is None:
-        assert packages.consume_smoke(NAME, VERSION, packages.QUALITY) == {
+        assert packages.consume(NAME, VERSION, packages.QUALITY) == {
             "name": NAME,
             "version": VERSION,
             "origin": str(origin),
@@ -365,7 +508,7 @@ def test_installed_consumer_requires_native_metadata_origin_and_registered_api(
             ValueError,
             match=r"origin|metadata",
         ):
-            packages.consume_smoke(NAME, VERSION, packages.QUALITY)
+            packages.consume(NAME, VERSION, packages.QUALITY)
 
 
 def test_failed_cli_emits_no_partial_facts_or_private_diagnostics(

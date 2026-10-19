@@ -16,8 +16,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 EXPRESSION = re.compile(r"\$\{\{\s*(\S+)\s*\}\}")
 _PHYSICAL_CONCURRENCY_GROUP = (
-    "${{ format('workflow-delivery-{0}-hcoona-release-smoke-python', "
-    "inputs.registry == 'testpypi' && 'test.pypi.org' || 'pypi.org') }}"
+    "${{ format('workflow-delivery-{0}-{1}', "
+    "inputs.registry == 'testpypi' && 'test.pypi.org' || 'pypi.org', "
+    "inputs.unit) }}"
 )
 
 
@@ -26,7 +27,7 @@ def workflow():
     """Load the current workflow as semantic YAML values."""
     return yaml.safe_load(
         (
-            ROOT / ".github/workflows/workflow-delivery-v3-python-smoke.yml"
+            ROOT / ".github/workflows/workflow-delivery-v3-python-release.yml"
         ).read_text()
     )
 
@@ -86,6 +87,16 @@ def test_workflow_publisher_owns_write_identity_and_environment(
         assert not actions(jobs[name], "upload-artifact")[0].get(
             "continue-on-error", False
         )
+
+
+def test_workflow_binds_the_dispatched_registered_unit(workflow):
+    """Every job receives the dispatched unit; its group binds it."""
+    unit = workflow["on"]["workflow_dispatch"]["inputs"]["unit"]
+    assert unit["type"] == "choice"
+    assert unit["required"] is True
+    assert unit["options"] == ["hcoona-release-smoke-python", "nbgv-python"]
+    assert workflow["env"]["UNIT"] == "${{ inputs.unit }}"
+    assert "inputs.unit" in workflow["concurrency"]["group"]
 
 
 @pytest.mark.parametrize(

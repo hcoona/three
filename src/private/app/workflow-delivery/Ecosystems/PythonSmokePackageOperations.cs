@@ -10,13 +10,15 @@ internal sealed record PythonPackageTools(string Checkout, string Scratch, strin
 internal sealed record PythonDistribution(string Kind, string Path, long Length, string Sha256);
 
 // Concrete registered Python smoke recipe using native package operations; no CI planning or
-// Release completion.
-internal sealed class PythonSmokePackageOperations(PythonPackageTools tools, string root)
+// Release completion. Other registered recipes extend its native operations.
+internal class PythonSmokePackageOperations(PythonPackageTools tools, string root)
 {
     internal const string Preset = "python/hcoona-release-smoke-python-v1";
     private readonly string archives = Path.Combine(root, "archives");
+    private protected readonly PythonPackageTools tools = tools;
+    private protected readonly string root = root;
     private readonly string python = Python(Path.Combine(root, "tools"));
-    private readonly Dictionary<string, string?> environment = new(tools.Environment,
+    private protected readonly Dictionary<string, string?> environment = new(tools.Environment,
         StringComparer.Ordinal)
     {
         ["UV_PROJECT_ENVIRONMENT"] = Path.Combine(root, "tools"),
@@ -86,7 +88,7 @@ internal sealed class PythonSmokePackageOperations(PythonPackageTools tools, str
         return [.. originals];
     }
 
-    internal async Task<JsonDocument> VersionFactsAsync(string directory,
+    internal virtual async Task<JsonDocument> VersionFactsAsync(string directory,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token) => JsonDocument.Parse((await execute(Helper(python,
             tools.Checkout, ["version-facts", Path.Combine(tools.Checkout, directory)]), token))
@@ -157,11 +159,17 @@ internal sealed class PythonSmokePackageOperations(PythonPackageTools tools, str
         string venv = Path.Combine(consumer, "venv");
         await execute(Uv(consumer, ["venv", venv, "--python", tools.Interpreter, "--no-project"]),
             token);
+        await InstallRuntimeAsync(name, consumer, Python(venv), execute, token);
         await execute(Uv(consumer, ["pip", "install", "--python", Python(venv), "--no-deps",
             "--no-cache", "--offline", install]), token);
         await execute(Helper(Python(venv), consumer, ["consume", name, version, Preset]), token);
         RequireOriginal(original);
     }
+
+    // The smoke distribution declares no runtime dependencies.
+    private protected virtual Task InstallRuntimeAsync(string name, string consumer,
+        string venv, Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token) => Task.CompletedTask;
 
     internal static void RequireOriginal(PythonDistribution original)
     {
@@ -174,12 +182,12 @@ internal sealed class PythonSmokePackageOperations(PythonPackageTools tools, str
             throw new InvalidDataException("Original Python distribution bytes changed.");
     }
 
-    private NativeCommand Uv(string directory, string[] arguments) => new(tools.Uv, directory,
-        arguments, tools.DeadlineSeconds, environment, tools.InheritEnvironment);
-    private NativeCommand Helper(string executable, string directory, string[] arguments) =>
-        new(executable, directory, ["-I", tools.Helper, .. arguments], tools.DeadlineSeconds,
-            environment, tools.InheritEnvironment);
-    private static string Python(string venv) => Path.Combine(venv,
+    private protected NativeCommand Uv(string directory, string[] arguments) => new(tools.Uv,
+        directory, arguments, tools.DeadlineSeconds, environment, tools.InheritEnvironment);
+    private protected NativeCommand Helper(string executable, string directory,
+        string[] arguments) => new(executable, directory, ["-I", tools.Helper, .. arguments],
+            tools.DeadlineSeconds, environment, tools.InheritEnvironment);
+    private protected static string Python(string venv) => Path.Combine(venv,
         OperatingSystem.IsWindows() ? "Scripts/python.exe" : "bin/python");
     private static string Absolute(string path) =>
         OwnedPath.Absolute(path, "Python package paths must be absolute.");

@@ -9,19 +9,27 @@ name: Workflow Delivery v3 Python Release
         options:
           - testpypi
           - pypi
+      unit:
+        description: Selected Python release unit
+        type: choice
+        required: true
+        options:
+          - hcoona-release-smoke-python
+          - nbgv-python
       dry-run:
         description: Qualify and describe without publication
         type: boolean
         default: true
 permissions: {}
 concurrency:
-  group: ${{ format('workflow-delivery-{0}-hcoona-release-smoke-python', inputs.registry == 'testpypi' && 'test.pypi.org' || 'pypi.org') }}
+  group: ${{ format('workflow-delivery-{0}-{1}', inputs.registry == 'testpypi' && 'test.pypi.org' || 'pypi.org', inputs.unit) }}
   cancel-in-progress: false
 defaults:
   run:
     shell: bash
 env:
   DESTINATION: ${{ inputs.registry }}
+  UNIT: ${{ inputs.unit }}
   DRY_RUN: ${{ inputs.dry-run }}
 jobs:
   prepare:

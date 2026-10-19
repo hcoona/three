@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Destinations;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -18,10 +19,13 @@ public sealed class PythonIndexObservationTests(TestContext context)
     [TestMethod]
     [DataRow("buddy", "testpypi", "test.pypi.org", "test-files.pythonhosted.org")]
     [DataRow("official", "pypi", "pypi.org", "files.pythonhosted.org")]
+    [DataRow("buddy", "testpypi", "test.pypi.org", "test-files.pythonhosted.org",
+        PythonReleaseUnits.Nbgv)]
     public async Task CompletePairUsesSelectedPublicIndexAndOriginalBytes(string channel,
-        string destination, string origin, string storage)
+        string destination, string origin, string storage,
+        string unit = PythonReleaseUnits.Smoke)
     {
-        using var fixture = new Fixture(channel, destination);
+        using var fixture = new Fixture(channel, destination, unit);
         using var handler = new Handler((_, n, _) => Task.FromResult(Response(200,
             n == 0 ? Encoding.UTF8.GetBytes("{}") : n == 1 ? Wheel : Sdist)));
         using var client = new HttpClient(handler);
@@ -38,8 +42,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
         Assert.HasCount(2, result.Observation.Files);
         Assert.IsTrue(result.Observation.Files.All(file => file.State == ReleaseFileState.Exact));
         Assert.HasCount(3, handler.Requests);
-        Assert.AreEqual($"https://{origin}/simple/hcoona-release-smoke-python/",
-            handler.Requests[0]);
+        Assert.AreEqual($"https://{origin}/simple/{unit}/", handler.Requests[0]);
         Assert.IsTrue(handler.Requests.Skip(1).All(uri => new Uri(uri).Host == storage));
         Assert.IsNotNull(command);
         Assert.IsFalse(command.InheritEnvironment);
@@ -422,21 +425,21 @@ public sealed class PythonIndexObservationTests(TestContext context)
         }
     }
 
-    private sealed class Fixture(string channel = "buddy", string destination = "testpypi")
-        : IDisposable
+    private sealed class Fixture(string channel = "buddy", string destination = "testpypi",
+        string unit = PythonReleaseUnits.Smoke) : IDisposable
     {
         private readonly string scratch =
             Directory.CreateTempSubdirectory("python-index-").FullName;
         internal PythonIndexTools Tools => new(Path.Combine(scratch, "python"),
             Path.Combine(scratch, "packages.py"), scratch);
         internal PreparedRelease Prepared => new(new(new('a', 40), "refs/heads/development",
-            "hcoona-release-smoke-python", "product/release.yml", channel, destination, true),
-            [File("wheel", "python-wheel",
-                "hcoona_release_smoke_python-1.2.3-py3-none-any.whl", Wheel),
-             File("sdist", "python-sdist", "hcoona_release_smoke_python-1.2.3.tar.gz", Sdist)],
+            unit, "product/release.yml", channel, destination, true),
+            [File("wheel", "python-wheel", Stem + "-1.2.3-py3-none-any.whl", Wheel),
+             File("sdist", "python-sdist", Stem + "-1.2.3.tar.gz", Sdist)],
             ["contents"], [new("contents", ReleaseCheckStatus.Passed)]);
-        private static ReleaseFile File(string output, string kind, string name, byte[] bytes) =>
-            new("build", output, kind, "hcoona-release-smoke-python", "1.2.3", "original/" + name,
+        private string Stem => unit.Replace('-', '_');
+        private ReleaseFile File(string output, string kind, string name, byte[] bytes) =>
+            new("build", output, kind, unit, "1.2.3", "original/" + name,
                 bytes.LongLength, Convert.ToHexStringLower(SHA256.HashData(bytes)));
         public void Dispose() => Directory.Delete(scratch, recursive: true);
     }

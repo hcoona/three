@@ -182,7 +182,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         internal string Workflow => ecosystem switch
         {
             "npm" => "workflow-delivery-v3-buddy-smoke.yml",
-            "ruby" => "workflow-delivery-v3-ruby-release.yml",
+            "ruby" or "python" => "workflow-delivery-v3-" + ecosystem + "-release.yml",
             _ => "workflow-delivery-v3-" + ecosystem + "-smoke.yml",
         };
         internal string Job => ecosystem == "npm" ? "verify" : "verify-result";

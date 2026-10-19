@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using WorkflowDelivery.Destinations;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -19,10 +20,13 @@ public sealed class PythonNativePublisherTests(TestContext context)
         "https://test.pypi.org/legacy/")]
     [DataRow("official", "pypi", "refs/heads/main", "sdist",
         "https://upload.pypi.org/legacy/")]
+    [DataRow("buddy", "testpypi", "refs/heads/development", "sdist",
+        "https://test.pypi.org/legacy/", PythonReleaseUnits.Nbgv)]
     public async Task NativePublisherReceivesOnlyQualifiedOriginalAndSelectedContext(
-        string channel, string destination, string selectedRef, string output, string endpoint)
+        string channel, string destination, string selectedRef, string output, string endpoint,
+        string unit = PythonReleaseUnits.Smoke)
     {
-        using var fixture = new Fixture();
+        using var fixture = new Fixture(unit);
         PreparedRelease prepared = fixture.Prepared with
         {
             Subject = fixture.Prepared.Subject
@@ -129,6 +133,7 @@ public sealed class PythonNativePublisherTests(TestContext context)
     [DataRow("destination")]
     [DataRow("wrong-name")]
     [DataRow("wrong-unit")]
+    [DataRow("official-nbgv")]
     [DataRow("missing-pair")]
     [DataRow("wrong-kind")]
     [DataRow("unknown-output")]
@@ -190,6 +195,17 @@ public sealed class PythonNativePublisherTests(TestContext context)
                 {
                     Subject = prepared.Subject with
                     { Unit = "foreign" }
+                }; break;
+            case "official-nbgv":
+                prepared = prepared with
+                {
+                    Subject = prepared.Subject with
+                    {
+                        Unit = PythonReleaseUnits.Nbgv, Channel = "official",
+                        Destination = "pypi", SelectedRef = "refs/heads/main",
+                    },
+                    Files = [.. prepared.Files.Select(file =>
+                        file with { Name = PythonReleaseUnits.Nbgv })],
                 }; break;
             case "wrong-version":
                 prepared = prepared with
@@ -301,7 +317,7 @@ public sealed class PythonNativePublisherTests(TestContext context)
             ["HTTP_PROXY"] = "http://ambient.invalid",
             ["PATH"] = "ambient-path",
         };
-        internal Fixture()
+        internal Fixture(string unit = PythonReleaseUnits.Smoke)
         {
             Originals = Directory.CreateDirectory(Path.Combine(Root, "originals")).FullName;
             Tools = new(Path.Combine(Root, "uv"), Directory.CreateDirectory(
@@ -309,16 +325,15 @@ public sealed class PythonNativePublisherTests(TestContext context)
             ReleaseFile[] files = new[] { ("wheel", "python-wheel", ".whl"),
                 ("sdist", "python-sdist", ".tar.gz") }.Select(item =>
                 {
-                    string name = "hcoona_release_smoke_python-0.1.0b1" + item.Item3;
+                    string name = unit.Replace('-', '_') + "-0.1.0b1" + item.Item3;
                     byte[] bytes = [1, 2, 3];
                     File.WriteAllBytes(Path.Combine(Originals, name), bytes);
                     return new ReleaseFile("python-distributions", item.Item1, item.Item2,
-                        "hcoona-release-smoke-python", "0.1.0b1", name, bytes.Length,
+                        unit, "0.1.0b1", name, bytes.Length,
                         Convert.ToHexStringLower(SHA256.HashData(bytes)));
                 }).ToArray();
             Prepared = new(new(new string('a', 40), "refs/heads/development",
-                "hcoona-release-smoke-python",
-                "unit.yml", "buddy", "testpypi", false), files, ["qualified"],
+                unit, "unit.yml", "buddy", "testpypi", false), files, ["qualified"],
                 [new("qualified", ReleaseCheckStatus.Passed)]);
         }
         public void Dispose() => Directory.Delete(Root, true);

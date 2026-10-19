@@ -96,6 +96,56 @@ public sealed class PythonReleaseTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task NbgvBuddyPublishesBothOriginalsOfItsUnit()
+    {
+        using var fixture = new Fixture(unit: PythonReleaseUnits.Nbgv);
+        PythonIndexObservationResult initial = fixture.Observe();
+        fixture.Observations.Enqueue(initial);
+        fixture.Observations.Enqueue(fixture.Observe(ReleaseFileState.Exact));
+        fixture.Observations.Enqueue(fixture.Exact());
+        PythonPublicationResult publication = await fixture.PublishAsync(initial,
+            context.CancellationToken);
+        PythonCompletionResult result = fixture.Complete(initial, fixture.Exact(), publication);
+        AssertSequence(["wheel", "sdist"], fixture.Writes);
+        Assert.AreEqual(PythonReleaseUnits.Nbgv, publication.Subject.Unit);
+        Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
+    }
+
+    [TestMethod]
+    [DataRow("smoke-required")]
+    [DataRow("missing-result")]
+    [DataRow("failed-result")]
+    [DataRow("official")]
+    public void ValidateNbgvRequiresAdoptedSuiteResultAndBuddy(string defect)
+    {
+        using var fixture = new Fixture(unit: PythonReleaseUnits.Nbgv);
+        PythonRelease.Validate(fixture.Preparation);
+        PreparedRelease prepared = fixture.Prepared;
+        ReleaseCheck[] checks = defect switch
+        {
+            "failed-result" => [.. prepared.Checks.Select(check => check.Id == "tests"
+                ? check with { Status = ReleaseCheckStatus.Failed } : check)],
+            "missing-result" => [.. prepared.Checks.Where(check => check.Id != "tests")],
+            _ => prepared.Checks,
+        };
+        string[] required = defect == "smoke-required"
+            ? [.. prepared.RequiredChecks.Where(id => id != "tests")] : prepared.RequiredChecks;
+        if (defect == "smoke-required") checks = [.. checks.Where(check => check.Id != "tests")];
+        ReleaseSubject subject = defect == "official" ? prepared.Subject with
+        {
+            Channel = "official", Destination = "pypi", SelectedRef = "refs/heads/main",
+        } : prepared.Subject;
+        var preparation = fixture.Preparation with
+        {
+            Prepared = prepared with
+            {
+                Subject = subject, RequiredChecks = required, Checks = checks,
+            },
+        };
+        Assert.ThrowsExactly<InvalidDataException>(() => PythonRelease.Validate(preparation));
+    }
+
+    [TestMethod]
     [DataRow("Unknown")]
     [DataRow("Conflict")]
     public async Task PublishAsyncInitialUnsafeStateRejectsBeforeDelegates(
@@ -532,16 +582,19 @@ public sealed class PythonReleaseTests(TestContext context)
         internal Action? AfterPublish { get; set; }
         internal PythonPublishResult? Invocation { get; set; }
 
-        internal Fixture(bool dryRun = false)
+        internal Fixture(bool dryRun = false, string unit = PythonReleaseUnits.Smoke)
         {
             Directory.CreateDirectory(Path.Combine(Root, "archives"));
             ReleaseFile[] files = [Original("wheel", "python-wheel", "product.whl",
-                "wheel-original"),
-                Original("sdist", "python-sdist", "product.tar.gz", "sdist-original")];
+                "wheel-original", unit),
+                Original("sdist", "python-sdist", "product.tar.gz", "sdist-original", unit)];
             var subject = new ReleaseSubject(new string('a', 40), "refs/heads/development",
-                "hcoona-release-smoke-python", "release.yml", "buddy", "testpypi", dryRun);
-            string[] required = ["native-input", "build", "contents", "wheel-consumer",
-                "sdist-consumer", "original-bytes"];
+                unit, "release.yml", "buddy", "testpypi", dryRun);
+            string[] required = unit == PythonReleaseUnits.Nbgv
+                ? ["native-input", "build", "contents", "wheel-consumer", "sdist-consumer",
+                    "tests", "original-bytes"]
+                : ["native-input", "build", "contents", "wheel-consumer", "sdist-consumer",
+                    "original-bytes"];
             var prepared = new PreparedRelease(subject, files, required,
                 required.Select(id => new ReleaseCheck(id, ReleaseCheckStatus.Passed)).ToArray());
             Preparation = new(prepared, new Dictionary<string, string>
@@ -552,13 +605,14 @@ public sealed class PythonReleaseTests(TestContext context)
             }, [new("build", Command(), Success)], []);
         }
 
-        private ReleaseFile Original(string output, string kind, string name, string contents)
+        private ReleaseFile Original(string output, string kind, string name, string contents,
+            string unit)
         {
             string relative = "archives/" + name;
             string path = Path.Combine(Root, relative);
             File.WriteAllText(path, contents);
             byte[] bytes = File.ReadAllBytes(path);
-            return new("distributions", output, kind, "hcoona-release-smoke-python", "1.0.0",
+            return new("distributions", output, kind, unit, "1.0.0",
                 relative, bytes.LongLength, Convert.ToHexStringLower(SHA256.HashData(bytes)));
         }
 
