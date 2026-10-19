@@ -138,10 +138,16 @@ public sealed class PythonPhase11ProductDoctorTests
     {
         (_, FakeProcessRunner runner, _) = await RunPosixDoctorAsync(ProductHealthyResult());
         string productProbeScript = Assert.IsType<string>(runner.StartSpecs[1].Arguments[1]);
+        // The dump deadline counts from before process start, so a stall during
+        // interpreter startup still dumps before the 10 s runner timeout.
+        long dumpDeadlineMilliseconds =
+            DateTimeOffset.UtcNow.AddSeconds(9).ToUnixTimeMilliseconds();
         string harness =
-            """
-            import faulthandler
-            faulthandler.dump_traceback_later(9)
+            "import faulthandler,time\n"
+            + "faulthandler.dump_traceback_later(max(0.001,"
+            + dumpDeadlineMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + "/1000-time.time()))\n"
+            + """
             import abc,importlib.metadata,sys,types
             keyring_module=types.ModuleType('keyring')
             backend_module=types.ModuleType('keyring.backend')
