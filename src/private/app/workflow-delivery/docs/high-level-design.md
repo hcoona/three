@@ -215,12 +215,12 @@ language must supply a real native capability to justify an intervening layer.
 Temporary fixture creation remains scenario code; fixed tool/dependency recipes
 belong to native configuration rather than another application setup registry.
 
-| Ecosystem | Build and qualification                                     | Destination consequence                                                                                         |
-| --------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| npm       | Native NBGV projection, original archive and clean install  | Exact version state; tags are routing metadata; no lifecycle scripts with publication capability                |
-| NuGet     | MSBuild/NBGV, original nupkg and local clean consumer       | Native package identity and archive state; no npm tag assumptions                                               |
-| Python    | nbgv-python, wheel and sdist, local clean consumer of both  | Complete two-file set; verified exact subsets may permit missing-file completion under the destination contract |
-| Ruby      | Native version/gem build, metadata and local clean consumer | Evaluate gemspecs unprivileged; destination-specific original-gem observation and upload                        |
+| Ecosystem | Build and qualification                                                                                                                                 | Destination consequence                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| npm       | Native NBGV projection, original archive and clean install                                                                                              | Exact version state; tags are routing metadata; no lifecycle scripts with publication capability                |
+| NuGet     | MSBuild/NBGV, original nupkg and local clean consumer                                                                                                   | Native package identity and archive state; no npm tag assumptions                                               |
+| Python    | nbgv-python projection (static version for the [WD-REL-001](requirements.md#release-delivery) exception), wheel and sdist, local clean consumer of both | Complete two-file set; verified exact subsets may permit missing-file completion under the destination contract |
+| Ruby      | Native version/gem build, metadata and local clean consumer                                                                                             | Evaluate gemspecs unprivileged; destination-specific original-gem observation and upload                        |
 
 Each destination contract states normalization, required files, native
 non-overwrite behavior, readback, visibility/time bounds, credential scope and
@@ -234,7 +234,9 @@ Planning obtains the expected native NBGV projection. Builds may invoke NBGV
 again with the same target, relevant Git history/ref, version configuration,
 dependency inputs and supported toolchain. Compare the required package/assembly
 version projections with the selected values. Missing native facts block the
-operation; no invented version or ambient fallback is allowed.
+operation; no invented version or ambient fallback is allowed. For the single
+[WD-REL-001](requirements.md#release-delivery) exception, `nbgv-python`, its
+committed static native version replaces the projection under the same rules.
 
 Retain deterministic build configuration: stable source and generated-source
 paths, appropriate package timestamps, dependency locks and toolchain inputs.
