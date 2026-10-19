@@ -72,6 +72,30 @@ public sealed class RubyReleaseTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow("smoke-required")]
+    [DataRow("missing-result")]
+    [DataRow("failed-result")]
+    public void ValidateLatexmathRequiresAdoptedSuiteResult(string defect)
+    {
+        using var fixture = new RubyCallerFixture(unit: RubyReleaseUnits.Latexmath);
+        RubyRelease.Validate(fixture.Preparation);
+        ReleaseCheck[] checks = defect switch
+        {
+            "failed-result" => [.. fixture.Prepared.Checks.Select(check => check.Id == "tests"
+                ? check with { Status = ReleaseCheckStatus.Failed } : check)],
+            _ => [.. fixture.Prepared.Checks.Where(check => check.Id != "tests")],
+        };
+        string[] required = defect == "smoke-required"
+            ? [.. fixture.Prepared.RequiredChecks.Where(id => id != "tests")]
+            : fixture.Prepared.RequiredChecks;
+        var preparation = fixture.Preparation with
+        {
+            Prepared = fixture.Prepared with { RequiredChecks = required, Checks = checks },
+        };
+        Assert.ThrowsExactly<InvalidDataException>(() => RubyRelease.Validate(preparation));
+    }
+
+    [TestMethod]
     [DataRow("buddy", "github-packages-ruby", "refs/heads/topic", false, false, true)]
     [DataRow("official", "rubygems", "refs/heads/main", false, true, true)]
     [DataRow("official", "rubygems", "refs/heads/main", false, false, false)]
@@ -490,7 +514,9 @@ internal sealed class RubyCallerFixture : IDisposable
         var file = new ReleaseFile("gem-build", "gem-output", "ruby-gem",
             unit, "1.2.3", "original.gem", 8,
             Convert.ToHexStringLower(SHA256.HashData("original"u8)));
-        string[] required = ["native-input", "build", "contents", "consumer", "original-bytes"];
+        string[] required = unit == RubyReleaseUnits.Latexmath
+            ? ["native-input", "build", "contents", "consumer", "tests", "original-bytes"]
+            : ["native-input", "build", "contents", "consumer", "original-bytes"];
         var prepared = new PreparedRelease(subject, [file], required, required.Select(id => new
             ReleaseCheck(id, ReleaseCheckStatus.Passed)).ToArray());
         Preparation = new(prepared, new() { ["name"] = file.Name, ["version"] = file.Version,

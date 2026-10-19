@@ -18,6 +18,15 @@ public sealed class RubyPreparationTests(TestContext context)
         "consumer",
         "original-bytes",
     ];
+    private static readonly string[] Tested =
+    [
+        "native-input",
+        "build",
+        "contents",
+        "consumer",
+        "tests",
+        "original-bytes",
+    ];
 
     private static readonly string[] NativeKeys =
     [
@@ -563,10 +572,21 @@ public sealed class RubyPreparationTests(TestContext context)
         ReleaseCompletion.Validate(result.Prepared);
         Assert.AreEqual(Fixture.Latexmath, Assert.ContainsSingle(result.Prepared.Files).Name);
         Assert.AreEqual(Fixture.Latexmath, result.Native["name"]);
+        CollectionAssert.AreEqual(Tested, result.Prepared.RequiredChecks);
         foreach (ReleaseCheck check in result.Prepared.Checks)
             Assert.AreEqual(ReleaseCheckStatus.Passed, check.Status, check.Id);
         string project = Path.Combine(fixture.Request.Checkout, "product");
+        // The adopted suite uses its own full locked bundle, separate from the runtime consumer.
+        NativeCommand[] tests = [.. result.Commands.Where(command => command.Check == "tests")
+            .Select(command => command.Command)];
+        Assert.HasCount(4, tests);
+        Assert.IsTrue(tests.All(command => command.Environment!["BUNDLE_WITHOUT"] is null &&
+            command.Environment["BUNDLE_FROZEN"] == "1" &&
+            command.Environment["BUNDLE_GEMFILE"] == Path.Combine(project, "Gemfile")));
+        Assert.AreEqual(project, tests[^1].Directory);
+        Assert.Contains("rspec", tests[^1].Arguments);
         Assert.HasCount(5, consumer);
+        Assert.AreEqual("development", consumer[2].Environment!["BUNDLE_WITHOUT"]);
         Assert.IsTrue(consumer.All(command => command.Environment!["BUNDLE_GEMFILE"] is null ||
             command.Environment["BUNDLE_GEMFILE"] == Path.Combine(project, "Gemfile")));
         CollectionAssert.Contains(consumer[1].Arguments, Fixture.LockedBundler);
@@ -587,11 +607,23 @@ public sealed class RubyPreparationTests(TestContext context)
             unit: Fixture.Latexmath);
         fixture.ArchiveDefect = defect;
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        RequireStopped(result, "contents", ReleaseCheckStatus.Failed);
+        RequireStopped(result, "contents", ReleaseCheckStatus.Failed, Tested);
         Assert.DoesNotContain(
             "consumer",
             result.Commands.Select(command => command.Check).ToArray()
         );
+    }
+
+    [TestMethod]
+    [DataRow("failed")]
+    [DataRow("missing-report")]
+    public async Task LatexmathFailedSuiteBlocksQualification(string defect)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken,
+            unit: Fixture.Latexmath);
+        fixture.SuiteDefect = defect;
+        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        RequireStopped(result, "tests", ReleaseCheckStatus.Failed, Tested);
     }
 
     [TestMethod]
@@ -818,22 +850,24 @@ public sealed class RubyPreparationTests(TestContext context)
     private static void RequireStopped(
         RubyPreparationResult result,
         string phase,
-        ReleaseCheckStatus status
+        ReleaseCheckStatus status,
+        string[]? expected = null
     )
     {
-        CollectionAssert.AreEqual(Checks, result.Prepared.RequiredChecks);
+        string[] checks = expected ?? Checks;
+        CollectionAssert.AreEqual(checks, result.Prepared.RequiredChecks);
         CollectionAssert.AreEqual(
-            Checks,
+            checks,
             result.Prepared.Checks.Select(check => check.Id).ToArray()
         );
-        int index = Array.IndexOf(Checks, phase);
-        for (int position = 0; position < Checks.Length; position++)
+        int index = Array.IndexOf(checks, phase);
+        for (int position = 0; position < checks.Length; position++)
             Assert.AreEqual(
                 position < index ? ReleaseCheckStatus.Passed
                     : position == index ? status
                     : ReleaseCheckStatus.Skipped,
                 result.Prepared.Checks[position].Status,
-                Checks[position]
+                checks[position]
             );
         Assert.IsEmpty(result.Prepared.Files);
         Assert.IsNotEmpty(result.Errors);
@@ -880,6 +914,7 @@ public sealed class RubyPreparationTests(TestContext context)
         internal string Defect { get; set; } = "";
         internal string ToolDefect { get; set; } = "";
         internal string ArchiveDefect { get; set; } = "";
+        internal string SuiteDefect { get; set; } = "";
         internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
 
         internal static async Task<Fixture> CreateAsync(CancellationToken token, string defect = "",
@@ -1048,6 +1083,9 @@ public sealed class RubyPreparationTests(TestContext context)
         internal string Phase(NativeCommand command)
         {
             string[] args = command.Arguments;
+            if (command.Directory == Path.Combine(Scratch, "package", "tests") ||
+                args.Contains("rspec"))
+                return "tests";
             if (args.Contains("build"))
                 return "build";
             if (args.Contains("install") && command.Executable == Tools.Ruby || args[0] == "-e" ||
@@ -1089,7 +1127,26 @@ public sealed class RubyPreparationTests(TestContext context)
             }
             if (args is ["-r", "bundler", ..])
                 return Success(LockedBundler + "\n");
-            if (args[0] == Path.Combine(Scratch, "package", "consumer", "gems", "bin", "bundle"))
+            if (args.Contains("rspec"))
+            {
+                bool failed = SuiteDefect == "failed";
+                if (SuiteDefect != "missing-report")
+                    await File.WriteAllTextAsync(args[^1], JsonSerializer.Serialize(new
+                    {
+                        version = "3.13.0",
+                        examples = new[] { new { id = "./spec/suite_spec.rb[1:1]",
+                            description = "suite", full_description = "suite",
+                            status = failed ? "failed" : "passed",
+                            file_path = "./spec/suite_spec.rb", line_number = 1,
+                            run_time = 0.01 } },
+                        summary = new { duration = 0.01, example_count = 1,
+                            failure_count = failed ? 1 : 0, pending_count = 0,
+                            errors_outside_of_examples_count = 0 },
+                    }), token);
+                return failed ? Success("") with { ExitCode = 1 } : Success("");
+            }
+            if (args[0] == Path.Combine(Scratch, "package", "consumer", "gems", "bin", "bundle") ||
+                args[0] == Path.Combine(Scratch, "package", "tests", "gems", "bin", "bundle"))
                 return Success("");
             if (args[0] == "-r")
                 return Success(

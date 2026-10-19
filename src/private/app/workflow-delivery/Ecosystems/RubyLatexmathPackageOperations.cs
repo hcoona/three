@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
@@ -9,7 +10,10 @@ internal sealed class RubyLatexmathPackageOperations(RubyFactTools tools, string
     string nbgv, string state, string project) : IRubyReleasePackage
 {
     private const string Name = RubyReleaseUnits.Latexmath;
+    // Bundle installation and the whole suite each stay within preparation's overall cap.
+    private const int SuiteDeadlineSeconds = 600;
     private string[] expected = [];
+    private string checkoutRoot = "", relative = "";
 
     public async Task<RubyGemArchive> BuildAsync(GitMaterialization checkout, string directory,
         string entryPoint, string version,
@@ -22,6 +26,7 @@ internal sealed class RubyLatexmathPackageOperations(RubyFactTools tools, string
             source.Gem.Platform != "ruby")
             throw new InvalidDataException("Native gem source identity differs.");
         // The gemspec declares lib/**, README.md and LICENSE; the revision supplies them.
+        (checkoutRoot, relative) = (checkout.Root, directory);
         string prefix = directory + "/";
         expected = [.. checkout.Revision.Entries
             .Where(entry => entry.Path.StartsWith(prefix + "lib/", StringComparison.Ordinal))
@@ -68,37 +73,8 @@ internal sealed class RubyLatexmathPackageOperations(RubyFactTools tools, string
         RubySmokePackageOperations.RequireOriginal(original);
         string consumer = Directory.CreateDirectory(Path.Combine(state, "consumer")).FullName;
         string gems = Path.Combine(consumer, "gems");
-        var environment = new Dictionary<string, string?>(tools.Environment,
-            StringComparer.Ordinal)
-        {
-            ["GEM_HOME"] = gems,
-            ["GEM_PATH"] = gems,
-            ["RUBYLIB"] = null,
-            ["RUBYOPT"] = null,
-            ["BUNDLE_GEMFILE"] = Path.Combine(project, "Gemfile"),
-            ["BUNDLE_FROZEN"] = "1",
-            ["BUNDLE_WITHOUT"] = "development",
-            ["BUNDLE_IGNORE_CONFIG"] = "1",
-            ["BUNDLE_APP_CONFIG"] = Path.Combine(consumer, "bundle-config"),
-            ["BUNDLE_USER_HOME"] = Path.Combine(consumer, "bundle-home"),
-        };
-        NativeCommandResult locked = await execute(new(tools.Ruby, consumer,
-            ["-r", "bundler", "-e", "puts Bundler::LockfileParser.bundled_with"],
-            tools.DeadlineSeconds, environment, InheritEnvironment: false,
-            CloseStandardInput: true), token);
-        token.ThrowIfCancellationRequested();
-        string bundler = locked.Stdout.Trim();
-        if (!locked.Succeeded || locked.Error is not null || bundler.Length == 0)
-            throw new IOException("Native locked Bundler query failed: " +
-                NativeDiagnostic.Describe(locked));
-        await RubySmokePackageOperations.RunAsync(new(tools.Ruby, consumer,
-            [gem, "install", "--norc", "bundler", "--version", bundler, "--no-document"],
-            tools.DeadlineSeconds, environment, InheritEnvironment: false,
-            CloseStandardInput: true), execute, token);
-        await RubySmokePackageOperations.RunAsync(new(tools.Ruby, consumer,
-            [Path.Combine(gems, "bin", "bundle"), "_" + bundler + "_", "install"],
-            tools.DeadlineSeconds, environment, InheritEnvironment: false,
-            CloseStandardInput: true), execute, token);
+        (Dictionary<string, string?> environment, _) = await InstallLockedAsync(consumer,
+            "development", execute, token);
         await RubySmokePackageOperations.RunAsync(new(tools.Ruby, consumer,
             [gem, "install", "--norc", original.Path, "--local", "--no-document"],
             tools.DeadlineSeconds, environment, InheritEnvironment: false,
@@ -133,5 +109,66 @@ internal sealed class RubyLatexmathPackageOperations(RubyFactTools tools, string
             tools.DeadlineSeconds, load, InheritEnvironment: false,
             CloseStandardInput: true), execute, token);
         RubySmokePackageOperations.RequireOriginal(original);
+    }
+
+    // The adopted ruby/rspec-v1 suite runs from the exact checkout with its locked bundle.
+    public async Task TestReleaseAsync(
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token)
+    {
+        if (checkoutRoot.Length == 0)
+            throw new InvalidDataException("Ruby Release tests require the built checkout.");
+        string tests = Directory.CreateDirectory(Path.Combine(state, "tests")).FullName;
+        (Dictionary<string, string?> environment, string bundler) = await InstallLockedAsync(
+            tests, null, execute, token);
+        RubyRSpecRun run = await RubyRSpecExecution.RunAsync(
+            new(relative, RubyProjectChecks.RSpec, "default"),
+            new(checkoutRoot, tools.Ruby, Path.Combine(tests, "gems", "bin", "bundle"), bundler,
+                Path.Combine(project, "Gemfile"), tests, SuiteDeadlineSeconds, environment),
+            execute, token);
+        if (run.Status != CheckStatus.Passed)
+            throw new InvalidDataException(run.ReportError ?? "Native RSpec suite did not " +
+                "pass: " + run.Status + ". " + NativeDiagnostic.Describe(run.Result));
+    }
+
+    // Bundler owns frozen resolution from the committed lock into owned gem state.
+    private async Task<(Dictionary<string, string?> Environment, string Bundler)>
+        InstallLockedAsync(string root, string? without,
+            Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+            CancellationToken token)
+    {
+        string gems = Path.Combine(root, "gems");
+        var environment = new Dictionary<string, string?>(tools.Environment,
+            StringComparer.Ordinal)
+        {
+            ["GEM_HOME"] = gems,
+            ["GEM_PATH"] = gems,
+            ["RUBYLIB"] = null,
+            ["RUBYOPT"] = null,
+            ["BUNDLE_GEMFILE"] = Path.Combine(project, "Gemfile"),
+            ["BUNDLE_FROZEN"] = "1",
+            ["BUNDLE_WITHOUT"] = without,
+            ["BUNDLE_IGNORE_CONFIG"] = "1",
+            ["BUNDLE_APP_CONFIG"] = Path.Combine(root, "bundle-config"),
+            ["BUNDLE_USER_HOME"] = Path.Combine(root, "bundle-home"),
+        };
+        NativeCommandResult locked = await execute(new(tools.Ruby, root,
+            ["-r", "bundler", "-e", "puts Bundler::LockfileParser.bundled_with"],
+            tools.DeadlineSeconds, environment, InheritEnvironment: false,
+            CloseStandardInput: true), token);
+        token.ThrowIfCancellationRequested();
+        string bundler = locked.Stdout.Trim();
+        if (!locked.Succeeded || locked.Error is not null || bundler.Length == 0)
+            throw new IOException("Native locked Bundler query failed: " +
+                NativeDiagnostic.Describe(locked));
+        await RubySmokePackageOperations.RunAsync(new(tools.Ruby, root,
+            [gem, "install", "--norc", "bundler", "--version", bundler, "--no-document"],
+            tools.DeadlineSeconds, environment, InheritEnvironment: false,
+            CloseStandardInput: true), execute, token);
+        await RubySmokePackageOperations.RunAsync(new(tools.Ruby, root,
+            [Path.Combine(gems, "bin", "bundle"), "_" + bundler + "_", "install"],
+            SuiteDeadlineSeconds, environment, InheritEnvironment: false,
+            CloseStandardInput: true), execute, token);
+        return (environment, bundler);
     }
 }

@@ -221,7 +221,11 @@ latexmath consumer installs its runtime dependencies with the Bundler version
 and frozen resolution of the committed product `Gemfile.lock`, without
 development gems, then installs the original locally; RubyGems/Bundler own that
 resolution. Its clean `require` uses RubyGems' native default path, so gems
-bundled with the selected Ruby remain loadable. Retain actual reached command termination and
+bundled with the selected Ruby remain loadable. Latexmath's adopted
+`ruby/rspec-v1` suite is its required `tests` check: the whole native RSpec
+invocation runs from the exact checkout with the complete frozen locked bundle in
+separate owned gem state, and the preparation job installs the suite's CI system
+tools. No CI verdict substitutes for it. Retain actual reached command termination and
 failed/missing/cancelled checks. Portable native identity and original bytes bind
 the request; checkout paths and a version string alone do not. A fresh recovery
 rebuilds and qualifies its own original at the same revision. A conflicting
