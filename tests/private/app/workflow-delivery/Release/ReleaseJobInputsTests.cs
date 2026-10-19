@@ -45,6 +45,41 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
+    [DataRow(RubyReleaseUnits.Smoke, "github-packages",
+        "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby/")]
+    [DataRow(RubyReleaseUnits.Smoke, "rubygems",
+        "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby/")]
+    [DataRow(RubyReleaseUnits.Latexmath, "github-packages",
+        "src/public/lib/asciidoctor-latexmath/")]
+    public void RubyRequestSelectsTheDispatchedUnit(string unit, string destination,
+        string directory)
+    {
+        using var fixture = new Caller("ruby", destination);
+        fixture.Env["UNIT"] = unit;
+        fixture.Run("request");
+        ReleaseSubject subject = fixture.Subject();
+        Assert.AreEqual(unit, subject.Unit);
+        Assert.AreEqual(directory + "workflow-delivery.release-unit.yml", subject.Declaration);
+        Assert.IsTrue(File.Exists(Path.Combine(RepositoryToolSelection.SourceRoot,
+            subject.Declaration)), subject.Declaration);
+    }
+
+    [TestMethod]
+    [DataRow(RubyReleaseUnits.Latexmath, "rubygems")]
+    [DataRow("another-gem", "github-packages")]
+    [DataRow("", "github-packages")]
+    public void UnsupportedRubyUnitStopsBeforePreparation(string unit, string destination)
+    {
+        using var fixture = new Caller("ruby", destination);
+        fixture.Env["UNIT"] = unit;
+        foreach (string[] entry in new[] { new[] { "request" }, ["receive", "publication"],
+            ["state"] })
+            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run(entry));
+        Assert.IsFalse(Directory.Exists(fixture.At("prepared")));
+        Assert.IsFalse(Directory.Exists(fixture.At("preparation-scratch")));
+    }
+
+    [TestMethod]
     [DataRow("ruby")]
     [DataRow("python")]
     [DataRow("npm")]
@@ -234,7 +269,7 @@ public sealed class ReleaseJobInputsTests
                 ["RUBY_EXECUTABLE"] = "selected-ruby", ["GEM_EXECUTABLE"] = "selected-gem",
                 ["DOTNET_EXECUTABLE"] = "selected-dotnet", ["UV_EXECUTABLE"] = "selected-uv",
                 ["PYTHON_EXECUTABLE"] = "selected-python", ["MISE_DATA_DIR"] = At("mise"),
-                ["GITHUB_OUTPUT"] = At("output"),
+                ["GITHUB_OUTPUT"] = At("output"), ["UNIT"] = RubyReleaseUnits.Smoke,
             };
         }
         internal string At(string path) => Path.Combine(root, path);

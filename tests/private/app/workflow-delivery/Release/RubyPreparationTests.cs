@@ -265,7 +265,7 @@ public sealed class RubyPreparationTests(TestContext context)
             DryRun = dryRun,
         };
         if (rejection.Length == 0)
-            Assert.AreEqual(channel == "official", RubyPreparation.Admit(subject));
+            Assert.AreEqual(channel == "official", RubyPreparation.Admit(subject).Official);
         else
             Assert.AreEqual(
                 rejection,
@@ -547,6 +547,54 @@ public sealed class RubyPreparationTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task LatexmathOriginalQualifiesWithLockedRuntimeDependencies()
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken,
+            unit: Fixture.Latexmath);
+        var consumer = new List<NativeCommand>();
+        fixture.Override = command =>
+        {
+            if (fixture.Phase(command) == "consumer")
+                consumer.Add(command);
+            return null;
+        };
+        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
+        ReleaseCompletion.Validate(result.Prepared);
+        Assert.AreEqual(Fixture.Latexmath, Assert.ContainsSingle(result.Prepared.Files).Name);
+        Assert.AreEqual(Fixture.Latexmath, result.Native["name"]);
+        foreach (ReleaseCheck check in result.Prepared.Checks)
+            Assert.AreEqual(ReleaseCheckStatus.Passed, check.Status, check.Id);
+        string project = Path.Combine(fixture.Request.Checkout, "product");
+        Assert.HasCount(5, consumer);
+        Assert.IsTrue(consumer.All(command => command.Environment!["BUNDLE_GEMFILE"] is null ||
+            command.Environment["BUNDLE_GEMFILE"] == Path.Combine(project, "Gemfile")));
+        CollectionAssert.Contains(consumer[1].Arguments, Fixture.LockedBundler);
+        CollectionAssert.AreEqual(new[] { "_" + Fixture.LockedBundler + "_", "install" },
+            consumer[2].Arguments[1..]);
+        Assert.AreEqual("1", consumer[2].Environment!["BUNDLE_FROZEN"]);
+        CollectionAssert.Contains(consumer[3].Arguments, "--local");
+        Assert.AreEqual("-e", consumer[4].Arguments[0]);
+        Assert.IsNull(consumer[4].Environment!["GEM_PATH"]);
+    }
+
+    [TestMethod]
+    [DataRow("dependencies")]
+    [DataRow("missing-content")]
+    public async Task LatexmathArchiveDefectCannotReachConsumer(string defect)
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken,
+            unit: Fixture.Latexmath);
+        fixture.ArchiveDefect = defect;
+        RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        RequireStopped(result, "contents", ReleaseCheckStatus.Failed);
+        Assert.DoesNotContain(
+            "consumer",
+            result.Commands.Select(command => command.Check).ToArray()
+        );
+    }
+
+    [TestMethod]
     [DataRow("name")]
     [DataRow("version")]
     [DataRow("platform")]
@@ -797,6 +845,14 @@ public sealed class RubyPreparationTests(TestContext context)
         bool ownsRepository = true
     ) : IDisposable
     {
+        internal const string Unit = "hcoona-release-smoke-ruby";
+        internal const string Latexmath = "asciidoctor-latexmath";
+        internal const string LockedBundler = "2.4.20";
+        internal static readonly string[] LatexmathLibrary =
+        [
+            "lib/asciidoctor-latexmath.rb",
+            "lib/asciidoctor/latexmath/version.rb",
+        ];
         internal const string Entry = "product/hcoona-release-smoke-ruby.gemspec";
         private const string HelperPath = "src/private/app/workflow-delivery/Native/Ruby/facts.rb";
         private static readonly string[] Files =
@@ -827,16 +883,16 @@ public sealed class RubyPreparationTests(TestContext context)
         internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
 
         internal static async Task<Fixture> CreateAsync(CancellationToken token, string defect = "",
-            Func<string, string, string>? changeConfig = null)
+            Func<string, string, string>? changeConfig = null, string unit = Unit)
         {
             GitFixture repo = await GitFixture.CreateAsync(token);
             try
             {
                 await StageRootAsync(repo, defect, changeConfig);
-                await StageProductAsync(repo, "product", defect);
+                await StageProductAsync(repo, "product", defect, unit);
                 string revision = await repo.CommitAsync();
                 await repo.GitAsync("reset", "--hard", revision);
-                return new(repo, SubjectFor(revision, "product", defect));
+                return new(repo, SubjectFor(revision, "product", defect, unit));
             }
             catch
             {
@@ -856,12 +912,13 @@ public sealed class RubyPreparationTests(TestContext context)
         internal static ReleaseSubject SubjectFor(
             string revision,
             string directory,
-            string defect
+            string defect,
+            string unit = Unit
         ) =>
             new(
                 revision,
                 "refs/heads/topic",
-                defect == "unit" ? "another" : "product",
+                defect == "unit" ? "another" : unit,
                 directory + "/workflow-delivery.release-unit.yml",
                 "buddy",
                 "github-packages-ruby",
@@ -898,19 +955,24 @@ public sealed class RubyPreparationTests(TestContext context)
         internal static async Task StageProductAsync(
             GitFixture repo,
             string directory,
-            string defect
+            string defect,
+            string unit = Unit
         )
         {
-            foreach ((string path, string content) in ProductFiles(directory, defect))
+            foreach ((string path, string content) in ProductFiles(directory, defect, unit))
                 await repo.SetAsync(path, content);
         }
 
         // The committed files of one recipe directory, keyed by repository path.
-        internal static Dictionary<string, string> ProductFiles(string directory, string defect)
+        internal static Dictionary<string, string> ProductFiles(string directory, string defect,
+            string unit = Unit)
         {
             var files = new Dictionary<string, string>(StringComparer.Ordinal);
             if (defect != "entry")
-                files.Add(directory + "/hcoona-release-smoke-ruby.gemspec", "fixture");
+                files.Add(directory + "/" + unit + ".gemspec", "fixture");
+            if (unit == Latexmath)
+                foreach (string file in LatexmathLibrary)
+                    files.Add(directory + "/" + file, "fixture");
             if (defect != "missing-quality")
                 files.Add(
                     directory + "/workflow-delivery.quality.yml",
@@ -921,15 +983,15 @@ public sealed class RubyPreparationTests(TestContext context)
                         preset: ruby/hcoona-release-smoke-ruby-v1
                     """.Replace(
                         "ruby/hcoona-release-smoke-ruby-v1",
-                        defect == "quality"
-                            ? "ruby/unknown-v1"
+                        defect == "quality" ? "ruby/unknown-v1"
+                            : unit == Latexmath ? "ruby/rspec-v1"
                             : "ruby/hcoona-release-smoke-ruby-v1",
                         StringComparison.Ordinal
                     )
                 );
             string text = """
                 schema: workflow-delivery/v3/release-unit
-                release-unit: product
+                release-unit: hcoona-release-smoke-ruby
                 builds:
                   - id: gem-build
                     definition: ruby/gem-v1
@@ -938,7 +1000,7 @@ public sealed class RubyPreparationTests(TestContext context)
                       - id: gem-output
                         role: primary-package
                         kind: ruby-gem
-                """;
+                """.Replace(Unit, unit, StringComparison.Ordinal);
             text = defect switch
             {
                 "build" => text.Replace("ruby/gem-v1", "ruby/unknown-v1", StringComparison.Ordinal),
@@ -988,13 +1050,14 @@ public sealed class RubyPreparationTests(TestContext context)
             string[] args = command.Arguments;
             if (args.Contains("build"))
                 return "build";
-            if (args.Contains("install") && command.Executable == Tools.Ruby || args[0] == "-e")
+            if (args.Contains("install") && command.Executable == Tools.Ruby || args[0] == "-e" ||
+                args is ["-r", "bundler", ..])
                 return "consumer";
             if (
                 args[0] == Helper
                 && File.ReadAllText(args[^1]).Contains("\"archive\"", StringComparison.Ordinal)
             )
-                return archiveQueries == 0 ? "build" : "contents";
+                return archiveQueries == 0 && Subject.Unit != Latexmath ? "build" : "contents";
             return "native-input";
         }
 
@@ -1024,6 +1087,10 @@ public sealed class RubyPreparationTests(TestContext context)
                     );
                 return Success("");
             }
+            if (args is ["-r", "bundler", ..])
+                return Success(LockedBundler + "\n");
+            if (args[0] == Path.Combine(Scratch, "package", "consumer", "gems", "bin", "bundle"))
+                return Success("");
             if (args[0] == "-r")
                 return Success(
                     JsonSerializer.Serialize(
@@ -1072,14 +1139,20 @@ public sealed class RubyPreparationTests(TestContext context)
                     )
                 );
             }
+            bool latexmath = Subject.Unit == Latexmath;
+            string[] files = latexmath ? [.. LatexmathLibrary, "README.md", "LICENSE"] : Files;
             var gem = new JsonObject
             {
-                ["name"] = "hcoona-release-smoke-ruby",
+                ["name"] = Subject.Unit,
                 ["version"] = "1.2.3",
                 ["platform"] = "ruby",
                 ["require_paths"] = new JsonArray("lib"),
-                ["files"] = JsonSerializer.SerializeToNode(Files),
-                ["runtime_dependencies"] = new JsonArray(),
+                ["files"] = JsonSerializer.SerializeToNode(files),
+                ["runtime_dependencies"] = latexmath ? new JsonArray(new JsonObject
+                {
+                    ["name"] = "asciidoctor",
+                    ["requirement"] = ">= 2.0, < 3.0",
+                }) : new JsonArray(),
                 ["extensions"] = new JsonArray(),
                 ["metadata"] = new JsonObject
                 {
@@ -1097,8 +1170,8 @@ public sealed class RubyPreparationTests(TestContext context)
                 Assert.AreEqual("archive", operation);
                 archiveQueries++;
                 gem["archive"] = path;
-                gem["contents"] = JsonSerializer.SerializeToNode(Files);
-                if (archiveQueries > 1)
+                gem["contents"] = JsonSerializer.SerializeToNode(files);
+                if (archiveQueries > (latexmath ? 0 : 1))
                 {
                     if (Defect == "missing-answer")
                         return Success("{}");

@@ -23,8 +23,9 @@ internal static class RubyNativePublisher
         CancellationToken token)
     {
         PreparedRelease prepared = preparation.Prepared;
-        if (prepared.Subject.DryRun || prepared.Subject.Unit != "hcoona-release-smoke-ruby" ||
-            prepared.Files is not [{ Kind: "ruby-gem", Name: "hcoona-release-smoke-ruby" }])
+        if (prepared.Subject.DryRun ||
+            RubyReleaseUnits.Admit(prepared.Subject).Id is not { } unit ||
+            prepared.Files is not [{ Kind: "ruby-gem", Name: var name }] || name != unit)
             throw new InvalidDataException("Native Ruby push requires a supported request.");
         bool buddy = prepared.Subject.Channel == "buddy" &&
             prepared.Subject.Destination == "github-packages-ruby";

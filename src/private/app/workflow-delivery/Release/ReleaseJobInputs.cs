@@ -31,12 +31,15 @@ internal static class ReleaseJobInputs
         string dry = Env("DRY_RUN");
         if (dry is not ("true" or "false")) throw new InvalidDataException(
             "Invalid dry-run input.");
-        string unit = "hcoona-release-smoke-" + (ecosystem == "nuget" ?
-            "github-packages" : ecosystem);
+        string unit = ecosystem == "ruby" ? Env("UNIT") : "hcoona-release-smoke-" +
+            (ecosystem == "nuget" ? "github-packages" : ecosystem);
         var subject = new ReleaseSubject(Env("GITHUB_SHA"), Env("GITHUB_REF"), unit,
+            ecosystem == "ruby" ? RubyReleaseUnits.Named(unit).Declaration :
             "tests/private/app/workflow-delivery/fixtures/products/" + unit +
             "/workflow-delivery.release-unit.yml", buddy ? "buddy" : "official",
             ecosystem == "ruby" && buddy ? "github-packages-ruby" : destination, dry == "true");
+        // Every Ruby job admits the selected unit; Official rejects it before preparation.
+        if (ecosystem == "ruby") _ = RubyReleaseUnits.Admit(subject);
         // Live reruns are unsupported (WD-OPS-003). A partial rerun skips the preparation
         // job, so every job entry below applies this one guard rather than workflow YAML.
         if (!subject.DryRun && Env("GITHUB_RUN_ATTEMPT") != "1")

@@ -352,6 +352,7 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                     ["DESTINATION"] = subject.Destination == "github-packages-ruby"
                         ? "github-packages" : subject.Destination,
                     ["DRY_RUN"] = subject.DryRun ? "true" : "false",
+                    ["UNIT"] = subject.Unit,
                     ["GITHUB_RUN_ID"] = run,
                     ["GITHUB_RUN_ATTEMPT"] = "1",
                     ["GITHUB_OUTPUT"] = outputPath,

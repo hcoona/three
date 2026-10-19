@@ -18,7 +18,8 @@ internal static class RubyDestinationObservation
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        if (prepared.Files is not [{ Kind: "ruby-gem", Name: "hcoona-release-smoke-ruby" }])
+        if (prepared.Files is not [{ Kind: "ruby-gem", Name: var name }] ||
+            name != RubyReleaseUnits.Admit(prepared.Subject).Id)
             throw new InvalidDataException("Native Ruby observation needs a supported original.");
         string host = (prepared.Subject.Channel, prepared.Subject.Destination) switch
         {
@@ -27,7 +28,8 @@ internal static class RubyDestinationObservation
             _ => throw new InvalidDataException("Unsupported native Ruby destination."),
         };
         ReleaseFile original = prepared.Files[0];
-        RubySourceReadResult read = await RubySourceReader.ReadAsync(host, original.Version,
+        RubySourceReadResult read = await RubySourceReader.ReadAsync(host, name,
+            original.Version,
             tools, credential, execute, token);
         ReleaseFileState state = read.State switch
         {

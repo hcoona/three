@@ -23,8 +23,8 @@
                       LogicalName="workflow-delivery-v3-buddy-smoke.yml" />
     <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-python-smoke.yml"
                       LogicalName="workflow-delivery-v3-python-smoke.yml" />
-    <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-ruby-smoke.yml"
-                      LogicalName="workflow-delivery-v3-ruby-smoke.yml" />
+    <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-ruby-release.yml"
+                      LogicalName="workflow-delivery-v3-ruby-release.yml" />
     <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-nuget-live-attempt.yml"
                       LogicalName="workflow-delivery-v3-nuget-live-attempt.yml" />
   </ItemGroup>

@@ -19,17 +19,20 @@ internal sealed record RubySourceReadResult(RubySourceState State, RubySourceOri
 // command outcome cross this boundary; no credential-bearing native diagnostic does.
 internal static class RubySourceReader
 {
-    internal static Task<RubySourceReadResult> ReadAsync(string host, string version,
-        RubySourceTools tools, RubyReadCredential? credential, CancellationToken token) =>
-        ReadAsync(host, version, tools, credential, NativeProcess.ExecuteAsync, token);
+    internal static Task<RubySourceReadResult> ReadAsync(string host, string name,
+        string version, RubySourceTools tools, RubyReadCredential? credential,
+        CancellationToken token) =>
+        ReadAsync(host, name, version, tools, credential, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<RubySourceReadResult> ReadAsync(string host, string version,
+    internal static async Task<RubySourceReadResult> ReadAsync(string host, string name,
+        string version,
         RubySourceTools tools, RubyReadCredential? credential,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
         bool buddy = host == "https://rubygems.pkg.github.com/hcoona";
         if (!(buddy || host == "https://rubygems.org") ||
+            name is not (RubyReleaseUnits.Smoke or RubyReleaseUnits.Latexmath) ||
             string.IsNullOrWhiteSpace(version) ||
             new[] { tools.Ruby, tools.Helper, tools.Scratch }.Any(path =>
                 !Path.IsPathFullyQualified(path)) || !Directory.Exists(tools.Scratch) ||
@@ -44,18 +47,18 @@ internal static class RubySourceReader
         string download = Directory.CreateDirectory(Path.Combine(scratch, "download")).FullName;
         string input = Path.Combine(scratch, "request.json");
         await File.WriteAllTextAsync(input, JsonSerializer.Serialize(new RubySourceRequest(host,
-            "hcoona-release-smoke-ruby", version, download),
+            name, version, download),
                 RubyFactJson.Default.RubySourceRequest), token);
         var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (string name in new[] { "SystemRoot", "WINDIR", "PATHEXT" })
-            environment[name] = Environment.GetEnvironmentVariable(name);
+        foreach (string key in new[] { "SystemRoot", "WINDIR", "PATHEXT" })
+            environment[key] = Environment.GetEnvironmentVariable(key);
         environment["PATH"] = string.Join(Path.PathSeparator,
             Path.GetDirectoryName(tools.Ruby), "/usr/bin", "/bin");
-        foreach (string name in new[] { "HOME", "USERPROFILE", "XDG_CONFIG_HOME",
+        foreach (string key in new[] { "HOME", "USERPROFILE", "XDG_CONFIG_HOME",
                      "XDG_CACHE_HOME", "XDG_DATA_HOME", "APPDATA", "LOCALAPPDATA",
                      "GEM_HOME", "GEM_PATH", "GEM_SPEC_CACHE", "TMPDIR", "TMP", "TEMP" })
-            environment[name] = Directory.CreateDirectory(Path.Combine(scratch,
-                name.ToLowerInvariant())).FullName;
+            environment[key] = Directory.CreateDirectory(Path.Combine(scratch,
+                key.ToLowerInvariant())).FullName;
         environment["LANG"] = "C.UTF-8";
         environment["LC_ALL"] = "C.UTF-8";
         if (buddy)
@@ -85,7 +88,7 @@ internal static class RubySourceReader
                     string path = value.Path!;
                     string digest = value.Sha256!;
                     long size = value.Size ?? 0;
-                    if (value.Name != "hcoona-release-smoke-ruby" ||
+                    if (value.Name != name ||
                         value.Version != version ||
                         value.Platform != "ruby" ||
                         !Path.IsPathFullyQualified(path) ||
@@ -97,7 +100,7 @@ internal static class RubySourceReader
                         Digest(path) != digest)
                         return Unknown("Native Ruby original or identity is inconsistent.");
                     return new(RubySourceState.Present,
-                        new(path, "hcoona-release-smoke-ruby", version, "ruby", size, digest),
+                        new(path, name, version, "ruby", size, digest),
                         command, []);
                 default:
                     return Unknown("Native Ruby complete source state is unavailable.");

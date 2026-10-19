@@ -95,16 +95,26 @@ public sealed class RubyNativePublisherTests(TestContext context)
         "Bearer " + RepositoryKey
     )]
     [DataRow("official", "rubygems", "refs/heads/main", "true", "https://rubygems.org", TrustedKey)]
+    [DataRow(
+        "buddy",
+        "github-packages-ruby",
+        "refs/heads/development",
+        "false",
+        "https://rubygems.pkg.github.com/hcoona",
+        "Bearer " + RepositoryKey,
+        RubyReleaseUnits.Latexmath
+    )]
     public async Task NativePushUsesQualifiedOriginalSelectedKeyAndClosedState(
         string channel,
         string destination,
         string selectedRef,
         string publicRelease,
         string host,
-        string expectedKey
+        string expectedKey,
+        string unit = RubyReleaseUnits.Smoke
     )
     {
-        using var fixture = new Fixture();
+        using var fixture = new Fixture(unit);
         RubyPreparationResult preparation = fixture.ForChannel(channel, destination, selectedRef);
         preparation.Native["public-release"] = publicRelease;
         var previous = ExcludedVariables
@@ -233,6 +243,7 @@ public sealed class RubyNativePublisherTests(TestContext context)
     [DataRow("wrong-unit")]
     [DataRow("wrong-name")]
     [DataRow("wrong-kind")]
+    [DataRow("official-latexmath")]
     public async Task QualifiedStateDefectsStopBeforeNativeInvocation(string defect)
     {
         using var fixture = new Fixture();
@@ -271,6 +282,20 @@ public sealed class RubyNativePublisherTests(TestContext context)
             case "wrong-name":
                 file = file with { Name = "other" };
                 preparation.Native["name"] = "other";
+                break;
+            case "official-latexmath":
+                prepared = prepared with
+                {
+                    Subject = prepared.Subject with
+                    {
+                        Unit = RubyReleaseUnits.Latexmath,
+                        Channel = "official",
+                        Destination = "rubygems",
+                        SelectedRef = "refs/heads/main",
+                    },
+                };
+                file = file with { Name = RubyReleaseUnits.Latexmath };
+                preparation.Native["name"] = RubyReleaseUnits.Latexmath;
                 break;
             case "wrong-kind":
                 file = file with { Kind = "other" };
@@ -681,7 +706,7 @@ public sealed class RubyNativePublisherTests(TestContext context)
         internal RubyPreparationResult Preparation { get; }
         internal Dictionary<string, string?> Platform { get; } = new(StringComparer.Ordinal);
 
-        internal Fixture()
+        internal Fixture(string unit = RubyReleaseUnits.Smoke)
         {
             Originals = Directory.CreateDirectory(Path.Combine(Root, "originals")).FullName;
             OriginalPath = Path.Combine(
@@ -699,7 +724,7 @@ public sealed class RubyNativePublisherTests(TestContext context)
                 new(
                     new string('a', 40),
                     "refs/heads/development",
-                    "hcoona-release-smoke-ruby",
+                    unit,
                     "product/unit.yml",
                     "buddy",
                     "github-packages-ruby",
@@ -710,7 +735,7 @@ public sealed class RubyNativePublisherTests(TestContext context)
                         "gem-build",
                         "selected-gem",
                         "ruby-gem",
-                        "hcoona-release-smoke-ruby",
+                        unit,
                         "1.2.3",
                         "package/original.gem",
                         bytes.Length,
@@ -726,7 +751,7 @@ public sealed class RubyNativePublisherTests(TestContext context)
                 prepared,
                 new(StringComparer.Ordinal)
                 {
-                    ["name"] = "hcoona-release-smoke-ruby",
+                    ["name"] = unit,
                     ["version"] = "1.2.3",
                     ["platform"] = "ruby",
                     ["commit"] = prepared.Subject.Revision,

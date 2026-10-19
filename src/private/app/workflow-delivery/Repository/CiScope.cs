@@ -456,7 +456,7 @@ internal static partial class CiScope
         AllInputs.Contains(path, StringComparer.Ordinal) ||
         PythonInputs.Contains(path, StringComparer.Ordinal) || Under(path, "tests/eng") ||
         path is ".github/workflows/workflow-delivery-v3-python-smoke.yml" or
-            ".github/workflows/workflow-delivery-v3-ruby-smoke.yml" or ".typos.toml" ||
+            ".github/workflows/workflow-delivery-v3-ruby-release.yml" or ".typos.toml" ||
         PythonRepositoryInputs.BuddyGuardInputs.Contains(path, StringComparer.Ordinal) ||
         PythonRepositoryInputs.IsWorkflow(path) ||
         AzureInput(path);

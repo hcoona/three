@@ -78,10 +78,17 @@ public sealed class RubyReleaseTests(TestContext context)
     [DataRow("official", "rubygems", "refs/tags/preview", true, false, true)]
     [DataRow("buddy", "github-packages-ruby", "refs/tags/preview", true, false, true)]
     [DataRow("buddy", "rubygems", "refs/heads/main", true, true, false)]
+    [DataRow("buddy", "github-packages-ruby", "refs/heads/topic", false, false, true,
+        RubyReleaseUnits.Latexmath)]
+    [DataRow("official", "rubygems", "refs/heads/main", false, true, false,
+        RubyReleaseUnits.Latexmath)]
+    [DataRow("official", "rubygems", "refs/heads/main", true, true, false,
+        RubyReleaseUnits.Latexmath)]
     public void ValidateChannelRefAndDryEligibility(string channel, string destination,
-        string selectedRef, bool dry, bool publicRelease, bool accepted)
+        string selectedRef, bool dry, bool publicRelease, bool accepted,
+        string unit = RubyReleaseUnits.Smoke)
     {
-        using var fixture = new RubyCallerFixture(channel, dry);
+        using var fixture = new RubyCallerFixture(channel, dry, unit);
         var preparation = fixture.Preparation with
         {
             Prepared = fixture.Prepared with { Subject = fixture.Prepared.Subject with { Destination
@@ -472,15 +479,16 @@ internal sealed class RubyCallerFixture : IDisposable
     internal RubyPreparationResult Preparation { get; }
     internal PreparedRelease Prepared => Preparation.Prepared;
     internal ReleaseFile Original => Prepared.Files[0];
-    internal RubyCallerFixture(string channel = "buddy", bool dry = false)
+    internal RubyCallerFixture(string channel = "buddy", bool dry = false,
+        string unit = RubyReleaseUnits.Smoke)
     {
         System.IO.Directory.CreateDirectory(Root);
         File.WriteAllText(Archive, "original");
         var subject = new ReleaseSubject(new('a', 40), channel == "official" ? "refs/heads/main" :
-            "refs/heads/topic", "hcoona-release-smoke-ruby", "fixture/release-unit.yml", channel,
+            "refs/heads/topic", unit, "fixture/release-unit.yml", channel,
             channel == "official" ? "rubygems" : "github-packages-ruby", dry);
         var file = new ReleaseFile("gem-build", "gem-output", "ruby-gem",
-            "hcoona-release-smoke-ruby", "1.2.3", "original.gem", 8,
+            unit, "1.2.3", "original.gem", 8,
             Convert.ToHexStringLower(SHA256.HashData("original"u8)));
         string[] required = ["native-input", "build", "contents", "consumer", "original-bytes"];
         var prepared = new PreparedRelease(subject, [file], required, required.Select(id => new

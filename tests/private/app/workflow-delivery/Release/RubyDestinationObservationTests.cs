@@ -34,10 +34,12 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     [DataRow("official", "rubygems", "absent")]
     [DataRow("official", "rubygems", "different")]
     [DataRow("official", "rubygems", "unknown")]
+    [DataRow("buddy", "github-packages-ruby", "exact", RubyReleaseUnits.Latexmath)]
+    [DataRow("buddy", "github-packages-ruby", "absent", RubyReleaseUnits.Latexmath)]
     public async Task SupportedDestinationsBindOriginalAndObservation(string channel,
-        string destination, string scenario)
+        string destination, string scenario, string unit = RubyReleaseUnits.Smoke)
     {
-        using var fixture = new Fixture(channel, destination);
+        using var fixture = new Fixture(channel, destination, unit);
         RubyObservationResult result = await fixture.ObserveAsync(command => Success(scenario switch
         {
             "exact" => fixture.Present(command, Fixture.Original),
@@ -345,6 +347,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     [DataRow("crossed-destination")]
     [DataRow("name")]
     [DataRow("kind")]
+    [DataRow("official-latexmath")]
     public async Task UnsupportedPreparationDoesNotRead(string scenario)
     {
         using var fixture = new Fixture();
@@ -358,6 +361,10 @@ public sealed class RubyDestinationObservationTests(TestContext context)
                 prepared.Subject with { Destination = "rubygems" } },
             "name" => prepared with { Files = [prepared.Files[0] with { Name =
                 "unrelated-package" }] },
+            "official-latexmath" => prepared with { Subject = prepared.Subject with {
+                Unit = RubyReleaseUnits.Latexmath, Channel = "official",
+                Destination = "rubygems" }, Files = [prepared.Files[0] with {
+                    Name = RubyReleaseUnits.Latexmath }] },
             _ => prepared with { Files = [prepared.Files[0] with { Kind = "python-wheel" }] },
         };
         int calls = 0;
@@ -373,6 +380,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
 
     [TestMethod]
     [DataRow("host")]
+    [DataRow("name")]
     [DataRow("blank-version")]
     [DataRow("relative-ruby")]
     [DataRow("relative-helper")]
@@ -396,6 +404,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         int calls = 0;
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => RubySourceReader.ReadAsync(
             scenario == "host" ? "https://unselected.invalid" : "https://rubygems.org",
+            scenario == "name" ? "another-package" : fixture.Prepared.Files[0].Name,
             scenario == "blank-version" ? " " : fixture.Prepared.Files[0].Version,
             tools, null, (_, _) =>
             {
@@ -487,15 +496,16 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         internal RubySourceTools Tools { get; }
         internal PreparedRelease Prepared { get; }
 
-        internal Fixture(string channel = "buddy", string destination = "github-packages-ruby")
+        internal Fixture(string channel = "buddy", string destination = "github-packages-ruby",
+            string unit = RubyReleaseUnits.Smoke)
         {
             Directory.CreateDirectory(Root);
             Tools = new(Path.Combine(Root, "tools", "ruby"), Path.Combine(Root, "tools",
                 "source.rb"),
                 Directory.CreateDirectory(Path.Combine(Root, "read")).FullName);
-            Prepared = new(new(new string('a', 40), "refs/heads/development", "ruby-fixture",
+            Prepared = new(new(new string('a', 40), "refs/heads/development", unit,
                 "fixtures/ruby.json", channel, destination, false),
-                [new("gem-build", "gem-original", "ruby-gem", "hcoona-release-smoke-ruby",
+                [new("gem-build", "gem-original", "ruby-gem", unit,
                     "1.2.3.pre.beta.7", "original/fixture.gem", Original.Length, Hash(Original))],
                 ["qualified-original"], [new("qualified-original", ReleaseCheckStatus.Passed)]);
         }
