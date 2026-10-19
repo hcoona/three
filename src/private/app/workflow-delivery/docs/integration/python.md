@@ -11,10 +11,11 @@ and authority of the integration contracts.
 `Native/Python` uses the repository-pinned UV metadata and synchronization CLI,
 passive PyPA build-requirement extraction and the bounded build association
 below. The [source assessment](../research/python-native-planning.md) retains the
-evidence and recheck triggers. UV owns resolution, the resolved graph, workspace
-membership and `requires-python` enforcement; PyPA owns build-requirement
-strings and PEP 508 parsing; NBGV owns its semantics. Standard tomllib supplies
-physical key/shape guards only. There is no embedded UV library, settings
+evidence and names the native contract tests that guard pin changes. UV owns
+resolution, the resolved graph, workspace membership and `requires-python`
+enforcement; PyPA owns build-requirement strings and PEP 508 parsing; NBGV owns
+its semantics. Standard tomllib supplies physical key/shape guards only.
+There is no embedded UV library, settings
 interpreter, resolver or compatibility promise. A nonempty flattened
 dependency group whose every requirement has a marker disjoint from the
 workspace Python range can lack a metadata node; that valid UV

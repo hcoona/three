@@ -400,4 +400,72 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
         Assert.IsFalse(selection.Request.Candidate.Projects.Any(project =>
             project.Id == "dirs.proj"));
     }
+
+    // The root SDK and central package pins reach the control test project only through native
+    // MSBuild evaluation, so a change to either pin selects that project's default test work.
+    [TestMethod]
+    [Timeout(60000, CooperativeCancellation = true)]
+    [DataRow("global.json", "SdkConfigurationCandidate")]
+    [DataRow("Directory.Packages.props", "CentralPackageConfiguration")]
+    public async Task RootDotNetPinsSelectTheControlTestWork(string pin, string role)
+    {
+        const string test = ControlTestInputs.Project;
+        using var fixture = await DotNetEndpointFixture.CreateAsync(context.CancellationToken);
+        await fixture.Repo.SetAsync("dirs.proj", $"""
+            <Project><ItemGroup><ProjectReference Include="{test}" /></ItemGroup></Project>
+            """);
+        // NBGV path filters keep the pins out of the version inputs, so only MSBuild selects.
+        await fixture.Repo.SetAsync("version.json", """
+            {"version":"1.0","pathFilters":["./tests"]}
+            """);
+        await fixture.Repo.SetAsync("global.json", RepositoryToolSelection.GlobalJson());
+        await fixture.Repo.SetAsync("nuget.config", """
+            <configuration><packageSources><clear />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources></configuration>
+            """);
+        await fixture.Repo.SetAsync("Directory.Build.props", """
+            <Project><PropertyGroup>
+              <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+              <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+              <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+              <NuGetAudit>false</NuGetAudit>
+              <DefaultItemExcludes>$(DefaultItemExcludes);obj/**</DefaultItemExcludes>
+            </PropertyGroup></Project>
+            """);
+        await fixture.Repo.SetAsync("Directory.Packages.props", "<Project />");
+        await fixture.Repo.SetAsync(test, """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+              <TargetFramework>net10.0</TargetFramework>
+              <IsTestingPlatformApplication>true</IsTestingPlatformApplication>
+            </PropertyGroup></Project>
+            """);
+        await fixture.CommitAsync();
+        // NuGet writes the lock it owns; the fixture commits it, then restores in locked mode.
+        await RestoreAsync(false);
+        string lockPath = test[..test.LastIndexOf('/')] + "/packages.lock.json";
+        await fixture.Repo.SetAsync(lockPath, await File.ReadAllTextAsync(
+            fixture.PathOf(lockPath), context.CancellationToken));
+        await fixture.CommitAsync();
+        await RestoreAsync(true);
+
+        DotNetRevisionInputs inputs = await fixture.Reader().ReadAsync(context.CancellationToken);
+        CiPlan plan = DotNetFactsAssembler.Complete(DotNetFactsAssembler.Select(inputs, inputs,
+            [pin], false, [], []), context.CancellationToken);
+        PlannedCheck check = Assert.ContainsSingle(plan.Checks.Where(item =>
+            item.Work.Key.Target == test && item.Work.Key.Check == DotNetChecks.Test));
+        Assert.Contains(new SelectionReason(pin, inputs.Revision.Commit, test), check.Reasons);
+        Assert.IsTrue(inputs.Inputs.Any(input => input.Path == pin &&
+            input.Native.Role == role && input.Native.Consumer.Project == fixture.PathOf(test)));
+
+        async Task RestoreAsync(bool locked)
+        {
+            NativeCommandResult restored = await NativeProcess.ExecuteAsync(new("dotnet",
+                fixture.Root, ["restore", fixture.PathOf(test),
+                    "-property:Configuration=Debug", "-property:ContinuousIntegrationBuild=true",
+                    "-property:RestoreLockedMode=" + (locked ? "true" : "false")], 30),
+                context.CancellationToken);
+            Assert.IsTrue(restored.Succeeded, restored.Stdout + restored.Stderr + restored.Error);
+        }
+    }
 }
