@@ -23,10 +23,11 @@ internal static class RubyRelease
         bool buddy = subject.Channel == "buddy" &&
             subject.Destination == "github-packages-ruby";
         bool official = subject.Channel == "official" && subject.Destination == "rubygems";
-        string package = RubyReleaseUnits.Admit(subject).Id;
+        RubyReleaseUnit unit = RubyReleaseUnits.Admit(subject);
+        string package = unit.Id;
         if (!(buddy || official) || prepared.Files is not
                 [{ Kind: "ruby-gem", Name: var file }] || file != package ||
-            !prepared.RequiredChecks.SequenceEqual(RubyPreparation.Required) ||
+            !prepared.RequiredChecks.SequenceEqual(RubyPreparation.RequiredFor(unit)) ||
             !Qualified(prepared.RequiredChecks, prepared.Checks) ||
             preparation.Errors.Length != 0 || preparation.Commands.Length == 0 ||
             preparation.Commands.Any(command => !command.Result.Succeeded ||

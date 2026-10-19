@@ -17,6 +17,12 @@ internal static class RubyPreparation
 {
     internal static readonly string[] Required = ["native-input", "build", "contents",
         "consumer", "original-bytes"];
+    private static readonly string[] Tested = ["native-input", "build", "contents",
+        "consumer", "tests", "original-bytes"];
+
+    // A unit adopting the native RSpec suite also requires its successful complete result.
+    internal static string[] RequiredFor(RubyReleaseUnit unit) =>
+        unit.Preset == RubyProjectChecks.Preset ? Tested : Required;
     private static readonly string[] ToolConfiguration = ["mise.toml", "mise.lock"];
 
     internal static Task<RubyPreparationResult> PrepareAsync(RubyPreparationRequest request,
@@ -46,12 +52,14 @@ internal static class RubyPreparation
         IRubyReleasePackage? operations = null;
         RubyGemArchive? original = null;
         ReleaseBuild? build = null;
+        string[] required = Required;
         string entry = "", directory = "", version = "", current = "native-input";
 
         await CheckAsync("native-input", async () =>
         {
             ReleaseSubject subject = request.Subject;
             (RubyReleaseUnit unit, bool official) = Admit(subject);
+            required = RequiredFor(unit);
             bound = await GitMaterialization.BindAsync(checkout, subject.Revision, token);
             RubyReleaseRecipe recipe = await ReadRecipeAsync(subject, bound.Root,
                 bound.ReadOptionalTextAsync, token);
@@ -135,6 +143,10 @@ internal static class RubyPreparation
             _ = await operations!.InspectReleaseAsync(original!, version, ExecuteAsync, token));
         await CheckAsync("consumer", () => operations!.ConsumeReleaseAsync(original!, version,
             ExecuteAsync, token));
+        if (required.Contains("tests"))
+            await CheckAsync("tests", () => operations is RubyLatexmathPackageOperations suite
+                ? suite.TestReleaseAsync(ExecuteAsync, token)
+                : throw new InvalidDataException("Ruby Release unit has no adopted suite."));
         await CheckAsync("original-bytes", () =>
         {
             RubySmokePackageOperations.RequireOriginal(original!);
@@ -143,7 +155,7 @@ internal static class RubyPreparation
                 original.Sha256));
             return Task.CompletedTask;
         });
-        return new(new(request.Subject, [.. files], Required.ToArray(), [.. checks]), native,
+        return new(new(request.Subject, [.. files], required.ToArray(), [.. checks]), native,
             [.. commands], [.. errors]);
 
         Task<NativeCommandResult> ExecuteAsync(NativeCommand command,

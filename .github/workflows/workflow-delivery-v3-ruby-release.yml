@@ -87,6 +87,20 @@ jobs:
           if-no-files-found: error
           retention-days: 45
           overwrite: false
+      - name: Install adopted suite system dependencies
+        if: inputs.unit == 'asciidoctor-latexmath'
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base \
+            texlive-latex-recommended \
+            texlive-fonts-recommended \
+            dvisvgm \
+            pdf2svg \
+            poppler-utils \
+            imagemagick \
+            ghostscript
       - name: Qualify complete selected native original
         run: |-
           set -Eeuo pipefail
