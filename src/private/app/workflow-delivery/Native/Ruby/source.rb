@@ -17,7 +17,9 @@ def read_selected_source(request)
     raise "Unsupported native Ruby source"
   end
   name = request.fetch("name")
-  raise "Unsupported native Ruby package" unless name == "hcoona-release-smoke-ruby"
+  unless ["hcoona-release-smoke-ruby", "asciidoctor-latexmath"].include?(name)
+    raise "Unsupported native Ruby package"
+  end
 
   version = Gem::Version.new(request.fetch("version"))
   requirement = Gem::Requirement.new("= #{version}")

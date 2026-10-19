@@ -8,9 +8,9 @@ internal sealed record RubyGemArchive(string Path, long Length, string Sha256);
 
 // RubyGems owns package semantics; callers own their plans and command/result recording.
 internal sealed class RubySmokePackageOperations(RubyFactTools tools, string gem, string nbgv,
-    string state)
+    string state) : IRubyReleasePackage
 {
-    internal async Task<RubyGemArchive> BuildAsync(GitMaterialization checkout, string directory,
+    public async Task<RubyGemArchive> BuildAsync(GitMaterialization checkout, string directory,
         string entryPoint, string version,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
@@ -56,7 +56,7 @@ internal sealed class RubySmokePackageOperations(RubyFactTools tools, string gem
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token) => await ConsumeAsync(original, version, false, execute, token);
 
-    internal async Task<RubyArchiveFacts> InspectReleaseAsync(RubyGemArchive original,
+    public async Task<RubyArchiveFacts> InspectReleaseAsync(RubyGemArchive original,
         string version, Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
@@ -76,7 +76,7 @@ internal sealed class RubySmokePackageOperations(RubyFactTools tools, string gem
         return facts;
     }
 
-    internal Task ConsumeReleaseAsync(RubyGemArchive original, string version,
+    public Task ConsumeReleaseAsync(RubyGemArchive original, string version,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token) => ConsumeAsync(original, version, true, execute, token);
 
@@ -130,7 +130,7 @@ internal sealed class RubySmokePackageOperations(RubyFactTools tools, string gem
             throw new InvalidDataException("Original gem changed between required checks.");
     }
 
-    private static async Task RunAsync(NativeCommand command,
+    internal static async Task RunAsync(NativeCommand command,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {

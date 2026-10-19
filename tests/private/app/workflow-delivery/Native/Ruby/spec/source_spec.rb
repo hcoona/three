@@ -11,7 +11,7 @@ module NativeHelpers
     TOKEN = "synthetic token:@/+?%&= punctuation"
     UNSAFE = "unsafe-native-exception-detail"
 
-    def invoke(scenario, host: OFFICIAL, version: "1.2.3", defect: nil, linked: false)
+    def invoke(scenario, host: OFFICIAL, version: "1.2.3", defect: nil, linked: false, name: NAME)
       @state = @scratch / "native state"
       environment = closed_environment(@state, variables: %w[HOME USERPROFILE XDG_CONFIG_HOME XDG_CACHE_HOME XDG_DATA_HOME GEM_HOME GEM_PATH GEM_SPEC_CACHE TMPDIR TMP TEMP])
       write(Pathname.new(environment["HOME"]) / ".gemrc", "---\n:sources:\n- https://alternate.invalid\n")
@@ -22,7 +22,7 @@ module NativeHelpers
       else
         directory.mkpath
       end
-      request = {"host" => host, "name" => NAME, "version" => version, "directory" => directory.to_s}
+      request = {"host" => host, "name" => name, "version" => version, "directory" => directory.to_s}
       case defect
       when "host" then request["host"] = "https://unselected.invalid"
       when "name" then request["name"] = "another-package"
@@ -31,7 +31,7 @@ module NativeHelpers
       end
       path = write(@state / "request.json", JSON.generate(request))
       trace_path = @state / "calls.json"
-      environment.merge!("TEST_SCENARIO" => scenario, "TEST_VERSION" => version, "TEST_TRACE" => trace_path.to_s)
+      environment.merge!("TEST_SCENARIO" => scenario, "TEST_NAME" => name, "TEST_VERSION" => version, "TEST_TRACE" => trace_path.to_s)
       environment.merge!("RUBY_SOURCE_USER" => USER, "RUBY_SOURCE_TOKEN" => TOKEN) if host == BUDDY
       argv = [RUBY, "-r", CARRIER / "spec/support/public_source_answers.rb", HELPERS / "source.rb", path]
       [JSON.generate(request), *argv.map(&:to_s)].each do |value|
@@ -72,6 +72,14 @@ module NativeHelpers
         expect(Pathname.new(RUBY)).to be_absolute
         expect(original.dirname.glob("*.gemrc")).to be_empty
       end
+    end
+
+    it "second_registered_unit_reads_its_exact_tuple" do
+      result, value, trace, = invoke("exact", host: BUDDY, name: "asciidoctor-latexmath")
+      expect(result.returncode).to eq(0)
+      assert_queries(trace)
+      expect(value).to include("state" => "present", "name" => "asciidoctor-latexmath")
+      expect(trace.drop(2).map { |call| call["name"] }).to eq(%w[asciidoctor-latexmath asciidoctor-latexmath])
     end
 
     %w[1.2.3 1.2.3.pre.beta.7].each do |version|

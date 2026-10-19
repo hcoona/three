@@ -201,7 +201,8 @@ public sealed class RubySourceReaderContractTests(TestContext context)
                     "cache")).FullName;
                 File.WriteAllBytes(Path.Combine(cache, $"{Name}-{version}.gem"), cached);
             }
-            RubySourceReadResult result = await RubySourceReader.ReadAsync(selected, version,
+            RubySourceReadResult result = await RubySourceReader.ReadAsync(selected, Name,
+                version,
                 new(ruby, Path.Combine(RepositoryToolSelection.SourceRoot,
                     "src/private/app/workflow-delivery/Native/Ruby/source.rb"), scratch),
                 credential, (command, cancellation) => NativeProcess.ExecuteAsync(command with

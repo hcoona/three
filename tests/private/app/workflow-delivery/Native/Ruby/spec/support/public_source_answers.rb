@@ -42,7 +42,7 @@ Gem::Source.prepend(Module.new do
       "credential_ok" => credential_ok }
     raise "unsafe-native-exception-detail #{uri}" if scenario == "fail-#{type}"
     version = Gem::Version.new(ENV.fetch("TEST_VERSION"))
-    tuple = Gem::NameTuple.new("hcoona-release-smoke-ruby", version, "ruby")
+    tuple = Gem::NameTuple.new(ENV.fetch("TEST_NAME"), version, "ruby")
     # Native NameTuple, Version and Requirement own exact tuple interpretation.
     distractors = [Gem::NameTuple.new("another-package", version, "ruby"),
       Gem::NameTuple.new(tuple.name, Gem::Version.new("9.9.9"), "ruby"),
@@ -59,7 +59,7 @@ Gem::Source.prepend(Module.new do
   define_method(:fetch_spec) do |tuple|
     raise "not a native NameTuple" unless tuple.is_a?(Gem::NameTuple)
     requirement = Gem::Requirement.new("= #{ENV.fetch('TEST_VERSION')}")
-    unless tuple.name == "hcoona-release-smoke-ruby" &&
+    unless tuple.name == ENV.fetch("TEST_NAME") &&
       requirement.satisfied_by?(tuple.version) && tuple.platform == "ruby"
       raise "not exact native tuple"
     end

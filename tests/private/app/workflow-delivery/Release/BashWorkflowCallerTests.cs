@@ -179,8 +179,12 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         internal string Root { get; } = Directory.CreateTempSubdirectory("bash-caller-tests-")
             .FullName;
         internal PreparedRelease Prepared { get; }
-        internal string Workflow => "workflow-delivery-v3-" + (ecosystem ==
-            "npm" ? "buddy" : ecosystem) + "-smoke.yml";
+        internal string Workflow => ecosystem switch
+        {
+            "npm" => "workflow-delivery-v3-buddy-smoke.yml",
+            "ruby" => "workflow-delivery-v3-ruby-release.yml",
+            _ => "workflow-delivery-v3-" + ecosystem + "-smoke.yml",
+        };
         internal string Job => ecosystem == "npm" ? "verify" : "verify-result";
         internal string VerifyStep => ecosystem switch
         {
@@ -276,6 +280,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
                 _ => "github-packages",
             },
             ["DRY_RUN"] = "false",
+            ["UNIT"] = Prepared.Subject.Unit,
             ["WRITE_NEEDED"] = "false",
             ["GITHUB_SHA"] = Prepared.Subject.Revision,
             ["GITHUB_REF"] = Prepared.Subject.SelectedRef,

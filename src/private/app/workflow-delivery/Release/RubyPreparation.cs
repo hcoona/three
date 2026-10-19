@@ -15,7 +15,6 @@ internal sealed record RubyPreparationResult(PreparedRelease Prepared,
 // The complete declared native gem is qualified independently of CI selection.
 internal static class RubyPreparation
 {
-    internal const string Preset = "ruby/hcoona-release-smoke-ruby-v1";
     internal static readonly string[] Required = ["native-input", "build", "contents",
         "consumer", "original-bytes"];
     private static readonly string[] ToolConfiguration = ["mise.toml", "mise.lock"];
@@ -44,7 +43,7 @@ internal static class RubyPreparation
         var native = new Dictionary<string, string>(StringComparer.Ordinal);
         Dictionary<string, string?> environment = EnvironmentFor(scratch, request);
         GitMaterialization? bound = null;
-        RubySmokePackageOperations? operations = null;
+        IRubyReleasePackage? operations = null;
         RubyGemArchive? original = null;
         ReleaseBuild? build = null;
         string entry = "", directory = "", version = "", current = "native-input";
@@ -52,7 +51,7 @@ internal static class RubyPreparation
         await CheckAsync("native-input", async () =>
         {
             ReleaseSubject subject = request.Subject;
-            bool official = Admit(subject);
+            (RubyReleaseUnit unit, bool official) = Admit(subject);
             bound = await GitMaterialization.BindAsync(checkout, subject.Revision, token);
             RubyReleaseRecipe recipe = await ReadRecipeAsync(subject, bound.Root,
                 bound.ReadOptionalTextAsync, token);
@@ -115,7 +114,7 @@ internal static class RubyPreparation
                 .VersionAsync(Path.Combine(checkout, entry), raw, token)).Version;
             RubySourceGemFacts source = await RubySourceCollector.ReadSourceAsync(bound, entry,
                 facts, nbgv, ExecuteAsync, token);
-            if (source.Gem.Name != "hcoona-release-smoke-ruby" ||
+            if (source.Gem.Name != unit.Id ||
                 source.Gem.Version != version || source.Gem.Platform != "ruby")
                 throw new InvalidDataException("Unsupported native Ruby source identity.");
             native.Add("name", source.Gem.Name);
@@ -126,8 +125,9 @@ internal static class RubyPreparation
             native.Add("ruby", ruby);
             native.Add("rubygems", rubygems);
             native.Add("nbgv", pin);
-            operations = new(facts, request.Tools.Gem, nbgv,
-                Directory.CreateDirectory(Path.Combine(scratch, "package")).FullName);
+            operations = RubyReleaseUnits.Package(unit, facts, request.Tools.Gem, nbgv,
+                Directory.CreateDirectory(Path.Combine(scratch, "package")).FullName,
+                Path.Combine(checkout, directory));
         });
         await CheckAsync("build", async () => original = await operations!.BuildAsync(bound!,
             directory, entry, version, ExecuteAsync, token));
@@ -189,8 +189,8 @@ internal static class RubyPreparation
         }
     }
 
-    // Pure subject admission, before any Git or native work. Returns whether it is Official.
-    internal static bool Admit(ReleaseSubject subject)
+    // Pure subject admission, before any Git or native work.
+    internal static (RubyReleaseUnit Unit, bool Official) Admit(ReleaseSubject subject)
     {
         bool buddy = subject.Channel == "buddy" && subject.Destination == "github-packages-ruby";
         bool official = subject.Channel == "official" && subject.Destination == "rubygems";
@@ -199,7 +199,7 @@ internal static class RubyPreparation
         ReleasePolicy.RequireEligible(subject);
         if (!GitReader.IsCommitId(subject.Revision))
             throw new InvalidDataException("Ruby Release requires the exact source revision.");
-        return official;
+        return (RubyReleaseUnits.Admit(subject), official);
     }
 
     // The complete committed recipe, read through a revision-bound reader.
@@ -219,12 +219,12 @@ internal static class RubyPreparation
         string parent = Path.GetDirectoryName(subject.Declaration)!.Replace('\\', '/');
         string entry = parent.Length == 0 ? build.EntryPoint : parent + "/" + build.EntryPoint;
         string directory = Path.GetDirectoryName(entry)!.Replace('\\', '/');
-        if (Path.GetFileName(entry) != "hcoona-release-smoke-ruby.gemspec" ||
+        if (Path.GetFileName(entry) != subject.Unit + ".gemspec" ||
             await read(entry, token) is null)
             throw new InvalidDataException("Missing committed adopted Ruby entry.");
         QualitySelection? quality = await new QualitySelectionReader(root, read)
             .ReadAsync(directory, "ruby", token);
-        if (quality?.Preset != Preset)
+        if (quality?.Preset != RubyReleaseUnits.Named(unit.Id).Preset)
             throw new InvalidDataException("Unsupported complete Ruby quality selection.");
         return new(build, entry, directory);
     }

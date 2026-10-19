@@ -13,8 +13,6 @@ internal sealed record RubyCompletionResult(ReleaseOutcome Outcome,
 // These concrete values cross ordinary jobs; native policy owns the write gate.
 internal static class RubyRelease
 {
-    private const string Package = "hcoona-release-smoke-ruby";
-
     // The single check of a received preparation in each job; later operations in that job
     // rely on it rather than re-admitting preparation internals.
     internal static void Validate(RubyPreparationResult preparation)
@@ -25,14 +23,15 @@ internal static class RubyRelease
         bool buddy = subject.Channel == "buddy" &&
             subject.Destination == "github-packages-ruby";
         bool official = subject.Channel == "official" && subject.Destination == "rubygems";
-        if (!(buddy || official) || subject.Unit != Package || prepared.Files is not
-                [{ Kind: "ruby-gem", Name: Package }] ||
+        string package = RubyReleaseUnits.Admit(subject).Id;
+        if (!(buddy || official) || prepared.Files is not
+                [{ Kind: "ruby-gem", Name: var file }] || file != package ||
             !prepared.RequiredChecks.SequenceEqual(RubyPreparation.Required) ||
             !Qualified(prepared.RequiredChecks, prepared.Checks) ||
             preparation.Errors.Length != 0 || preparation.Commands.Length == 0 ||
             preparation.Commands.Any(command => !command.Result.Succeeded ||
                 command.Result.Error is not null) ||
-            !preparation.Native.TryGetValue("name", out string? name) || name != Package ||
+            !preparation.Native.TryGetValue("name", out string? name) || name != package ||
             !preparation.Native.TryGetValue("version", out string? version) ||
                 version != prepared.Files[0].Version ||
             !preparation.Native.TryGetValue("platform", out string? platform) ||

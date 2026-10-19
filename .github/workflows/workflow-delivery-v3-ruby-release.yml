@@ -9,6 +9,13 @@ name: Workflow Delivery v3 Ruby Release
         options:
           - github-packages
           - rubygems
+      unit:
+        description: Selected Ruby release unit
+        type: choice
+        required: true
+        options:
+          - hcoona-release-smoke-ruby
+          - asciidoctor-latexmath
       dry-run:
         description: Qualify and describe without publication
         type: boolean
@@ -16,14 +23,15 @@ name: Workflow Delivery v3 Ruby Release
 permissions: {}
 concurrency:
   group:
-    ${{ format('workflow-delivery-{0}-hcoona-release-smoke-ruby', inputs.destination == 'github-packages' && 'rubygems.pkg.github.com-hcoona'
-    || 'rubygems.org') }}
+    ${{ format('workflow-delivery-{0}-{1}', inputs.destination == 'github-packages' && 'rubygems.pkg.github.com-hcoona'
+    || 'rubygems.org', inputs.unit) }}
   cancel-in-progress: false
 defaults:
   run:
     shell: bash
 env:
   DESTINATION: ${{ inputs.destination }}
+  UNIT: ${{ inputs.unit }}
   DRY_RUN: ${{ inputs.dry-run }}
 jobs:
   prepare:
