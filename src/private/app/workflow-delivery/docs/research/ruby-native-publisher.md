@@ -155,16 +155,47 @@ host. It asserts the following:
   redirect and an other-realm redirect each end the command as a failure after
   exactly one POST, and no request reaches another realm.
 
+`RubySourceReaderContractTests` runs the production `RubySourceReader` and the
+real `source.rb` with the locked RubyGems against a loopback HTTPS gem source.
+The source serves gems built by the locked `gem` and indexes written with
+RubyGems' own Marshal format. The only seam routes the selected host to loopback
+and keeps its path and user information; every `Gem::Source` method runs
+unchanged. It asserts:
+
+- the exact ordered requests: `specs.4.8.gz`, `prerelease_specs.4.8.gz`,
+  `quick/Marshal.4.8/<full>.gemspec.rz`, then `gems/<full>.gem`, under the
+  `/hcoona` owner path for Buddy (the download is requested from the host root);
+- Basic authentication with the encoded read user and token on every Buddy
+  request and none for Official;
+- a present answer, released or prerelease, with the original's size, SHA-256
+  and the `<download>/cache/<file>.gem` path;
+- absent after only the two inventory reads when neither lists the version;
+- unknown, stopping at the failed request, when either inventory answers 404 or
+  500, the specification 500 or the original 404.
+
+RubyGems reuses an original already in its download cache without a request, so
+the reader's fresh-scratch requirement is load-bearing; the cache row asserts both
+the native reuse and the reader's refusal of used scratch. This contract found an
+application defect: `source.rb` never loaded `rubygems/remote_fetcher`, which
+`Gem::Source` calls but does not autoload, so every real read answered unknown.
+The helper now requires it. The hosted Ruby smoke runs recorded in
+[normal-live evidence](../validation/ruby-normal-live-evidence.md) (2026-10-02)
+predate this helper (added 2026-10-12); no hosted Ruby smoke run has used it.
+
 The native helper's RSpec carrier asserts the exact specification and archive
-field shape, the locked Ruby identity, and that every committed `Gemfile.lock`
+field shape, the locked Ruby identity, a remote `file://` Git source answered
+from the lock as its URI and revision, and that every committed `Gemfile.lock`
 names a Bundler the helper supports and the carrier tests. The Linux
 native-preparation job runs the publisher contracts whenever `mise.toml`,
 `mise.lock` or the managed sources change; the RSpec carrier runs when its
 helpers, schemas or any committed `Gemfile.lock` change.
 
 The credential Action, OIDC token exchange, GitHub Packages and RubyGems.org
-acceptance, token scope and registry routing remain non-claims, bound to the
-recorded runs; the Action is a dispatch-only workflow pin and gets static
+acceptance and index format, token scope and registry routing (including the
+GitHub Packages storage redirect) remain non-claims, bound to the recorded runs.
+The carrier's `gem install bundler --version` preparation and the RSpec JSON
+report shape are exercised only by the hosted Ruby group job and are not pin
+contracts; the Action is a dispatch-only workflow pin and gets static
 validation only. Windows remains the owner's assumption. A missing native
 capability blocks the affected path rather than expanding the application into a
 generic credential, resolver or trust service.
