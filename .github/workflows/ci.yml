@@ -1009,7 +1009,7 @@ jobs:
             -property:RestoreLockedMode=true \
             --filter 'FullyQualifiedName=WorkflowDelivery.Tests.Release.RubyPreparationNativeTests.NativePreparationQualifiesCommittedOriginalAndInstalledOrigin|TestCategory=RubyNativeContract' \
             --report-trx --report-trx-filename preparation.trx \
-            --results-directory "$RUNNER_TEMP/native-preparation/ruby" -- --minimum-expected-tests 19
+            --results-directory "$RUNNER_TEMP/native-preparation/ruby" -- --minimum-expected-tests 20
       - name: Execute PNPM and Node native contracts
         if: ${{ !cancelled() && steps.plan.outputs.node == 'true' }}
         run: |

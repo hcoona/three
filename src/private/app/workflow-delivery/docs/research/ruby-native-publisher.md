@@ -151,9 +151,18 @@ host. It asserts the following:
 
 - Buddy pushes exactly one POST of the original bytes to `/hcoona/api/v1/gems` with
   `Bearer <key>`, and Official to `/api/v1/gems` with the raw key; both exit 0.
-- A 503, the registry's existing-version 409, a dropped connection, a same-realm
-  redirect and an other-realm redirect each end the command as a failure after
-  exactly one POST, and no request reaches another realm.
+- A 503, the registry's existing-version 409, a connection closed without a
+  response, a same-realm redirect and an other-realm redirect each end the
+  command as a failure after exactly one POST, and no request reaches another
+  realm.
+- A TCP reset (RST) is resent once by RubyGems' request layer (`Gem::Request`
+  retries `ECONNRESET`, `EOFError` and similar once per request): the command
+  fails after exactly two POSTs of the same original. This is the bounded native
+  resend that [WD-OPS-002](../requirements.md#observation-retry-and-recovery)
+  already delegates; one invocation is not one network write. A resent push of a
+  version the registry already accepted is rejected as an existing version, and
+  the application's fresh observation, not the command outcome, establishes the
+  business result.
 
 `RubySourceReaderContractTests` runs the production `RubySourceReader` and the
 real `source.rb` with the locked RubyGems against a loopback HTTPS gem source.

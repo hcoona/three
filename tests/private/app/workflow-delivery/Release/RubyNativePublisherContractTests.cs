@@ -41,25 +41,31 @@ public sealed class RubyNativePublisherContractTests(TestContext context)
         Assert.StartsWith("127.0.0.1:", posted.Host);
     }
 
-    // RubyGems does not resend: a failure status, the registry's existing-version rejection, a
-    // dropped connection and any redirect (same or other realm) each end the command as a
-    // failure after exactly one POST, and no request reaches another realm.
+    // A returned failure status, the registry's existing-version rejection, a connection
+    // closed without a response and any redirect (same or other realm) each end the command
+    // as a failure after exactly one POST. A TCP reset (RST) is resent once by RubyGems'
+    // request layer, so it ends after two POSTs of the same original. No request reaches
+    // another realm.
     [TestMethod]
     [OSCondition(OperatingSystems.Linux)]
-    [DataRow("unavailable")]
-    [DataRow("existing-version")]
-    [DataRow("reset")]
-    [DataRow("same-realm-redirect")]
-    [DataRow("other-realm-redirect")]
-    public async Task PushFailuresEndAfterOnePost(string answer)
+    [DataRow("unavailable", 1)]
+    [DataRow("existing-version", 1)]
+    [DataRow("close", 1)]
+    [DataRow("reset", 2)]
+    [DataRow("same-realm-redirect", 1)]
+    [DataRow("other-realm-redirect", 1)]
+    public async Task PushFailuresStayWithinTheNativeResendBound(string answer, int posts)
     {
         using var push = await Push.RunAsync("official", answer, context.CancellationToken);
 
         AssertExited(push.Result, false);
-        GemHost.Request posted = Assert.ContainsSingle(push.Requests);
-        Assert.AreEqual("/api/v1/gems", posted.Path);
-        Assert.StartsWith("127.0.0.1:", posted.Host);
-        CollectionAssert.AreEqual(push.Original, posted.Body);
+        Assert.HasCount(posts, push.Requests);
+        foreach (GemHost.Request posted in push.Requests)
+        {
+            Assert.AreEqual("/api/v1/gems", posted.Path);
+            Assert.StartsWith("127.0.0.1:", posted.Host);
+            CollectionAssert.AreEqual(push.Original, posted.Body);
+        }
     }
 
     private static void AssertExited(NativeCommandResult result, bool succeeded)
@@ -235,6 +241,7 @@ public sealed class RubyNativePublisherContractTests(TestContext context)
                             "existing-version" => ("409 Conflict",
                                 "Repushing of gem versions is not allowed.", ""),
                             "reset" => ("reset", "", ""),
+                            "close" => ("close", "", ""),
                             "same-realm-redirect" => ("307 Temporary Redirect", "",
                                 "Location: https://127.0.0.1:" + Port + "/moved" +
                                 request.Path + "\r\n"),
@@ -243,7 +250,15 @@ public sealed class RubyNativePublisherContractTests(TestContext context)
                                 request.Path + "\r\n"),
                             _ => throw new InvalidOperationException(answer),
                         };
-                        if (status == "reset") return;
+                        if (status == "reset")
+                        {
+                            // An abortive close: the client receives a TCP reset (RST).
+                            socket.Client.LingerState = new LingerOption(true, 0);
+                            socket.Client.Close(0);
+                            return;
+                        }
+                        // A graceful close without a response: the client reads end of file.
+                        if (status == "close") return;
                         byte[] content = Encoding.UTF8.GetBytes(body);
                         await secure.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 " + status +
                             "\r\n" + headers + "Content-Length: " + content.Length +
