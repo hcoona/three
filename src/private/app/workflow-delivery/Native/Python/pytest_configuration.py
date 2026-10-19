@@ -18,8 +18,9 @@ def inspect_configuration(directory: Path) -> dict[str, object]:
     if Path.cwd() != root:
         message = "The query must run at its requested endpoint."
         raise ValueError(message)
-    os.environ.pop("PYTEST_ADDOPTS", None)
-    os.environ.pop("PYTEST_PLUGINS", None)
+    # Ambient pytest settings (options, plugins, tracing) are not inputs.
+    for name in [name for name in os.environ if name.startswith("PYTEST_")]:
+        del os.environ[name]
     os.environ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     import pytest  # noqa: PLC0415
 

@@ -106,13 +106,15 @@ credentials/access and Environment operations remain outside this result.
 A passing observation would qualify only this exact Linux planning-input
 composition. It would not qualify package presets, preparation/install/build,
 test execution, complete paired caller/cutover, Windows, Release or publication.
-Windows remains the owner's accepted feasibility assumption. Recheck affected
-source/operation contracts when tools, graph shape, inputs or necessary environment
-change, or at the next integration review. The author evaluates the affected
-interfaces; independent engineering/evidence review checks the conclusion.
+Windows remains the owner's accepted feasibility assumption. Changes to graph
+shape, inputs or necessary environment are evaluated by their author and checked
+by independent engineering/evidence review; tool pins are guarded as below.
 Unresolved necessary shapes stop for owner disposition without a parallel parser,
 target roster or reduced impact coverage.
 
-The repository UV pin later moved to 0.13.x. That change is not evaluated for
-this UV 0.12.23 record; it falls to the record's stated fallback, the next
-integration review.
+This observation stays bound to UV 0.12.23. Later pins are guarded by contract
+tests rather than a recheck: `PythonNativeContractTests` and the extended
+`PythonPreparationNativeTests` run the locked tools in the Linux
+native-preparation job, and `test_pytest_configuration_contract.py` runs the
+locked pytest. A pin change that alters a consumed fact fails CI. Windows remains
+the owner's assumption.

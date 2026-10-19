@@ -101,9 +101,12 @@ into another durable trust record. Preserve actual command outcomes and required
 selection/hash inputs instead. Missing or failed native acknowledgement blocks
 consumption; a local-original installation cannot establish remote routing.
 The [concrete contract](../integration/python.md#concrete-python-release-integration)
-retains component/caller qualification and separate live authorization. Recheck
-these affected native contracts when the selected UV changes; dependency and
-implementation review is the fallback event.
+retains component/caller qualification and separate live authorization.
+`PythonNativeContractTests` guards the consumed UV contracts at the locked pin: the root-lock
+export is hash-pinned and registry-only and includes the locked `packaging`, and
+the exact install flags stop on a missing or different hash and install a
+matching one. Installation from pypi.org needs the network and stays a
+non-claim, covered only by the dispatch-only smoke workflow.
 
 ## Credential and Output Boundary
 
@@ -158,10 +161,30 @@ consumers, deadlines and workflow transfer. Controlled integration tests and
 ordinary CI qualify only their stated scope. Any live validation, publisher
 configuration change or publication requires separate bounded authorization.
 
-Recheck affected native sources when the selected UV/OIDC dependency changes,
-or when publisher/output integration relies on changed runner command handling.
-The implementation or dependency-change reviewer evaluates these boundaries;
-that review is the fallback event. Missing capability evidence blocks the
+`PythonNativeContractTests.TrustedPublishingUploadsOnceAndForwardsTheTokenMask`
+runs the locked UV with the publisher's exact command against a loopback HTTPS
+registry and token service with fake identities, and a closed proxy for any
+non-loopback request. It asserts that the flags are accepted and that the exchange
+is audience, OIDC token request, mint, exactly one upload of the selected original
+bytes with the minted token, then token invalidation. It also asserts that the
+forwarded runner output is exactly the minted token's `::add-mask::` line. It runs
+for both a wheel and a minimal valid sdist, so UV reads upload metadata from each
+archive format, and it asserts that the mint request carries the OIDC token and
+the invalidation request carries the minted token.
+`NativeUploadHandlingStaysBoundedAndFailsClosed` guards the native upload handling
+the publisher relies on instead of an application retry. A 503, a 500 and the
+registry's `400 File already exists` answer each end the command as a failure
+after one upload. A connection reset is retried a bounded four uploads in total
+before failing. Every row requires UV to exit on its own, not by deadline kill. A
+same-realm redirect is followed with the token, and a redirect
+to another realm fails without sending it there. The existing-file row covers
+UV's handling of a registry rejection; the optional pre-upload
+`--check-url` check is not selected and is not guarded. The publisher passes one
+file per invocation, so stopping at the first failure across several files is
+outside the consumed contract. Warehouse token minting and acceptance, the real
+GitHub OIDC provider and runner masking remain non-claims, bound to the recorded
+runs. A change to runner command
+handling is evaluated by its author. Missing capability evidence blocks the
 changed path rather than expanding the application into another publisher.
 
 ## UV 0.12.24 to 0.13.1 Recheck
