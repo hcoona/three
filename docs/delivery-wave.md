@@ -379,13 +379,18 @@ ends a grant. Git and the proposing PR retain the reason and history.
   sources, the root `uv.lock` and the latexmath `Gemfile.lock`.
 - **Owner decisions:** nbgv-python keeps its static `pyproject.toml` version,
   bumped by hand before each publication; a same-version conflict keeps its
-  normal outcome. Clean local consumers resolve runtime dependencies
+  normal outcome. It is the sole exception to the canonical NBGV version of
+  WD-REL-001 and WD-REL-005: it supplies NBGV to Python builds and must not
+  version itself through itself. Clean local consumers resolve runtime dependencies
   (`packaging`, `asciidoctor`) from those committed locks. Publication goes only
   to the existing Buddy destinations, TestPyPI and GitHub Packages; Official
   stays out of scope. The shared callers are renamed now, with a smoke-only
   Official guard, so a later Official onboarding needs one publisher
   registration per destination against the new names.
-- **Advancement and outcome:** add a release-unit declaration for each
+- **Advancement and outcome:** first amend WD-REL-001 and WD-REL-005 with that
+  single named exception, keeping the canonical NBGV version for every other
+  unit, and reconcile the HLD and MLD sections that restate it. Then add a
+  release-unit declaration for each
   product, a quality selection for nbgv-python (latexmath keeps its adopted
   `ruby/rspec-v1`), and one concrete product recipe each,
   beside the smoke recipes, as the HLD's accepted extension cost: a
@@ -406,7 +411,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
   publisher, each product completes one verified live Buddy publication.
 - **Ordering and gates:** follow the Workflow Delivery engineering, OCR,
   record-system and research-evidence review gates; independently classify
-  material findings before repair. Live Buddy publication starts only after
+  material findings before repair. The requirements amendment passes its
+  [change review](../src/private/app/workflow-delivery/docs/requirements.md#requirement-change-review)
+  and merges before the nbgv-python recipe is implemented. Live Buddy publication starts only after
   the implementation merges with ordinary CI passing and the owner confirms
   the publisher registration. A failed or uncertain live attempt returns to the
   owner before any further dispatch for that product.
