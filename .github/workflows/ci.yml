@@ -982,7 +982,7 @@ jobs:
           dotnet "$RUNNER_TEMP/native-control/control/WorkflowDelivery.dll" ci native-preparation-plan "$GITHUB_WORKSPACE" \
             "$RUNNER_TEMP/native-scope/ci-scope.json" "$RUNNER_TEMP/native-preparation"
       - name: Setup selected native tools
-        if: steps.plan.outputs.python == 'true' || steps.plan.outputs.ruby == 'true'
+        if: steps.plan.outputs.python == 'true' || steps.plan.outputs.ruby == 'true' || steps.plan.outputs.node == 'true'
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           version: '2026.10.11'
@@ -991,6 +991,7 @@ jobs:
             dotnet
             ${{ steps.plan.outputs.python == 'true' && 'python uv' || '' }}
             ${{ steps.plan.outputs.ruby == 'true' && 'ruby' || '' }}
+            ${{ steps.plan.outputs.node == 'true' && 'node pnpm' || '' }}
       - name: Execute required original Python preparation scenario
         if: steps.plan.outputs.python == 'true'
         run: |
@@ -1009,6 +1010,15 @@ jobs:
             --filter FullyQualifiedName=WorkflowDelivery.Tests.Release.RubyPreparationNativeTests.NativePreparationQualifiesCommittedOriginalAndInstalledOrigin \
             --report-trx --report-trx-filename preparation.trx \
             --results-directory "$RUNNER_TEMP/native-preparation/ruby" -- --minimum-expected-tests 1
+      - name: Execute PNPM and Node native contracts
+        if: ${{ !cancelled() && steps.plan.outputs.node == 'true' }}
+        run: |
+          mise exec --locked dotnet node pnpm -- dotnet test \
+            --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj \
+            -property:RestoreLockedMode=true \
+            --filter 'TestCategory=PnpmNativeContract' \
+            --report-trx --report-trx-filename contracts.trx \
+            --results-directory "$RUNNER_TEMP/native-preparation/node" -- --minimum-expected-tests 28
       - name: Retain original preparation plans, reports and packages
         if: always()
         uses: actions/upload-artifact@v7

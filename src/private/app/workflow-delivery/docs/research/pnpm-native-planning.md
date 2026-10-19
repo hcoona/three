@@ -263,9 +263,8 @@ permit dependency level 256 but omit its children without a truncation flag.
 Reject that indistinguishable boundary. The renderer nests two JSON containers
 per dependency level inside the array/project pair; a JSON maximum depth of 512
 accepts the complete level-255 shape and rejects level 256. These are pinned
-source findings and adapter inferences, not new PNPM observations or a claim of
-unbounded graph support. Controlled-output tests can validate the adapter's
-acceptance/rejection without another native campaign.
+source findings and adapter inferences, not a claim of unbounded graph support.
+The [pin guard](#pin-guard) now exercises the boundary with the pinned PNPM.
 
 ## Bounded Local CLI Validation Protocol
 
@@ -527,11 +526,10 @@ absolute-path preservation and other unobserved shapes must not inherit this
 runtime coverage. The existing rule remains: unresolved required scope blocks
 planning rather than broadening execution silently.
 
-Reevaluate the selected CLI composition when the repository's PNPM pin changes
-or concrete integration exposes a missing fact. Recheck embedded-runtime facts
-only if the owner reopens that selection. The integration author checks the
-public contracts and affected scenarios; the next native-reader implementation
-or dependency-upgrade review is the fallback review point.
+The selected CLI composition is guarded at the pinned PNPM instead of rechecked;
+see [Pin Guard](#pin-guard). A concrete integration change that exposes a missing
+fact is evaluated by its author. Embedded-runtime facts are rechecked only if the
+owner reopens that selection.
 
 ## Native Script Metadata Candidate
 
@@ -740,7 +738,7 @@ require a separately accepted protocol and a rerun.
 | Installed extraneous packages appear as `unsavedDependencies`                 | Holds: each singleton listing carried the extraneous root package in that group                                                                                                                                                                                                                                             |
 | `pkg get <field> --json` returns the native value or nothing                  | Holds: `"dist output"`, then `"build output"` in the candidate; absent fields produced no output; repository `scripts` returned objects                                                                                                                                                                                     |
 | New: membership still lists members containing nested checkouts               | Holds by source (PNPM project discovery does not call the pruned walk); corroborated by an unadmitted local observation in which members holding a `.git` directory or `pnpm-workspace.yaml` were still listed                                                                                                              |
-| Depth-256 cutoff without truncation flag                                      | Unchanged source; not exercised (the repository's deepest walked level is 11)                                                                                                                                                                                                                                               |
+| Depth-256 cutoff without truncation flag                                      | Unchanged source; exercised by the pin guard at 12.14.0 (the repository's deepest walked level is 11)                                                                                                                                                                                                                       |
 | NAPI, embedded-runtime and v11 helper findings                                | Not rechecked: unselected and outside the trigger                                                                                                                                                                                                                                                                           |
 | 12.9.0 preparation-gate and recursive `pkg get` findings                      | Hold; 12.10.0 now forwards `--config.*` tokens to a verify-deps install, and the adopted executor still disables that gate                                                                                                                                                                                                  |
 
@@ -762,9 +760,8 @@ multiple peer contexts and updateConfig-hook filters. The earlier observation
 and application-qualification sections remain bound to 12.8.1/12.8.2. The
 sanitized runner, inventory comparison, output hashes and summaries are retained
 in this recheck's pull request; the disposable fixtures were then removed.
-The next trigger is unchanged: a repository PNPM pin change or a concrete
-missing fact. The hook-filter limit is guarded instead of rechecked, by two
-guards. `PnpmGraphReader` reads `pnpmfile`, `config-dependencies` and
+The PNPM pin trigger is retired; see [Pin Guard](#pin-guard). The hook-filter
+limit is guarded by two guards. `PnpmGraphReader` reads `pnpmfile`, `config-dependencies` and
 `node-linker` through `pnpm config get --json` and fails planning unless the
 first two are unset and the linker is unset or `isolated`; `PnpmGraphReaderTests`
 covers each rejection. It also requires `global-pnpmfile` to be unset, because a
@@ -774,11 +771,55 @@ fails planning when `.npmrc` or a hook file exists at the workspace root, checke
 even when PNPM reports no other member, or at a member ancestor: `.pnpmfile.mjs` and `.pnpmfile.cjs`, the two names the
 12.14.0 [finder](https://github.com/pnpm/pnpm/blob/fe4a0c232384289de82be3d502896ca7e070050c/pnpm/crates/hooks/src/finder.rs#L17-L27)
 probes, and the retained undotted `pnpmfile.cjs`, which 12.14.0 does not load.
-`NodeRepositoryReaderTests` covers each name. The file list is a source reading
-at 12.14.0, so the PNPM pin trigger covers it until the planned PNPM native
-contract tests assert, with the pinned PNPM, which default hook files narrow the
-membership query. Adopting a hook or another linker therefore returns
-to the owner as a reader change rather than a merge-time recheck.
+`NodeRepositoryReaderTests` covers each name.
+`PnpmGraphContractTests.EveryDefaultHookFilePnpmLoadsIsRejectedByTheReader` runs
+the pinned PNPM with a narrowing hook under each candidate name and requires
+every name that narrows membership to be in that list. Adopting a hook or another
+linker therefore returns to the owner as a reader change rather than a merge-time
+recheck.
+
+## Pin Guard
+
+The PNPM and Node pins are guarded by contract tests in the
+`PnpmNativeContract` category. The Linux native-preparation job runs them under
+`mise exec --locked dotnet node pnpm` whenever `mise.toml`, `mise.lock`,
+`ci.yml`, the root `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, an
+`.npmrc` or hook file, or the managed workflow-delivery sources and fixtures change.
+Every PNPM command runs with a constructed environment: no inherited npm or PNPM
+configuration, a fresh home and a closed proxy and registry. It must exit on its
+own.
+
+`PnpmGraphContractTests` runs the application's `PnpmGraphReader` and
+`PnpmScriptReader` on the committed `fixtures/pnpm-contract` workspace. Its lock
+was generated by the pinned PNPM with `install --lockfile-only --offline --ignore-scripts`.
+The workspace has a link, a workspace alias, optional and dev edges, a transitive
+consumer, a cycle, a nested member, an injected peer, `file:` and `link:` inputs to a
+publish directory with a space in its path, a local tarball, a non-workspace
+directory, a `link:` input to a directory outside every member and an unrelated
+member. The tests assert:
+
+- the exact projection the planner consumes: every member, name, dependency set,
+  publish directory and local input with its kind and consumer;
+- the exact directory-selector closure, including that a nested member is not
+  selected by its parent, both by default and with
+  `PNPM_CONFIG_LEGACY_DIR_FILTERING=true`: the reader's
+  `--config.legacy-dir-filtering=false` override keeps the closure and the whole
+  projection unchanged, and the projection fails without it;
+- the script metadata object and its absence;
+- that the committed settings plan, while a dedicated lock, a configured
+  pnpmfile, a configuration dependency, the hoisted linker and a global pnpmfile
+  each stop planning;
+- which default hook files the pinned PNPM loads;
+- that after an offline frozen install, a manifest edge removal written only to
+  the wanted lock is what the reader returns, while the installed tree still holds
+  the removed relation, so planning never reads installed state;
+- the depth boundary, with a generated single-member `file:` chain: at 255 levels
+  the reader keeps every input including the deepest, and at 256 levels, where
+  PNPM stops without a truncation marker, the reader fails with a JSON depth error.
+
+NAPI and embedded-runtime findings stay unselected. Hoisted or global virtual
+stores, dedicated lock layouts and multiple peer contexts are rejected or
+unobserved shapes, as recorded above. Windows remains the owner's assumption.
 
 ## Actual Reader and Script Metadata Observation
 

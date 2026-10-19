@@ -1,0 +1,2 @@
+# The local tarball input is a committed fixture, not a build output.
+!vendor/*.tgz

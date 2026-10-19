@@ -1,0 +1,8 @@
+{
+  "name": "@contract/alias",
+  "version": "1.0.0",
+  "private": true,
+  "optionalDependencies": {
+    "core-alias": "workspace:@contract/core@*"
+  }
+}

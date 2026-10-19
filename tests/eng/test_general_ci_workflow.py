@@ -152,13 +152,17 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
         conditions = {
             "Setup selected native tools": (
                 "steps.plan.outputs.python == 'true' || "
-                "steps.plan.outputs.ruby == 'true'"
+                "steps.plan.outputs.ruby == 'true' || "
+                "steps.plan.outputs.node == 'true'"
             ),
             "Execute required original Python preparation scenario": (
                 "steps.plan.outputs.python == 'true'"
             ),
             "Execute original Ruby preparation scenario": (
                 "${{ !cancelled() && steps.plan.outputs.ruby == 'true' }}"
+            ),
+            "Execute PNPM and Node native contracts": (
+                "${{ !cancelled() && steps.plan.outputs.node == 'true' }}"
             ),
             "Retain original preparation plans, reports and packages": (
                 "always()"

@@ -1,0 +1,8 @@
+{
+  "name": "@contract/tarball-consumer",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@contract/archived": "file:../../vendor/archived-1.0.0.tgz"
+  }
+}

@@ -1,0 +1,25 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .: {}
+
+  product:
+    devDependencies:
+      '@contract/local-dependency':
+        specifier: file:../local-dependency
+        version: file:local-dependency
+    publishDirectory: .
+
+packages:
+
+  '@contract/local-dependency@file:local-dependency':
+    resolution: {directory: local-dependency, type: directory}
+
+snapshots:
+
+  '@contract/local-dependency@file:local-dependency': {}

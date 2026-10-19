@@ -109,3 +109,34 @@ No publication, Registry acquisition, hosted release/proving dispatch,
 credential/access/Environment/publisher change or predecessor cleanup follows.
 The observation does not prove complete descendant termination, universal zero
 egress, distinct-commit artifact equality or a Windows execution.
+
+## Pin Guard
+
+This observation stays bound to Node 24.21.0, PNPM 12.8.2 and npm 11.19.0. The
+execution facts it relied on are guarded at the current pins by
+`NpmPackContractTests` in the Linux native-preparation job (see the
+[PNPM pin guard](pnpm-native-planning.md#pin-guard) for selection and
+isolation). These tests run the production command builders with the locked
+Node and PNPM on the committed `fixtures/npm-contract` workspace. They assert:
+
+- the `node --version` and `pnpm --version` readback the preparation compares;
+- that the Node group's runtime reader accepts the real
+  `mise ls --json --current --locked` answers for the committed selection, with
+  the locked Node as the packaging variant and the locked PNPM as the plan's
+  dimension, and rejects them for another root;
+- that `--config.verify-deps-before-run=false` runs the build and test scripts
+  without the dependency installation PNPM otherwise performs;
+- that `pack --out` writes exactly the requested path after a successful prepack,
+  writes nothing when prepack fails, injects the root license and contains the
+  payload `NodePackageArchive` requires;
+- that multi-field `pkg get --json` answers flat dotted keys, so the adopted
+  recipe's `engines.runtime` rejection and Release preparation's
+  `publishConfig.directory` read stay effective;
+- that the isolated offline consumer installs the original archive and imports
+  it, while a missing archive or a skipped install fails.
+
+`RepositoryPinContractsTests.LockedNodeRuntimeHasItsPackagingMatrixEntry` keeps the
+locked Node major in the `node-tests` matrix. npm has no pin: it is bundled with
+the Node selected by the dispatch-only Buddy workflow, and npm publication,
+registry authentication and GitHub Packages behavior remain non-claims bound to
+the recorded runs.
