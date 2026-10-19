@@ -410,7 +410,8 @@ Use the private C# application to expand adopted package checks, invoke native
 operations and join their outcomes through existing `CheckSpec`, `PackageTarget`
 and result contracts. UV owns frozen group/workspace selection, phase-specific native installation,
 PEP 517 backend requirements and build dispatch. The maintained
-`nbgv-python` plugin owns official NBGV invocation. Do not port these semantics,
+`nbgv-python` plugin owns official NBGV invocation; `nbgv-python`'s own version
+comes from Hatchling's static `[project].version`. Do not port these semantics,
 maintain a second backend-requirement declaration, rewrite project version
 metadata or inject a replacement version engine. The
 [source assessment](../research/python-native-packaging.md) distinguishes these
@@ -497,17 +498,22 @@ native capability stops for owner disposition without reduced check coverage.
 
 ## Concrete Python Release Integration
 
-This contract selects the existing `hcoona-release-smoke-python` release unit,
-its declared wheel/sdist build and adopted Python distribution quality preset.
-TestPyPI is Buddy and PyPI is Official. It adds no product, destination,
-publication authority or native experiment. Source findings follow the
+This contract selects the registered `hcoona-release-smoke-python` and
+`nbgv-python` release units, their declared wheel/sdist builds and the adopted
+Python distribution quality preset. TestPyPI is Buddy and PyPI is Official;
+Official accepts only the smoke unit. The product-neutral caller
+`workflow-delivery-v3-python-release.yml` takes the unit as a dispatch input and
+binds it through concurrency, preparation, observation and publication. It adds
+no destination, publication authority or native experiment. Source findings follow the
 [native publisher assessment](../research/python-native-publisher.md); closed
 campaigns remain historical evidence rather than executable callers.
 
 Preparation reads the exact committed release declaration, project entry and
 quality selection using existing Git/declaration readers. Unsupported builds,
 outputs, quality recipes or required tests remain unavailable. Resolve native
-metadata through the maintained backend and `nbgv-python`; use the selected
+metadata through the maintained backend and `nbgv-python`, except that
+`nbgv-python` itself has Hatchling's static `[project].version` and no NBGV
+projection or public-release fact; use the selected
 CPython/UV and the synchronized root lock. [Locked tool selection](common.md#locked-tool-selection)
 accepts whichever CPython and UV the root lock selects. Live Official requires the native public-release
 projection; ref eligibility follows the [Official channel scope](common.md#official-channel-scope).
@@ -560,8 +566,15 @@ wheel consumer, Git-free original sdist consumer and original-byte results,
 plus any applicable declared tests. Preserve each reached command's actual
 termination and failed/missing/cancelled results. Bind portable native name,
 version, filenames, declared output roles, sizes and digests to the request;
-checkout-specific paths are not remote identity. The selected project has no
-runtime dependencies; another dependency shape needs its concrete integration.
+checkout-specific paths are not remote identity. The smoke project has no
+runtime dependencies. `nbgv-python` declares exactly `packaging>=24.0`; each
+clean consumer installs that closure from the committed root `uv.lock`
+(`uv export --frozen` then a hash-checked `uv pip install --no-deps`) before
+installing the original alone, and checks its import origin and exported API.
+Its preparation also runs the adopted pytest suite
+(`src/public/lib/nbgv-python/tests`) as the required `tests` check, so CI
+results are not substituted for Release qualification. Another dependency
+shape needs its concrete integration.
 
 Use explicit closed destinations: TestPyPI Simple Index
 `https://test.pypi.org/simple/`, upload `https://test.pypi.org/legacy/` and file
