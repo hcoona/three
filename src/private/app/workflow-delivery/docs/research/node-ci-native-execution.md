@@ -120,6 +120,10 @@ isolation). These tests run the production command builders with the locked
 Node and PNPM on the committed `fixtures/npm-contract` workspace. They assert:
 
 - the `node --version` and `pnpm --version` readback the preparation compares;
+- that the Node group's runtime reader accepts the real
+  `mise ls --json --current --locked` answers for the committed selection, with
+  the locked Node as the packaging variant and the locked PNPM as the plan's
+  dimension, and rejects them for another root;
 - that `--config.verify-deps-before-run=false` runs the build and test scripts
   without the dependency installation PNPM otherwise performs;
 - that `pack --out` writes exactly the requested path after a successful prepack,

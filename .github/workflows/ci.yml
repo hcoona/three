@@ -1018,7 +1018,7 @@ jobs:
             -property:RestoreLockedMode=true \
             --filter 'TestCategory=PnpmNativeContract' \
             --report-trx --report-trx-filename contracts.trx \
-            --results-directory "$RUNNER_TEMP/native-preparation/node" -- --minimum-expected-tests 21
+            --results-directory "$RUNNER_TEMP/native-preparation/node" -- --minimum-expected-tests 25
       - name: Retain original preparation plans, reports and packages
         if: always()
         uses: actions/upload-artifact@v7

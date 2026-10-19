@@ -1,0 +1,8 @@
+{
+  "name": "@contract/linked-consumer",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@contract/linked": "link:../../vendor/linked"
+  }
+}

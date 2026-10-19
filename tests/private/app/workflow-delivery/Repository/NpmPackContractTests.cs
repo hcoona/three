@@ -4,6 +4,7 @@ using System.Text.Json;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
+using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Tests.Repository;
 
@@ -47,6 +48,38 @@ public sealed class NpmPackContractTests(TestContext context)
         Assert.ThrowsExactly<InvalidDataException>(() => LockedToolSelection.RequireReadback(
             "pnpm", RepositoryToolSelection.NextMajor(RepositoryToolSelection.Locked("pnpm")),
             pnpm.Stdout.Trim()));
+    }
+
+    // The Node group's runtime reader parses the real mise answers for the committed
+    // selection: the locked Node becomes the packaging variant of its matrix entry, and the
+    // locked PNPM is the plan's PNPM dimension.
+    [TestMethod]
+    [OSCondition(OperatingSystems.Linux)]
+    public async Task RuntimeReaderAcceptsTheRealMiseSelection()
+    {
+        string root = RepositoryToolSelection.SourceRoot;
+        async Task<string> Mise(string tool)
+        {
+            NativeCommandResult answer = await NativeProcess.ExecuteAsync(new("mise", root,
+                ["ls", "--json", "--current", "--locked", tool], 60),
+                context.CancellationToken);
+            PnpmNativeTool.AssertExited(answer, true);
+            return answer.Stdout;
+        }
+
+        NodeRuntimeInputs inputs = NodeRuntimeReader.Read(new(new string('c', 40), []), root,
+            File.ReadAllText(Path.Combine(root, NodeRuntimeReader.Workflow)),
+            RepositoryToolSelection.MiseToml, RepositoryToolSelection.MiseLock,
+            await Mise("node"), await Mise("pnpm"));
+
+        Assert.AreEqual(RepositoryToolSelection.Locked("node"), inputs.Variants.Single(variant =>
+            variant.Key == inputs.PackagingVariant).ExactVersion);
+        Assert.AreEqual(RepositoryToolSelection.Locked("pnpm"), inputs.PnpmVersion);
+        Assert.ThrowsExactly<InvalidDataException>(() => NodeRuntimeReader.Read(
+            new(new string('c', 40), []), Path.Combine(root, "elsewhere"),
+            File.ReadAllText(Path.Combine(root, NodeRuntimeReader.Workflow)),
+            RepositoryToolSelection.MiseToml, RepositoryToolSelection.MiseLock,
+            Mise("node").Result, Mise("pnpm").Result));
     }
 
     // The CI build/test command runs the script without installing first: the flag disables

@@ -16,7 +16,8 @@ public sealed class PnpmGraphContractTests(TestContext context)
     private const string Publisher = "members/publisher";
     private static readonly string[] Members = [".", "members/alias", "members/app",
         "members/core", "members/cycle-a", "members/cycle-b", "members/dir-consumer",
-        "members/file-consumer", "members/link-consumer", "members/outer",
+        "members/file-consumer", "members/link-consumer", "members/linked-consumer",
+        "members/outer",
         "members/outer/inner", "members/peer-consumer", "members/peer-lib", Publisher,
         "members/tarball-consumer", "members/top", "members/unrelated"];
     private static readonly string[] TopClosure = ["members/app", "members/core",
@@ -29,12 +30,17 @@ public sealed class PnpmGraphContractTests(TestContext context)
     // The complete projection the planner consumes: every member, its native dependency
     // closure through link, workspace alias, optional, dev, transitive, cycle, injected-peer
     // and file:/link: publish-directory edges, publish coordinates and non-member inputs.
+    // The legacy row turns PNPM's legacy directory filtering on for this run only; the
+    // reader's explicit override must keep the projection unchanged.
     [TestMethod]
     [OSCondition(OperatingSystems.Linux)]
-    public async Task GraphReaderProjectsTheFixtureWorkspaceExactly()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task GraphReaderProjectsTheFixtureWorkspaceExactly(bool legacy)
     {
         using var tool = await PnpmNativeTool.CreateAsync(context.CancellationToken);
         using var copy = new FixtureCopy("pnpm-contract");
+        if (legacy) tool.Extra["PNPM_CONFIG_LEGACY_DIR_FILTERING"] = "true";
 
         PnpmGraph graph = await Reader(tool, copy.Root).ReadAsync(context.CancellationToken);
 
@@ -45,6 +51,7 @@ public sealed class PnpmGraphContractTests(TestContext context)
                 project.Dependencies) + "]" + (project.PublishDirectory is { } output
                     ? " publish=" + output : ""))));
         Assert.AreEqual("vendor/archived-1.0.0.tgz file members/tarball-consumer\n" +
+            "vendor/linked directory members/linked-consumer\n" +
             "vendor/plain directory members/dir-consumer", string.Join("\n",
                 graph.LocalInputs.OrderBy(input => input.Path, StringComparer.Ordinal).Select(
                     input => input.Path + (input.IsDirectory ? " directory " : " file ") +
@@ -61,6 +68,7 @@ public sealed class PnpmGraphContractTests(TestContext context)
         members/dir-consumer <@contract/dir-consumer> []
         members/file-consumer <@contract/file-consumer> [members/publisher]
         members/link-consumer <@contract/link-consumer> [members/publisher]
+        members/linked-consumer <@contract/linked-consumer> []
         members/outer <@contract/outer> []
         members/outer/inner <@contract/inner> [members/core]
         members/peer-consumer <@contract/peer-consumer> [members/core,members/peer-lib]
@@ -71,16 +79,21 @@ public sealed class PnpmGraphContractTests(TestContext context)
         members/unrelated <@contract/unrelated> []
         """;
 
-    // The closure query the reader issues: with legacy directory filtering off, a directory
-    // selector selects that project and its dependencies only, never nested projects.
+    // The closure query the reader issues: its explicit override turns legacy directory
+    // filtering off, so a directory selector selects that project and its dependencies only,
+    // never nested projects, even when legacy filtering is otherwise on.
     [TestMethod]
     [OSCondition(OperatingSystems.Linux)]
-    [DataRow("members/top", "top")]
-    [DataRow("members/outer", "outer")]
-    public async Task DirectorySelectorClosureIsExact(string directory, string expected)
+    [DataRow("members/top", "top", false)]
+    [DataRow("members/outer", "outer", false)]
+    [DataRow("members/top", "top", true)]
+    [DataRow("members/outer", "outer", true)]
+    public async Task DirectorySelectorClosureIsExact(string directory, string expected,
+        bool legacy)
     {
         using var tool = await PnpmNativeTool.CreateAsync(context.CancellationToken);
         using var copy = new FixtureCopy("pnpm-contract");
+        if (legacy) tool.Extra["PNPM_CONFIG_LEGACY_DIR_FILTERING"] = "true";
 
         string answer = await tool.QueryAsync(copy.Root, ["--config.legacy-dir-filtering=false",
             "--filter", "{./" + directory + "}...", "list", "--recursive",

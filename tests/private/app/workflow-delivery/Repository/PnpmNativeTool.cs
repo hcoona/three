@@ -44,6 +44,8 @@ internal sealed class PnpmNativeTool : IDisposable
                 ["npm_config_registry"] = "http://127.0.0.1:9/",
                 ["HTTPS_PROXY"] = "http://127.0.0.1:9",
                 ["HTTP_PROXY"] = "http://127.0.0.1:9",
+                // A future loopback service is reached directly, never through the proxy.
+                ["NO_PROXY"] = "127.0.0.1,localhost",
             };
             foreach ((string name, string? value) in Extra) values[name] = value;
             return values;

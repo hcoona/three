@@ -52,6 +52,12 @@ importers:
         specifier: link:../publisher/dist output
         version: link:../publisher/dist output
 
+  members/linked-consumer:
+    dependencies:
+      '@contract/linked':
+        specifier: link:../../vendor/linked
+        version: link:../../vendor/linked
+
   members/outer: {}
 
   members/outer/inner:
