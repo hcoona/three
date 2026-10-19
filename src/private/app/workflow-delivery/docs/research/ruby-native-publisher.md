@@ -133,7 +133,7 @@ native platform defaults; it is not a guarantee those files are never read.
 The [concrete contract](../integration/ruby.md#concrete-ruby-release-integration)
 selects owned state and native API composition within those limits.
 
-## Recheck and Remaining Qualification
+## Pin Guard and Remaining Qualification
 
 The original source responses, retrieval requests, hashes and independent source
 assessments remain in the delivery work carrier. They establish the stated
@@ -142,11 +142,73 @@ tests/ordinary CI must precede implementation/caller delivery claims. New live
 feed, authentication, publisher configuration or publication work requires its
 own bounded authorization; this research reopens no completed campaign.
 
-Recheck these interfaces when RubyGems, the selected credential Action or native
-registry routing changes affect the integration. The dependency/integration
-reviewer evaluates the change, with implementation review as fallback. A missing
-native capability blocks the affected path rather than expanding the application
-into a generic credential, resolver or trust service.
+The locked Ruby and its bundled RubyGems are guarded by contract tests instead of a
+recheck. `RubyNativePublisherContractTests` runs the production
+`RubyNativePublisher` with the locked `gem` against a loopback HTTPS gem host. The
+host uses fake keys and a disposable CA whose leaf names `127.0.0.1` and
+`localhost`, and every proxy points at a closed port, so no request leaves the
+host. It asserts the following:
+
+- Buddy pushes exactly one POST of the original bytes to `/hcoona/api/v1/gems` with
+  `Bearer <key>`, and Official to `/api/v1/gems` with the raw key; both exit 0.
+- A 503, the registry's existing-version 409, a TLS connection dropped without
+  close_notify (an unclean EOF), a same-realm redirect and an other-realm redirect
+  each end the command as a failure after exactly one POST, and no request reaches
+  another realm.
+- A TCP reset (RST) and a clean TLS shutdown without a response are resent once by
+  RubyGems' request layer (`Gem::Request` retries `ECONNRESET`, `EOFError` and
+  similar once per request): the command fails after exactly two POSTs of the same
+  original. This is the bounded native
+  resend that [WD-OPS-002](../requirements.md#observation-retry-and-recovery)
+  already delegates; one invocation is not one network write. A resent push of a
+  version the registry already accepted is rejected as an existing version, and
+  the application's fresh observation, not the command outcome, establishes the
+  business result.
+
+`RubySourceReaderContractTests` runs the production `RubySourceReader` and the
+real `source.rb` with the locked RubyGems against a loopback HTTPS gem source.
+The source serves gems built by the locked `gem` and indexes written with
+RubyGems' own Marshal format. The only seam routes the selected host to loopback
+and keeps its path and user information; every `Gem::Source` method runs
+unchanged. It asserts:
+
+- the exact ordered requests: `specs.4.8.gz`, `prerelease_specs.4.8.gz`,
+  `quick/Marshal.4.8/<full>.gemspec.rz`, then `gems/<full>.gem`, under the
+  `/hcoona` owner path for Buddy (the download is requested from the host root);
+- Basic authentication with the encoded read user and token on every Buddy
+  request and none for Official;
+- a present answer, released or prerelease, with the original's size, SHA-256
+  and the `<download>/cache/<file>.gem` path;
+- absent after only the two inventory reads when neither lists the version;
+- unknown, stopping at the failed request, when either inventory answers 404 or
+  500, the specification 500 or the original 404.
+
+RubyGems reuses an original already in its download cache without a request, so
+the reader's fresh-scratch requirement is load-bearing; the cache row asserts both
+the native reuse and the reader's refusal of used scratch. This contract found an
+application defect: `source.rb` never loaded `rubygems/remote_fetcher`, which
+`Gem::Source` calls but does not autoload, so every real read answered unknown.
+The helper now requires it. The hosted Ruby smoke runs recorded in
+[normal-live evidence](../validation/ruby-normal-live-evidence.md) (2026-10-02)
+predate this helper (added 2026-10-12); no hosted Ruby smoke run has used it.
+
+The native helper's RSpec carrier asserts the exact specification and archive
+field shape, the locked Ruby identity, a remote `file://` Git source answered
+from the lock as its URI and revision, and that every committed `Gemfile.lock`
+names a Bundler the helper supports and the carrier tests. The Linux
+native-preparation job runs the publisher contracts whenever `mise.toml`,
+`mise.lock` or the managed sources change; the RSpec carrier runs when its
+helpers, schemas or any committed `Gemfile.lock` change.
+
+The credential Action, OIDC token exchange, GitHub Packages and RubyGems.org
+acceptance and index format, token scope and registry routing (including the
+GitHub Packages storage redirect) remain non-claims, bound to the recorded runs.
+The carrier's `gem install bundler --version` preparation and the RSpec JSON
+report shape are exercised only by the hosted Ruby group job and are not pin
+contracts; the Action is a dispatch-only workflow pin and gets static
+validation only. Windows remains the owner's assumption. A missing native
+capability blocks the affected path rather than expanding the application into a
+generic credential, resolver or trust service.
 
 [push]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/commands/push_command.rb
 [gemcutter]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/gemcutter_utilities.rb

@@ -7,7 +7,8 @@ internal sealed record RubyPublisherTools(string Ruby, string Gem, string Scratc
 internal sealed record RubyPublishResult(ReleaseSubject Subject, ReleaseUpload Upload);
 
 // The actual publisher job supplies the selected platform-issued key. RubyGems
-// owns push and its native response/retry semantics; the application never resends.
+// owns push and its native response/retry semantics (including one resend after a connection
+// reset); the application never resends.
 internal static class RubyNativePublisher
 {
     internal static Task<RubyPublishResult> PublishAsync(RubyPreparationResult preparation,

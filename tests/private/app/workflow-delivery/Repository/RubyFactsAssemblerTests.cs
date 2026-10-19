@@ -30,6 +30,17 @@ public sealed class RubyFactsAssemblerTests
         ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
 
     [TestMethod]
+    [DataRow("src/private/app/workflow-delivery/Native/Ruby/source.rb", true)]
+    [DataRow("src/private/app/workflow-delivery/Native/contracts/ruby-source.schema.json", true)]
+    [DataRow("src/public/lib/hexo-renderer-asciidoc/Gemfile.lock", true)]
+    [DataRow("src/public/lib/asciidoctor-latexmath/Gemfile.lock", true)]
+    [DataRow("Gemfile.lock", true)]
+    [DataRow("src/public/lib/hexo-renderer-asciidoc/Gemfile", false)]
+    [DataRow("src/private/app/workflow-delivery/Native/contracts/python-x.schema.json", false)]
+    public void NativeSuiteConsumesHelpersSchemasAndEveryBundlerLock(string path, bool consumed)
+        => Assert.AreEqual(consumed, RubyNativeTestInputs.Consumes(path));
+
+    [TestMethod]
     [DataRow("tests/private/app/workflow-delivery/Native/Ruby/spec/facts_spec.rb")]
     [DataRow("tests/private/app/workflow-delivery/Native/Ruby/Gemfile.lock")]
     [DataRow("src/private/app/workflow-delivery/Native/Ruby/facts.rb")]

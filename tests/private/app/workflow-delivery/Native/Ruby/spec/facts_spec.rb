@@ -149,6 +149,34 @@ module NativeHelpers
           expect(locked.binread).to eq(before)
         end
 
+        # A remote Git source (here a file:// repository) is answered from the lock as its URI
+        # and locked revision; the planner reads them without a local checkout.
+        it "remote_git_source_answers_locked_uri_and_revision" do
+          original = gem_fixture(@scratch / "remote-git-source", "fixture_a")
+          git = lambda do |directory, *arguments|
+            result = run_process(["git", *arguments], directory: directory, environment: native[1])
+            expect(result.returncode).to eq(0), result.stderr
+            result.stdout.strip
+          end
+          git.call(original.dirname, "init", "--initial-branch=main")
+          git.call(original.dirname, "add", ".")
+          git.call(original.dirname, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "Initialize native remote fixture")
+          revision = git.call(original.dirname, "rev-parse", "HEAD")
+          uri = "file://#{original.dirname}"
+          gemfile = write(@scratch / "Gemfile", "gem \"fixture_a\", git: #{uri.to_json}, branch: \"main\"\n")
+          # The file:// repository is fetched by Bundler from local disk; no registry is read.
+          locked_run = command(native, @scratch, ["-S", "bundle", "_#{native[0]}_", "lock"], environment: {"BUNDLE_GEMFILE" => gemfile.to_s, "BUNDLE_FROZEN" => "0"})
+          expect(locked_run.returncode).to eq(0), locked_run.stderr
+          locked = @scratch / "Gemfile.lock"
+          expect(locked.read).to include("GIT\n  remote: #{uri}\n  revision: #{revision}\n")
+          environment = {"BUNDLE_GEMFILE" => gemfile.to_s}
+          before = locked.binread
+          selected = answer(facts(native, "bundle", gemfile, environment: environment))["specifications"].to_h { |spec| [spec["name"], spec] }
+          expect(selected["fixture_a"]["source"]).to eq({"kind" => "git", "uri" => uri, "revision" => revision})
+          expect(selected["fixture_a"].values_at("name", "version", "platform")).to eq(["fixture_a", "1.2.3", "ruby"])
+          expect(locked.binread).to eq(before)
+        end
+
         # Planning reads the committed lock; registry members are never installed for facts.
         def registry_lock(native, specs:, platforms:)
           gemfile = write(@scratch / "Gemfile", "source \"https://rubygems.org\"\ngem \"absent_fixture\"\n")
