@@ -555,6 +555,9 @@ public sealed class PythonNativeContractTests(TestContext context)
                 HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
             var names = new SubjectAlternativeNameBuilder();
             names.AddIpAddress(IPAddress.Loopback);
+            // The other-realm redirect row targets localhost; a request UV forwarded there must
+            // complete TLS and reach the registry, so the row can observe it.
+            names.AddDnsName("localhost");
             leafRequest.CertificateExtensions.Add(names.Build());
             leafRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(false,
                 false, 0, true));
