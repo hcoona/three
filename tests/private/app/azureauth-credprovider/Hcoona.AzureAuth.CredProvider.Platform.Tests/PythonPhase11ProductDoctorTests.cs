@@ -140,6 +140,8 @@ public sealed class PythonPhase11ProductDoctorTests
         string productProbeScript = Assert.IsType<string>(runner.StartSpecs[1].Arguments[1]);
         string harness =
             """
+            import faulthandler
+            faulthandler.dump_traceback_later(9)
             import abc,importlib.metadata,sys,types
             keyring_module=types.ModuleType('keyring')
             backend_module=types.ModuleType('keyring.backend')
@@ -196,6 +198,7 @@ public sealed class PythonPhase11ProductDoctorTests
             result.Status == ProcessExecutionStatus.NonZeroExit && result.HasExitCode,
             $"Python harness status={result.Status}; termination={result.TerminationReason}; "
                 + $"hasExitCode={result.HasExitCode}; exit={result.ExitCode}; "
+                + $"resolved={ResolveCommandForDiagnostics(pythonCommand) ?? "<unresolved>"}; "
                 + "milestones="
                 + string.Join(", ", milestones.Select(milestone =>
                     $"{milestone.Name}@{milestone.Elapsed.TotalMilliseconds:F0}ms"))
@@ -210,6 +213,27 @@ public sealed class PythonPhase11ProductDoctorTests
         Assert.Contains("import importlib.metadata,inspect,sys", productProbeScript);
         Assert.Contains("not inspect.isabstract(backend_type)", productProbeScript);
         Assert.DoesNotContain("backend_type()", productProbeScript, StringComparison.Ordinal);
+    }
+
+    // Approximates the OS executable search so a stalled-launch failure names the interpreter.
+    private static string? ResolveCommandForDiagnostics(string command)
+    {
+        string fileName = OperatingSystem.IsWindows() ? command + ".exe" : command;
+        IEnumerable<string?> directories = OperatingSystem.IsWindows()
+            ?
+            [
+                Path.GetDirectoryName(Environment.ProcessPath),
+                Environment.CurrentDirectory,
+                Environment.SystemDirectory,
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            ]
+            : [];
+        return directories
+            .Concat((Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+                .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            .Where(directory => !string.IsNullOrEmpty(directory))
+            .Select(directory => Path.Combine(directory!, fileName))
+            .FirstOrDefault(File.Exists);
     }
 
     [Fact]
