@@ -354,8 +354,9 @@ public sealed class PythonNativeContractTests(TestContext context)
 
     // UV's native upload handling the publisher relies on instead of an application retry:
     // a returned failure status, including the registry's existing-file answer, ends the
-    // invocation after one upload; a transport failure, whether a connection closed without
-    // a response or a TCP reset (RST), is retried a bounded number of times;
+    // invocation after one upload; a transport failure, whether a TLS connection dropped
+    // without close_notify, a clean TLS shutdown without a response or a TCP reset (RST), is
+    // retried a bounded number of times;
     // a same-realm redirect is followed with the token and another realm is refused. Every
     // failure is a failed command, never a success.
     [TestMethod]
@@ -363,7 +364,8 @@ public sealed class PythonNativeContractTests(TestContext context)
     [DataRow("unavailable", 1, false)]
     [DataRow("server-error", 1, false)]
     [DataRow("existing-file", 1, false)]
-    [DataRow("close", 4, false)]
+    [DataRow("unclean-close", 4, false)]
+    [DataRow("clean-close", 4, false)]
     [DataRow("reset", 4, false)]
     [DataRow("same-realm-redirect", 2, true)]
     [DataRow("other-realm-redirect", 1, false)]
@@ -703,8 +705,14 @@ public sealed class PythonNativeContractTests(TestContext context)
                             socket.Client.Close(0);
                             return;
                         }
-                        // A graceful close without a response: the client reads end of file.
-                        if (status == "close") return;
+                        // A clean TLS shutdown (close_notify) without a response.
+                        if (status == "clean-close")
+                        {
+                            await secure.ShutdownAsync();
+                            return;
+                        }
+                        // The socket closes without close_notify: an unclean TLS EOF.
+                        if (status == "unclean-close") return;
                         byte[] content = Encoding.UTF8.GetBytes(body);
                         await secure.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 " + status +
                             "\r\nContent-Type: application/json\r\n" + headers +
@@ -735,7 +743,8 @@ public sealed class PythonNativeContractTests(TestContext context)
                     "existing-file" => ("400 File already exists", "400 File already " +
                         "exists. See https://pypi.org/help/#file-name-reuse", ""),
                     "reset" => ("reset", "", ""),
-                    "close" => ("close", "", ""),
+                    "unclean-close" => ("unclean-close", "", ""),
+                    "clean-close" => ("clean-close", "", ""),
                     "same-realm-redirect" => ("307 Temporary Redirect", "", "Location: " +
                         "https://127.0.0.1:" + Port + "/legacy/moved/\r\n"),
                     "other-realm-redirect" => ("307 Temporary Redirect", "", "Location: " +
