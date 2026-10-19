@@ -1,0 +1,125 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .: {}
+
+  members/alias:
+    optionalDependencies:
+      core-alias:
+        specifier: workspace:@contract/core@*
+        version: link:../core
+
+  members/app:
+    dependencies:
+      '@contract/core':
+        specifier: workspace:*
+        version: link:../core
+
+  members/core: {}
+
+  members/cycle-a:
+    dependencies:
+      '@contract/cycle-b':
+        specifier: workspace:*
+        version: link:../cycle-b
+
+  members/cycle-b:
+    dependencies:
+      '@contract/cycle-a':
+        specifier: workspace:*
+        version: link:../cycle-a
+
+  members/dir-consumer:
+    dependencies:
+      '@contract/plain':
+        specifier: file:../../vendor/plain
+        version: file:vendor/plain
+
+  members/file-consumer:
+    dependencies:
+      '@contract/publisher':
+        specifier: file:../publisher/dist output
+        version: file:members/publisher/dist output
+
+  members/link-consumer:
+    dependencies:
+      '@contract/publisher':
+        specifier: link:../publisher/dist output
+        version: link:../publisher/dist output
+
+  members/outer: {}
+
+  members/outer/inner:
+    dependencies:
+      '@contract/core':
+        specifier: workspace:*
+        version: link:../../core
+
+  members/peer-consumer:
+    dependencies:
+      '@contract/core':
+        specifier: workspace:*
+        version: link:../core
+      '@contract/peer-lib':
+        specifier: workspace:*
+        version: file:members/peer-lib(@contract/core@members+core)
+    dependenciesMeta:
+      '@contract/peer-lib':
+        injected: true
+
+  members/peer-lib:
+    devDependencies:
+      '@contract/core':
+        specifier: workspace:*
+        version: link:../core
+
+  members/publisher:
+    publishDirectory: dist output
+
+  members/tarball-consumer:
+    dependencies:
+      '@contract/archived':
+        specifier: file:../../vendor/archived-1.0.0.tgz
+        version: file:vendor/archived-1.0.0.tgz
+
+  members/top:
+    devDependencies:
+      '@contract/app':
+        specifier: workspace:*
+        version: link:../app
+
+  members/unrelated: {}
+
+packages:
+
+  '@contract/archived@file:vendor/archived-1.0.0.tgz':
+    resolution: {integrity: sha512-v2f1EweD+E8XECIAK/5ccS09UrXHix43LONa3MlcQ12hXsOJ/1MWARo+n6vZCp3munPHyCi7ec1JMc7a0zPV8Q==, tarball: file:vendor/archived-1.0.0.tgz}
+    version: 1.0.0
+
+  '@contract/peer-lib@file:members/peer-lib':
+    resolution: {directory: members/peer-lib, type: directory}
+    peerDependencies:
+      '@contract/core': '*'
+
+  '@contract/plain@file:vendor/plain':
+    resolution: {directory: vendor/plain, type: directory}
+
+  '@contract/publisher@file:members/publisher/dist output':
+    resolution: {directory: members/publisher/dist output, type: directory}
+
+snapshots:
+
+  '@contract/archived@file:vendor/archived-1.0.0.tgz': {}
+
+  '@contract/peer-lib@file:members/peer-lib(@contract/core@members+core)':
+    dependencies:
+      '@contract/core': link:members/core
+
+  '@contract/plain@file:vendor/plain': {}
+
+  '@contract/publisher@file:members/publisher/dist output': {}

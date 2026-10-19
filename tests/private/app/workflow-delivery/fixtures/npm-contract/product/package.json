@@ -1,0 +1,25 @@
+{
+  "name": "@hcoona/hcoona-release-smoke-npm",
+  "version": "1.2.3",
+  "type": "module",
+  "main": "./dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node ./build.mjs",
+    "test": "node ./check.mjs",
+    "prepack": "node ./prepack.mjs"
+  },
+  "engines": {
+    "runtime": {
+      "name": "node"
+    }
+  },
+  "publishConfig": {
+    "directory": "."
+  },
+  "devDependencies": {
+    "@contract/local-dependency": "file:../local-dependency"
+  }
+}

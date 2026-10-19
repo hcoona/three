@@ -6,7 +6,7 @@ using WorkflowDelivery.Repository;
 namespace WorkflowDelivery.CI;
 
 internal sealed record NativePreparationSelection(CiComparison Comparison,
-    bool Python, bool Ruby);
+    bool Python, bool Ruby, bool Node);
 
 // The native Linux scenarios own preparation; this boundary only selects them. The runner's
 // filter, per-module minimum count and exit code qualify the selected rows.
@@ -17,6 +17,10 @@ internal static class NativePreparationQualification
         "mise.lock", "workflow-delivery.quality.yml"];
     private static readonly string[] Managed = ["src/private/app/workflow-delivery",
         "tests/private/app/workflow-delivery"];
+    // The root PNPM workspace files the Node contract tests' tools read: the locked PNPM
+    // resolves its settings and hooks from them, beside the fixtures under Managed.
+    private static readonly string[] NodeInputs = ["package.json", "pnpm-workspace.yaml",
+        "pnpm-lock.yaml", ".npmrc", .. NodeRepositoryReader.HookFiles];
 
     internal static NativePreparationSelection Select(CiComparison comparison,
         string[] changedPaths)
@@ -26,7 +30,8 @@ internal static class NativePreparationQualification
             throw new InvalidDataException("Full native qualification requires one source.");
         return new(comparison,
             comparison.Full || changedPaths.Any(path => Input(path, true)),
-            comparison.Full || changedPaths.Any(path => Input(path, false)));
+            comparison.Full || changedPaths.Any(path => Input(path, false)),
+            comparison.Full || changedPaths.Any(NodeInput));
     }
 
     internal static int? Run(string[] args, TextWriter output)
@@ -55,7 +60,8 @@ internal static class NativePreparationQualification
             if (Environment.GetEnvironmentVariable("GITHUB_OUTPUT") is { Length: > 0 } path)
                 File.AppendAllText(path,
                     $"python={selected.Python.ToString().ToLowerInvariant()}\n" +
-                    $"ruby={selected.Ruby.ToString().ToLowerInvariant()}\n");
+                    $"ruby={selected.Ruby.ToString().ToLowerInvariant()}\n" +
+                    $"node={selected.Node.ToString().ToLowerInvariant()}\n");
             return 0;
         }
         return null;
@@ -77,6 +83,19 @@ internal static class NativePreparationQualification
         return DotNetInheritedInputs.Consumes(path, roots) ||
             Under(path, Products + (python ? "hcoona-release-smoke-python" :
                 "hcoona-release-smoke-ruby"));
+    }
+
+    // The PNPM/Node contract tests run the locked Node and PNPM through the managed readers and
+    // package operations on committed fixtures; they consume no product source or quality
+    // declaration.
+    private static bool NodeInput(string path)
+    {
+        if (ControlInputs.InertDocument(path)) return false;
+        if (Shared.Contains(path, StringComparer.Ordinal)) return true;
+        if (path.EndsWith("/workflow-delivery.quality.yml", StringComparison.Ordinal))
+            return false;
+        return NodeInputs.Contains(path, StringComparer.Ordinal) ||
+            DotNetInheritedInputs.Consumes(path, Managed);
     }
 
     private static bool Under(string path, string directory) => path == directory ||

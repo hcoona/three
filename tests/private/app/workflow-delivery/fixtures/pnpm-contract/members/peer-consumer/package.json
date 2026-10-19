@@ -1,0 +1,14 @@
+{
+  "name": "@contract/peer-consumer",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@contract/peer-lib": "workspace:*",
+    "@contract/core": "workspace:*"
+  },
+  "dependenciesMeta": {
+    "@contract/peer-lib": {
+      "injected": true
+    }
+  }
+}

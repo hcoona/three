@@ -1,0 +1,8 @@
+{
+  "name": "@contract/dir-consumer",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@contract/plain": "file:../../vendor/plain"
+  }
+}

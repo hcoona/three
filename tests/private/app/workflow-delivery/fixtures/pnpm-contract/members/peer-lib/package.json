@@ -1,0 +1,11 @@
+{
+  "name": "@contract/peer-lib",
+  "version": "1.0.0",
+  "private": true,
+  "peerDependencies": {
+    "@contract/core": "*"
+  },
+  "devDependencies": {
+    "@contract/core": "workspace:*"
+  }
+}
