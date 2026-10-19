@@ -30,6 +30,8 @@ public sealed class PythonNativeContractTests(TestContext context)
     private static readonly string[] ToolsReach = ["b"];
     private static readonly string[] BuildNames = ["b", "hatchling", "nbgv-python"];
     private static readonly string[] BuildExtras = ["cli"];
+    private static readonly string[] TokenExchange = ["GET /_/oidc/audience", "GET /token",
+        "POST /_/oidc/mint-token", "POST /_/oidc/burn-token"];
     private static readonly string[] Exchange = ["GET /_/oidc/audience", "GET /token",
         "POST /_/oidc/mint-token", "POST /legacy/", "POST /_/oidc/burn-token"];
     private static string? uv, interpreter, tools;
@@ -54,7 +56,7 @@ public sealed class PythonNativeContractTests(TestContext context)
                 ["UV_PYTHON_DOWNLOADS"] = "never",
                 ["UV_NO_SYSTEM_CONFIG"] = "1",
             }), token);
-        Assert.IsTrue(sync.Succeeded, NativeDiagnostic.Describe(sync));
+        AssertExited(sync, true);
     }
 
     [ClassCleanup]
@@ -144,7 +146,7 @@ public sealed class PythonNativeContractTests(TestContext context)
         NativeCommandResult locked = await NativeProcess.ExecuteAsync(new(uv!, root,
             ["lock", "--offline", "--python", interpreter!], 120, environment),
             context.CancellationToken);
-        Assert.IsTrue(locked.Succeeded, NativeDiagnostic.Describe(locked));
+        AssertExited(locked, true);
 
         PythonMetadata metadata = await new PythonMetadataReader().ReadAsync(root, uv!,
             interpreter!, environment, context.CancellationToken);
@@ -242,7 +244,7 @@ public sealed class PythonNativeContractTests(TestContext context)
         NativeCommandResult identity = await NativeProcess.ExecuteAsync(new(Helper,
             project.Path, ["-I", Path.Combine(Sources, "packages.py"), "identity",
                 project.Path], 60, Isolated(project)), context.CancellationToken);
-        Assert.IsTrue(identity.Succeeded, NativeDiagnostic.Describe(identity));
+        AssertExited(identity, true);
         using JsonDocument answer = JsonDocument.Parse(identity.Stdout);
         Assert.AreEqual("contract-probe-x", answer.RootElement.GetProperty("name").GetString());
         Assert.AreEqual("1.2.3", answer.RootElement.GetProperty("version").GetString());
@@ -259,7 +261,7 @@ public sealed class PythonNativeContractTests(TestContext context)
                 "--only-group", "dev", "--no-emit-workspace", "--no-emit-local",
                 "--no-annotate", "--no-header", "--format", "requirements.txt"], 120),
             context.CancellationToken);
-        Assert.IsTrue(export.Succeeded, NativeDiagnostic.Describe(export));
+        AssertExited(export, true);
         string[] requirements = Requirements(export.Stdout);
         Assert.IsNotEmpty(requirements);
         foreach (string requirement in requirements)
@@ -306,23 +308,30 @@ public sealed class PythonNativeContractTests(TestContext context)
         Assert.AreEqual(installs, result.Errors.Length == 0, JsonSerializer.Serialize(
             result.Commands.Select(item => NativeDiagnostic.Describe(item.Result))));
         Assert.HasCount(2, result.Commands);
-        Assert.IsTrue(result.Commands[0].Result.Succeeded);
-        Assert.AreEqual(installs, result.Commands[1].Result.Succeeded);
+        AssertExited(result.Commands[0].Result, true);
+        AssertExited(result.Commands[1].Result, installs);
+        // The observable effect: the package is importable only after a successful install.
+        NativeCommandResult import = await NativeProcess.ExecuteAsync(new(result.Interpreter,
+            state, ["-I", "-c", "import contract_probe"], 60), context.CancellationToken);
+        AssertExited(import, installs);
     }
 
     // The real UV trusted-publishing exchange against a loopback registry and token service
-    // with fake identities: the publisher's exact flags are accepted, one upload of the
-    // original bytes uses the minted token, and its mask line reaches the runner.
+    // with fake identities: the publisher's exact flags are accepted, the OIDC token is
+    // exchanged for a minted token, one upload of exactly the selected original uses it, the
+    // token is invalidated, and its mask line reaches the runner. Both release formats run:
+    // UV reads the upload metadata from each archive itself.
     [TestMethod]
     [OSCondition(OperatingSystems.Linux)]
-    public async Task TrustedPublishingUploadsOnceAndForwardsTheTokenMask()
+    [DataRow("wheel")]
+    [DataRow("sdist")]
+    public async Task TrustedPublishingUploadsOnceAndForwardsTheTokenMask(string output)
     {
-        using var publication = await Publication.RunAsync(uv!, "accept",
+        using var publication = await Publication.RunAsync(uv!, "accept", output,
             context.CancellationToken);
-        PythonPublishResult result = publication.Result;
 
-        Assert.IsTrue(result.Upload.Command.Succeeded, NativeDiagnostic.Describe(
-            result.Upload.Command));
+        AssertExited(publication.Result.Upload.Command, true);
+        Assert.AreEqual(output, publication.Result.Upload.Output);
         Assert.AreEqual("::add-mask::" + LoopbackRegistry.Minted + Environment.NewLine,
             publication.Masks);
         LoopbackRegistry.Request[] requests = publication.Requests;
@@ -330,10 +339,17 @@ public sealed class PythonNativeContractTests(TestContext context)
             request.Method + " " + request.Path).ToArray());
         Assert.AreEqual("Bearer " + LoopbackRegistry.RequestToken, requests[1].Authorization);
         Assert.Contains("audience=" + LoopbackRegistry.Audience, requests[1].Query);
+        using (JsonDocument mint = JsonDocument.Parse(requests[2].Body))
+            Assert.AreEqual(LoopbackRegistry.OidcToken, mint.RootElement.GetProperty("token")
+                .GetString());
         LoopbackRegistry.Request posted = requests[3];
         Assert.AreEqual(Publication.Credential, posted.Authorization);
-        Assert.IsTrue(posted.Body.AsSpan().IndexOf(publication.Wheel) >= 0);
-        Assert.IsFalse(posted.Body.AsSpan().IndexOf(publication.SdistName) >= 0);
+        Assert.IsFalse(publication.Result.MaskForwardingFailed);
+        Assert.IsTrue(posted.Body.AsSpan().IndexOf(publication.Selected) >= 0);
+        Assert.IsFalse(posted.Body.AsSpan().IndexOf(publication.Other) >= 0);
+        using (JsonDocument burn = JsonDocument.Parse(requests[4].Body))
+            Assert.AreEqual(LoopbackRegistry.Minted, burn.RootElement.GetProperty("token")
+                .GetString());
     }
 
     // UV's native upload handling the publisher relies on instead of an application retry:
@@ -352,17 +368,27 @@ public sealed class PythonNativeContractTests(TestContext context)
     public async Task NativeUploadHandlingStaysBoundedAndFailsClosed(string answer, int uploads,
         bool succeeds)
     {
-        using var publication = await Publication.RunAsync(uv!, answer,
+        using var publication = await Publication.RunAsync(uv!, answer, "wheel",
             context.CancellationToken);
         NativeCommandResult command = publication.Result.Upload.Command;
 
-        Assert.AreEqual(succeeds, command.Succeeded, NativeDiagnostic.Describe(command));
+        // UV ends on its own (no deadline kill) with the expected outcome.
+        AssertExited(command, succeeds);
+        // The token was minted before any upload, so its mask reaches the runner either way.
+        Assert.AreEqual("::add-mask::" + LoopbackRegistry.Minted + Environment.NewLine,
+            publication.Masks);
         LoopbackRegistry.Request[] posts = publication.Requests.Where(request =>
             request.Method == "POST" && request.Path.StartsWith("/legacy",
                 StringComparison.Ordinal)).ToArray();
         Assert.HasCount(uploads, posts);
+        Assert.IsFalse(publication.Result.MaskForwardingFailed);
+        // Around the uploads, the token exchange happens once and the minted token is
+        // invalidated once, whatever the upload outcome; nothing else is requested.
+        CollectionAssert.AreEqual(TokenExchange, publication.Requests.Where(request =>
+            !request.Path.StartsWith("/legacy", StringComparison.Ordinal)).Select(request =>
+                request.Method + " " + request.Path).ToArray());
         Assert.IsTrue(posts.All(post => post.Authorization == Publication.Credential &&
-            post.Body.AsSpan().IndexOf(publication.Wheel) >= 0));
+            post.Body.AsSpan().IndexOf(publication.Selected) >= 0));
         // Another realm (here "localhost" on the same port) never receives the token.
         Assert.IsTrue(publication.Requests.All(request => request.Host.StartsWith(
             "127.0.0.1:", StringComparison.Ordinal)));
@@ -377,19 +403,20 @@ public sealed class PythonNativeContractTests(TestContext context)
         internal PythonPublishResult Result { get; private set; } = null!;
         internal string Masks { get; private set; } = "";
         internal LoopbackRegistry.Request[] Requests { get; private set; } = [];
-        internal byte[] Wheel { get; private set; } = [];
-        internal byte[] SdistName { get; private set; } = [];
+        internal byte[] Selected { get; private set; } = [];
+        internal byte[] Other { get; private set; } = [];
 
         internal static async Task<Publication> RunAsync(string uv, string answer,
-            CancellationToken token)
+            string output, CancellationToken token)
         {
             var publication = new Publication();
-            try { await publication.PublishAsync(uv, answer, token); }
+            try { await publication.PublishAsync(uv, answer, output, token); }
             catch { publication.Dispose(); throw; }
             return publication;
         }
 
-        private async Task PublishAsync(string uv, string answer, CancellationToken token)
+        private async Task PublishAsync(string uv, string answer, string output,
+            CancellationToken token)
         {
             using var authority = new LoopbackAuthority(scratch.Path);
             await using var registry = new LoopbackRegistry(authority.Leaf, answer);
@@ -397,11 +424,10 @@ public sealed class PythonNativeContractTests(TestContext context)
                 "originals")).FullName;
             string wheel = PythonNativeContractTests.Wheel(originals,
                 "hcoona_release_smoke_python", "0.1.0b1");
-            string sdist = System.IO.Path.Combine(originals,
-                "hcoona_release_smoke_python-0.1.0b1.tar.gz");
-            File.WriteAllBytes(sdist, [1, 2, 3]);
-            Wheel = File.ReadAllBytes(wheel);
-            SdistName = Encoding.UTF8.GetBytes(System.IO.Path.GetFileName(sdist));
+            string sdist = PythonNativeContractTests.Sdist(originals,
+                "hcoona_release_smoke_python", "0.1.0b1");
+            byte[][] bytes = [File.ReadAllBytes(wheel), File.ReadAllBytes(sdist)];
+            (Selected, Other) = output == "wheel" ? (bytes[0], bytes[1]) : (bytes[1], bytes[0]);
             static ReleaseFile Original(string output, string kind, string path) =>
                 new("python-distributions", output, kind, "hcoona-release-smoke-python",
                     "0.1.0b1", System.IO.Path.GetFileName(path), new FileInfo(path).Length,
@@ -422,7 +448,7 @@ public sealed class PythonNativeContractTests(TestContext context)
             using var masks = new StringWriter();
             string state = Directory.CreateDirectory(System.IO.Path.Combine(scratch.Path,
                 "publisher")).FullName;
-            Result = await PythonNativePublisher.PublishAsync(prepared, originals, "wheel",
+            Result = await PythonNativePublisher.PublishAsync(prepared, originals, output,
                 new(uv, state), platform, masks, (command, cancellation) =>
                 {
                     // The production command, retargeted to the loopback registry only.
@@ -465,6 +491,8 @@ public sealed class PythonNativeContractTests(TestContext context)
         ["UV_NO_SYSTEM_CONFIG"] = "1",
         ["UV_NO_PROGRESS"] = "1",
         ["PYTHONNOUSERSITE"] = "1",
+        ["PYTHONPATH"] = null,
+        ["PYTHONHOME"] = null,
         ["PYTHONDONTWRITEBYTECODE"] = "1",
         ["HTTPS_PROXY"] = DeadProxy,
         ["HTTP_PROXY"] = DeadProxy,
@@ -488,6 +516,40 @@ public sealed class PythonNativeContractTests(TestContext context)
         string full = Path.Combine(root, path);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, text);
+    }
+
+    // A native result that ended on its own, as opposed to a deadline kill or start failure.
+    private static void AssertExited(NativeCommandResult result, bool succeeded)
+    {
+        Assert.AreEqual(NativeTermination.Exited, result.Termination,
+            NativeDiagnostic.Describe(result));
+        Assert.AreEqual(succeeded, result.ExitCode == 0, NativeDiagnostic.Describe(result));
+    }
+
+    // A minimal sdist: one top-level directory holding PKG-INFO, as UV reads it on upload.
+    internal static string Sdist(string directory, string name, string version)
+    {
+        string path = Path.Combine(directory, $"{name}-{version}.tar.gz");
+        using (FileStream file = File.Create(path))
+        using (var gzip = new GZipStream(file, CompressionLevel.Optimal))
+        using (var tar = new TarWriter(gzip, TarEntryFormat.Pax))
+        {
+            string root = $"{name}-{version}/";
+            tar.WriteEntry(new PaxTarEntry(TarEntryType.Directory, root));
+            foreach ((string entry, string text) in new[]
+            {
+                (root + "PKG-INFO", $"Metadata-Version: 2.1\nName: {name.Replace('_', '-')}\n" +
+                    $"Version: {version}\n"),
+                (root + "pyproject.toml", $"[project]\nname = \"{name.Replace('_', '-')}\"\n" +
+                    $"version = \"{version}\"\n"),
+            })
+            {
+                byte[] content = Encoding.UTF8.GetBytes(text);
+                tar.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, entry)
+                    { DataStream = new MemoryStream(content) });
+            }
+        }
+        return path;
     }
 
     internal static string Wheel(string directory, string name, string version)
@@ -583,6 +645,7 @@ public sealed class PythonNativeContractTests(TestContext context)
         internal const string RequestToken = "fake-actions-request-token";
         internal const string Audience = "fake-audience";
         internal const string Minted = "pypi-fake-minted-token";
+        internal const string OidcToken = "fake-oidc-jwt";
         internal sealed record Request(string Method, string Path, string Query,
             string? Authorization, string Host, byte[] Body);
 
@@ -650,7 +713,7 @@ public sealed class PythonNativeContractTests(TestContext context)
             request.Path switch
             {
                 "/_/oidc/audience" => ("200 OK", "{\"audience\":\"" + Audience + "\"}", ""),
-                "/token" => ("200 OK", "{\"value\":\"fake-oidc-jwt\"}", ""),
+                "/token" => ("200 OK", "{\"value\":\"" + OidcToken + "\"}", ""),
                 "/_/oidc/mint-token" => ("200 OK", "{\"success\":true,\"token\":\"" + Minted +
                     "\"}", ""),
                 "/_/oidc/burn-token" => ("200 OK", "{}", ""),

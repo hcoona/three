@@ -167,12 +167,16 @@ registry and token service with fake identities, and a closed proxy for any
 non-loopback request. It asserts that the flags are accepted and that the exchange
 is audience, OIDC token request, mint, exactly one upload of the selected original
 bytes with the minted token, then token invalidation. It also asserts that the
-forwarded runner output is exactly the minted token's `::add-mask::` line.
+forwarded runner output is exactly the minted token's `::add-mask::` line. It runs
+for both a wheel and a minimal valid sdist, so UV reads upload metadata from each
+archive format, and it asserts that the mint request carries the OIDC token and
+the invalidation request carries the minted token.
 `NativeUploadHandlingStaysBoundedAndFailsClosed` guards the native upload handling
 the publisher relies on instead of an application retry. A 503, a 500 and the
 registry's `400 File already exists` answer each end the command as a failure
 after one upload. A connection reset is retried a bounded four uploads in total
-before failing. A same-realm redirect is followed with the token, and a redirect
+before failing. Every row requires UV to exit on its own, not by deadline kill. A
+same-realm redirect is followed with the token, and a redirect
 to another realm fails without sending it there. The existing-file row covers
 UV's handling of a registry rejection; the optional pre-upload
 `--check-url` check is not selected and is not guarded. The publisher passes one

@@ -30,7 +30,7 @@ def _query(
     }
     child.update(environment)
     return subprocess.run(  # noqa: S603 -- the pinned interpreter and helper.
-        [sys.executable, str(QUERY), str(directory)],
+        [sys.executable, "-I", str(QUERY), str(directory)],
         cwd=directory,
         env=child,
         capture_output=True,
