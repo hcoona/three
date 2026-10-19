@@ -15,7 +15,7 @@ is not an Official route.
 
 | Ecosystem | Official destination | Implemented Official scope                                    |
 | --------- | -------------------- | ------------------------------------------------------------- |
-| Python    | PyPI                 | Live publication only from `refs/heads/main`                  |
+| Python    | PyPI                 | Smoke unit only; live publication only from `refs/heads/main` |
 | Ruby      | RubyGems.org         | Smoke unit only; live publication only from `refs/heads/main` |
 | npm       | npmjs                | Dry-run simulation only; no live Official caller              |
 | NuGet     | None                 | No Official channel; GitHub Packages Buddy only               |
@@ -27,8 +27,11 @@ requests carry the dispatched ref in their subject without a ref-class check. Dr
 ref eligibility. Native Environment branch policies may constrain a channel
 further; they do not replace this check. Ruby Official accepts only the
 `hcoona-release-smoke-ruby` unit; `RubyReleaseUnits.Admit` rejects a production unit such
-as `asciidoctor-latexmath` with Official before preparation. Adding another
-Official ref or Ruby Official unit, a live
+as `asciidoctor-latexmath` with Official before preparation. Python Official
+accepts only the `hcoona-release-smoke-python` unit; `nbgv-python` is ineligible
+for Official under WD-REL-001, and `PythonReleaseUnits.Admit` rejects it with
+Official before preparation. Adding another Official ref or Ruby or Python
+Official unit, a live
 npm Official caller or a NuGet Official destination is a caller change that
 updates this table and its tests together.
 
