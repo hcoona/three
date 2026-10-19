@@ -37,6 +37,8 @@ internal static class RubyReleaseUnits
             "ruby/rspec-v1", false),
     ];
 
+    internal static bool Registered(string id) => Units.Any(unit => unit.Id == id);
+
     internal static RubyReleaseUnit Named(string id) =>
         Units.SingleOrDefault(unit => unit.Id == id) ??
             throw new InvalidDataException("Unsupported Ruby Release unit.");

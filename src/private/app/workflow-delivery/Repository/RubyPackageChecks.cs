@@ -1,4 +1,5 @@
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Ecosystems;
 
 namespace WorkflowDelivery.Repository;
 
@@ -29,7 +30,7 @@ internal static class RubyPackageChecks
                 !Path.IsPathFullyQualified(source.Gemspec) ||
                 !PathComparison.Equals(Path.GetFullPath(Path.Combine(root, entry)),
                     Path.GetFullPath(source.Gemspec)) ||
-                source.Gem.Name != "hcoona-release-smoke-ruby" ||
+                !RubyReleaseUnits.Registered(source.Gem.Name) ||
                 string.IsNullOrWhiteSpace(source.Gem.Version) || source.Gem.Platform != "ruby")
                 throw new InvalidDataException("Unresolved adopted native Ruby gem subject.");
             if (build.Outputs is not [{ Role: "primary-package", Kind: "ruby-gem" }])
