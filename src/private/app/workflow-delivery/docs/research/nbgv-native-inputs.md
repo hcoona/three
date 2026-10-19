@@ -259,9 +259,9 @@ These tests do not cover cloud-build providers other than GitHub Actions, the
 `NBGV_GitEngine`, `DEPENDABOT` and a bot `GITHUB_ACTOR`. The rows clear all of
 them, and the Ruby callers launch the CLI with a constructed, non-inherited
 environment. Shallow clones (preparation rejects them) and Windows paths beyond
-the Windows CI run are not covered either. PNPM reader queries remain covered by
-the [PNPM pin trigger](pnpm-native-planning.md) until the PNPM native contract
-tests land. Existing observations keep their original pins and limits.
+the Windows CI run are not covered either. PNPM reader queries are guarded by
+the PNPM [Pin Guard](pnpm-native-planning.md#pin-guard). Existing observations
+keep their original pins and limits.
 
 [cli]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/nbgv/Program.cs#L597-L657
 [oracle]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/NerdBank.GitVersioning/VersionOracle.cs#L44-L82

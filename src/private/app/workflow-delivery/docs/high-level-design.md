@@ -181,9 +181,9 @@ native UV metadata stubs build nodes: the
 [Python planning contract](integration/python.md#native-python-planning-facts)
 joins PyPA-parsed Hatchling build-requirement names to native workspace members
 only under an absent or exact workspace source, and fails on every other shape.
-It is not UV lowering and is rechecked under its research record. Reuse native
-output-directory metadata when available rather than requiring a duplicate
-Workflow declaration.
+It is not UV lowering and is guarded by the native contract tests its research
+record names. Reuse native output-directory metadata when available rather than
+requiring a duplicate Workflow declaration.
 
 Before implementing an integration, identify the native interface and verify
 that its output supports the required scope and errors. A successful call does

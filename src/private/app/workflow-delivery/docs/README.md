@@ -24,8 +24,10 @@ remain unsupported. Internal historical formats need no compatibility reader.
 
 ## Native Integration Evidence
 
-Read a record when changing or reviewing the integration it supports, or when
-its recheck trigger fires.
+Read a record when changing or reviewing the integration it supports, or when a
+native contract test that names it fails. Pin changes are guarded by those
+tests; the remaining rechecks are the service and decision-time checks the
+records name.
 
 | Integration                     | Source and bounded observations                                                                                                                                                                          | Read when                                                                                                               |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
