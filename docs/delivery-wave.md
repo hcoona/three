@@ -361,3 +361,50 @@ ends a grant. Git and the proposing PR retain the reason and history.
   #1262 stay separate); no change to Workflow Delivery scope selection or
   retained-job selection; no release, dispatch, publication, credential or
   access change. Delete this entry when the outcome is accepted.
+
+### Repair triaged product lint, lock and test-diagnostic findings
+
+- **Work carrier:** the pull request proposing this entry and four linked
+  implementation pull requests, one per finding below. The repository owner
+  triaged these findings and approved each fix.
+- **Accepted inputs:** the issues and pull request named below, root
+  `Directory.Packages.props`,
+  `global.json`, the affected product sources, Gemfile and lock files, and the
+  affected test project.
+- **Advancement and outcome:**
+    - [#1298](https://github.com/hcoona/three/issues/1298): repair the Ruff
+      findings and formatting drift that `hk check --all` reports on `main`,
+      without behavior change.
+    - [#1297](https://github.com/hcoona/three/issues/1297): remove the Ruby
+      version pin from the asciidoctor-latexmath Gemfile and relock with its
+      recorded Bundler; the gemspec keeps the runtime range.
+    - [#1258](https://github.com/hcoona/three/issues/1258): remove the central
+      transitive `Microsoft.Testing.Platform.MSBuild` pin so MSTest.Sdk and
+      xUnit v3 own their platform versions and an MSTest.Sdk upgrade no longer
+      fails restore with NU1109 (a local restore observation recorded in the
+      implementation PR); refresh the affected NuGet lock files. The #1258 TRX
+      regression itself stays open upstream.
+    - The AzureAuth Python harness timeout that failed Renovate PR
+      [#1316](https://github.com/hcoona/three/pull/1316) in
+      [run 39259837708](https://github.com/hcoona/three/actions/runs/39259837708):
+      add stall diagnostics (a Python stack dump shortly before the timeout and
+      the resolved interpreter in the failure message), keeping its timeout and
+      assertions; a run that reaches the dump now fails.
+
+    The outcome is accepted when each change merges with ordinary CI passing
+    and its PR records the outcome check: `ruff` and `ruff_format` pass under
+    `hk check --all`, and a temporary MSTest.Sdk 4.5.1 restore passes without
+    NU1109.
+
+- **Ordering and gates:** follow the existing engineering and review gates;
+  independently classify material findings before repair. A root-cause fix
+  for #1316 that the diagnostics reveal needs its own owner decision.
+- **Effects:** permit source and repository/GitHub inspection, product, test,
+  lock and package-version changes listed above, locked tool preparation,
+  isolated local builds and credential-free tests, independent delegated
+  review, ordinary PR/check operations and their normal CI.
+- **Exclusions:** no MSTest.Sdk or other package version upgrade, no Renovate
+  hold, no change to the Workflow Delivery TRX fixture, no timeout increase,
+  no gemspec Ruby floor change, no V3 onboarding; no release, dispatch,
+  publication, credential or access change. Delete this entry when the
+  outcome is accepted.
