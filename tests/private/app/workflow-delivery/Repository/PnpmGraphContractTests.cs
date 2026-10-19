@@ -23,6 +23,8 @@ public sealed class PnpmGraphContractTests(TestContext context)
     private static readonly string[] TopClosure = ["members/app", "members/core",
         "members/top"];
     private static readonly string[] OuterClosure = ["members/outer"];
+    private static readonly string[] TopCandidate = ["members/core"];
+    private static readonly string[] DeepConsumer = ["app"];
     private static readonly string[] HookCandidates = [".pnpmfile.mjs", ".pnpmfile.cjs",
         ".pnpmfile.js", ".pnpmfile.ts", ".pnpmfile.mts", ".pnpmfile.cts", "pnpmfile.mjs",
         "pnpmfile.cjs", "pnpmfile.js"];
@@ -198,6 +200,95 @@ public sealed class PnpmGraphContractTests(TestContext context)
         Assert.Contains(".pnpmfile.mjs", loaded);
         foreach (string name in loaded)
             Assert.Contains(name, NodeRepositoryReader.HookFiles);
+    }
+
+    // Planning reads the wanted lock, not installed state: after an install, a manifest edge
+    // removal written only to the lock is what the reader returns, while the installed tree
+    // still holds the removed relation.
+    [TestMethod]
+    [OSCondition(OperatingSystems.Linux)]
+    public async Task GraphReaderFollowsTheWantedLockOverStaleInstalledState()
+    {
+        using var tool = await PnpmNativeTool.CreateAsync(context.CancellationToken);
+        using var copy = new FixtureCopy("pnpm-contract");
+        PnpmNativeTool.AssertExited(await tool.RunAsync("pnpm", copy.Root, ["install",
+            "--frozen-lockfile", "--offline", "--ignore-scripts"], context.CancellationToken),
+            true);
+        string manifest = Path.Combine(copy.Root, "members", "top", "package.json");
+        File.WriteAllText(manifest, File.ReadAllText(manifest).Replace("@contract/app",
+            "@contract/core", StringComparison.Ordinal));
+        PnpmNativeTool.AssertExited(await tool.RunAsync("pnpm", copy.Root, ["install",
+            "--lockfile-only", "--offline", "--ignore-scripts"], context.CancellationToken),
+            true);
+
+        PnpmGraph graph = await Reader(tool, copy.Root).ReadAsync(context.CancellationToken);
+
+        CollectionAssert.AreEqual(TopCandidate, graph.Projects.Single(project =>
+            project.Directory == "members/top").Dependencies);
+        Assert.HasCount(3, graph.LocalInputs);
+        // The precondition: the installed tree still has the removed relation.
+        string installed = await tool.QueryAsync(copy.Root, ["--filter", "{./members/top}",
+            "list", "--recursive", "--json", "--depth", "Infinity"],
+            context.CancellationToken);
+        Assert.Contains("@contract/app", installed);
+    }
+
+    // PNPM stops a listing at dependency level 256 without a truncation marker. The reader
+    // accepts JSON depth 512 (level 255) and rejects 514, so it keeps the deepest input of a
+    // complete tree and fails closed where PNPM may have cut the tree. A single member with a
+    // generated file: chain exercises the real cutoff.
+    [TestMethod]
+    [OSCondition(OperatingSystems.Linux)]
+    [DataRow(255)]
+    [DataRow(256)]
+    public async Task GraphReaderKeepsLevel255AndRejectsTheTruncationBoundary(int levels)
+    {
+        using var tool = await PnpmNativeTool.CreateAsync(context.CancellationToken);
+        string scratch = Directory.CreateTempSubdirectory("pnpm-contract-depth-").FullName;
+        try
+        {
+            string root = Path.Combine(scratch, "deep workspace");
+            Write(root, "package.json", """
+                {"name":"@deep/root","version":"1.0.0","private":true}
+                """);
+            Write(root, "pnpm-workspace.yaml", "packages:\n  - app\n");
+            Write(root, "app/package.json", """
+                {"name":"@deep/app","version":"1.0.0","private":true,
+                 "dependencies":{"@deep/d1":"file:../vendor/d1"}}
+                """);
+            for (int level = 1; level <= levels; level++)
+                Write(root, $"vendor/d{level}/package.json", level == levels
+                    ? $$"""{"name":"@deep/d{{level}}","version":"1.0.0"}"""
+                    : $$$"""
+                        {"name":"@deep/d{{{level}}}","version":"1.0.0",
+                         "dependencies":{"@deep/d{{{level + 1}}}":"file:../d{{{level + 1}}}"}}
+                        """);
+            PnpmNativeTool.AssertExited(await tool.RunAsync("pnpm", root, ["install",
+                "--lockfile-only", "--offline", "--ignore-scripts"], context.CancellationToken),
+                true);
+
+            Task<PnpmGraph> read = Reader(tool, root).ReadAsync(context.CancellationToken);
+
+            if (levels == 256)
+            {
+                await Assert.ThrowsAsync<JsonException>(() => read);
+                return;
+            }
+            PnpmGraph graph = await read;
+            CollectionAssert.AreEquivalent(Enumerable.Range(1, levels).Select(level =>
+                "vendor/d" + level).ToArray(), graph.LocalInputs.Select(input => input.Path)
+                .ToArray());
+            Assert.IsTrue(graph.LocalInputs.All(input => input.IsDirectory &&
+                input.Consumers.SequenceEqual(DeepConsumer)));
+        }
+        finally { ScratchRoots.TryDelete(scratch); }
+    }
+
+    private static void Write(string root, string path, string text)
+    {
+        string full = Path.Combine(root, path);
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllText(full, text);
     }
 
     private static PnpmGraphReader Reader(PnpmNativeTool tool, string root) =>

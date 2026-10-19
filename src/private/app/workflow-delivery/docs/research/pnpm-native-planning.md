@@ -263,9 +263,8 @@ permit dependency level 256 but omit its children without a truncation flag.
 Reject that indistinguishable boundary. The renderer nests two JSON containers
 per dependency level inside the array/project pair; a JSON maximum depth of 512
 accepts the complete level-255 shape and rejects level 256. These are pinned
-source findings and adapter inferences, not new PNPM observations or a claim of
-unbounded graph support. Controlled-output tests can validate the adapter's
-acceptance/rejection without another native campaign.
+source findings and adapter inferences, not a claim of unbounded graph support.
+The [pin guard](#pin-guard) now exercises the boundary with the pinned PNPM.
 
 ## Bounded Local CLI Validation Protocol
 
@@ -739,7 +738,7 @@ require a separately accepted protocol and a rerun.
 | Installed extraneous packages appear as `unsavedDependencies`                 | Holds: each singleton listing carried the extraneous root package in that group                                                                                                                                                                                                                                             |
 | `pkg get <field> --json` returns the native value or nothing                  | Holds: `"dist output"`, then `"build output"` in the candidate; absent fields produced no output; repository `scripts` returned objects                                                                                                                                                                                     |
 | New: membership still lists members containing nested checkouts               | Holds by source (PNPM project discovery does not call the pruned walk); corroborated by an unadmitted local observation in which members holding a `.git` directory or `pnpm-workspace.yaml` were still listed                                                                                                              |
-| Depth-256 cutoff without truncation flag                                      | Unchanged source; not exercised (the repository's deepest walked level is 11)                                                                                                                                                                                                                                               |
+| Depth-256 cutoff without truncation flag                                      | Unchanged source; exercised by the pin guard at 12.14.0 (the repository's deepest walked level is 11)                                                                                                                                                                                                                       |
 | NAPI, embedded-runtime and v11 helper findings                                | Not rechecked: unselected and outside the trigger                                                                                                                                                                                                                                                                           |
 | 12.9.0 preparation-gate and recursive `pkg get` findings                      | Hold; 12.10.0 now forwards `--config.*` tokens to a verify-deps install, and the adopted executor still disables that gate                                                                                                                                                                                                  |
 
@@ -810,9 +809,14 @@ member. The tests assert:
 - that the committed settings plan, while a dedicated lock, a configured
   pnpmfile, a configuration dependency, the hoisted linker and a global pnpmfile
   each stop planning;
-- which default hook files the pinned PNPM loads.
+- which default hook files the pinned PNPM loads;
+- that after an offline frozen install, a manifest edge removal written only to
+  the wanted lock is what the reader returns, while the installed tree still holds
+  the removed relation, so planning never reads installed state;
+- the depth boundary, with a generated single-member `file:` chain: at 255 levels
+  the reader keeps every input including the deepest, and at 256 levels, where
+  PNPM stops without a truncation marker, the reader fails with a JSON depth error.
 
-The depth-256 cutoff remains a source finding (the fixture is not that deep), and
 NAPI and embedded-runtime findings stay unselected. Hoisted or global virtual
 stores, dedicated lock layouts and multiple peer contexts are rejected or
 unobserved shapes, as recorded above. Windows remains the owner's assumption.
