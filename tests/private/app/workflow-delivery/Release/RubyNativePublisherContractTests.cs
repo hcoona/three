@@ -41,16 +41,17 @@ public sealed class RubyNativePublisherContractTests(TestContext context)
         Assert.StartsWith("127.0.0.1:", posted.Host);
     }
 
-    // A returned failure status, the registry's existing-version rejection, a connection
-    // closed without a response and any redirect (same or other realm) each end the command
-    // as a failure after exactly one POST. A TCP reset (RST) is resent once by RubyGems'
-    // request layer, so it ends after two POSTs of the same original. No request reaches
-    // another realm.
+    // A returned failure status, the registry's existing-version rejection, a TLS connection
+    // dropped without close_notify (an unclean EOF) and any redirect (same or other realm)
+    // each end the command as a failure after exactly one POST. A TCP reset (RST) and a clean
+    // TLS shutdown without a response are resent once by RubyGems' request layer, so they end
+    // after two POSTs of the same original. No request reaches another realm.
     [TestMethod]
     [OSCondition(OperatingSystems.Linux)]
     [DataRow("unavailable", 1)]
     [DataRow("existing-version", 1)]
-    [DataRow("close", 1)]
+    [DataRow("unclean-close", 1)]
+    [DataRow("clean-close", 2)]
     [DataRow("reset", 2)]
     [DataRow("same-realm-redirect", 1)]
     [DataRow("other-realm-redirect", 1)]
@@ -241,7 +242,8 @@ public sealed class RubyNativePublisherContractTests(TestContext context)
                             "existing-version" => ("409 Conflict",
                                 "Repushing of gem versions is not allowed.", ""),
                             "reset" => ("reset", "", ""),
-                            "close" => ("close", "", ""),
+                            "unclean-close" => ("unclean-close", "", ""),
+                            "clean-close" => ("clean-close", "", ""),
                             "same-realm-redirect" => ("307 Temporary Redirect", "",
                                 "Location: https://127.0.0.1:" + Port + "/moved" +
                                 request.Path + "\r\n"),
@@ -257,8 +259,14 @@ public sealed class RubyNativePublisherContractTests(TestContext context)
                             socket.Client.Close(0);
                             return;
                         }
-                        // A graceful close without a response: the client reads end of file.
-                        if (status == "close") return;
+                        // A clean TLS shutdown (close_notify) without a response.
+                        if (status == "clean-close")
+                        {
+                            await secure.ShutdownAsync();
+                            return;
+                        }
+                        // The socket closes without close_notify: an unclean TLS EOF.
+                        if (status == "unclean-close") return;
                         byte[] content = Encoding.UTF8.GetBytes(body);
                         await secure.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 " + status +
                             "\r\n" + headers + "Content-Length: " + content.Length +
