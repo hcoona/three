@@ -174,8 +174,9 @@ the invalidation request carries the minted token.
 `NativeUploadHandlingStaysBoundedAndFailsClosed` guards the native upload handling
 the publisher relies on instead of an application retry. A 503, a 500 and the
 registry's `400 File already exists` answer each end the command as a failure
-after one upload. A connection reset is retried a bounded four uploads in total
-before failing. Every row requires UV to exit on its own, not by deadline kill. A
+after one upload. A TLS connection dropped without close_notify, a clean TLS
+shutdown without a response and a TCP reset (RST) are each retried to a bounded
+four uploads in total before failing. Every row requires UV to exit on its own, not by deadline kill. A
 same-realm redirect is followed with the token, and a redirect
 to another realm fails without sending it there. The existing-file row covers
 UV's handling of a registry rejection; the optional pre-upload

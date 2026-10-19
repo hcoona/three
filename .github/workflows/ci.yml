@@ -1000,7 +1000,7 @@ jobs:
             -property:RestoreLockedMode=true \
             --filter 'FullyQualifiedName=WorkflowDelivery.Tests.Release.PythonPreparationNativeTests.NativeBranchPreparationBuildsCompleteOriginalPairAndGitFreeConsumer|TestCategory=PythonNativeContract' \
             --report-trx --report-trx-filename preparation.trx \
-            --results-directory "$RUNNER_TEMP/native-preparation/python" -- --minimum-expected-tests 15
+            --results-directory "$RUNNER_TEMP/native-preparation/python" -- --minimum-expected-tests 17
       - name: Execute original Ruby preparation scenario
         if: ${{ !cancelled() && steps.plan.outputs.ruby == 'true' }}
         run: |
