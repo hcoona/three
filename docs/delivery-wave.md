@@ -362,49 +362,65 @@ ends a grant. Git and the proposing PR retain the reason and history.
   retained-job selection; no release, dispatch, publication, credential or
   access change. Delete this entry when the outcome is accepted.
 
-### Repair triaged product lint, lock and test-diagnostic findings
+### Onboard nbgv-python and asciidoctor-latexmath to Workflow Delivery Buddy release
 
-- **Work carrier:** the pull request proposing this entry and four linked
-  implementation pull requests, one per finding below. The repository owner
-  triaged these findings and approved each fix.
-- **Accepted inputs:** the issues and pull request named below, root
-  `Directory.Packages.props`,
-  `global.json`, the affected product sources, Gemfile and lock files, and the
-  affected test project.
-- **Advancement and outcome:**
-    - [#1298](https://github.com/hcoona/three/issues/1298): repair the Ruff
-      findings and formatting drift that `hk check --all` reports on `main`,
-      without behavior change.
-    - [#1297](https://github.com/hcoona/three/issues/1297): remove the Ruby
-      version pin from the asciidoctor-latexmath Gemfile and relock with its
-      recorded Bundler; the gemspec keeps the runtime range.
-    - [#1258](https://github.com/hcoona/three/issues/1258): remove the central
-      transitive `Microsoft.Testing.Platform.MSBuild` pin so MSTest.Sdk and
-      xUnit v3 own their platform versions and an MSTest.Sdk upgrade no longer
-      fails restore with NU1109 (a local restore observation recorded in the
-      implementation PR); refresh the affected NuGet lock files. The #1258 TRX
-      regression itself stays open upstream.
-    - The AzureAuth Python harness timeout that failed Renovate PR
-      [#1316](https://github.com/hcoona/three/pull/1316) in
-      [run 39259837708](https://github.com/hcoona/three/actions/runs/39259837708):
-      add stall diagnostics (a Python stack dump shortly before the timeout and
-      the resolved interpreter in the failure message), keeping its timeout and
-      assertions; a run that reaches the dump now fails.
-
-    The outcome is accepted when each change merges with ordinary CI passing
-    and its PR records the outcome check: `ruff` and `ruff_format` pass under
-    `hk check --all`, and a temporary MSTest.Sdk 4.5.1 restore passes without
-    NU1109.
-
-- **Ordering and gates:** follow the existing engineering and review gates;
-  independently classify material findings before repair. A root-cause fix
-  for #1316 that the diagnostics reveal needs its own owner decision.
-- **Effects:** permit source and repository/GitHub inspection, product, test,
-  lock and package-version changes listed above, locked tool preparation,
-  isolated local builds and credential-free tests, independent delegated
-  review, ordinary PR/check operations and their normal CI.
-- **Exclusions:** no MSTest.Sdk or other package version upgrade, no Renovate
-  hold, no change to the Workflow Delivery TRX fixture, no timeout increase,
-  no gemspec Ruby floor change, no V3 onboarding; no release, dispatch,
-  publication, credential or access change. Delete this entry when the
-  outcome is accepted.
+- **Work carrier:** the pull request proposing this entry and its linked
+  implementation pull requests. The repository owner asked to extend Workflow
+  Delivery toward releasing every publishable product, starting with the Python
+  and Ruby products, and approved Buddy publication without Official.
+- **Accepted inputs:** the Workflow Delivery
+  [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
+  [HLD](../src/private/app/workflow-delivery/docs/high-level-design.md),
+  [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
+  [Python](../src/private/app/workflow-delivery/docs/integration/python.md#concrete-python-release-integration)
+  and [Ruby](../src/private/app/workflow-delivery/docs/integration/ruby.md#concrete-ruby-release-integration)
+  Release contracts and [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md);
+  the `src/public/lib/nbgv-python` and `src/public/lib/asciidoctor-latexmath`
+  sources, the root `uv.lock` and the latexmath `Gemfile.lock`.
+- **Owner decisions:** nbgv-python keeps its static `pyproject.toml` version,
+  bumped by hand before each publication; a same-version conflict keeps its
+  normal outcome. Clean local consumers resolve runtime dependencies
+  (`packaging`, `asciidoctor`) from those committed locks. Publication goes only
+  to the existing Buddy destinations, TestPyPI and GitHub Packages; Official
+  stays out of scope. The shared callers are renamed now, with a smoke-only
+  Official guard, so a later Official onboarding needs one publisher
+  registration per destination against the new names.
+- **Advancement and outcome:** add a release-unit declaration for each
+  product, a quality selection for nbgv-python (latexmath keeps its adopted
+  `ruby/rspec-v1`), and one concrete product recipe each,
+  beside the smoke recipes, as the HLD's accepted extension cost: a
+  nbgv-python wheel/sdist recipe with a static version and a latexmath single
+  `ruby`-platform gem recipe with its NBGV version and its `asciidoctor`
+  runtime dependency. Make the Python and Ruby Release callers, observation and
+  publishers select a registered unit instead of the hard-coded smoke package,
+  and give each caller a product-neutral workflow file name that the owner
+  binds trusted publishers to; smoke registrations bound to the old file
+  names stay unchanged and no longer match. Each caller also serves its
+  Official path; under this entry that path accepts only the smoke units, and
+  selecting Official for nbgv-python or asciidoctor-latexmath fails before
+  preparation. Update the
+  [Official channel scope](../src/private/app/workflow-delivery/docs/integration/common.md#official-channel-scope), the integration contracts, product
+  READMEs and tests in the same change. The outcome is accepted when ordinary
+  CI qualifies both recipes and callers, a dry run for each product and
+  Buddy destination succeeds, and, after the owner registers the TestPyPI
+  publisher, each product completes one verified live Buddy publication.
+- **Ordering and gates:** follow the Workflow Delivery engineering, OCR,
+  record-system and research-evidence review gates; independently classify
+  material findings before repair. Live Buddy publication starts only after
+  the implementation merges with ordinary CI passing and the owner confirms
+  the publisher registration. A failed or uncertain live attempt returns to the
+  owner before any further dispatch for that product.
+- **Effects:** permit source and repository/GitHub inspection, documentation,
+  workflow, test and implementation changes, locked tool preparation, isolated
+  local builds and credential-free tests, independent delegated review,
+  ordinary PR/check operations and their normal CI, dry-run dispatches of the
+  Release callers, the owner's TestPyPI publisher registration, and up to one
+  successful live Buddy publication per product through its existing Buddy
+  Environment.
+- **Exclusions:** no Official (PyPI or RubyGems.org) publication or Official
+  Environment change, and no Official caller change beyond the rename, unit
+  selection and smoke-only Official guard above; no NBGV adoption for nbgv-python; no
+  other product or ecosystem onboarding; no change to the npm or NuGet
+  callers; no rerun of completed campaigns; no deletion or administration of
+  published packages or of existing publisher registrations. Delete this entry
+  when the outcome is accepted.
