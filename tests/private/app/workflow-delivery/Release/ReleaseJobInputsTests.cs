@@ -84,6 +84,40 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
+    [DataRow(PythonReleaseUnits.Smoke, "testpypi",
+        "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/")]
+    [DataRow(PythonReleaseUnits.Smoke, "pypi",
+        "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/")]
+    [DataRow(PythonReleaseUnits.Nbgv, "testpypi", "src/public/lib/nbgv-python/")]
+    public void PythonRequestSelectsTheDispatchedUnit(string unit, string destination,
+        string directory)
+    {
+        using var fixture = new Caller("python", destination);
+        fixture.Env["UNIT"] = unit;
+        fixture.Run("request");
+        ReleaseSubject subject = fixture.Subject();
+        Assert.AreEqual(unit, subject.Unit);
+        Assert.AreEqual(directory + "workflow-delivery.release-unit.yml", subject.Declaration);
+        Assert.IsTrue(File.Exists(Path.Combine(RepositoryToolSelection.SourceRoot,
+            subject.Declaration)), subject.Declaration);
+    }
+
+    [TestMethod]
+    [DataRow(PythonReleaseUnits.Nbgv, "pypi")]
+    [DataRow("another-distribution", "testpypi")]
+    [DataRow("", "testpypi")]
+    public void UnsupportedPythonUnitStopsBeforePreparation(string unit, string destination)
+    {
+        using var fixture = new Caller("python", destination);
+        fixture.Env["UNIT"] = unit;
+        foreach (string[] entry in new[] { new[] { "request" }, ["receive", "publication"],
+            ["state"] })
+            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run(entry));
+        Assert.IsFalse(Directory.Exists(fixture.At("prepared")));
+        Assert.IsFalse(Directory.Exists(fixture.At("preparation-scratch")));
+    }
+
+    [TestMethod]
     [DataRow("ruby")]
     [DataRow("python")]
     [DataRow("npm")]
@@ -274,7 +308,8 @@ public sealed class ReleaseJobInputsTests
                 ["DOTNET_EXECUTABLE"] = "selected-dotnet", ["UV_EXECUTABLE"] = "selected-uv",
                 ["MISE_EXECUTABLE"] = "selected-mise",
                 ["PYTHON_EXECUTABLE"] = "selected-python", ["MISE_DATA_DIR"] = At("mise"),
-                ["GITHUB_OUTPUT"] = At("output"), ["UNIT"] = RubyReleaseUnits.Smoke,
+                ["GITHUB_OUTPUT"] = At("output"), ["UNIT"] = ecosystem == "python" ?
+                    PythonReleaseUnits.Smoke : RubyReleaseUnits.Smoke,
             };
         }
         internal string At(string path) => Path.Combine(root, path);

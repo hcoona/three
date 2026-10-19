@@ -26,6 +26,47 @@ MAX_SDIST_MEMBERS = 20000
 MAX_METADATA = 1024 * 1024
 MAX_INDEX_FILES = 4096
 QUALITY = "python/hcoona-release-smoke-python-v1"
+# Registered products: import package, wheel and sdist payload, declared
+# Requires-Dist and the exported API checked from a clean install.
+PRODUCTS = {
+    "hcoona-release-smoke-python": {
+        "module": "hcoona_release_smoke_python",
+        "wheel": {"hcoona_release_smoke_python/__init__.py"},
+        "sdist": {
+            "src/hcoona_release_smoke_python/__init__.py",
+            "pyproject.toml",
+            "README.md",
+            "LICENSE",
+        },
+        "requires": [],
+        "api": ["project_id"],
+    },
+    "nbgv-python": {
+        "module": "nbgv_python",
+        "wheel": {
+            "nbgv_python/__init__.py",
+            "nbgv_python/cli.py",
+            "nbgv_python/hatch_plugin.py",
+        },
+        "sdist": {
+            "src/nbgv_python/__init__.py",
+            "src/nbgv_python/cli.py",
+            "src/nbgv_python/hatch_plugin.py",
+            "pyproject.toml",
+            "README.md",
+        },
+        "requires": ["packaging>=24.0"],
+        "api": ["get_version", "forward", "NbgvRunner", "GitVersion"],
+    },
+}
+
+
+def product(name: str, quality: str) -> dict:
+    """Select a registered product; other names or qualities are unsupported."""
+    if quality != QUALITY or name not in PRODUCTS:
+        message = "Unsupported registered Python package quality"
+        raise ValueError(message)
+    return PRODUCTS[name]
 
 
 def native_identity(project: Path) -> dict:
@@ -66,6 +107,28 @@ def native_version_facts(project: Path) -> dict:
     }
 
 
+def native_static_version_facts(project: Path) -> dict:
+    """Expose maintained backend facts of a static [project].version."""
+    from hatchling.builders.wheel import WheelBuilder  # noqa: PLC0415
+    from packaging.version import Version  # noqa: PLC0415
+
+    metadata = WheelBuilder(str(project.resolve())).metadata
+    if "version" in metadata.core.dynamic:
+        message = "Unsupported selected native version source"
+        raise ValueError(message)
+    version = Version(metadata.version)
+    return {
+        "name": metadata.core.name,
+        "version": str(version),
+        "local_version": version.local,
+        "dependencies": metadata.core.dependencies,
+        "implementation": sys.implementation.name,
+        "interpreter_version": ".".join(
+            str(part) for part in sys.version_info[:3]
+        ),
+    }
+
+
 def member_path(name: str) -> str:
     """Reject reader-ambiguous archive coordinates before metadata lookup."""
     value = name.removesuffix("/")
@@ -82,7 +145,9 @@ def member_path(name: str) -> str:
     return value
 
 
-def metadata_identity(data: bytes, name: str, version: str) -> None:
+def metadata_identity(
+    data: bytes, name: str, version: str, requires: list
+) -> None:
     """Compare native metadata through maintained packaging semantics."""
     from packaging.utils import canonicalize_name  # noqa: PLC0415
     from packaging.version import Version  # noqa: PLC0415
@@ -95,6 +160,7 @@ def metadata_identity(data: bytes, name: str, version: str) -> None:
         or len(versions) != 1
         or canonicalize_name(names[0]) != canonicalize_name(name)
         or Version(versions[0]) != Version(version)
+        or message.get_all("Requires-Dist", []) != requires
     ):
         message = "Distribution metadata identity differs"
         raise ValueError(message)
@@ -136,7 +202,7 @@ class _Inventory:
         return coordinate
 
 
-def _wheel(path: Path) -> tuple[set[str], bytes, set[str]]:
+def _wheel(path: Path, payload: set[str]) -> tuple[set[str], bytes, set[str]]:
     inventory = _Inventory()
     with zipfile.ZipFile(path) as archive:
         infos = archive.infolist()
@@ -158,10 +224,10 @@ def _wheel(path: Path) -> tuple[set[str], bytes, set[str]]:
             message = "Missing or ambiguous wheel metadata"
             raise ValueError(message)
         data = archive.read(metadata[0])
-    return inventory.files, data, {"hcoona_release_smoke_python/__init__.py"}
+    return inventory.files, data, payload
 
 
-def _sdist(path: Path) -> tuple[set[str], bytes, set[str]]:
+def _sdist(path: Path, payload: set[str]) -> tuple[set[str], bytes, set[str]]:
     inventory = _Inventory(MAX_SDIST_CONTENTS, MAX_SDIST_MEMBERS)
     metadata = []
     with tarfile.open(path, "r:*") as archive:
@@ -192,13 +258,7 @@ def _sdist(path: Path) -> tuple[set[str], bytes, set[str]]:
         with stream:
             data = stream.read(MAX_METADATA + 1)
     root = roots.pop()
-    required = {
-        root + "/src/hcoona_release_smoke_python/__init__.py",
-        root + "/pyproject.toml",
-        root + "/README.md",
-        root + "/LICENSE",
-    }
-    return inventory.files, data, required
+    return inventory.files, data, {root + "/" + item for item in payload}
 
 
 def inspect_archive(
@@ -218,21 +278,19 @@ def inspect_archive(
     )
     from packaging.version import Version  # noqa: PLC0415
 
-    if quality != QUALITY:
-        message = "Unsupported registered Python package quality"
-        raise ValueError(message)
+    selected = product(name, quality)
     if not path.is_file():
         message = "Invalid original distribution"
         raise ValueError(message)
     if path.suffix == ".whl":
         native_name, native_version, _, _ = parse_wheel_filename(path.name)
         kind = "python-wheel"
-        files, data, required = _wheel(path)
+        files, data, required = _wheel(path, selected["wheel"])
     else:
         native_name, native_version = parse_sdist_filename(path.name)
         kind = "python-sdist"
-        files, data, required = _sdist(path)
-    metadata_identity(data, name, version)
+        files, data, required = _sdist(path, selected["sdist"])
+    metadata_identity(data, name, version, selected["requires"])
     if (
         canonicalize_name(name) != native_name
         or Version(version) != native_version
@@ -270,11 +328,9 @@ def inspect_outputs(
     return sorted(outputs, key=lambda output: output["kind"])
 
 
-def consume_smoke(name: str, version: str, quality: str) -> dict:
+def consume(name: str, version: str, quality: str) -> dict:
     """Check native installed metadata and the registered API from this venv."""
-    if quality != QUALITY or name != "hcoona-release-smoke-python":
-        message = "Unsupported registered Python package quality"
-        raise ValueError(message)
+    selected = product(name, quality)
     distribution = importlib.metadata.distribution(name)
     if distribution.metadata["Name"] != name or distribution.version != version:
         message = "Installed native metadata identity differs"
@@ -287,13 +343,20 @@ def consume_smoke(name: str, version: str, quality: str) -> dict:
     installed = {
         Path(distribution.locate_file(file)).resolve() for file in files
     }
-    module = importlib.import_module("hcoona_release_smoke_python")
+    module = importlib.import_module(selected["module"])
     origin = Path(module.__file__).resolve()
     if (
         sys.prefix == sys.base_prefix
         or not origin.is_relative_to(root)
         or origin not in installed
-        or module.project_id() != "hcoona-release-smoke-python"
+        or not all(
+            callable(getattr(module, api, None)) for api in selected["api"]
+        )
+        or (
+            name == "hcoona-release-smoke-python"
+            and module.project_id() != "hcoona-release-smoke-python"
+        )
+        or not _installed_requirements(selected["requires"], root)
     ):
         message = "Installed origin or registered API differs"
         raise ValueError(message)
@@ -302,6 +365,18 @@ def consume_smoke(name: str, version: str, quality: str) -> dict:
         "version": distribution.version,
         "origin": str(origin),
     }
+
+
+def _installed_requirements(requires: list, root: Path) -> bool:
+    """Declared runtime requirements resolve from this venv, not the base."""
+    for value in requires:
+        # Only a product declaring requirements has packaging installed here.
+        from packaging.requirements import Requirement  # noqa: PLC0415
+
+        dependency = importlib.metadata.distribution(Requirement(value).name)
+        if not Path(dependency.locate_file("")).resolve().is_relative_to(root):
+            return False
+    return True
 
 
 def index_facts(path: Path, name: str, version: str) -> dict:
@@ -359,18 +434,23 @@ def index_facts(path: Path, name: str, version: str) -> dict:
     return {"matches_name": matches_name, "files": selected}
 
 
+PROJECT_FACTS = {
+    "identity": "native_identity",
+    "version-facts": "native_version_facts",
+    "static-version-facts": "native_static_version_facts",
+}
+
+
 def _dispatch() -> dict | list:
     match sys.argv[1:]:
-        case ["identity", project]:
-            return native_identity(Path(project))
-        case ["version-facts", project]:
-            return native_version_facts(Path(project))
+        case [command, project] if command in PROJECT_FACTS:
+            return globals()[PROJECT_FACTS[command]](Path(project))
         case ["outputs", directory, name, version, quality]:
             return inspect_outputs(Path(directory), name, version, quality)
         case ["archive", path, name, version, quality]:
             return inspect_archive(Path(path), name, version, quality)
         case ["consume", name, version, quality]:
-            return consume_smoke(name, version, quality)
+            return consume(name, version, quality)
         case ["index-facts", path, name, version]:
             return index_facts(Path(path), name, version)
         case _:

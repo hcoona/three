@@ -139,7 +139,7 @@ internal static class PythonRepositoryInputs
              BuddyGuardInputs.Contains(path, StringComparer.Ordinal))) ||
         (target == "tests/eng/test_typos_config.py" && path == ".typos.toml") ||
         (target == "tests/eng/test_python_release_caller.py" &&
-            path is ".github/workflows/workflow-delivery-v3-python-smoke.yml" or
+            path is ".github/workflows/workflow-delivery-v3-python-release.yml" or
                 "global.json") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
             path is "eng/scripts/sync_python_version.py" or

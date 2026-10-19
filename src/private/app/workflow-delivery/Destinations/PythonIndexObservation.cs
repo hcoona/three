@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -15,7 +16,6 @@ internal sealed record PythonIndexObservationResult(ReleaseObservation Observati
 internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools tools,
     TimeProvider? clock = null)
 {
-    private const string Package = "hcoona-release-smoke-python";
     private const int MetadataLimit = 2 * 1024 * 1024;
 
     internal Task<PythonIndexObservationResult> ObserveAsync(PreparedRelease prepared,
@@ -25,10 +25,11 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
+        string package = PythonReleaseUnits.Admit(prepared.Subject).Id;
         if (prepared.Files.Length != 2 ||
             prepared.Files.Count(file => file.Kind == "python-wheel") != 1 ||
             prepared.Files.Count(file => file.Kind == "python-sdist") != 1 ||
-            prepared.Files.Any(file => file.Name != Package ||
+            prepared.Files.Any(file => file.Name != package ||
                 file.Version != prepared.Files[0].Version))
             throw new InvalidDataException("Unsupported Python original pair.");
         string origin = (prepared.Subject.Channel, prepared.Subject.Destination) switch
@@ -55,7 +56,7 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token, phase.Token);
         try
         {
-            var indexUri = new Uri($"https://{origin}/simple/{Package}/");
+            var indexUri = new Uri($"https://{origin}/simple/{package}/");
             (int status, byte[] body) = await ReadAsync("index", indexUri, origin,
                 (stream, length, read) => RegistryBody.LimitedAsync(stream, length,
                     MetadataLimit, read), []);
@@ -63,7 +64,7 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
             if (status != 200) return All(ReleaseFileState.Unknown);
             await File.WriteAllBytesAsync(input, body, lifetime.Token);
             NativeCommandResult native = await execute(new(tools.Interpreter, tools.Scratch,
-                ["-I", "-B", tools.Helper, "index-facts", input, Package,
+                ["-I", "-B", tools.Helper, "index-facts", input, package,
                     prepared.Files[0].Version], 30, InheritEnvironment: false), lifetime.Token);
             reads.Add(new("native-facts", null,
                 $"Native facts terminated as {native.Termination}, exit {native.ExitCode}."));

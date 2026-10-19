@@ -1,5 +1,6 @@
 using System.Text.Json;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Repository;
@@ -91,6 +92,9 @@ internal sealed class PythonRepositoryReader
                 PythonMetadataMember member = native.Metadata.Members.SingleOrDefault(member =>
                     member.Directory == directory) ??
                     throw new InvalidDataException("Python distribution has no native member.");
+                // Only the distribution of a registered concrete recipe is adopted.
+                if (!PythonReleaseUnits.Registered(member.Name))
+                    throw new InvalidDataException("Unsupported Python Release unit.");
                 if (!quality.TryGetValue(directory, out QualitySelection? selection) ||
                     selection?.Preset != PythonPackageChecks.Preset)
                     throw new InvalidDataException("Python distribution lacks adopted quality.");

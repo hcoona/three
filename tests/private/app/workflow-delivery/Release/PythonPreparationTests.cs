@@ -102,7 +102,7 @@ public sealed class PythonPreparationTests(TestContext context)
         ReleaseSubject subject = Fixture.SubjectFor(Revision) with { Channel = channel,
             Destination = destination, SelectedRef = selectedRef, DryRun = dryRun };
         if (rejection.Length == 0)
-            Assert.AreEqual(channel == "official", PythonPreparation.Admit(subject));
+            Assert.AreEqual(channel == "official", PythonPreparation.Admit(subject).Official);
         else
             Assert.AreEqual(rejection, Assert.ThrowsExactly<InvalidDataException>(() =>
                 PythonPreparation.Admit(subject)).Message);
@@ -158,7 +158,7 @@ public sealed class PythonPreparationTests(TestContext context)
         if (field.Length > 0) Change(facts, field, value);
         if (field == "local_version") facts["public_release"] = false;
         using JsonDocument document = JsonDocument.Parse(facts.ToJsonString());
-        Assert.AreEqual(publicRelease, PythonPreparation.QualifyNative(subject,
+        Assert.AreEqual((bool?)publicRelease, PythonPreparation.QualifyNative(subject,
             channel == "official", "hcoona-release-smoke-python", "1.0.0", Interpreter,
             document.RootElement));
     }
@@ -361,6 +361,109 @@ public sealed class PythonPreparationTests(TestContext context)
         Assert.IsEmpty(result.Prepared.Files);
     }
 
+    private static readonly string[] Tested = ["native-input", "build", "contents",
+        "wheel-consumer", "sdist-consumer", "tests", "original-bytes"];
+    private static readonly string[] Consumers = ["wheel-consumer", "sdist-consumer"];
+    private static readonly string[] LockedExport = ["--frozen", "--no-dev",
+        "--no-emit-workspace", "nbgv-python"];
+    private static readonly string[] SuiteSync = ["sync", "--frozen", "--package",
+        "nbgv-python"];
+    private static readonly string[] SuiteRun = ["pytest", "-c", "pyproject.toml",
+        "src/public/lib/nbgv-python/tests"];
+
+    [TestMethod]
+    public async Task NbgvOriginalQualifiesWithLockedRuntimeAndAdoptedSuite()
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken,
+            unit: Fixture.Nbgv);
+        fixture.Version = "2.1.0.dev1";
+        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
+        PythonRelease.Validate(result);
+        CollectionAssert.AreEqual(Tested, result.Prepared.RequiredChecks);
+        CollectionAssert.AreEqual(Tested, result.Prepared.Checks.Select(check => check.Id)
+            .ToArray());
+        Assert.IsTrue(result.Prepared.Files.All(file => file.Name == Fixture.Nbgv &&
+            file.Version == "2.1.0.dev1"));
+        Assert.AreEqual(Fixture.Nbgv, result.Native["name"]);
+        Assert.IsFalse(result.Native.ContainsKey("public-release"));
+        Assert.IsFalse(result.Commands.Any(command =>
+            command.Command.Arguments.Contains("version-facts")));
+        // Each consumer installs the hash-checked locked closure, then the original alone.
+        foreach (string consumer in Consumers)
+        {
+            string[][] commands = [.. result.Commands.Where(command => command.Check == consumer)
+                .Select(command => command.Command.Arguments)];
+            int export = Array.FindIndex(commands, arguments => arguments[0] == "export");
+            Assert.IsGreaterThanOrEqualTo(0, export, consumer);
+            CollectionAssert.IsSubsetOf(LockedExport, commands[export]);
+            string locked = commands[export][Array.IndexOf(commands[export], "--output-file") + 1];
+            CollectionAssert.IsSubsetOf(new[] { "--require-hashes", "--no-deps", locked },
+                commands[export + 1]);
+            Assert.Contains("--no-deps", commands[export + 2]);
+            Assert.Contains("consume", commands[export + 3]);
+        }
+        string[][] tests = [.. result.Commands.Where(command => command.Check == "tests")
+            .Select(command => command.Command.Arguments)];
+        Assert.HasCount(2, tests);
+        CollectionAssert.IsSubsetOf(SuiteSync, tests[0]);
+        CollectionAssert.IsSubsetOf(SuiteRun, tests[1]);
+    }
+
+    [TestMethod]
+    public async Task NbgvFailedSuiteBlocksQualification()
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken,
+            unit: Fixture.Nbgv);
+        fixture.Version = "2.1.0.dev1";
+        fixture.Override = command => command.Arguments.Contains("pytest")
+            ? new(NativeTermination.Exited, 1, "1 failed", "", 0.1, null) : null;
+        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        CollectionAssert.AreEqual(Tested, result.Prepared.RequiredChecks);
+        CollectionAssert.AreEqual(new[] { ReleaseCheckStatus.Passed, ReleaseCheckStatus.Passed,
+            ReleaseCheckStatus.Passed, ReleaseCheckStatus.Passed, ReleaseCheckStatus.Passed,
+            ReleaseCheckStatus.Failed, ReleaseCheckStatus.Skipped },
+            result.Prepared.Checks.Select(check => check.Status).ToArray());
+        Assert.IsEmpty(result.Prepared.Files);
+        Assert.IsNotEmpty(result.Errors);
+    }
+
+    [TestMethod]
+    public async Task NbgvOfficialIsRejectedBeforeNativeWork()
+    {
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken,
+            unit: Fixture.Nbgv);
+        fixture.Subject = fixture.Subject with { Channel = "official", Destination = "pypi",
+            SelectedRef = "refs/heads/main" };
+        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+        Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
+        Assert.IsEmpty(result.Commands);
+        Assert.IsEmpty(result.Prepared.Files);
+        Assert.AreEqual("Official Python Release does not accept this unit.",
+            Assert.ContainsSingle(result.Errors));
+    }
+
+    [TestMethod]
+    [DataRow("", "")]
+    [DataRow("commit", Revision)]
+    [DataRow("public_release", "true")]
+    [DataRow("dependencies", "packaging>=99")]
+    [DataRow("local_version", "g1234567")]
+    public void NbgvStaticFactsQualifyOnlyTheirProduct(string field, string value)
+    {
+        ReleaseSubject subject = Fixture.SubjectFor(Revision, Fixture.Nbgv);
+        JsonObject facts = Fixture.StaticFacts("2.1.0.dev1");
+        if (field.Length > 0) Change(facts, field, value);
+        using JsonDocument document = JsonDocument.Parse(facts.ToJsonString());
+        if (field.Length == 0)
+            Assert.IsNull(PythonPreparation.QualifyNative(subject, false, Fixture.Nbgv,
+                "2.1.0.dev1", Interpreter, document.RootElement));
+        else
+            Assert.AreEqual(Identity, Assert.ThrowsExactly<InvalidDataException>(() =>
+                PythonPreparation.QualifyNative(subject, false, Fixture.Nbgv, "2.1.0.dev1",
+                    Interpreter, document.RootElement)).Message);
+    }
+
     private sealed class Fixture(GitFixture repo, ReleaseSubject subject,
         bool ownsRepository = true) : IDisposable
     {
@@ -374,10 +477,15 @@ public sealed class PythonPreparationTests(TestContext context)
         internal (string Tool, string Defect)? ToolDefect { get; set; }
 
         internal static async Task<Fixture> CreateAsync(CancellationToken token,
-            string? defect = null, Func<string, string, string>? changeConfig = null)
+            string? defect = null, Func<string, string, string>? changeConfig = null,
+            string unit = Smoke)
         {
             GitFixture repo = await GitFixture.CreateAsync(token);
-            try { return new(repo, SubjectFor(await CommitAsync(repo, defect, changeConfig))); }
+            try
+            {
+                return new(repo, SubjectFor(await CommitAsync(repo, defect, changeConfig, unit),
+                    unit));
+            }
             catch { repo.Dispose(); throw; }
         }
 
@@ -386,14 +494,17 @@ public sealed class PythonPreparationTests(TestContext context)
             new(repo, SubjectFor(revision), ownsRepository: false);
 
         private const string Declaration = "product/workflow-delivery.release-unit.yml";
+        internal const string Smoke = "hcoona-release-smoke-python";
+        internal const string Nbgv = "nbgv-python";
 
-        internal static ReleaseSubject SubjectFor(string revision) => new(revision,
-            "refs/heads/development", "product", Declaration, "buddy", "testpypi", false);
+        internal static ReleaseSubject SubjectFor(string revision, string unit = Smoke) =>
+            new(revision, "refs/heads/development", unit, Declaration, "buddy", "testpypi",
+                false);
 
         internal static async Task<string> CommitAsync(GitFixture repo, string? defect,
-            Func<string, string, string>? changeConfig = null)
+            Func<string, string, string>? changeConfig = null, string unit = Smoke)
         {
-            foreach ((string path, string content) in Files(defect))
+            foreach ((string path, string content) in Files(defect, unit))
                 await repo.SetAsync(path, changeConfig is null ? content
                     : changeConfig(path, content));
             string revision = await repo.CommitAsync();
@@ -403,7 +514,7 @@ public sealed class PythonPreparationTests(TestContext context)
 
         // The committed files of the product, keyed by repository path. The root tool
         // configuration is the actual committed one, so the fake follows its updates.
-        internal static Dictionary<string, string> Files(string? defect)
+        internal static Dictionary<string, string> Files(string? defect, string unit = Smoke)
         {
             var files = new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -425,7 +536,7 @@ public sealed class PythonPreparationTests(TestContext context)
                         StringComparison.Ordinal));
             files.Add(Declaration, """
                 schema: workflow-delivery/v3/release-unit
-                release-unit: product
+                release-unit: hcoona-release-smoke-python
                 builds:
                   - id: distributions
                     definition: python/distribution-set-v1
@@ -438,7 +549,8 @@ public sealed class PythonPreparationTests(TestContext context)
                         role: source-package
                         kind: python-sdist
                 """.Replace("python-sdist", defect == "outputs" ? "other-kind" :
-                    "python-sdist", StringComparison.Ordinal));
+                    "python-sdist", StringComparison.Ordinal).Replace(Smoke, unit,
+                        StringComparison.Ordinal));
             return files;
         }
 
@@ -450,6 +562,16 @@ public sealed class PythonPreparationTests(TestContext context)
             ["dependencies"] = new JsonArray(), ["implementation"] = "cpython",
             ["interpreter_version"] = interpreter ?? Interpreter,
         };
+
+        // Hatchling's static version facts of the nbgv-python distribution.
+        internal static JsonObject StaticFacts(string version, string? interpreter = null) =>
+            new()
+            {
+                ["name"] = Nbgv, ["version"] = version, ["local_version"] = null,
+                ["dependencies"] = new JsonArray("packaging>=24.0"),
+                ["implementation"] = "cpython",
+                ["interpreter_version"] = interpreter ?? Interpreter,
+            };
 
         // The native mise answer for the fixture's own committed root selection.
         private string Selected(string tool) => RepositoryToolSelection.Locked(
@@ -492,7 +614,13 @@ public sealed class PythonPreparationTests(TestContext context)
             if (arguments.Contains("--short"))
                 return Success(ToolDefect == ("uv", "readback") ? "0.0.0" : Selected("uv"));
             if (arguments.Contains("identity")) return Success(JsonSerializer.Serialize(new
-                { name = "hcoona-release-smoke-python", version = Version }));
+                { name = Subject.Unit, version = Version }));
+            if (arguments.Contains("static-version-facts"))
+            {
+                JsonObject facts = StaticFacts(Version, Selected("python"));
+                ChangeFacts?.Invoke(facts);
+                return Success(facts.ToJsonString());
+            }
             if (arguments.Contains("version-facts"))
             {
                 JsonObject facts = Facts(Subject.Revision, Version, Selected("python"));

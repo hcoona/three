@@ -13,7 +13,6 @@ internal sealed record PythonCompletionResult(ReleaseOutcome Outcome,
 // Only concrete ordinary job results are durable; the platform owns approval.
 internal static class PythonRelease
 {
-    private const string Package = "hcoona-release-smoke-python";
     private static readonly string[] Formats = ["python-wheel", "python-sdist"];
 
     // The single check of a received preparation in each job; later operations in that job
@@ -25,17 +24,18 @@ internal static class PythonRelease
         ReleaseSubject subject = prepared.Subject;
         bool buddy = subject.Channel == "buddy" && subject.Destination == "testpypi";
         bool official = subject.Channel == "official" && subject.Destination == "pypi";
-        if (!(buddy || official) || subject.Unit != Package ||
+        PythonReleaseUnit unit = PythonReleaseUnits.Admit(subject);
+        if (!(buddy || official) ||
             prepared.Files.Length != 2 || Formats.Any(kind =>
                 prepared.Files.Count(file => file.Kind == kind) != 1) ||
-            prepared.Files.Any(file => file.Name != Package ||
+            prepared.Files.Any(file => file.Name != unit.Id ||
                 file.Version != prepared.Files[0].Version) ||
-            !prepared.RequiredChecks.SequenceEqual(PythonPreparation.Required) ||
+            !prepared.RequiredChecks.SequenceEqual(PythonPreparation.RequiredFor(unit)) ||
             !Qualified(prepared.RequiredChecks, prepared.Checks) ||
             preparation.Errors.Length != 0 || preparation.Commands.Length == 0 ||
             preparation.Commands.Any(command => !command.Result.Succeeded ||
                 command.Result.Error is not null) ||
-            !preparation.Native.TryGetValue("name", out string? name) || name != Package ||
+            !preparation.Native.TryGetValue("name", out string? name) || name != unit.Id ||
             !preparation.Native.TryGetValue("version", out string? version) ||
                 version != prepared.Files[0].Version ||
             !preparation.Native.TryGetValue("commit", out string? commit) ||

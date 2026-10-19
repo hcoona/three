@@ -12,7 +12,6 @@ internal sealed record PythonPublishResult(ReleaseUpload Upload, bool MaskForwar
 // diagnostic text remain transient; only actual process facts leave this boundary.
 internal static class PythonNativePublisher
 {
-    private const string Package = "hcoona-release-smoke-python";
     private const string DiagnosticLimit = "Native publication diagnostics omitted: " +
         "they may contain credentials.";
     private static readonly string[] StateVariables = ["HOME", "USERPROFILE", "XDG_CONFIG_HOME",
@@ -36,11 +35,12 @@ internal static class PythonNativePublisher
             ("official", "pypi") => "https://upload.pypi.org/legacy/",
             _ => throw new InvalidDataException("Unsupported native Python publication."),
         };
-        if (prepared.Subject.DryRun || prepared.Subject.Unit != Package ||
+        string package = PythonReleaseUnits.Admit(prepared.Subject).Id;
+        if (prepared.Subject.DryRun ||
             prepared.Files.Length != 2 ||
             prepared.Files.Count(file => file.Kind == "python-wheel") != 1 ||
             prepared.Files.Count(file => file.Kind == "python-sdist") != 1 ||
-            prepared.Files.Any(file => file.Name != Package))
+            prepared.Files.Any(file => file.Name != package))
             throw new InvalidDataException("Unsupported Python publication.");
         // The effect boundary repeats the request's live ref eligibility.
         ReleasePolicy.RequireEligible(prepared.Subject);

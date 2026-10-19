@@ -16,6 +16,12 @@ internal static class PythonPreparation
 {
     internal static readonly string[] Required = ["native-input", "build", "contents",
         "wheel-consumer", "sdist-consumer", "original-bytes"];
+    private static readonly string[] Tested = ["native-input", "build", "contents",
+        "wheel-consumer", "sdist-consumer", "tests", "original-bytes"];
+
+    // A unit adopting its native pytest suite also requires its successful complete result.
+    internal static string[] RequiredFor(PythonReleaseUnit unit) =>
+        unit.Tests is null ? Required : Tested;
     private static readonly string[] Inputs = ["pyproject.toml", "uv.lock", "mise.toml",
         "mise.lock", "global.json", ".config/dotnet-tools.json",
         "src/private/app/workflow-delivery/Native/Python/packages.py"];
@@ -47,6 +53,8 @@ internal static class PythonPreparation
         // The caller supplies the platform's existing tool installation resource.
         environment["MISE_DATA_DIR"] = Absolute(request.MiseDataDirectory);
         PythonSmokePackageOperations? operations = null;
+        PythonReleaseUnit? unit = null;
+        string[] required = Required;
         ReleaseBuild? build = null;
         PythonDistribution[] originals = [];
         string name = "", version = "", current = "native-input";
@@ -54,7 +62,8 @@ internal static class PythonPreparation
         await CheckAsync("native-input", async () =>
         {
             ReleaseSubject subject = request.Subject;
-            bool official = Admit(subject);
+            (unit, bool official) = Admit(subject);
+            required = RequiredFor(unit);
             GitMaterialization bound = await GitMaterialization.BindAsync(checkout,
                 subject.Revision, token);
             PythonReleaseRecipe recipe = await ReadRecipeAsync(subject, bound.Root,
@@ -73,17 +82,18 @@ internal static class PythonPreparation
             LockedToolSelection.RequireReadback("uv", uvVersion, (await RunAsync(new(uv,
                 checkout, ["self", "version", "--short"], 30))).Stdout.Trim());
             await RunAsync(new("dotnet", checkout, ["tool", "restore"], 300));
-            operations = new(new(checkout, scratch, uv, interpreter, helper, 300, environment,
-                false), Path.Combine(scratch, "package"));
+            operations = PythonReleaseUnits.Package(unit.Id, new(checkout, scratch, uv,
+                interpreter, helper, 300, environment, false), Path.Combine(scratch, "package"));
             (name, version) = await operations.PrepareAsync(directory, ExecuteAsync, token);
             using JsonDocument facts = await operations.VersionFactsAsync(directory,
                 ExecuteAsync, token);
-            bool publicRelease = QualifyNative(subject, official, name, version, pythonVersion,
-                facts.RootElement);
+            bool? publicRelease = QualifyNative(subject, official, name, version,
+                pythonVersion, facts.RootElement);
             native.Add("name", name);
             native.Add("version", version);
             native.Add("commit", subject.Revision);
-            native.Add("public-release", publicRelease ? "true" : "false");
+            if (publicRelease is { } release)
+                native.Add("public-release", release ? "true" : "false");
             native.Add("python", pythonVersion);
             native.Add("uv", uvVersion);
         });
@@ -95,6 +105,10 @@ internal static class PythonPreparation
             originals, name, version, ExecuteAsync, token));
         await CheckAsync("sdist-consumer", () => operations!.ConsumeAsync("python-sdist",
             originals, name, version, ExecuteAsync, token));
+        if (required.Contains("tests"))
+            await CheckAsync("tests", () => operations is PythonNbgvPackageOperations suite
+                ? suite.TestReleaseAsync(unit!.Tests!, ExecuteAsync, token)
+                : throw new InvalidDataException("Python Release unit has no adopted suite."));
         await CheckAsync("original-bytes", () =>
         {
             foreach (PythonDistribution original in originals)
@@ -108,7 +122,7 @@ internal static class PythonPreparation
             }
             return Task.CompletedTask;
         });
-        return new(new(request.Subject, [.. files], Required.ToArray(), [.. checks]), native,
+        return new(new(request.Subject, [.. files], required.ToArray(), [.. checks]), native,
             [.. commands], [.. errors]);
 
         Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
@@ -162,8 +176,8 @@ internal static class PythonPreparation
                 30))).Stdout);
     }
 
-    // Pure subject admission, before any Git or native work. Returns whether it is Official.
-    internal static bool Admit(ReleaseSubject subject)
+    // Pure subject admission, before any Git or native work.
+    internal static (PythonReleaseUnit Unit, bool Official) Admit(ReleaseSubject subject)
     {
         bool buddy = subject.Channel == "buddy" && subject.Destination == "testpypi";
         bool official = subject.Channel == "official" && subject.Destination == "pypi";
@@ -172,7 +186,7 @@ internal static class PythonPreparation
         ReleasePolicy.RequireEligible(subject);
         if (!GitReader.IsCommitId(subject.Revision))
             throw new InvalidDataException("Python Release requires the exact selected revision.");
-        return official;
+        return (PythonReleaseUnits.Admit(subject), official);
     }
 
     // The complete committed recipe and native inputs, read through a revision-bound reader.
@@ -208,20 +222,32 @@ internal static class PythonPreparation
         return new(build, directory);
     }
 
-    // Pure check of the native version facts against the admitted subject.
-    internal static bool QualifyNative(ReleaseSubject subject, bool official, string name,
+    // Pure check of the native version facts against the admitted subject. Only the NBGV
+    // projection of the smoke unit has a public-release fact.
+    internal static bool? QualifyNative(ReleaseSubject subject, bool official, string name,
         string version, string pythonVersion, JsonElement value)
     {
-        bool publicRelease = value.GetProperty("public_release").GetBoolean();
-        if (name != "hcoona-release-smoke-python" ||
-            value.GetProperty("name").GetString() != name ||
+        if (name != subject.Unit || value.GetProperty("name").GetString() != name ||
             value.GetProperty("version").GetString() != version ||
-            value.GetProperty("commit").GetString() != subject.Revision ||
             value.GetProperty("implementation").GetString() != "cpython" ||
             value.GetProperty("interpreter_version").GetString() != pythonVersion ||
+            !subject.DryRun && value.GetProperty("local_version").ValueKind !=
+                JsonValueKind.Null)
+            throw new InvalidDataException("Unsupported native Python Release identity.");
+        if (name == PythonReleaseUnits.Nbgv)
+        {
+            // Hatchling's static [project].version; no NBGV projection (WD-REL-001).
+            if (value.EnumerateObject().Any(item => item.Name is "commit" or "public_release")
+                || value.GetProperty("dependencies").GetArrayLength() != 1 ||
+                value.GetProperty("dependencies")[0].GetString() != "packaging>=24.0")
+                throw new InvalidDataException("Unsupported native Python Release identity.");
+            return null;
+        }
+        bool publicRelease = value.GetProperty("public_release").GetBoolean();
+        if (name != PythonReleaseUnits.Smoke ||
+            value.GetProperty("commit").GetString() != subject.Revision ||
             value.GetProperty("dependencies").GetArrayLength() != 0 ||
-            !subject.DryRun && (value.GetProperty("local_version").ValueKind !=
-                JsonValueKind.Null || official && !publicRelease))
+            !subject.DryRun && official && !publicRelease)
             throw new InvalidDataException("Unsupported native Python Release identity.");
         return publicRelease;
     }

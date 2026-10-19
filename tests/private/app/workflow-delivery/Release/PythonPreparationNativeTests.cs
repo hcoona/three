@@ -203,7 +203,8 @@ public sealed class PythonPreparationNativeTests(TestContext context)
                 ["RUNNER_TEMP"] = directory, ["GITHUB_OUTPUT"] = output,
                 ["GITHUB_SHA"] = subject.Revision, ["GITHUB_REF"] = subject.SelectedRef,
                 ["DESTINATION"] = subject.Destination, ["DRY_RUN"] = "false",
-                ["GITHUB_RUN_ID"] = "native-preparation", ["GITHUB_RUN_ATTEMPT"] = "1",
+                ["UNIT"] = subject.Unit, ["GITHUB_RUN_ID"] = "native-preparation",
+                ["GITHUB_RUN_ATTEMPT"] = "1",
             };
             Assert.AreEqual(0, ReleaseJobInputs.Run(["release", "job-inputs", "python", "state"],
                 name => callerEnvironment.GetValueOrDefault(name)));

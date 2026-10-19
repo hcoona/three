@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
@@ -154,6 +155,39 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow(PythonReleaseUnits.Nbgv)]
+    [DataRow("unregistered-product")]
+    public async Task OnlyRegisteredDistributionKeepsItsAdoptedObligations(string package)
+    {
+        // The committed nbgv-python declaration and quality selection are read as adopted.
+        using var fixture = await Fixture.CreateAsync(context.CancellationToken);
+        string real = Path.Combine(RepositoryToolSelection.SourceRoot, "src", "public", "lib",
+            PythonReleaseUnits.Nbgv);
+        foreach (string file in new[] { "workflow-delivery.quality.yml",
+                     "workflow-delivery.release-unit.yml" })
+            await fixture.UpdateAsync("src/c/" + file, await File.ReadAllTextAsync(
+                Path.Combine(real, file), context.CancellationToken), context.CancellationToken);
+        fixture.Answer(package);
+        fixture.Identity = Success("{\"name\":\"" + package + "\",\"version\":\"2.1.0.dev1\"}");
+        if (package != PythonReleaseUnits.Nbgv)
+        {
+            Assert.AreEqual("Unsupported Python Release unit.",
+                (await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+                    fixture.ReadAsync(context.CancellationToken))).Message);
+            return;
+        }
+        PythonRevisionInputs inputs = await fixture.ReadAsync(context.CancellationToken);
+        ProjectFacts owner = Assert.ContainsSingle(inputs.Facts.Packages);
+        Assert.AreEqual(PythonReleaseUnits.Nbgv, owner.ReleaseUnit);
+        Assert.AreEqual(PythonPackageChecks.Preset, owner.QualityPreset);
+        CollectionAssert.AreEquivalent(PythonPackageChecks.Kinds, owner.Checks.Select(check =>
+            check.Key.Check).ToArray());
+        Assert.IsTrue(owner.Checks.All(check => check.Required &&
+            check.Package!.ExpectedVersion == "2.1.0.dev1"));
+        Assert.AreEqual("src/c/tests", Assert.ContainsSingle(inputs.Targets.Targets).Target);
+    }
+
+    [TestMethod]
     [DataRow("failed")]
     [DataRow("timed-out")]
     [DataRow("invalid-json")]
@@ -168,7 +202,7 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
             "timed-out" => new(NativeTermination.TimedOut, null, "", "", 30, "deadline"),
             "invalid-json" => Success("not json"),
             "foreign-name" => Success("{\"name\":\"other\",\"version\":\"1.2.3\"}"),
-            _ => Success("{\"name\":\"c\",\"version\":\"\"}")
+            _ => Success("{\"name\":\"" + PythonReleaseUnits.Smoke + "\",\"version\":\"\"}")
         };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.ReadAsync(context.CancellationToken));
@@ -313,7 +347,7 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         internal PythonGroupOperation[] Operations { get; private set; } = [];
         internal List<NativeCommand> Commands { get; } = [];
         internal NativeCommandResult Identity { get; set; } =
-            Success("{\"name\":\"c\",\"version\":\"1.2.3\"}");
+            Success("{\"name\":\"" + PythonReleaseUnits.Smoke + "\",\"version\":\"1.2.3\"}");
         internal bool GraphError { get; set; }
         internal bool PytestError { get; set; }
         internal string Target { get; set; } = "src/c/tests";
@@ -385,11 +419,12 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
             };
         }
 
-        private void Answer()
+        // Answers native facts whose src/c member is the named distribution.
+        internal void Answer(string package = PythonReleaseUnits.Smoke)
         {
             PythonProjectDependencies[] projects = [new(".", "root", [], []),
                 new("src/a", "a", [], []), new("src/b", "b", ["src/a"], []),
-                new("src/c", "c", ["src/b"], [])];
+                new("src/c", package, ["src/b"], [])];
             var metadata = new PythonMetadata(Root, "workspace", ">=3.14",
                 projects.Select(project => new PythonMetadataMember(project.Name,
                     project.Directory, project.Name)).ToArray(),
