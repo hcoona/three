@@ -557,7 +557,9 @@ Git/ref/history, configuration, dependency and supported toolchain inputs. CI
 package execution owns its process environment and does not inherit the runner's
 ambient ref context, which would otherwise change the NBGV projection. Required
 package/assembly projections must agree. Missing facts and disagreement fail the
-operation; no fallback version or execution suffix is invented.
+operation; no fallback version or execution suffix is invented. The
+[WD-REL-001](requirements.md#release-delivery) exception uses its committed
+static native version in place of the NBGV projection under the same rules.
 
 Use native deterministic build configuration, stable paths/timestamps and locked
 dependencies. Routine publication does not require a duplicate build. Same-input

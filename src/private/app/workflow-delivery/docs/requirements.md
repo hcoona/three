@@ -143,7 +143,11 @@ application must not claim isolation beyond that scope.
   commit, a channel and one selected destination. Identify its canonical NBGV
   version, native package coordinate and complete intended output set. Distinguish
   the product/version from a particular execution and its external effects;
-  this does not require a global product-to-commit index.
+  this does not require a global product-to-commit index. The sole exception
+  is `nbgv-python`: it supplies NBGV to Python builds and must not version
+  itself through itself, so its committed static native version takes the
+  place of the canonical NBGV version. It is not eligible for Official
+  publication ([WD-CHN-002](#buddy-and-official-channels)).
 - **WD-REL-002:** Enforce the selected channel's ref eligibility and the actual
   destination authorization before a live side effect. Source and configuration
   declarations must not substitute for native permission enforcement.
@@ -157,7 +161,8 @@ application must not claim isolation beyond that scope.
   cross-run CI artifact promotion is outside the initial scope.
 - **WD-REL-005:** CI and Release must use equivalent build definitions for the
   same variant and inputs. Build, package metadata and publication must agree
-  with the selected native NBGV projection. Do not invent versions, use fallback
+  with the selected native NBGV projection, or the committed static version for
+  the WD-REL-001 exception. Do not invent versions, use fallback
   fields or append execution-derived suffixes to work around invalid input.
 - **WD-REL-006:** Ordinary rebuild-based recovery requires identical original
   package bytes for the same target, relevant frozen inputs and supported
