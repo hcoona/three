@@ -314,3 +314,50 @@ ends a grant. Git and the proposing PR retain the reason and history.
   trusted-publisher entries or repository variables (they are listed for the
   owner's separate disposition); no new release route; no release, dispatch,
   publication or credential change.
+
+### Widen conformance to all covered files when a lint tool version changes
+
+- **Work carrier:** the pull request proposing this entry and one linked
+  implementation pull request;
+  [Issue #1299](https://github.com/hcoona/three/issues/1299) retains the
+  proposal. After the ruff 0.17.1 bump in
+  [#1293](https://github.com/hcoona/three/pull/1293), changed-file conformance
+  let findings in unchanged files reach `main` ([#1298](https://github.com/hcoona/three/issues/1298));
+  the repository owner authorized this entry.
+- **Accepted inputs:** the [HK execution guide](engineering/hk-execution.md),
+  root `hk.pkl` and its imported modules, the
+  [Git helper](../eng/scripts/workflow_delivery_v3_hk.py), the `conformance`
+  job in `.github/workflows/ci.yml`, and the committed tool locks `mise.lock`,
+  `uv.lock`, `pnpm-lock.yaml` and `.config/dotnet-tools.json`.
+- **Advancement and outcome:** for a comparison, read the locked version of
+  the linter each HK file step runs, at both endpoints, from the committed lock
+  of the provider that supplies it (for example `mise which` for mise tools or
+  the package lock for `uv run` and `pnpm exec`), using standard formats or
+  native queries rather than a hand-maintained version list. The linter is the
+  tool named after the `hk_exec.py`, `uv run` or `pnpm exec --` launcher;
+  launcher and runtime lock changes do not widen. When a linter's locked
+  version differs, run every conformance step that invokes it on all its
+  covered files; other steps keep the changed-file input. Derive the
+  step-to-linter mapping from the step commands in the endpoint's evaluated
+  `hk.pkl` under the locked Pkl, or from one maintained copy guarded by a drift
+  test against that evaluation. When a tool lock changes, a step whose command
+  or provider lock cannot be resolved runs on all its files; resolution never
+  narrows a run. `.config/dotnet-tools.json` applies once a step runs a .NET
+  tool (#1262). Update the HK execution guide and tests in the same change. The
+  outcome is accepted when a ruff bump runs `ruff` and `ruff_format` on all
+  covered files and fails on a seeded finding in an unchanged file, an
+  unrelated lock change keeps changed-file scope, and an unresolved mapping
+  widens, each shown by tests.
+- **Ordering and gates:** follow the existing Workflow Delivery engineering,
+  OCR and record-system review gates; independently classify material findings
+  before repair. Enable the widening only after the findings it would reveal on
+  `main` are fixed (#1298, fixed separately with owner approval).
+- **Effects:** permit source and repository/GitHub inspection, documentation,
+  workflow and implementation changes, locked tool preparation, isolated local
+  builds and credential-free tests, independent delegated review, ordinary
+  PR/check operations and their normal CI.
+- **Exclusions:** no change to HK step definitions, globs, exclusions or
+  profiles, no new lint tool and no tool version change (#1273, #1272 and
+  #1262 stay separate); no change to Workflow Delivery scope selection or
+  retained-job selection; no release, dispatch, publication, credential or
+  access change. Delete this entry when the outcome is accepted.
