@@ -455,8 +455,13 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
         PlannedCheck check = Assert.ContainsSingle(plan.Checks.Where(item =>
             item.Work.Key.Target == test && item.Work.Key.Check == DotNetChecks.Test));
         Assert.Contains(new SelectionReason(pin, inputs.Revision.Commit, test), check.Reasons);
+        // The native identity, not the fixture spelling, binds the consumer (Windows temp
+        // paths can differ in case or short-name form).
+        var identities = new DotNetRepositoryReader.NativeIdentityComparer();
         Assert.IsTrue(inputs.Inputs.Any(input => input.Path == pin &&
-            input.Native.Role == role && input.Native.Consumer.Project == fixture.PathOf(test)));
+            input.Native.Role == role && inputs.Nodes.Any(node => node.Project == test &&
+                identities.Equals(DotNetRepositoryReader.Key(node.Native.Identity),
+                    DotNetRepositoryReader.Key(input.Native.Consumer)))));
 
         async Task RestoreAsync(bool locked)
         {
