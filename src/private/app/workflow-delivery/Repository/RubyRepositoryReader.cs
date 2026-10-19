@@ -1,4 +1,5 @@
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Repository;
@@ -86,6 +87,11 @@ internal static class RubyRepositoryReader
             if (selection is null) continue;
             CheckSpec[] checks;
             ReleaseUnitDeclaration? unit = membership.GetValueOrDefault(source.Directory);
+            // A release unit keeps the quality obligations of its registered recipe.
+            if (unit is not null &&
+                RubyReleaseUnits.Named(native[source.Directory].Gem.Name).Preset !=
+                selection.Preset)
+                throw new InvalidDataException("Unsupported adopted Ruby quality obligations.");
             if (selection.Preset == RubyProjectChecks.Preset)
                 checks = RubyProjectChecks.Expand(selection, source.Directory);
             else if (selection.Preset == RubyPackageChecks.Preset && unit is not null)

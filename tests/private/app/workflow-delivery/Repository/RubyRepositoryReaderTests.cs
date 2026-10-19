@@ -253,21 +253,30 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
     [DataRow("rspec")]
     [DataRow("input-only")]
     [DataRow("gem")]
+    [DataRow("latexmath")]
+    [DataRow("latexmath-package")]
     public async Task NativeSourceAdoptionPreservesRequiredChecksAndVersionInputs(string adoption)
     {
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
         string name = adoption == "gem" ? "hcoona-release-smoke-ruby" : "asciidoctor-latexmath";
+        string real = Path.Combine(RepositoryToolSelection.SourceRoot, "src", "public", "lib",
+            name);
         string directory = "src/" + name;
         foreach (string path in RubyRepositoryReader.CallerSources)
             await repo.SetAsync(path, "original caller input");
         await repo.SetAsync(directory + "/" + name + ".gemspec", "original source");
         await repo.SetAsync(directory + "/version.json", "{\"version\":\"1.2\"}");
         await repo.SetAsync(directory + "/spec/check_spec.rb", "project test input");
-        if (adoption != "input-only")
+        if (adoption == "latexmath")
+            await repo.SetAsync(directory + "/workflow-delivery.quality.yml",
+                await File.ReadAllTextAsync(Path.Combine(real, "workflow-delivery.quality.yml"),
+                    context.CancellationToken));
+        else if (adoption != "input-only")
             await repo.SetAsync(directory + "/workflow-delivery.quality.yml",
                 "schema: workflow-delivery/v3/quality-selection\n" +
                 "ecosystems:\n  ruby:\n    preset: " +
-                (adoption == "gem" ? RubyPackageChecks.Preset : RubyProjectChecks.Preset) +
+                (adoption is "gem" or "latexmath-package" ? RubyPackageChecks.Preset :
+                    RubyProjectChecks.Preset) +
                 "\n");
         if (adoption == "gem")
             await repo.SetAsync(directory + "/workflow-delivery.release-unit.yml",
@@ -275,10 +284,14 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
                 "  - id: gem\n    definition: ruby/gem-v1\n    entry-point: " + name +
                 ".gemspec\n    outputs:\n      - id: gem\n        role: primary-package\n" +
                 "        kind: ruby-gem\n");
+        else if (adoption.StartsWith("latexmath", StringComparison.Ordinal))
+            await repo.SetAsync(directory + "/workflow-delivery.release-unit.yml",
+                await File.ReadAllTextAsync(Path.Combine(real,
+                    "workflow-delivery.release-unit.yml"), context.CancellationToken));
         GitMaterialization checkout = await BindAsync(repo);
         RubyRepositoryRequest request = Request(repo.Directory);
-        RubyRevisionInputs result = await RubyRepositoryReader.ReadAsync(checkout, request,
-            async (command, token) =>
+        Func<Task<RubyRevisionInputs>> read = () => RubyRepositoryReader.ReadAsync(checkout,
+            request, async (command, token) =>
             {
                 if (command.Executable == request.Nbgv)
                 {
@@ -308,6 +321,13 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
                     runtime_dependencies = Array.Empty<object>()
                 });
             }, context.CancellationToken);
+        if (adoption == "latexmath-package")
+        {
+            // A registered unit keeps its own adopted obligations; another preset is not admitted.
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(read);
+            return;
+        }
+        RubyRevisionInputs result = await read();
         Assert.AreEqual(directory, Assert.ContainsSingle(result.Facts.Native.Graph.Projects)
             .Directory);
         Assert.Contains(directory, result.Facts.Native.Inputs.Single(input =>
@@ -330,6 +350,14 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         {
             Assert.AreEqual(RubyProjectChecks.RSpec, Assert.ContainsSingle(owner.Checks).Key.Check);
             Assert.IsEmpty(result.Units);
+        }
+        else if (adoption == "latexmath")
+        {
+            Assert.AreEqual(RubyProjectChecks.RSpec, Assert.ContainsSingle(owner.Checks).Key.Check);
+            Assert.AreEqual("asciidoctor-latexmath", owner.ReleaseUnit);
+            Assert.AreEqual(owner.Id, Assert.ContainsSingle(
+                result.Facts.OperationInputs.Single(input => input.Path ==
+                    directory + "/workflow-delivery.release-unit.yml").Consumers));
         }
         else
         {
