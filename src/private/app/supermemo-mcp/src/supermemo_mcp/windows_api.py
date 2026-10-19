@@ -115,7 +115,7 @@ class ChildWindowFromPointFlags:
 class MENUITEMINFO(Structure):
     """Windows MENUITEMINFO 结构体"""  # noqa: D415
 
-    _fields_ = [  # noqa: RUF012
+    _fields_ = [
         ("cbSize", wintypes.UINT),
         ("fMask", wintypes.UINT),
         ("fType", wintypes.UINT),
@@ -135,7 +135,7 @@ class MENUITEMINFO(Structure):
 class GUITHREADINFO(Structure):
     """Windows GUITHREADINFO 结构体"""  # noqa: D415
 
-    _fields_ = [  # noqa: RUF012
+    _fields_ = [
         ("cbSize", wintypes.DWORD),
         ("flags", wintypes.DWORD),
         ("hwndActive", wintypes.HWND),

@@ -45,7 +45,8 @@ def d2l_ai_filter_mdl_tab(
     for panel in document.find_all(
         "div",
         class_="mdl-tabs__panel",
-        id=lambda element_id: element_id
-        and not element_id.startswith(tab_name),
+        id=lambda element_id: (
+            element_id and not element_id.startswith(tab_name)
+        ),
     ):
         panel.decompose()

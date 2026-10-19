@@ -200,7 +200,7 @@ def test_backend_get_credential_returns_public_keyring_simple_credential(
     monkeypatch.setattr(
         backend_module,
         "get_credentials",
-        lambda service, username: _credential_for(service, username),
+        _credential_for,
     )
 
     credential = backend_module.AzureAuthKeyringBackend().get_credential(
@@ -248,7 +248,7 @@ def test_keyring_cli_formats_backend_credential_via_public_command_path(
     monkeypatch.setattr(
         backend_module,
         "get_credentials",
-        lambda service, username: _credential_for(service, username),
+        _credential_for,
     )
     backend = backend_module.AzureAuthKeyringBackend()
     monkeypatch.setattr(

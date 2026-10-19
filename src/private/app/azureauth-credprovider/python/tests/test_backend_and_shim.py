@@ -183,8 +183,10 @@ def test_backend_unrelated_services_chain_without_invoking_helper(
     [
         "pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
         "dev.azure.com/org/project/_packaging/feed/pypi/simple/",
-        "org.visualstudio.com/DefaultCollection/"
-        "project/_packaging/feed/pypi/simple/",
+        (
+            "org.visualstudio.com/DefaultCollection/"
+            "project/_packaging/feed/pypi/simple/"
+        ),
         "https://[pkgs.dev.azure.com",
     ],
 )
