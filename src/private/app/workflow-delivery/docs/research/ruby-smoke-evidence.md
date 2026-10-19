@@ -226,12 +226,15 @@ First-project creation requires its own later bounded authority and evidence.
 
 ## Rechecks and Evidence Limits
 
-Before implementation or admission relies on mutable destination support,
-authentication, publisher behavior or registry APIs, the implementer rechecks
-the official guide and the selected native versions; an independent evidence
-reviewer assesses material changes. Changed toolchain/profile, service behavior,
-ownership or publication tuple triggers the affected recheck. The next Wave
-change selecting Ruby implementation or operation is the fallback review event.
+The selected native versions (Ruby, RubyGems, Bundler) are guarded by contract
+tests instead of a recheck; the
+[Ruby publisher pin guard](ruby-native-publisher.md#pin-guard-and-remaining-qualification)
+names them. Before implementation or admission relies on mutable destination
+support, authentication, publisher behavior or registry APIs, the implementer
+rechecks the official guide; an independent evidence reviewer assesses material
+changes. Changed service behavior, ownership or publication tuple triggers that
+service recheck. The next Wave change selecting Ruby implementation or operation
+is the fallback review event for those service facts.
 Record results in its Issue/PR and update this record if a current conclusion
 changes. Pinned source identity does not expire, but applicability can change.
 

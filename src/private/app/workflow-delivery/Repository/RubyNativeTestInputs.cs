@@ -10,5 +10,7 @@ internal static class RubyNativeTestInputs
         (path.StartsWith("src/private/app/workflow-delivery/Native/contracts/ruby-",
             StringComparison.Ordinal) && path.EndsWith(".schema.json", StringComparison.Ordinal)) ||
         path.StartsWith("tests/private/app/workflow-delivery/fixtures/products/" +
-            "hcoona-release-smoke-ruby/", StringComparison.Ordinal);
+            "hcoona-release-smoke-ruby/", StringComparison.Ordinal) ||
+        // The pin contract requires every committed lock's Bundler to be a supported context.
+        path == "Gemfile.lock" || path.EndsWith("/Gemfile.lock", StringComparison.Ordinal);
 }

@@ -787,7 +787,9 @@ The PNPM and Node pins are guarded by contract tests in the
 `.npmrc` or hook file, or the managed workflow-delivery sources and fixtures change.
 Every PNPM command runs with a constructed environment: no inherited npm or PNPM
 configuration, a fresh home and a closed proxy and registry. It must exit on its
-own.
+own. PNPM 12.14.0 still writes zero-byte operation-lock files under
+`/tmp/pnpm-store-operation-locks-<uid>` even when `TMPDIR` is set; they hold no
+inputs or results and stay on the ephemeral runner.
 
 `PnpmGraphContractTests` runs the application's `PnpmGraphReader` and
 `PnpmScriptReader` on the committed `fixtures/pnpm-contract` workspace. Its lock

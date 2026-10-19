@@ -1007,9 +1007,9 @@ jobs:
           mise exec --locked dotnet ruby -- dotnet test \
             --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj \
             -property:RestoreLockedMode=true \
-            --filter FullyQualifiedName=WorkflowDelivery.Tests.Release.RubyPreparationNativeTests.NativePreparationQualifiesCommittedOriginalAndInstalledOrigin \
+            --filter 'FullyQualifiedName=WorkflowDelivery.Tests.Release.RubyPreparationNativeTests.NativePreparationQualifiesCommittedOriginalAndInstalledOrigin|TestCategory=RubyNativeContract' \
             --report-trx --report-trx-filename preparation.trx \
-            --results-directory "$RUNNER_TEMP/native-preparation/ruby" -- --minimum-expected-tests 1
+            --results-directory "$RUNNER_TEMP/native-preparation/ruby" -- --minimum-expected-tests 8
       - name: Execute PNPM and Node native contracts
         if: ${{ !cancelled() && steps.plan.outputs.node == 'true' }}
         run: |
