@@ -307,12 +307,12 @@ The MLD's [post-publication completion](../middle-level-design.md#post-publicati
 contract applies to these destinations; this table owns their concrete
 conditions and observation.
 
-| Existing destination/use  | Native completion conditions to preserve                                                                                      | Post-publication observation                                                                                                   |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| GitHub Packages npm Buddy | Scoped package/version, intended repository association/access and original tarball; native non-overwrite/duplicate semantics | Package control, version manifest naming the exact version, downloaded tarball size/SHA-256 equal to the original              |
-| npmjs Official simulation | Exact public package/version metadata and original tarball or authoritative absence; this caller selects no routing tag       | Report read/qualification/hypothetical result only; no live publication caller or completion claim is inferred from simulation |
+| Existing destination/use  | Native completion conditions to preserve                                                                                         | Post-publication observation                                                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub Packages npm Buddy | Scoped package/version, intended repository association/access and original tarball; native non-overwrite/duplicate semantics    | Package control, version manifest naming the exact version, downloaded tarball size/SHA-256 equal to the original                |
+| npmjs Official            | Exact public package/version metadata and original tarball or authoritative absence; native non-overwrite of a published version | Public version metadata naming the exact version, downloaded tarball size/SHA-256 equal to the original; dry run is hypothetical |
 
-The [npm Buddy integration](../../README.md#npm-buddy-release)
+The [npm Release integration](../../README.md#npm-release)
 owns complete selected preparation,
 native package-control/exact original-byte reads, Environment on the actual
 publisher, one standard native upload, separate no-write registry readback and
@@ -323,18 +323,46 @@ native producer source; they do not authorize replay.
 ## Concrete npm Release Integration
 
 This section records the implemented npm Release behavior; it adds no
-obligation beyond the code it cites. It neither reopens the completed npm
-proving work nor authorizes publication, dispatch, authentication or access
-changes. Changes follow the
-[shared review core](../middle-level-design.md#release-integration-review).
+obligation beyond the code it cites.
+
+- **Units and caller.** [`NpmReleaseUnits`](../../Ecosystems/NpmReleaseUnits.cs)
+  registers `hcoona-release-smoke-npm` and `hexo-renderer-asciidoc`. The
+  product-neutral caller
+  [`workflow-delivery-v3-npm-release.yml`](../../../../../../.github/workflows/workflow-delivery-v3-npm-release.yml)
+  takes `registry` (`github-packages` or `npmjs`), `unit` and `dry-run` inputs
+  and binds the unit through concurrency, preparation, observation, publication
+  and verification. `NpmReleaseUnits.Admit` accepts GitHub Packages only as
+  Buddy and npmjs only as Official, rejects live Official for the smoke unit and
+  applies `ReleasePolicy.RequireEligible` before preparation, in the request job
+  and in each publisher.
+- **Channel package names.** The smoke unit keeps its committed scoped name on
+  both registries. `hexo-renderer-asciidoc` commits the unscoped npmjs name; for
+  Buddy, preparation runs `pnpm pkg set name=@hcoona/hexo-renderer-asciidoc`
+  in the disposable checkout before packing, so the Buddy archive differs from
+  the Official archive only in its `name`. The rename is never committed and
+  there is no cross-channel equivalence check.
+- **Unit recipes.** The smoke unit runs build then test and installs its
+  dependency-free archive offline. `hexo-renderer-asciidoc` runs its adopted
+  Vitest suite before its build (its packed-artifact test deletes `dist`), then
+  packs once; NBGV's `prepack` stamps the `version.json` projection
+  (`4.0.0-beta.<height>`) and `postpack` restores the placeholder. The
+  contents check accepts its declared registry dependencies and peer, `main`
+  `./dist/index.cjs` and the channel name. Its clean consumer installs the
+  original with lifecycle scripts disabled and registry dependencies (and the
+  `hexo` peer) resolved from the public npm registry without credentials, then
+  imports the ESM entry, requires the CommonJS entry and renders one heading
+  ([`NpmPreparation`](../../Release/NpmPreparation.cs)). It neither reopens the completed npm
+  proving work nor authorizes publication, dispatch, authentication or access
+  changes. Changes follow the
+  [shared review core](../middle-level-design.md#release-integration-review).
 
 - **Endpoints.** GitHub Packages Buddy observes package control at
-  `https://api.github.com/users/hcoona/packages/npm/hcoona-release-smoke-npm` and
-  metadata and tarballs at `https://npm.pkg.github.com`
+  `https://api.github.com/users/hcoona/packages/npm/<unscoped name>` and
+  metadata and tarballs for `@hcoona/<unscoped name>` at `https://npm.pkg.github.com`
   ([GithubNpmObservation `Registry`/`Api`](../../Destinations/GithubNpmObservation.cs)).
   It accepts only HTTPS port 443 on those hosts and the GitHub package storage
-  hosts ([`ValidateUri`](../../Destinations/GithubNpmObservation.cs)). The
-  npmjs Official simulation reads only `https://registry.npmjs.org`
+  hosts ([`ValidateUri`](../../Destinations/GithubNpmObservation.cs)). npmjs
+  Official observation reads only `https://registry.npmjs.org`
   ([NpmjsObservation `ObserveAsync`](../../Destinations/NpmjsObservation.cs),
   [`ValidateUri`](../../Destinations/NpmjsObservation.cs)).
 - **Observation bounds.** Each observation has a 60-second operation deadline
@@ -355,31 +383,45 @@ changes. Changes follow the
   ([NpmPreparation](../../Release/NpmPreparation.cs);
   [NpmPreparationTests.cs](../../../../../../tests/private/app/workflow-delivery/Release/NpmPreparationTests.cs)).
 - **Publication.** After a fresh observation finds the version absent and the
-  original unchanged, the publisher runs one
+  original unchanged, each publisher runs one native upload with no inherited
+  environment, then observes again. Exact state needs no write, other states
+  block it, and an abnormal native outcome permits reads but never another
+  upload. GitHub Packages runs
   `npm publish <original> --registry https://npm.pkg.github.com --tag buddy-sha-<revision> --ignore-scripts --fetch-retries=0`
-  with a 120-second deadline and no inherited environment, then observes again.
-  Exact state needs no write, other states block it, and an abnormal native
-  outcome permits reads but never another upload
+  with a 120-second deadline and the job token
   ([GithubNpmPublication `PublishAsync`](../../Destinations/GithubNpmPublication.cs)).
-- **Permissions.** In the
-  [Buddy workflow](../../../../../../.github/workflows/workflow-delivery-v3-buddy-smoke.yml),
-  only the `publish` job, behind the `workflow-delivery-v3-buddy-approval`
-  Environment, has `packages: write`; the observation and verification jobs have
-  `packages: read`. Its concurrency group is the registry/package pair without
-  cancellation. The
-  [simulation workflow](../../../../../../.github/workflows/workflow-delivery-v3-official-simulate.yml)
-  has `contents: read` only.
-- **Non-overwrite.** GitHub Packages' native non-overwrite and duplicate
-  semantics are relied on as stated in the completion table above; the
-  application adds no reservation or replacement.
+  npmjs runs
+  `npm publish <original> --registry https://registry.npmjs.org/ --access public --provenance --tag <tag> --ignore-scripts --fetch-retries=0`
+  with a 180-second deadline and npm trusted publishing: it receives only the
+  Actions OIDC request context and provenance variables, empty npm
+  configuration and no registry token. The bundled npm CLI must be at least
+  11.5.1 and Node at least 22.14.0, as npm trusted publishing requires. A stable
+  version uses tag `latest`; a prerelease uses its first prerelease identifier
+  (`beta` for `4.0.0-beta.<height>`) so it never moves `latest`
+  ([NpmjsPublication `PublishAsync`, `DistTag`](../../Destinations/NpmjsPublication.cs)).
+- **Permissions.** In the caller, only `publish-github-packages`, behind the
+  `workflow-delivery-v3-npm-github-packages` Environment, has `packages: write`,
+  and only `publish-npmjs`, behind the `workflow-delivery-v3-npm-npmjs`
+  Environment, has `id-token: write`. The observation and verification jobs
+  have `packages: read` and pass the job token only for GitHub Packages. The
+  concurrency group is the registry/unit pair without cancellation. The npmjs
+  trusted publisher must name this workflow file and Environment.
+- **Non-overwrite.** GitHub Packages' and npmjs' native non-overwrite and
+  duplicate semantics are relied on as stated in the completion table above;
+  the application adds no reservation or replacement.
 - **Validation cases.** Controlled tests cover single publication under current
   native state, an abnormal upload with observed business state and a
   substituted original
-  ([GithubNpmPublicationTests.cs](../../../../../../tests/private/app/workflow-delivery/Release/GithubNpmPublicationTests.cs));
+  ([GithubNpmPublicationTests.cs](../../../../../../tests/private/app/workflow-delivery/Release/GithubNpmPublicationTests.cs),
+  [NpmjsPublicationTests.cs](../../../../../../tests/private/app/workflow-delivery/Release/NpmjsPublicationTests.cs),
+  which also covers the trusted-publishing environment, tool minimums and tag);
+  per-unit order, rename, metadata and consumer
+  ([NpmPreparationTests.cs](../../../../../../tests/private/app/workflow-delivery/Release/NpmPreparationTests.cs));
   exact identity and original bytes, longer or different bytes, absence,
   incomplete metadata, oversized responses, deadlines and cancellation
   ([GithubNpmObservationTests.cs](../../../../../../tests/private/app/workflow-delivery/Release/GithubNpmObservationTests.cs),
   [NpmjsObservationTests.cs](../../../../../../tests/private/app/workflow-delivery/Release/NpmjsObservationTests.cs)).
-- **Non-claims.** These checks do not establish current token reach, publisher
-  or Environment configuration, live registry behavior or a new publication.
-  The npmjs simulation makes no live completion claim.
+- **Non-claims.** These checks do not establish current token reach, trusted
+  publisher or Environment configuration, OIDC exchange, provenance,
+  live registry behavior or a new publication. An npmjs dry run makes no live
+  completion claim.

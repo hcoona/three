@@ -13,25 +13,28 @@ Delivery callers support a narrower set, which this table owns. The retired v1
 Official stack ([retired records](../validation/historical-readers.md#retired-records))
 is not an Official route.
 
-| Ecosystem | Official destination | Implemented Official scope                                    |
-| --------- | -------------------- | ------------------------------------------------------------- |
-| Python    | PyPI                 | Smoke unit only; live publication only from `refs/heads/main` |
-| Ruby      | RubyGems.org         | Smoke unit only; live publication only from `refs/heads/main` |
-| npm       | npmjs                | Dry-run simulation only; no live Official caller              |
-| NuGet     | None                 | No Official channel; GitHub Packages Buddy only               |
+| Ecosystem | Official destination | Implemented Official scope                                      |
+| --------- | -------------------- | --------------------------------------------------------------- |
+| Python    | PyPI                 | Smoke unit only; live publication only from `refs/heads/main`   |
+| Ruby      | RubyGems.org         | Smoke unit only; live publication only from `refs/heads/main`   |
+| npm       | npmjs                | `hexo-renderer-asciidoc` only; live only from `refs/heads/main` |
+| NuGet     | None                 | No Official channel; GitHub Packages Buddy only                 |
 
 `ReleasePolicy.RequireEligible` is the one application ref check. Python and Ruby
 apply it during preparation and again in the privileged publisher; live
-Buddy there requires a branch ref under `refs/heads/`. The npm and NuGet Buddy
-requests carry the dispatched ref in their subject without a ref-class check. Dry run needs no live
+Buddy there requires a branch ref under `refs/heads/`. npm applies it in the
+request job, during preparation and in each publisher. NuGet Buddy requests
+carry the dispatched ref in their subject without a ref-class check. Dry run needs no live
 ref eligibility. Native Environment branch policies may constrain a channel
 further; they do not replace this check. Ruby Official accepts only the
 `hcoona-release-smoke-ruby` unit; `RubyReleaseUnits.Admit` rejects a production unit such
 as `asciidoctor-latexmath` with Official before preparation. Python Official
 accepts only the `hcoona-release-smoke-python` unit; `PythonReleaseUnits.Admit`
-rejects `nbgv-python` with Official before preparation. Adding another Official
-ref or Ruby or Python Official unit, a live npm Official caller, a NuGet
-Official destination, or a GitHub Releases or browser-extension store
+rejects `nbgv-python` with Official before preparation. npm Official accepts only
+`hexo-renderer-asciidoc` live; the `hcoona-release-smoke-npm` unit remains
+dry-run only, and `NpmReleaseUnits.Admit` rejects it live with Official before
+preparation. Adding another Official ref or Ruby, Python or npm Official unit,
+a NuGet Official destination, or a GitHub Releases or browser-extension store
 destination is a caller change that updates this table and its tests together.
 
 ## Locked Tool Selection
@@ -53,7 +56,10 @@ SDK from `global.json`) through
 Release jobs without a checkout receive them as the preparing job's outputs and
 still install outside the checkout. Root `mise.toml` selects Node exactly, like
 UV, PNPM and Ruby, so the Renovate mise manager proposes each patch with its
-lock update. The npm Buddy publisher uses the npm CLI bundled with the locked Node; no record documents a publisher npm limit.
+lock update. The npm publishers use the npm CLI bundled with the locked Node. The npmjs
+publisher rejects an npm CLI below 11.5.1 or Node below 22.14.0, the
+documented npm trusted-publishing minimums; GitHub Packages has no documented
+publisher npm limit.
 [`test_python_runtime.py`](../../../../../../tests/eng/test_python_runtime.py)
 rejects literal tool versions in every workflow except the retired NuGet Live
 attempt.

@@ -96,8 +96,7 @@ original transfer, phase configuration and required write-state output. Existing
 Ruby/Python/npm/NuGet workflows invoke `release job-inputs <ecosystem> <operation>` through
 their already distributed candidate control. They do not carry a separate
 language-specific Release caller implementation. Actions retains job ordering,
-Environment, credentials, concurrency and immutable artifact transfer. npm's
-single-job Official simulation creates a consumed typed request.
+Environment, credentials, concurrency and immutable artifact transfer.
 
 Same-run
 immutable artifact IDs carry the producer run; each later job checks the received

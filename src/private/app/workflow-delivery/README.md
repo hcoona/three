@@ -60,8 +60,7 @@ preparation in each later job: it binds its subject to the request and applies t
 ecosystem's complete preparation check before creating the phase output directory.
 Every `job-inputs` entry rejects a live run attempt other than 1, so partial
 reruns of later jobs stop too. Native tool-config operations
-remain ecosystem-specific. npm Official simulation uses `simulation-request` in
-its single job. Each `complete-*` command takes preparation, initial observation,
+remain ecosystem-specific. Each `complete-*` command takes preparation, initial observation,
 final observation and publication (`-` only when omitted) paths. Missing
 required publication information remains unknown even when final bytes match.
 
@@ -177,24 +176,24 @@ Completion, retry and recovery semantics are owned by the
 per-destination completion conditions in each
 [integration contract](docs/middle-level-design.md#integration-mapping).
 
-### Official npm Dry Run
+### npm Release
 
-The existing Official simulation workflow calls `prepare-npm`, `observe-npmjs`
-and `describe-npmjs`. It uses NBGV and locked PNPM to build/test/pack the complete
-original archive and perform clean installed API consumption, then reads bounded
-public npmjs state. Development refs can exercise this process without write
-capability. Its description is hypothetical and never claims live completion.
-
-### npm Buddy Release
-
-The existing Buddy workflow accepts any dispatched ref without an application
-ref-class check (see the [Official channel
-scope](docs/integration/common.md#official-channel-scope)) and transfers
-selected source/control, originals and qualification by immutable artifact IDs.
-GitHub package association and exact archive state are checked natively. The
-actual publisher gate precedes the write-capable invocation; a separate no-write
-registry readback and common result component establish completion. Tags remain
-routing metadata, not original-package authority.
+The product-neutral caller
+[`workflow-delivery-v3-npm-release.yml`](../../../../.github/workflows/workflow-delivery-v3-npm-release.yml)
+takes `registry` (`github-packages` Buddy or `npmjs` Official), `unit` and
+`dry-run`. It transfers selected source/control, originals and qualification by
+immutable artifact IDs. Preparation uses NBGV and locked PNPM to build, test and
+pack the complete original archive and performs clean installed API
+consumption. GitHub package association, npmjs public metadata and exact
+archive state are checked natively. Live requests apply the
+[Official channel scope](docs/integration/common.md#official-channel-scope)
+ref check. The actual publisher Environment gate precedes the write-capable
+invocation; GitHub Packages uses the job token and npmjs uses npm trusted
+publishing with provenance. A separate no-write registry readback and common
+result component establish completion. A dry run is hypothetical and never
+claims live completion. Tags remain routing metadata, not original-package
+authority. The [concrete contract](docs/integration/node.md#concrete-npm-release-integration)
+lists the units and their recipes.
 
 ### NuGet Buddy Release
 
