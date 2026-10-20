@@ -39,18 +39,19 @@ revision. Live Official requires the native public-release projection. The
 version may contain only ASCII letters, digits, `.` and `-`; the application does
 not strip, inject or choose another field.
 
-The tag is `release/image-occlusion-editor/v<SemVer2>`. This is the
+The Official tag is `release/image-occlusion-editor/v<SemVer2>`. This is the
 repository's existing `release/<unit>/v<version>` tag convention and the tag
-form already named by the product's NBGV `publicReleaseRefSpec`. The release
-title is `image-occlusion-editor v<SemVer2>`. The two assets are
-`ImageOcclusionEditor-<SemVer2>-win-x64-setup.exe` and
+form already named by the product's NBGV `publicReleaseRefSpec`. The Buddy tag
+is `buddy/image-occlusion-editor/v<SemVer2>`, a distinct coordinate as
+WD-CHN-001 requires. The release title is `image-occlusion-editor v<SemVer2>`.
+The two assets are `ImageOcclusionEditor-<SemVer2>-win-x64-setup.exe` and
 `ImageOcclusionEditor-<SemVer2>-win-x64-portable.zip`.
 
-Buddy and Official share one tag namespace. A Buddy prerelease from `main`
-projects the same public version and therefore the same tag as an Official
-release from the same commit; the later request then observes a prerelease flag
-that differs from its channel and stops on a conflict. No policy decides a
-distinct Buddy coordinate on `main`; this remains a recorded gap.
+A Buddy prerelease from `main` projects the same public version as an Official
+release from the same commit, but under its own tag, so the two coexist and
+neither observes the other. The repository's "latest" release is left at the
+GitHub default for Official releases; Buddy prereleases are never marked
+latest.
 
 ### Preparation
 
@@ -130,6 +131,8 @@ relies on the release and asset non-overwrite behavior above.
 Rebuilding the same revision is not guaranteed to reproduce identical
 installer or ZIP bytes. After a partial publication, a fresh request whose
 rebuilt bytes differ observes a conflict instead of completing the subset.
+This fail-closed behavior is accepted: the existing assets are never
+overwritten, and the owner decides the next step.
 
 ### Caller
 
@@ -138,7 +141,8 @@ gated `publish` and `verify-result` on Linux. Control, preparation and originals
 move between jobs by same-run artifact ID with the native digest check.
 `job-inputs github-release receive <phase>` binds the received preparation's
 subject to the request. One concurrency group per unit serializes both
-channels through verification, because they share the tag namespace. Dry run
+channels through verification, because they share one product version stream.
+Dry run
 runs preparation and observation, enters no write gate and never invokes the
 create or upload endpoints.
 

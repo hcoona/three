@@ -34,7 +34,7 @@ internal static class GithubRelease
                 command.Result.Error is not null) ||
             !Native(preparation, "name", subject.Unit) || !Native(preparation, "version",
                 version) || !Native(preparation, "commit", subject.Revision) ||
-            !Native(preparation, "tag", GithubReleaseUnits.Tag(subject.Unit, version)) ||
+            !Native(preparation, "tag", GithubReleaseUnits.Tag(subject, version)) ||
             official && !subject.DryRun && !Native(preparation, "public-release", "true"))
             throw new InvalidDataException("Incomplete or unsupported GitHub Release preparation.");
     }
