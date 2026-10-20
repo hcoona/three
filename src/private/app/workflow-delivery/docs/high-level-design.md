@@ -350,7 +350,10 @@ ref restrictions do not block it.
    of the submitted version under the
    [WD-REL-009](requirements.md#release-delivery) exception; for AMO and Edge
    the publisher makes this read and emits credential-free, request-bound
-   observations that result collection evaluates. Report command
+   observations that result collection evaluates. For nuget.org, readback
+   instead observes the exact package ID and normalized version as available
+   through the public API under the same exception, waiting a bounded time for
+   indexing. Report command
    outcomes, business completion and uncertainty separately. Missing required
    verification prevents a satisfaction claim.
 
@@ -370,14 +373,14 @@ sequenceDiagram
         Prep-->>Operator: Simulation and hypothetical operations
     else Exact complete state
         Prep->>Verify: Qualified request and current observation; no write
-        Verify->>Registry: Required coordinate and original-byte readback
+        Verify->>Registry: Required completion readback (step 6)
         Verify-->>Operator: Satisfaction and known effects
     else Supported write remains
         Prep->>Gate: Qualified request and intended operations
         Gate->>Publisher: Native authorization permits job
         Publisher->>Registry: Reobserve; perform only still-needed writes
         Publisher->>Verify: Actual command outcomes and known effects
-        Verify->>Registry: Required bounded coordinate and original-byte readback
+        Verify->>Registry: Required bounded completion readback (step 6)
         Verify-->>Operator: Satisfaction, command results and uncertainty
     else Conflict, unknown or unsupported partial state
         Prep-->>Operator: Blocked request and reason

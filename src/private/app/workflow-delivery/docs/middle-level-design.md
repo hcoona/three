@@ -132,14 +132,14 @@ native command-argument interfaces need no invented JSON envelope.
 The [application README](../README.md) owns current commands and supported
 options. The internal CLI has no historical Python command or record aliases.
 
-| Consumer                     | Native input/output boundary                                                                                                                       |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Root CI planning             | Exact event candidate/comparison, native paired facts, quality declarations and selected required work                                             |
-| Ecosystem CI group wrappers  | Prepared current control, complete selected checks/variants and candidate-bound command/results                                                    |
-| Ordinary Release preparation | Selected revision, one release unit/channel/destination/mode, complete original package set and clean qualification                                |
-| Observation and publisher    | Bound preparation/original files, native destination state, upload-once command facts and required verification                                    |
-| Separate verification jobs   | No-write registry readback of exact coordinates and original bytes and business completion, retaining command abnormalities and unresolved effects |
-| Historical auditors          | Original producer-qualified Git source and retained evidence; no current campaign/replay entry point                                               |
+| Consumer                     | Native input/output boundary                                                                                                                                                              |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Root CI planning             | Exact event candidate/comparison, native paired facts, quality declarations and selected required work                                                                                    |
+| Ecosystem CI group wrappers  | Prepared current control, complete selected checks/variants and candidate-bound command/results                                                                                           |
+| Ordinary Release preparation | Selected revision, one release unit/channel/destination/mode, complete original package set and clean qualification                                                                       |
+| Observation and publisher    | Bound preparation/original files, native destination state, upload-once command facts and required verification                                                                           |
+| Separate verification jobs   | No-write registry readback of the [post-publication completion](#post-publication-completion) observation and business completion, retaining command abnormalities and unresolved effects |
+| Historical auditors          | Original producer-qualified Git source and retained evidence; no current campaign/replay entry point                                                                                      |
 
 Native PNPM, MSBuild/NuGet, UV/Python and RubyGems/Bundler own ecosystem semantics.
 The application does not retain the old public Python control package, exclusive
@@ -591,11 +591,14 @@ API observation of each exact intended coordinate, its required metadata and
 visibility, and the actual served original downloaded and compared by size and
 SHA-256 with the qualified original. Metadata or listing digests alone are not
 sufficient. No remote native install, restore or import runs after publication.
-GitHub Releases compare each downloaded release asset this way. The sole
-exception is the Chrome Web Store, AMO and Edge Add-ons: under
-[WD-REL-009](requirements.md#release-delivery), completion is the store API
-reporting the submitted version as received, in review or published, and no
-served-byte comparison is made.
+GitHub Releases compare each downloaded release asset this way. The
+exceptions are the Chrome Web Store, AMO and Edge Add-ons, and nuget.org. Under
+[WD-REL-009](requirements.md#release-delivery), store completion is the store API
+reporting the submitted version as received, in review or published. nuget.org
+completion is its public API reporting the exact package ID and normalized
+version as available after a bounded indexing wait; an already available
+version satisfies the request by observation. These exceptions make no
+served-byte comparison.
 
 Byte equality carries the pre-publication qualification to the published state.
 It does not prove that a stock client's credentials, feed or index routing,
@@ -695,9 +698,9 @@ as unknown; a later fresh request confirms it without a write. Conflicting bytes
 still leave the request unsatisfied.
 
 An initially exact request and a newly published request use the same completion
-predicate. There is no separate exact-satisfaction certificate. Required metadata
-and downloaded original file bytes must be established, or the reported
-submission state for the browser-store exception; a version label or successful
+predicate. There is no separate exact-satisfaction certificate. That predicate is
+the destination's [post-publication completion](#post-publication-completion)
+observation, including its WD-REL-009 exceptions; a version label or successful
 upload alone is insufficient.
 
 ### Result and Exit Behavior

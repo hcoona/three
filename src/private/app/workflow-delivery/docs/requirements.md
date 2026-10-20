@@ -207,9 +207,15 @@ application must not claim isolation beyond that scope.
   Chrome Web Store, AMO and Edge Add-ons re-sign or repack submissions and do
   not serve them during review; for these three destinations completion is
   instead the store API reporting the submitted version as received, in review
-  or published. Otherwise, version-label equality or a successful command alone
-  is insufficient. Completion by observed state must not claim that this
-  invocation created the remote objects.
+  or published. nuget.org repository-signs every accepted package, so the
+  served bytes never equal the original, and its package versions are
+  immutable; for nuget.org completion is instead the nuget.org API reporting
+  the exact package ID and normalized version as available, observed within a
+  bounded indexing wait. A version already available before the upload
+  satisfies the request by observation, without content proof. Otherwise,
+  version-label equality or a successful command alone is insufficient.
+  Completion by observed state must not claim that this invocation created the
+  remote objects.
 - **WD-REL-009A:** Report whether the request is satisfied, whether mutation was
   attempted, the command outcome and any unresolved effects. Do not convert a
   terminal failure into success retrospectively or invent missing publication
@@ -230,7 +236,9 @@ application must not claim isolation beyond that scope.
   repeat native consumption; byte equality with those originals carries the
   qualification to the published state. For the three browser-extension stores
   of the WD-REL-009 exception, qualification covers the submitted originals and
-  makes no claim about the store-processed package.
+  makes no claim about the store-processed package. For nuget.org,
+  qualification covers the uploaded originals and makes no claim about the
+  repository-signed package.
 
 ### Buddy and Official Channels
 
