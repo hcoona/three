@@ -1625,7 +1625,7 @@ def test_retired_buddy_routes_stay_absent_and_v3_buddy_stays_dedicated():
         for suffix in (".yml", ".yaml"):
             assert not (workflows / (name + suffix)).exists(), name + suffix
     buddy = yaml.safe_load(
-        (workflows / "workflow-delivery-v3-buddy-smoke.yml").read_text()
+        (workflows / "workflow-delivery-v3-npm-release.yml").read_text()
     )
     assert "workflow_dispatch" in buddy.get("on", buddy.get(True))
     assert not any("uses" in job for job in buddy["jobs"].values())

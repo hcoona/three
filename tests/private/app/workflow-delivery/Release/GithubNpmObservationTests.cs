@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Destinations;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Tests.Release;
@@ -264,17 +265,17 @@ public sealed class GithubNpmObservationTests
     private static PreparedRelease Prepared() => new(new(new('a', 40),
         "refs/heads/development", "hcoona-release-smoke-npm", "product/release.yml", "buddy",
         "github-packages-npm", false),
-        [new("build", "archive", "npm-tarball", GithubNpmObservation.Package, "1.2.3",
+        [new("build", "archive", "npm-tarball", AdoptedNpmPackage.PackageName, "1.2.3",
             "original/package.tgz", Original.Length,
             Convert.ToHexStringLower(SHA256.HashData(Original)))],
         ["consumer"], [new("consumer", ReleaseCheckStatus.Passed)]);
 
     private static string Metadata(string archive) => JsonSerializer.Serialize(new
     {
-        name = GithubNpmObservation.Package,
+        name = AdoptedNpmPackage.PackageName,
         versions = new Dictionary<string, object>
         {
-            ["1.2.3"] = new { name = GithubNpmObservation.Package, version = "1.2.3",
+            ["1.2.3"] = new { name = AdoptedNpmPackage.PackageName, version = "1.2.3",
                 dist = new { tarball = archive } },
         },
     });

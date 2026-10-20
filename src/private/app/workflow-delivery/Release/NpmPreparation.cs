@@ -14,9 +14,6 @@ internal sealed record NpmPreparationResult(PreparedRelease Prepared,
 
 internal static class NpmPreparation
 {
-    private static readonly string[] Required = ["native-input", "build", "test", "pack",
-        "contents", "consumer", "original-bytes"];
-
     internal static Task<NpmPreparationResult> PrepareAsync(NpmPreparationRequest request,
         CancellationToken token) => PrepareAsync(request, NativeProcess.ExecuteAsync,
             (checkout, revision, product, cancellation) =>
@@ -39,6 +36,8 @@ internal static class NpmPreparation
         if (scratch.Contains("%s", StringComparison.Ordinal) ||
             scratch.Contains("%v", StringComparison.Ordinal))
             throw new InvalidDataException("Scratch cannot contain native pack output markers.");
+        // Admission precedes every scratch write.
+        NpmReleaseUnit recipe = NpmReleaseUnits.Admit(request.Subject);
         var commands = new List<ReleaseCommand>();
         var checks = new List<ReleaseCheck>();
         var errors = new List<string>();
@@ -62,12 +61,9 @@ internal static class NpmPreparation
             ("MISE_EXEC_AUTO_INSTALL", "0"), ("MISE_AUTO_INSTALL", "0"),
             ("MISE_TRUSTED_CONFIG_PATHS", checkout),
         }) environment[name] = value;
-        bool official = request.Subject.Channel == "official" &&
-            request.Subject.Destination == "npmjs" && request.Subject.DryRun;
-        bool buddy = request.Subject.Channel == "buddy" &&
-            request.Subject.Destination == "github-packages-npm";
-        if (!GitReader.IsCommitId(request.Subject.Revision) || !(official || buddy))
+        if (!GitReader.IsCommitId(request.Subject.Revision))
             throw new InvalidDataException("Unsupported selected npm destination and mode.");
+        string package = recipe.PackageName(request.Subject);
         GitMaterialization bound = await GitMaterialization.BindAsync(checkout,
             request.Subject.Revision, token);
         ReleaseUnitDeclaration unit = ReleaseUnitDeclarationReader.Read(
@@ -115,8 +111,7 @@ internal static class NpmPreparation
                         .Distinct(StringComparer.Ordinal).Count() !=
                         value.EnumerateObject().Count())
                     throw new InvalidDataException("Ambiguous selected native npm metadata.");
-                if (value.GetProperty("name").GetString() !=
-                    AdoptedNpmPackage.PackageName ||
+                if (value.GetProperty("name").GetString() != recipe.SourceName ||
                     value.TryGetProperty("publishConfig.directory", out _) ||
                     !value.GetProperty("scripts").TryGetProperty(
                         "build",
@@ -133,41 +128,51 @@ internal static class NpmPreparation
         string archive = Path.Combine(originals, "package.tgz");
         long size = 0;
         string? sha256 = null;
-        await CheckAsync("build", async () => await RunAsync("build", new("pnpm", checkout,
-            ["--dir", Path.Combine(checkout, product), "--config.verify-deps-before-run=false",
-                "run", "build"], 300)));
-        await CheckAsync("test", async () => await RunAsync("test", new("pnpm", checkout,
-            ["--dir", Path.Combine(checkout, product), "--config.verify-deps-before-run=false",
-                "run", "test"], 300)));
-        await CheckAsync("pack", async () =>
+        var actions = new Dictionary<string, Func<Task>>(StringComparer.Ordinal)
         {
-            await RunAsync("pack", NpmPackageOperations.Pack(checkout, product, archive));
-            (size, sha256) = await NpmPackageOperations.OriginalAsync(archive, token);
-        });
-        await CheckAsync("contents", async () =>
-        {
-            NativeCommand command = await NpmPackageOperations.MetadataAsync(archive,
-                Path.Combine(scratch, "metadata"), token);
-            NativeCommandResult result = await RunAsync("contents", command);
-            AdoptedNpmPackage.ValidateMetadata(result.Stdout, nativeVersion);
-        });
-        await CheckAsync("consumer", async () =>
-        {
-            await RunAsync("consumer", await NpmPackageOperations.InstallAsync(archive, scratch,
-                token));
-            await RunAsync("consumer", AdoptedNpmPackage.Import(scratch));
-        });
-        await CheckAsync("original-bytes", async () =>
-        {
-            (long actualSize, string actualDigest) = await NpmPackageOperations.OriginalAsync(
-                archive, token);
-            if (actualSize != size || actualDigest != sha256)
-                throw new InvalidDataException("Qualified original changed during consumption.");
-            files.Add(new(build.Id, build.Outputs[0].Id, "npm-tarball",
-                AdoptedNpmPackage.PackageName, nativeVersion, "original/package.tgz", size,
-                sha256!));
-        });
-        return new(new(request.Subject, [.. files], Required.ToArray(), [.. checks]),
+            ["build"] = async () => await RunAsync("build", new("pnpm", checkout,
+                ["--dir", Path.Combine(checkout, product),
+                    "--config.verify-deps-before-run=false", "run", "build"], 300)),
+            ["test"] = async () => await RunAsync("test", new("pnpm", checkout,
+                ["--dir", Path.Combine(checkout, product),
+                    "--config.verify-deps-before-run=false", "run", "test"], 300)),
+            ["pack"] = async () =>
+            {
+                // The channel package name is set only in the disposable checkout.
+                if (package != recipe.SourceName)
+                    await RunAsync("pack", new("pnpm", checkout,
+                        ["--dir", Path.Combine(checkout, product), "pkg", "set",
+                            "name=" + package], 30));
+                await RunAsync("pack", NpmPackageOperations.Pack(checkout, product, archive));
+                (size, sha256) = await NpmPackageOperations.OriginalAsync(archive, token);
+            },
+            ["contents"] = async () =>
+            {
+                NativeCommand command = await NpmPackageOperations.MetadataAsync(archive,
+                    Path.Combine(scratch, "metadata"), token);
+                NativeCommandResult result = await RunAsync("contents", command);
+                AdoptedNpmPackage.ValidateMetadata(result.Stdout, nativeVersion, package,
+                    recipe.Main, recipe.RegistryDependencies);
+            },
+            ["consumer"] = async () =>
+            {
+                await RunAsync("consumer", await NpmPackageOperations.InstallAsync(archive,
+                    scratch, offline: !recipe.RegistryDependencies, token));
+                await RunAsync("consumer", recipe.Import(scratch, package));
+            },
+            ["original-bytes"] = async () =>
+            {
+                (long actualSize, string actualDigest) =
+                    await NpmPackageOperations.OriginalAsync(archive, token);
+                if (actualSize != size || actualDigest != sha256)
+                    throw new InvalidDataException(
+                        "Qualified original changed during consumption.");
+                files.Add(new(build.Id, build.Outputs[0].Id, "npm-tarball", package,
+                    nativeVersion, "original/package.tgz", size, sha256!));
+            },
+        };
+        foreach (string id in recipe.Required.Skip(1)) await CheckAsync(id, actions[id]);
+        return new(new(request.Subject, [.. files], [.. recipe.Required], [.. checks]),
             [.. commands], [.. errors]);
 
         async Task<NativeCommandResult> RunAsync(string check, NativeCommand command)

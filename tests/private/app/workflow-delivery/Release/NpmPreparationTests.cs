@@ -11,6 +11,8 @@ namespace WorkflowDelivery.Tests.Release;
 [TestClass]
 public sealed class NpmPreparationTests(TestContext context)
 {
+    private static readonly string[] ProductChecks = ["native-input", "test", "build", "pack",
+        "contents", "consumer", "original-bytes"];
     // Every row varies only the request or controlled native answers and reads one
     // class-owned commit; preparation writes only to the row's own scratch.
     private static GitFixture? shared;
@@ -90,6 +92,68 @@ public sealed class NpmPreparationTests(TestContext context)
             Assert.IsFalse(command.Command.Environment.ContainsKey("NODE_OPTIONS"));
             Assert.IsFalse(command.Command.Environment.ContainsKey("NPM_TOKEN"));
         }
+    }
+
+    [TestMethod]
+    [DataRow("buddy", "github-packages-npm", true, "refs/heads/development",
+        "@hcoona/hexo-renderer-asciidoc")]
+    [DataRow("buddy", "github-packages-npm", false, "refs/heads/development",
+        "@hcoona/hexo-renderer-asciidoc")]
+    [DataRow("official", "npmjs", true, "refs/heads/development", "hexo-renderer-asciidoc")]
+    [DataRow("official", "npmjs", false, "refs/heads/main", "hexo-renderer-asciidoc")]
+    public async Task ProductPreparationQualifiesTheChannelPackageAfterItsOwnTests(
+        string channel, string destination, bool dryRun, string selectedRef, string package)
+    {
+        using var fixture = Fixture.Product(shared!, sharedCommit, channel, destination, dryRun,
+            selectedRef);
+
+        NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
+
+        Assert.IsEmpty(result.Errors);
+        CollectionAssert.AreEqual(ProductChecks, result.Prepared.RequiredChecks);
+        CollectionAssert.AreEqual(result.Prepared.RequiredChecks,
+            result.Prepared.Checks.Select(check => check.Id).ToArray());
+        Assert.IsTrue(result.Prepared.Checks.All(check =>
+            check.Status == ReleaseCheckStatus.Passed));
+        ReleaseFile output = Assert.ContainsSingle(result.Prepared.Files);
+        Assert.AreEqual(package, output.Name);
+        Assert.AreEqual(fixture.Request.Subject, result.Prepared.Subject);
+        // The channel name is set in the disposable checkout only when it differs.
+        string[] renamed = result.Commands.Where(command => command.Command.Arguments
+            .Contains("set")).Select(command => command.Command.Arguments[^1]).ToArray();
+        CollectionAssert.AreEqual(channel == "buddy" ? new[] { "name=" + package } : [],
+            renamed);
+        List<ReleaseCommand> commands = [.. result.Commands];
+        int packed = commands.FindIndex(command =>
+            command.Command.Arguments.Contains("pack"));
+        Assert.IsLessThan(packed, commands.FindLastIndex(command =>
+            command.Command.Arguments.Contains("set")));
+        Assert.IsLessThan(commands.FindIndex(command => command.Check == "build"),
+            commands.FindIndex(command => command.Check == "test"));
+        // Registry dependencies resolve from the public registry without credentials.
+        NativeCommand installed = result.Commands.Single(command =>
+            command.Command.Arguments.Contains("install")).Command;
+        Assert.DoesNotContain("--offline", installed.Arguments);
+        Assert.Contains("--ignore-scripts", installed.Arguments);
+        Assert.Contains("'" + package + "'", result.Commands.Last().Command.Arguments[^1]);
+        Assert.DoesNotContain("publish", result.Commands.SelectMany(command =>
+            command.Command.Arguments));
+    }
+
+    [TestMethod]
+    [DataRow("hexo-renderer-asciidoc", "refs/heads/development")]
+    [DataRow("hcoona-release-smoke-npm", "refs/heads/main")]
+    public async Task OfficialLivePreparationRequiresALiveUnitFromMain(string unit,
+        string selectedRef)
+    {
+        using var fixture = Fixture.Product(shared!, sharedCommit, "official", "npmjs", false,
+            selectedRef);
+        fixture.Request = fixture.Request with { Subject = fixture.Request.Subject with
+            { Unit = unit } };
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunAsync(context.CancellationToken));
+        Assert.IsFalse(Directory.EnumerateFileSystemEntries(fixture.Scratch).Any());
     }
 
     [TestMethod]
@@ -235,11 +299,21 @@ public sealed class NpmPreparationTests(TestContext context)
         internal NativeTermination? Termination { get; set; }
         internal string TerminationCheck { get; set; } = "build";
         private string? archive;
+        private const string Hexo = "hexo-renderer-asciidoc";
+        private string? packageName;
+        private bool IsProduct => Request.Subject.Unit == Hexo;
 
         // Reads a class-owned committed repository; the row owns only its scratch.
         internal static Fixture Shared(GitFixture repository, string commit) => new(repository,
             new(new(commit, "refs/heads/development", "hcoona-release-smoke-npm",
                 "product/workflow-delivery.release-unit.yml", "official", "npmjs", true),
+                repository.Directory,
+                Directory.CreateTempSubdirectory("workflow-release-").FullName));
+
+        internal static Fixture Product(GitFixture repository, string commit, string channel,
+            string destination, bool dryRun, string selectedRef) => new(repository,
+            new(new(commit, selectedRef, "hexo-renderer-asciidoc",
+                "hexo/workflow-delivery.release-unit.yml", channel, destination, dryRun),
                 repository.Directory,
                 Directory.CreateTempSubdirectory("workflow-release-").FullName));
 
@@ -264,6 +338,25 @@ public sealed class NpmPreparationTests(TestContext context)
                   node:
                     preset: node/hcoona-release-smoke-npm-v1
                 """);
+            await repository.SetAsync("hexo/package.json", "{\"name\":\"hexo-renderer-asciidoc\"}");
+            await repository.SetAsync("hexo/workflow-delivery.release-unit.yml", """
+                schema: workflow-delivery/v3/release-unit
+                release-unit: hexo-renderer-asciidoc
+                builds:
+                  - id: npm-package
+                    definition: node/npm-package-v1
+                    entry-point: package.json
+                    outputs:
+                      - id: npm-tarball
+                        role: primary-package
+                        kind: npm-tarball
+                """);
+            await repository.SetAsync("hexo/workflow-delivery.quality.yml", """
+                schema: workflow-delivery/v3/quality-selection
+                ecosystems:
+                  node:
+                    preset: node/hcoona-release-smoke-npm-v1
+                """);
             // The fake answers from the actual committed root tool configuration.
             await repository.SetAsync("mise.toml", RepositoryToolSelection.MiseToml);
             await repository.SetAsync("mise.lock", RepositoryToolSelection.MiseLock);
@@ -283,6 +376,7 @@ public sealed class NpmPreparationTests(TestContext context)
         {
             token.ThrowIfCancellationRequested();
             string[] args = command.Arguments;
+            if (packageName is null && !IsProduct) packageName = "@hcoona/hcoona-release-smoke-npm";
             string operation = args.Contains("pack") ? "pack" : args.Contains("install")
                 ? "consumer" : args.Contains("pkg") && !args.Contains("publishConfig.directory")
                     ? "contents" : args[^1];
@@ -320,13 +414,21 @@ public sealed class NpmPreparationTests(TestContext context)
                 output = ToolDefect == (tool, "readback") ? "0.0.0"
                     : (tool == "node" ? "v" : "") + Selected(tool);
             }
+            else if (args.Contains("pkg") && args.Contains("set"))
+                packageName = args[^1]["name=".Length..];
             else if (args.Contains("pkg"))
                 output = args.Contains("publishConfig.directory")
-                    ? """
-                      {"name":"@hcoona/hcoona-release-smoke-npm",
-                       "scripts":{"build":"native build","test":"native test"}}
-                      """
-                    : NodeExecutionFixture.Metadata;
+                    ? JsonSerializer.Serialize(new { name = IsProduct ? Hexo : packageName,
+                        scripts = new { build = "native build", test = "native test" } })
+                    : IsProduct ? JsonSerializer.Serialize(new
+                    {
+                        name = packageName ?? Hexo, version = ExpectedVersion, type = "module",
+                        main = "./dist/index.cjs",
+                        dependencies = new Dictionary<string, string>
+                            { ["@asciidoctor/core"] = "4.1.1" },
+                        peerDependencies = new Dictionary<string, string>
+                            { ["hexo"] = ">=8.0.0" },
+                    }) : NodeExecutionFixture.Metadata;
             else if (args.Contains("pack"))
             {
                 archive = args[^1];

@@ -337,7 +337,7 @@ public sealed class CiScopeTests
     // The committed tool-version guard (test_python_runtime.py) reads every root *.yml.
     [DataRow(".github/workflows/lint.yaml", false)]
     [DataRow(".github/workflows/codeql.yml", true)]
-    [DataRow(".github/workflows/workflow-delivery-v3-official-simulate.yml", true)]
+    [DataRow(".github/workflows/workflow-delivery-v3-npm-release.yml", true)]
     public void RootWorkflowsReceiveHkWorkflowLintResponsibility(string path, bool python)
     {
         ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],

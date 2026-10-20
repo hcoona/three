@@ -28,20 +28,9 @@ internal static class ReleaseCli
         }
         if (args is ["release", "observe-npmjs", var preparationPath, var scratch])
         {
-            // Same-job simulation: prepare-npm validated and qualified this preparation.
             PreparedRelease prepared = Read(preparationPath,
                 TransferJson.Default.NpmPreparationResult).Prepared;
-            if (!Path.IsPathFullyQualified(scratch))
-                throw new InvalidDataException("Original release directory must be absolute.");
-            foreach (ReleaseFile file in prepared.Files)
-            {
-                (long size, string digest) = NpmPackageOperations.OriginalAsync(
-                    Path.Combine(scratch, file.Path), CancellationToken.None)
-                    .GetAwaiter().GetResult();
-                if (size != file.Size || digest != file.Sha256)
-                    throw new InvalidDataException(
-                        "Original release transfer differs from preparation.");
-            }
+            VerifyOriginals(prepared, scratch);
             NpmjsObservationResult result;
             if (observe is null)
             {
@@ -51,7 +40,40 @@ internal static class ReleaseCli
             }
             else result = observe(prepared, CancellationToken.None).GetAwaiter().GetResult();
             Write(result, TransferJson.Default.NpmjsObservationResult);
-            return 0;
+            return Proceeds(result.Observation) ? 0 : 1;
+        }
+        if (args is ["release", "publish-npmjs", var officialPreparedPath, var officialOriginals,
+                var officialScratch, var officialToolchain])
+        {
+            PreparedRelease prepared = Read(officialPreparedPath,
+                TransferJson.Default.NpmPreparationResult).Prepared;
+            VerifyOriginals(prepared, officialOriginals);
+            using HttpClient client = RegistryHttpClient.Create();
+            var reader = new NpmjsObservation(client);
+            var platform = Environment.GetEnvironmentVariables().Cast<System.Collections
+                .DictionaryEntry>().ToDictionary(entry => (string)entry.Key,
+                    entry => (string?)entry.Value, StringComparer.Ordinal);
+            NpmjsPublicationResult result = NpmjsPublication.PublishAsync(prepared,
+                officialOriginals, officialScratch, officialToolchain, platform,
+                Platform.NativeProcess.ExecuteAsync, reader.ObserveAsync, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            Write(result, TransferJson.Default.NpmjsPublicationResult);
+            // Handled upload failure is data. Required verification owns completion.
+            return result.Errors.Length == 0 ? 0 : 1;
+        }
+        if (args is ["release", "complete-npmjs", var officialCompletePrepared,
+                var officialInitial, var officialFinal, var officialPublished])
+        {
+            PreparedRelease prepared = Read(officialCompletePrepared,
+                TransferJson.Default.NpmPreparationResult).Prepared;
+            NpmjsPublicationResult? published = officialPublished == "-" ? null
+                : Read(officialPublished, TransferJson.Default.NpmjsPublicationResult);
+            ReleaseOutcome result = Complete(prepared, Read(officialInitial,
+                    TransferJson.Default.NpmjsObservationResult).Observation,
+                Read(officialFinal, TransferJson.Default.NpmjsObservationResult).Observation,
+                published?.Subject, published?.Uploads);
+            Write(result, TransferJson.Default.ReleaseOutcome);
+            return result.State == ReleaseBusinessState.Satisfied ? 0 : 1;
         }
         if (args is ["release", "describe-npmjs", var preparedPath, var observedPath])
         {
@@ -78,9 +100,7 @@ internal static class ReleaseCli
             GithubNpmObservationResult result = new GithubNpmObservation(client).ObserveAsync(
                 prepared, Credential(), CancellationToken.None).GetAwaiter().GetResult();
             Write(result, TransferJson.Default.GithubNpmObservationResult);
-            return result.Observation.Files.All(file => file.State is ReleaseFileState.Exact or
-                ReleaseFileState.Absent) && result.Observation.Checks.All(check =>
-                    check.Status == ReleaseCheckStatus.Passed) ? 0 : 1;
+            return Proceeds(result.Observation) ? 0 : 1;
         }
         if (args is ["release", "publish-github-npm", var publishPreparedPath, var publishOriginals,
                 var publishScratch, var publishToolchain])
@@ -118,28 +138,13 @@ internal static class ReleaseCli
         {
             PreparedRelease prepared = Read(completePreparedPath,
                 TransferJson.Default.NpmPreparationResult).Prepared;
-            GithubNpmObservationResult initial = Read(completeInitialPath,
-                TransferJson.Default.GithubNpmObservationResult);
-            _ = ReleaseCompletion.Evaluate(prepared, initial.Observation, []);
-            if (initial.Observation.RequiredChecks.Any(id => !initial.Observation.Checks.Any(
-                    check => check.Id == id && check.Status == ReleaseCheckStatus.Passed)) ||
-                initial.Observation.Files.Any(file =>
-                    file.State is not (ReleaseFileState.Exact or ReleaseFileState.Absent)))
-                throw new InvalidDataException("Initial npm observation could not proceed.");
-            GithubNpmObservationResult observed = Read(completeObservedPath,
-                TransferJson.Default.GithubNpmObservationResult);
             GithubNpmPublicationResult? published = completePublishedPath == "-" ? null
                 : Read(completePublishedPath, TransferJson.Default.GithubNpmPublicationResult);
-            if (published is not null && published.Subject != prepared.Subject)
-                throw new InvalidDataException("Mismatched publication result.");
-            // Completion is the registry observation of the exact coordinate and original bytes.
-            ReleaseOutcome result = ReleaseCompletion.Evaluate(prepared, observed.Observation,
-                published?.Uploads ?? []);
-            if (published is null && initial.Observation.Files.Any(file =>
-                    file.State == ReleaseFileState.Absent))
-                result = result with { State = ReleaseBusinessState.Unknown,
-                    Reasons = [.. result.Reasons,
-                        "Required publication result is missing; effects remain unknown."] };
+            ReleaseOutcome result = Complete(prepared, Read(completeInitialPath,
+                    TransferJson.Default.GithubNpmObservationResult).Observation,
+                Read(completeObservedPath,
+                    TransferJson.Default.GithubNpmObservationResult).Observation,
+                published?.Subject, published?.Uploads);
             Write(result, TransferJson.Default.ReleaseOutcome);
             return result.State == ReleaseBusinessState.Satisfied ? 0 : 1;
         }
@@ -147,6 +152,32 @@ internal static class ReleaseCli
 
         void Write<T>(T value, JsonTypeInfo<T> type) =>
             output.WriteLine(JsonSerializer.Serialize(value, type));
+    }
+
+    private static bool Proceeds(ReleaseObservation observation) =>
+        observation.Files.All(file => file.State is ReleaseFileState.Exact or
+            ReleaseFileState.Absent) && observation.Checks.All(check =>
+                check.Status == ReleaseCheckStatus.Passed);
+
+    // Completion is the registry observation of the exact coordinate and original bytes.
+    private static ReleaseOutcome Complete(PreparedRelease prepared,
+        ReleaseObservation initial, ReleaseObservation observed, ReleaseSubject? published,
+        ReleaseUpload[]? uploads)
+    {
+        _ = ReleaseCompletion.Evaluate(prepared, initial, []);
+        if (initial.RequiredChecks.Any(id => !initial.Checks.Any(
+                check => check.Id == id && check.Status == ReleaseCheckStatus.Passed)) ||
+            initial.Files.Any(file =>
+                file.State is not (ReleaseFileState.Exact or ReleaseFileState.Absent)))
+            throw new InvalidDataException("Initial npm observation could not proceed.");
+        if (published is not null && published != prepared.Subject)
+            throw new InvalidDataException("Mismatched publication result.");
+        ReleaseOutcome result = ReleaseCompletion.Evaluate(prepared, observed, uploads ?? []);
+        if (published is null && initial.Files.Any(file => file.State == ReleaseFileState.Absent))
+            result = result with { State = ReleaseBusinessState.Unknown,
+                Reasons = [.. result.Reasons,
+                    "Required publication result is missing; effects remain unknown."] };
+        return result;
     }
 
     private static string Credential() => Environment.GetEnvironmentVariable("GITHUB_TOKEN")

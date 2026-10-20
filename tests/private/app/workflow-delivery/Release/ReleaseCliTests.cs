@@ -55,6 +55,44 @@ public sealed class ReleaseCliTests
     }
 
     [TestMethod]
+    [DataRow("Exact", false, 0, "Satisfied")]
+    [DataRow("Absent", true, 1, "Unknown")]
+    [DataRow("Conflict", false, 1, "Unsatisfied")]
+    [DataRow("Exact", true, 1, "Unknown")]
+    public void ActualNpmjsCompletionUsesFinalRegistryObservationOfOriginalBytes(
+        string finalState, bool initiallyAbsent, int expectedExit, string expectedState)
+    {
+        using var files = new Files();
+        PreparedRelease prepared = files.Prepared with
+        { Subject = files.Prepared.Subject with { DryRun = false } };
+        ReleaseFile file = prepared.Files[0];
+        string preparation = files.Write("official-prepared.json", JsonSerializer.Serialize(
+            new NpmPreparationResult(prepared, [], []), TransferJson.Default.NpmPreparationResult));
+        NpmjsObservationResult Observed(ReleaseFileState state) => new(new(prepared.Subject,
+            [new(file.Output, file.Name, file.Version, state,
+                state == ReleaseFileState.Exact ? file.Size : null,
+                state == ReleaseFileState.Exact ? file.Sha256 : null)],
+            ["metadata"], [new("metadata", ReleaseCheckStatus.Passed)]), []);
+        string initial = files.Write("official-initial.json", JsonSerializer.Serialize(
+            Observed(initiallyAbsent ? ReleaseFileState.Absent : ReleaseFileState.Exact),
+            TransferJson.Default.NpmjsObservationResult));
+        string observation = files.Write("official-final.json", JsonSerializer.Serialize(
+            Observed(Enum.Parse<ReleaseFileState>(finalState)),
+            TransferJson.Default.NpmjsObservationResult));
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        Assert.AreEqual(expectedExit, Program.Run(["release", "complete-npmjs", preparation,
+            initial, observation, "-"], output, error), error.ToString());
+
+        ReleaseOutcome result = JsonSerializer.Deserialize(output.ToString(),
+            TransferJson.Default.ReleaseOutcome)!;
+        Assert.AreEqual(prepared.Subject, result.Subject);
+        Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expectedState), result.State);
+        Assert.IsEmpty(result.Uploads);
+    }
+
+    [TestMethod]
     [DataRow("Exact", 0, 0)]
     [DataRow("Absent", 0, 1)]
     [DataRow("Conflict", 1, 0)]

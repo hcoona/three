@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Destinations;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -146,7 +147,7 @@ public sealed class GithubNpmPublicationTests
             File.WriteAllBytes(Path.Combine(Originals, "original/package.tgz"), bytes);
             Prepared = new(new(new('a', 40), "refs/heads/development",
                 "hcoona-release-smoke-npm", "product/release.yml", "buddy", "github-packages-npm",
-                false), [new("build", "archive", "npm-tarball", GithubNpmObservation.Package,
+                false), [new("build", "archive", "npm-tarball", AdoptedNpmPackage.PackageName,
                     "1.2.3", "original/package.tgz", bytes.Length,
                     Convert.ToHexStringLower(SHA256.HashData(bytes)))],
                 ["consumer"], [new("consumer", ReleaseCheckStatus.Passed)]);

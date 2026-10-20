@@ -241,18 +241,18 @@ public sealed class PythonRepositoryInputsTests
         ".github/workflows/workflow-delivery-v3-nuget-reproducibility.yml")]
     [DataRow("tests/eng/test_general_ci_workflow.py", ".github/workflows/release-buddy.yml")]
     [DataRow("tests/eng/test_general_ci_workflow.py",
-        ".github/workflows/workflow-delivery-v3-buddy-smoke.yml")]
+        ".github/workflows/workflow-delivery-v3-npm-release.yml")]
     [DataRow("tests/eng/test_typos_config.py", ".typos.toml")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/workflow_delivery_v3_hk.py")]
     [DataRow("tests/eng/test_other.py", "eng/scripts/locked_tool_versions.py")]
     [DataRow("tests/eng/test_python_runtime.py",
-        ".github/workflows/workflow-delivery-v3-buddy-smoke.yml")]
+        ".github/workflows/workflow-delivery-v3-npm-release.yml")]
     [DataRow("tests/eng/test_python_runtime.py",
         ".github/workflows/workflow-delivery-v3-python-release.yml")]
     [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/renovate.yml")]
     [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/codeql.yml")]
     [DataRow("tests/eng/test_python_runtime.py",
-        ".github/workflows/workflow-delivery-v3-official-simulate.yml")]
+        ".github/workflows/workflow-delivery-v3-ruby-release.yml")]
     [DataRow("tests/eng/test_general_ci_workflow.py", "eng/scripts/hk_scope_drift.py")]
     [DataRow("tests/eng/test_python_runtime.py", "global.json")]
     [DataRow("tests/eng/test_python_release_caller.py", "global.json")]

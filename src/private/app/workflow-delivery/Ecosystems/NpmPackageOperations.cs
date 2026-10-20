@@ -35,8 +35,13 @@ internal static class NpmPackageOperations
                 "engines.runtime", "gypfile"], 30);
     }
 
+    internal static Task<NativeCommand> InstallAsync(string archive, string directory,
+        CancellationToken token) => InstallAsync(archive, directory, offline: true, token);
+
+    // An online consumer resolves the original's registry dependencies from the public
+    // registry with the same isolated state and no credentials.
     internal static async Task<NativeCommand> InstallAsync(string archive, string directory,
-        CancellationToken token)
+        bool offline, CancellationToken token)
     {
         string consumer = Path.Combine(directory, "consumer");
         string store = Path.Combine(directory, "store");
@@ -52,7 +57,8 @@ internal static class NpmPackageOperations
         await File.WriteAllTextAsync(auth, "", token);
         return new("pnpm", consumer,
             ["--dir", consumer, "--ignore-workspace", "--store-dir", store, "--state-dir", state,
-                "--npmrc-auth-file", auth, "install", archive, "--offline", "--ignore-scripts"],
+                "--npmrc-auth-file", auth, "install", archive,
+                .. (string[])(offline ? ["--offline"] : []), "--ignore-scripts"],
             300);
     }
 

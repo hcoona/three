@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
@@ -12,18 +13,26 @@ internal sealed record GithubNpmObservationResult(ReleaseObservation Observation
 // No approval mirror, version reservation, package witness or tag certificate.
 internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? clock = null)
 {
-    internal const string Package = "@hcoona/hcoona-release-smoke-npm";
+    internal const string Scope = "@hcoona/";
     internal const string Registry = "https://npm.pkg.github.com";
-    private const string Api = "https://api.github.com/users/hcoona/packages/npm/"
-        + "hcoona-release-smoke-npm";
+    private const string Api = "https://api.github.com/users/hcoona/packages/npm/";
+
+    // The registered unit's Buddy package is the only coordinate this destination reads.
+    internal static string Package(PreparedRelease prepared)
+    {
+        string package = NpmReleaseUnits.Admit(prepared.Subject).BuddyName;
+        if (prepared.Subject.Channel != "buddy" ||
+            !package.StartsWith(Scope, StringComparison.Ordinal) || prepared.Files is not
+                [{ Kind: "npm-tarball" } file] || file.Name != package)
+            throw new InvalidDataException("Unsupported GitHub npm request.");
+        return package;
+    }
 
     internal async Task<GithubNpmObservationResult> ObserveAsync(PreparedRelease prepared,
         string credential, CancellationToken token)
     {
-        if (prepared.Subject.Channel != "buddy" ||
-            prepared.Subject.Destination != "github-packages-npm" || prepared.Files is not
-                [{ Kind: "npm-tarball", Name: Package }] ||
-            credential.Length == 0 || credential.Any(c => c is '\r' or '\n' or '\0'))
+        string bare = Package(prepared)[Scope.Length..];
+        if (credential.Length == 0 || credential.Any(c => c is '\r' or '\n' or '\0'))
             throw new InvalidDataException("Unsupported GitHub npm request or read credential.");
         ReleaseFile file = prepared.Files[0];
         var reads = new List<GithubNpmRead>();
@@ -34,14 +43,15 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token, timer.Token);
         try
         {
-            (int status, byte[] body) = await ReadAsync("package", new(Api), Metadata);
+            (int status, byte[] body) = await ReadAsync("package", new(Api + bare), Metadata);
             // An unavailable or unreadable package-control response cannot establish state.
             if (status != 200) return Result(ReleaseFileState.Unknown);
             using (JsonDocument document = JsonDocument.Parse(body))
             {
                 JsonElement package = document.RootElement;
                 Unique(package);
-                if (Text(package, "name") is not ("hcoona-release-smoke-npm" or Package) ||
+                if (Text(package, "name") is not { } name ||
+                    (name != bare && name != file.Name) ||
                     Text(package, "package_type") != "npm" ||
                     Text(package, "visibility") != "public" ||
                     Text(package.GetProperty("repository"), "full_name") != "hcoona/three")
@@ -53,7 +63,7 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
                 control = ReleaseCheckStatus.Passed;
             }
             (status, body) = await ReadAsync("metadata", new(Registry + "/@hcoona%2F"
-                + "hcoona-release-smoke-npm"), Metadata);
+                + bare), Metadata);
             // A missing provisioned package response cannot authorize creation.
             if (status != 200) return Result(ReleaseFileState.Unknown);
             using JsonDocument metadata = JsonDocument.Parse(body);
