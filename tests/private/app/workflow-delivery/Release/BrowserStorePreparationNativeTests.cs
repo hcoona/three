@@ -86,7 +86,9 @@ public sealed class BrowserStorePreparationNativeTests(TestContext context)
                 using ZipArchive zip = ZipFile.OpenRead(path);
                 if (path.EndsWith("-sources.zip", StringComparison.Ordinal))
                 {
-                    Assert.IsNotNull(zip.GetEntry("package.json"));
+                    Assert.IsNotNull(zip.GetEntry("pnpm-lock.yaml"));
+                    Assert.IsNotNull(zip.GetEntry(BrowserStorePreparation.Product +
+                        "/package.json"));
                     continue;
                 }
                 using Stream stream = zip.GetEntry("manifest.json")!.Open();

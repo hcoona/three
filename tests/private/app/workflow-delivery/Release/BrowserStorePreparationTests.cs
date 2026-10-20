@@ -48,6 +48,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     [DataRow("manifest-version", "consumer")]
     [DataRow("unsafe-path", "contents")]
     [DataRow("source-output", "contents")]
+    [DataRow("source-lockfile", "contents")]
     [DataRow("missing", "build")]
     public async Task DefectiveStoreZipCannotQualify(string defect, string failed)
     {
@@ -220,9 +221,14 @@ public sealed class BrowserStorePreparationTests(TestContext context)
             Write(Name(browser), entries);
             if (browser == "firefox")
             {
+                string product = BrowserStorePreparation.Product;
                 var sources = new Dictionary<string, string>
-                    { ["package.json"] = "{}", ["wxt.config.ts"] = "config" };
-                if (Defect == "source-output") sources[".output/old.zip"] = "x";
+                {
+                    ["pnpm-lock.yaml"] = "lock", ["pnpm-workspace.yaml"] = "workspace",
+                    [product + "/package.json"] = "{}", [product + "/wxt.config.ts"] = "config",
+                };
+                if (Defect == "source-output") sources[product + "/.output/old.zip"] = "x";
+                if (Defect == "source-lockfile") sources.Remove("pnpm-lock.yaml");
                 Write(Name("sources"), sources);
             }
         }
