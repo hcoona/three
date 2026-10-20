@@ -13,7 +13,6 @@ public sealed class NuGetReleaseTests(TestContext context)
     [DataRow(new[] { "Absent", "Absent", "Exact" }, 3, "Exact")]
     [DataRow(new[] { "Conflict" }, 1, "Conflict")]
     [DataRow(new[] { "Unknown" }, 1, "Unknown")]
-    [DataRow(new[] { "Absent", "Absent", "Absent", "Absent" }, 3, "Absent")]
     public async Task SettleReobservesOnlyAbsenceWithinTheBound(string[] states, int reads,
         string expected)
     {
@@ -26,7 +25,8 @@ public sealed class NuGetReleaseTests(TestContext context)
                 Assert.AreEqual("credential", credential);
                 return Task.FromResult(fixture.Observe(Enum.Parse<ReleaseFileState>(
                     states[read++])));
-            }, "credential", 3, TimeSpan.Zero, context.CancellationToken);
+            }, "credential", TimeSpan.FromMinutes(1), TimeSpan.Zero,
+            context.CancellationToken);
 
         Assert.AreEqual(reads, read);
         Assert.AreEqual(Enum.Parse<ReleaseFileState>(expected),
@@ -269,23 +269,33 @@ public sealed class NuGetReleaseTests(TestContext context)
 
     // An accepted nuget.org upload not listed within about 15 minutes is uncertain and
     // returns to the owner; re-dispatching the same revision observes it without an upload.
+    // The deadline cuts an in-flight read or a delay.
     [TestMethod]
-    public async Task NuGetOrgUnlistedAfterBoundIsUnknownAndRedispatchIsSatisfied()
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task NuGetOrgUnlistedAfterBoundIsUnknownAndRedispatchIsSatisfied(
+        bool hangingRead)
     {
         PreparedRelease prepared = Official();
         NuGetObservationResult absent = OfficialObservation(prepared, ReleaseFileState.Absent);
         var invocation = new NuGetPushResult(true, false, null, 1);
         int reads = 0;
         NuGetObservationResult final = await NuGetRelease.SettleAsync(prepared,
-            (_, _, _) => { reads++; return Task.FromResult(absent); }, "",
-            NuGetRelease.SettleAttempts, TimeSpan.Zero, context.CancellationToken);
+            async (_, _, token) =>
+            {
+                if (reads++ == 0 || !hangingRead) return absent;
+                await Assert.ThrowsAsync<OperationCanceledException>(() =>
+                    Task.Delay(Timeout.Infinite, token));
+                return OfficialObservation(prepared, ReleaseFileState.Unknown);
+            }, "", TimeSpan.FromMilliseconds(200),
+            hangingRead ? TimeSpan.Zero : Timeout.InfiniteTimeSpan, context.CancellationToken);
 
         NuGetCompletionResult result = NuGetRelease.Complete(prepared, absent, final,
             new(prepared.Subject, absent, invocation, absent, []));
 
-        Assert.AreEqual(TimeSpan.FromMinutes(15), NuGetRelease.SettleAttempts *
-            NuGetRelease.SettleInterval);
-        Assert.AreEqual(NuGetRelease.SettleAttempts, reads);
+        Assert.AreEqual(TimeSpan.FromMinutes(15), NuGetRelease.SettleDeadline);
+        Assert.AreEqual(hangingRead ? 2 : 1, reads);
+        Assert.AreEqual(ReleaseFileState.Unknown, final.Observation.Files[0].State);
         Assert.AreEqual(ReleaseBusinessState.Unknown, result.Outcome.State);
         Assert.AreEqual(true, result.MutationAttempted);
         Assert.IsTrue(result.Outcome.Reasons.Any(reason => reason.Contains("re-dispatch",

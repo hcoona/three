@@ -83,23 +83,39 @@ internal static class NuGetRelease
         return new(prepared.Subject, before, invocation, after, []);
     }
 
-    // About 15 minutes: 30 reads separated by 29 intervals of 30 seconds.
-    internal const int SettleAttempts = 30;
+    // One elapsed deadline bounds every read and delay of the post-upload wait.
+    internal static readonly TimeSpan SettleDeadline = TimeSpan.FromMinutes(15);
     internal static readonly TimeSpan SettleInterval = TimeSpan.FromSeconds(30);
 
     // Native validation and indexing can delay visibility after an accepted upload; only an
-    // absent coordinate is read again, and every other state is the observation result.
+    // absent coordinate is read again, and every other state is the observation result. A
+    // coordinate still absent at the deadline is unknown; a zero deadline observes once.
     internal static async Task<NuGetObservationResult> SettleAsync(PreparedRelease prepared,
         Func<PreparedRelease, string, CancellationToken, Task<NuGetObservationResult>> observe,
-        string credential, int attempts, TimeSpan interval, CancellationToken token)
+        string credential, TimeSpan deadline, TimeSpan interval, CancellationToken token,
+        TimeProvider? clock = null)
     {
-        for (int attempt = 1; ; attempt++)
+        if (deadline <= TimeSpan.Zero) return await observe(prepared, credential, token);
+        using var timer = new CancellationTokenSource(deadline, clock ?? TimeProvider.System);
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token, timer.Token);
+        while (true)
         {
-            NuGetObservationResult result = await observe(prepared, credential, token);
-            if (attempt >= attempts ||
-                result.Observation.Files[0].State != ReleaseFileState.Absent)
-                return result;
-            await Task.Delay(interval, token);
+            NuGetObservationResult result = await observe(prepared, credential, lifetime.Token);
+            if (result.Observation.Files[0].State != ReleaseFileState.Absent) return result;
+            try
+            {
+                await Task.Delay(interval, clock ?? TimeProvider.System, lifetime.Token);
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            {
+                return result with
+                {
+                    Observation = result.Observation with { Files = [.. result.Observation.Files
+                        .Select(file => file with { State = ReleaseFileState.Unknown })] },
+                    Reads = [.. result.Reads, new("settle", null,
+                        "Coordinate not observed before the settle deadline.")],
+                };
+            }
         }
     }
 
@@ -141,10 +157,10 @@ internal static class NuGetRelease
             return new(outcome with { State = ReleaseBusinessState.Unsatisfied,
                 Reasons = [.. outcome.Reasons, "Publication did not establish a supported path."] },
                 published.Invocation is not null, published.Invocation);
-        // An attempted upload whose coordinate is still absent after the bounded wait has
-        // unresolved effects; the owner re-dispatches the same revision later to observe it.
-        if (published.Invocation is not null &&
-            final.Observation.Files[0].State == ReleaseFileState.Absent)
+        // An attempted upload whose coordinate is still absent or unknown after the bounded
+        // wait has unresolved effects; the owner re-dispatches the same revision later.
+        if (published.Invocation is not null && final.Observation.Files[0].State is
+                ReleaseFileState.Absent or ReleaseFileState.Unknown)
             return new(outcome with { State = ReleaseBusinessState.Unknown,
                 Reasons = [.. outcome.Reasons, "Uploaded coordinate was not observed within " +
                     "the bounded wait; re-dispatch the same revision later."] }, true,

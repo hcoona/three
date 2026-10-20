@@ -584,9 +584,10 @@ original bytes (for nuget.org, the exact coordinate available), observed again i
 a separate no-write verification job. After a
 returned upload, native validation and indexing can delay visibility. The
 verification observation therefore repeats only while the coordinate is absent,
-up to 30 times at 30-second intervals (about 15 minutes); any other state ends
-the wait. An attempted upload whose coordinate is still absent after the wait is
-unknown, not unsatisfied: its effects are unresolved and the result returns to
+at 30-second intervals; any other state ends the wait. One 15-minute elapsed
+deadline bounds the whole wait, cutting an in-flight read or interval, well inside
+the 35-minute verification job timeout. An attempted upload whose coordinate is
+still absent at the deadline is unknown, not unsatisfied: its effects are unresolved and the result returns to
 the owner. The owner waits until the nuget.org flat-container index
 (`https://api.nuget.org/v3-flatcontainer/<lowercase-id>/index.json`) lists the
 normalized version, then dispatches the caller again for the same unit, registry
