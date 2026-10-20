@@ -60,8 +60,6 @@ this directory's `version.json` at the selected revision. Preparation packs ever
 framework, checks the native package contents and consumes the original package in a
 clean project before any publication.
 
-Before the first GitHub Packages release, the owner bootstraps the package once as described in [NuGet Release integration](../../../private/app/workflow-delivery/docs/integration/dotnet.md#concrete-nuget-release-integration).
-
 ## License
 
 This project is licensed under the GNU General Public License v3.0 or later (GPL v3+). See [COPYING](https://github.com/hcoona/three/blob/main/COPYING) for details.

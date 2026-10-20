@@ -131,7 +131,6 @@ public sealed class GithubNpmObservationTests
 
     [TestMethod]
     [DataRow("repository")]
-    [DataRow("visibility")]
     [DataRow("owner")]
     public async Task DifferentNativeControlStopsBeforeRegistryReads(string field)
     {
@@ -139,7 +138,6 @@ public sealed class GithubNpmObservationTests
         {
             "repository" => Control.Replace("hcoona/three", "hcoona/unrelated",
                 StringComparison.Ordinal),
-            "visibility" => Control.Replace("public", "private", StringComparison.Ordinal),
             _ => Control.Replace("\"login\":\"hcoona\"", "\"login\":\"other\"",
                 StringComparison.Ordinal),
         };

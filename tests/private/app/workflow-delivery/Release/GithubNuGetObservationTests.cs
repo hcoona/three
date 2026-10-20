@@ -132,14 +132,12 @@ public sealed class GithubNuGetObservationTests
     }
 
     [TestMethod]
-    [DataRow("private")]
     [DataRow("unrelated")]
     [DataRow("npm")]
     public async Task ConflictingPackageControlStopsBeforeVersionReads(string change)
     {
         string control = change switch
         {
-            "private" => Control.Replace("public", "private", StringComparison.Ordinal),
             "npm" => Control.Replace("nuget", "npm", StringComparison.Ordinal),
             _ => Control.Replace("hcoona/three", "hcoona/unrelated", StringComparison.Ordinal),
         };
@@ -163,24 +161,6 @@ public sealed class GithubNuGetObservationTests
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(4, handler.Requests);
-    }
-
-    // GitHub creates a new NuGet package private, so a missing package needs owner bootstrap.
-    [TestMethod]
-    public async Task UnprovisionedPackageCannotAuthorizeCreation()
-    {
-        using var handler = new Handler((_, step) => step == 0 ? Json(Index)
-            : step == 1 ? new(HttpStatusCode.NotFound) { Content = new ByteArrayContent([]) }
-            : throw new AssertFailedException("Unexpected read after missing control."));
-        using var client = new HttpClient(handler);
-        NuGetObservationResult result = await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
-
-        Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
-        Assert.AreEqual(ReleaseCheckStatus.Missing, result.Observation.Checks.Single(check =>
-            check.Id == "native-package-control").Status);
-        Assert.HasCount(2, handler.Requests);
-        Assert.Contains("owner bootstrap required", result.Reads[^1].Detail);
     }
 
     [TestMethod]

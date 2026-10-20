@@ -53,7 +53,6 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
                 if (Text(package, "name") is not { } name ||
                     (name != bare && name != file.Name) ||
                     Text(package, "package_type") != "npm" ||
-                    Text(package, "visibility") != "public" ||
                     Text(package.GetProperty("repository"), "full_name") != "hcoona/three")
                     return Result(ReleaseFileState.Conflict);
                 // GitHub's user route establishes ownership when owner is null.

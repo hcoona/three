@@ -150,8 +150,6 @@ projection of this directory's `version.json` at the selected revision. Preparat
 packs every target framework, checks the native package contents and consumes the
 original package in a clean project before any publication.
 
-Before the first GitHub Packages release, the owner bootstraps the package once as described in [NuGet Release integration](../../../private/app/workflow-delivery/docs/integration/dotnet.md#concrete-nuget-release-integration).
-
 ## License
 
 LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See [LICENSE](https://github.com/hcoona/three/blob/main/LICENSES/LGPL-3.0-linking-exception.txt) for details.

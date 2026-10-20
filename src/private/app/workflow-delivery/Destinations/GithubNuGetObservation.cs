@@ -58,19 +58,20 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
 
             string root = resources.PackageBaseAddress + Uri.EscapeDataString(packageId) + "/";
             (status, body) = await ReadAsync("package-control", new(api));
-            // GitHub creates a new NuGet package private and offers no API to change its
-            // visibility, so a missing package cannot authorize creation; the owner bootstraps it.
+            // An owner package that does not exist yet is created by the first publication,
+            // which links it to the packed repository; the feed must agree it is absent.
             if (status == 404)
             {
-                reads.Add(new("package-control", status,
-                    "Package not provisioned; owner bootstrap required."));
-                return Result(ReleaseFileState.Unknown);
+                (status, _) = await ReadAsync("native-versions", new(root + "index.json"));
+                if (status != 404) return Result(ReleaseFileState.Unknown);
+                control = ReleaseCheckStatus.Passed;
+                return Result(ReleaseFileState.Absent);
             }
             RequireOk(status);
             JObject package = Object(body);
             if (!StringComparer.OrdinalIgnoreCase.Equals(Text(package, "name"), identity.Id) ||
-                Text(package, "package_type") != "nuget" || Text(package, "visibility") !=
-                    "public" || Text(RequiredObject(package["repository"]), "full_name") !=
+                Text(package, "package_type") != "nuget" ||
+                    Text(RequiredObject(package["repository"]), "full_name") !=
                     "hcoona/three" || package["owner"] is { Type: not JTokenType.Null } owner &&
                     Text(RequiredObject(owner), "login") != "hcoona")
                 return Result(ReleaseFileState.Conflict);
