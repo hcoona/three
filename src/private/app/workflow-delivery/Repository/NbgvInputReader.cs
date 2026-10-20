@@ -3,6 +3,8 @@ using Nerdbank.GitVersioning.Managed;
 
 namespace WorkflowDelivery.Repository;
 
+internal sealed record BrowserExtensionVersion(string Manifest, string Npm);
+
 internal sealed record NbgvInputs(string Commit, string Directory,
     string[] ConfigurationCandidates, string[] Paths);
 
@@ -14,8 +16,27 @@ internal sealed class NbgvInputReader(string root)
         ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     // Full projection uses the caller-bound clean HEAD and the same native cloud/ref
-    // context as the build. Version height and npm projection remain NBGV operations.
+    // context as the build. Version height and native projections remain NBGV operations.
     internal string NpmVersion(GitRevision revision, string directory, CancellationToken token)
+        => Project(revision, directory, oracle => oracle.NpmPackageVersion, token);
+
+    // The browser-extension manifest projection of the product recipe: the NBGV simple
+    // version padded to three parts, then the version height, each part within 0..65535.
+    internal BrowserExtensionVersion BrowserVersion(GitRevision revision, string directory,
+        CancellationToken token)
+    {
+        (int[] parts, string npm) = Project(revision, directory, oracle =>
+            (new[] { oracle.SimpleVersion.Major, oracle.SimpleVersion.Minor,
+                Math.Max(oracle.SimpleVersion.Build, 0), oracle.VersionHeight },
+                oracle.NpmPackageVersion), token);
+        if (parts.Any(part => part is < 0 or > 65535))
+            throw new InvalidDataException(
+                "NBGV browser-extension version parts must be within 0..65535.");
+        return new(string.Join('.', parts), npm);
+    }
+
+    private T Project<T>(GitRevision revision, string directory, Func<VersionOracle, T> project,
+        CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         using GitContext context = GitContext.Create(root, engine: GitContext.Engine.ReadOnly);
@@ -23,13 +44,13 @@ internal sealed class NbgvInputReader(string root)
             !string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(
                 context.WorkingTreePath)), root, PhysicalComparison))
             throw new InvalidDataException(
-                "NBGV npm projection requires the selected checkout HEAD.");
+                "NBGV projection requires the selected checkout HEAD.");
         context.RepoRelativeProjectDirectory = directory;
         if (ReadOptions(context, revision, directory)?.Version is null)
             throw new InvalidDataException("NBGV did not resolve the selected product version.");
         var oracle = new VersionOracle(context, CloudBuild.Active);
         token.ThrowIfCancellationRequested();
-        return oracle.NpmPackageVersion;
+        return project(oracle);
     }
 
     internal NbgvInputs Read(GitRevision revision, string directory, CancellationToken token)
