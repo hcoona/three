@@ -41,8 +41,9 @@ internal static class NuGetReleaseCli
                 .GetAwaiter().GetResult();
             NuGetRelease.ValidateObservation(preparation.Prepared, result);
             Write(result, TransferJson.Default.NuGetObservationResult);
-            return result.Observation.Files.All(file => file.State is ReleaseFileState.Exact or
-                ReleaseFileState.Absent) && result.Observation.Checks.All(check =>
+            return (NuGetRelease.Present(result.Observation) ||
+                result.Observation.Files[0].State == ReleaseFileState.Absent) &&
+                result.Observation.Checks.All(check =>
                     check.Status == ReleaseCheckStatus.Passed) ? 0 : 1;
         }
         if (args is ["release", "describe-nuget", var describePreparation,

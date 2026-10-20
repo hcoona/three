@@ -203,10 +203,11 @@ selects a registered `unit`, `registry` (`github-packages` Buddy or `nugetorg`
 Official) and `dry-run`. It uses native MSBuild/NBGV Build/Pack, original nupkg
 inspection and a clean local consumer. Bounded observation uses maintained NuGet
 interpretation; the publisher uses the official native upload invocation. The
-nuget.org publisher holds only a short-lived key from trusted publishing, and
-nuget.org readback compares the original after removing its repository
-signature. A fresh registry observation and original-byte comparison run in a
-separate read-only verification job. A successful upload alone cannot satisfy
+nuget.org publisher holds only a short-lived key from trusted publishing.
+nuget.org completion is its version list reporting the exact version available,
+with no served-byte comparison; GitHub Packages keeps the original-byte
+comparison. A fresh registry observation runs in a separate read-only
+verification job. A successful upload alone cannot satisfy
 the request.
 
 The Windows `NuGet native preparation (Windows)` CI job and the

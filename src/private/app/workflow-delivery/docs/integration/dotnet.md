@@ -517,16 +517,19 @@ Observe Official nuget.org anonymously through the same shared client
 (`Destinations/NuGetOrgObservation`). Official `ServiceIndexResourceV3`
 interprets `https://api.nuget.org/v3/index.json`, which must name exactly
 `https://api.nuget.org/v3-flatcontainer/` as PackageBaseAddress and
-`https://www.nuget.org/api/v2/package` as PackagePublish. The flat-container
-version list and archive are the coordinate and original-byte evidence; a missing
-package or version is absent. nuget.org's trusted-publishing policy and package
-ownership own package control, so the application reads no owner metadata.
-nuget.org adds its repository signature to every accepted package. Native
-`SignedPackageArchiveUtility.RemoveRepositorySignaturesAsync` removes only that
-signature from the downloaded archive; the result's size and SHA-256 must equal the
-qualified original, and native identity must match. We interpret that as the
-WD-REL-009 original-byte comparison for this destination. Any other difference is
-a conflict. The archive bound is the original size plus 1 MiB for the signature.
+`https://www.nuget.org/api/v2/package` as PackagePublish. nuget.org's
+trusted-publishing policy and package ownership own package control, so the
+application reads no owner metadata. nuget.org repository-signs every accepted
+package and its versions are immutable, so under the WD-REL-009 nuget.org
+exception completion is the flat-container
+`{lowercase-id}/index.json` version list containing the exact normalized
+version. The observation reports that version available with no size or digest,
+and never downloads the archive or compares served bytes. A missing package or
+version is absent; any other response is unknown. A version available before the
+push is satisfied by observation, without a creation claim or content proof.
+WD-REL-012 qualification covers the clean local consumption of the uploaded
+original before publication and makes no claim about the repository-signed
+package.
 
 The publisher constructs supported `HttpSource` and `HttpHandlerResourceV3`
 resources for the selected publish endpoint, using native `NullThrottle`. Invoke
@@ -556,12 +559,14 @@ Link parent cancellation to standard handler sends and body consumption, and
 await native invocation completion after cancellation. Stopping the await does
 not stop writes. Preserve actual timeout/cancellation/failure and uncertainty;
 process termination may interrupt the invocation, after which only bounded reads
-may run. Refresh observation immediately before publication: exact removes the
-write, absent permits it, conflict or unknown stops it. A handled invocation
+may run. Refresh observation immediately before publication: exact (or, for
+nuget.org, available) removes the write, absent permits it, conflict or unknown
+stops it. A handled invocation
 failure still permits bounded readback but no further application write.
 
 Required completion covers destination control, coordinate and the downloaded
-original bytes, observed again in a separate no-write verification job. After a
+original bytes (for nuget.org, the exact coordinate available), observed again in
+a separate no-write verification job. After a
 returned upload, native validation and indexing can delay visibility. The
 verification observation therefore repeats only while the coordinate is absent,
 up to 40 times at 30-second intervals; any other state ends the wait. No
@@ -602,7 +607,7 @@ The MLD's [post-publication completion](../middle-level-design.md#post-publicati
 contract applies to these destinations; this table owns their concrete
 conditions and observation.
 
-| Existing destination/use    | Native completion conditions to preserve                                                              | Post-publication observation                                                                                                                                                                                                            |
-| --------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub Packages NuGet Buddy | Normalized package/version, intended owner/feed/repository and visibility, exact `.nupkg`             | [Package control](../high-level-design.md#domain-values), GitHub and flat-container (NuGet v3 package content resource) version sets containing the version, downloaded `.nupkg` size/SHA-256 equal to the original and native identity |
-| nuget.org Official          | Normalized package/version, trusted-publishing policy owner, exact `.nupkg` before repository signing | Flat-container version set containing the version, native identity and downloaded `.nupkg` size/SHA-256 equal to the original after removing only the repository signature                                                              |
+| Existing destination/use    | Native completion conditions to preserve                                                  | Post-publication observation                                                                                                                                                                                                            |
+| --------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub Packages NuGet Buddy | Normalized package/version, intended owner/feed/repository and visibility, exact `.nupkg` | [Package control](../high-level-design.md#domain-values), GitHub and flat-container (NuGet v3 package content resource) version sets containing the version, downloaded `.nupkg` size/SHA-256 equal to the original and native identity |
+| nuget.org Official          | Normalized package/version, trusted-publishing policy owner, qualified original `.nupkg`  | Flat-container version set containing the exact normalized version (WD-REL-009 nuget.org exception; no served-byte comparison)                                                                                                          |
