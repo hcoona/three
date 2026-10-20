@@ -264,7 +264,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
                 ["commit"] = subject.Revision,
             };
             if (ecosystem == "ruby") native["platform"] = "ruby";
-            if (github) native["tag"] = GithubReleaseUnits.Tag(unit, "1.0.0");
+            if (github) native["tag"] = GithubReleaseUnits.Tag(subject, "1.0.0");
             ReleaseCommand[] commands = [new("build", new("native", Root, ["build"], 60),
                 new(NativeTermination.Exited, 0, "controlled native build", "", 0.1, null))];
             foreach (string phase in new[] { "prepared", "observation" })

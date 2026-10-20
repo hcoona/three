@@ -31,7 +31,7 @@ public sealed class GithubReleaseTests(TestContext context)
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
         GithubRelease.Validate(result);
         string version = result.Native["version"];
-        Assert.AreEqual("release/image-occlusion-editor/v" + version, result.Native["tag"]);
+        Assert.AreEqual("buddy/image-occlusion-editor/v" + version, result.Native["tag"]);
         CollectionAssert.AreEquivalent(new[]
         {
             "ImageOcclusionEditor-" + version + "-win-x64-setup.exe",
@@ -141,6 +141,8 @@ public sealed class GithubReleaseTests(TestContext context)
         Assert.IsTrue(publication.Creation!.Succeeded);
         Assert.HasCount(2, publication.Uploads);
         Assert.AreEqual(Revision, github.TagCommit);
+        Assert.AreEqual((official ? "release/" : "buddy/") + "image-occlusion-editor/v" +
+            Version, github.Release!.Tag);
         Assert.AreEqual(!official, github.Release!.Prerelease);
         Assert.AreEqual("image-occlusion-editor v" + Version, github.Release.Name);
         Assert.AreEqual(official ? null : "false", github.Release.MakeLatest);
@@ -184,6 +186,7 @@ public sealed class GithubReleaseTests(TestContext context)
     [DataRow("other-tag-commit", "Conflict")]
     [DataRow("annotated-tag", "Conflict")]
     [DataRow("channel", "Conflict")]
+    [DataRow("other-namespace", "Absent")]
     [DataRow("extra-asset", "Conflict")]
     [DataRow("starter-asset", "Unknown")]
     [DataRow("unavailable", "Unknown")]
@@ -194,8 +197,10 @@ public sealed class GithubReleaseTests(TestContext context)
         byte[] setup = defect == "different-bytes" ? Encoding.ASCII.GetBytes("MZ controlled setuq")
             : defect == "different-size" ? Encoding.ASCII.GetBytes("MZ other") : Setup;
         github.Publish(defect == "other-tag-commit" ? new string('b', 40) : Revision,
-            prerelease: defect != "channel", ("setup", setup));
+            prerelease: true, ("setup", setup));
+        if (defect == "channel") github.MarkFullRelease();
         if (defect == "annotated-tag") github.AnnotatedTag = true;
+        if (defect == "other-namespace") github.MoveToOtherChannel();
         if (defect == "extra-asset") github.AddAsset("notes.txt", "uploaded", [1, 2, 3]);
         if (defect == "starter-asset") github.AddAsset(Name("portable-zip"), "starter", Portable);
         if (defect == "unavailable") github.Unavailable = true;
@@ -207,6 +212,14 @@ public sealed class GithubReleaseTests(TestContext context)
 
         Assert.IsTrue(observed.Observation.Files.Any(file =>
             file.State == Enum.Parse<ReleaseFileState>(expected)));
+        if (defect == "other-namespace")
+        {
+            // A release under the Official namespace is not this Buddy request's coordinate.
+            Assert.IsTrue(observed.Observation.Files.All(file =>
+                file.State == ReleaseFileState.Absent));
+            Assert.IsFalse(github.Requests.Any(request => request.Method != HttpMethod.Get));
+            return;
+        }
         Assert.ThrowsExactly<InvalidDataException>(() =>
             GithubRelease.Missing(prepared, observed));
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => Publish(preparation,
@@ -214,6 +227,34 @@ public sealed class GithubReleaseTests(TestContext context)
         ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, observed.Observation, []);
         Assert.AreNotEqual(ReleaseBusinessState.Satisfied, outcome.State);
         Assert.IsFalse(github.Requests.Any(request => request.Method != HttpMethod.Get));
+    }
+
+    [TestMethod]
+    public async Task BuddyAndOfficialOfOneVersionUseDistinctTags()
+    {
+        using var github = new FakeGithub();
+        using var originals = new Originals();
+        foreach (bool official in new[] { false, true })
+        {
+            GithubReleasePreparationResult preparation = Preparation(official);
+            GithubReleaseDestination destination = github.Destination();
+            GithubReleaseObservationResult initial = await destination.ObserveAsync(
+                preparation.Prepared, context.CancellationToken);
+            // The earlier Buddy prerelease does not occupy the Official coordinate.
+            Assert.IsTrue(initial.Observation.Files.All(file =>
+                file.State == ReleaseFileState.Absent));
+            GithubReleasePublicationResult publication = await Publish(preparation, originals,
+                initial, destination);
+            GithubReleaseObservationResult final = await destination.ObserveAsync(
+                preparation.Prepared, context.CancellationToken);
+            Assert.AreEqual(ReleaseBusinessState.Satisfied, GithubRelease.Complete(
+                preparation.Prepared, initial, final, publication).Outcome.State);
+        }
+        CollectionAssert.AreEquivalent(new[]
+        {
+            "buddy/image-occlusion-editor/v" + Version,
+            "release/image-occlusion-editor/v" + Version,
+        }, github.Tags.ToArray());
     }
 
     [TestMethod]
@@ -292,7 +333,7 @@ public sealed class GithubReleaseTests(TestContext context)
             {
                 ["name"] = subject.Unit, ["version"] = Version, ["commit"] = Revision,
                 ["public-release"] = "true",
-                ["tag"] = GithubReleaseUnits.Tag(subject.Unit, Version),
+                ["tag"] = GithubReleaseUnits.Tag(subject, Version),
             },
             [new("build", new("pwsh", "/", [], 1), new(NativeTermination.Exited, 0, "", "", 1,
                 null))], []);
@@ -318,34 +359,56 @@ public sealed class GithubReleaseTests(TestContext context)
 
     // A controlled GitHub with one repository: lightweight or annotated tags, at most one
     // release per tag and its assets. Writes follow the native create and upload contract.
+    // Release, TagCommit and AddAsset address the most recently published release.
     private sealed class FakeGithub : HttpMessageHandler
     {
         internal sealed record Asset(long Id, string Name, string State, byte[] Bytes);
         internal sealed record Hosted(long Id, string Tag, string Name, bool Prerelease,
             string? MakeLatest, List<Asset> Assets);
 
-        private const string Tag = "release/image-occlusion-editor/v" + Version;
+        private const string Repo = "/repos/hcoona/three";
         private long next = 100;
-        internal string? TagCommit { get; private set; }
+        private readonly Dictionary<string, string> tags = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Hosted> releases = new(StringComparer.Ordinal);
+        internal string? TagCommit => Release is null ? null : tags[Release.Tag];
         internal bool AnnotatedTag { get; set; }
         internal bool Unavailable { get; set; }
         internal string? Failing { get; init; }
         internal Hosted? Release { get; private set; }
+        internal IReadOnlyCollection<string> Tags => tags.Keys;
         internal List<Seen> Requests { get; } = [];
 
         internal GithubReleaseDestination Destination() =>
             new(new HttpClient(this, disposeHandler: false), "controlled-token");
 
+        // Publishes at the tag of the channel a prerelease flag would normally select.
         internal void Publish(string commit, bool prerelease,
             params (string Kind, byte[] Bytes)[] assets)
         {
-            TagCommit = commit;
-            Release = new(next++, Tag, "image-occlusion-editor v" + Version, prerelease, null,
-                []);
+            string tag = (prerelease ? "buddy/" : "release/") + "image-occlusion-editor/v" +
+                Version;
+            tags[tag] = commit;
+            Release = releases[tag] = new(next++, tag, "image-occlusion-editor v" + Version,
+                prerelease, null, []);
             foreach ((string kind, byte[] bytes) in assets)
                 AddAsset(Name(kind == "setup" ? "inno-installer" : "portable-zip"), "uploaded",
                     bytes);
         }
+
+        // Places the current release under the other channel's tag, keeping its flag.
+        internal void MoveToOtherChannel()
+        {
+            string tag = Release!.Tag.StartsWith("buddy/", StringComparison.Ordinal)
+                ? "release/" + Release.Tag["buddy/".Length..]
+                : "buddy/" + Release.Tag["release/".Length..];
+            tags[tag] = tags[Release.Tag];
+            tags.Remove(Release.Tag);
+            releases.Remove(Release.Tag);
+            Release = releases[tag] = Release with { Tag = tag };
+        }
+
+        internal void MarkFullRelease() =>
+            Release = releases[Release!.Tag] = Release with { Prerelease = false };
 
         internal void AddAsset(string name, string state, byte[] bytes) =>
             Release!.Assets.Add(new(next++, name, state, bytes));
@@ -353,58 +416,71 @@ public sealed class GithubReleaseTests(TestContext context)
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken token)
         {
-            string path = request.RequestUri!.AbsolutePath;
+            string path = Uri.UnescapeDataString(request.RequestUri!.AbsolutePath);
             Requests.Add(new(request.Method, request.RequestUri.Host + path,
                 request.Headers.Authorization?.ToString(),
                 request.Headers.Accept.FirstOrDefault()?.MediaType));
             if (Unavailable) return new(HttpStatusCode.BadGateway);
-            const string repo = "/repos/hcoona/three";
-            if (request.Method == HttpMethod.Get && path == repo + "/git/ref/tags/" + Tag)
-                return TagCommit is null ? new(HttpStatusCode.NotFound) : Json(new JsonObject
-                {
-                    ["ref"] = "refs/tags/" + Tag,
-                    ["object"] = new JsonObject
+            Hosted? owner = releases.Values.SingleOrDefault(value =>
+                path.StartsWith(Repo + "/releases/" + value.Id + "/", StringComparison.Ordinal));
+            if (request.Method == HttpMethod.Get &&
+                path.StartsWith(Repo + "/git/ref/tags/", StringComparison.Ordinal))
+            {
+                string tag = path[(Repo + "/git/ref/tags/").Length..];
+                return !tags.TryGetValue(tag, out string? commit) ? new(HttpStatusCode.NotFound)
+                    : Json(new JsonObject
                     {
-                        ["type"] = AnnotatedTag ? "tag" : "commit",
-                        ["sha"] = TagCommit,
-                    },
-                });
-            if (request.Method == HttpMethod.Get && path == repo + "/releases/tags/" + Tag)
-                return Release is null ? new(HttpStatusCode.NotFound) : Json(new JsonObject
-                {
-                    ["id"] = Release.Id, ["tag_name"] = Release.Tag, ["draft"] = false,
-                    ["prerelease"] = Release.Prerelease,
-                });
-            if (request.Method == HttpMethod.Get && Release is not null &&
-                path == repo + "/releases/" + Release.Id + "/assets")
-                return Json(new JsonArray([.. Release.Assets.Select(asset => (JsonNode)
+                        ["ref"] = "refs/tags/" + tag,
+                        ["object"] = new JsonObject
+                        {
+                            ["type"] = AnnotatedTag ? "tag" : "commit", ["sha"] = commit,
+                        },
+                    });
+            }
+            if (request.Method == HttpMethod.Get &&
+                path.StartsWith(Repo + "/releases/tags/", StringComparison.Ordinal))
+                return !releases.TryGetValue(path[(Repo + "/releases/tags/").Length..],
+                    out Hosted? release) ? new(HttpStatusCode.NotFound) : Json(new JsonObject
+                    {
+                        ["id"] = release.Id, ["tag_name"] = release.Tag, ["draft"] = false,
+                        ["prerelease"] = release.Prerelease,
+                    });
+            if (request.Method == HttpMethod.Get && owner is not null &&
+                request.RequestUri.Host == "api.github.com" &&
+                path == Repo + "/releases/" + owner.Id + "/assets")
+                return Json(new JsonArray([.. owner.Assets.Select(asset => (JsonNode)
                     new JsonObject
                     {
                         ["id"] = asset.Id, ["name"] = asset.Name, ["state"] = asset.State,
                         ["size"] = asset.Bytes.LongLength,
                     })]));
-            if (request.Method == HttpMethod.Get && Release?.Assets.SingleOrDefault(asset =>
-                    path == repo + "/releases/assets/" + asset.Id) is Asset served)
+            if (request.Method == HttpMethod.Get && releases.Values.SelectMany(value =>
+                    value.Assets).SingleOrDefault(asset =>
+                    path == Repo + "/releases/assets/" + asset.Id) is Asset served)
                 return new(HttpStatusCode.OK) { Content = new ByteArrayContent(served.Bytes) };
-            if (request.Method == HttpMethod.Post && path == repo + "/releases")
+            if (request.Method == HttpMethod.Post && path == Repo + "/releases")
             {
                 if (Failing == "create") return new(HttpStatusCode.UnprocessableEntity)
                     { Content = new StringContent("{}") };
                 JsonObject body = JsonNode.Parse(await request.Content!.ReadAsStringAsync(
                     token))!.AsObject();
-                TagCommit ??= (string)body["target_commitish"]!;
-                Release = new(next++, (string)body["tag_name"]!, (string)body["name"]!,
+                string tag = (string)body["tag_name"]!;
+                if (releases.ContainsKey(tag)) return new(HttpStatusCode.UnprocessableEntity)
+                    { Content = new StringContent("{}") };
+                tags.TryAdd(tag, (string)body["target_commitish"]!);
+                Release = releases[tag] = new(next++, tag, (string)body["name"]!,
                     (bool)body["prerelease"]!, (string?)body["make_latest"], []);
                 return Json(new JsonObject { ["id"] = Release.Id }, HttpStatusCode.Created);
             }
-            if (request.Method == HttpMethod.Post && Release is not null &&
+            if (request.Method == HttpMethod.Post && owner is not null &&
                 request.RequestUri.Host == "uploads.github.com" &&
-                path == repo + "/releases/" + Release.Id + "/assets")
+                path == Repo + "/releases/" + owner.Id + "/assets")
             {
                 if (Failing == "upload") return new(HttpStatusCode.InternalServerError)
                     { Content = new StringContent("{}") };
                 string name = Uri.UnescapeDataString(request.RequestUri.Query["?name=".Length..]);
-                AddAsset(name, "uploaded", await request.Content!.ReadAsByteArrayAsync(token));
+                owner.Assets.Add(new(next++, name, "uploaded",
+                    await request.Content!.ReadAsByteArrayAsync(token)));
                 return Json(new JsonObject { ["id"] = next - 1 }, HttpStatusCode.Created);
             }
             return new(HttpStatusCode.NotFound);

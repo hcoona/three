@@ -11,8 +11,9 @@ internal sealed record GithubReleasePreparationRequest(ReleaseSubject Subject, s
 internal sealed record GithubReleasePreparationResult(PreparedRelease Prepared,
     Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors);
 
-// Static registration of the supported GitHub Release unit. The tag follows the product's
-// committed NBGV publicReleaseRefSpec and the repository's release/<unit>/v<version> tags.
+// Static registration of the supported GitHub Release unit. Official tags follow the
+// product's committed NBGV publicReleaseRefSpec and the repository's release/<unit>/v<version>
+// tags; Buddy prereleases use the distinct buddy/<unit>/v<version> namespace (WD-CHN-001).
 internal static class GithubReleaseUnits
 {
     internal const string ImageOcclusionEditor = "image-occlusion-editor";
@@ -25,7 +26,8 @@ internal static class GithubReleaseUnits
     internal const string Executable = "ImageOcclusionEditor.exe";
     internal const string Editor = "svg-edit/index.html";
 
-    internal static string Tag(string unit, string version) => "release/" + unit + "/v" + version;
+    internal static string Tag(ReleaseSubject subject, string version) =>
+        (subject.Channel == "buddy" ? "buddy/" : "release/") + subject.Unit + "/v" + version;
 
     internal static string Title(string unit, string version) => unit + " v" + version;
 
@@ -130,7 +132,7 @@ internal static class GithubReleasePreparation
             native.Add("version", version);
             native.Add("commit", subject.Revision);
             native.Add("public-release", publicRelease ? "true" : "false");
-            native.Add("tag", GithubReleaseUnits.Tag(subject.Unit, version));
+            native.Add("tag", GithubReleaseUnits.Tag(subject, version));
             native.Add("sdk", selected);
         });
         await CheckAsync("build", async () =>

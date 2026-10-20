@@ -260,7 +260,7 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
             prepared.Files.Any(file => file.Version != prepared.Files[0].Version) ||
             string.IsNullOrEmpty(credential) || credential.Any(c => c is '\r' or '\n' or '\0'))
             throw new InvalidDataException("Unsupported GitHub Release request.");
-        return (GithubReleaseUnits.Tag(prepared.Subject.Unit, prepared.Files[0].Version), buddy);
+        return (GithubReleaseUnits.Tag(prepared.Subject, prepared.Files[0].Version), buddy);
     }
 
     private static ReleaseFileObservation Observed(ReleaseFile file, ReleaseFileState state,
