@@ -204,6 +204,7 @@ testpaths = [
   "tests/eng/test_general_ci_workflow.py",
   "tests/eng/test_python_runtime.py",
   "tests/eng/test_typos_config.py",
+  "tests/eng/test_workflow_delivery_v3_hk.py",
   "src/private/app/azureauth-credprovider/python/tests",
   "src/private/app/git-commit-heatmap/tests",
   "src/private/app/llm-text-splitter/tests",
