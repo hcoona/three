@@ -244,6 +244,9 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
             "submissions/operations/submit-op", handler.Requests[3].Uri);
         Assert.IsTrue(handler.Requests.All(request => request.Authorization == "ApiKey key" &&
             request.ClientId == "client"));
+        // An unfinished or failed submission returns to the owner; it is never resubmitted.
+        Assert.AreEqual(1, handler.Requests.Count(request => request.Method == "POST" &&
+            request.Uri.EndsWith("/submissions", StringComparison.Ordinal)));
     }
 
     [TestMethod]
