@@ -100,3 +100,17 @@ If you believe a required notice is missing or incomplete, please open an issue 
 
 See [publish and installer responsibilities](docs/packaging.md) for the existing
 script boundaries and their source observations.
+
+## Release
+
+This repository releases the editor as the `image-occlusion-editor` release unit
+([declaration](workflow-delivery.release-unit.yml)) through the
+[Workflow Delivery GitHub Release caller](../../../../.github/workflows/workflow-delivery-v3-github-release.yml).
+Each release carries the Inno Setup installer
+`ImageOcclusionEditor-<version>-win-x64-setup.exe` and the portable
+`ImageOcclusionEditor-<version>-win-x64-portable.zip`, under the tag
+`release/image-occlusion-editor/v<version>`. The NBGV version comes from
+[version.json](version.json). Buddy releases are GitHub prereleases; Official
+releases come only from `main`. The
+[GitHub Release integration contract](../../../private/app/workflow-delivery/docs/integration/github-release.md)
+owns the build, qualification and publication conditions.
