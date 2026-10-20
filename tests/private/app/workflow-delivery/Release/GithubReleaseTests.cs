@@ -230,6 +230,36 @@ public sealed class GithubReleaseTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task ReleaseWhoseTagWasDeletedIsNeverSatisfiedOrExtended(bool complete)
+    {
+        using var github = new FakeGithub();
+        using var originals = new Originals();
+        github.Publish(Revision, prerelease: true, complete
+            ? [("setup", Setup), ("portable", Portable)] : [("setup", Setup)]);
+        github.DeleteTag();
+        GithubReleasePreparationResult preparation = Preparation(false);
+        GithubReleaseDestination destination = github.Destination();
+        GithubReleaseObservationResult observed = await destination.ObserveAsync(
+            preparation.Prepared, context.CancellationToken);
+
+        // Exact assets alone do not bind the release to the prepared commit.
+        Assert.IsTrue(observed.Observation.Files.All(file =>
+            file.State == ReleaseFileState.Conflict));
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            GithubRelease.Missing(preparation.Prepared, observed));
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => Publish(preparation,
+            originals, observed, destination));
+        Assert.ThrowsExactly<InvalidDataException>(() => GithubRelease.Complete(
+            preparation.Prepared, observed, observed, null));
+        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, ReleaseCompletion.Evaluate(
+            preparation.Prepared, observed.Observation, []).State);
+        Assert.IsFalse(github.Requests.Any(request => request.Method != HttpMethod.Get));
+        Assert.IsNull(github.TagCommit);
+    }
+
+    [TestMethod]
     public async Task BuddyAndOfficialOfOneVersionUseDistinctTags()
     {
         using var github = new FakeGithub();
@@ -370,7 +400,8 @@ public sealed class GithubReleaseTests(TestContext context)
         private long next = 100;
         private readonly Dictionary<string, string> tags = new(StringComparer.Ordinal);
         private readonly Dictionary<string, Hosted> releases = new(StringComparer.Ordinal);
-        internal string? TagCommit => Release is null ? null : tags[Release.Tag];
+        internal string? TagCommit =>
+            Release is null ? null : tags.GetValueOrDefault(Release.Tag);
         internal bool AnnotatedTag { get; set; }
         internal bool Unavailable { get; set; }
         internal string? Failing { get; init; }
@@ -406,6 +437,8 @@ public sealed class GithubReleaseTests(TestContext context)
             releases.Remove(Release.Tag);
             Release = releases[tag] = Release with { Tag = tag };
         }
+
+        internal void DeleteTag() => tags.Remove(Release!.Tag);
 
         internal void MarkFullRelease() =>
             Release = releases[Release!.Tag] = Release with { Prerelease = false };
