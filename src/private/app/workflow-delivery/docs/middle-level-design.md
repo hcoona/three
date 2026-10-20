@@ -804,12 +804,14 @@ job with the union of every destination's privileges.
 Logical phases are prepare/qualify, observe/describe, gated publication when needed,
 and verification/result. Combine or split them according to actual runner,
 credential, product-execution and transfer boundaries. Verification readback runs
-outside the privileged publisher, except for the Chrome Web Store, AMO and Edge
-Add-ons: their status APIs need the publish credentials, so the publish job makes
-both the pre-submission and the completion reads and emits credential-free,
+outside the privileged publisher; the Chrome Web Store uses a read-only
+`chromewebstore.readonly` token there. AMO and Edge Add-ons are the exception:
+their status APIs need the publish credentials, so the publish job makes both
+the pre-submission and the completion reads and emits credential-free,
 request-bound observations that result collection evaluates
-([WD-REL-008](requirements.md#release-delivery)). A live store request therefore
-always enters the write gate, and a store dry run reports state as unobserved. Exact-state and dry-run paths do not enter a
+([WD-REL-008](requirements.md#release-delivery)). A live AMO or Edge request
+therefore always enters the write gate, and their dry run reports state as
+unobserved. Exact-state and dry-run paths do not enter a
 write gate; dry run reports hypothetical operations and actual validation limits.
 
 Serialize this repository's publication operation by physical registry and normalized
