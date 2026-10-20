@@ -115,7 +115,8 @@ public sealed class NuGetReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task PublishAsyncUnprovisionedGithubPackageBlocksUpload()
+    // A package GitHub does not have yet is absent; the first upload creates it.
+    public async Task PublishAsyncAbsentGithubPackagePermitsCreatingUpload()
     {
         using var fixture = new NuGetReleaseTestFixture();
         using var registry = new MissingPackageRegistry();
@@ -125,13 +126,15 @@ public sealed class NuGetReleaseTests(TestContext context)
         NuGetPublicationResult result = await NuGetRelease.PublishAsync(
             fixture.Preparation, fixture.Root, "controlled-capability",
             new GithubNuGetObservation(client).ObserveAsync, (_, _, _, _, _) =>
-            { pushes++; throw new AssertFailedException("Missing package must not upload."); },
+            { pushes++; return Task.FromResult(new NuGetPushResult(true, false, null, 1)); },
             context.CancellationToken);
 
-        Assert.AreEqual(0, pushes);
-        Assert.IsNull(result.Invocation);
-        Assert.IsNotEmpty(result.Errors);
-        Assert.AreEqual(ReleaseFileState.Unknown, result.After.Observation.Files[0].State);
+        Assert.AreEqual(1, pushes);
+        Assert.IsNotNull(result.Invocation);
+        Assert.IsEmpty(result.Errors);
+        Assert.AreEqual(ReleaseFileState.Absent, result.Before.Observation.Files[0].State);
+        Assert.AreEqual(ReleaseCheckStatus.Passed, result.Before.Observation.Checks.Single(
+            check => check.Id == "native-package-control").Status);
     }
 
     private sealed class MissingPackageRegistry : HttpMessageHandler

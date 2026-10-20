@@ -511,8 +511,6 @@ Packages (Buddy) from any branch, or `registry: nugetorg` for nuget.org (Officia
 checks the native package contents and consumes the original package in a clean project
 before any publication.
 
-Before the first GitHub Packages release, the owner bootstraps the package once as described in [NuGet Release integration](../../../private/app/workflow-delivery/docs/integration/dotnet.md#concrete-nuget-release-integration).
-
 ## License
 
 LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See the [LICENSE](https://github.com/hcoona/three/blob/main/LICENSES/LGPL-3.0-linking-exception.txt) file for details.

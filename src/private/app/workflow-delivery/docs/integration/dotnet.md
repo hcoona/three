@@ -501,7 +501,7 @@ shared registry HTTP client described in the
 index; require unique HTTPS owner-origin PackageBaseAddress and PackagePublish
 endpoints without user information, query or fragment. Native NuGet identity
 comparison owns normalized package/version equality. Require the selected
-GitHub package's NuGet type, normalized name, public visibility and
+GitHub package's NuGet type, normalized name and
 `hcoona/three` repository association, then complete native version metadata and
 original archive comparison. API inventory is supporting metadata with bounded
 pagination, not an independent admission authority.
@@ -510,23 +510,10 @@ Bound each observation to 90 seconds and 80 application reads, each
 body-inclusive read to 30 seconds and metadata bodies to 2 MiB. The shared client follows the archive's storage redirect;
 signed URLs are not retained in diagnostics. Compare original size and digest. Exact, absent, conflicting and unknown observations
 use the same predicate before and after publication. Unknown control, identity
-or original bytes block writes; absence permits creation only with established
-native package control.
-
-A package that GitHub does not report yet is unknown, never absent: GitHub creates a
-new NuGet package private, linking it to the repository passes on access but not
-visibility, and its REST API cannot change visibility. The owner therefore
-bootstraps each GitHub Packages package once before its first Buddy release:
-
-1. Dispatch the NuGet Release caller for the unit with `registry: github-packages`
-   and `dry-run: true`, and take the qualified original `.nupkg` from its
-   `nuget-prepared-<run>-<attempt>` artifact; the observation reports unknown.
-2. Push that exact file with a token that has `write:packages`:
-   `dotnet nuget push <file> --source https://nuget.pkg.github.com/hcoona/index.json --api-key <token>`.
-   The packed `RepositoryUrl` links the new package to `hcoona/three`.
-3. In the package settings, change its visibility to public.
-4. Dispatch the same revision live. It observes the version exact and completes
-   without a write.
+or original bytes block writes. A package GitHub does not have yet is absent
+when its feed also reports no versions; the first upload creates it, and the
+packed `RepositoryUrl` links it to `hcoona/three`. Package visibility is not
+checked.
 
 Observe Official nuget.org anonymously through the same shared client
 (`Destinations/NuGetOrgObservation`). Official `ServiceIndexResourceV3`
