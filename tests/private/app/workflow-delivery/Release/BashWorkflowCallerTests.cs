@@ -10,9 +10,10 @@ using YamlDotNet.RepresentationModel;
 
 namespace WorkflowDelivery.Tests.Release;
 
-// The bash Release callers (npm Buddy, Python and Ruby) share the NuGet caller's handled
-// verification boundary: an observation exit of 1 is a typed Conflict/Unknown result that
-// still reaches completion, and any higher exit fails the step before completion.
+// The bash Release callers (npm Buddy, Python, Ruby and GitHub Release) share the NuGet
+// caller's handled verification boundary: an observation exit of 1 is a typed
+// Conflict/Unknown result that still reaches completion, and any higher exit fails the step
+// before completion.
 [TestClass]
 public sealed class BashWorkflowCallerTests(TestContext context)
 {
@@ -25,7 +26,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
     {
         try
         {
-            foreach (string ecosystem in new[] { "npm", "python", "ruby" })
+            foreach (string ecosystem in new[] { "npm", "python", "ruby", "github-release" })
             {
                 var fixture = new Fixture(ecosystem);
                 Received.Add(ecosystem, fixture);
@@ -55,6 +56,8 @@ public sealed class BashWorkflowCallerTests(TestContext context)
     [DataRow("python", "Conflict", 1, "Unsatisfied")]
     [DataRow("ruby", "Exact", 0, "Satisfied")]
     [DataRow("ruby", "Conflict", 1, "Unsatisfied")]
+    [DataRow("github-release", "Exact", 0, "Satisfied")]
+    [DataRow("github-release", "Conflict", 1, "Unsatisfied")]
     // One handled exit-1 row per caller; ReleaseStateTests maps each typed state.
     public async Task ActualVerificationStepRetainsTypedRegistryOutcome(string ecosystem,
         string state, int expectedExit, string expectedState)
@@ -79,6 +82,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
     [DataRow("npm")]
     [DataRow("python")]
     [DataRow("ruby")]
+    [DataRow("github-release")]
     public async Task ActualVerificationStepStopsOnUnhandledObservationFailure(string ecosystem)
     {
         using var fixture = Fixture.CopyOf(Received[ecosystem]);
@@ -182,6 +186,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         internal string Workflow => ecosystem switch
         {
             "npm" => "workflow-delivery-v3-npm-release.yml",
+            "github-release" => "workflow-delivery-v3-github-release.yml",
             "ruby" or "python" => "workflow-delivery-v3-" + ecosystem + "-release.yml",
             _ => "workflow-delivery-v3-" + ecosystem + "-smoke.yml",
         };
@@ -190,6 +195,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         {
             "npm" => "Verify registry coordinate and original bytes",
             "python" => "Verify both index files and original bytes in final public state",
+            "github-release" => "Read back every published asset against its original bytes",
             _ => "Verify native source original and complete final native state",
         };
 
@@ -216,13 +222,17 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         internal Fixture(string ecosystem)
         {
             this.ecosystem = ecosystem;
-            string unit = "hcoona-release-smoke-" + ecosystem;
+            bool github = ecosystem == "github-release";
+            string unit = github ? GithubReleaseUnits.ImageOcclusionEditor
+                : "hcoona-release-smoke-" + ecosystem;
             var subject = new ReleaseSubject(new string('a', 40), "refs/heads/development", unit,
-                Products + unit + "/workflow-delivery.release-unit.yml", "buddy",
+                github ? GithubReleaseUnits.Declaration
+                    : Products + unit + "/workflow-delivery.release-unit.yml", "buddy",
                 ecosystem switch
                 {
                     "npm" => "github-packages-npm",
                     "python" => "testpypi",
+                    "github-release" => GithubReleaseUnits.Buddy,
                     _ => "github-packages-ruby",
                 }, false);
             ReleaseFile[] files = ecosystem switch
@@ -232,12 +242,17 @@ public sealed class BashWorkflowCallerTests(TestContext context)
                 "python" => [Original("distributions", "wheel", "python-wheel", unit,
                     "archives/package.whl"), Original("distributions", "sdist", "python-sdist",
                     unit, "archives/package.tar.gz")],
+                "github-release" => [Original("windows-app", "installer", "inno-installer",
+                    GithubReleaseUnits.Asset("inno-installer", "1.0.0"), "originals/setup.exe"),
+                    Original("windows-app", "portable", "portable-zip",
+                    GithubReleaseUnits.Asset("portable-zip", "1.0.0"), "originals/portable.zip")],
                 _ => [Original("gem-build", "gem-output", "ruby-gem", unit, "original.gem")],
             };
             string[] required = ecosystem switch
             {
                 "npm" => ["consumer"],
                 "python" => PythonPreparation.Required,
+                "github-release" => GithubReleasePreparation.Required,
                 _ => RubyPreparation.Required,
             };
             Prepared = new(subject, files, required, required.Select(id =>
@@ -249,6 +264,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
                 ["commit"] = subject.Revision,
             };
             if (ecosystem == "ruby") native["platform"] = "ruby";
+            if (github) native["tag"] = GithubReleaseUnits.Tag(unit, "1.0.0");
             ReleaseCommand[] commands = [new("build", new("native", Root, ["build"], 60),
                 new(NativeTermination.Exited, 0, "controlled native build", "", 0.1, null))];
             foreach (string phase in new[] { "prepared", "observation" })
@@ -260,6 +276,9 @@ public sealed class BashWorkflowCallerTests(TestContext context)
             else if (ecosystem == "python")
                 Write(preparation, new PythonPreparationResult(Prepared, native, commands, []),
                     TransferJson.Default.PythonPreparationResult);
+            else if (github)
+                Write(preparation, new GithubReleasePreparationResult(Prepared, native, commands,
+                    []), TransferJson.Default.GithubReleasePreparationResult);
             else
                 Write(preparation, new RubyPreparationResult(Prepared, native, commands, []),
                     TransferJson.Default.RubyPreparationResult);
@@ -273,7 +292,12 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         internal Dictionary<string, string?> Environment() => new()
         {
             ["RUNNER_TEMP"] = Root,
-            ["DESTINATION"] = ecosystem == "python" ? "testpypi" : "github-packages",
+            ["DESTINATION"] = ecosystem switch
+            {
+                "python" => "testpypi",
+                "github-release" => GithubReleaseUnits.Buddy,
+                _ => "github-packages",
+            },
             ["DRY_RUN"] = "false",
             ["UNIT"] = Prepared.Subject.Unit,
             ["WRITE_NEEDED"] = "false",
@@ -303,6 +327,8 @@ public sealed class BashWorkflowCallerTests(TestContext context)
                 "npm" => JsonSerializer.Deserialize(json, TransferJson.Default.ReleaseOutcome)!,
                 "python" => JsonSerializer.Deserialize(json,
                     TransferJson.Default.PythonCompletionResult)!.Outcome,
+                "github-release" => JsonSerializer.Deserialize(json,
+                    TransferJson.Default.GithubReleaseCompletionResult)!.Outcome,
                 _ => JsonSerializer.Deserialize(json,
                     TransferJson.Default.RubyCompletionResult)!.Outcome,
             };
@@ -322,6 +348,10 @@ public sealed class BashWorkflowCallerTests(TestContext context)
             else if (ecosystem == "python")
                 Write(path, new PythonIndexObservationResult(Observation("public-index-files"),
                     []), TransferJson.Default.PythonIndexObservationResult);
+            else if (ecosystem == "github-release")
+                Write(path, new GithubReleaseObservationResult(Observation(
+                    GithubReleaseDestination.Check), 7, []),
+                    TransferJson.Default.GithubReleaseObservationResult);
             else
                 Write(path, new RubyObservationResult(Observation("native-source-original"),
                     new(state switch

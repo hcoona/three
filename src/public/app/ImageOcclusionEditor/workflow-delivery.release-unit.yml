@@ -1,0 +1,13 @@
+schema: workflow-delivery/v3/release-unit
+release-unit: image-occlusion-editor
+builds:
+  - id: windows-app
+    definition: dotnet/github-release-assets-v1
+    entry-point: ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj
+    outputs:
+      - id: installer
+        role: primary-package
+        kind: inno-installer
+      - id: portable
+        role: portable-package
+        kind: portable-zip

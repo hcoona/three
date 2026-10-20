@@ -1,0 +1,285 @@
+name: Workflow Delivery v3 GitHub Release
+'on':
+  workflow_dispatch:
+    inputs:
+      destination:
+        description: Selected GitHub Release channel destination
+        type: choice
+        required: true
+        options:
+          - github-release-prerelease
+          - github-release
+      unit:
+        description: Selected GitHub Release unit
+        type: choice
+        required: true
+        options:
+          - image-occlusion-editor
+      dry-run:
+        description: Qualify and describe without publication
+        type: boolean
+        default: true
+permissions: {}
+concurrency:
+  group: ${{ format('workflow-delivery-github-release-{0}', inputs.unit) }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+env:
+  DESTINATION: ${{ inputs.destination }}
+  UNIT: ${{ inputs.unit }}
+  DRY_RUN: ${{ inputs.dry-run }}
+jobs:
+  prepare:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out exact source without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read committed tool versions
+        id: tools
+        run: |
+          python eng/scripts/locked_tool_versions.py dotnet | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Prepare runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
+        with:
+          version: 2026.10.11
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected runtime
+        env:
+          DOTNET_VERSION: ${{ steps.tools.outputs.dotnet }}
+        run: |
+          mise install --yes "dotnet@$env:DOTNET_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $dotnet = mise which --tool "dotnet@$env:DOTNET_VERSION" dotnet
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "DOTNET_EXECUTABLE=$dotnet" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+          Split-Path -Parent $dotnet | Add-Content -LiteralPath $env:GITHUB_PATH -Encoding utf8
+        working-directory: ${{ runner.temp }}
+      - name: Build complete control before product execution
+        run: |
+          & $env:DOTNET_EXECUTABLE build src/private/app/workflow-delivery/WorkflowDelivery.csproj -p:RestoreLockedMode=true -o "$env:RUNNER_TEMP/control"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:DOTNET_EXECUTABLE "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs github-release request
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain actual control results
+        id: control
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: github-release-control-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/control
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+      - name: Build once and qualify installer and portable package
+        run: |
+          & $env:DOTNET_EXECUTABLE "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-github-release "$env:RUNNER_TEMP/prepared/request.json" > "$env:RUNNER_TEMP/prepared/preparation.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:DOTNET_EXECUTABLE "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs github-release originals
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain actual prepared results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: github-release-prepared-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/prepared
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    outputs:
+      control-id: ${{ steps.control.outputs.artifact-id }}
+      dotnet: ${{ steps.tools.outputs.dotnet }}
+      preparation-id: ${{ steps.retain.outputs.artifact-id }}
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - &id001
+        name: Download control by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.control-id }}
+          path: ${{ runner.temp }}/control
+          digest-mismatch: error
+      - &id002
+        name: Download prepared by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
+          path: ${{ runner.temp }}/prepared
+          digest-mismatch: error
+      - &id003
+        name: Prepare runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
+        with:
+          version: 2026.10.11
+          install: false
+          working_directory: ${{ runner.temp }}
+      - &id004
+        name: Install selected runtime
+        env:
+          DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+        run: |
+          set -Eeuo pipefail
+          mise install --yes "dotnet@$DOTNET_VERSION"
+          {
+            printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
+          } >> "$GITHUB_ENV"
+        working-directory: ${{ runner.temp }}
+      - name: Receive transferred preparation
+        run: |
+          set -Eeuo pipefail
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs github-release receive observation
+      - name: Observe tag, release and served assets against qualified originals
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-release "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/observation/observation.json"
+      - name: Expose required writes and describe dry run
+        id: state
+        run: |
+          set -Eeuo pipefail
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs github-release state
+          if [ "$DRY_RUN" = true ]; then
+            mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-github-release "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/observation/dry-run.json"
+            cat "$RUNNER_TEMP/observation/dry-run.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Retain actual observation results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: github-release-observation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/observation
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    needs: prepare
+    outputs:
+      write-needed: ${{ steps.state.outputs.write-needed }}
+      observation-id: ${{ steps.retain.outputs.artifact-id }}
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - *id001
+      - *id002
+      - name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - *id003
+      - *id004
+      - name: Receive transferred preparation
+        run: |
+          set -Eeuo pipefail
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs github-release receive publication
+      - name: Refresh complete state and create the release and remaining assets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-github-release "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/publication/publication.json"
+      - name: Retain actual publication results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: github-release-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publication
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    needs:
+      - prepare
+      - observe
+    if: inputs.dry-run == false && needs.observe.outputs.write-needed == 'true'
+    environment:
+      name: ${{ inputs.destination == 'github-release' && 'workflow-delivery-v3-github-release' || 'workflow-delivery-v3-github-release-prerelease' }}
+    outputs:
+      publication-id: ${{ steps.retain.outputs.artifact-id }}
+  verify-result:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - *id001
+      - *id002
+      - name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - name: Download publication by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.publish.outputs.publication-id }}
+          path: ${{ runner.temp }}/publication
+          digest-mismatch: error
+        if: needs.publish.outputs.publication-id != ''
+      - *id003
+      - *id004
+      - name: Receive transferred preparation
+        run: |
+          set -Eeuo pipefail
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs github-release receive verification
+      - name: Read back every published asset against its original bytes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          # A handled conflicting or unknown observation remains typed completion input.
+          status=0
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-release "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/verification/final.json" || status=$?
+          if [ "$status" -gt 1 ]; then exit "$status"; fi
+          publication=-
+          if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-github-release "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
+      - name: Show actual available business result
+        run: |
+          set -Eeuo pipefail
+          if [ -s "$RUNNER_TEMP/verification/outcome.json" ]; then
+            cat "$RUNNER_TEMP/verification/outcome.json" >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '%s\n' 'Required GitHub Release completion result is unavailable.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+        if: always()
+      - name: Retain actual verification results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: github-release-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verification
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    needs:
+      - prepare
+      - observe
+      - publish
+    if: always() && !cancelled() && inputs.dry-run == false && needs.prepare.result == 'success' && needs.observe.result == 'success'

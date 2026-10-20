@@ -12,7 +12,7 @@ internal static class ReleaseJobInputs
     internal static int? Run(string[] args, Func<string, string?>? environment = null)
     {
         if (args is not ["release", "job-inputs", var ecosystem, .. var operation]) return null;
-        if (ecosystem is not ("ruby" or "python" or "npm" or "nuget"))
+        if (ecosystem is not ("ruby" or "python" or "npm" or "nuget" or "github-release"))
             throw new InvalidDataException("Unsupported Release caller ecosystem.");
         environment ??= Environment.GetEnvironmentVariable;
         string Env(string name) => environment(name) is { Length: > 0 } value ? value :
@@ -24,14 +24,16 @@ internal static class ReleaseJobInputs
         bool buddy = (ecosystem, destination) switch
         {
             ("ruby", "github-packages") or ("python", "testpypi") or
-                ("npm", "github-packages") or ("nuget", "github-packages-nuget") => true,
-            ("ruby", "rubygems") or ("python", "pypi") or ("npm", "npmjs") => false,
+                ("npm", "github-packages") or ("nuget", "github-packages-nuget") or
+                ("github-release", GithubReleaseUnits.Buddy) => true,
+            ("ruby", "rubygems") or ("python", "pypi") or ("npm", "npmjs") or
+                ("github-release", GithubReleaseUnits.Official) => false,
             _ => throw new InvalidDataException("Unsupported Release caller destination."),
         };
         string dry = Env("DRY_RUN");
         if (dry is not ("true" or "false")) throw new InvalidDataException(
             "Invalid dry-run input.");
-        string unit = ecosystem is "ruby" or "python" or "npm" ? Env("UNIT")
+        string unit = ecosystem is "ruby" or "python" or "npm" or "github-release" ? Env("UNIT")
             : "hcoona-release-smoke-github-packages";
         var subject = new ReleaseSubject(Env("GITHUB_SHA"), Env("GITHUB_REF"), unit,
             ecosystem switch
@@ -39,6 +41,7 @@ internal static class ReleaseJobInputs
                 "ruby" => RubyReleaseUnits.Named(unit).Declaration,
                 "python" => PythonReleaseUnits.Named(unit).Declaration,
                 "npm" => NpmReleaseUnits.Named(unit).Declaration,
+                "github-release" => GithubReleaseUnits.Declaration,
                 _ => "tests/private/app/workflow-delivery/fixtures/products/" + unit +
                     "/workflow-delivery.release-unit.yml",
             }, buddy ? "buddy" : "official",
@@ -48,11 +51,12 @@ internal static class ReleaseJobInputs
                 ("npm", true) => "github-packages-npm",
                 _ => destination,
             }, dry == "true");
-        // Every Ruby, Python and npm job admits the selected registered unit before
-        // preparation; npm also rejects its smoke unit for live Official.
+        // Every Ruby, Python, npm and GitHub Release job admits the selected registered unit
+        // before preparation; npm also rejects its smoke unit for live Official.
         if (ecosystem == "ruby") _ = RubyReleaseUnits.Admit(subject);
         if (ecosystem == "python") _ = PythonReleaseUnits.Admit(subject);
         if (ecosystem == "npm") _ = NpmReleaseUnits.Admit(subject);
+        if (ecosystem == "github-release") _ = GithubReleaseUnits.Admit(subject);
         // Live reruns are unsupported (WD-OPS-003). A partial rerun skips the preparation
         // job, so every job entry below applies this one guard rather than workflow YAML.
         if (!subject.DryRun && Env("GITHUB_RUN_ATTEMPT") != "1")
@@ -83,6 +87,8 @@ internal static class ReleaseJobInputs
                 TransferJson.Default.NpmPreparationResult).Prepared,
             "nuget" => Read(Path.Combine(prepared, "preparation.json"),
                 TransferJson.Default.NuGetPreparationResult).Prepared,
+            "github-release" => Read(Path.Combine(prepared, "preparation.json"),
+                TransferJson.Default.GithubReleasePreparationResult).Prepared,
             _ => throw new InvalidDataException("Unsupported Release preparation."),
         };
         void Receive()
@@ -105,6 +111,11 @@ internal static class ReleaseJobInputs
                     NuGetPreparationResult nuget = Read(path,
                         TransferJson.Default.NuGetPreparationResult);
                     NuGetRelease.Validate(nuget);
+                    break;
+                case "github-release":
+                    GithubReleasePreparationResult github = Read(path,
+                        TransferJson.Default.GithubReleasePreparationResult);
+                    GithubRelease.Validate(github);
                     break;
                 default:
                     PreparedRelease release = Read(path,
@@ -143,6 +154,10 @@ internal static class ReleaseJobInputs
                     Write(Path.Combine(prepared, "request.json"), new NpmPreparationRequest(
                         subject, Env("GITHUB_WORKSPACE"), scratch),
                         TransferJson.Default.NpmPreparationRequest);
+                else if (ecosystem == "github-release")
+                    Write(Path.Combine(prepared, "request.json"),
+                        new GithubReleasePreparationRequest(subject, Env("GITHUB_WORKSPACE"),
+                            scratch), TransferJson.Default.GithubReleasePreparationRequest);
                 else
                     Write(Path.Combine(prepared, "request.json"), new NuGetPreparationRequest(
                         subject, Env("GITHUB_WORKSPACE"), scratch),
@@ -185,6 +200,8 @@ internal static class ReleaseJobInputs
                         TransferJson.Default.NpmjsObservationResult).Observation,
                     "nuget" => Read(At("observation/observation.json"),
                         TransferJson.Default.GithubNuGetObservationResult).Observation,
+                    "github-release" => Read(At("observation/observation.json"),
+                        TransferJson.Default.GithubReleaseObservationResult).Observation,
                     _ => throw new InvalidDataException("Unsupported Release observation."),
                 };
                 Same(observation.Subject);

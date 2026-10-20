@@ -25,6 +25,8 @@
                       LogicalName="workflow-delivery-v3-python-release.yml" />
     <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-ruby-release.yml"
                       LogicalName="workflow-delivery-v3-ruby-release.yml" />
+    <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-github-release.yml"
+                      LogicalName="workflow-delivery-v3-github-release.yml" />
     <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-nuget-live-attempt.yml"
                       LogicalName="workflow-delivery-v3-nuget-live-attempt.yml" />
   </ItemGroup>

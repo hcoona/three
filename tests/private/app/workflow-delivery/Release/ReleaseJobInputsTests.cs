@@ -17,6 +17,9 @@ public sealed class ReleaseJobInputsTests
     [DataRow("npm", "github-packages", "buddy", "github-packages-npm")]
     [DataRow("npm", "npmjs", "official", "npmjs")]
     [DataRow("nuget", "github-packages-nuget", "buddy", "github-packages-nuget")]
+    [DataRow("github-release", "github-release-prerelease", "buddy",
+        "github-release-prerelease")]
+    [DataRow("github-release", "github-release", "official", "github-release")]
     public void RequestRetainsNativeSubjectAndTypedTools(string ecosystem, string destination,
         string channel, string expectedDestination)
     {
@@ -171,6 +174,7 @@ public sealed class ReleaseJobInputsTests
     [DataRow("python")]
     [DataRow("npm")]
     [DataRow("nuget")]
+    [DataRow("github-release")]
     public void ReceivedPreparationBindsRequestSubjectOnce(string ecosystem)
     {
         using var fixture = new Caller(ecosystem);
@@ -207,6 +211,7 @@ public sealed class ReleaseJobInputsTests
     [DataRow("python")]
     [DataRow("npm")]
     [DataRow("nuget")]
+    [DataRow("github-release")]
     public void ReceivedUnqualifiedPreparationStopsBeforePhaseOutput(string ecosystem)
     {
         using var fixture = new Caller(ecosystem);
@@ -221,6 +226,7 @@ public sealed class ReleaseJobInputsTests
     [DataRow("python")]
     [DataRow("npm")]
     [DataRow("nuget")]
+    [DataRow("github-release")]
     public void OriginalTransferRetainsBytesAndRejectsEscapingInputs(string ecosystem)
     {
         using var fixture = new Caller(ecosystem);
@@ -248,6 +254,7 @@ public sealed class ReleaseJobInputsTests
     [DataRow("python")]
     [DataRow("npm")]
     [DataRow("nuget")]
+    [DataRow("github-release")]
     public void InvalidOperationsAndLiveRerunsCreateNoState(string ecosystem)
     {
         using var fixture = new Caller(ecosystem);
@@ -284,6 +291,7 @@ public sealed class ReleaseJobInputsTests
     [DataRow("python")]
     [DataRow("npm")]
     [DataRow("nuget")]
+    [DataRow("github-release")]
     public void WriteNeededUsesActualObservationAndRejectsSubjectSubstitution(string ecosystem)
     {
         using var fixture = new Caller(ecosystem);
@@ -307,6 +315,8 @@ public sealed class ReleaseJobInputsTests
                     []), TransferJson.Default.GithubNpmObservationResult),
                 "nuget" => JsonSerializer.Serialize(new GithubNuGetObservationResult(observation,
                     null, []), TransferJson.Default.GithubNuGetObservationResult),
+                "github-release" => JsonSerializer.Serialize(new GithubReleaseObservationResult(
+                    observation, null, []), TransferJson.Default.GithubReleaseObservationResult),
                 _ => throw new InvalidOperationException(),
             };
             File.WriteAllText(fixture.At("observation/observation.json"), json);
@@ -320,6 +330,28 @@ public sealed class ReleaseJobInputsTests
             Assert.AreEqual(original, File.ReadAllText(fixture.At("output")));
             fixture.Env["GITHUB_SHA"] = subject.Revision;
         }
+    }
+
+    [TestMethod]
+    [DataRow("github-release", "refs/heads/feature", "image-occlusion-editor")]
+    [DataRow("github-release-prerelease", "refs/tags/v1", "image-occlusion-editor")]
+    [DataRow("github-release-prerelease", "refs/heads/feature", "another-app")]
+    [DataRow("github-packages", "refs/heads/main", "image-occlusion-editor")]
+    // Live Official GitHub Release is main-only; every job entry stops an ineligible
+    // request, unit or destination before preparation.
+    public void UnsupportedGithubReleaseRequestStopsBeforePreparation(string destination,
+        string reference, string unit)
+    {
+        using var fixture = new Caller("github-release", destination);
+        fixture.Env["DRY_RUN"] = "false";
+        fixture.Env["GITHUB_RUN_ATTEMPT"] = "1";
+        fixture.Env["GITHUB_REF"] = reference;
+        fixture.Env["UNIT"] = unit;
+        foreach (string[] entry in new[] { new[] { "request" }, ["receive", "publication"],
+            ["state"] })
+            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run(entry));
+        Assert.IsFalse(Directory.Exists(fixture.At("prepared")));
+        Assert.IsFalse(Directory.Exists(fixture.At("preparation-scratch")));
     }
 
     private sealed class Caller : IDisposable
@@ -337,6 +369,7 @@ public sealed class ReleaseJobInputsTests
                 ["RUNNER_TEMP"] = root, ["DESTINATION"] = destination ?? (
                     ecosystem switch { "ruby" => "github-packages", "python" => "testpypi",
                         "npm" => "github-packages", "nuget" => "github-packages-nuget",
+                        "github-release" => GithubReleaseUnits.Buddy,
                         _ => throw new InvalidOperationException() }),
                 ["GITHUB_SHA"] = new string('a', 40), ["GITHUB_REF"] = "refs/heads/feature",
                 ["GITHUB_RUN_ID"] = "123", ["GITHUB_RUN_ATTEMPT"] = "2", ["DRY_RUN"] = "true",
@@ -349,6 +382,7 @@ public sealed class ReleaseJobInputsTests
                 {
                     "python" => PythonReleaseUnits.Smoke,
                     "npm" => NpmReleaseUnits.Smoke,
+                    "github-release" => GithubReleaseUnits.ImageOcclusionEditor,
                     _ => RubyReleaseUnits.Smoke,
                 },
             };
@@ -379,6 +413,8 @@ public sealed class ReleaseJobInputsTests
                     TransferJson.Default.NpmPreparationResult),
                 "nuget" => JsonSerializer.Serialize(new NuGetPreparationResult(prepared,
                     new(), [], []), TransferJson.Default.NuGetPreparationResult),
+                "github-release" => JsonSerializer.Serialize(new GithubReleasePreparationResult(
+                    prepared, new(), [], []), TransferJson.Default.GithubReleasePreparationResult),
                 _ => throw new InvalidOperationException(),
             };
             File.WriteAllText(At("prepared/preparation.json"), json);
