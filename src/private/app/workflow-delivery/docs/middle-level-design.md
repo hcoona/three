@@ -592,6 +592,11 @@ API observation of each exact intended coordinate, its required metadata and
 visibility, and the actual served original downloaded and compared by size and
 SHA-256 with the qualified original. Metadata or listing digests alone are not
 sufficient. No remote native install, restore or import runs after publication.
+GitHub Releases compare each downloaded release asset this way. The sole
+exception is the Chrome Web Store, AMO and Edge Add-ons: under
+[WD-REL-009](requirements.md#release-delivery), completion is the store API
+reporting the submitted version as received, in review or published, and no
+served-byte comparison is made.
 
 Byte equality carries the pre-publication qualification to the published state.
 It does not prove that a stock client's credentials, feed or index routing,
@@ -692,8 +697,9 @@ still leave the request unsatisfied.
 
 An initially exact request and a newly published request use the same completion
 predicate. There is no separate exact-satisfaction certificate. Required metadata
-and downloaded original file bytes must be established; a version label or
-successful upload alone is insufficient.
+and downloaded original file bytes must be established, or the reported
+submission state for the browser-store exception; a version label or successful
+upload alone is insufficient.
 
 ### Result and Exit Behavior
 
@@ -846,7 +852,7 @@ Fresh same-revision recovery may use current native state under its destination
 contract without requiring a permanent application record store. Optional
 telemetry failure does not undo an established result; missing required
 completion evidence leaves uncertainty. No permanent ledger or mandatory
-per-product GitHub Release is added.
+per-product GitHub Release audit anchor is added.
 
 ## Validation and Integration
 

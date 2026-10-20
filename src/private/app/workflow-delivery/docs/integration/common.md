@@ -28,12 +28,11 @@ ref eligibility. Native Environment branch policies may constrain a channel
 further; they do not replace this check. Ruby Official accepts only the
 `hcoona-release-smoke-ruby` unit; `RubyReleaseUnits.Admit` rejects a production unit such
 as `asciidoctor-latexmath` with Official before preparation. Python Official
-accepts only the `hcoona-release-smoke-python` unit; `nbgv-python` is ineligible
-for Official under WD-REL-001, and `PythonReleaseUnits.Admit` rejects it with
-Official before preparation. Adding another Official ref or Ruby or Python
-Official unit, a live
-npm Official caller or a NuGet Official destination is a caller change that
-updates this table and its tests together.
+accepts only the `hcoona-release-smoke-python` unit; `PythonReleaseUnits.Admit`
+rejects `nbgv-python` with Official before preparation. Adding another Official
+ref or Ruby or Python Official unit, a live npm Official caller, a NuGet
+Official destination, or a GitHub Releases or browser-extension store
+destination is a caller change that updates this table and its tests together.
 
 ## Locked Tool Selection
 

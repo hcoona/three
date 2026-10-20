@@ -100,7 +100,7 @@ accepted writer's effective token.
 | Package control              | The registry's package-level record (type, name, visibility, owner/repository association) that observation reads before version state                                                                                                                                                                                                                                                                                                                                                             |
 | Release result               | Business satisfaction, attempted effects, command outcomes, verification and uncertainty                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Buddy channel                | Distributable previews from allowed development branches, distinct from Official ([WD-CHN-001](requirements.md#buddy-and-official-channels))                                                                                                                                                                                                                                                                                                                                                       |
-| Official channel             | Canonical NBGV version from an eligible, reviewed official ref ([WD-CHN-002](requirements.md#buddy-and-official-channels)); the [Official channel scope](integration/common.md#official-channel-scope) states the implemented set                                                                                                                                                                                                                                                                  |
+| Official channel             | Canonical NBGV version (or the WD-REL-001 static version) from an eligible, reviewed official ref ([WD-CHN-002](requirements.md#buddy-and-official-channels)); the [Official channel scope](integration/common.md#official-channel-scope) states the implemented set                                                                                                                                                                                                                               |
 | Control                      | The Workflow Delivery application built from the selected control revision: the candidate in CI, the release revision in Release; transferred as a prepared CLI artifact                                                                                                                                                                                                                                                                                                                           |
 | Control distribution         | The complete prepared output of that application, transferred once to the CI jobs that run it                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Original                     | An exact qualified package file of a Release request; a request never substitutes another or older artifact for its qualified originals, and fresh recovery rebuilds and qualifies its own set ([WD-OPS-004](requirements.md#observation-retry-and-recovery))                                                                                                                                                                                                                                      |
@@ -329,7 +329,9 @@ ref restrictions do not block it.
    operations before the native gate.
 5. In the authorized publisher context, consume the qualified request, check
    current destination state and acquire supported short-lived write capability
-   when needed. A changed plan cannot enlarge the reviewed request. Exact state
+   when needed; only the AMO and Edge Add-ons publishers use their Environment's
+   long-lived secrets under the [WD-REL-008](requirements.md#release-delivery)
+   exception. A changed plan cannot enlarge the reviewed request. Exact state
    can remove a now-unnecessary write; conflict/unknown state blocks it. Execute
    supported native publisher invocations in order, once per still-needed file
    or native operation. Delegate their built-in bounded transport retries;
@@ -338,7 +340,10 @@ ref restrictions do not block it.
    No separate pre-mutation marker or marker readback is required.
 6. While execution is active, perform bounded registry readback outside the
    privileged publisher context: observe each exact coordinate and compare the
-   downloaded served bytes with the qualified originals. Report command
+   downloaded served bytes with the qualified originals. For the three
+   browser-extension stores, readback instead observes the store-reported state
+   of the submitted version under the
+   [WD-REL-009](requirements.md#release-delivery) exception. Report command
    outcomes, business completion and uncertainty separately. Missing required
    verification prevents a satisfaction claim.
 
