@@ -124,6 +124,7 @@ internal static class DotNetCiCaller
                 ["scholarly"] = retained.Scholarly,
             },
             ["nuget_native_preparation"] = retained.NuGetNativePreparation,
+            ["github_release_native_preparation"] = retained.GithubReleaseNativePreparation,
             ["reasons"] = reasons,
         };
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
@@ -133,6 +134,8 @@ internal static class DotNetCiCaller
                      ("mise", retained.Mise), ("azureauth", retained.AzureAuth),
                      ("scholarly", retained.Scholarly),
                      ("nuget_native_preparation", retained.NuGetNativePreparation),
+                     ("github_release_native_preparation",
+                         retained.GithubReleaseNativePreparation),
                      ("full", request.Full) })
             CiCallerTransfer.Output(key, value ? "true" : "false");
         CiCallerTransfer.Output("base", request.Basis.Reference);

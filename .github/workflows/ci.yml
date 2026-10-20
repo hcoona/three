@@ -34,6 +34,7 @@ jobs:
       azureauth: ${{ steps.select.outputs.azureauth }}
       scholarly: ${{ steps.select.outputs.scholarly }}
       nuget_native_preparation: ${{ steps.select.outputs.nuget_native_preparation }}
+      github_release_native_preparation: ${{ steps.select.outputs.github_release_native_preparation }}
       base: ${{ steps.select.outputs.base }}
       candidate: ${{ steps.select.outputs.candidate }}
       full: ${{ steps.select.outputs.full }}
@@ -128,7 +129,7 @@ jobs:
   validation:
     name: Validate
     runs-on: ubuntu-latest
-    needs: [conformance, scholarly-tests, nuget-native-preparation, native-preparation-tests]
+    needs: [conformance, scholarly-tests, nuget-native-preparation, github-release-native-preparation, native-preparation-tests]
     if: always()
     steps:
       - name: Require complete validation results
@@ -137,10 +138,11 @@ jobs:
           CONFORMANCE_RESULT: ${{ needs.conformance.result }}
           SCHOLARLY_RESULT: ${{ needs.scholarly-tests.result }}
           NUGET_PREPARATION_RESULT: ${{ needs.nuget-native-preparation.result }}
+          GITHUB_RELEASE_PREPARATION_RESULT: ${{ needs.github-release-native-preparation.result }}
           PREPARATION_RESULT: ${{ needs.native-preparation-tests.result }}
         run: |
-          if [[ "$CONFORMANCE_RESULT" != 'success' || "$SCHOLARLY_RESULT" != 'success' || "$NUGET_PREPARATION_RESULT" != 'success' || "$PREPARATION_RESULT" != 'success' ]]; then
-            echo "Required validation did not complete: source=$CONFORMANCE_RESULT, scholarly=$SCHOLARLY_RESULT, nuget=$NUGET_PREPARATION_RESULT, preparation=$PREPARATION_RESULT." >&2
+          if [[ "$CONFORMANCE_RESULT" != 'success' || "$SCHOLARLY_RESULT" != 'success' || "$NUGET_PREPARATION_RESULT" != 'success' || "$GITHUB_RELEASE_PREPARATION_RESULT" != 'success' || "$PREPARATION_RESULT" != 'success' ]]; then
+            echo "Required validation did not complete: source=$CONFORMANCE_RESULT, scholarly=$SCHOLARLY_RESULT, nuget=$NUGET_PREPARATION_RESULT, github-release=$GITHUB_RELEASE_PREPARATION_RESULT, preparation=$PREPARATION_RESULT." >&2
             exit 1
           fi
       - name: Reject canceled validation
@@ -830,6 +832,62 @@ jobs:
         with:
           name: nuget-native-preparation-windows
           path: artifacts/nuget-native-preparation
+          if-no-files-found: error
+          retention-days: 30
+      - name: Reject canceled validation
+        if: cancelled()
+        shell: bash
+        run: |
+          echo 'Validation was canceled before a complete result.' >&2
+          exit 1
+
+  github-release-native-preparation:
+    name: GitHub Release native preparation (Windows)
+    runs-on: windows-latest
+    needs: scope
+    if: ${{ !cancelled() }}
+    env:
+      WDV3_GITHUB_RELEASE_PREPARATION_EVIDENCE: ${{ github.workspace }}/artifacts/github-release-native-preparation
+    steps:
+      - name: Require successful scope selection
+        id: scope
+        shell: bash
+        env:
+          SELECTION_RESULT: ${{ needs.scope.result }}
+          APPLICABLE: ${{ needs.scope.outputs.github_release_native_preparation }}
+        run: |
+          case "$SELECTION_RESULT:$APPLICABLE" in
+            success:true) echo 'run=true' >> "$GITHUB_OUTPUT" ;;
+            success:false) echo 'run=false' >> "$GITHUB_OUTPUT"; echo 'Not applicable to this change.' ;;
+            *) echo 'Scope selection failed or omitted applicability.' >&2; exit 1 ;;
+          esac
+      - name: Checkout
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup .NET SDK
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Verify the ImageOcclusionEditor recipe and clean consumers
+        if: success() && !cancelled() && steps.scope.outputs.run == 'true'
+        shell: pwsh
+        run: |
+          dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj `
+            -p:RestoreLockedMode=true --filter 'TestCategory=GithubReleaseNativePreparation' `
+            --report-trx --results-directory "$env:WDV3_GITHUB_RELEASE_PREPARATION_EVIDENCE" `
+            "-bl:$env:WDV3_GITHUB_RELEASE_PREPARATION_EVIDENCE/native-preparation.binlog" `
+            -- --minimum-expected-tests 1
+          exit $LASTEXITCODE
+      - name: Retain prepared assets and native evidence
+        if: always() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: github-release-native-preparation-windows
+          path: artifacts/github-release-native-preparation
           if-no-files-found: error
           retention-days: 30
       - name: Reject canceled validation

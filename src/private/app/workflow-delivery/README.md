@@ -260,8 +260,11 @@ root:
 dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj
 ```
 
-The project's native MTP default excludes `NuGetNativePreparation` and
-`NuGetNativeScenarios`; the Windows jobs named above own them. It also excludes
+The project's native MTP default excludes `NuGetNativePreparation`,
+`NuGetNativeScenarios` and `GithubReleaseNativePreparation`; the Windows jobs
+named above and in the
+[GitHub Release integration](docs/integration/github-release.md#caller) own
+them. It also excludes
 `PythonNativeContract`, which the Linux native-preparation job runs under
 `mise exec --locked dotnet python uv` with
 `--filter 'TestCategory=PythonNativeContract'`, and `PnpmNativeContract`, which

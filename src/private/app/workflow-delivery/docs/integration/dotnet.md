@@ -301,7 +301,9 @@ required checks, collected against the original plan and candidate. Exit zero
 cannot satisfy absent, skipped or failed obligations.
 
 The Workflow Delivery test project's native MTP configuration excludes the
-`NuGetNativePreparation` and `NuGetNativeScenarios` categories by default.
+`NuGetNativePreparation` and `NuGetNativeScenarios` categories by default, and
+the `GithubReleaseNativePreparation` category that the
+[GitHub Release integration](github-release.md#caller) owns.
 The Windows `NuGet native preparation (Windows)` CI job owns the two
 preparation rows (real preparation, original package and clean consumer). Its
 applicability follows the existing .NET/Workflow scope selection, which covers

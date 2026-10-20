@@ -478,12 +478,14 @@ sequenceDiagram
     participant Python as python-tests (Linux)
     participant Prep as native-preparation-tests (Linux)
     participant NuGet as nuget-native-preparation (Windows)
+    participant Github as github-release-native-preparation (Windows)
     participant NodeTests as node-tests (Linux matrix)
     participant Validate as validation: Validate (Linux)
     Scope->>Scope: Build candidate control, read paired native facts, select work
     Scope->>Store: ci-scope (selection and reasons)
     Scope->>Store: ci-dotnet-plan (control output, python-control.zip, Ruby facts helper, original .NET plan)
     Scope-->>NuGet: nuget_native_preparation applicability output
+    Scope-->>Github: github_release_native_preparation applicability output
     Store->>DotNet: ci-dotnet-plan
     DotNet->>Store: dotnet-group-results
     Store->>Ruby: ci-scope, ci-dotnet-plan
@@ -498,8 +500,10 @@ sequenceDiagram
     Store->>Prep: ci-scope, ci-dotnet-plan
     Prep->>Store: native-preparation-results
     NuGet->>Store: nuget-native-preparation-windows
+    Github->>Store: github-release-native-preparation-windows
     Prep-->>Validate: job result
     NuGet-->>Validate: job result
+    Github-->>Validate: job result
 ```
 
 Native tool setup and queries consume each endpoint's committed locks without
