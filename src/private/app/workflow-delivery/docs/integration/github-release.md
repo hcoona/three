@@ -152,7 +152,12 @@ create or upload endpoints.
 Changes follow the [shared review core](../middle-level-design.md#release-integration-review).
 Controlled scenario tests cover preparation with a controlled Windows
 toolchain, observation, publication order, non-overwrite and caller steps.
-They do not prove the Windows runner's native build, the Inno installer, live
+The Windows `GitHub Release native preparation (Windows)` CI job runs the
+`GithubReleaseNativePreparation` test: the real preparation of this unit on
+`windows-latest`, including the product build, ISCC, the silent install and
+the portable extraction, and it retains both prepared assets as CI evidence.
+It runs when the product, the Workflow Delivery source or tests, or shared
+.NET/CI inputs change, and Validate requires its result. Neither proves live
 GitHub behavior or the Environments' configuration.
 
 ### GitHub Release Destination Completion

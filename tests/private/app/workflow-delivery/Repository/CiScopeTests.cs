@@ -233,6 +233,31 @@ public sealed class CiScopeTests
     }
 
     [TestMethod]
+    [DataRow("src/public/app/ImageOcclusionEditor/script/Setup.iss", true)]
+    [DataRow("src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/App.xaml.cs",
+        true)]
+    [DataRow("src/public/app/ImageOcclusionEditor/version.json", true)]
+    [DataRow("src/public/Directory.Build.props", true)]
+    [DataRow("src/private/app/workflow-delivery/Release/GithubReleasePreparation.cs", true)]
+    [DataRow("tests/private/app/workflow-delivery/Release/" +
+        "GithubReleasePreparationNativeTests.cs", true)]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
+        "hcoona-release-smoke-github-packages/Smoke.cs", false)]
+    [DataRow("src/private/app/workflow-delivery/docs/integration/github-release.md", false)]
+    [DataRow("src/public/app/another/x.cs", false)]
+    [DataRow("global.json", true)]
+    [DataRow(".github/workflows/ci.yml", true)]
+    [DataRow("eng/native-resource.json", true)]
+    [DataRow("pyproject.toml", false)]
+    public void GithubReleaseNativePreparationFollowsItsProductAndPreparationInputs(
+        string path, bool selected)
+    {
+        Assert.AreEqual(selected, CiScope.Select([path], Comparison(path), false,
+            ["eng/native-resource.json"]).GithubReleaseNativePreparation);
+        Assert.IsTrue(CiScope.Select([], Comparison(), true, []).GithubReleaseNativePreparation);
+    }
+
+    [TestMethod]
     public void NativeHkImportsNameTheLocalConfigurationModules()
     {
         string root = Path.Combine(Path.GetTempPath(), "hk root");

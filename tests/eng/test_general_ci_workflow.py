@@ -397,6 +397,7 @@ def test_required_general_ci_checks_remain_eligible(
                     "conformance",
                     "scholarly-tests",
                     "nuget-native-preparation",
+                    "github-release-native-preparation",
                     "native-preparation-tests",
                 ]
                 if key == "validation"
@@ -1138,6 +1139,7 @@ def test_required_validate_rejects_missing_or_failed_consumers(
         "conformance",
         "scholarly-tests",
         "nuget-native-preparation",
+        "github-release-native-preparation",
         "native-preparation-tests",
     ]
     assert job["if"] == "always()"
@@ -1148,6 +1150,7 @@ def test_required_validate_rejects_missing_or_failed_consumers(
         "needs.conformance.result": "success",
         "needs.scholarly-tests.result": "success",
         "needs.nuget-native-preparation.result": "success",
+        "needs.github-release-native-preparation.result": "success",
         "needs.native-preparation-tests.result": "success",
     }
     scenarios = [successful]
@@ -1155,6 +1158,7 @@ def test_required_validate_rejects_missing_or_failed_consumers(
         "conformance",
         "scholarly-tests",
         "nuget-native-preparation",
+        "github-release-native-preparation",
         "native-preparation-tests",
     ):
         for result in ("failure", "cancelled", "skipped", ""):
@@ -1554,6 +1558,40 @@ def test_nuget_native_preparation_runs_selected_rows(workflow):
     assert upload["with"]["path"] == "artifacts/nuget-native-preparation"
     assert upload["with"]["if-no-files-found"] == "error"
     assert upload["with"]["retention-days"] == 30
+
+
+def test_github_release_native_preparation_runs_the_real_recipe(workflow):
+    """Per-PR CI qualifies the real ImageOcclusionEditor recipe on Windows."""
+    job = workflow["jobs"]["github-release-native-preparation"]
+    assert job["runs-on"].startswith("windows-")
+    assert job["steps"][0]["env"]["APPLICABLE"] == (
+        "${{ needs.scope.outputs.github_release_native_preparation }}"
+    )
+    assert (
+        workflow["jobs"]["scope"]["outputs"][
+            "github_release_native_preparation"
+        ]
+        == "${{ steps.select.outputs.github_release_native_preparation }}"
+    )
+    assert (
+        "github-release-native-preparation"
+        in workflow["jobs"]["validation"]["needs"]
+    )
+    checkout = _step_using(job, "actions/checkout@")
+    assert checkout["with"]["persist-credentials"] is False
+    assert checkout["with"]["fetch-depth"] == 0
+    assert "permissions" not in job
+    run = _native_test(job)
+    assert CONTROL_PROJECT in run
+    assert "--filter 'TestCategory=GithubReleaseNativePreparation'" in run
+    assert "-- --minimum-expected-tests 1" in run
+    assert "exit $LASTEXITCODE" in run
+    upload = _step_using(job, "actions/upload-artifact@")
+    assert upload["if"] == "always() && steps.scope.outputs.run == 'true'"
+    assert (
+        upload["with"]["path"] == "artifacts/github-release-native-preparation"
+    )
+    assert upload["with"]["if-no-files-found"] == "error"
 
 
 def test_nuget_reproducibility_runs_on_dispatch_and_main_changes(workflow):

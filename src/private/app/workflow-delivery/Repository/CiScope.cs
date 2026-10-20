@@ -12,7 +12,8 @@ internal sealed record RecordTaskOwner(string Script, string Rule);
 // Committed root HK and Renovate configuration text read at one endpoint.
 internal sealed record ToolingConfiguration(string? Hk, string? Renovate);
 internal sealed record CiScopeApplicability(bool Mise, bool AzureAuth, bool Scholarly,
-    bool NuGetNativePreparation, SortedDictionary<string, string[]> Reasons);
+    bool NuGetNativePreparation, bool GithubReleaseNativePreparation,
+    SortedDictionary<string, string[]> Reasons);
 
 // Finite retained-job applicability and repository responsibility for changed coordinates.
 // Native .NET/PNPM/Python/Ruby facts still own product consumption; a present coordinate
@@ -30,6 +31,7 @@ internal static partial class CiScope
     private const string Scholarly = "src/private/lib/scholarly-publication";
     private const string Products = "tests/private/app/workflow-delivery/fixtures/products";
     private const string NuGetProduct = Products + "/hcoona-release-smoke-github-packages";
+    private const string GithubReleaseProduct = "src/public/app/ImageOcclusionEditor";
     // Inputs of every retained job: the workflow itself and its locked tools.
     private static readonly string[] AllInputs = [".github/workflows/ci.yml",
         "eng/scripts/Bootstrap-CiControl.ps1", "mise.toml", "mise.lock"];
@@ -38,6 +40,9 @@ internal static partial class CiScope
         "eng/scripts/sync_python_version.py", "eng/scripts/test-python.sh"];
     private static readonly string[] NuGetPreparationRoots = ["src/private/app/workflow-delivery",
         "tests/private/app/workflow-delivery", NuGetProduct];
+    private static readonly string[] GithubReleasePreparationRoots = [
+        "src/private/app/workflow-delivery", "tests/private/app/workflow-delivery",
+        GithubReleaseProduct];
     private static readonly string[] RubyInputs = ["Gemfile", "Gemfile.lock", ".ruby-version"];
 
     internal static CiScopeApplicability Select(string[] changed, GitComparison comparison,
@@ -52,20 +57,22 @@ internal static partial class CiScope
             ["azureauth"] = new(StringComparer.Ordinal),
             ["scholarly"] = new(StringComparer.Ordinal),
         };
-        bool nuget = full;
+        bool nuget = full, githubRelease = full;
         foreach (string path in changed)
         {
             foreach (string job in Jobs(path, gems).Where(reasons.ContainsKey))
                 reasons[job].Add(path);
-            nuget |= AllInputs.Contains(path, StringComparer.Ordinal) ||
-                path == "stylecop.json" || NuGetPreparationInput(path) ||
-                resourceInputs.Contains(path, StringComparer.Ordinal);
+            bool shared = AllInputs.Contains(path, StringComparer.Ordinal) ||
+                path == "stylecop.json" || resourceInputs.Contains(path, StringComparer.Ordinal);
+            nuget |= shared || NuGetPreparationInput(path);
+            githubRelease |= shared || GithubReleasePreparationInput(path);
         }
         if (full)
             foreach (SortedSet<string> why in reasons.Values) why.Add("explicit full validation");
         return new(reasons["mise"].Count != 0, reasons["azureauth"].Count != 0,
-            reasons["scholarly"].Count != 0, nuget, new(reasons.ToDictionary(pair => pair.Key,
-                pair => pair.Value.ToArray()), StringComparer.Ordinal));
+            reasons["scholarly"].Count != 0, nuget, githubRelease,
+            new(reasons.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray()),
+                StringComparer.Ordinal));
     }
 
     internal static async Task<ScopeCoordinate[]> OwnersAsync(GitMaterialization checkout,
@@ -408,6 +415,12 @@ internal static partial class CiScope
         !ControlInputs.InertDocument(path) && (Under(path, Products) && !Under(path, NuGetProduct)
             ? DotNetInheritedInputs.Consumes(path, [NuGetProduct])
             : DotNetInheritedInputs.Consumes(path, NuGetPreparationRoots));
+
+    // The real ImageOcclusionEditor recipe consumes its product and the preparation code; the
+    // test fixture products are not its inputs.
+    private static bool GithubReleasePreparationInput(string path) =>
+        !ControlInputs.InertDocument(path) && !Under(path, Products) &&
+        DotNetInheritedInputs.Consumes(path, GithubReleasePreparationRoots);
 
     internal const string WorkflowLint = "native-hk-workflow-lint";
     internal const string ShellLint = "native-hk-shell-lint";
