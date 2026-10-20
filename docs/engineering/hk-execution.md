@@ -149,6 +149,33 @@ retains HK's native selection and configured stashing; it does not call this
 helper to augment its path list. Distinguish path selection from the content
 snapshot when reporting validation. See the [local check command](../../CONTRIBUTING.md#local-checks).
 
+### Lint Tool Lock Changes
+
+When the compared paths include `mise.lock`, `uv.lock` or `pnpm-lock.yaml`,
+the helper evaluates the checked-out `hk.pkl` with the locked Pkl and maps
+each `check` hook file step (a command with `{{files}}`) to its linter: the
+executable named after `hk_exec.py`, `uv run` or `pnpm exec --`. It reads that
+linter's locked versions at both endpoints from the provider's committed lock.
+`mise which --plugin` names the mise tool whose `mise.lock` entries are read;
+`uv.lock` packages match the executable's normalized name; `pnpm list
+--lockfile-only` over each endpoint's root `package.json` and `pnpm-lock.yaml`
+selects the root dependency named after the executable, with or without its
+npm scope. Launchers and runtimes such as uv, pnpm, Node.js and Python are not
+linters, so their lock changes do not widen a step.
+
+A step whose linter version differs runs on all its covered files. The helper
+skips it in the changed-path HK run, runs it in a second
+`<command> --all --step=<step>` run, reports each widened step and reason on
+stderr, and fails when either run fails. When a tool lock changes, a step whose
+command has another form (for example the actionlint and Pkl evaluation
+wrappers) or whose linter has no entry in its provider lock at either endpoint
+(for example `taplo`, which `pnpm exec` finds on the mise `PATH`) also runs on
+all its files. Resolution never narrows a run, and a failed Pkl evaluation
+fails the helper. Other steps, including lock and configuration checks, keep
+the changed-path input. `.config/dotnet-tools.json` joins these locks once a
+step runs a .NET tool ([#1262](https://github.com/hcoona/three/issues/1262)).
+With `--staged`, the endpoints are `HEAD` and the index.
+
 ## Quoted Paths and Watchdogs
 
 [hk_exec.py](../../eng/scripts/hk_exec.py) normalizes quoted file arguments
