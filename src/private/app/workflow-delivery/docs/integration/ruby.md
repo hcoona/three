@@ -207,7 +207,10 @@ while retaining distinct plan/check and request/qualification decisions. Release
 does not consume `CiPlan` or `CheckSpec`
 ([implementation types](../middle-level-design.md#implementation-type-names)). The common mechanisms use the selected
 Ruby/RubyGems/NBGV tools, closed environment and native builder. The request also
-carries the caller's mise data directory; the prepared Ruby runtime must report
+carries the caller's mise data directory and mise executable. The closed `PATH`
+includes that executable's directory because the mise-installed Ruby's own
+RubyGems plugin runs `mise reshim` after installs; redirected home and XDG state
+keep that effect in scratch. The prepared Ruby runtime must report
 the root [locked tool selection](common.md#locked-tool-selection) for `ruby`. Exclude inherited `SOURCE_DATE_EPOCH` for this
 fixture and use RubyGems' fixed native default; do not introduce a timestamp or
 archive engine. Native default timestamps do not promise byte identity across

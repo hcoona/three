@@ -47,7 +47,7 @@ public sealed class RubyPreparationTests(TestContext context)
     private static string sharedRevision = "";
     // RubySourceCollector writes <product>/lib/.../version.rb into the checkout, so every
     // shared row that can reach source reading gets its own committed product directory.
-    private const int LaneCount = 64;
+    private const int LaneCount = 65;
     private static int nextLane = -1;
     private const string Revision = "0123456789abcdef0123456789abcdef01234567";
 
@@ -157,6 +157,12 @@ public sealed class RubyPreparationTests(TestContext context)
             Assert.AreEqual(fixture.Subject.SelectedRef, environment["GITHUB_REF"]);
             Assert.AreEqual(fixture.Subject.Revision, environment["GITHUB_SHA"]);
             Assert.StartsWith(fixture.Scratch, environment["HOME"]!);
+            // The selected mise Ruby's RubyGems plugin needs its provider during installs.
+            if (command.Command.Executable != "mise")
+                CollectionAssert.Contains(
+                    environment["PATH"]!.Split(Path.PathSeparator),
+                    Path.GetDirectoryName(fixture.Tools.Mise)
+                );
             foreach (
                 string excluded in new[]
                 {
@@ -814,6 +820,7 @@ public sealed class RubyPreparationTests(TestContext context)
     [DataRow("relative-checkout")]
     [DataRow("relative-tool")]
     [DataRow("relative-mise-data")]
+    [DataRow("relative-mise")]
     [DataRow("nested-scratch")]
     [DataRow("nonempty-scratch")]
     public async Task UnownedOrUnpreparedPathsFailBeforeCommands(string defect)
@@ -824,6 +831,8 @@ public sealed class RubyPreparationTests(TestContext context)
             request = request with { Checkout = "relative" };
         if (defect == "relative-tool")
             request = request with { Tools = request.Tools with { Gem = "gem" } };
+        if (defect == "relative-mise")
+            request = request with { Tools = request.Tools with { Mise = "mise" } };
         if (defect == "relative-mise-data")
             request = request with { MiseDataDirectory = "mise-data" };
         if (defect == "nested-scratch")
@@ -906,7 +915,8 @@ public sealed class RubyPreparationTests(TestContext context)
             new(
                 Path.Combine(Repo.Directory, "ruby"),
                 Path.Combine(Repo.Directory, "gem"),
-                Path.Combine(Repo.Directory, "dotnet")
+                Path.Combine(Repo.Directory, "dotnet"),
+                Path.Combine(Repo.Directory, "provider", "mise")
             );
         internal const string RubyGems = "fixture-rubygems";
         internal RubyPreparationRequest Request => new(Subject, Repo.Directory, Scratch, Tools,

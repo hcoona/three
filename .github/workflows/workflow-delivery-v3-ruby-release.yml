@@ -67,6 +67,7 @@ jobs:
             printf 'RUBY_EXECUTABLE=%s\n' "$(mise which --tool "ruby@$RUBY_VERSION" ruby)"
             printf 'GEM_EXECUTABLE=%s\n' "$(mise exec "ruby@$RUBY_VERSION" -- which gem)"
             printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
+            printf 'MISE_EXECUTABLE=%s\n' "$(readlink -f "$(command -v mise)")"
           } >> "$GITHUB_ENV"
           printf '%s\n' "$(dirname "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)")" >> "$GITHUB_PATH"
         working-directory: ${{ runner.temp }}

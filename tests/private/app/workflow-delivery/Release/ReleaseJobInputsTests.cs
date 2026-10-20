@@ -37,8 +37,12 @@ public sealed class ReleaseJobInputsTests
         Assert.AreEqual(fixture.At("preparation-scratch"), request.RootElement.GetProperty(
             "scratch").GetString());
         if (ecosystem == "ruby")
+        {
             Assert.AreEqual("selected-ruby", request.RootElement.GetProperty(
                 "tools").GetProperty("ruby").GetString());
+            Assert.AreEqual("selected-mise", request.RootElement.GetProperty(
+                "tools").GetProperty("mise").GetString());
+        }
         if (ecosystem is "ruby" or "python")
             Assert.AreEqual(fixture.Env["MISE_DATA_DIR"], request.RootElement.GetProperty(
                 "miseDataDirectory").GetString());
@@ -268,6 +272,7 @@ public sealed class ReleaseJobInputsTests
                 ["GITHUB_REPOSITORY"] = "hcoona/three", ["GITHUB_WORKSPACE"] = root,
                 ["RUBY_EXECUTABLE"] = "selected-ruby", ["GEM_EXECUTABLE"] = "selected-gem",
                 ["DOTNET_EXECUTABLE"] = "selected-dotnet", ["UV_EXECUTABLE"] = "selected-uv",
+                ["MISE_EXECUTABLE"] = "selected-mise",
                 ["PYTHON_EXECUTABLE"] = "selected-python", ["MISE_DATA_DIR"] = At("mise"),
                 ["GITHUB_OUTPUT"] = At("output"), ["UNIT"] = RubyReleaseUnits.Smoke,
             };
