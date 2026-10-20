@@ -186,15 +186,16 @@ application must not claim isolation beyond that scope.
   no short-lived write capability: their publisher uses long-lived API
   credentials held only as secrets of the store's Release Environment and
   available only to the publish job. The Chrome Web Store publisher obtains a
-  short-lived token through Google Cloud Workload Identity Federation; its
-  observation, including dry run, uses a separate read-only token of that
-  identity with only the `chromewebstore.readonly` scope. The AMO and Edge APIs
-  have no read access apart from the write credentials, so only their publish
-  job observes them, before and after submission, and emits credential-free,
-  request-bound observations for result evaluation. A live AMO or Edge request
-  therefore always passes the native gate, even when already satisfied
-  ([WD-REL-007](#release-delivery)), and their dry run reports the store state
-  as unobserved.
+  short-lived token through Google Cloud Workload Identity Federation; its live
+  observation uses a separate read-only token of that identity with only the
+  `chromewebstore.readonly` scope. The AMO and Edge APIs have no read access
+  apart from the write credentials, so only their publish job observes them,
+  before and after submission, and emits credential-free, request-bound
+  observations for result evaluation. A live AMO or Edge request therefore
+  always passes the native gate, even when already satisfied
+  ([WD-REL-007](#release-delivery)). Because the Chrome identity is
+  write-capable, a browser-store dry run acquires no store credential, including
+  the Chrome read-only token, and reports the store state as unobserved.
 - **WD-REL-009:** Keep upload-command results and business request completion
   distinct. Record success, failure or ambiguity of the actual command accurately.
   While an execution remains active, bounded authoritative verification may

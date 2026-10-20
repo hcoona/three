@@ -322,11 +322,11 @@ ref restrictions do not block it.
 3. Observe the destination with public or minimally scoped read access. Compare
    qualified files with native state and classify intended work. Dry run reports
    hypothetical operations and its actual validation boundary, then stops with
-   no mutation or live-completion claim. The Chrome Web Store is read with a
-   read-only token. AMO and Edge Add-ons are read only with publish
+   no mutation or live-completion claim. A live Chrome Web Store request is
+   read with a read-only token. AMO and Edge Add-ons are read only with publish
    credentials, so their observation moves to the publisher in step 5
-   ([WD-REL-008](requirements.md#release-delivery)) and their dry run reports
-   store state as unobserved.
+   ([WD-REL-008](requirements.md#release-delivery)). Every browser-store dry
+   run acquires no store credential and reports store state as unobserved.
 4. If exact complete state and required verification conditions hold,
    report satisfaction without a write gate; a live AMO or Edge request always
    reaches the gate. If a write remains, retain and
