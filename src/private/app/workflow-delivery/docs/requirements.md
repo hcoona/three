@@ -146,8 +146,8 @@ application must not claim isolation beyond that scope.
   this does not require a global product-to-commit index. The sole exception
   is `nbgv-python`: it supplies NBGV to Python builds and must not version
   itself through itself, so its committed static native version takes the
-  place of the canonical NBGV version. It is not eligible for Official
-  publication ([WD-CHN-002](#buddy-and-official-channels)).
+  place of the canonical NBGV version in both channels
+  ([WD-CHN-002](#buddy-and-official-channels)).
 - **WD-REL-002:** Enforce the selected channel's ref eligibility and the actual
   destination authorization before a live side effect. Source and configuration
   declarations must not substitute for native permission enforcement.
@@ -181,7 +181,12 @@ application must not claim isolation beyond that scope.
 - **WD-REL-008:** Only the authorized publisher may acquire the destination's
   supported short-lived write capability. Build and qualification have none.
   Observation uses public access or the minimum required read-only authority.
-  Authorization failure must not trigger a long-lived-credential fallback.
+  Authorization failure must not trigger a long-lived-credential fallback. The
+  sole exception is Firefox Add-ons (AMO) and Microsoft Edge Add-ons, which offer
+  no short-lived write capability: their publisher uses long-lived API
+  credentials held only as secrets of the store's Release Environment and
+  available only to the publish job. The Chrome Web Store publisher obtains a
+  short-lived token through Google Cloud Workload Identity Federation.
 - **WD-REL-009:** Keep upload-command results and business request completion
   distinct. Record success, failure or ambiguity of the actual command accurately.
   While an execution remains active, bounded authoritative verification may
@@ -190,9 +195,13 @@ application must not claim isolation beyond that scope.
   destination conditions are established. Post-publication completion is the
   authoritative registry or platform observation of each exact intended
   coordinate together with downloaded served bytes equal to the qualified
-  originals. Version-label equality or a successful command alone is
-  insufficient. Completion by observed state must not claim that this invocation
-  created the remote objects.
+  originals; for GitHub Releases these are the downloaded release assets. The
+  Chrome Web Store, AMO and Edge Add-ons re-sign or repack submissions and do
+  not serve them during review; for these three destinations completion is
+  instead the store API reporting the submitted version as received, in review
+  or published. Otherwise, version-label equality or a successful command alone
+  is insufficient. Completion by observed state must not claim that this
+  invocation created the remote objects.
 - **WD-REL-009A:** Report whether the request is satisfied, whether mutation was
   attempted, the command outcome and any unresolved effects. Do not convert a
   terminal failure into success retrospectively or invent missing publication
@@ -211,7 +220,9 @@ application must not claim isolation beyond that scope.
   preparation satisfies this requirement by clean local consumption of the
   qualified originals before publication. Post-publication completion does not
   repeat native consumption; byte equality with those originals carries the
-  qualification to the published state.
+  qualification to the published state. For the three browser-extension stores
+  of the WD-REL-009 exception, qualification covers the submitted originals and
+  makes no claim about the store-processed package.
 
 ### Buddy and Official Channels
 
@@ -220,8 +231,12 @@ application must not claim isolation beyond that scope.
   publication from allowed development branches; this is ordinary channel
   behavior and is not a smoke-only exception. Channel isolation need not change
   the canonical product-version string and must reflect actual token reach.
+  GitHub Releases publish Buddy as a prerelease and Official as a release. The
+  browser-extension stores (Chrome Web Store, AMO and Edge Add-ons) are Official
+  destinations only; their Buddy request is a dry run.
 - **WD-CHN-002:** Official publication uses the canonical NBGV version and its
-  correct native projection from an eligible, reviewed official ref. The
+  correct native projection, or the WD-REL-001 static version, from an eligible,
+  reviewed official ref. The
   [current Official scope](integration/common.md#official-channel-scope) states
   the implemented set. NBGV can give different repository commits the
   same public product version when relevant version inputs are unchanged. A
@@ -362,6 +377,7 @@ application must not claim isolation beyond that scope.
   attestations where appropriate. No uniform capability is assumed.
 - **WD-RET-004:** No permanent external release ledger, global product-to-target
   binding index or mandatory per-unit GitHub Release audit anchor is required.
+  A GitHub Release that is a unit's selected destination is ordinary publication.
 - **WD-RET-005:** If required state cannot be established after record expiry,
   report that limitation and block the affected operation. Native current-state
   observation may suffice where its contract allows it; absent active state
