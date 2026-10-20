@@ -361,3 +361,101 @@ ends a grant. Git and the proposing PR retain the reason and history.
   #1262 stay separate); no change to Workflow Delivery scope selection or
   retained-job selection; no release, dispatch, publication, credential or
   access change. Delete this entry when the outcome is accepted.
+
+### Extend Workflow Delivery release to every publishable product
+
+- **Work carrier:** the pull request proposing this entry and its linked
+  implementation pull requests. The repository owner asked Workflow Delivery
+  to release every publishable product. The legacy release stack is retired, so
+  these products have no current release route.
+- **Accepted inputs:** the Workflow Delivery
+  [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
+  [HLD](../src/private/app/workflow-delivery/docs/high-level-design.md),
+  [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
+  [integration contracts](../src/private/app/workflow-delivery/docs/middle-level-design.md#integration-mapping),
+  [Official channel scope](../src/private/app/workflow-delivery/docs/integration/common.md#official-channel-scope)
+  and [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md);
+  the product sources under `src/public/lib/{CircularList,Hjg.Pngcs,Memoization,MicrosoftExtensions.Logging.MSTest,MicrosoftExtensions.Logging.Xunit,MicrosoftExtensions.Options.DedupChangeExtensions,PhiFailureDetector,WebHdfs.Extensions.FileProviders,hexo-renderer-asciidoc,steam-account-history-to-csv,nbgv-python,asciidoctor-latexmath}`
+  and `src/public/app/ImageOcclusionEditor`, and their committed locks and
+  version files.
+- **Owner decisions:**
+    - The product set is the eight nuget.org packages above (Memoization ships
+      its generator inside `Memoization.Net`), `hexo-renderer-asciidoc`,
+      `steam-account-history-to-csv`, ImageOcclusionEditor, and Official
+      publication of `nbgv-python` and `asciidoctor-latexmath`.
+      PhiFailureDetector.Console, `markdown-hybrid-search-mcp` and private or lab
+      projects are not released.
+    - NuGet packages use GitHub Packages for Buddy and nuget.org for Official.
+    - `hexo-renderer-asciidoc` keeps its unscoped name on npmjs for Official, so
+      the community package is not split. Its Buddy build sets the package name to
+      `@hcoona/hexo-renderer-asciidoc` for GitHub Packages. This is the only
+      difference between the two channel builds; no cross-channel equivalence
+      check is added.
+    - `nbgv-python` may publish Official to PyPI with its committed static
+      version. This extends its existing exception to the canonical NBGV version.
+    - ImageOcclusionEditor publishes to GitHub Releases: a prerelease for Buddy
+      and a release for Official. Each release carries the Inno installer and
+      the portable zip.
+    - `steam-account-history-to-csv` publishes to the Chrome Web Store, Firefox
+      Add-ons (AMO) and Microsoft Edge Add-ons, all as Official only; Buddy for
+      these stores is a dry run.
+        - Chrome uses a Google Cloud service account through Workload Identity
+          Federation, giving a short-lived token.
+        - AMO and Edge have no short-lived capability. They use long-lived API
+          credentials held only as secrets of their Release Environment, available
+          only to the publish job. This is an exception to WD-REL-008 for these
+          two stores.
+        - A store request is complete when the store API reports the submitted
+          version as received, in review or published. Stores re-sign or repack
+          packages and do not serve them during review, so this replaces the served
+          byte equality of WD-REL-009 for these three destinations.
+    - With V3 registered as their trusted publisher, the owner removes trust in
+      the retired workflows on PyPI, npm, RubyGems.org and nuget.org.
+- **Advancement and outcome:**
+    - First amend the requirements with the decisions above. They are the
+      `nbgv-python` Official exception, the browser-store credential and
+      completion exceptions, and GitHub Releases and the browser stores as
+      destinations. Then reconcile the HLD, MLD, integration contracts and
+      Official channel scope.
+    - Then onboard each product with its release-unit declaration, quality
+      selection, concrete recipe, preparation, observation, publisher and caller
+      paths, documentation and tests, following the accepted onboarding pattern.
+    - Extend the NuGet and npm callers with nuget.org and npmjs Official
+      publication by trusted publishing. Admit the onboarded products to the
+      Python and Ruby Official paths.
+    - Add a GitHub Release caller on a Windows runner and a browser-store caller.
+    - The outcome is accepted when ordinary CI qualifies every recipe and caller,
+      and a dry run succeeds for each product and destination. After the owner
+      registers each destination's publisher or credentials, each product also
+      needs one verified live publication per destination: Buddy where defined,
+      then Official.
+- **Ordering and gates:**
+    - Follow the Workflow Delivery engineering, OCR, record-system and
+      research-evidence review gates; independently classify material findings
+      before repair.
+    - The requirements amendment passes its
+      [change review](../src/private/app/workflow-delivery/docs/requirements.md#requirement-change-review)
+      and merges before the implementation that depends on it.
+    - Ecosystems may proceed independently. Live publication for a destination
+      starts only after its implementation merges with ordinary CI passing and
+      the owner confirms its publisher registration or credentials.
+    - A failed or uncertain live attempt returns to the owner before any further
+      dispatch for that product and destination.
+- **Effects:** this entry permits:
+    - source and repository/GitHub inspection, documentation, workflow, test and
+      implementation changes;
+    - locked tool preparation, isolated local builds and credential-free tests;
+    - independent delegated review and ordinary PR/check operations with their
+      normal CI;
+    - dry-run dispatches of the Release callers;
+    - creating the new Release Environments with the owner as required reviewer;
+    - the owner's publisher registrations, credential provisioning and removal of
+      trust in the retired workflows;
+    - up to one successful live publication per product and destination through
+      its owner-approved Environment.
+- **Exclusions:** no publication of other products and no change to the
+  versions of published products beyond their normal NBGV projection. No
+  deletion, unlisting or administration of published packages, releases or
+  store listings, apart from the trust removal above. No rerun of completed
+  campaigns. No long-lived credential outside the AMO and Edge exception.
+  Delete this entry when the outcome is accepted.
