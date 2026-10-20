@@ -513,6 +513,21 @@ use the same predicate before and after publication. Unknown control, identity
 or original bytes block writes; absence permits creation only with established
 native package control.
 
+A package that GitHub does not report yet is unknown, never absent: GitHub creates a
+new NuGet package private, linking it to the repository passes on access but not
+visibility, and its REST API cannot change visibility. The owner therefore
+bootstraps each GitHub Packages package once before its first Buddy release:
+
+1. Dispatch the NuGet Release caller for the unit with `registry: github-packages`
+   and `dry-run: true`, and take the qualified original `.nupkg` from its
+   `nuget-prepared-<run>-<attempt>` artifact; the observation reports unknown.
+2. Push that exact file with a token that has `write:packages`:
+   `dotnet nuget push <file> --source https://nuget.pkg.github.com/hcoona/index.json --api-key <token>`.
+   The packed `RepositoryUrl` links the new package to `hcoona/three`.
+3. In the package settings, change its visibility to public.
+4. Dispatch the same revision live. It observes the version exact and completes
+   without a write.
+
 Observe Official nuget.org anonymously through the same shared client
 (`Destinations/NuGetOrgObservation`). Official `ServiceIndexResourceV3`
 interprets `https://api.nuget.org/v3/index.json`, which must name exactly

@@ -58,14 +58,13 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
 
             string root = resources.PackageBaseAddress + Uri.EscapeDataString(packageId) + "/";
             (status, body) = await ReadAsync("package-control", new(api));
-            // An owner package that does not exist yet is created by the first publication,
-            // which links it to the publishing repository; the feed must agree it is absent.
+            // GitHub creates a new NuGet package private and offers no API to change its
+            // visibility, so a missing package cannot authorize creation; the owner bootstraps it.
             if (status == 404)
             {
-                (status, _) = await ReadAsync("native-versions", new(root + "index.json"));
-                if (status != 404) return Result(ReleaseFileState.Unknown);
-                control = ReleaseCheckStatus.Passed;
-                return Result(ReleaseFileState.Absent);
+                reads.Add(new("package-control", status,
+                    "Package not provisioned; owner bootstrap required."));
+                return Result(ReleaseFileState.Unknown);
             }
             RequireOk(status);
             JObject package = Object(body);
