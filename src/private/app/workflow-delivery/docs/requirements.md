@@ -186,7 +186,13 @@ application must not claim isolation beyond that scope.
   no short-lived write capability: their publisher uses long-lived API
   credentials held only as secrets of the store's Release Environment and
   available only to the publish job. The Chrome Web Store publisher obtains a
-  short-lived token through Google Cloud Workload Identity Federation.
+  short-lived token through Google Cloud Workload Identity Federation. These
+  three store APIs have no read access apart from the write credentials, so
+  only their publish job observes them, before and after submission, and emits
+  credential-free, request-bound observations for result evaluation. A live
+  store request therefore always passes the native gate, even when already
+  satisfied ([WD-REL-007](#release-delivery)), and a store dry run reports the
+  store state as unobserved.
 - **WD-REL-009:** Keep upload-command results and business request completion
   distinct. Record success, failure or ambiguity of the actual command accurately.
   While an execution remains active, bounded authoritative verification may

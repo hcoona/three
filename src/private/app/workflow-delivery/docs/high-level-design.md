@@ -322,9 +322,13 @@ ref restrictions do not block it.
 3. Observe the destination with public or minimally scoped read access. Compare
    qualified files with native state and classify intended work. Dry run reports
    hypothetical operations and its actual validation boundary, then stops with
-   no mutation or live-completion claim.
+   no mutation or live-completion claim. The three browser-extension stores
+   are read only with publish credentials, so their observation moves to the
+   publisher in step 5 ([WD-REL-008](requirements.md#release-delivery)) and
+   their dry run reports store state as unobserved.
 4. If exact complete state and required verification conditions hold,
-   report satisfaction without a write gate. If a write remains, retain and
+   report satisfaction without a write gate; a live store request always
+   reaches the gate. If a write remains, retain and
    expose target, native coordinate, complete outputs, destination and intended
    operations before the native gate.
 5. In the authorized publisher context, consume the qualified request, check
@@ -341,9 +345,11 @@ ref restrictions do not block it.
 6. While execution is active, perform bounded registry readback outside the
    privileged publisher context: observe each exact coordinate and compare the
    downloaded served bytes with the qualified originals. For the three
-   browser-extension stores, readback instead observes the store-reported state
-   of the submitted version under the
-   [WD-REL-009](requirements.md#release-delivery) exception. Report command
+   browser-extension stores, the publisher instead reads the store-reported
+   state of the submitted version under the
+   [WD-REL-009](requirements.md#release-delivery) exception and emits
+   credential-free, request-bound observations that result collection
+   evaluates. Report command
    outcomes, business completion and uncertainty separately. Missing required
    verification prevents a satisfaction claim.
 
