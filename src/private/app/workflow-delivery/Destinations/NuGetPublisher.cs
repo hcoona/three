@@ -19,17 +19,25 @@ internal sealed record NuGetPushResult(bool ReturnedSuccessfully, bool Cancelled
 
 // Official NuGet owns upload construction and its bounded retries. This component
 // constrains the selected original and connects cancellation to the actual transport.
-internal static class GithubNuGetPublisher
+internal static class NuGetPublisher
 {
-    internal const string Endpoint = "https://nuget.pkg.github.com/hcoona/";
-    private const string Package = "Hcoona.ReleaseSmoke.GithubPackages";
+    internal const string GithubEndpoint = "https://nuget.pkg.github.com/hcoona/";
+    // The gallery's PackagePublish resource; the client sends to it with a trailing slash.
+    internal const string NuGetOrgEndpoint = "https://www.nuget.org/api/v2/package/";
 
+    // The GitHub credential is the job token; the nuget.org credential is the short-lived API
+    // key that the official NuGet login action exchanged for the job's OIDC token.
     internal static async Task<NuGetPushResult> PushAsync(PreparedRelease prepared,
         string originals, string endpoint, string credential, CancellationToken cancellation,
         HttpMessageHandler? controlledTransport = null)
     {
-        if (prepared.Subject.DryRun || prepared.Subject.Channel != "buddy" ||
-            prepared.Subject.Destination != "github-packages-nuget" || endpoint != Endpoint ||
+        string? expected = (prepared.Subject.Channel, prepared.Subject.Destination) switch
+        {
+            ("buddy", "github-packages-nuget") => GithubEndpoint,
+            ("official", "nugetorg") => NuGetOrgEndpoint,
+            _ => null,
+        };
+        if (prepared.Subject.DryRun || expected is null || endpoint != expected ||
             prepared.Files is not [{ Kind: "nuget-package" }] ||
             string.IsNullOrEmpty(credential) || credential.Any(c => c is '\r' or '\n' or '\0') ||
             !Path.IsPathFullyQualified(originals))
@@ -42,7 +50,9 @@ internal static class GithubNuGetPublisher
         if (!OwnedPath.Within(path, root) ||
             !File.Exists(path) || !path.EndsWith(".nupkg", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Original NuGet package is missing or not a file.");
-        var identity = new PackageIdentity(Package, NuGetVersion.Parse(file.Version));
+        ReleasePolicy.RequireEligible(prepared.Subject);
+        var identity = new PackageIdentity(NuGetReleaseUnits.Admit(prepared.Subject).PackageId,
+            NuGetVersion.Parse(file.Version));
         if (!PackageIdentityComparer.Default.Equals(identity,
                 new PackageIdentity(file.Name, NuGetVersion.Parse(file.Version))) ||
             OwnedFile.Length(path) != file.Size || DotNetPackageArchive.Digest(path) !=
@@ -55,7 +65,7 @@ internal static class GithubNuGetPublisher
             AllowAutoRedirect = false, UseCookies = false, UseProxy = false,
             UseDefaultCredentials = false, AutomaticDecompression = DecompressionMethods.None,
         };
-        using var handler = new PublishHandler(credential, cancellation)
+        using var handler = new PublishHandler(endpoint, credential, cancellation)
             { InnerHandler = controlledTransport ?? standard };
         var resource = new HttpHandlerResourceV3(standard, handler);
         using var source = new HttpSource(new PackageSource(endpoint),
@@ -83,8 +93,8 @@ internal static class GithubNuGetPublisher
         }
     }
 
-    private sealed class PublishHandler(string credential, CancellationToken parent)
-        : DelegatingHandler
+    private sealed class PublishHandler(string endpoint, string credential,
+        CancellationToken parent) : DelegatingHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
             CancellationToken cancellation)
@@ -92,10 +102,12 @@ internal static class GithubNuGetPublisher
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(parent,
                 cancellation);
             linked.Token.ThrowIfCancellationRequested();
-            if (request.Method != HttpMethod.Put || request.RequestUri?.AbsoluteUri != Endpoint)
+            if (request.Method != HttpMethod.Put || request.RequestUri?.AbsoluteUri != endpoint)
                 throw new InvalidOperationException("Unsupported native NuGet upload endpoint.");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Basic",
-                Convert.ToBase64String(Encoding.UTF8.GetBytes("hcoona:" + credential)));
+            // nuget.org authenticates only the client's own API-key header.
+            if (endpoint == GithubEndpoint)
+                request.Headers.Authorization = new AuthenticationHeaderValue("Basic",
+                    Convert.ToBase64String(Encoding.UTF8.GetBytes("hcoona:" + credential)));
             HttpResponseMessage response = await base.SendAsync(request, linked.Token);
             if (response.Content is not null)
                 response.Content = new CancelledContent(response.Content, parent);

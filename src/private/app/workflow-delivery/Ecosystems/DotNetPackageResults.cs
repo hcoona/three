@@ -73,9 +73,12 @@ internal static class DotNetPackageResults
         ValidateExpectations(framework, runtime, expectations);
     }
 
+    // An empty framework selects the multi-target outer build, which has no single
+    // documentation file and may also produce a symbol package.
     internal static void ValidateExpectations(string framework, string runtime,
         Dictionary<string, string> values)
     {
+        bool outer = framework.Length == 0;
         if (values.Count != NativeProperties.Length - 1 ||
             NativeProperties.Where(name => name != "MSBuildProjectFullPath")
                 .Any(name => !values.ContainsKey(name)) ||
@@ -83,11 +86,13 @@ internal static class DotNetPackageResults
             values["TargetFramework"] != framework ||
             values["RuntimeIdentifier"] != runtime ||
             !values["IsPackable"].Equals("true", StringComparison.OrdinalIgnoreCase) ||
-            values["IncludeSymbols"].Equals("true", StringComparison.OrdinalIgnoreCase) ||
+            !outer && values["IncludeSymbols"].Equals("true", StringComparison.OrdinalIgnoreCase) ||
+            outer && values["DocumentationFile"].Length != 0 ||
             values["IncludeSource"].Equals("true", StringComparison.OrdinalIgnoreCase) ||
             !values["GenerateDocumentationFile"].Equals("true",
                 StringComparison.OrdinalIgnoreCase) ||
-            RequiredText.Any(name => string.IsNullOrWhiteSpace(values[name])) ||
+            RequiredText.Any(name => (!outer || name != "DocumentationFile") &&
+                string.IsNullOrWhiteSpace(values[name])) ||
             !Version.TryParse(values["AssemblyVersion"], out _) ||
             !NuGetVersion.TryParse(values["NuGetPackageVersion"], out NuGetVersion? version) ||
             !NuGetVersion.TryParse(values["PackageVersion"], out NuGetVersion? packed) ||
@@ -98,7 +103,7 @@ internal static class DotNetPackageResults
     }
     internal static DotNetOriginalPackage Archive(string unit, string build, string output, string
         role, string kind, JsonElement root,
-        string destination, Dictionary<string, string> expected)
+        string destination, Dictionary<string, string> expected, bool symbols = false)
     {
         JsonElement receipt = DotNetPackageResults.Target(root, "_GetOutputItemsFromPack");
         if (!receipt.TryGetProperty("Items", out JsonElement items) ||
@@ -116,7 +121,8 @@ internal static class DotNetPackageResults
             string path = Path.GetFullPath(fullPath.GetString()!);
             string extension = Path.GetExtension(path);
             if (extension.Equals(".nuspec", StringComparison.OrdinalIgnoreCase)) continue;
-            if (!extension.Equals(".nupkg", StringComparison.OrdinalIgnoreCase) ||
+            if (!(extension.Equals(".nupkg", StringComparison.OrdinalIgnoreCase) ||
+                    symbols && extension.Equals(".snupkg", StringComparison.OrdinalIgnoreCase)) ||
                 !OwnedPath.Within(path, destination) || !archives.Add(path))
                 throw new InvalidDataException("Undeclared or ambiguous native package output.");
             DotNetPackageConsumer.RequireFile(path);
@@ -129,10 +135,14 @@ internal static class DotNetPackageResults
                 Path.GetExtension(path).Equals(".snupkg", StringComparison.OrdinalIgnoreCase))
                 actual.Add(Path.GetFullPath(path));
         }
-        if (archives.Count != 1 || !actual.SetEquals(archives))
+        string[] packages = archives.Where(path => Path.GetExtension(path).Equals(".nupkg",
+            StringComparison.OrdinalIgnoreCase)).ToArray();
+        // A declared symbol package must accompany its package; it is not a Release output.
+        if (packages is not [string archive] || !actual.SetEquals(archives) ||
+            archives.Count != (symbols ? 2 : 1) || symbols && !archives.Contains(
+                Path.ChangeExtension(archive, ".snupkg")))
             throw new InvalidDataException(
                 "The complete original native archive set is missing or undeclared.");
-        string archive = archives.Single();
         DotNetPackageArchive.RequireIdentity(DotNetPackageArchive.Identity(archive), expected);
         return new(unit, build, output, role, kind, archive,
             OwnedFile.Length(archive), DotNetPackageArchive.Digest(archive));

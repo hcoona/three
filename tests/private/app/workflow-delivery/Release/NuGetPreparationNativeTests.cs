@@ -167,10 +167,10 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
         byte[] firstBytes = File.ReadAllBytes(first.Archive);
         using var absentFeed = new Feed(first.Result.Prepared.Files[0].Version, null);
         using var absentClient = new HttpClient(absentFeed);
-        GithubNuGetObservationResult absent = await new GithubNuGetObservation(absentClient)
+        NuGetObservationResult absent = await new GithubNuGetObservation(absentClient)
             .ObserveAsync(first.Result.Prepared, "controlled-read", context.CancellationToken);
         Assert.AreEqual(ReleaseFileState.Absent, absent.Observation.Files[0].State);
-        GithubNuGetCompletionResult missing = NuGetRelease.Complete(first.Result.Prepared,
+        NuGetCompletionResult missing = NuGetRelease.Complete(first.Result.Prepared,
             absent, absent, null);
         Assert.AreEqual(ReleaseBusinessState.Unknown, missing.Outcome.State);
         Assert.IsNull(missing.MutationAttempted);
@@ -208,7 +208,7 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             int writes = 0;
             try
             {
-                GithubNuGetPublicationResult publication = await NuGetRelease.PublishAsync(
+                NuGetPublicationResult publication = await NuGetRelease.PublishAsync(
                     fresh.Result, fresh.Scratch, "controlled-read", observer.ObserveAsync,
                     (_, _, _, _, _) =>
                     {
@@ -221,9 +221,9 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                 Assert.AreEqual(conflict ? ReleaseFileState.Conflict : ReleaseFileState.Exact,
                     publication.Before.Observation.Files[0].State);
                 // Completion is the independent registry readback of the served original bytes.
-                GithubNuGetObservationResult final = await observer.ObserveAsync(
+                NuGetObservationResult final = await observer.ObserveAsync(
                     fresh.Result.Prepared, "controlled-read", context.CancellationToken);
-                GithubNuGetCompletionResult complete = NuGetRelease.Complete(
+                NuGetCompletionResult complete = NuGetRelease.Complete(
                     fresh.Result.Prepared, absent, final, publication);
                 fixture.Attach(label + "-fresh-completion.json", complete);
                 Assert.AreEqual(conflict ? ReleaseBusinessState.Unsatisfied :

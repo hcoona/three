@@ -91,7 +91,7 @@ CLI's behavior, actual GitHub Packages response or live publication. Controlled
 integration tests and ordinary CI qualify only their stated scope; any live
 validation remains separately authorized.
 
-`GithubNuGetPublisherTests` guards these findings against the pinned
+`NuGetPublisherTests` guards these findings against the pinned
 NuGet.Protocol, which CI selects when `Directory.Packages.props` changes. A
 controlled transport replaces only the network. The pinned client sends at most
 three times for 500, 503, 408 and 429 responses and for `HttpRequestException`,

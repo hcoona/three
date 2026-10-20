@@ -25,7 +25,8 @@ on:
       - .editorconfig
       - src/private/app/workflow-delivery/Release/NuGet*.cs
       - src/private/app/workflow-delivery/Ecosystems/DotNetPackage*.cs
-      - src/private/app/workflow-delivery/Destinations/GithubNuGet*.cs
+      - src/private/app/workflow-delivery/Ecosystems/NuGet*.cs
+      - src/private/app/workflow-delivery/Destinations/*NuGet*.cs
       - tests/private/app/workflow-delivery/Release/NuGetPreparationNativeTests.cs
       - tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-github-packages/**
       - .github/workflows/workflow-delivery-v3-nuget-reproducibility.yml

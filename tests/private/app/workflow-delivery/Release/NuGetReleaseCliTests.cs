@@ -54,7 +54,7 @@ public sealed class NuGetReleaseCliTests(TestContext context)
             Enum.Parse<ReleaseFileState>(stateName));
         using var output = new StringWriter();
 
-        int? exit = NuGetReleaseCli.Run(["release", "describe-github-nuget", preparation,
+        int? exit = NuGetReleaseCli.Run(["release", "describe-nuget", preparation,
             observed], output);
 
         Assert.AreEqual(expectedExit, exit);
@@ -85,24 +85,24 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         {
             using var transport = new NuGetReleaseTestFixture.UploadTransport(
                 HttpStatusCode.Created);
-            invocation = await GithubNuGetPublisher.PushAsync(fixture.Prepared, fixture.Root,
-                GithubNuGetPublisher.Endpoint, "controlled-capability", context.CancellationToken,
+            invocation = await NuGetPublisher.PushAsync(fixture.Prepared, fixture.Root,
+                NuGetPublisher.GithubEndpoint, "controlled-capability", context.CancellationToken,
                 transport);
             Assert.IsTrue(invocation.ReturnedSuccessfully);
             Assert.AreEqual(1, transport.Sends);
-            publisher = fixture.Write("publisher.json", new GithubNuGetPublicationResult(
+            publisher = fixture.Write("publisher.json", new NuGetPublicationResult(
                 fixture.Prepared.Subject, fixture.Observe(ReleaseFileState.Absent), invocation,
                 fixture.Observe(ReleaseFileState.Exact), []),
-                TransferJson.Default.GithubNuGetPublicationResult);
+                TransferJson.Default.NuGetPublicationResult);
         }
         using var output = new StringWriter();
 
-        int? exit = NuGetReleaseCli.Run(["release", "complete-github-nuget", Preparation(fixture),
+        int? exit = NuGetReleaseCli.Run(["release", "complete-nuget", Preparation(fixture),
             initial, final, publisher], output);
 
         Assert.AreEqual(0, exit);
-        GithubNuGetCompletionResult result = JsonSerializer.Deserialize(output.ToString(),
-            TransferJson.Default.GithubNuGetCompletionResult)!;
+        NuGetCompletionResult result = JsonSerializer.Deserialize(output.ToString(),
+            TransferJson.Default.NuGetCompletionResult)!;
         Assert.AreEqual(fixture.Prepared.Subject, result.Outcome.Subject);
         Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
         Assert.AreEqual(state == ReleaseFileState.Absent, result.MutationAttempted);
@@ -119,12 +119,12 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         string final = Observation(fixture, "final.json", ReleaseFileState.Exact);
         using var output = new StringWriter();
 
-        int? exit = NuGetReleaseCli.Run(["release", "complete-github-nuget", Preparation(fixture),
+        int? exit = NuGetReleaseCli.Run(["release", "complete-nuget", Preparation(fixture),
             initial, final, "-"], output);
 
         Assert.AreEqual(1, exit);
-        GithubNuGetCompletionResult result = JsonSerializer.Deserialize(output.ToString(),
-            TransferJson.Default.GithubNuGetCompletionResult)!;
+        NuGetCompletionResult result = JsonSerializer.Deserialize(output.ToString(),
+            TransferJson.Default.NuGetCompletionResult)!;
         Assert.AreEqual(ReleaseBusinessState.Unknown, result.Outcome.State);
         Assert.IsNull(result.MutationAttempted);
         Assert.IsNull(result.Invocation);
@@ -138,18 +138,18 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         using var fixture = new NuGetReleaseTestFixture();
         string initial = Observation(fixture, "initial.json", ReleaseFileState.Absent);
         string final = Observation(fixture, "final.json", ReleaseFileState.Exact);
-        string publisher = fixture.Write("publisher.json", new GithubNuGetPublicationResult(
+        string publisher = fixture.Write("publisher.json", new NuGetPublicationResult(
             fixture.Prepared.Subject, fixture.Observe(ReleaseFileState.Exact), null,
             fixture.Observe(ReleaseFileState.Exact), []),
-            TransferJson.Default.GithubNuGetPublicationResult);
+            TransferJson.Default.NuGetPublicationResult);
         using var output = new StringWriter();
 
-        int? exit = NuGetReleaseCli.Run(["release", "complete-github-nuget", Preparation(fixture),
+        int? exit = NuGetReleaseCli.Run(["release", "complete-nuget", Preparation(fixture),
             initial, final, publisher], output);
 
         Assert.AreEqual(0, exit);
-        GithubNuGetCompletionResult result = JsonSerializer.Deserialize(output.ToString(),
-            TransferJson.Default.GithubNuGetCompletionResult)!;
+        NuGetCompletionResult result = JsonSerializer.Deserialize(output.ToString(),
+            TransferJson.Default.NuGetCompletionResult)!;
         Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
         Assert.AreEqual(false, result.MutationAttempted);
         Assert.IsNull(result.Invocation);
@@ -164,7 +164,7 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         using var output = new StringWriter();
 
         Assert.ThrowsExactly<FileNotFoundException>(() => NuGetReleaseCli.Run(
-            ["release", "complete-github-nuget", Preparation(fixture), exact,
+            ["release", "complete-nuget", Preparation(fixture), exact,
                 Path.Combine(fixture.Root, "missing-final.json"), "-"], output));
 
         Assert.AreEqual("", output.ToString());
@@ -192,10 +192,10 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         string preparation = Preparation(fixture);
         string exact = Observation(fixture, "exact.json", ReleaseFileState.Exact);
         // A fresh-exact publisher result legitimately contains no library invocation.
-        string publisher = fixture.Write("publisher.json", new GithubNuGetPublicationResult(
+        string publisher = fixture.Write("publisher.json", new NuGetPublicationResult(
             fixture.Prepared.Subject, fixture.Observe(ReleaseFileState.Exact), null,
             fixture.Observe(ReleaseFileState.Exact), []),
-            TransferJson.Default.GithubNuGetPublicationResult);
+            TransferJson.Default.NuGetPublicationResult);
         string target = transfer switch
         {
             "preparation" => preparation,
@@ -212,7 +212,7 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         string initial = Observation(fixture, "initial.json", ReleaseFileState.Absent);
         using var output = new StringWriter();
 
-        void Run() => NuGetReleaseCli.Run(["release", "complete-github-nuget", preparation,
+        void Run() => NuGetReleaseCli.Run(["release", "complete-nuget", preparation,
             initial, exact, publisher], output);
 
         if (defect is "root-null" or "duplicate")
@@ -254,7 +254,7 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         }
         using var output = new StringWriter();
 
-        void Run() => NuGetReleaseCli.Run(["release", "describe-github-nuget", preparation,
+        void Run() => NuGetReleaseCli.Run(["release", "describe-nuget", preparation,
             observation], output);
 
         if (defect is "native-null" or "nested-duplicate")
@@ -273,7 +273,7 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         int observes = 0;
 
         Assert.ThrowsExactly<InvalidDataException>(() => NuGetReleaseCli.Run(
-            ["release", "observe-github-nuget", preparation, fixture.Root], output,
+            ["release", "observe-nuget", preparation, fixture.Root, "-"], output,
             observe: (_, _, _) =>
             {
                 observes++;
@@ -291,7 +291,7 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         using var output = new StringWriter();
 
         Assert.ThrowsExactly<InvalidDataException>(() => NuGetReleaseCli.Run(
-            ["release", "describe-github-nuget", Preparation(fixture),
+            ["release", "describe-nuget", Preparation(fixture),
                 Observation(fixture, "exact.json", ReleaseFileState.Exact)], output));
         Assert.AreEqual("", output.ToString());
     }
@@ -304,7 +304,7 @@ public sealed class NuGetReleaseCliTests(TestContext context)
         using var output = new StringWriter();
 
         Assert.ThrowsExactly<InvalidDataException>(() => NuGetReleaseCli.Run(
-            ["release", "complete-github-nuget", Preparation(fixture), exact, exact, "-"],
+            ["release", "complete-nuget", Preparation(fixture), exact, exact, "-"],
             output));
         Assert.AreEqual("", output.ToString());
     }
@@ -314,7 +314,7 @@ public sealed class NuGetReleaseCliTests(TestContext context)
 
     private static string Observation(NuGetReleaseTestFixture fixture, string name,
         ReleaseFileState state) => fixture.Write(name, fixture.Observe(state),
-            TransferJson.Default.GithubNuGetObservationResult);
+            TransferJson.Default.NuGetObservationResult);
 
     private static string Malformed(string text, string property, string defect)
     {

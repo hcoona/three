@@ -18,7 +18,7 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         Directory.CreateDirectory(Path.Combine(fixture.Root, "observation"));
         fixture.Write("observation/observation.json", fixture.Observe(
             Enum.Parse<ReleaseFileState>(state)),
-            TransferJson.Default.GithubNuGetObservationResult);
+            TransferJson.Default.NuGetObservationResult);
         var environment = Environment(fixture);
         environment["GITHUB_OUTPUT"] = Path.Combine(fixture.Root, "output");
 
@@ -42,12 +42,11 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         fixture.Write("prepared/preparation.json", fixture.Preparation,
             TransferJson.Default.NuGetPreparationResult);
         fixture.Write("observation/observation.json", fixture.Observe(ReleaseFileState.Exact),
-            TransferJson.Default.GithubNuGetObservationResult);
+            TransferJson.Default.NuGetObservationResult);
         fixture.Write("controlled-final.json", fixture.Observe(
             Enum.Parse<ReleaseFileState>(state)),
-            TransferJson.Default.GithubNuGetObservationResult);
+            TransferJson.Default.NuGetObservationResult);
         var environment = Environment(fixture);
-        environment["WRITE_NEEDED"] = "false";
         environment["CONTROLLED_OBSERVATION"] = Path.Combine(fixture.Root,
             "controlled-final.json");
         // The actual observe command exits 1 for a handled conflict or unknown state; both
@@ -60,9 +59,9 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
             "Verify registry coordinate and original bytes", environment);
 
         Assert.AreEqual(expectedExit, result.ExitCode, result.Stderr);
-        GithubNuGetCompletionResult outcome = JsonSerializer.Deserialize(File.ReadAllText(
+        NuGetCompletionResult outcome = JsonSerializer.Deserialize(File.ReadAllText(
             Path.Combine(fixture.Root, "verification/outcome.json")),
-            TransferJson.Default.GithubNuGetCompletionResult)!;
+            TransferJson.Default.NuGetCompletionResult)!;
         Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expectedState), outcome.Outcome.State);
         Assert.AreEqual(fixture.Prepared.Subject, outcome.Outcome.Subject);
         Assert.IsFalse(outcome.MutationAttempted);
@@ -77,9 +76,8 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         fixture.Write("prepared/preparation.json", fixture.Preparation,
             TransferJson.Default.NuGetPreparationResult);
         fixture.Write("observation/observation.json", fixture.Observe(ReleaseFileState.Exact),
-            TransferJson.Default.GithubNuGetObservationResult);
+            TransferJson.Default.NuGetObservationResult);
         var environment = Environment(fixture);
-        environment["WRITE_NEEDED"] = "false";
         // Exit 2 is an unhandled native failure, not a typed destination state.
         environment["CONTROLLED_OBSERVATION_EXIT"] = "2";
         Assert.IsTrue((await Step(fixture, "verify-result", "Receive transferred preparation",
@@ -95,7 +93,8 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
     private static Dictionary<string, string?> Environment(NuGetReleaseTestFixture fixture) => new()
     {
         ["RUNNER_TEMP"] = fixture.Root,
-        ["DESTINATION"] = "github-packages-nuget",
+        ["DESTINATION"] = "github-packages",
+        ["UNIT"] = fixture.Prepared.Subject.Unit,
         ["DRY_RUN"] = "false",
         ["GITHUB_SHA"] = fixture.Prepared.Subject.Revision,
         ["GITHUB_REF"] = fixture.Prepared.Subject.SelectedRef,
@@ -116,7 +115,7 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
             function mise {
               $operation = @($args | Select-Object -Skip 4)
               switch ($operation[1]) {
-                'observe-github-nuget' {
+                'observe-nuget' {
                   $observed = "$env:RUNNER_TEMP/observation/observation.json"
                   if ($env:CONTROLLED_OBSERVATION) { $observed = $env:CONTROLLED_OBSERVATION }
                   Get-Content -LiteralPath $observed -Raw
@@ -136,7 +135,7 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         // whenever the caller workflow changes.
         var yaml = new YamlStream();
         using Stream resource = typeof(NuGetWorkflowCallerTests).Assembly
-            .GetManifestResourceStream("workflow-delivery-v3-nuget-live-attempt.yml")
+            .GetManifestResourceStream("workflow-delivery-v3-nuget-release.yml")
             ?? throw new AssertFailedException("Missing embedded caller workflow.");
         using var reader = new StreamReader(resource);
         yaml.Load(reader);

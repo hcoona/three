@@ -1,0 +1,321 @@
+name: Workflow Delivery v3 NuGet Release
+'on':
+  workflow_dispatch:
+    inputs:
+      registry:
+        description: Selected NuGet destination
+        type: choice
+        required: true
+        options:
+          - github-packages
+          - nugetorg
+      unit:
+        description: Selected NuGet release unit
+        type: choice
+        required: true
+        options:
+          - hcoona-release-smoke-github-packages
+          - circular-list
+          - hjg-pngcs
+          - memoization
+          - microsoft-extensions-logging-mstest
+          - microsoft-extensions-logging-xunit
+          - microsoft-extensions-options-dedup-change-extensions
+          - phi-failure-detector
+          - webhdfs-extensions-file-providers
+      dry-run:
+        description: Qualify and describe without publication
+        type: boolean
+        default: true
+permissions: {}
+concurrency:
+  group: ${{ format('workflow-delivery-{0}-{1}', inputs.registry == 'nugetorg' && 'nuget.org' || 'nuget.pkg.github.com-hcoona', inputs.unit) }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: pwsh
+env:
+  DESTINATION: ${{ inputs.registry }}
+  UNIT: ${{ inputs.unit }}
+  DRY_RUN: ${{ inputs.dry-run }}
+jobs:
+  prepare:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    outputs:
+      control-id: ${{ steps.control.outputs.artifact-id }}
+      dotnet: ${{ steps.tools.outputs.dotnet }}
+      preparation-id: ${{ steps.originals.outputs.artifact-id }}
+    steps:
+      - name: Check out exact source without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read committed SDK version
+        id: tools
+        run: |
+          $version = (Get-Content -LiteralPath global.json -Raw | ConvertFrom-Json).sdk.version
+          "dotnet=$version" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+          "DOTNET_VERSION=$version" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+      - name: Prepare selected native tools
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
+        with:
+          version: 2026.10.11
+          experimental: true
+          install_args: dotnet
+      - name: Build complete control before product execution
+        run: |
+          mise exec --locked dotnet -- dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj -p:RestoreLockedMode=true -o "$env:RUNNER_TEMP/control"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget request
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain actual control results
+        id: control
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: nuget-control-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/control
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+      - name: Qualify complete selected NuGet release
+        run: |
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-nuget "$env:RUNNER_TEMP/prepared/request.json" > "$env:RUNNER_TEMP/prepared/preparation.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget originals
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain actual prepared results
+        id: originals
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: nuget-prepared-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/prepared
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+  observe:
+    needs: prepare
+    runs-on: windows-2022
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      write-needed: ${{ steps.state.outputs.write-needed }}
+      observation-id: ${{ steps.retain.outputs.artifact-id }}
+    steps:
+      - &control
+        name: Download control by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.control-id }}
+          path: ${{ runner.temp }}/control
+          digest-mismatch: error
+      - &prepared
+        name: Download prepared by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
+          path: ${{ runner.temp }}/prepared
+          digest-mismatch: error
+      - &runtime
+        name: Prepare runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
+        with:
+          version: 2026.10.11
+          install: false
+          working_directory: ${{ runner.temp }}
+      - &install
+        name: Install selected runtime
+        working-directory: ${{ runner.temp }}
+        env:
+          DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+        run: |
+          mise install --yes "dotnet@$env:DOTNET_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "DOTNET_VERSION=$env:DOTNET_VERSION" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+      - name: Receive transferred preparation
+        run: |
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget receive observation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Observe native destination and original bytes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" - > "$env:RUNNER_TEMP/observation/observation.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Describe native state and dry-run writes
+        id: state
+        run: |
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget state
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:DRY_RUN -eq 'true') {
+            mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/observation/observation.json" > "$env:RUNNER_TEMP/observation/dry-run.json"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            Get-Content -LiteralPath "$env:RUNNER_TEMP/observation/dry-run.json" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+            'Dry run describes supported writes; it makes no publication or live completion claim.' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          }
+      - name: Retain actual observation results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: nuget-observation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/observation
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+  publish-github-packages:
+    if: inputs.registry == 'github-packages' && inputs.dry-run == false && needs.observe.outputs.write-needed == 'true'
+    needs:
+      - prepare
+      - observe
+    runs-on: windows-2022
+    timeout-minutes: 15
+    environment: workflow-delivery-v3-nuget-github-packages
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      publication-id: ${{ steps.retain.outputs.artifact-id }}
+    steps:
+      - *control
+      - *prepared
+      - *runtime
+      - *install
+      - &receive-publication
+        name: Receive transferred preparation
+        run: |
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget receive publication
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Refresh and invoke official NuGet publisher once
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/publication/publication.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain actual publication results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: nuget-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publication
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+  publish-nugetorg:
+    if: inputs.registry == 'nugetorg' && inputs.dry-run == false && needs.observe.outputs.write-needed == 'true'
+    needs:
+      - prepare
+      - observe
+    runs-on: windows-2022
+    timeout-minutes: 15
+    environment: workflow-delivery-v3-nuget-nugetorg
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      publication-id: ${{ steps.retain.outputs.artifact-id }}
+    steps:
+      - *control
+      - *prepared
+      - *runtime
+      - *install
+      - *receive-publication
+      - name: Exchange OIDC token for short-lived nuget.org key
+        id: login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Refresh and invoke official NuGet publisher once
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: |
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/publication/publication.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain actual publication results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: nuget-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publication
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+  verify-result:
+    if: always() && !cancelled() && inputs.dry-run == false && needs.prepare.result == 'success' && needs.observe.result == 'success'
+    needs:
+      - prepare
+      - observe
+      - publish-github-packages
+      - publish-nugetorg
+    runs-on: windows-2022
+    # nuget.org validation can delay visibility of an accepted upload for several minutes.
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - *control
+      - *prepared
+      - *runtime
+      - *install
+      - name: Receive transferred preparation
+        run: |
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget receive verification
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - name: Download publication by immutable artifact ID
+        if: needs.publish-github-packages.outputs.publication-id != '' || needs.publish-nugetorg.outputs.publication-id != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.publish-github-packages.outputs.publication-id || needs.publish-nugetorg.outputs.publication-id }}
+          path: ${{ runner.temp }}/publication
+          digest-mismatch: error
+      - name: Verify registry coordinate and original bytes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $publication = "$env:RUNNER_TEMP/publication/publication.json"
+          if (-not ((Test-Path -LiteralPath $publication) -and (Get-Item -LiteralPath $publication).Length -gt 0)) { $publication = '-' }
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" $publication > "$env:RUNNER_TEMP/verification/final.json"
+          # A handled conflicting or unknown observation remains typed completion input.
+          if ($LASTEXITCODE -notin @(0, 1)) { exit $LASTEXITCODE }
+
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/observation/observation.json" "$env:RUNNER_TEMP/verification/final.json" $publication > "$env:RUNNER_TEMP/verification/outcome.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Show actual available business results
+        if: always()
+        run: |
+          '## NuGet Release result' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          foreach ($name in @('final', 'outcome')) {
+            $path = "$env:RUNNER_TEMP/verification/$name.json"
+            if ((Test-Path -LiteralPath $path) -and (Get-Item -LiteralPath $path).Length -gt 0) {
+              Get-Content -LiteralPath $path | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+            } else { "$name`: required result unavailable." | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8 }
+          }
+      - name: Retain actual verification results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: nuget-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verification
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false

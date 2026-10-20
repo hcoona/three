@@ -211,7 +211,15 @@ public sealed class CiScopeTests
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
         "hcoona-release-smoke-ruby/.gitattributes", false)]
     [DataRow("src/private/Directory.Build.targets", true)]
-    [DataRow("src/public/.gitattributes", false)]
+    // Line endings and the packed README of a registered NuGet product are package inputs.
+    [DataRow("src/public/.gitattributes", true)]
+    [DataRow("src/public/lib/CircularList/CircularList.cs", true)]
+    [DataRow("src/public/lib/WebHdfs.Extensions.FileProviders/" +
+        "workflow-delivery.release-unit.yml", true)]
+    [DataRow("src/public/lib/Memoization.Generators/MemoizationGenerator.cs", true)]
+    [DataRow("src/public/lib/CircularList/README.md", true)]
+    [DataRow("src/public/app/PhiFailureDetector.Console/Program.cs", false)]
+    [DataRow("src/public/lib/nbgv-python/nbgv.py", false)]
     [DataRow("global.json", true)]
     [DataRow("stylecop.json", true)]
     [DataRow(".github/workflows/ci.yml", true)]

@@ -24,28 +24,45 @@ internal static class DotNetPackageArchive
         return new NuspecReader(nuspec).GetIdentity();
     }
 
-    internal static void Contents(string path, Dictionary<string, string> expected)
+    internal static void Contents(string path, Dictionary<string, string> expected) =>
+        Contents(path, expected, null);
+
+    // A null framework set is the single-framework smoke recipe without dependencies;
+    // otherwise each declared framework has one library group and dependency groups stay
+    // within that set.
+    internal static void Contents(string path, Dictionary<string, string> expected,
+        string[]? frameworks)
     {
         using var reader = new PackageArchiveReader(path);
         Names(reader);
         using MemoryStream nuspecStream = Read(reader, reader.GetNuspecFile());
         var nuspec = new NuspecReader(nuspecStream);
         RequireIdentity(nuspec.GetIdentity(), expected);
-        if (nuspec.GetDependencyGroups().Any(group => group.Packages.Any()))
-            throw new InvalidDataException("The product package cannot have runtime dependencies.");
+        NuGetFramework[] declared = (frameworks ?? [expected["TargetFramework"]])
+            .Select(NuGetFramework.Parse).ToArray();
+        PackageDependencyGroup[] dependencies = nuspec.GetDependencyGroups().ToArray();
+        if (frameworks is null ? dependencies.Any(group => group.Packages.Any()) :
+            dependencies.Any(group => !declared.Contains(group.TargetFramework)))
+            throw new InvalidDataException(frameworks is null
+                ? "The product package cannot have runtime dependencies."
+                : "Undeclared native package dependency framework.");
         FrameworkSpecificGroup[] groups = reader.GetLibItems().ToArray();
-        NuGetFramework framework = NuGetFramework.ParseFolder(expected["TargetFramework"]);
-        if (groups is not [FrameworkSpecificGroup group] ||
-            !group.TargetFramework.Equals(framework))
+        if (groups.Length != declared.Length || declared.Any(framework =>
+                groups.Count(group => group.TargetFramework.Equals(framework)) != 1))
             throw new InvalidDataException("Different or missing native package library group.");
-        string assembly = Single(expected["AssemblyName"] + ".dll");
-        string documentation = Single(Path.GetFileName(expected["DocumentationFile"]
-            .Replace('\\', '/')));
-        using (MemoryStream dll = Read(reader, assembly)) Versions(dll, expected);
-        using (MemoryStream xml = Read(reader, documentation))
+        string documentationName = frameworks is null
+            ? Path.GetFileName(expected["DocumentationFile"].Replace('\\', '/'))
+            : expected["AssemblyName"] + ".xml";
+        foreach (FrameworkSpecificGroup group in groups)
+        {
+            string assembly = Single(group, expected["AssemblyName"] + ".dll");
+            string documentation = Single(group, documentationName);
+            using (MemoryStream dll = Read(reader, assembly)) Versions(dll, expected);
+            using MemoryStream xml = Read(reader, documentation);
             if (XDocument.Load(xml).Root?.Element("assembly")?.Element("name")?.Value !=
                 expected["AssemblyName"])
                 throw new InvalidDataException("Missing or different native XML documentation.");
+        }
         string? readme = nuspec.GetReadme();
         if (readme != expected["PackageReadmeFile"])
             throw new InvalidDataException("Different declared native package README.");
@@ -61,7 +78,7 @@ internal static class DotNetPackageArchive
                 throw new InvalidDataException("Missing or different native repository metadata.");
         }
 
-        string Single(string name)
+        static string Single(FrameworkSpecificGroup group, string name)
         {
             string[] matches = group.Items.Where(item => Path.GetFileName(item) == name).ToArray();
             return matches is [string match] ? match :

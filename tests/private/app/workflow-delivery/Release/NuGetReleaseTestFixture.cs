@@ -20,7 +20,7 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
 
     internal NuGetReleaseTestFixture(bool dryRun = false)
     {
-        // Matches the controlled archive used by GithubNuGetPublisherTests.
+        // Matches the controlled archive used by NuGetPublisherTests.
         using (var zip = new ZipArchive(File.Create(Archive), ZipArchiveMode.Create))
         using (var writer = new StreamWriter(zip.CreateEntry("package.nuspec").Open()))
             writer.Write("<package><metadata><id>Hcoona.ReleaseSmoke.GithubPackages</id>"
@@ -34,7 +34,7 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
         native["IsPackable"] = native["GenerateDocumentationFile"] = "true";
         native["DocumentationFile"] = "obj/Release/Hcoona.ReleaseSmoke.GithubPackages.xml";
         native["PackageReadmeFile"] = "README.md";
-        native["PackageId"] = native["AssemblyName"] = GithubNuGetObservation.Package;
+        native["PackageId"] = native["AssemblyName"] = "Hcoona.ReleaseSmoke.GithubPackages";
         native["NuGetPackageVersion"] = native["PackageVersion"] = "1.0.0";
         native["AssemblyVersion"] = native["AssemblyFileVersion"] = "1.0.0.0";
         native["AssemblyInformationalVersion"] = "1.0.0";
@@ -45,7 +45,7 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
                 + "workflow-delivery.release-unit.yml",
             "buddy", "github-packages-nuget", dryRun);
         var prepared = new PreparedRelease(subject,
-            [new("package", "original", "nuget-package", GithubNuGetObservation.Package,
+            [new("package", "original", "nuget-package", "Hcoona.ReleaseSmoke.GithubPackages",
                 "1.0.0", "original.nupkg", new FileInfo(Archive).Length,
                 DotNetPackageArchive.Digest(Archive))], [.. NuGetPreparation.Required],
             NuGetPreparation.Required.Select(id => new ReleaseCheck(id,
@@ -57,7 +57,7 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
         _ = NuGetRelease.Original(Preparation, Root);
     }
 
-    internal GithubNuGetObservationResult Observe(ReleaseFileState state,
+    internal NuGetObservationResult Observe(ReleaseFileState state,
         ReleaseCheckStatus qualification = ReleaseCheckStatus.Passed)
     {
         ReleaseFile file = Prepared.Files[0];
@@ -68,7 +68,7 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
             ["native-package-control", "native-metadata-visibility"],
             [new("native-package-control", qualification),
                 new("native-metadata-visibility", ReleaseCheckStatus.Passed)]),
-            new("https://nuget.pkg.github.com/hcoona/flat/", GithubNuGetPublisher.Endpoint), []);
+            new("https://nuget.pkg.github.com/hcoona/flat/", NuGetPublisher.GithubEndpoint), []);
     }
 
     internal string Write<T>(string name, T value, JsonTypeInfo<T> type) =>
@@ -91,7 +91,7 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
         {
             cancellation.ThrowIfCancellationRequested();
             Assert.AreEqual(HttpMethod.Put, request.Method);
-            Assert.AreEqual(GithubNuGetPublisher.Endpoint, request.RequestUri!.AbsoluteUri);
+            Assert.AreEqual(NuGetPublisher.GithubEndpoint, request.RequestUri!.AbsoluteUri);
             Sends++;
             return Task.FromResult(new HttpResponseMessage(status)
                 { Content = new ByteArrayContent([]), RequestMessage = request });

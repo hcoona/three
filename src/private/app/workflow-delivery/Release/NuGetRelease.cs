@@ -4,10 +4,10 @@ using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Release;
 
-internal sealed record GithubNuGetPublicationResult(ReleaseSubject Subject,
-    GithubNuGetObservationResult Before, NuGetPushResult? Invocation,
-    GithubNuGetObservationResult After, string[] Errors);
-internal sealed record GithubNuGetCompletionResult(ReleaseOutcome Outcome,
+internal sealed record NuGetPublicationResult(ReleaseSubject Subject,
+    NuGetObservationResult Before, NuGetPushResult? Invocation,
+    NuGetObservationResult After, string[] Errors);
+internal sealed record NuGetCompletionResult(ReleaseOutcome Outcome,
     bool? MutationAttempted, NuGetPushResult? Invocation);
 
 // These values cross ordinary NuGet jobs; official library calls remain library results.
@@ -35,27 +35,27 @@ internal static class NuGetRelease
     {
         PreparedRelease prepared = preparation.Prepared;
         ReleaseCompletion.Validate(prepared);
-        if (prepared.Subject.Channel != "buddy" ||
-            prepared.Subject.Destination != "github-packages-nuget" ||
-            prepared.Files is not [{ Kind: "nuget-package" }] ||
-            prepared.Subject.Unit != "hcoona-release-smoke-github-packages" ||
+        NuGetReleaseUnit unit = NuGetReleaseUnits.Admit(prepared.Subject);
+        ReleasePolicy.RequireEligible(prepared.Subject);
+        if (prepared.Files is not [{ Kind: "nuget-package" }] ||
             !prepared.RequiredChecks.SequenceEqual(NuGetPreparation.Required) ||
             prepared.RequiredChecks.Any(id => !prepared.Checks.Any(check => check.Id == id &&
                 check.Status == ReleaseCheckStatus.Passed)) || preparation.Errors.Length != 0 ||
             preparation.Commands.Length == 0 ||
             preparation.Commands.Any(command => !command.Result.Succeeded))
             throw new InvalidDataException("Incomplete or unsupported NuGet preparation.");
-        DotNetPackageResults.ValidateExpectations("net10.0", "", preparation.Native);
+        DotNetPackageResults.ValidateExpectations(unit.Library ? "" : unit.Frameworks[0], "",
+            preparation.Native);
         ReleaseFile file = prepared.Files[0];
         if (file.Name != preparation.Native["PackageId"] ||
             file.Version != preparation.Native["NuGetPackageVersion"] ||
-            !StringComparer.OrdinalIgnoreCase.Equals(file.Name, GithubNuGetObservation.Package))
+            file.Name != unit.PackageId)
             throw new InvalidDataException("NuGet file differs from native preparation.");
     }
 
-    internal static async Task<GithubNuGetPublicationResult> PublishAsync(
+    internal static async Task<NuGetPublicationResult> PublishAsync(
         NuGetPreparationResult preparation, string originals, string credential,
-        Func<PreparedRelease, string, CancellationToken, Task<GithubNuGetObservationResult>>
+        Func<PreparedRelease, string, CancellationToken, Task<NuGetObservationResult>>
             observe,
         Func<PreparedRelease, string, string, string, CancellationToken, Task<NuGetPushResult>>
             push,
@@ -65,7 +65,7 @@ internal static class NuGetRelease
         PreparedRelease prepared = preparation.Prepared;
         if (prepared.Subject.DryRun)
             throw new InvalidDataException("Dry run cannot invoke NuGet publication.");
-        GithubNuGetObservationResult before = await observe(prepared, credential, token);
+        NuGetObservationResult before = await observe(prepared, credential, token);
         ValidateObservation(prepared, before);
         if (before.Observation.Files[0].State == ReleaseFileState.Exact &&
             Qualified(before.Observation))
@@ -79,14 +79,33 @@ internal static class NuGetRelease
         NuGetPushResult invocation = await push(prepared, originals,
             before.Resources!.PackagePublish, credential, token);
         // Handled upload abnormality permits bounded reads, never application resend.
-        GithubNuGetObservationResult after = await observe(prepared, credential, token);
+        NuGetObservationResult after = await observe(prepared, credential, token);
         ValidateObservation(prepared, after);
         return new(prepared.Subject, before, invocation, after, []);
     }
 
-    internal static GithubNuGetCompletionResult Complete(PreparedRelease prepared,
-        GithubNuGetObservationResult initial, GithubNuGetObservationResult final,
-        GithubNuGetPublicationResult? published)
+    internal const int SettleAttempts = 40;
+    internal static readonly TimeSpan SettleInterval = TimeSpan.FromSeconds(30);
+
+    // Native validation and indexing can delay visibility after an accepted upload; only an
+    // absent coordinate is read again, and every other state is the observation result.
+    internal static async Task<NuGetObservationResult> SettleAsync(PreparedRelease prepared,
+        Func<PreparedRelease, string, CancellationToken, Task<NuGetObservationResult>> observe,
+        string credential, int attempts, TimeSpan interval, CancellationToken token)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            NuGetObservationResult result = await observe(prepared, credential, token);
+            if (attempt >= attempts ||
+                result.Observation.Files[0].State != ReleaseFileState.Absent)
+                return result;
+            await Task.Delay(interval, token);
+        }
+    }
+
+    internal static NuGetCompletionResult Complete(PreparedRelease prepared,
+        NuGetObservationResult initial, NuGetObservationResult final,
+        NuGetPublicationResult? published)
     {
         ValidateObservation(prepared, initial);
         ValidateObservation(prepared, final);
@@ -126,12 +145,13 @@ internal static class NuGetRelease
     }
 
     internal static void ValidateObservation(PreparedRelease prepared,
-        GithubNuGetObservationResult result)
+        NuGetObservationResult result)
     {
-        if (!result.Observation.RequiredChecks.SequenceEqual(
-                ["native-package-control", "native-metadata-visibility"]) ||
-            result.Resources is { } resources &&
-                resources.PackagePublish != GithubNuGetPublisher.Endpoint ||
+        bool github = prepared.Subject.Destination == "github-packages-nuget";
+        if (!result.Observation.RequiredChecks.SequenceEqual(github
+                ? GithubNuGetObservation.RequiredChecks : NuGetOrgObservation.RequiredChecks) ||
+            result.Resources is { } resources && resources.PackagePublish != (github
+                ? NuGetPublisher.GithubEndpoint : NuGetPublisher.NuGetOrgEndpoint) ||
             Qualified(result.Observation) && result.Resources is null)
             throw new InvalidDataException("Incomplete native NuGet observation.");
         // Reuse the common complete-set and exact-byte validation in either mode.

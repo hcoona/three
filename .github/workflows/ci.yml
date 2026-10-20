@@ -824,7 +824,7 @@ jobs:
             -p:RestoreLockedMode=true --filter 'TestCategory=NuGetNativePreparation' `
             --report-trx --results-directory "$env:WDV3_NUGET_PREPARATION_EVIDENCE" `
             "-bl:$env:WDV3_NUGET_PREPARATION_EVIDENCE/native-preparation.binlog" `
-            -- --minimum-expected-tests 2
+            -- --minimum-expected-tests 10
           exit $LASTEXITCODE
       - name: Retain original archives and native evidence
         if: always() && steps.scope.outputs.run == 'true'

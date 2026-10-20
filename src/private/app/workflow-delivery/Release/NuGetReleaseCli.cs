@@ -10,8 +10,8 @@ internal static class NuGetReleaseCli
     internal static int? Run(string[] args, TextWriter output,
         Func<NuGetPreparationRequest, CancellationToken, Task<NuGetPreparationResult>>?
             prepare = null,
-        Func<PreparedRelease, string, CancellationToken, Task<GithubNuGetObservationResult>>?
-            observe = null)
+        Func<PreparedRelease, string, CancellationToken, Task<NuGetObservationResult>>?
+            observe = null, TimeSpan? settleInterval = null)
     {
         if (args is ["release", "prepare-nuget", var requestPath])
         {
@@ -23,25 +23,33 @@ internal static class NuGetReleaseCli
             NuGetRelease.Validate(result);
             return 0;
         }
-        if (args is ["release", "observe-github-nuget", var preparationPath, var originals])
+        // The final observation names the publication result, if any; a returned upload can
+        // precede native visibility, which the observation awaits within a bounded period.
+        if (args is ["release", "observe-nuget", var preparationPath, var originals,
+                var publicationPath])
         {
             NuGetPreparationResult preparation = Preparation(preparationPath);
             _ = NuGetRelease.Original(preparation, originals);
             using HttpClient client = RegistryHttpClient.Create();
-            GithubNuGetObservationResult result = (observe ?? new GithubNuGetObservation(client)
-                .ObserveAsync)(preparation.Prepared, Credential(), CancellationToken.None)
+            bool settle = publicationPath != "-" && ReleaseCli.Read(publicationPath,
+                TransferJson.Default.NuGetPublicationResult).Invocation is
+                    { ReturnedSuccessfully: true };
+            NuGetObservationResult result = NuGetRelease.SettleAsync(preparation.Prepared,
+                observe ?? Observer(preparation.Prepared, client), ObserveCredential(
+                    preparation.Prepared), settle ? NuGetRelease.SettleAttempts : 1,
+                settleInterval ?? NuGetRelease.SettleInterval, CancellationToken.None)
                 .GetAwaiter().GetResult();
             NuGetRelease.ValidateObservation(preparation.Prepared, result);
-            Write(result, TransferJson.Default.GithubNuGetObservationResult);
+            Write(result, TransferJson.Default.NuGetObservationResult);
             return result.Observation.Files.All(file => file.State is ReleaseFileState.Exact or
                 ReleaseFileState.Absent) && result.Observation.Checks.All(check =>
                     check.Status == ReleaseCheckStatus.Passed) ? 0 : 1;
         }
-        if (args is ["release", "describe-github-nuget", var describePreparation,
+        if (args is ["release", "describe-nuget", var describePreparation,
                 var describeObservation])
         {
             PreparedRelease prepared = Preparation(describePreparation).Prepared;
-            GithubNuGetObservationResult observed = Observation(describeObservation);
+            NuGetObservationResult observed = Observation(describeObservation);
             NuGetRelease.ValidateObservation(prepared, observed);
             ReleaseDryRun result = ReleaseCompletion.Describe(prepared, observed.Observation,
                 observed.Observation.Files.Where(file => file.State == ReleaseFileState.Absent)
@@ -49,30 +57,34 @@ internal static class NuGetReleaseCli
             Write(result, TransferJson.Default.ReleaseDryRun);
             return result.Ready ? 0 : 1;
         }
-        if (args is ["release", "publish-github-nuget", var publishPreparation,
+        if (args is ["release", "publish-nuget", var publishPreparation,
                 var publishOriginals])
         {
             NuGetPreparationResult preparation = Preparation(publishPreparation);
             using HttpClient client = RegistryHttpClient.Create();
-            var reader = new GithubNuGetObservation(client);
-            GithubNuGetPublicationResult result = NuGetRelease.PublishAsync(preparation,
-                publishOriginals, Credential(), reader.ObserveAsync,
+            PreparedRelease selected = preparation.Prepared;
+            Func<PreparedRelease, string, CancellationToken, Task<NuGetObservationResult>>
+                reader = Observer(selected, client);
+            string observation = ObserveCredential(selected);
+            NuGetPublicationResult result = NuGetRelease.PublishAsync(preparation,
+                publishOriginals, PublishCredential(selected),
+                (prepared, _, token) => reader(prepared, observation, token),
                 (prepared, directory, endpoint, credential, token) =>
-                    GithubNuGetPublisher.PushAsync(prepared, directory, endpoint, credential,
+                    NuGetPublisher.PushAsync(prepared, directory, endpoint, credential,
                         token), CancellationToken.None).GetAwaiter().GetResult();
-            Write(result, TransferJson.Default.GithubNuGetPublicationResult);
+            Write(result, TransferJson.Default.NuGetPublicationResult);
             // Handled official upload failure is data; independent verification owns completion.
             return result.Errors.Length == 0 ? 0 : 1;
         }
-        if (args is ["release", "complete-github-nuget", var completePreparation,
+        if (args is ["release", "complete-nuget", var completePreparation,
                 var initialObservation, var finalObservation, var publisherPath])
         {
-            GithubNuGetCompletionResult result = NuGetRelease.Complete(
+            NuGetCompletionResult result = NuGetRelease.Complete(
                 Preparation(completePreparation).Prepared, Observation(initialObservation),
                 Observation(finalObservation), publisherPath == "-" ? null
                     : ReleaseCli.Read(publisherPath,
-                        TransferJson.Default.GithubNuGetPublicationResult));
-            Write(result, TransferJson.Default.GithubNuGetCompletionResult);
+                        TransferJson.Default.NuGetPublicationResult));
+            Write(result, TransferJson.Default.NuGetCompletionResult);
             return result.Outcome.State == ReleaseBusinessState.Satisfied ? 0 : 1;
         }
         return null;
@@ -85,9 +97,23 @@ internal static class NuGetReleaseCli
     private static NuGetPreparationResult Preparation(string path) =>
         ReleaseCli.Read(path, TransferJson.Default.NuGetPreparationResult);
 
-    private static GithubNuGetObservationResult Observation(string path) =>
-        ReleaseCli.Read(path, TransferJson.Default.GithubNuGetObservationResult);
+    private static NuGetObservationResult Observation(string path) =>
+        ReleaseCli.Read(path, TransferJson.Default.NuGetObservationResult);
 
-    private static string Credential() => Environment.GetEnvironmentVariable("GITHUB_TOKEN")
-        ?? throw new InvalidDataException("Current GitHub read/write credential is unavailable.");
+    private static Func<PreparedRelease, string, CancellationToken, Task<NuGetObservationResult>>
+        Observer(PreparedRelease prepared, HttpClient client) =>
+        prepared.Subject.Destination == "nugetorg" ? new NuGetOrgObservation(client).ObserveAsync
+            : new GithubNuGetObservation(client).ObserveAsync;
+
+    // nuget.org state is anonymous; GitHub Packages state requires the job token.
+    private static string ObserveCredential(PreparedRelease prepared) =>
+        prepared.Subject.Destination == "nugetorg" ? "" : Variable("GITHUB_TOKEN");
+
+    // The nuget.org key is the short-lived key exchanged by the official NuGet login action.
+    private static string PublishCredential(PreparedRelease prepared) =>
+        Variable(prepared.Subject.Destination == "nugetorg" ? "NUGET_API_KEY" : "GITHUB_TOKEN");
+
+    private static string Variable(string name) =>
+        Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value
+            : throw new InvalidDataException("Current destination credential is unavailable.");
 }
