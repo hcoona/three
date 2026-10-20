@@ -162,7 +162,8 @@ internal static class BrowserStorePreparation
                     token);
                 originalsByOutput.Add(target.Output, (relative, size, sha256));
                 BrowserExtensionArchive.ValidateMembers(path);
-                if (target.Manifest == 0) BrowserExtensionArchive.ValidateSources(path);
+                if (target.Manifest == 0)
+                    BrowserExtensionArchive.ValidateSources(path, Product);
             }
         });
         // A store loads the zip root as an unpacked extension: its manifest must carry the

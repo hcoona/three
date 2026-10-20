@@ -57,8 +57,12 @@ equal the NBGV npm version. The clean-consumption check
 ([`BrowserExtensionArchive`](../../Ecosystems/BrowserExtensionArchive.cs))
 rejects unsafe or duplicate entries and requires a root `manifest.json` with
 the expected name, version and manifest version whose referenced files exist.
-The sources zip must contain `package.json` and `wxt.config.ts` and no
-`node_modules/` or `.output/` content.
+The sources zip is rooted at the workspace so an AMO reviewer can rebuild the
+Firefox zip from the product's
+[build instructions](../../../../../public/lib/steam-account-history-to-csv/README.md#rebuild-from-the-amo-sources-archive);
+it must contain `pnpm-lock.yaml`, `pnpm-workspace.yaml` and the product's
+`package.json` and `wxt.config.ts`, and no `node_modules` or `.output`
+content.
 
 ## Destinations and Completion
 
@@ -176,18 +180,6 @@ available and this caller-on-`main` binding is the narrowest available scope.
 Each store must already list the extension; the caller only updates existing
 listings. AMO needs the add-on's listed channel; Edge needs a published or
 draft product in Partner Center.
-
-### Before First Live AMO Submission
-
-The product is unchanged by this integration. These product changes are
-deferred to the first live round and must be made, reviewed and released
-through ordinary product work before the first live AMO submission:
-
-- add `browser_specific_settings.gecko.id` with the existing add-on ID to the
-  generated Firefox manifest;
-- declare `browser_specific_settings.gecko.data_collection_permissions`;
-- add build instructions (and the lockfile they need) to the AMO sources zip so
-  a reviewer can reproduce the Firefox zip.
 
 ## Known Gaps
 

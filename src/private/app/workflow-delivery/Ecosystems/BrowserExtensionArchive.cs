@@ -45,15 +45,16 @@ internal static class BrowserExtensionArchive
         _ = Names(zip);
     }
 
-    internal static void ValidateSources(string archive)
+    // The sources zip is rooted at the workspace so a reviewer installs from its lockfile.
+    internal static void ValidateSources(string archive, string product)
     {
         using ZipArchive zip = ZipFile.OpenRead(archive);
         HashSet<string> names = Names(zip);
-        foreach (string required in new[] { "package.json", "wxt.config.ts" })
+        foreach (string required in new[] { "pnpm-lock.yaml", "pnpm-workspace.yaml",
+            product + "/package.json", product + "/wxt.config.ts" })
             if (!names.Contains(required))
                 throw new InvalidDataException("Source zip omits " + required + ".");
-        if (names.Any(name => name.StartsWith("node_modules/", StringComparison.Ordinal) ||
-                name.StartsWith(".output/", StringComparison.Ordinal)))
+        if (names.Any(name => name.Split('/').Any(part => part is "node_modules" or ".output")))
             throw new InvalidDataException("Source zip contains build or dependency output.");
     }
 

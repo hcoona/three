@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
  */
 
-import { access, readdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ResolvedPublicFile, Wxt } from 'wxt';
@@ -13,22 +14,13 @@ import { getBrowserExtensionVersion, getVersionInfo } from './scripts/version-ut
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
-async function pathExists(candidate: string): Promise<boolean> {
-  try {
-    await access(candidate);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function findMonorepoRoot(startDir: string): Promise<string> {
+function findMonorepoRoot(startDir: string): string {
   let current = startDir;
   const { root } = path.parse(current);
 
   while (true) {
     for (const marker of ['pnpm-workspace.yaml', '.git']) {
-      if (await pathExists(path.join(current, marker))) {
+      if (existsSync(path.join(current, marker))) {
         return current;
       }
     }
@@ -43,30 +35,64 @@ async function findMonorepoRoot(startDir: string): Promise<string> {
   throw new Error(`Unable to locate pnpm workspace root when starting from ${startDir}.`);
 }
 
+const monorepoRoot = findMonorepoRoot(projectRoot);
+const productDir = path.relative(monorepoRoot, projectRoot).split(path.sep).join('/');
+
+// The AMO sources archive has no Git history for NBGV, so a reviewer passes the submitted
+// manifest version explicitly when rebuilding it.
+const versionOverride = process.env.BROWSER_EXTENSION_VERSION;
+
 export default defineConfig({
   srcDir: 'src',
   targetBrowsers: ['chrome', 'firefox', 'edge'],
 
-  manifest: {
+  manifest: ({ browser }) => ({
     name: 'Steam Account History to CSV',
-  },
+    ...(browser === 'firefox' && {
+      browser_specific_settings: {
+        gecko: {
+          id: '{ec925b44-57c3-4340-92a8-3fd7d6fe6043}',
+          data_collection_permissions: { required: ['none'] },
+        },
+      },
+    }),
+  }),
 
   zip: {
     artifactTemplate: '{{name}}-{{packageVersion}}-{{browser}}.zip',
     sourcesTemplate: '{{name}}-{{packageVersion}}-sources.zip',
+    // AMO reviewers rebuild from the workspace root with its lockfile; see README.md.
+    sourcesRoot: monorepoRoot,
+    includeSources: [
+      'package.json',
+      'pnpm-lock.yaml',
+      'pnpm-workspace.yaml',
+      'mise.toml',
+      'COPYING',
+      'COPYING.LESSER',
+      'LICENSES/**',
+      `${productDir}/**`,
+    ],
   },
 
   hooks: {
     'build:manifestGenerated': async (_wxt: Wxt, manifest) => {
+      if (versionOverride !== undefined) {
+        if (!/^\d+\.\d+\.\d+\.\d+$/.test(versionOverride)) {
+          throw new Error(`BROWSER_EXTENSION_VERSION "${versionOverride}" is not a dotted four-part version.`);
+        }
+        manifest.version = versionOverride;
+        return;
+      }
+
       const versionInfo = await getVersionInfo(projectRoot);
       manifest.version = getBrowserExtensionVersion(versionInfo);
     },
 
     'build:publicAssets': async (_wxt: Wxt, assets: ResolvedPublicFile[]) => {
-      const monorepoRoot = await findMonorepoRoot(projectRoot);
       const licensesDir = path.join(monorepoRoot, 'LICENSES');
 
-      if (await pathExists(licensesDir)) {
+      if (existsSync(licensesDir)) {
         const entries = await readdir(licensesDir, { withFileTypes: true });
         for (const entry of entries) {
           if (!entry.isFile()) {

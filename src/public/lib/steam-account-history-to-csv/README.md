@@ -61,3 +61,23 @@ Build outputs are written to `.output/`.
 - `pnpm zip:edge`
 
 Zips are created under `.output/` and are ready to upload to the respective stores.
+
+### Rebuild from the AMO sources archive
+
+`pnpm zip:firefox` also writes the `-sources.zip` archive submitted to AMO. It holds this package with the workspace root files it needs, including `pnpm-lock.yaml`. To rebuild the Firefox extension from it on Linux or macOS:
+
+1. Install the Node.js and pnpm versions pinned by `node` and `pnpm` in the archive's `mise.toml`, for example with `npm install --global pnpm@<version>`.
+2. From the extracted archive root, install the locked dependencies:
+
+    ```sh
+    pnpm install --frozen-lockfile --ignore-scripts --filter 'steam-account-history-to-csv...'
+    ```
+
+3. NBGV derives the manifest version from Git history, which the archive does not carry. Pass the `version` of the submitted `manifest.json` instead:
+
+    ```sh
+    BROWSER_EXTENSION_VERSION=<submitted version> \
+      pnpm --dir src/public/lib/steam-account-history-to-csv exec wxt build -b firefox
+    ```
+
+4. Compare `src/public/lib/steam-account-history-to-csv/.output/firefox-mv2/` with the contents of the submitted Firefox zip.
