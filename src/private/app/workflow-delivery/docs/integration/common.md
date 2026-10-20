@@ -18,7 +18,7 @@ is not an Official route.
 | Python          | PyPI                 | Smoke unit and `nbgv-python`; live publication only from `refs/heads/main`                   |
 | Ruby            | RubyGems.org         | Smoke unit and `asciidoctor-latexmath`; live publication only from `refs/heads/main`         |
 | npm             | npmjs                | `hexo-renderer-asciidoc` only; live only from `refs/heads/main`                              |
-| NuGet           | None                 | No Official channel; GitHub Packages Buddy only                                              |
+| NuGet           | nuget.org            | The eight library product units only; live publication only from `refs/heads/main`           |
 | GitHub Releases | GitHub release       | `image-occlusion-editor` only; live publication only from `refs/heads/main`                  |
 | Browser         | Chrome Web Store     | `steam-account-history-to-csv` only; live only from `refs/heads/main`; Buddy is dry run only |
 | Browser         | Firefox AMO          | `steam-account-history-to-csv` only; live only from `refs/heads/main`; Buddy is dry run only |
@@ -28,20 +28,25 @@ is not an Official route.
 GitHub Releases and the [browser stores](browser-store.md#caller-and-channel)
 apply it during preparation and again in the privileged publisher; live Buddy
 there requires a branch ref under `refs/heads/`. npm applies it in the request
-job, during preparation and in each publisher. NuGet Buddy requests carry the
-dispatched ref in their subject without a ref-class check. Dry run needs no live
-ref eligibility. Native Environment branch policies may constrain a channel
-further; they do not replace this check. Ruby and Python Official accept every
-unit registered in `RubyReleaseUnits` and `PythonReleaseUnits`; their `Admit`
-rejects any other unit before preparation. npm Official accepts only
-`hexo-renderer-asciidoc` live; the `hcoona-release-smoke-npm` unit remains
-dry-run only, and `NpmReleaseUnits.Admit` rejects it live with Official before
-preparation. GitHub Releases accepts only the `image-occlusion-editor` unit,
-through `GithubReleaseUnits.Admit` ([GitHub Release integration](github-release.md)).
-The browser stores accept Buddy only as a dry run. Adding another Official ref
-or Ruby, Python, npm or GitHub Releases Official unit, a NuGet Official
-destination, or another browser-extension product or store is a caller change
-that updates this table and its tests together.
+job, during preparation and in each publisher. NuGet applies it during
+preparation, in the publisher and whenever a job receives a preparation, with
+the same rule. Dry run needs no live ref eligibility. Native Environment branch
+policies may constrain a channel further; they do not replace this check. Ruby
+and Python Official accept every unit registered in `RubyReleaseUnits` and
+`PythonReleaseUnits`; their `Admit` rejects any other unit before preparation.
+npm Official accepts only `hexo-renderer-asciidoc` live; the
+`hcoona-release-smoke-npm` unit remains dry-run only, and `NpmReleaseUnits.Admit`
+rejects it live with Official before preparation. NuGet Official accepts only the
+eight library units
+[registered for the product recipe](dotnet.md#concrete-nuget-release-integration);
+`NuGetReleaseUnits.Admit` rejects the `hcoona-release-smoke-github-packages`
+smoke unit with Official before preparation. GitHub Releases accepts only the
+`image-occlusion-editor` unit, through `GithubReleaseUnits.Admit`
+([GitHub Release integration](github-release.md)). The browser stores accept
+Buddy only as a dry run. Adding another Official ref or Ruby, Python, npm, NuGet
+or GitHub Releases Official unit, another NuGet Official destination, or another
+browser-extension product or store is a caller change that updates this table
+and its tests together.
 
 ## Locked Tool Selection
 
@@ -67,8 +72,7 @@ publisher rejects an npm CLI below 11.5.1 or Node below 22.14.0, the
 documented npm trusted-publishing minimums; GitHub Packages has no documented
 publisher npm limit.
 [`test_python_runtime.py`](../../../../../../tests/eng/test_python_runtime.py)
-rejects literal tool versions in every workflow except the retired NuGet Live
-attempt.
+rejects literal tool versions in every workflow.
 
 ## CLI and Boundary Payloads
 

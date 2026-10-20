@@ -197,6 +197,19 @@ All methods in this library are thread-safe and can be called concurrently from 
 
 Contributions are welcome! Please feel free to submit issues and pull requests.
 
+## Releasing
+
+Workflow Delivery releases the `MicrosoftExtensions.Options.DedupChangeExtensions`
+package through the manually dispatched
+`.github/workflows/workflow-delivery-v3-nuget-release.yml` caller with `unit:
+microsoft-extensions-options-dedup-change-extensions`, as declared by
+`workflow-delivery.release-unit.yml`. Use `registry: github-packages` for GitHub
+Packages (Buddy) from any branch, or `registry: nugetorg` for nuget.org (Official) from
+`main` only. The package version is the NBGV projection of this directory's
+`version.json` at the selected revision. Preparation packs every target framework,
+checks the native package contents and consumes the original package in a clean project
+before any publication.
+
 ## License
 
 LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See the [LICENSE](https://github.com/hcoona/three/blob/main/LICENSES/LGPL-3.0-linking-exception.txt) for details.

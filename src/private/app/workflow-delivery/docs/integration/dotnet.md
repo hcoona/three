@@ -404,22 +404,76 @@ not establish routing or complete-group acceptance. Retained Python consumers,
 all selected Node variants and explicit group execution ownership remain
 separate qualification responsibilities of the complete group.
 
-## Concrete NuGet Buddy Integration
+## Concrete NuGet Release Integration
 
-This contract selects the existing declared
-`Hcoona.ReleaseSmoke.GithubPackages` product, one `net10.0` `.nupkg`, no symbols
-or runtime dependencies, and GitHub Packages NuGet
-[Buddy](../high-level-design.md#domain-values) with development dry runs. It adds no product, destination or native-operation authorization.
+This contract selects one statically registered unit through the `unit` input of
+`.github/workflows/workflow-delivery-v3-nuget-release.yml`: the
+`hcoona-release-smoke-github-packages` fixture (`Hcoona.ReleaseSmoke.GithubPackages`,
+one `net10.0` `.nupkg`) or one of eight ordinary library products, each with a
+`workflow-delivery.release-unit.yml` beside its project under `src/public/lib`:
+
+| Unit                                                   | Package ID                                            |
+| ------------------------------------------------------ | ----------------------------------------------------- |
+| `circular-list`                                        | `IO.Github.Hcoona.Collections.CircularList`           |
+| `hjg-pngcs`                                            | `IO.Github.Hcoona.Pngcs`                              |
+| `memoization`                                          | `Memoization.Net`                                     |
+| `microsoft-extensions-logging-mstest`                  | `IO.Github.Hcoona.MicrosoftExtensions.Logging.MSTest` |
+| `microsoft-extensions-logging-xunit`                   | `MicrosoftExtensions.Logging.Xunit`                   |
+| `microsoft-extensions-options-dedup-change-extensions` | `MicrosoftExtensions.Options.DedupChangeExtensions`   |
+| `phi-failure-detector`                                 | `PhiFailureDetector`                                  |
+| `webhdfs-extensions-file-providers`                    | `WebHdfs.Extensions.FileProviders`                    |
+
+The `registry` input selects GitHub Packages NuGet
+(`https://nuget.pkg.github.com/hcoona/index.json`) as
+[Buddy](../high-level-design.md#domain-values) or nuget.org
+(`https://api.nuget.org/v3/index.json`) as Official. `NuGetReleaseUnits.Admit`
+accepts only those two channel/destination pairs, a unit's own committed
+declaration and, for Official, a library unit; the smoke unit stays Buddy-only.
+Unit and ref eligibility follow the
+[Official channel scope](common.md#official-channel-scope). The Buddy Environment
+`workflow-delivery-v3-nuget-github-packages` allows every branch and keeps its
+required reviewer; the Official Environment `workflow-delivery-v3-nuget-nugetorg`
+remains limited to `main`. This adds no other product or destination.
+
+`Ecosystems/NuGetReleaseUnits` statically registers each unit's declaration,
+package ID, assembly name, exact native `TargetFrameworks` set and consumer
+probe. The smoke unit keeps its single-framework recipe. The eight products share
+one concrete multi-target library recipe because they have one native shape: an
+SDK-style packable library with the repository's common package metadata, a
+`lib/<framework>/<assembly>.dll` payload per declared framework, ordinary
+`PackageReference` dependencies, no runtime identifier, build/analyzer assets,
+content files or required test selection. Under the HLD's
+[extension-cost rule](../high-level-design.md#native-integrations), a project of another
+shape still needs its own concrete recipe; a ninth library of this exact shape
+adds only a declaration and a registry row. `Memoization` references
+`Memoization.Generators` as a build-time source generator whose output is compiled
+into `Memoization.dll`; the package ships no `analyzers/` asset, which matches
+its published nuget.org layout. The generator directory is a preparation root,
+and the Memoization probe binds a generated overload.
 
 Preparation reads the exact committed release declaration, entry and quality
 selection through the existing Git materialization and declaration readers.
 Resolve the supported `dotnet/nuget-package-v1` build and primary package output;
 unknown quality recipes, variants or required tests remain unavailable. Use the
-normal selected SDK, locked restore, `Release`/`net10.0`/no RID and
-`ContinuousIntegrationBuild`. Native `GetBuildVersion`, Build and
-`Pack,_GetOutputItemsFromPack` use those same dimensions; compare their native
-package and assembly version projections. Native reproducibility configuration
-remains authoritative. Inject neither frozen versions nor a package witness.
+normal selected SDK, locked restore, `Release`, no RID and
+`ContinuousIntegrationBuild`; the smoke recipe selects `net10.0`, and the library
+recipe uses the multi-target outer build and requires its native
+`TargetFrameworks` to equal the registered set. Native `GetBuildVersion`, Build
+and `Pack,_GetOutputItemsFromPack` use those same dimensions; compare their native
+package and assembly version projections. The outer build runs
+`GetBuildVersion` before Build or Pack, because it otherwise dispatches to inner
+builds without its own version projection. Native NBGV evaluates the selected ref,
+so a public-release ref yields a version without the commit suffix. Native
+reproducibility configuration remains authoritative. Inject neither frozen
+versions nor a package witness.
+
+Library contents require exactly one library group per declared framework, each
+with the assembly and its XML documentation, dependency groups only for declared
+frameworks, the declared README and the native repository metadata. A library pack may produce its declared
+`.snupkg` beside the `.nupkg`; the symbol package is not a Release output and is
+not published. The clean consumer restores the original from a local source,
+builds a `net<SDK major>.0` console application, runs the probe and requires it to
+print the assembly name.
 
 Share concrete archive inspection, original size/digest comparison and clean
 local consumption in the [Ecosystems module](../middle-level-design.md#components-and-native-responsibilities); CI adapts its own plan/results to them.
@@ -441,7 +495,7 @@ implementation. Source inspection and installed package availability establish
 neither runtime compatibility nor live publication. Keep this client untrimmed
 and JIT; no AOT claim is made.
 
-Observe the selected `https://nuget.pkg.github.com/hcoona/index.json` through the
+Observe the selected Buddy `https://nuget.pkg.github.com/hcoona/index.json` through the
 shared registry HTTP client described in the
 [MLD](../middle-level-design.md#registry-observation-and-retention). Official `ServiceIndexResourceV3` interprets the service
 index; require unique HTTPS owner-origin PackageBaseAddress and PackagePublish
@@ -459,6 +513,21 @@ use the same predicate before and after publication. Unknown control, identity
 or original bytes block writes; absence permits creation only with established
 native package control.
 
+Observe Official nuget.org anonymously through the same shared client
+(`Destinations/NuGetOrgObservation`). Official `ServiceIndexResourceV3`
+interprets `https://api.nuget.org/v3/index.json`, which must name exactly
+`https://api.nuget.org/v3-flatcontainer/` as PackageBaseAddress and
+`https://www.nuget.org/api/v2/package` as PackagePublish. The flat-container
+version list and archive are the coordinate and original-byte evidence; a missing
+package or version is absent. nuget.org's trusted-publishing policy and package
+ownership own package control, so the application reads no owner metadata.
+nuget.org adds its repository signature to every accepted package. Native
+`SignedPackageArchiveUtility.RemoveRepositorySignaturesAsync` removes only that
+signature from the downloaded archive; the result's size and SHA-256 must equal the
+qualified original, and native identity must match. We interpret that as the
+WD-REL-009 original-byte comparison for this destination. Any other difference is
+a conflict. The archive bound is the original size plus 1 MiB for the signature.
+
 The publisher constructs supported `HttpSource` and `HttpHandlerResourceV3`
 resources for the selected publish endpoint, using native `NullThrottle`. Invoke
 official `PackageUpdateResource.PushAsync` once for one qualified regular file,
@@ -466,9 +535,20 @@ with no symbols, `allowSnupkg=false`, `skipDuplicate=false`,
 `noServiceEndpoint=true`, a 120-second native timeout and insecure connections
 disabled. Official NuGet owns multipart construction and its default bounded
 retries. Use sanitized typed failures and no credential-bearing native logger.
-The standard handler supplies Basic authentication only to the selected NuGet
-origin; the API-key delegate supplies the same scoped native capability.
-GitHub metadata API reads use Bearer authentication separately. Do not inherit
+For Buddy, the standard handler supplies Basic authentication only to the selected
+GitHub NuGet origin; the API-key delegate supplies the same scoped native
+capability, and GitHub metadata API reads use Bearer authentication separately. For Official,
+the only credential is the API key in the native `X-NuGet-ApiKey` header to
+`https://www.nuget.org/api/v2/package`, with no Basic authentication. The
+caller obtains it from the official `NuGet/login` action, which exchanges the
+job's GitHub OIDC token (audience `https://www.nuget.org`) at
+`https://www.nuget.org/api/v2/token` for a short-lived key. The repository
+variable `NUGET_USER` names the nuget.org account that owns the
+[trusted-publishing policy](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing).
+That policy names repository owner `hcoona`, repository `three`, workflow file
+`workflow-delivery-v3-nuget-release.yml` and Environment
+`workflow-delivery-v3-nuget-nugetorg`. Observation and verification jobs hold no
+nuget.org credential. Do not inherit
 credential plugins or prompts, override the testing retry handler, introduce an
 application resend loop or infer finer package isolation than the platform grants.
 
@@ -481,15 +561,24 @@ write, absent permits it, conflict or unknown stops it. A handled invocation
 failure still permits bounded readback but no further application write.
 
 Required completion covers destination control, coordinate and the downloaded
-original bytes, observed again in a separate no-write verification job; no
+original bytes, observed again in a separate no-write verification job. After a
+returned upload, native validation and indexing can delay visibility. The
+verification observation therefore repeats only while the coordinate is absent,
+up to 40 times at 30-second intervals; any other state ends the wait. No
 remote restore, build or invocation runs after publication. Common result
 evaluation may report satisfaction after a handled upload error only with a
 complete fresh observation, preserving the command abnormality. Missing or malformed subject, file,
 digest or required result cannot satisfy the request.
 
-The ordinary NuGet Buddy entry and reusable live caller use four concrete jobs:
-prepare, observe, publish and verify/result. Use the existing Environment on the
-actual publisher and native package concurrency through verification. Transfer
+The product-neutral caller `workflow-delivery-v3-nuget-release.yml` takes `unit`,
+`registry` (`github-packages` or `nugetorg`) and `dry-run` inputs and replaces the
+former smoke-only Buddy entry and reusable live-attempt caller. It runs prepare,
+observe, one gated publisher and verify/result jobs on Windows through the
+`release prepare-nuget`, `observe-nuget`, `describe-nuget`, `publish-nuget` and
+`complete-nuget` commands. `publish-github-packages` holds `packages: write` in
+`workflow-delivery-v3-nuget-github-packages`; `publish-nugetorg` holds only
+`id-token: write` in `workflow-delivery-v3-nuget-nugetorg`. Use native
+registry/package concurrency through verification. Transfer
 control, preparation and original artifacts by same-run immutable artifact ID
 with the native download digest check; `job-inputs nuget receive <phase>` binds
 the received preparation's source subject to the request. Keep 45-day retention.
@@ -513,6 +602,7 @@ The MLD's [post-publication completion](../middle-level-design.md#post-publicati
 contract applies to these destinations; this table owns their concrete
 conditions and observation.
 
-| Existing destination/use    | Native completion conditions to preserve                                                  | Post-publication observation                                                                                                                                                                                                            |
-| --------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub Packages NuGet Buddy | Normalized package/version, intended owner/feed/repository and visibility, exact `.nupkg` | [Package control](../high-level-design.md#domain-values), GitHub and flat-container (NuGet v3 package content resource) version sets containing the version, downloaded `.nupkg` size/SHA-256 equal to the original and native identity |
+| Existing destination/use    | Native completion conditions to preserve                                                              | Post-publication observation                                                                                                                                                                                                            |
+| --------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub Packages NuGet Buddy | Normalized package/version, intended owner/feed/repository and visibility, exact `.nupkg`             | [Package control](../high-level-design.md#domain-values), GitHub and flat-container (NuGet v3 package content resource) version sets containing the version, downloaded `.nupkg` size/SHA-256 equal to the original and native identity |
+| nuget.org Official          | Normalized package/version, trusted-publishing policy owner, exact `.nupkg` before repository signing | Flat-container version set containing the version, native identity and downloaded `.nupkg` size/SHA-256 equal to the original after removing only the repository signature                                                              |

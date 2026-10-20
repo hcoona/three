@@ -186,6 +186,19 @@ var cachedCompute = Memoization.Create<double[], double>(weights =>
 });
 ```
 
+## Releasing
+
+Workflow Delivery releases the `Memoization.Net` package through the manually dispatched
+`.github/workflows/workflow-delivery-v3-nuget-release.yml` caller with `unit:
+memoization`, as declared by `workflow-delivery.release-unit.yml`. Use `registry:
+github-packages` for GitHub Packages (Buddy) from any branch, or `registry: nugetorg`
+for nuget.org (Official) from `main` only. The package version is the NBGV projection of
+this directory's `version.json` at the selected revision. Preparation packs every target
+framework, checks the native package contents and consumes the original package in a
+clean project before any publication. The `Memoization.Generators` source generator runs
+at build time and its output is compiled into `Memoization.dll`; the package ships no
+analyzer.
+
 ## License
 
 LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See [LICENSE](https://github.com/hcoona/three/blob/main/LICENSES/LGPL-3.0-linking-exception.txt) for details.
