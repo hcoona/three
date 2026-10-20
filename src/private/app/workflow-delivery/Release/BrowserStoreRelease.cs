@@ -56,7 +56,13 @@ internal static class BrowserStoreRelease
     internal static StoreObservation Unobserved(BrowserStorePreparationResult preparation) =>
         new(preparation.Prepared.Subject, preparation.Target,
             preparation.Prepared.Files[0].Version, StoreState.Unobserved,
-            ["Only the credentialed publisher can read this store."], []);
+            [preparation.Prepared.Subject.DryRun ? NotObserved
+                : "Only the credentialed publisher can read this store."], []);
+
+    // A dry run acquires no store credential (WD-CHN-004); even the Chrome Web Store read
+    // token comes from the one write-capable service account.
+    private const string NotObserved =
+        "The store was not observed: a dry run acquires no store credential.";
 
     internal static bool Satisfied(StoreState state) =>
         state is StoreState.Received or StoreState.InReview or StoreState.Published;
@@ -67,13 +73,16 @@ internal static class BrowserStoreRelease
         if (observation.Subject != preparation.Prepared.Subject ||
             observation.Target != preparation.Target ||
             observation.Version != preparation.Prepared.Files[0].Version ||
-            observation.State == StoreState.Unobserved &&
-                preparation.Target.Store == BrowserStorePreparation.ChromeWebStore)
+            (preparation.Prepared.Subject.DryRun
+                ? observation.State != StoreState.Unobserved
+                : observation.State == StoreState.Unobserved &&
+                    preparation.Target.Store == BrowserStorePreparation.ChromeWebStore))
             throw new InvalidDataException("Store observation is not for this request.");
     }
 
     // A read store needs a write only when the exact version is absent. Stores readable
-    // only by the credentialed publisher always route a live request through the gate.
+    // only by the credentialed publisher always route a live request through the gate, and
+    // a dry run, which observes no store, always describes the writes.
     internal static bool WriteNeeded(BrowserStorePreparationResult preparation,
         StoreObservation observation)
     {
@@ -96,16 +105,8 @@ internal static class BrowserStoreRelease
                 ["upload firefox-zip", "create version with firefox-sources"],
             _ => ["upload edge-zip", "submit"],
         };
-        return observation.State switch
-        {
-            StoreState.Absent => new(subject, true, writes, []),
-            StoreState.Unobserved => new(subject, true, writes,
-                ["Store state is unobserved; the publisher observes it before submission."]),
-            _ when Satisfied(observation.State) => new(subject, true, [],
-                ["The store already reports this version: " + observation.State + "."]),
-            _ => new(subject, false, [], observation.Reasons.Length == 0
-                ? ["Store state: " + observation.State + "."] : observation.Reasons),
-        };
+        return new(subject, true, writes, [NotObserved,
+            "A live request observes the store before any submission."]);
     }
 
     // The publisher re-observes with its own credential and submits only an absent or

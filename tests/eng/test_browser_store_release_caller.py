@@ -101,7 +101,13 @@ def test_only_the_publisher_holds_environment_secrets_and_write_scope(
         auth = uses(job, "google-github-actions/auth")
         assert len(auth) == (0 if name == "prepare" else 1)
         for step in auth:
-            assert step["if"] == "inputs.store == 'chrome-web-store'"
+            # A dry run acquires no store credential, even read-only.
+            chrome = "inputs.store == 'chrome-web-store'"
+            assert step["if"] == (
+                chrome
+                if name == "publish"
+                else chrome + " && inputs.dry-run == false"
+            )
             assert step["with"]["create_credentials_file"] is False
             assert step["with"]["token_format"] == "access_token"  # noqa: S105 - Output kind, not a secret.
             assert step["with"]["access_token_scopes"] == (

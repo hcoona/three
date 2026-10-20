@@ -19,19 +19,26 @@ live Official request only from `refs/heads/main`
 ([Official channel scope](common.md#official-channel-scope)). Concurrency is
 one group per store and product, never cancelled.
 
-| Job             | Capability                                                    | Work                                                                                                                                                         |
-| --------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `prepare`       | `contents: read`                                              | Build control first, install frozen dependencies with `--ignore-scripts`, run `release prepare-browser-store` once and retain the selected store's originals |
-| `observe`       | `contents: read`, `id-token: write` (CWS read-only token)     | `observe-browser-store`, `job-inputs browser-store state` and, on dry run, `describe-browser-store`                                                          |
-| `publish`       | Environment `workflow-delivery-v3-<store>`; store credentials | Fresh observation, the store's native upload/submit operations and, for AMO and Edge, the post-submission observation                                        |
-| `verify-result` | `contents: read`, `id-token: write` (CWS read-only token)     | Final CWS `observe-browser-store`, then `complete-browser-store` for every store                                                                             |
+| Job             | Capability                                                     | Work                                                                                                                                                         |
+| --------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `prepare`       | `contents: read`                                               | Build control first, install frozen dependencies with `--ignore-scripts`, run `release prepare-browser-store` once and retain the selected store's originals |
+| `observe`       | `contents: read`, `id-token: write` (live CWS read-only token) | `observe-browser-store`, `job-inputs browser-store state` and, on dry run, `describe-browser-store`                                                          |
+| `publish`       | Environment `workflow-delivery-v3-<store>`; store credentials  | Fresh observation, the store's native upload/submit operations and, for AMO and Edge, the post-submission observation                                        |
+| `verify-result` | `contents: read`, `id-token: write` (CWS read-only token)      | Final CWS `observe-browser-store`, then `complete-browser-store` for every store                                                                             |
 
 The publisher runs only for a live request whose observation needs a write.
 A live CWS request that is already satisfied completes without entering the
 gate ([WD-REL-007](../requirements.md#release-delivery)). AMO and Edge
 observation needs the publish credentials, so a live AMO or Edge request
-always enters the gate and their dry run reports the store state as
-`Unobserved`.
+always enters the gate.
+
+A dry run, from any ref and either channel, acquires no store credential, not
+even the CWS read-only token: that token comes from the one write-capable
+service account, which is a publication capability
+([WD-CHN-004](../requirements.md#buddy-and-official-channels)). It still
+builds, qualifies and describes the hypothetical operations, but observes no
+store; its observation is `Unobserved` and its result states that the store
+was not observed. Only a live Official request on `main` authenticates.
 
 ## Preparation
 
@@ -100,8 +107,8 @@ live store acceptance.
 
 ## Owner Setup
 
-The workflow needs these before a live run; a dry run needs only the CWS
-variables to read state.
+The workflow needs these before a live run. A dry run uses no credential; it
+needs only the selected store's ID variable and, for CWS, the publisher ID.
 
 ### Repository Variables
 

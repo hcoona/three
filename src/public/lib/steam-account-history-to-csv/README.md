@@ -23,7 +23,7 @@ All three storefronts require thorough local testing before submission and gener
 
 ### Automated release
 
-The [Workflow Delivery browser-store caller](../../../../.github/workflows/workflow-delivery-v3-browser-store-release.yml) updates the existing listings from `main`. Dispatch it with one `store` (`chrome-web-store`, `firefox-amo` or `edge-addons`), the `official` channel and `dry-run` unset; a dry run or a `buddy` request only qualifies the zips and reports the store state. The release unit is [`workflow-delivery.release-unit.yml`](workflow-delivery.release-unit.yml). The [browser-store integration](../../../private/app/workflow-delivery/docs/integration/browser-store.md#owner-setup) lists the required variables, Environment secrets and Google Cloud setup.
+The [Workflow Delivery browser-store caller](../../../../.github/workflows/workflow-delivery-v3-browser-store-release.yml) updates the existing listings from `main`. Dispatch it with one `store` (`chrome-web-store`, `firefox-amo` or `edge-addons`), the `official` channel and `dry-run` unset; a dry run or a `buddy` request only qualifies the zips and describes the store operations without credentials, reporting the store as not observed. The release unit is [`workflow-delivery.release-unit.yml`](workflow-delivery.release-unit.yml). The [browser-store integration](../../../private/app/workflow-delivery/docs/integration/browser-store.md#owner-setup) lists the required variables, Environment secrets and Google Cloud setup.
 
 ## Build & package
 
