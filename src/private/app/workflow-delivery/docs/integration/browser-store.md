@@ -67,13 +67,31 @@ blocks writes. An unreadable state is unknown.
 | Firefox AMO      | JWT issuer and secret (Environment secrets); one HS256 token per request                              | In the publisher: add-on `versions/v<version>/` (`unreviewed` in review, `public` published); add-on 404 is a conflict                                         | API v5 listed upload, upload validation polling, then version creation with the sources zip; re-observes the version                         |
 | Edge Add-ons     | API v1.1 `Authorization: ApiKey` and `X-ClientID` (Environment secrets)                               | None: the API has no read endpoint, so state is `Unobserved` before submission                                                                                 | Package upload and submission, polling each operation; a succeeded submission is received, a failed one a conflict                           |
 
+Edge fails closed. Without a read endpoint, a live Edge request cannot tell
+whether an earlier request already submitted the version, so it never retries
+or resubmits on its own: an upload or submission whose operation fails or does
+not finish leaves the request unknown or conflicting and returns it to the
+owner, and a rerun of the same request is rejected (WD-OPS-002 and WD-OPS-003
+in [Observation, Retry, and Recovery](../requirements.md#observation-retry-and-recovery)).
+Before dispatching a new live Edge request after an unknown outcome, the owner
+checks the product in Partner Center and dispatches only if the version was not
+received.
+
 The adapters live in [`Destinations/`](../../Destinations/) (`ChromeWebStore`,
 `FirefoxAmo`, `EdgeAddons` and the shared bounded `StoreHttp`).
 [`BrowserStoreRelease`](../../Release/BrowserStoreRelease.cs) owns describe,
 publish and complete. Scenario tests use HTTP fakes in
 [`BrowserStoreReleaseTests`](../../../../../../tests/private/app/workflow-delivery/Release/BrowserStoreReleaseTests.cs)
 and fake native builds in
-[`BrowserStorePreparationTests`](../../../../../../tests/private/app/workflow-delivery/Release/BrowserStorePreparationTests.cs);
+[`BrowserStorePreparationTests`](../../../../../../tests/private/app/workflow-delivery/Release/BrowserStorePreparationTests.cs).
+[`BrowserStorePreparationNativeTests`](../../../../../../tests/private/app/workflow-delivery/Release/BrowserStorePreparationNativeTests.cs)
+(category `BrowserStoreNativePreparation`) installs the locked product graph
+with `--ignore-scripts` in a clean clone and runs the real preparation, which
+builds and qualifies all four zips with WXT under the locked Node and PNPM.
+Ordinary CI runs it in the Linux `native-preparation-tests` job when
+`ci native-preparation-plan` selects `browser`: a change to the managed
+control, the shared CI and tool inputs, the root PNPM workspace files, the root
+`version.json` or the product directory.
 [`test_browser_store_release_caller.py`](../../../../../../tests/eng/test_browser_store_release_caller.py)
 checks the caller's credential and gate boundaries. None of them establishes
 live store acceptance.
@@ -113,17 +131,24 @@ required reviewers the owner chooses.
 2. Create a workload identity pool, for example `github`.
 3. Create an OIDC provider in it with issuer
    `https://token.actions.githubusercontent.com`, attribute mapping
-   `google.subject=assertion.sub`, `attribute.repository=assertion.repository`,
-   `attribute.environment=assertion.environment` and
-   `attribute.workflow_ref=assertion.workflow_ref`, and attribute condition
-   `assertion.repository == 'hcoona/three' && assertion.ref == 'refs/heads/main'`.
-   Add `assertion.workflow_ref.startsWith('hcoona/three/.github/workflows/workflow-delivery-v3-browser-store-release.yml@')`
-   to limit the caller. Do not require `assertion.environment`: the read-only
-   `observe` and `verify-result` jobs have no Environment.
+   `google.subject=assertion.sub`, `attribute.repository=assertion.repository`
+   and `attribute.workflow_ref=assertion.workflow_ref`, and exactly this
+   required attribute condition:
+
+    ```text
+    assertion.repository == 'hcoona/three' && assertion.workflow_ref == 'hcoona/three/.github/workflows/workflow-delivery-v3-browser-store-release.yml@refs/heads/main'
+    ```
+
+    It admits only this caller run from `main`. It does not require
+    `assertion.environment`: the read-only `observe` and `verify-result` jobs
+    have no Environment.
+
 4. Create a service account, for example `cws-publisher`, with no project
    roles.
-5. Grant `roles/iam.workloadIdentityUser` on that service account to
-   `principalSet://iam.googleapis.com/projects/<project-number>/locations/global/workloadIdentityPools/<pool>/attribute.repository/hcoona/three`.
+5. Grant `roles/iam.workloadIdentityUser` on that service account only to the
+   principal set that follows the condition:
+   `principalSet://iam.googleapis.com/projects/<project-number>/locations/global/workloadIdentityPools/<pool>/attribute.workflow_ref/hcoona/three/.github/workflows/workflow-delivery-v3-browser-store-release.yml@refs/heads/main`.
+   Do not bind the wider `attribute.repository` principal set.
 6. In the Chrome Web Store Developer Dashboard, open the publisher's Account
    page and add the service account email. A publisher accepts one service
    account.
@@ -131,9 +156,11 @@ required reviewers the owner chooses.
    service account email.
 
 The read and write scopes are requested per job, but Workload Identity
-Federation cannot restrict a scope to a job: any job that may impersonate the
-service account could request the write scope. The repository, ref and
-workflow conditions above bound that set; see the gaps below.
+Federation cannot restrict a scope to a job. The residual risk is that the
+non-publish jobs of this same caller on `main` (`observe` and
+`verify-result`) can obtain a write-scoped token. The Chrome Web Store allows
+one service account per publisher, so a separate read-only identity is not
+available and this caller-on-`main` binding is the narrowest available scope.
 
 ### Store Listings
 
@@ -141,20 +168,21 @@ Each store must already list the extension; the caller only updates existing
 listings. AMO needs the add-on's listed channel; Edge needs a published or
 draft product in Partner Center.
 
+### Before First Live AMO Submission
+
+The product is unchanged by this integration. These product changes are
+deferred to the first live round and must be made, reviewed and released
+through ordinary product work before the first live AMO submission:
+
+- add `browser_specific_settings.gecko.id` with the existing add-on ID to the
+  generated Firefox manifest;
+- declare `browser_specific_settings.gecko.data_collection_permissions`;
+- add build instructions (and the lockfile they need) to the AMO sources zip so
+  a reviewer can reproduce the Firefox zip.
+
 ## Known Gaps
 
 These remain owner decisions; the integration does not compensate for them.
 
-- WIF scope binding: a write-scoped CWS token is obtainable by any job that
-  passes the provider condition. Requiring the Environment claim would also
-  gate the read-only jobs and break the no-approval satisfied path.
-- Edge has no read API, so a rerun after an ambiguous submission cannot be
-  checked before resubmission, and completion is the submission operation
-  result only.
-- The generated Firefox manifest has no `browser_specific_settings.gecko.id`
-  and no `data_collection_permissions`; AMO accepts the existing add-on now but
-  warns about both. The AMO sources zip has no lockfile or build instructions.
-- CI does not qualify this browser recipe; preparation runs only in the
-  Release caller.
 - `version_name` carries the NBGV npm prerelease string (`1.2.0-dev.<height>`)
   on Official; this is the product's existing behavior.

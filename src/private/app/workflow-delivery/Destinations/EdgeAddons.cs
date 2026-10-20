@@ -7,7 +7,9 @@ namespace WorkflowDelivery.Destinations;
 
 // Microsoft Edge Add-ons API v1.1. The API exposes no read of listing or version state, so
 // the store is unobserved before submission; the submission operation status is the only
-// store report of the version having been received.
+// store report of the version having been received. Without a read, a request after an unknown
+// outcome cannot tell a resubmission from a first submission, so this class never resubmits:
+// an unknown outcome returns to the owner, who checks Partner Center before any new request.
 internal sealed class EdgeAddons(HttpClient client, ReleaseSubject subject,
     BrowserStoreTarget target, string version, string apiKey, string clientId,
     Func<TimeSpan, CancellationToken, Task>? delay = null, TimeProvider? time = null,
