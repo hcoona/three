@@ -36,7 +36,7 @@ internal static class NuGetReleaseCli
                     { ReturnedSuccessfully: true };
             NuGetObservationResult result = NuGetRelease.SettleAsync(preparation.Prepared,
                 observe ?? Observer(preparation.Prepared, client), ObserveCredential(
-                    preparation.Prepared), settle ? NuGetRelease.SettleAttempts : 1,
+                    preparation.Prepared), settle ? NuGetRelease.SettleDeadline : TimeSpan.Zero,
                 settleInterval ?? NuGetRelease.SettleInterval, CancellationToken.None)
                 .GetAwaiter().GetResult();
             NuGetRelease.ValidateObservation(preparation.Prepared, result);
