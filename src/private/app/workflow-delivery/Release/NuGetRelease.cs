@@ -83,7 +83,8 @@ internal static class NuGetRelease
         return new(prepared.Subject, before, invocation, after, []);
     }
 
-    internal const int SettleAttempts = 40;
+    // About 15 minutes: 30 reads separated by 29 intervals of 30 seconds.
+    internal const int SettleAttempts = 30;
     internal static readonly TimeSpan SettleInterval = TimeSpan.FromSeconds(30);
 
     // Native validation and indexing can delay visibility after an accepted upload; only an
@@ -140,6 +141,14 @@ internal static class NuGetRelease
             return new(outcome with { State = ReleaseBusinessState.Unsatisfied,
                 Reasons = [.. outcome.Reasons, "Publication did not establish a supported path."] },
                 published.Invocation is not null, published.Invocation);
+        // An attempted upload whose coordinate is still absent after the bounded wait has
+        // unresolved effects; the owner re-dispatches the same revision later to observe it.
+        if (published.Invocation is not null &&
+            final.Observation.Files[0].State == ReleaseFileState.Absent)
+            return new(outcome with { State = ReleaseBusinessState.Unknown,
+                Reasons = [.. outcome.Reasons, "Uploaded coordinate was not observed within " +
+                    "the bounded wait; re-dispatch the same revision later."] }, true,
+                published.Invocation);
         return new(outcome, published.Invocation is not null, published.Invocation);
     }
 

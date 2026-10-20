@@ -151,7 +151,7 @@ public sealed class NuGetReleaseTests(TestContext context)
 
     [TestMethod]
     [DataRow("Exact", "Satisfied")]
-    [DataRow("Absent", "Unsatisfied")]
+    [DataRow("Absent", "Unknown")]
     [DataRow("Unknown", "Unknown")]
     [DataRow("Conflict", "Unsatisfied")]
     public async Task PublishAsyncOfficialUploadAbnormalityReadsBackWithoutResend(
@@ -265,6 +265,38 @@ public sealed class NuGetReleaseTests(TestContext context)
         Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
         Assert.AreEqual((bool?)!preExisting, result.MutationAttempted);
         Assert.AreSame(preExisting ? null : invocation, result.Invocation);
+    }
+
+    // An accepted nuget.org upload not listed within about 15 minutes is uncertain and
+    // returns to the owner; re-dispatching the same revision observes it without an upload.
+    [TestMethod]
+    public async Task NuGetOrgUnlistedAfterBoundIsUnknownAndRedispatchIsSatisfied()
+    {
+        PreparedRelease prepared = Official();
+        NuGetObservationResult absent = OfficialObservation(prepared, ReleaseFileState.Absent);
+        var invocation = new NuGetPushResult(true, false, null, 1);
+        int reads = 0;
+        NuGetObservationResult final = await NuGetRelease.SettleAsync(prepared,
+            (_, _, _) => { reads++; return Task.FromResult(absent); }, "",
+            NuGetRelease.SettleAttempts, TimeSpan.Zero, context.CancellationToken);
+
+        NuGetCompletionResult result = NuGetRelease.Complete(prepared, absent, final,
+            new(prepared.Subject, absent, invocation, absent, []));
+
+        Assert.AreEqual(TimeSpan.FromMinutes(15), NuGetRelease.SettleAttempts *
+            NuGetRelease.SettleInterval);
+        Assert.AreEqual(NuGetRelease.SettleAttempts, reads);
+        Assert.AreEqual(ReleaseBusinessState.Unknown, result.Outcome.State);
+        Assert.AreEqual(true, result.MutationAttempted);
+        Assert.IsTrue(result.Outcome.Reasons.Any(reason => reason.Contains("re-dispatch",
+            StringComparison.Ordinal)));
+
+        NuGetObservationResult available = OfficialObservation(prepared,
+            ReleaseFileState.Available);
+        NuGetCompletionResult redispatch = NuGetRelease.Complete(prepared, available,
+            available, null);
+        Assert.AreEqual(ReleaseBusinessState.Satisfied, redispatch.Outcome.State);
+        Assert.AreEqual(false, redispatch.MutationAttempted);
     }
 
     // GitHub Packages Buddy keeps exact byte readback; the core rejects a version-only state.
