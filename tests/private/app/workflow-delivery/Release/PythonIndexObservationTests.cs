@@ -21,6 +21,8 @@ public sealed class PythonIndexObservationTests(TestContext context)
     [DataRow("official", "pypi", "pypi.org", "files.pythonhosted.org")]
     [DataRow("buddy", "testpypi", "test.pypi.org", "test-files.pythonhosted.org",
         PythonReleaseUnits.Nbgv)]
+    [DataRow("official", "pypi", "pypi.org", "files.pythonhosted.org",
+        PythonReleaseUnits.Nbgv)]
     public async Task CompletePairUsesSelectedPublicIndexAndOriginalBytes(string channel,
         string destination, string origin, string storage,
         string unit = PythonReleaseUnits.Smoke)

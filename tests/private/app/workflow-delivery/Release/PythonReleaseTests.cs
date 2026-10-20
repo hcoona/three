@@ -90,10 +90,13 @@ public sealed class PythonReleaseTests(TestContext context)
         Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
     }
 
+    // The static version has no public-release fact in either channel (WD-REL-001).
     [TestMethod]
-    public async Task NbgvBuddyPublishesBothOriginalsOfItsUnit()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task NbgvPublishesBothOriginalsOfItsUnit(bool official)
     {
-        using var fixture = new Fixture(unit: PythonReleaseUnits.Nbgv);
+        using var fixture = new Fixture(unit: PythonReleaseUnits.Nbgv, official: official);
         PythonIndexObservationResult initial = fixture.Observe();
         fixture.Observations.Enqueue(initial);
         PythonPublicationResult publication = await fixture.PublishAsync(initial,
@@ -108,8 +111,7 @@ public sealed class PythonReleaseTests(TestContext context)
     [DataRow("smoke-required")]
     [DataRow("missing-result")]
     [DataRow("failed-result")]
-    [DataRow("official")]
-    public void ValidateNbgvRequiresAdoptedSuiteResultAndBuddy(string defect)
+    public void ValidateNbgvRequiresAdoptedSuiteResult(string defect)
     {
         using var fixture = new Fixture(unit: PythonReleaseUnits.Nbgv);
         PythonRelease.Validate(fixture.Preparation);
@@ -124,16 +126,9 @@ public sealed class PythonReleaseTests(TestContext context)
         string[] required = defect == "smoke-required"
             ? [.. prepared.RequiredChecks.Where(id => id != "tests")] : prepared.RequiredChecks;
         if (defect == "smoke-required") checks = [.. checks.Where(check => check.Id != "tests")];
-        ReleaseSubject subject = defect == "official" ? prepared.Subject with
-        {
-            Channel = "official", Destination = "pypi", SelectedRef = "refs/heads/main",
-        } : prepared.Subject;
         var preparation = fixture.Preparation with
         {
-            Prepared = prepared with
-            {
-                Subject = subject, RequiredChecks = required, Checks = checks,
-            },
+            Prepared = prepared with { RequiredChecks = required, Checks = checks },
         };
         Assert.ThrowsExactly<InvalidDataException>(() => PythonRelease.Validate(preparation));
     }
@@ -527,14 +522,18 @@ public sealed class PythonReleaseTests(TestContext context)
         internal Action? AfterPublish { get; set; }
         internal PythonPublishResult? Invocation { get; set; }
 
-        internal Fixture(bool dryRun = false, string unit = PythonReleaseUnits.Smoke)
+        internal Fixture(bool dryRun = false, string unit = PythonReleaseUnits.Smoke,
+            bool official = false)
         {
             Directory.CreateDirectory(Path.Combine(Root, "archives"));
             ReleaseFile[] files = [Original("wheel", "python-wheel", "product.whl",
                 "wheel-original", unit),
                 Original("sdist", "python-sdist", "product.tar.gz", "sdist-original", unit)];
-            var subject = new ReleaseSubject(new string('a', 40), "refs/heads/development",
-                unit, "release.yml", "buddy", "testpypi", dryRun);
+            var subject = official
+                ? new ReleaseSubject(new string('a', 40), "refs/heads/main", unit, "release.yml",
+                    "official", "pypi", dryRun)
+                : new ReleaseSubject(new string('a', 40), "refs/heads/development", unit,
+                    "release.yml", "buddy", "testpypi", dryRun);
             string[] required = unit == PythonReleaseUnits.Nbgv
                 ? ["native-input", "build", "contents", "wheel-consumer", "sdist-consumer",
                     "tests", "original-bytes"]

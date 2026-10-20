@@ -104,9 +104,11 @@ public sealed class RubyReleaseTests(TestContext context)
     [DataRow("buddy", "rubygems", "refs/heads/main", true, true, false)]
     [DataRow("buddy", "github-packages-ruby", "refs/heads/topic", false, false, true,
         RubyReleaseUnits.Latexmath)]
-    [DataRow("official", "rubygems", "refs/heads/main", false, true, false,
+    [DataRow("official", "rubygems", "refs/heads/main", false, true, true,
         RubyReleaseUnits.Latexmath)]
-    [DataRow("official", "rubygems", "refs/heads/main", true, true, false,
+    [DataRow("official", "rubygems", "refs/heads/main", false, false, false,
+        RubyReleaseUnits.Latexmath)]
+    [DataRow("official", "rubygems", "refs/heads/main", true, false, true,
         RubyReleaseUnits.Latexmath)]
     public void ValidateChannelRefAndDryEligibility(string channel, string destination,
         string selectedRef, bool dry, bool publicRelease, bool accepted,

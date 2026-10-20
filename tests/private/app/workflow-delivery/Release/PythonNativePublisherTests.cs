@@ -22,6 +22,8 @@ public sealed class PythonNativePublisherTests(TestContext context)
         "https://upload.pypi.org/legacy/")]
     [DataRow("buddy", "testpypi", "refs/heads/development", "sdist",
         "https://test.pypi.org/legacy/", PythonReleaseUnits.Nbgv)]
+    [DataRow("official", "pypi", "refs/heads/main", "wheel",
+        "https://upload.pypi.org/legacy/", PythonReleaseUnits.Nbgv)]
     public async Task NativePublisherReceivesOnlyQualifiedOriginalAndSelectedContext(
         string channel, string destination, string selectedRef, string output, string endpoint,
         string unit = PythonReleaseUnits.Smoke)
@@ -133,7 +135,6 @@ public sealed class PythonNativePublisherTests(TestContext context)
     [DataRow("destination")]
     [DataRow("wrong-name")]
     [DataRow("wrong-unit")]
-    [DataRow("official-nbgv")]
     [DataRow("missing-pair")]
     [DataRow("wrong-kind")]
     [DataRow("unknown-output")]
@@ -195,17 +196,6 @@ public sealed class PythonNativePublisherTests(TestContext context)
                 {
                     Subject = prepared.Subject with
                     { Unit = "foreign" }
-                }; break;
-            case "official-nbgv":
-                prepared = prepared with
-                {
-                    Subject = prepared.Subject with
-                    {
-                        Unit = PythonReleaseUnits.Nbgv, Channel = "official",
-                        Destination = "pypi", SelectedRef = "refs/heads/main",
-                    },
-                    Files = [.. prepared.Files.Select(file =>
-                        file with { Name = PythonReleaseUnits.Nbgv })],
                 }; break;
             case "wrong-version":
                 prepared = prepared with

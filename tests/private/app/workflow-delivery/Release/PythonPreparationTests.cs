@@ -372,10 +372,15 @@ public sealed class PythonPreparationTests(TestContext context)
         "src/public/lib/nbgv-python/tests"];
 
     [TestMethod]
-    public async Task NbgvOriginalQualifiesWithLockedRuntimeAndAdoptedSuite()
+    [DataRow("buddy")]
+    [DataRow("official")]
+    public async Task NbgvOriginalQualifiesWithLockedRuntimeAndAdoptedSuite(string channel)
     {
         using var fixture = await Fixture.CreateAsync(context.CancellationToken,
             unit: Fixture.Nbgv);
+        if (channel == "official")
+            fixture.Subject = fixture.Subject with { Channel = "official", Destination = "pypi",
+                SelectedRef = "refs/heads/main" };
         fixture.Version = "2.1.0.dev1";
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
@@ -426,21 +431,6 @@ public sealed class PythonPreparationTests(TestContext context)
             result.Prepared.Checks.Select(check => check.Status).ToArray());
         Assert.IsEmpty(result.Prepared.Files);
         Assert.IsNotEmpty(result.Errors);
-    }
-
-    [TestMethod]
-    public async Task NbgvOfficialIsRejectedBeforeNativeWork()
-    {
-        using var fixture = await Fixture.CreateAsync(context.CancellationToken,
-            unit: Fixture.Nbgv);
-        fixture.Subject = fixture.Subject with { Channel = "official", Destination = "pypi",
-            SelectedRef = "refs/heads/main" };
-        PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
-        Assert.AreEqual(ReleaseCheckStatus.Failed, result.Prepared.Checks[0].Status);
-        Assert.IsEmpty(result.Commands);
-        Assert.IsEmpty(result.Prepared.Files);
-        Assert.AreEqual("Official Python Release does not accept this unit.",
-            Assert.ContainsSingle(result.Errors));
     }
 
     [TestMethod]

@@ -104,6 +104,8 @@ public sealed class RubyNativePublisherTests(TestContext context)
         "Bearer " + RepositoryKey,
         RubyReleaseUnits.Latexmath
     )]
+    [DataRow("official", "rubygems", "refs/heads/main", "true", "https://rubygems.org", TrustedKey,
+        RubyReleaseUnits.Latexmath)]
     public async Task NativePushUsesQualifiedOriginalSelectedKeyAndClosedState(
         string channel,
         string destination,
@@ -243,7 +245,6 @@ public sealed class RubyNativePublisherTests(TestContext context)
     [DataRow("wrong-unit")]
     [DataRow("wrong-name")]
     [DataRow("wrong-kind")]
-    [DataRow("official-latexmath")]
     public async Task QualifiedStateDefectsStopBeforeNativeInvocation(string defect)
     {
         using var fixture = new Fixture();
@@ -282,20 +283,6 @@ public sealed class RubyNativePublisherTests(TestContext context)
             case "wrong-name":
                 file = file with { Name = "other" };
                 preparation.Native["name"] = "other";
-                break;
-            case "official-latexmath":
-                prepared = prepared with
-                {
-                    Subject = prepared.Subject with
-                    {
-                        Unit = RubyReleaseUnits.Latexmath,
-                        Channel = "official",
-                        Destination = "rubygems",
-                        SelectedRef = "refs/heads/main",
-                    },
-                };
-                file = file with { Name = RubyReleaseUnits.Latexmath };
-                preparation.Native["name"] = RubyReleaseUnits.Latexmath;
                 break;
             case "wrong-kind":
                 file = file with { Kind = "other" };

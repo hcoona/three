@@ -48,8 +48,8 @@ internal static class ReleaseJobInputs
                 ("npm", true) => "github-packages-npm",
                 _ => destination,
             }, dry == "true");
-        // Every Ruby, Python and npm job admits the selected unit; Official rejects it before
-        // preparation.
+        // Every Ruby, Python and npm job admits the selected registered unit before
+        // preparation; npm also rejects its smoke unit for live Official.
         if (ecosystem == "ruby") _ = RubyReleaseUnits.Admit(subject);
         if (ecosystem == "python") _ = PythonReleaseUnits.Admit(subject);
         if (ecosystem == "npm") _ = NpmReleaseUnits.Admit(subject);

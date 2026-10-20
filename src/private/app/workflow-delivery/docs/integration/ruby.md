@@ -178,7 +178,7 @@ This contract selects one of two statically registered units through the
 `asciidoctor-latexmath` product under `src/public/lib/asciidoctor-latexmath`,
 each with its declared single gem and adopted quality selection. GitHub Packages at
 `https://rubygems.pkg.github.com/hcoona` is Buddy; `https://rubygems.org` is
-Official. The [native assessment](../research/ruby-native-publisher.md) supplies
+Official for both units. The [native assessment](../research/ruby-native-publisher.md) supplies
 the source basis. This adds no product, destination, publication authority or
 native experiment and reopens no completed campaign.
 
@@ -195,7 +195,9 @@ Environment remains limited to `main`. Keep one faithful
 source/control revision and selected native ref context; missing history or
 unsupported native facts block the request. Use the existing NBGV `SemVer2` and
 maintained RubyGems version projection, without an application suffix stripper,
-publication-only version override or injected commit witness.
+publication-only version override or injected commit witness. Live Official
+requires the native public-release projection; each unit's committed
+`publicReleaseRefSpec` includes `^refs/heads/main$`.
 
 `Ecosystems/RubyReleaseUnits` statically registers the two units.
 `Ecosystems/RubySmokePackageOperations` and

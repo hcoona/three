@@ -130,13 +130,13 @@ The wrapper surfaces the same exit codes as the underlying tool and prints diagn
 
 ## Releasing
 
-Workflow Delivery releases this package to TestPyPI (Buddy) through the manually dispatched
-`.github/workflows/workflow-delivery-v3-python-release.yml` caller with `unit: nbgv-python`, as
-declared by `workflow-delivery.release-unit.yml`. The package version is the static
-`[project].version` in `pyproject.toml`, not an NBGV projection. Preparation builds the wheel and
+Workflow Delivery releases this package to TestPyPI (Buddy) and PyPI (Official) through the
+manually dispatched `.github/workflows/workflow-delivery-v3-python-release.yml` caller with
+`unit: nbgv-python`, as declared by `workflow-delivery.release-unit.yml`. Live PyPI publication runs
+only from `main`. The package version in both channels is the static `[project].version` in
+`pyproject.toml`, not an NBGV projection. Preparation builds the wheel and
 sdist at the selected revision, checks their native metadata, installs each original in a clean
-environment with the runtime dependencies locked by the root `uv.lock`, and runs `tests/`. PyPI
-(Official) release is not supported for this package and is rejected before preparation.
+environment with the runtime dependencies locked by the root `uv.lock`, and runs `tests/`.
 
 ## Project Records
 

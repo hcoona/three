@@ -263,13 +263,13 @@ Bug reports, feature requests, and patches are welcome. Please open an issue des
 ## Releasing
 
 Workflow Delivery releases this gem to the GitHub Packages (Buddy) RubyGems
-registry through the manually dispatched
+registry and to RubyGems.org (Official) through the manually dispatched
 `.github/workflows/workflow-delivery-v3-ruby-release.yml` caller with
 `unit: asciidoctor-latexmath`, as declared by `workflow-delivery.release-unit.yml`.
+Live RubyGems.org publication runs only from `main` and uses the NBGV
+public-release version that `version.json` selects there.
 Preparation builds the gem at the selected revision, checks its native facts and
 installs it locally with the runtime dependencies locked by `Gemfile.lock`.
-RubyGems.org (Official) release is not supported for this gem and is rejected
-before preparation.
 
 ## Author
 
