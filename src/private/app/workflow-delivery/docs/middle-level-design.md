@@ -673,6 +673,7 @@ extra probe records.
 | Conflicting bytes or unknown required state                           | No mutation                                                           | Unsatisfied or unknown, with the blocking reason                    |
 | Acknowledged upload and complete required verification                | No additional write                                                   | Satisfied; preserve the acknowledged command result                 |
 | Acknowledged upload with missing required verification                | No additional write                                                   | Unsatisfied or unknown; retain the successful command result        |
+| Acknowledged upload not yet visible without read-after-write          | No additional write; a fresh request observes the exact state         | Unknown; retain the successful command result                       |
 | Failed/ambiguous native invocation and complete required verification | Stop application mutation; bounded reads only                         | Satisfied by observed state; preserve the command failure/ambiguity |
 | Failed/ambiguous native invocation with incomplete/uncertain state    | Stop application mutation; bounded reads only                         | Unsatisfied or unknown; fresh recovery may be possible              |
 | Interrupted publisher or missing result                               | No inferred retry                                                     | Effects may remain unknown unless native facts establish non-start  |
@@ -681,8 +682,13 @@ For Python, a failed or ambiguous wheel invocation stops the write sequence even
 read confirms the wheel. It does not authorize uploading sdist in that same
 sequence. If the complete intended set is independently verified, the active
 request can be satisfied; otherwise a fresh request can consider supported
-missing-file completion. Successful acknowledged uploads can continue in their
-declared order only after the required intermediate verification.
+missing-file completion. An acknowledged native upload means the index committed
+that file, but the public index read is eventually consistent with no
+read-after-write guarantee. Successful acknowledged uploads therefore continue in
+their declared order without intermediate verification or application polling.
+Final verification reports an acknowledged file that the index does not yet show
+as unknown; a later fresh request confirms it without a write. Conflicting bytes
+still leave the request unsatisfied.
 
 An initially exact request and a newly published request use the same completion
 predicate. There is no separate exact-satisfaction certificate. Required metadata
