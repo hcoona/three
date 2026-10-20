@@ -351,6 +351,7 @@ internal static class Program
 [JsonSerializable(typeof(ReleaseOutcome))]
 [JsonSerializable(typeof(GithubNpmObservationResult))]
 [JsonSerializable(typeof(GithubNpmPublicationResult))]
+[JsonSerializable(typeof(NpmjsPublicationResult))]
 [JsonSerializable(typeof(CiComparison))]
 [JsonSerializable(typeof(ControlTestInputRequest))]
 [JsonSerializable(typeof(ControlTestInputResponse))]

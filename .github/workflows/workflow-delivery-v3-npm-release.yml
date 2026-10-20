@@ -1,15 +1,30 @@
-name: Workflow Delivery v3 npm Buddy
+name: Workflow Delivery v3 npm Release
 
 on:
   workflow_dispatch:
     inputs:
+      registry:
+        description: Selected npm destination
+        type: choice
+        required: true
+        options:
+          - github-packages
+          - npmjs
+      unit:
+        description: Selected npm release unit
+        type: choice
+        required: true
+        options:
+          - hcoona-release-smoke-npm
+          - hexo-renderer-asciidoc
       dry-run:
         description: Qualify and describe without publication
         type: boolean
         default: true
 
 env:
-  DESTINATION: github-packages-npm
+  DESTINATION: ${{ inputs.registry }}
+  UNIT: ${{ inputs.unit }}
   DRY_RUN: ${{ inputs.dry-run }}
 
 permissions:
@@ -17,7 +32,7 @@ permissions:
 
 # The native containing workflow owns the physical package through verification.
 concurrency:
-  group: workflow-delivery-npm.pkg.github.com-hcoona-hcoona-release-smoke-npm
+  group: ${{ format('workflow-delivery-{0}-{1}', inputs.registry == 'npmjs' && 'registry.npmjs.org' || 'npm.pkg.github.com', inputs.unit) }}
   cancel-in-progress: false
 
 jobs:
@@ -54,7 +69,7 @@ jobs:
         id: control
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: buddy-control-${{ github.run_id }}-${{ github.run_attempt }}
+          name: npm-control-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/control
           if-no-files-found: error
           retention-days: 45
@@ -70,8 +85,6 @@ jobs:
             --store-dir "$RUNNER_TEMP/dependencies/store" --state-dir "$RUNNER_TEMP/dependencies/state" \
             install --frozen-lockfile --ignore-scripts'
       - name: Qualify complete selected release
-        env:
-          DRY_RUN: ${{ inputs.dry-run }}
         run: |
           export MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
           mise exec --locked dotnet node pnpm -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" \
@@ -82,7 +95,7 @@ jobs:
         id: originals
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: buddy-preparation-${{ github.run_id }}-${{ github.run_attempt }}
+          name: npm-preparation-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/prepared
           if-no-files-found: error
           retention-days: 45
@@ -126,18 +139,20 @@ jobs:
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm receive observation
       - name: Observe native package and original bytes
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ inputs.registry == 'github-packages' && github.token || '' }}
         run: |
-          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-npm \
+          registry=github-npm
+          if test "$DESTINATION" = npmjs; then registry=npmjs; fi
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release "observe-$registry" \
             "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/observation/observation.json"
       - name: Describe native state
         id: state
-        env:
-          DRY_RUN: ${{ inputs.dry-run }}
         run: |
+          registry=github-npm
+          if test "$DESTINATION" = npmjs; then registry=npmjs; fi
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm state
           if test "$DRY_RUN" = true; then
-            mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-github-npm \
+            mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release "describe-$registry" \
               "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" \
               > "$RUNNER_TEMP/observation/dry-run.json"
           fi
@@ -150,7 +165,7 @@ jobs:
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP']) / 'observation'
           with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as summary:
-              summary.write('## npm Buddy observation\n\n')
+              summary.write('## npm observation\n\n')
               for name in ('observation', 'dry-run'):
                   path = root / (name + '.json')
                   if path.exists() and path.stat().st_size:
@@ -162,21 +177,21 @@ jobs:
         id: retain
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: buddy-observation-${{ github.run_id }}-${{ github.run_attempt }}
+          name: npm-observation-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/observation
           if-no-files-found: error
           retention-days: 45
           overwrite: false
 
-  publish:
-    if: inputs.dry-run == false && needs.observe.outputs.write-needed == 'true'
+  publish-github-packages:
+    if: inputs.registry == 'github-packages' && inputs.dry-run == false && needs.observe.outputs.write-needed == 'true'
     needs: [prepare, observe]
     runs-on: ubuntu-24.04
     env:
       DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
       NODE_VERSION: ${{ needs.prepare.outputs.node }}
     timeout-minutes: 15
-    environment: workflow-delivery-v3-buddy-approval
+    environment: workflow-delivery-v3-npm-github-packages
     permissions:
       contents: read
       packages: write
@@ -236,7 +251,80 @@ jobs:
         id: retain
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: buddy-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          name: npm-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publication
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+
+  publish-npmjs:
+    if: inputs.registry == 'npmjs' && inputs.dry-run == false && needs.observe.outputs.write-needed == 'true'
+    needs: [prepare, observe]
+    runs-on: ubuntu-24.04
+    env:
+      DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+      NODE_VERSION: ${{ needs.prepare.outputs.node }}
+    timeout-minutes: 15
+    environment: workflow-delivery-v3-npm-npmjs
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      publication-id: ${{ steps.retain.outputs.artifact-id }}
+    steps:
+      - name: Download selected control by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.control-id }}
+          path: ${{ runner.temp }}/control
+          digest-mismatch: error
+      - name: Prepare native runtime without product execution
+        uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        with:
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected native runtime
+        working-directory: ${{ runner.temp }}
+        run: mise install --yes "dotnet@$DOTNET_VERSION"
+      - name: Download complete preparation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
+          path: ${{ runner.temp }}/prepared
+          digest-mismatch: error
+      - name: Receive transferred preparation
+        run: |
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm receive publication
+      - name: Prepare qualified native npm toolchain
+        working-directory: ${{ runner.temp }}
+        run: |
+          mise install --yes "node@$NODE_VERSION"
+          node_root="$(mise where "node@$NODE_VERSION")"
+          toolchain="$RUNNER_TEMP/npm-tools"
+          mkdir -p "$toolchain/bin" "$toolchain/home"
+          ln -s "$node_root/bin/node" "$toolchain/bin/node"
+          # The publisher uses the npm CLI bundled with the locked Node.
+          ln -s "$node_root/lib/node_modules/npm/bin/npm-cli.js" "$toolchain/bin/npm"
+          touch "$toolchain/user.npmrc" "$toolchain/global.npmrc"
+          npm_version="$(env -i PATH="$toolchain/bin:/usr/bin:/bin" HOME="$toolchain/home" \
+            NPM_CONFIG_USERCONFIG="$toolchain/user.npmrc" NPM_CONFIG_GLOBALCONFIG="$toolchain/global.npmrc" \
+            "$toolchain/bin/npm" --version)"
+          jq -n --arg node "$NODE_VERSION" --arg npm "$npm_version" \
+            '{node: $node, npm: $npm}' > "$toolchain/bin/selected-tools.json"
+      - name: Publish once with trusted publishing after fresh native observation
+        run: |
+          mkdir -p "$RUNNER_TEMP/publisher-runtime"
+          # npm exchanges the job's OIDC identity and attaches provenance; no token exists.
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-npmjs \
+            "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" \
+            "$RUNNER_TEMP/publisher-runtime" "$RUNNER_TEMP/npm-tools/bin" \
+            > "$RUNNER_TEMP/publication/publication.json"
+      - name: Retain actual publication outcome
+        if: always()
+        id: retain
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: npm-publication-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/publication
           if-no-files-found: error
           retention-days: 45
@@ -246,8 +334,9 @@ jobs:
     if: >-
       always() && !cancelled() && inputs.dry-run == false &&
       needs.prepare.result == 'success' && needs.observe.result == 'success' &&
-      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
-    needs: [prepare, observe, publish]
+      (needs.publish-github-packages.result == 'success' || needs.publish-github-packages.result == 'skipped') &&
+      (needs.publish-npmjs.result == 'success' || needs.publish-npmjs.result == 'skipped')
+    needs: [prepare, observe, publish-github-packages, publish-npmjs]
     runs-on: ubuntu-24.04
     env:
       DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
@@ -289,24 +378,26 @@ jobs:
         if: needs.observe.outputs.write-needed == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          artifact-ids: ${{ needs.publish.outputs.publication-id }}
+          artifact-ids: ${{ needs.publish-github-packages.outputs.publication-id || needs.publish-npmjs.outputs.publication-id }}
           path: ${{ runner.temp }}/publication
           digest-mismatch: error
       - name: Verify registry coordinate and original bytes
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ inputs.registry == 'github-packages' && github.token || '' }}
           WRITE_NEEDED: ${{ needs.observe.outputs.write-needed }}
         run: |
           control="$RUNNER_TEMP/control/WorkflowDelivery.dll"
           prepared="$RUNNER_TEMP/prepared/preparation.json"
+          registry=github-npm
+          if test "$DESTINATION" = npmjs; then registry=npmjs; fi
           # A handled conflicting or unknown observation remains typed completion input.
           status=0
-          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$control" release observe-github-npm \
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$control" release "observe-$registry" \
             "$prepared" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/verification/final.json" || status=$?
           if [ "$status" -gt 1 ]; then exit "$status"; fi
           publication=-
           if test "$WRITE_NEEDED" = true; then publication="$RUNNER_TEMP/publication/publication.json"; fi
-          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$control" release complete-github-npm \
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$control" release "complete-$registry" \
             "$prepared" "$RUNNER_TEMP/observation/observation.json" \
             "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
       - name: Show actual available business results
@@ -318,7 +409,7 @@ jobs:
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP']) / 'verification'
           with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as summary:
-              summary.write('## npm Buddy result\n\n')
+              summary.write('## npm result\n\n')
               for name in ('final', 'outcome'):
                   path = root / (name + '.json')
                   if not path.exists() or not path.stat().st_size:
@@ -330,7 +421,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: buddy-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          name: npm-verification-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/verification
           if-no-files-found: error
           retention-days: 45

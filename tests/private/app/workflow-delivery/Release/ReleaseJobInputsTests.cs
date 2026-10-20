@@ -14,7 +14,7 @@ public sealed class ReleaseJobInputsTests
     [DataRow("ruby", "rubygems", "official", "rubygems")]
     [DataRow("python", "testpypi", "buddy", "testpypi")]
     [DataRow("python", "pypi", "official", "pypi")]
-    [DataRow("npm", "github-packages-npm", "buddy", "github-packages-npm")]
+    [DataRow("npm", "github-packages", "buddy", "github-packages-npm")]
     [DataRow("npm", "npmjs", "official", "npmjs")]
     [DataRow("nuget", "github-packages-nuget", "buddy", "github-packages-nuget")]
     public void RequestRetainsNativeSubjectAndTypedTools(string ecosystem, string destination,
@@ -113,6 +113,55 @@ public sealed class ReleaseJobInputsTests
         foreach (string[] entry in new[] { new[] { "request" }, ["receive", "publication"],
             ["state"] })
             Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run(entry));
+        Assert.IsFalse(Directory.Exists(fixture.At("prepared")));
+        Assert.IsFalse(Directory.Exists(fixture.At("preparation-scratch")));
+    }
+
+    [TestMethod]
+    [DataRow(NpmReleaseUnits.Smoke, "github-packages", "true",
+        "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/")]
+    [DataRow(NpmReleaseUnits.Smoke, "npmjs", "true",
+        "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-npm/")]
+    [DataRow(NpmReleaseUnits.Hexo, "github-packages", "false",
+        "src/public/lib/hexo-renderer-asciidoc/")]
+    [DataRow(NpmReleaseUnits.Hexo, "npmjs", "true", "src/public/lib/hexo-renderer-asciidoc/")]
+    public void NpmRequestSelectsTheDispatchedUnit(string unit, string destination, string dry,
+        string directory)
+    {
+        using var fixture = new Caller("npm", destination);
+        fixture.Env["UNIT"] = unit;
+        fixture.Env["DRY_RUN"] = dry;
+        fixture.Env["GITHUB_RUN_ATTEMPT"] = "1";
+        fixture.Run("request");
+        ReleaseSubject subject = fixture.Subject();
+        Assert.AreEqual(unit, subject.Unit);
+        Assert.AreEqual(directory + "workflow-delivery.release-unit.yml", subject.Declaration);
+        Assert.IsTrue(File.Exists(Path.Combine(RepositoryToolSelection.SourceRoot,
+            subject.Declaration)), subject.Declaration);
+    }
+
+    [TestMethod]
+    [DataRow(NpmReleaseUnits.Hexo, "npmjs", "refs/heads/main", true)]
+    [DataRow(NpmReleaseUnits.Hexo, "npmjs", "refs/heads/feature", false)]
+    [DataRow(NpmReleaseUnits.Smoke, "npmjs", "refs/heads/main", false)]
+    [DataRow("another-package", "github-packages", "refs/heads/feature", false)]
+    [DataRow("", "github-packages", "refs/heads/feature", false)]
+    public void OfficialLiveNpmRequestAcceptsOnlyLiveUnitsFromMain(string unit,
+        string destination, string selectedRef, bool accepted)
+    {
+        using var fixture = new Caller("npm", destination);
+        fixture.Env["UNIT"] = unit;
+        fixture.Env["DRY_RUN"] = "false";
+        fixture.Env["GITHUB_RUN_ATTEMPT"] = "1";
+        fixture.Env["GITHUB_REF"] = selectedRef;
+        if (accepted)
+        {
+            fixture.Run("request");
+            Assert.AreEqual("official", fixture.Subject().Channel);
+            Assert.IsFalse(fixture.Subject().DryRun);
+            return;
+        }
+        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("request"));
         Assert.IsFalse(Directory.Exists(fixture.At("prepared")));
         Assert.IsFalse(Directory.Exists(fixture.At("preparation-scratch")));
     }
@@ -273,18 +322,6 @@ public sealed class ReleaseJobInputsTests
         }
     }
 
-    [TestMethod]
-    public void OfficialSimulationCreatesOnlyConsumedRequest()
-    {
-        using var fixture = new Caller("npm", "npmjs");
-        fixture.Run("simulation-request");
-        NpmPreparationRequest request = JsonSerializer.Deserialize(File.ReadAllText(
-            fixture.At("prepared/request.json")), TransferJson.Default.NpmPreparationRequest)!;
-        Assert.AreEqual("official", request.Subject.Channel);
-        Assert.AreEqual("npmjs", request.Subject.Destination);
-        Assert.IsTrue(request.Subject.DryRun);
-    }
-
     private sealed class Caller : IDisposable
     {
         private readonly string root = Path.Combine(Path.GetTempPath(), "release-caller-" +
@@ -299,7 +336,7 @@ public sealed class ReleaseJobInputsTests
             {
                 ["RUNNER_TEMP"] = root, ["DESTINATION"] = destination ?? (
                     ecosystem switch { "ruby" => "github-packages", "python" => "testpypi",
-                        "npm" => "github-packages-npm", "nuget" => "github-packages-nuget",
+                        "npm" => "github-packages", "nuget" => "github-packages-nuget",
                         _ => throw new InvalidOperationException() }),
                 ["GITHUB_SHA"] = new string('a', 40), ["GITHUB_REF"] = "refs/heads/feature",
                 ["GITHUB_RUN_ID"] = "123", ["GITHUB_RUN_ATTEMPT"] = "2", ["DRY_RUN"] = "true",
@@ -308,8 +345,12 @@ public sealed class ReleaseJobInputsTests
                 ["DOTNET_EXECUTABLE"] = "selected-dotnet", ["UV_EXECUTABLE"] = "selected-uv",
                 ["MISE_EXECUTABLE"] = "selected-mise",
                 ["PYTHON_EXECUTABLE"] = "selected-python", ["MISE_DATA_DIR"] = At("mise"),
-                ["GITHUB_OUTPUT"] = At("output"), ["UNIT"] = ecosystem == "python" ?
-                    PythonReleaseUnits.Smoke : RubyReleaseUnits.Smoke,
+                ["GITHUB_OUTPUT"] = At("output"), ["UNIT"] = ecosystem switch
+                {
+                    "python" => PythonReleaseUnits.Smoke,
+                    "npm" => NpmReleaseUnits.Smoke,
+                    _ => RubyReleaseUnits.Smoke,
+                },
             };
         }
         internal string At(string path) => Path.Combine(root, path);

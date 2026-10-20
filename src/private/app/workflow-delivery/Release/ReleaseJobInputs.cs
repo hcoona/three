@@ -24,28 +24,35 @@ internal static class ReleaseJobInputs
         bool buddy = (ecosystem, destination) switch
         {
             ("ruby", "github-packages") or ("python", "testpypi") or
-                ("npm", "github-packages-npm") or ("nuget", "github-packages-nuget") => true,
+                ("npm", "github-packages") or ("nuget", "github-packages-nuget") => true,
             ("ruby", "rubygems") or ("python", "pypi") or ("npm", "npmjs") => false,
             _ => throw new InvalidDataException("Unsupported Release caller destination."),
         };
         string dry = Env("DRY_RUN");
         if (dry is not ("true" or "false")) throw new InvalidDataException(
             "Invalid dry-run input.");
-        string unit = ecosystem is "ruby" or "python" ? Env("UNIT") : "hcoona-release-smoke-" +
-            (ecosystem == "nuget" ? "github-packages" : ecosystem);
+        string unit = ecosystem is "ruby" or "python" or "npm" ? Env("UNIT")
+            : "hcoona-release-smoke-github-packages";
         var subject = new ReleaseSubject(Env("GITHUB_SHA"), Env("GITHUB_REF"), unit,
             ecosystem switch
             {
                 "ruby" => RubyReleaseUnits.Named(unit).Declaration,
                 "python" => PythonReleaseUnits.Named(unit).Declaration,
+                "npm" => NpmReleaseUnits.Named(unit).Declaration,
                 _ => "tests/private/app/workflow-delivery/fixtures/products/" + unit +
                     "/workflow-delivery.release-unit.yml",
             }, buddy ? "buddy" : "official",
-            ecosystem == "ruby" && buddy ? "github-packages-ruby" : destination, dry == "true");
-        // Every Ruby and Python job admits the selected unit; Official rejects it before
+            (ecosystem, buddy) switch
+            {
+                ("ruby", true) => "github-packages-ruby",
+                ("npm", true) => "github-packages-npm",
+                _ => destination,
+            }, dry == "true");
+        // Every Ruby, Python and npm job admits the selected unit; Official rejects it before
         // preparation.
         if (ecosystem == "ruby") _ = RubyReleaseUnits.Admit(subject);
         if (ecosystem == "python") _ = PythonReleaseUnits.Admit(subject);
+        if (ecosystem == "npm") _ = NpmReleaseUnits.Admit(subject);
         // Live reruns are unsupported (WD-OPS-003). A partial rerun skips the preparation
         // job, so every job entry below applies this one guard rather than workflow YAML.
         if (!subject.DryRun && Env("GITHUB_RUN_ATTEMPT") != "1")
@@ -115,7 +122,6 @@ internal static class ReleaseJobInputs
         switch (operation)
         {
             case ["request"]:
-            case ["simulation-request"] when ecosystem == "npm" && !buddy && subject.DryRun:
                 if (Env("GITHUB_REPOSITORY") != "hcoona/three")
                     throw new InvalidDataException("Unsupported Release repository.");
                 string scratch = Fresh("preparation-scratch");

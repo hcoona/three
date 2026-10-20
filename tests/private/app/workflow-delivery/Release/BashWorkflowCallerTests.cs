@@ -181,7 +181,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         internal PreparedRelease Prepared { get; }
         internal string Workflow => ecosystem switch
         {
-            "npm" => "workflow-delivery-v3-buddy-smoke.yml",
+            "npm" => "workflow-delivery-v3-npm-release.yml",
             "ruby" or "python" => "workflow-delivery-v3-" + ecosystem + "-release.yml",
             _ => "workflow-delivery-v3-" + ecosystem + "-smoke.yml",
         };
@@ -227,7 +227,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
                 }, false);
             ReleaseFile[] files = ecosystem switch
             {
-                "npm" => [Original("build", "archive", "npm-tarball", GithubNpmObservation.Package,
+                "npm" => [Original("build", "archive", "npm-tarball", AdoptedNpmPackage.PackageName,
                     "original/package.tgz")],
                 "python" => [Original("distributions", "wheel", "python-wheel", unit,
                     "archives/package.whl"), Original("distributions", "sdist", "python-sdist",
@@ -273,12 +273,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         internal Dictionary<string, string?> Environment() => new()
         {
             ["RUNNER_TEMP"] = Root,
-            ["DESTINATION"] = ecosystem switch
-            {
-                "npm" => "github-packages-npm",
-                "python" => "testpypi",
-                _ => "github-packages",
-            },
+            ["DESTINATION"] = ecosystem == "python" ? "testpypi" : "github-packages",
             ["DRY_RUN"] = "false",
             ["UNIT"] = Prepared.Subject.Unit,
             ["WRITE_NEEDED"] = "false",

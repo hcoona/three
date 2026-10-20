@@ -22,7 +22,7 @@ internal static class PythonRepositoryInputs
         ".github/workflows/buddy.yml", ".github/workflows/buddy.yaml",
         ".github/workflows/release-buddy.yml", ".github/workflows/release-buddy.yaml",
         ".github/workflows/legacy-buddy.yml", ".github/workflows/legacy-buddy.yaml",
-        ".github/workflows/workflow-delivery-v3-buddy-smoke.yml"];
+        ".github/workflows/workflow-delivery-v3-npm-release.yml"];
     private static readonly string[] AzureRoots = [
         "src/private/app/azureauth-credprovider", "tests/private/app/azureauth-credprovider"];
     internal static PythonInputBinding[] Map(GitRevision revision,

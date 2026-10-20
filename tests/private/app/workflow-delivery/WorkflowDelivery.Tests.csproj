@@ -19,8 +19,8 @@
     <EmbeddedResource Include="fixtures/products/hcoona-release-smoke-npm/version.json"
                       LogicalName="NpmFixtureVersionConfiguration" />
     <!-- Caller tests execute these workflow step bodies; embedding binds them as test inputs. -->
-    <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-buddy-smoke.yml"
-                      LogicalName="workflow-delivery-v3-buddy-smoke.yml" />
+    <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-npm-release.yml"
+                      LogicalName="workflow-delivery-v3-npm-release.yml" />
     <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-python-release.yml"
                       LogicalName="workflow-delivery-v3-python-release.yml" />
     <EmbeddedResource Include="../../../../.github/workflows/workflow-delivery-v3-ruby-release.yml"

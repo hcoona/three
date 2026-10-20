@@ -8,7 +8,13 @@ internal static class AdoptedNpmPackage
 {
     internal const string PackageName = "@hcoona/hcoona-release-smoke-npm";
 
-    internal static void ValidateMetadata(string text, string version)
+    internal static void ValidateMetadata(string text, string version) =>
+        ValidateMetadata(text, version, PackageName, "./dist/index.js",
+            registryDependencies: false);
+
+    // Registry dependencies require the consumer to resolve them from the public registry.
+    internal static void ValidateMetadata(string text, string version, string name,
+        string main, bool registryDependencies)
     {
         using JsonDocument document = JsonDocument.Parse(text);
         JsonElement metadata = document.RootElement;
@@ -16,14 +22,15 @@ internal static class AdoptedNpmPackage
             metadata.EnumerateObject().Select(field => field.Name).Distinct(StringComparer.Ordinal)
                 .Count() != metadata.EnumerateObject().Count())
             throw new InvalidDataException("Native packed metadata must be an unambiguous object.");
-        Require("name", PackageName);
+        Require("name", name);
         Require("version", version);
         Require("type", "module");
-        Require("main", "./dist/index.js");
+        Require("main", main);
         foreach (string field in new[] { "dependencies", "optionalDependencies", "peerDependencies",
             "peerDependenciesMeta" })
             if (metadata.TryGetProperty(field, out JsonElement value) &&
-                (value.ValueKind != JsonValueKind.Object || value.EnumerateObject().Any()))
+                (value.ValueKind != JsonValueKind.Object ||
+                    (!registryDependencies && value.EnumerateObject().Any())))
                 throw new InvalidDataException(
                     "Unsupported installed npm dependency shape: " + field);
         foreach (string field in new[] { "bundledDependencies", "bundleDependencies" })
