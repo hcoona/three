@@ -169,7 +169,11 @@ internal static class NuGetPreparation
 
         NativeCommand Query(string targets, string response, string[]? extra = null) => new(
             "dotnet", checkout, ["msbuild", DotNetCli.DisableBuildServers, project, "-nologo",
-                "-noAutoResponse", "-target:" + targets, "-getTargetResult:" + targets,
+                "-noAutoResponse",
+                // The multi-target outer build dispatches to inner builds, so its own
+                // version projection exists only after it runs the versioning target.
+                "-target:" + (registered.Library && targets != "GetBuildVersion"
+                    ? "GetBuildVersion," + targets : targets), "-getTargetResult:" + targets,
                 "-getProperty:" + string.Join(',', DotNetPackageResults.NativeProperties),
                 "-getResultOutputFile:" + response, .. Dimensions.Where(dimension =>
                     !registered.Library || dimension != "-property:TargetFramework=").Select(
