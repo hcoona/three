@@ -8,7 +8,7 @@ internal sealed record BrowserStorePublicationResult(ReleaseSubject Subject,
     StoreObservation Before, StoreOperation[] Operations, StoreObservation? Final,
     string[] Errors);
 internal sealed record BrowserStoreCompletionResult(ReleaseOutcome Outcome, StoreState State,
-    bool MutationAttempted, BrowserStorePublicationResult? Publication);
+    bool? MutationAttempted, BrowserStorePublicationResult? Publication);
 
 // Store completion is the store API reporting the exact submitted version as received, in
 // review or published (WD-REL-009). Review and publication timing remain store-owned.
@@ -157,8 +157,15 @@ internal static class BrowserStoreRelease
             throw new InvalidDataException("Publication is not for this request.");
         final ??= publication is null ? initial : publication.Final;
         if (final is not null) ValidateObservation(preparation, final);
-        bool attempted = publication?.Operations.Length > 0;
         StoreState state = final?.State ?? StoreState.Unknown;
+        // A request that needed a write but has no publisher result cannot attribute a later
+        // store state to itself: whether it mutated the store stays unknown.
+        if (publication is null && !Satisfied(initial.State))
+            return new(new(subject, ReleaseBusinessState.Unknown, [],
+                [.. final?.Reasons ?? [], "Store state: " + state + ".",
+                    "Required browser-store publication result is missing; effects remain " +
+                    "unknown."]), state, null, null);
+        bool attempted = publication?.Operations.Length > 0;
         ReleaseBusinessState business = Satisfied(state) ? ReleaseBusinessState.Satisfied
             : state is StoreState.Unknown or StoreState.Unobserved
                 ? ReleaseBusinessState.Unknown : ReleaseBusinessState.Unsatisfied;
