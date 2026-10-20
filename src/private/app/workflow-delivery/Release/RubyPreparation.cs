@@ -5,7 +5,8 @@ using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Release;
 
-internal sealed record RubyPreparationTools(string Ruby, string Gem, string Dotnet);
+internal sealed record RubyPreparationTools(string Ruby, string Gem, string Dotnet,
+    string Mise);
 internal sealed record RubyPreparationRequest(ReleaseSubject Subject, string Checkout,
     string Scratch, RubyPreparationTools Tools, string MiseDataDirectory);
 internal sealed record RubyReleaseRecipe(ReleaseBuild Build, string Entry, string Directory);
@@ -37,7 +38,8 @@ internal static class RubyPreparation
         token = lifetime.Token;
         string checkout = Absolute(request.Checkout), scratch = Absolute(request.Scratch);
         foreach (string path in new[] { request.Tools.Ruby, request.Tools.Gem,
-                     request.Tools.Dotnet, request.MiseDataDirectory }) _ = Absolute(path);
+                     request.Tools.Dotnet, request.Tools.Mise, request.MiseDataDirectory })
+            _ = Absolute(path);
         if (!Directory.Exists(checkout) || !Directory.Exists(scratch) ||
             OwnedPath.Overlap(scratch, checkout) ||
             Directory.EnumerateFileSystemEntries(scratch).Any())
@@ -260,8 +262,10 @@ internal static class RubyPreparation
         foreach (string name in new[] { "SystemRoot", "WINDIR", "PATHEXT" })
             values[name] = Environment.GetEnvironmentVariable(name);
         string home = Directory.CreateDirectory(Path.Combine(scratch, "home")).FullName;
+        // The selected mise Ruby's own RubyGems plugin runs `mise reshim` after installs.
         values["PATH"] = string.Join(Path.PathSeparator, new[] { request.Tools.Ruby,
-            request.Tools.Gem, request.Tools.Dotnet }.Select(Path.GetDirectoryName)
+            request.Tools.Gem, request.Tools.Dotnet, request.Tools.Mise }
+            .Select(Path.GetDirectoryName)
             .Append(OperatingSystem.IsWindows() ? Environment.GetFolderPath(
                 Environment.SpecialFolder.System) : "/usr/bin").Append("/bin")
             .Distinct(StringComparer.Ordinal));

@@ -158,7 +158,7 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                 subject,
                 checkout,
                 scratch,
-                new(ruby, gem, dotnet),
+                new(ruby, gem, dotnet, Provider()),
                 miseData
             );
             RubyPreparationResult result = await RubyPreparation.PrepareAsync(
@@ -466,6 +466,12 @@ public sealed class RubyPreparationNativeTests(TestContext context)
 
         static string Hash(string path) => Convert.ToHexStringLower(
             SHA256.HashData(File.ReadAllBytes(path)));
+
+        // The caller passes the absolute provider executable that installed Ruby.
+        static string Provider() => Environment.GetEnvironmentVariable("PATH")!
+            .Split(Path.PathSeparator).Select(directory => Path.Combine(directory,
+                OperatingSystem.IsWindows() ? "mise.exe" : "mise"))
+            .First(File.Exists);
 
         async Task<string> PreparedToolAsync(string tool)
         {
