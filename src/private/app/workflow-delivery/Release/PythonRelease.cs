@@ -6,7 +6,7 @@ namespace WorkflowDelivery.Release;
 
 internal sealed record PythonPublicationResult(ReleaseSubject Subject,
     PythonIndexObservationResult Before, PythonPublishResult[] Invocations,
-    PythonIndexObservationResult[] Readbacks, string[] Errors);
+    string[] Errors);
 internal sealed record PythonCompletionResult(ReleaseOutcome Outcome,
     bool? MutationAttempted, PythonPublicationResult? Publication);
 
@@ -104,43 +104,28 @@ internal static class PythonRelease
         PythonIndexObservationResult before = await observe(prepared, token);
         ValidateObservation(prepared, before);
         var invocations = new List<PythonPublishResult>();
-        var readbacks = new List<PythonIndexObservationResult>();
         var errors = new List<string>();
-        PythonIndexObservationResult current = before;
-        foreach (string kind in Formats)
+        string[] missing = [];
+        try { missing = Missing(prepared, before); }
+        catch (InvalidDataException)
+        { errors.Add("Current complete state does not permit further Python writes."); }
+        if (missing.Any(output => !intended.Contains(output, StringComparer.Ordinal)))
+        { errors.Add("Current state would enlarge the reviewed Python writes."); missing = []; }
+        // An acknowledged upload is committed by the index, whose public read has no
+        // read-after-write guarantee; the next missing file follows without a readback.
+        foreach (string output in missing)
         {
-            string[] missing;
-            try { missing = Missing(prepared, current); }
-            catch (InvalidDataException)
-            { errors.Add("Current complete state does not permit further Python writes."); break; }
-            if (missing.Any(output => !intended.Contains(output, StringComparer.Ordinal)))
-            { errors.Add("Current state would enlarge the reviewed Python writes."); break; }
-            ReleaseFile file = prepared.Files.Single(value => value.Kind == kind);
-            if (!missing.Contains(file.Output, StringComparer.Ordinal)) continue;
+            if (invocations.Count != 0 && token.IsCancellationRequested)
+            { errors.Add("Python publication interrupted; further writes stopped."); break; }
             Originals(preparation, originals);
             token.ThrowIfCancellationRequested();
-            PythonPublishResult invocation = await publish(prepared, originals, file.Output,
-                token);
+            PythonPublishResult invocation = await publish(prepared, originals, output, token);
             invocations.Add(invocation);
-            if (invocation.Upload.Output != file.Output)
+            if (invocation.Upload.Output != output)
                 throw new InvalidDataException("Python publisher returned another output.");
-            try
-            {
-                current = await observe(prepared, token);
-                ValidateObservation(prepared, current);
-                readbacks.Add(current);
-            }
-            catch (OperationCanceledException)
-            { errors.Add("Python publication readback cancelled; further writes stopped."); break; }
             if (!Acknowledged(invocation)) break;
-            try { _ = Missing(prepared, current); }
-            catch (InvalidDataException)
-            { errors.Add("Python intermediate state cannot permit further writes."); break; }
-            if (current.Observation.Files.Single(value => value.Output == file.Output).State !=
-                ReleaseFileState.Exact)
-            { errors.Add("Published original lacks exact intermediate readback."); break; }
         }
-        return new(prepared.Subject, before, [.. invocations], [.. readbacks], [.. errors]);
+        return new(prepared.Subject, before, [.. invocations], [.. errors]);
     }
 
     internal static PythonCompletionResult Complete(PreparedRelease prepared,
@@ -157,6 +142,11 @@ internal static class PythonRelease
         if (publication is not null) ValidatePublication(prepared, initialMissing, publication);
         // Completion is the index observation of each exact file and its original bytes.
         ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, final.Observation, uploads);
+        string[] pending = Pending(prepared, final, publication);
+        if (pending.Length != 0)
+            outcome = outcome with { State = ReleaseBusinessState.Unknown,
+                Reasons = [.. pending.Select(output =>
+                    $"Acknowledged Python upload is not yet visible: {output}.")] };
         if (publication is null && initialMissing.Length != 0)
             return new(outcome with { State = ReleaseBusinessState.Unknown,
                 Reasons = [.. outcome.Reasons,
@@ -165,34 +155,41 @@ internal static class PythonRelease
         return new(outcome, uploads.Length != 0, publication);
     }
 
+    // Only an acknowledged file the index does not yet show is pending visibility; any
+    // other unsatisfied file or check keeps the request unsatisfied.
+    private static string[] Pending(PreparedRelease prepared,
+        PythonIndexObservationResult final, PythonPublicationResult? publication)
+    {
+        string[] acknowledged = publication?.Invocations.Where(Acknowledged)
+            .Select(value => value.Upload.Output).ToArray() ?? [];
+        ReleaseFileObservation[] files = final.Observation.Files;
+        bool visibilityOnly = Qualified(prepared.RequiredChecks, prepared.Checks) &&
+            Qualified(final.Observation.RequiredChecks, final.Observation.Checks) &&
+            files.All(file => file.State == ReleaseFileState.Exact ||
+                file.State == ReleaseFileState.Absent &&
+                    acknowledged.Contains(file.Output, StringComparer.Ordinal));
+        return visibilityOnly ? files.Where(file => file.State == ReleaseFileState.Absent)
+            .Select(file => file.Output).ToArray() : [];
+    }
+
     private static void ValidatePublication(PreparedRelease prepared, string[] initialMissing,
         PythonPublicationResult publication)
     {
         if (publication.Subject != prepared.Subject || initialMissing.Length == 0 ||
-            publication.Invocations.Length > 2 || publication.Readbacks.Length >
-                publication.Invocations.Length)
+            publication.Invocations.Length > 2)
             throw new InvalidDataException("Unsupported Python publication result.");
         ValidateObservation(prepared, publication.Before);
-        PythonIndexObservationResult current = publication.Before;
+        string[] missing = publication.Invocations.Length == 0 ? [] :
+            Missing(prepared, publication.Before);
         for (int i = 0; i < publication.Invocations.Length; i++)
         {
             PythonPublishResult invocation = publication.Invocations[i];
-            string[] missing = Missing(prepared, current);
-            if (missing.Length == 0 || invocation.Upload.Output != missing[0] ||
+            if (i >= missing.Length || invocation.Upload.Output != missing[i] ||
                 !initialMissing.Contains(invocation.Upload.Output, StringComparer.Ordinal) ||
-                i > 0 && (!Acknowledged(publication.Invocations[i - 1]) ||
-                    publication.Readbacks.Length < i ||
-                    current.Observation.Files.Single(file => file.Output ==
-                        publication.Invocations[i - 1].Upload.Output).State !=
-                            ReleaseFileState.Exact) ||
+                i > 0 && !Acknowledged(publication.Invocations[i - 1]) ||
                 !double.IsFinite(invocation.Upload.Command.DurationSeconds) ||
                     invocation.Upload.Command.DurationSeconds < 0)
                 throw new InvalidDataException("Unsupported Python write sequence.");
-            if (i < publication.Readbacks.Length)
-            {
-                current = publication.Readbacks[i];
-                ValidateObservation(prepared, current);
-            }
         }
     }
 

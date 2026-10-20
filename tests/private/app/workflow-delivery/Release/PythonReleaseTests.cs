@@ -47,9 +47,6 @@ public sealed class PythonReleaseTests(TestContext context)
             sdistExact ? ReleaseFileState.Exact : ReleaseFileState.Absent);
         string[] expected = wheelExact ? ["sdist"] : sdistExact ? ["wheel"] : ["wheel", "sdist"];
         fixture.Observations.Enqueue(initial);
-        if (expected.Length == 2)
-            fixture.Observations.Enqueue(fixture.Observe(ReleaseFileState.Exact));
-        fixture.Observations.Enqueue(fixture.Exact());
 
         PythonPublicationResult publication = await fixture.PublishAsync(initial,
             context.CancellationToken);
@@ -58,8 +55,7 @@ public sealed class PythonReleaseTests(TestContext context)
         AssertSequence(expected, fixture.Writes);
         AssertSequence(expected, result.Outcome.Uploads.Select(value => value.Output));
         Assert.HasCount(expected.Length, publication.Invocations);
-        Assert.HasCount(expected.Length, publication.Readbacks);
-        Assert.AreEqual(expected.Length + 1, fixture.Reads);
+        Assert.AreEqual(1, fixture.Reads);
         Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
         Assert.AreEqual(true, result.MutationAttempted);
         Assert.AreSame(publication, result.Publication);
@@ -81,7 +77,6 @@ public sealed class PythonReleaseTests(TestContext context)
             sdistMissing ? ReleaseFileState.Absent : ReleaseFileState.Exact);
         fixture.Observations.Enqueue(fresh);
         string[] expected = wheelMissing ? ["wheel"] : sdistMissing ? ["sdist"] : [];
-        if (expected.Length != 0) fixture.Observations.Enqueue(fixture.Exact());
 
         PythonPublicationResult publication = await fixture.PublishAsync(initial,
             context.CancellationToken);
@@ -90,7 +85,7 @@ public sealed class PythonReleaseTests(TestContext context)
         AssertSequence(expected, fixture.Writes);
         AssertSequence(expected, result.Outcome.Uploads.Select(value => value.Output));
         Assert.AreSame(fresh, publication.Before);
-        Assert.AreEqual(expected.Length + 1, fixture.Reads);
+        Assert.AreEqual(1, fixture.Reads);
         Assert.AreEqual(expected.Length != 0, result.MutationAttempted);
         Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
     }
@@ -101,8 +96,6 @@ public sealed class PythonReleaseTests(TestContext context)
         using var fixture = new Fixture(unit: PythonReleaseUnits.Nbgv);
         PythonIndexObservationResult initial = fixture.Observe();
         fixture.Observations.Enqueue(initial);
-        fixture.Observations.Enqueue(fixture.Observe(ReleaseFileState.Exact));
-        fixture.Observations.Enqueue(fixture.Exact());
         PythonPublicationResult publication = await fixture.PublishAsync(initial,
             context.CancellationToken);
         PythonCompletionResult result = fixture.Complete(initial, fixture.Exact(), publication);
@@ -181,7 +174,6 @@ public sealed class PythonReleaseTests(TestContext context)
         Assert.AreEqual(1, fixture.Reads);
         Assert.IsEmpty(fixture.Writes);
         Assert.IsEmpty(publication.Invocations);
-        Assert.IsEmpty(publication.Readbacks);
         Assert.IsNotEmpty(publication.Errors);
         Assert.AreEqual(expected, result.Outcome.State);
         Assert.AreEqual(false, result.MutationAttempted);
@@ -189,34 +181,37 @@ public sealed class PythonReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("Unknown", "Passed", "Unknown")]
-    [DataRow("Conflict", "Passed", "Unsatisfied")]
-    [DataRow("Absent", "Missing", "Unsatisfied")]
-    [DataRow("Absent", "Passed", "Unsatisfied")]
-    public async Task PublishAsyncUnsafeIntermediateStateStopsLaterWrites(
-        string wheelName, string qualificationName, string expectedName)
+    [DataRow("Absent", "Absent", "Passed", "Unknown")]
+    [DataRow("Exact", "Absent", "Passed", "Unknown")]
+    [DataRow("Conflict", "Absent", "Passed", "Unsatisfied")]
+    [DataRow("Absent", "Absent", "Missing", "Unsatisfied")]
+    [DataRow("Exact", "Exact", "Passed", "Satisfied")]
+    public async Task AcknowledgedUploadContinuesWhileIndexReadLags(string wheelName,
+        string sdistName, string qualificationName, string expectedName)
     {
-        ReleaseFileState wheel = Enum.Parse<ReleaseFileState>(wheelName);
-        ReleaseCheckStatus qualification = Enum.Parse<ReleaseCheckStatus>(qualificationName);
         ReleaseBusinessState expected = Enum.Parse<ReleaseBusinessState>(expectedName);
-        using var fixture = new Fixture();
+        using var fixture = new Fixture(unit: PythonReleaseUnits.Nbgv);
         PythonIndexObservationResult initial = fixture.Observe();
-        PythonIndexObservationResult readback = fixture.Observe(wheel,
-            qualification: qualification);
         fixture.Observations.Enqueue(initial);
-        fixture.Observations.Enqueue(readback);
 
+        // The index still reports both files absent after the wheel upload is acknowledged.
         PythonPublicationResult publication = await fixture.PublishAsync(initial,
             context.CancellationToken);
-        PythonCompletionResult result = fixture.Complete(initial, readback, publication);
+        PythonCompletionResult result = fixture.Complete(initial, fixture.Observe(
+            Enum.Parse<ReleaseFileState>(wheelName), Enum.Parse<ReleaseFileState>(sdistName),
+            Enum.Parse<ReleaseCheckStatus>(qualificationName)), publication);
 
-        AssertSequence(["wheel"], fixture.Writes);
-        Assert.AreEqual(2, fixture.Reads);
-        Assert.AreSame(readback, Assert.ContainsSingle(publication.Readbacks));
-        Assert.IsNotEmpty(publication.Errors);
+        AssertSequence(["wheel", "sdist"], fixture.Writes);
+        Assert.AreEqual(1, fixture.Reads);
+        Assert.IsEmpty(publication.Errors);
         Assert.AreEqual(expected, result.Outcome.State);
         Assert.AreEqual(true, result.MutationAttempted);
-        Assert.IsTrue(Assert.ContainsSingle(result.Outcome.Uploads).Command.Succeeded);
+        Assert.HasCount(2, result.Outcome.Uploads);
+        string reasons = string.Join(";", result.Outcome.Reasons);
+        if (expected == ReleaseBusinessState.Unknown)
+            Assert.Contains("not yet visible: sdist", reasons);
+        else if (expected == ReleaseBusinessState.Unsatisfied)
+            Assert.DoesNotContain("not yet visible", reasons);
     }
 
     [TestMethod]
@@ -246,29 +241,6 @@ public sealed class PythonReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task PublishAsyncReadbackDisappearanceCannotEnlargeInitialMissingSet()
-    {
-        using var fixture = new Fixture();
-        PythonIndexObservationResult initial = fixture.Observe(ReleaseFileState.Absent,
-            ReleaseFileState.Exact);
-        PythonIndexObservationResult readback = fixture.Observe(ReleaseFileState.Exact);
-        fixture.Observations.Enqueue(initial);
-        fixture.Observations.Enqueue(readback);
-
-        PythonPublicationResult publication = await fixture.PublishAsync(initial,
-            context.CancellationToken);
-        PythonCompletionResult result = fixture.Complete(initial, readback, publication);
-
-        AssertSequence(["wheel"], fixture.Writes);
-        Assert.AreEqual(2, fixture.Reads);
-        Assert.Contains("enlarge", Assert.ContainsSingle(publication.Errors));
-        Assert.AreSame(readback, Assert.ContainsSingle(publication.Readbacks));
-        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, result.Outcome.State);
-        Assert.AreEqual(true, result.MutationAttempted);
-        Assert.AreEqual("wheel", Assert.ContainsSingle(result.Outcome.Uploads).Output);
-    }
-
-    [TestMethod]
     [DataRow("failed", "Exact", "Satisfied")]
     [DataRow("failed", "Absent", "Unsatisfied")]
     [DataRow("ambiguous", "Exact", "Satisfied")]
@@ -287,7 +259,6 @@ public sealed class PythonReleaseTests(TestContext context)
         using var fixture = new Fixture();
         PythonIndexObservationResult initial = fixture.Observe();
         fixture.Observations.Enqueue(initial);
-        fixture.Observations.Enqueue(fixture.Exact());
         NativeCommandResult command = defect switch
         {
             "failed" => new(NativeTermination.Exited, 17, "partial", "failure", 0.125, null),
@@ -306,8 +277,7 @@ public sealed class PythonReleaseTests(TestContext context)
             fixture.Observe(ReleaseFileState.Exact, finalSdist), publication);
 
         AssertSequence(["wheel"], fixture.Writes);
-        Assert.AreEqual(2, fixture.Reads);
-        Assert.HasCount(1, publication.Readbacks);
+        Assert.AreEqual(1, fixture.Reads);
         Assert.AreSame(invocation, Assert.ContainsSingle(publication.Invocations));
         NativeCommandResult retained = Assert.ContainsSingle(result.Outcome.Uploads).Command;
         Assert.AreSame(command, retained);
@@ -345,14 +315,14 @@ public sealed class PythonReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task PublishAsyncCancelledReadbackRetainsInvocationAndStops()
+    public async Task PublishAsyncInterruptedAfterAcknowledgedUploadRetainsItAndStops()
     {
         using var fixture = new Fixture();
         using var cancel =
             CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
         PythonIndexObservationResult initial = fixture.Observe();
         fixture.Observations.Enqueue(initial);
-        fixture.BeforeReadback = cancel.Cancel;
+        fixture.AfterAcknowledged = cancel.Cancel;
 
         PythonPublicationResult publication = await fixture.PublishAsync(initial,
             cancel.Token);
@@ -360,10 +330,9 @@ public sealed class PythonReleaseTests(TestContext context)
             fixture.Observe(ReleaseFileState.Exact), publication);
 
         AssertSequence(["wheel"], fixture.Writes);
-        Assert.AreEqual(2, fixture.Reads);
+        Assert.AreEqual(1, fixture.Reads);
         Assert.HasCount(1, publication.Invocations);
-        Assert.IsEmpty(publication.Readbacks);
-        Assert.Contains("cancelled", Assert.ContainsSingle(publication.Errors));
+        Assert.Contains("interrupted", Assert.ContainsSingle(publication.Errors));
         Assert.AreEqual(ReleaseBusinessState.Unsatisfied, result.Outcome.State);
         Assert.AreEqual(true, result.MutationAttempted);
         Assert.AreSame(Fixture.Success, Assert.ContainsSingle(result.Outcome.Uploads).Command);
@@ -434,29 +403,6 @@ public sealed class PythonReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("wheel")]
-    [DataRow("sdist")]
-    public async Task CompleteAfterPublicationRequiresBothFinalIndexFiles(string omitted)
-    {
-        using var fixture = new Fixture();
-        PythonIndexObservationResult initial = fixture.Observe();
-        fixture.Observations.Enqueue(initial);
-        fixture.Observations.Enqueue(fixture.Exact());
-        PythonPublicationResult publication = await fixture.PublishAsync(initial,
-            context.CancellationToken);
-
-        PythonCompletionResult result = fixture.Complete(initial, fixture.Observe(
-            omitted == "wheel" ? ReleaseFileState.Absent : ReleaseFileState.Exact,
-            omitted == "sdist" ? ReleaseFileState.Absent : ReleaseFileState.Exact), publication);
-
-        AssertSequence(["wheel"], fixture.Writes);
-        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, result.Outcome.State);
-        Assert.AreEqual(true, result.MutationAttempted);
-        Assert.Contains("Required destination file is absent: " + omitted, string.Join(";",
-            result.Outcome.Reasons));
-    }
-
-    [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
     public async Task PublishAsyncSubstitutedOriginalRejectsBeforeUpload(bool duringRead)
@@ -520,7 +466,7 @@ public sealed class PythonReleaseTests(TestContext context)
                 { Sha256 = new string('e', 64) }; break;
             case "publication-subject":
                 initial = fixture.Observe();
-                publication = new(other, initial, [], [], []);
+                publication = new(other, initial, [], []);
                 break;
         }
 
@@ -554,8 +500,7 @@ public sealed class PythonReleaseTests(TestContext context)
         { ExitCode = 17 };
         var publication = new PythonPublicationResult(fixture.Prepared.Subject, initial,
             [new(new("wheel", command), maskFailed, "Controlled result."),
-                new(new("sdist", Fixture.Success), false, "Controlled result.")],
-            [fixture.Observe(ReleaseFileState.Exact), fixture.Exact()], []);
+                new(new("sdist", Fixture.Success), false, "Controlled result.")], []);
 
         Assert.ThrowsExactly<InvalidDataException>(() => fixture.Complete(initial,
             fixture.Exact(), publication));
@@ -578,7 +523,7 @@ public sealed class PythonReleaseTests(TestContext context)
         internal List<string> Writes { get; } = [];
         internal int Reads { get; private set; }
         internal Action? AfterObserve { get; set; }
-        internal Action? BeforeReadback { get; set; }
+        internal Action? AfterAcknowledged { get; set; }
         internal Action? AfterPublish { get; set; }
         internal PythonPublishResult? Invocation { get; set; }
 
@@ -637,7 +582,6 @@ public sealed class PythonReleaseTests(TestContext context)
         {
             Assert.AreSame(Prepared, prepared);
             Reads++;
-            if (Reads > 1) BeforeReadback?.Invoke();
             token.ThrowIfCancellationRequested();
             Assert.IsNotEmpty(Observations, "Unexpected observation beyond the bounded scenario.");
             PythonIndexObservationResult observation = Observations.Dequeue();
@@ -654,6 +598,7 @@ public sealed class PythonReleaseTests(TestContext context)
             Writes.Add(output);
             AfterPublish?.Invoke();
             token.ThrowIfCancellationRequested();
+            AfterAcknowledged?.Invoke();
             return Task.FromResult(Invocation ?? new(new(output, Success), false,
                 "Controlled result; no native publication."));
         }
