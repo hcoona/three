@@ -54,7 +54,10 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
             var index = new ServiceIndexResourceV3(Object(body), DateTime.UtcNow);
             Uri packageBase = Endpoint(index, "PackageBaseAddress/3.0.0");
             Uri publish = Endpoint(index, "PackagePublish/2.0.0");
-            resources = new(packageBase.AbsoluteUri.TrimEnd('/') + "/", publish.AbsoluteUri);
+            // The live index lists the push resource without a trailing slash; the client
+            // pushes to it with one, which is the endpoint the publisher admits.
+            resources = new(packageBase.AbsoluteUri.TrimEnd('/') + "/",
+                publish.AbsoluteUri.TrimEnd('/') + "/");
 
             string root = resources.PackageBaseAddress + Uri.EscapeDataString(packageId) + "/";
             (status, body) = await ReadAsync("package-control", new(api));

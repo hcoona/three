@@ -19,7 +19,7 @@ public sealed class GithubNuGetObservationTests
     private const string Index = "{\"version\":\"3.0.0\",\"resources\":["
         + "{\"@type\":\"PackageBaseAddress/3.0.0\",\"@id\":\"" + Base + "\"},"
         + "{\"@type\":\"PackagePublish/2.0.0\","
-        + "\"@id\":\"https://nuget.pkg.github.com/hcoona/\"}]}";
+        + "\"@id\":\"https://nuget.pkg.github.com/hcoona\"}]}";
 
     [TestMethod]
     [DataRow(false, "Exact")]

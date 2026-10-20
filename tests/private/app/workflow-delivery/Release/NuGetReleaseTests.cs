@@ -147,7 +147,7 @@ public sealed class NuGetReleaseTests(TestContext context)
                     + "{\"@type\":\"PackageBaseAddress/3.0.0\","
                     + "\"@id\":\"https://nuget.pkg.github.com/hcoona/download/\"},"
                     + "{\"@type\":\"PackagePublish/2.0.0\","
-                    + "\"@id\":\"https://nuget.pkg.github.com/hcoona/\"}]}") }
+                    + "\"@id\":\"https://nuget.pkg.github.com/hcoona\"}]}") }
                 : new HttpResponseMessage(HttpStatusCode.NotFound)
                     { Content = new ByteArrayContent([]) });
     }
