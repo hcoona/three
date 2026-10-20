@@ -1,12 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using WorkflowDelivery.Platform;
+using WorkflowDelivery.Release;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.CI;
 
 internal sealed record NativePreparationSelection(CiComparison Comparison,
-    bool Python, bool Ruby, bool Node);
+    bool Python, bool Ruby, bool Node, bool Browser);
 
 // The native Linux scenarios own preparation; this boundary only selects them. The runner's
 // filter, per-module minimum count and exit code qualify the selected rows.
@@ -31,7 +32,8 @@ internal static class NativePreparationQualification
         return new(comparison,
             comparison.Full || changedPaths.Any(path => Input(path, true)),
             comparison.Full || changedPaths.Any(path => Input(path, false)),
-            comparison.Full || changedPaths.Any(NodeInput));
+            comparison.Full || changedPaths.Any(NodeInput),
+            comparison.Full || changedPaths.Any(BrowserInput));
     }
 
     internal static int? Run(string[] args, TextWriter output)
@@ -61,7 +63,8 @@ internal static class NativePreparationQualification
                 File.AppendAllText(path,
                     $"python={selected.Python.ToString().ToLowerInvariant()}\n" +
                     $"ruby={selected.Ruby.ToString().ToLowerInvariant()}\n" +
-                    $"node={selected.Node.ToString().ToLowerInvariant()}\n");
+                    $"node={selected.Node.ToString().ToLowerInvariant()}\n" +
+                    $"browser={selected.Browser.ToString().ToLowerInvariant()}\n");
             return 0;
         }
         return null;
@@ -97,6 +100,11 @@ internal static class NativePreparationQualification
         return NodeInputs.Contains(path, StringComparer.Ordinal) ||
             DotNetInheritedInputs.Consumes(path, Managed);
     }
+
+    // The browser-store scenario also builds the committed product, and the AMO source archive
+    // carries every product file.
+    private static bool BrowserInput(string path) => NodeInput(path) ||
+        Under(path, BrowserStorePreparation.Product);
 
     private static bool Under(string path, string directory) => path == directory ||
         path.StartsWith(directory + "/", StringComparison.Ordinal);

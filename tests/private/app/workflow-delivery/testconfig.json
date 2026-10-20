@@ -1,5 +1,5 @@
 {
   "commandLineOptions": {
-    "filter": "TestCategory!=NuGetNativeScenarios&TestCategory!=NuGetNativePreparation&TestCategory!=GithubReleaseNativePreparation&TestCategory!=PythonNativeContract&TestCategory!=PnpmNativeContract&TestCategory!=RubyNativeContract"
+    "filter": "TestCategory!=NuGetNativeScenarios&TestCategory!=NuGetNativePreparation&TestCategory!=GithubReleaseNativePreparation&TestCategory!=PythonNativeContract&TestCategory!=PnpmNativeContract&TestCategory!=RubyNativeContract&TestCategory!=BrowserStoreNativePreparation"
   }
 }

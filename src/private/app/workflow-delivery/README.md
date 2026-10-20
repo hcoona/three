@@ -279,8 +279,9 @@ named above and in the
 them. It also excludes
 `PythonNativeContract`, which the Linux native-preparation job runs under
 `mise exec --locked dotnet python uv` with
-`--filter 'TestCategory=PythonNativeContract'`, and `PnpmNativeContract`, which
-the same job runs under `mise exec --locked dotnet node pnpm`. To run them locally,
+`--filter 'TestCategory=PythonNativeContract'`, and `PnpmNativeContract` and
+`BrowserStoreNativePreparation`, which the same job runs under
+`mise exec --locked dotnet node pnpm`. To run them locally,
 override the default with `--filter 'TestCategory=NuGetNativePreparation'
 --minimum-expected-tests 2` or `--filter 'TestCategory=NuGetNativeScenarios'
 --minimum-expected-tests 3`. An explicit filter replaces the default, so an
