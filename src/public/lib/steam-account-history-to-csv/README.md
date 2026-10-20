@@ -21,6 +21,10 @@ This is a lightweight browser extension that converts the Steam account history 
 
 All three storefronts require thorough local testing before submission and generally expect a clear privacy disclosure plus demo credentials when applicable.
 
+### Automated release
+
+The [Workflow Delivery browser-store caller](../../../../.github/workflows/workflow-delivery-v3-browser-store-release.yml) updates the existing listings from `main`. Dispatch it with one `store` (`chrome-web-store`, `firefox-amo` or `edge-addons`), the `official` channel and `dry-run` unset; a dry run or a `buddy` request only qualifies the zips and reports the store state. The release unit is [`workflow-delivery.release-unit.yml`](workflow-delivery.release-unit.yml). The [browser-store integration](../../../private/app/workflow-delivery/docs/integration/browser-store.md#owner-setup) lists the required variables, Environment secrets and Google Cloud setup.
+
 ## Build & package
 
 This package is built with [WXT](https://wxt.dev). WXT generates `manifest.json` from `wxt.config.ts` and the `src/entrypoints/*` files.

@@ -13,31 +13,35 @@ Delivery callers support a narrower set, which this table owns. The retired v1
 Official stack ([retired records](../validation/historical-readers.md#retired-records))
 is not an Official route.
 
-| Ecosystem       | Official destination | Implemented Official scope                                                           |
-| --------------- | -------------------- | ------------------------------------------------------------------------------------ |
-| Python          | PyPI                 | Smoke unit and `nbgv-python`; live publication only from `refs/heads/main`           |
-| Ruby            | RubyGems.org         | Smoke unit and `asciidoctor-latexmath`; live publication only from `refs/heads/main` |
-| npm             | npmjs                | `hexo-renderer-asciidoc` only; live only from `refs/heads/main`                      |
-| NuGet           | None                 | No Official channel; GitHub Packages Buddy only                                      |
-| GitHub Releases | GitHub release       | `image-occlusion-editor` only; live publication only from `refs/heads/main`          |
+| Ecosystem       | Official destination | Implemented Official scope                                                                   |
+| --------------- | -------------------- | -------------------------------------------------------------------------------------------- |
+| Python          | PyPI                 | Smoke unit and `nbgv-python`; live publication only from `refs/heads/main`                   |
+| Ruby            | RubyGems.org         | Smoke unit and `asciidoctor-latexmath`; live publication only from `refs/heads/main`         |
+| npm             | npmjs                | `hexo-renderer-asciidoc` only; live only from `refs/heads/main`                              |
+| NuGet           | None                 | No Official channel; GitHub Packages Buddy only                                              |
+| GitHub Releases | GitHub release       | `image-occlusion-editor` only; live publication only from `refs/heads/main`                  |
+| Browser         | Chrome Web Store     | `steam-account-history-to-csv` only; live only from `refs/heads/main`; Buddy is dry run only |
+| Browser         | Firefox AMO          | `steam-account-history-to-csv` only; live only from `refs/heads/main`; Buddy is dry run only |
+| Browser         | Edge Add-ons         | `steam-account-history-to-csv` only; live only from `refs/heads/main`; Buddy is dry run only |
 
-`ReleasePolicy.RequireEligible` is the one application ref check. Python, Ruby
-and GitHub Releases apply it during preparation and again in the privileged
-publisher; live Buddy there requires a branch ref under `refs/heads/`. npm
-applies it in the request job, during preparation and in each publisher. NuGet
-Buddy requests carry the dispatched ref in their subject without a ref-class
-check. Dry run needs no live ref eligibility. Native Environment branch policies
-may constrain a channel further; they do not replace this check. Ruby and Python
-Official accept every unit registered in `RubyReleaseUnits` and
-`PythonReleaseUnits`; their `Admit` rejects any other unit before preparation.
-npm Official accepts only `hexo-renderer-asciidoc` live; the
-`hcoona-release-smoke-npm` unit remains dry-run only, and
-`NpmReleaseUnits.Admit` rejects it live with Official before preparation.
-GitHub Releases accepts only the `image-occlusion-editor` unit, through
-`GithubReleaseUnits.Admit` ([GitHub Release integration](github-release.md)).
-Adding another Official ref or Ruby, Python, npm or GitHub Releases Official
-unit, a NuGet Official destination, or a browser-extension store destination
-is a caller change that updates this table and its tests together.
+`ReleasePolicy.RequireEligible` is the one application ref check. Python, Ruby,
+GitHub Releases and the [browser stores](browser-store.md#caller-and-channel)
+apply it during preparation and again in the privileged publisher; live Buddy
+there requires a branch ref under `refs/heads/`. npm applies it in the request
+job, during preparation and in each publisher. NuGet Buddy requests carry the
+dispatched ref in their subject without a ref-class check. Dry run needs no live
+ref eligibility. Native Environment branch policies may constrain a channel
+further; they do not replace this check. Ruby and Python Official accept every
+unit registered in `RubyReleaseUnits` and `PythonReleaseUnits`; their `Admit`
+rejects any other unit before preparation. npm Official accepts only
+`hexo-renderer-asciidoc` live; the `hcoona-release-smoke-npm` unit remains
+dry-run only, and `NpmReleaseUnits.Admit` rejects it live with Official before
+preparation. GitHub Releases accepts only the `image-occlusion-editor` unit,
+through `GithubReleaseUnits.Admit` ([GitHub Release integration](github-release.md)).
+The browser stores accept Buddy only as a dry run. Adding another Official ref
+or Ruby, Python, npm or GitHub Releases Official unit, a NuGet Official
+destination, or another browser-extension product or store is a caller change
+that updates this table and its tests together.
 
 ## Locked Tool Selection
 
