@@ -115,6 +115,41 @@ public sealed class NuGetReleaseTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task PublishAsyncUnprovisionedGithubPackageBlocksUpload()
+    {
+        using var fixture = new NuGetReleaseTestFixture();
+        using var registry = new MissingPackageRegistry();
+        using var client = new HttpClient(registry);
+        int pushes = 0;
+
+        NuGetPublicationResult result = await NuGetRelease.PublishAsync(
+            fixture.Preparation, fixture.Root, "controlled-capability",
+            new GithubNuGetObservation(client).ObserveAsync, (_, _, _, _, _) =>
+            { pushes++; throw new AssertFailedException("Missing package must not upload."); },
+            context.CancellationToken);
+
+        Assert.AreEqual(0, pushes);
+        Assert.IsNull(result.Invocation);
+        Assert.IsNotEmpty(result.Errors);
+        Assert.AreEqual(ReleaseFileState.Unknown, result.After.Observation.Files[0].State);
+    }
+
+    private sealed class MissingPackageRegistry : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellation) => Task.FromResult(
+            request.RequestUri!.AbsoluteUri == GithubNuGetObservation.ServiceIndex
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(
+                    "{\"version\":\"3.0.0\",\"resources\":["
+                    + "{\"@type\":\"PackageBaseAddress/3.0.0\","
+                    + "\"@id\":\"https://nuget.pkg.github.com/hcoona/download/\"},"
+                    + "{\"@type\":\"PackagePublish/2.0.0\","
+                    + "\"@id\":\"https://nuget.pkg.github.com/hcoona/\"}]}") }
+                : new HttpResponseMessage(HttpStatusCode.NotFound)
+                    { Content = new ByteArrayContent([]) });
+    }
+
+    [TestMethod]
     [DataRow("Exact", "Satisfied")]
     [DataRow("Absent", "Unsatisfied")]
     [DataRow("Unknown", "Unknown")]

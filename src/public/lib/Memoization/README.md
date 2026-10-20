@@ -199,6 +199,8 @@ clean project before any publication. The `Memoization.Generators` source genera
 at build time and its output is compiled into `Memoization.dll`; the package ships no
 analyzer.
 
+Before the first GitHub Packages release, the owner bootstraps the package once as described in [NuGet Release integration](../../../private/app/workflow-delivery/docs/integration/dotnet.md#concrete-nuget-release-integration).
+
 ## License
 
 LGPL-3.0-or-later WITH LGPL-3.0-linking-exception. See [LICENSE](https://github.com/hcoona/three/blob/main/LICENSES/LGPL-3.0-linking-exception.txt) for details.
