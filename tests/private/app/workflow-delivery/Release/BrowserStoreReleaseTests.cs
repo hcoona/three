@@ -309,6 +309,26 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     }
 
     [TestMethod]
+    public void MissingPublisherResultLeavesALaterPublishedStateUnknown()
+    {
+        using var files = new Originals(["chrome-zip"]);
+        BrowserStorePreparationResult preparation = files.Preparation("chrome-web-store",
+            live: true);
+
+        BrowserStoreCompletionResult completion = BrowserStoreRelease.Complete(preparation,
+            Observation(preparation, StoreState.Absent),
+            Observation(preparation, StoreState.Published), null);
+
+        Assert.AreEqual(ReleaseBusinessState.Unknown, completion.Outcome.State);
+        Assert.AreEqual(StoreState.Published, completion.State);
+        Assert.IsNull(completion.MutationAttempted);
+        Assert.IsNull(completion.Publication);
+        Assert.AreEqual(ReleaseBusinessState.Satisfied, BrowserStoreRelease.Complete(
+            preparation, Observation(preparation, StoreState.Published),
+            Observation(preparation, StoreState.Published), null).Outcome.State);
+    }
+
+    [TestMethod]
     public async Task DryRunAndBuddyLiveCannotPublish()
     {
         using var files = new Originals(["chrome-zip"]);

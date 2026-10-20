@@ -59,7 +59,9 @@ Completion is the store reporting the prepared version as received, in review
 or published ([WD-REL-009](../requirements.md#release-delivery)); updates apply
 only to an existing listing. A missing listing, a later or other in-flight
 version, or a rejected, disabled or taken-down version is a conflict that
-blocks writes. An unreadable state is unknown.
+blocks writes. An unreadable state is unknown. A request whose initial
+observation needed a write but that has no publisher result is unknown, with
+its mutation unknown, even when the final observation shows the version.
 
 | Store            | Authentication                                                                                        | Observation                                                                                                                                                    | Publication                                                                                                                                  |
 | ---------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
