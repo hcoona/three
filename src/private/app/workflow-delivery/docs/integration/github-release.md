@@ -101,7 +101,10 @@ required check `release-identity`.
 
 - If the tag exists, it must be a lightweight tag at the selected revision.
   Any other existing tag is a conflict and is never moved.
-- If no release exists for the tag, every asset is absent.
+- If no release exists for the tag, every asset is absent. A missing tag is
+  acceptable only then, because creation binds the tag to the selected
+  revision. An existing release whose tag is missing is a conflict, even when
+  its assets are exact, so it is neither satisfied nor extended.
 - An existing release must not be a draft, and its prerelease flag must match
   the channel.
 - Every listed asset must be one of the prepared names in the `uploaded`

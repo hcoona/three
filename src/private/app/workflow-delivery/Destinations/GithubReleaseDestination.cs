@@ -36,10 +36,12 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
         try
         {
             // A tag without a release at the selected commit still admits creation; any
-            // other existing tag is never moved.
+            // other existing tag is never moved. A missing tag admits only an absent release,
+            // which creation then binds to the selected commit.
             (int status, byte[] body) = await ReadAsync("tag",
                 new(Api + "/git/ref/tags/" + Escape(tag)));
-            if (status == 200)
+            bool tagged = status == 200;
+            if (tagged)
             {
                 JsonObject reference = Object(body);
                 JsonObject target = RequiredObject(reference["object"]);
@@ -56,7 +58,8 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
             RequireOk(status);
             JsonObject release = Object(body);
             long id = Number(release, "id");
-            if (Text(release, "tag_name") != tag || Flag(release, "draft") ||
+            // A release whose tag is gone is no longer bound to the prepared commit.
+            if (!tagged || Text(release, "tag_name") != tag || Flag(release, "draft") ||
                 Flag(release, "prerelease") != buddy)
                 return Result(ReleaseFileState.Conflict, ReleaseCheckStatus.Failed);
             releaseId = id;
