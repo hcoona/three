@@ -34,7 +34,8 @@ internal static class BrowserStoreReleaseCli
             _ = BrowserStoreRelease.OriginalsAsync(preparation, observeOriginals,
                 CancellationToken.None).GetAwaiter().GetResult();
             StoreObservation result;
-            if (preparation.Target.Store == BrowserStorePreparation.ChromeWebStore)
+            if (preparation.Target.Store == BrowserStorePreparation.ChromeWebStore &&
+                !preparation.Prepared.Subject.DryRun)
             {
                 using HttpClient client = RegistryHttpClient.Create();
                 result = store(preparation, false, client).ObserveAsync(CancellationToken.None)

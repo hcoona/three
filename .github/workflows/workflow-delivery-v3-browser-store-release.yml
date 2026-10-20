@@ -152,7 +152,7 @@ jobs:
       - &read-token
         name: Acquire read-only Chrome Web Store token
         id: read-token
-        if: inputs.store == 'chrome-web-store'
+        if: inputs.store == 'chrome-web-store' && inputs.dry-run == false
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:
           workload_identity_provider: ${{ vars.WORKFLOW_DELIVERY_CWS_WORKLOAD_IDENTITY_PROVIDER }}

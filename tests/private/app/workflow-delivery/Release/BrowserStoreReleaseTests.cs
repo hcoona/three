@@ -250,23 +250,46 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    [DataRow("chrome-web-store", "Absent", true, 2)]
-    [DataRow("firefox-amo", "Unobserved", true, 2)]
-    [DataRow("edge-addons", "Unobserved", true, 2)]
-    [DataRow("chrome-web-store", "Published", true, 0)]
-    [DataRow("chrome-web-store", "Conflict", false, 0)]
-    [DataRow("chrome-web-store", "Unknown", false, 0)]
-    public void DryRunDescribesOnlyAbsentOrUnobservedWrites(string store, string state,
-        bool ready, int writes)
+    [DataRow("chrome-web-store")]
+    [DataRow("firefox-amo")]
+    [DataRow("edge-addons")]
+    public void DryRunObservesNoStoreAndReportsItUnobserved(string store)
     {
         using var files = new Originals(BrowserStorePreparation.StoreOutputs(store));
         BrowserStorePreparationResult preparation = files.Preparation(store);
+        string root = Directory.CreateTempSubdirectory("browser-store-dry-").FullName;
+        try
+        {
+            string prepared = Path.Combine(root, "preparation.json");
+            File.WriteAllText(prepared, JsonSerializer.Serialize(preparation,
+                TransferJson.Default.BrowserStorePreparationResult));
+            string originals = Path.GetDirectoryName(Path.GetDirectoryName(
+                files.Files[0].Path))!;
+            int factory = 0;
+            string Run(params string[] args)
+            {
+                using var output = new StringWriter();
+                Assert.AreEqual(0, BrowserStoreReleaseCli.Run(["release", .. args], output,
+                    store: (_, _, _) => { factory++; throw new InvalidOperationException(); },
+                    environment: _ => null));
+                return output.ToString();
+            }
+            string observation = Path.Combine(root, "observation.json");
+            File.WriteAllText(observation, Run("observe-browser-store", prepared, originals));
+            ReleaseDryRun result = JsonSerializer.Deserialize(Run("describe-browser-store",
+                prepared, observation), TransferJson.Default.ReleaseDryRun)!;
 
-        ReleaseDryRun result = BrowserStoreRelease.Describe(preparation,
-            Observation(preparation, Enum.Parse<StoreState>(state)));
-
-        Assert.AreEqual(ready, result.Ready);
-        Assert.HasCount(writes, result.HypotheticalWrites);
+            Assert.AreEqual(0, factory);
+            Assert.AreEqual(StoreState.Unobserved, JsonSerializer.Deserialize(
+                File.ReadAllText(observation), TransferJson.Default.StoreObservation)!.State);
+            Assert.IsTrue(result.Ready);
+            Assert.HasCount(2, result.HypotheticalWrites);
+            Assert.AreEqual("The store was not observed: a dry run acquires no store " +
+                "credential.", result.Reasons[0]);
+            Assert.ThrowsExactly<InvalidDataException>(() => BrowserStoreRelease.Describe(
+                preparation, Observation(preparation, StoreState.Absent)));
+        }
+        finally { Directory.Delete(root, recursive: true); }
     }
 
     [TestMethod]
