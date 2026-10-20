@@ -22,7 +22,7 @@ Gem::Source.prepend(Module.new do
     end
     expected_host = JSON.parse(File.read(ARGV.fetch(0))).fetch("host")
     selected = URI.parse(expected_host)
-    unless uri.host == selected.host && uri.path == selected.path
+    unless uri.host == selected.host && uri.path.chomp("/") == selected.path.chomp("/")
       raise "wrong native host"
     end
     credential_ok = if uri.host == "rubygems.pkg.github.com"

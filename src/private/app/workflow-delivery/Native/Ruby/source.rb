@@ -36,6 +36,8 @@ def read_selected_source(request)
     uri.user = URI.encode_www_form_component(user).gsub("+", "%20")
     uri.password = URI.encode_www_form_component(token).gsub("+", "%20")
   end
+  # RubyGems resolves gem downloads relative to the source; keep a path prefix as a directory.
+  uri.path = "#{uri.path}/" unless uri.path.end_with?("/")
   source = Gem::Source.new(uri.to_s)
   sources = Gem::SourceList.new
   sources << source

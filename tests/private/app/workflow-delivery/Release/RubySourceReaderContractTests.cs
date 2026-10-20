@@ -53,7 +53,7 @@ public sealed class RubySourceReaderContractTests(TestContext context)
         CollectionAssert.AreEqual(new[] { prefix + "/specs.4.8.gz",
             prefix + "/prerelease_specs.4.8.gz",
             prefix + $"/quick/Marshal.4.8/{Name}-{version}.gemspec.rz",
-            $"/gems/{Name}-{version}.gem" }, source.Paths);
+            prefix + $"/gems/{Name}-{version}.gem" }, source.Paths);
         string? expected = channel == "buddy" ? "Basic " + Convert.ToBase64String(
             Encoding.UTF8.GetBytes(Credential.User + ":" + Credential.Token)) : null;
         Assert.IsTrue(source.Requests.All(request => request.Authorization == expected),
