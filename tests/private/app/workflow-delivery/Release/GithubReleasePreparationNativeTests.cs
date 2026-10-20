@@ -73,8 +73,10 @@ public sealed class GithubReleasePreparationNativeTests(TestContext context)
 
         async Task<string> Git(string directory, params string[] arguments)
         {
+            // Match the release caller's checkout, which does not fetch LFS content.
             NativeCommandResult outcome = await NativeProcess.ExecuteAsync(new("git", directory,
-                arguments, 300), token);
+                arguments, 300,
+                new Dictionary<string, string?> { ["GIT_LFS_SKIP_SMUDGE"] = "1" }), token);
             Assert.IsTrue(outcome.Succeeded, outcome.Stderr);
             return outcome.Stdout;
         }
