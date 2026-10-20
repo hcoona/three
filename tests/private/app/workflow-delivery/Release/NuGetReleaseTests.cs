@@ -208,6 +208,84 @@ public sealed class NuGetReleaseTests(TestContext context)
         Assert.AreEqual(ReleaseBusinessState.Unknown, result.Outcome.State);
     }
 
+    // WD-REL-009: nuget.org completes on the exact version reported available, without
+    // byte proof; a version already available is satisfied without claiming creation.
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void CompleteNuGetOrgAvailableVersionIsSatisfiedWithoutByteProof(bool preExisting)
+    {
+        PreparedRelease prepared = Official();
+        NuGetObservationResult available = OfficialObservation(prepared,
+            ReleaseFileState.Available);
+        NuGetObservationResult initial = preExisting ? available
+            : OfficialObservation(prepared, ReleaseFileState.Absent);
+        var invocation = new NuGetPushResult(true, false, null, 1);
+        NuGetPublicationResult? published = preExisting ? null
+            : new(prepared.Subject, initial, invocation, available, []);
+
+        NuGetCompletionResult result = NuGetRelease.Complete(prepared, initial, available,
+            published);
+
+        Assert.AreEqual(ReleaseBusinessState.Satisfied, result.Outcome.State);
+        Assert.AreEqual((bool?)!preExisting, result.MutationAttempted);
+        Assert.AreSame(preExisting ? null : invocation, result.Invocation);
+    }
+
+    // GitHub Packages Buddy keeps exact byte readback; the core rejects a version-only state.
+    [TestMethod]
+    public async Task PublishAsyncBuddyRejectsVersionOnlyStateBeforeUpload()
+    {
+        using var fixture = new NuGetReleaseTestFixture();
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => NuGetRelease.PublishAsync(
+            fixture.Preparation, fixture.Root, "controlled-capability",
+            (_, _, _) => Task.FromResult(fixture.Observe(ReleaseFileState.Available)),
+            (_, _, _, _, _) => throw new AssertFailedException("Available must not upload."),
+            context.CancellationToken));
+    }
+
+    [TestMethod]
+    [DataRow("size")]
+    [DataRow("buddy-final")]
+    public void CompleteRejectsVersionOnlyStateOutsideTheException(string change)
+    {
+        if (change == "buddy-final")
+        {
+            using var fixture = new NuGetReleaseTestFixture();
+            Assert.ThrowsExactly<InvalidDataException>(() => NuGetRelease.Complete(
+                fixture.Prepared, fixture.Observe(ReleaseFileState.Exact),
+                fixture.Observe(ReleaseFileState.Available), null));
+            return;
+        }
+        PreparedRelease prepared = Official();
+        NuGetObservationResult available = OfficialObservation(prepared,
+            ReleaseFileState.Available);
+        NuGetObservationResult sized = available with { Observation = available.Observation with
+            { Files = [available.Observation.Files[0] with { Size = 1 }] } };
+        Assert.ThrowsExactly<InvalidDataException>(() => NuGetRelease.Complete(prepared,
+            sized, sized, null));
+    }
+
+    private static PreparedRelease Official() => new(
+        new(new string('a', 40), "refs/heads/main", "phi-failure-detector",
+            "src/public/lib/PhiFailureDetector/workflow-delivery.release-unit.yml", "official",
+            "nugetorg", false),
+        [new("package", "original", "nuget-package", "PhiFailureDetector", "1.0.0",
+            "PhiFailureDetector.1.0.0.nupkg", 1, new string('b', 64))],
+        [.. NuGetPreparation.Required], NuGetPreparation.Required.Select(id =>
+            new ReleaseCheck(id, ReleaseCheckStatus.Passed)).ToArray());
+
+    private static NuGetObservationResult OfficialObservation(PreparedRelease prepared,
+        ReleaseFileState state)
+    {
+        ReleaseFile file = prepared.Files[0];
+        return new(new(prepared.Subject,
+            [new(file.Output, file.Name, file.Version, state, null, null)],
+            NuGetOrgObservation.RequiredChecks,
+            [new("native-metadata-visibility", ReleaseCheckStatus.Passed)]),
+            new(NuGetOrgObservation.PackageBaseAddress, NuGetPublisher.NuGetOrgEndpoint), []);
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]

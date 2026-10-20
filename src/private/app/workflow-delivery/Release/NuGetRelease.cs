@@ -67,8 +67,7 @@ internal static class NuGetRelease
             throw new InvalidDataException("Dry run cannot invoke NuGet publication.");
         NuGetObservationResult before = await observe(prepared, credential, token);
         ValidateObservation(prepared, before);
-        if (before.Observation.Files[0].State == ReleaseFileState.Exact &&
-            Qualified(before.Observation))
+        if (Present(before.Observation) && Qualified(before.Observation))
             return new(prepared.Subject, before, null, before, []);
         if (before.Observation.Files[0].State != ReleaseFileState.Absent ||
             !Qualified(before.Observation))
@@ -109,15 +108,15 @@ internal static class NuGetRelease
     {
         ValidateObservation(prepared, initial);
         ValidateObservation(prepared, final);
-        // Completion is the registry observation of the exact coordinate and original bytes.
+        // Completion is the registry observation of the exact coordinate and original bytes,
+        // or for nuget.org of the exact coordinate available (WD-REL-009).
         ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, final.Observation, []);
-        if (!Qualified(initial.Observation) || initial.Observation.Files[0].State is not
-                (ReleaseFileState.Exact or ReleaseFileState.Absent))
+        if (!Qualified(initial.Observation) || !Present(initial.Observation) &&
+                initial.Observation.Files[0].State != ReleaseFileState.Absent)
             throw new InvalidDataException("Initial NuGet observation could not proceed.");
         if (published is null)
         {
-            if (initial.Observation.Files[0].State == ReleaseFileState.Exact)
-                return new(outcome, false, null);
+            if (Present(initial.Observation)) return new(outcome, false, null);
             return new(outcome with { State = ReleaseBusinessState.Unknown,
                 Reasons = [.. outcome.Reasons,
                     "Required publication result is missing; effects remain unknown."] }, null,
@@ -125,7 +124,7 @@ internal static class NuGetRelease
         }
         if (published.Subject != prepared.Subject)
             throw new InvalidDataException("Mismatched NuGet publication result.");
-        if (initial.Observation.Files[0].State == ReleaseFileState.Exact ||
+        if (Present(initial.Observation) ||
             published.Invocation is { } invocation &&
                 (!double.IsFinite(invocation.DurationSeconds) || invocation.DurationSeconds < 0 ||
                     invocation.ReturnedSuccessfully && invocation.FailureType is not null ||
@@ -135,8 +134,8 @@ internal static class NuGetRelease
         ValidateObservation(prepared, published.Before);
         ValidateObservation(prepared, published.After);
         bool allowed = Qualified(published.Before.Observation) &&
-            published.Before.Observation.Files[0].State == (published.Invocation is null
-                ? ReleaseFileState.Exact : ReleaseFileState.Absent);
+            (published.Invocation is null ? Present(published.Before.Observation)
+                : published.Before.Observation.Files[0].State == ReleaseFileState.Absent);
         if (!allowed || published.Errors.Length != 0)
             return new(outcome with { State = ReleaseBusinessState.Unsatisfied,
                 Reasons = [.. outcome.Reasons, "Publication did not establish a supported path."] },
@@ -161,6 +160,10 @@ internal static class NuGetRelease
                     .Select(file => file.Output).ToArray());
         else _ = ReleaseCompletion.Evaluate(prepared, result.Observation, []);
     }
+
+    // A present coordinate is never created again; nuget.org reports it without byte proof.
+    internal static bool Present(ReleaseObservation observation) =>
+        observation.Files[0].State is ReleaseFileState.Exact or ReleaseFileState.Available;
 
     private static bool Qualified(ReleaseObservation observation) =>
         observation.RequiredChecks.All(id => observation.Checks.Any(check => check.Id == id &&

@@ -13,7 +13,9 @@ internal sealed record ReleaseCheck(string Id, ReleaseCheckStatus Status);
 internal sealed record PreparedRelease(ReleaseSubject Subject, ReleaseFile[] Files,
     string[] RequiredChecks, ReleaseCheck[] Checks);
 
-internal enum ReleaseFileState { Absent, Exact, Conflict, Unknown }
+// Available is the exact coordinate reported available without a served-byte claim; only
+// destinations under the WD-REL-009 version-observation exception may report it.
+internal enum ReleaseFileState { Absent, Exact, Conflict, Unknown, Available }
 internal sealed record ReleaseFileObservation(string Output, string Name, string Version,
     ReleaseFileState State, long? Size, string? Sha256);
 internal sealed record ReleaseObservation(ReleaseSubject Subject,
@@ -54,6 +56,9 @@ internal static class ReleasePolicy
 // infers a multi-file transaction or a missing-file recovery capability.
 internal static class ReleaseCompletion
 {
+    // nuget.org repository-signs every accepted package and its versions are immutable.
+    private static readonly string[] VersionObserved = ["nugetorg"];
+
     internal static ReleaseOutcome Evaluate(PreparedRelease prepared,
         ReleaseObservation? observation, ReleaseUpload[] uploads)
     {
@@ -149,6 +154,13 @@ internal static class ReleaseCompletion
                 case ReleaseFileState.Exact:
                     if (actual.Size != file.Size || actual.Sha256 != file.Sha256)
                         throw new InvalidDataException("Exact state differs from original bytes.");
+                    break;
+                case ReleaseFileState.Available:
+                    if (!VersionObserved.Contains(prepared.Subject.Destination,
+                            StringComparer.Ordinal) || actual.Size is not null ||
+                        actual.Sha256 is not null)
+                        throw new InvalidDataException(
+                            "Unsupported version-only destination observation.");
                     break;
                 case ReleaseFileState.Absent:
                     absent = true;
