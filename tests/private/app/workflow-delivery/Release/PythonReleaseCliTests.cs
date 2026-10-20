@@ -53,7 +53,7 @@ public sealed class PythonReleaseCliTests
             TransferJson.Default.PythonIndexToolResult);
         f.RoundTrip(f.Observe(), TransferJson.Default.PythonIndexObservationResult);
         f.RoundTrip(new PythonPublicationResult(f.Prepared.Subject, f.Observe(),
-            [f.PublishResult("wheel")], [f.Observe(ReleaseFileState.Exact)], []),
+            [f.PublishResult("wheel")], []),
             TransferJson.Default.PythonPublicationResult);
     }
 
@@ -82,7 +82,7 @@ public sealed class PythonReleaseCliTests
             case "observation": Reject(f.Observe(),
                 TransferJson.Default.PythonIndexObservationResult, "observation"); break;
             case "publication":
-                Reject(new PythonPublicationResult(f.Prepared.Subject, f.Observe(), [], [], []),
+                Reject(new PythonPublicationResult(f.Prepared.Subject, f.Observe(), [], []),
                     TransferJson.Default.PythonPublicationResult, "invocations");
                 break;
             default: Assert.Fail("Unmapped typed transfer."); break;
@@ -336,12 +336,8 @@ public sealed class PythonReleaseCliTests
                 Assert.AreEqual(f.IndexTools.Interpreter, tools.Interpreter);
                 Assert.AreEqual(f.IndexTools.Helper, tools.Helper);
                 Fresh(tools.Scratch, f.IndexTools.Scratch);
-                return Task.FromResult(reads++ switch
-                {
-                    0 => f.Observe(),
-                    1 => f.Observe(ReleaseFileState.Exact),
-                    _ => f.Observe(ReleaseFileState.Exact, ReleaseFileState.Exact),
-                });
+                reads++;
+                return Task.FromResult(f.Observe());
             }, publish: (prepared, originals, selected, tools, _) =>
             {
                 Assert.AreEqual(f.Prepared.Subject, prepared.Subject);
@@ -359,9 +355,8 @@ public sealed class PythonReleaseCliTests
         CollectionAssert.AreEqual((string[])["wheel", "sdist"], writes);
         CollectionAssert.AreEqual(writes.ToArray(), result.Invocations.Select(v =>
             v.Upload.Output).ToArray());
-        Assert.AreEqual(3, reads);
-        Assert.HasCount(5, scratches);
-        Assert.HasCount(2, result.Readbacks);
+        Assert.AreEqual(1, reads);
+        Assert.HasCount(3, scratches);
         Assert.IsEmpty(result.Errors);
         Assert.AreEqual(ReleaseFileState.Absent, result.Before.Observation.Files[0].State);
         void Fresh(string scratch, string parent)
@@ -430,12 +425,11 @@ public sealed class PythonReleaseCliTests
         int writes = 0;
         using var published = new StringWriter();
         Assert.AreEqual(0, PythonReleaseCli.Run(f.PublishArgs(f.Observe()), published,
-            observe: (_, _, _) => Task.FromResult(reads++ == 0 ? f.Observe() :
-                f.Observe(ReleaseFileState.Exact, ReleaseFileState.Exact)),
+            observe: (_, _, _) => { reads++; return Task.FromResult(f.Observe()); },
             publish: (_, _, selected, _, _) => { writes++; return
                 Task.FromResult(f.PublishResult(selected, failed)); }));
         Assert.AreEqual(1, writes);
-        Assert.AreEqual(2, reads);
+        Assert.AreEqual(1, reads);
         string publication = f.SaveText(published.ToString());
         using var output = new StringWriter();
         Assert.AreEqual(exit, PythonReleaseCli.Run(f.CompleteArgs(f.Observe(),
