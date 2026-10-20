@@ -623,10 +623,13 @@ result-file sanitation. Never fabricate native success to hide output handling.
 
 Refresh the complete observation immediately before mutation. Remove writes
 that became unnecessary; conflict or unknown state stops them. Invoke missing
-wheel before missing sdist, retaining already exact originals. Continue to the
-next missing file only after acknowledged native success and required exact
-intermediate readback. A returned failure/ambiguity or interruption stops all
-further application writes even if a subsequent read confirms that file.
+wheel before missing sdist, retaining already exact originals. Rely on the
+platform: an acknowledged native upload means the index committed that file,
+while the public index read is eventually consistent with no read-after-write
+guarantee, so a read soon after the upload can still miss it. Continue to the
+next missing file after acknowledged native success, without an intermediate
+readback or application polling. A returned failure/ambiguity or interruption
+stops all further application writes even if a subsequent read confirms that file.
 Bounded complete verification may still satisfy the active request; retain the
 actual command abnormality and do not attribute insertion. A fresh same-revision
 request can consider supported exact-subset completion after rebuilding and
@@ -639,6 +642,10 @@ equal the qualified original. No remote UV install or import runs after
 publication; local wheel and Git-free sdist consumption before publication
 carries qualification. This observation does not claim index routing or
 resolver file selection. Missing or unknown observation blocks completion.
+A file whose upload this request acknowledged but which the observation still
+shows absent is unknown rather than unsatisfied: the acknowledged upload is not
+yet visible. A later fresh request confirms it by observing exact state and
+needs no write. Conflicting bytes remain unsatisfied.
 
 The ordinary Python entry and actual Release caller compose qualified components.
 They use prepare, observe, gated publish and separate
