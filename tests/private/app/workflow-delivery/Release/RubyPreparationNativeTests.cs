@@ -467,11 +467,15 @@ public sealed class RubyPreparationNativeTests(TestContext context)
         static string Hash(string path) => Convert.ToHexStringLower(
             SHA256.HashData(File.ReadAllBytes(path)));
 
-        // The caller passes the absolute provider executable that installed Ruby.
-        static string Provider() => Environment.GetEnvironmentVariable("PATH")!
-            .Split(Path.PathSeparator).Select(directory => Path.Combine(directory,
-                OperatingSystem.IsWindows() ? "mise.exe" : "mise"))
-            .First(File.Exists);
+        // Like the caller's readlink -f, pass the resolved provider executable.
+        static string Provider()
+        {
+            string path = Environment.GetEnvironmentVariable("PATH")!
+                .Split(Path.PathSeparator).Select(directory => Path.Combine(directory,
+                    OperatingSystem.IsWindows() ? "mise.exe" : "mise"))
+                .First(File.Exists);
+            return new FileInfo(path).ResolveLinkTarget(true)?.FullName ?? path;
+        }
 
         async Task<string> PreparedToolAsync(string tool)
         {
