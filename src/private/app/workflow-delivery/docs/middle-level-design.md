@@ -22,9 +22,9 @@ implementation details cannot silently weaken these contracts. The
 
 The per-ecosystem integration contracts for [.NET and NuGet](integration/dotnet.md),
 [Node and npm](integration/node.md), [Python](integration/python.md),
-[Ruby](integration/ruby.md) and [GitHub Releases](integration/github-release.md)
-own each ecosystem's native fact extraction, CI group,
-Release caller and destination conditions; the
+[Ruby](integration/ruby.md), [GitHub Releases](integration/github-release.md)
+and [browser stores](integration/browser-store.md) own each ecosystem's native
+fact extraction, CI group, Release caller and destination conditions; the
 [common integration tables](integration/common.md) own the Official channel scope
 and CLI/boundary payloads (see [integration mapping](#integration-mapping)). Each group requires its own applicable native and
 hosted qualification; source design acceptance does not establish those results.
@@ -149,13 +149,13 @@ or closed campaign operators as compatibility services.
 
 ### Workflow Caller Boundaries
 
-| Caller                                                         | Required atomic boundary                                                                                                                                                                            |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/ci.yml` and the CI scope caller             | Actual native ownership, control preparation, group selection, complete results and retained originals                                                                                              |
-| Native Node, .NET, Python and Ruby group wrappers              | Paired endpoint facts, selected work, effective quality, original tool outputs and terminal process facts                                                                                           |
-| Windows NuGet preparation job and reproducibility workflow     | Two preparation rows in CI and three sensitivity/recovery tests on dispatch or `main` changes, executed and passed, with original packages, separate PDBs, native diagnostics and failure retention |
-| Ordinary npm, NuGet, Python, Ruby and GitHub Release workflows | Selected control/product revision, prepared artifact bindings, native authorization, upload-once behavior and separate no-write verification/results                                                |
-| Remaining platform-specific CI and independent projects        | Preserve their own ownership, runners, preparations and required checks                                                                                                                             |
+| Caller                                                                                | Required atomic boundary                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/ci.yml` and the CI scope caller                                    | Actual native ownership, control preparation, group selection, complete results and retained originals                                                                                              |
+| Native Node, .NET, Python and Ruby group wrappers                                     | Paired endpoint facts, selected work, effective quality, original tool outputs and terminal process facts                                                                                           |
+| Windows NuGet preparation job and reproducibility workflow                            | Two preparation rows in CI and three sensitivity/recovery tests on dispatch or `main` changes, executed and passed, with original packages, separate PDBs, native diagnostics and failure retention |
+| Ordinary npm, NuGet, Python, Ruby, GitHub Release and browser-store release workflows | Selected control/product revision, prepared artifact bindings, native authorization, upload-once behavior and separate no-write verification/results                                                |
+| Remaining platform-specific CI and independent projects                               | Preserve their own ownership, runners, preparations and required checks                                                                                                                             |
 
 The Windows NuGet jobs' success cannot substitute for the complete ordinary CI
 gate. General C# checks use Windows; Python and Ruby callers use their supported
@@ -902,9 +902,9 @@ closed; no implementation validation can silently consume a spent external grant
 The [Concrete NuGet Buddy](integration/dotnet.md#concrete-nuget-buddy-integration),
 [npm Release](integration/node.md#concrete-npm-release-integration),
 [Python Release](integration/python.md#concrete-python-release-integration),
-[Ruby Release](integration/ruby.md#concrete-ruby-release-integration) and
+[Ruby Release](integration/ruby.md#concrete-ruby-release-integration),
 [GitHub Release](integration/github-release.md#concrete-github-release-integration)
-integrations share one review
+and [browser store](integration/browser-store.md) integrations share one review
 core: review affected changes with independent engineering/OCR and
 record/research review before implementation, run complete affected suites, HK
 and record checks, and qualify the final caller subject in ordinary CI before
@@ -919,9 +919,10 @@ This design owns the shared inventories and common contracts: the
 [root tooling](#root-tooling-declarations-and-record-readers). Each per-ecosystem
 integration contract ([.NET and NuGet](integration/dotnet.md),
 [Node and npm](integration/node.md), [Python](integration/python.md),
-[Ruby](integration/ruby.md) and [GitHub Releases](integration/github-release.md))
-owns only its ecosystem-specific native facts, CI group, Release caller and
-destination conditions.
+[Ruby](integration/ruby.md), [GitHub Releases](integration/github-release.md)
+and [browser stores](integration/browser-store.md)) owns only its
+ecosystem-specific native facts, CI group, Release caller and destination
+conditions.
 
 The
 [common integration tables](integration/common.md) own only the Official channel

@@ -35,20 +35,20 @@ and types; internal formats have no compatibility promise. A request must supply
 its required frozen native facts and owned directories, rather than a latest
 artifact, ambient fallback or second dependency declaration.
 
-| Interface                                                                | Purpose                                                                                           |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `ci comparison`, `ci control-inputs`                                     | Resolve the event comparison and actual control-test resource consumers                           |
-| `ci caller-control prepare`, `ci caller-dotnet/python/ruby/node`         | Compose existing CI requests, original plans and exact transfers                                  |
-| `ci native-preparation-plan`                                             | Select the original Linux managed preparation scenarios                                           |
-| `ci plan`, `ci plan-node`, `ci plan-node-group`                          | Select declared work from native paired facts and reasons                                         |
-| `ci prepare-python-group`, `ci plan-python-group`, `ci run-python-group` | Prepare, select and execute the original Python plan                                              |
-| `ci prepare-ruby-group`, `ci plan-ruby-group`, `ci run-ruby-group`       | Prepare, select and execute Ruby checks and transfer native Node contributions                    |
-| `ci run-dotnet`                                                          | Execute native managed work                                                                       |
-| `ci run-node`, `ci run-python-package`, `ci result`                      | Execute selected work or collect its candidate-bound results                                      |
-| `release prepare-*`, destination observation/description                 | Independently qualify originals and describe exact, absent, partial, conflicting or unknown state |
-| `release job-inputs ruby/python/npm/nuget/github-release <operation>`    | Prepare existing ordinary Release caller inputs and transfers                                     |
-| `native-message-schemas <directory>`                                     | Regenerate static descriptions of maintained native helper messages                               |
-| Destination publication and completion commands                          | Invoke the native publisher, require separate registry readback and report truthful results       |
+| Interface                                                                           | Purpose                                                                                           |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `ci comparison`, `ci control-inputs`                                                | Resolve the event comparison and actual control-test resource consumers                           |
+| `ci caller-control prepare`, `ci caller-dotnet/python/ruby/node`                    | Compose existing CI requests, original plans and exact transfers                                  |
+| `ci native-preparation-plan`                                                        | Select the original Linux managed preparation scenarios                                           |
+| `ci plan`, `ci plan-node`, `ci plan-node-group`                                     | Select declared work from native paired facts and reasons                                         |
+| `ci prepare-python-group`, `ci plan-python-group`, `ci run-python-group`            | Prepare, select and execute the original Python plan                                              |
+| `ci prepare-ruby-group`, `ci plan-ruby-group`, `ci run-ruby-group`                  | Prepare, select and execute Ruby checks and transfer native Node contributions                    |
+| `ci run-dotnet`                                                                     | Execute native managed work                                                                       |
+| `ci run-node`, `ci run-python-package`, `ci result`                                 | Execute selected work or collect its candidate-bound results                                      |
+| `release prepare-*`, destination observation/description                            | Independently qualify originals and describe exact, absent, partial, conflicting or unknown state |
+| `release job-inputs ruby/python/npm/nuget/github-release/browser-store <operation>` | Prepare existing ordinary Release caller inputs and transfers                                     |
+| `native-message-schemas <directory>`                                                | Regenerate static descriptions of maintained native helper messages                               |
+| Destination publication and completion commands                                     | Invoke the native publisher, require separate registry readback and report truthful results       |
 
 The [static native helper contracts](Native/contracts/) come from actual serializer
 metadata. Managed tests check regeneration; native helper tests use the static
@@ -247,6 +247,18 @@ RubyGems retain their separate observation, authorization and publisher
 contracts. The native publisher invocation, command outcome and required
 read-only source readback remain distinct from business satisfaction. Closed bootstrap
 and native campaigns are not alternate operational entries.
+
+### Browser Store Release
+
+The [browser-store caller](../../../../.github/workflows/workflow-delivery-v3-browser-store-release.yml)
+builds `steam-account-history-to-csv` once with WXT and qualifies the selected
+store's zips (`prepare-browser-store`). The Chrome Web Store, Firefox AMO and
+Edge Add-ons are Official only; Buddy is a dry run. The CWS is observed and
+verified with a read-only Workload Identity Federation token outside the
+publisher; AMO and Edge are observed only inside their gated publisher. A store
+reporting the version as received, in review or published satisfies the
+request. The [browser-store integration](docs/integration/browser-store.md)
+owns the store contracts and the owner setup.
 
 ## Validation and Evidence Limits
 
