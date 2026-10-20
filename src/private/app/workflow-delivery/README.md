@@ -46,7 +46,7 @@ artifact, ambient fallback or second dependency declaration.
 | `ci run-dotnet`                                                          | Execute native managed work                                                                       |
 | `ci run-node`, `ci run-python-package`, `ci result`                      | Execute selected work or collect its candidate-bound results                                      |
 | `release prepare-*`, destination observation/description                 | Independently qualify originals and describe exact, absent, partial, conflicting or unknown state |
-| `release job-inputs ruby/python/npm/nuget <operation>`                   | Prepare existing ordinary Release caller inputs and transfers                                     |
+| `release job-inputs ruby/python/npm/nuget/github-release <operation>`    | Prepare existing ordinary Release caller inputs and transfers                                     |
 | `native-message-schemas <directory>`                                     | Regenerate static descriptions of maintained native helper messages                               |
 | Destination publication and completion commands                          | Invoke the native publisher, require separate registry readback and report truthful results       |
 
@@ -221,6 +221,20 @@ hashes. UV owns publication. A supported fresh request may upload only missing
 files after exact subset observation; no atomic two-file publication is promised.
 Uncertain reads, unsupported partial state or conflicting files block mutation.
 Final index readback and completion remain required when state is already exact.
+
+### GitHub Release
+
+The [GitHub Release caller](../../../../.github/workflows/workflow-delivery-v3-github-release.yml)
+builds the ImageOcclusionEditor installer and portable ZIP once on Windows with the
+product's own scripts, then qualifies both by a silent install and an extraction
+into owned scratch (`prepare-github-release`). Observation reads the tag, the
+release and every served asset (`observe-github-release`); only the gated
+publisher's job token has `contents: write`, and it creates the release and
+uploads missing assets once (`publish-github-release`). The separate
+`complete-github-release` readback compares each downloaded asset byte for byte
+with its original. Different existing assets are a conflict and are never
+replaced. The [GitHub Release integration contract](docs/integration/github-release.md)
+owns the coordinates and conditions.
 
 ### Ordinary Ruby Release
 

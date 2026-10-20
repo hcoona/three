@@ -2,7 +2,10 @@
 
 Project maintainers use this record to locate the existing packaging stages.
 The scripts and project file own executable settings; these observations are
-not a release-channel selection or a new support commitment.
+not a release-channel selection or a new support commitment. The
+[GitHub Release integration contract](../../../../private/app/workflow-delivery/docs/integration/github-release.md)
+runs these scripts once on Windows to prepare the released installer and
+portable ZIP.
 
 [Publish-ImageOcclusionEditor.ps1](../script/Publish-ImageOcclusionEditor.ps1)
 publishes into `out/ImageOcclusionEditor/<Configuration>/<TargetFramework>/<RuntimeIdentifier>/`.
