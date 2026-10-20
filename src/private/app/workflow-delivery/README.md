@@ -283,7 +283,7 @@ them. It also excludes
 `BrowserStoreNativePreparation`, which the same job runs under
 `mise exec --locked dotnet node pnpm`. To run them locally,
 override the default with `--filter 'TestCategory=NuGetNativePreparation'
---minimum-expected-tests 2` or `--filter 'TestCategory=NuGetNativeScenarios'
+--minimum-expected-tests 10` or `--filter 'TestCategory=NuGetNativeScenarios'
 --minimum-expected-tests 3`. An explicit filter replaces the default, so an
 unrestricted local run uses `--filter 'FullyQualifiedName~WorkflowDelivery'`.
 

@@ -24,11 +24,10 @@ internal static class ReleaseJobInputs
         string destination = Env("DESTINATION");
         bool buddy = (ecosystem, destination) switch
         {
-            ("ruby", "github-packages") or ("python", "testpypi") or
-                ("npm", "github-packages") or ("nuget", "github-packages-nuget") or
+            ("ruby" or "npm" or "nuget", "github-packages") or ("python", "testpypi") or
                 ("github-release", GithubReleaseUnits.Buddy) => true,
             ("ruby", "rubygems") or ("python", "pypi") or ("npm", "npmjs") or
-                ("github-release", GithubReleaseUnits.Official) => false,
+                ("nuget", "nugetorg") or ("github-release", GithubReleaseUnits.Official) => false,
             // Browser stores are Official destinations; a Buddy request is a dry run.
             ("browser-store", BrowserStorePreparation.ChromeWebStore or
                 BrowserStorePreparation.FirefoxAmo or BrowserStorePreparation.EdgeAddons) =>
@@ -43,9 +42,8 @@ internal static class ReleaseJobInputs
         string dry = Env("DRY_RUN");
         if (dry is not ("true" or "false")) throw new InvalidDataException(
             "Invalid dry-run input.");
-        string unit = ecosystem is "ruby" or "python" or "npm" or "github-release" ? Env("UNIT") :
-            ecosystem == "browser-store" ? BrowserStorePreparation.Unit :
-            "hcoona-release-smoke-github-packages";
+        string unit = ecosystem == "browser-store" ? BrowserStorePreparation.Unit :
+            Env("UNIT");
         var subject = new ReleaseSubject(Env("GITHUB_SHA"), Env("GITHUB_REF"), unit,
             ecosystem switch
             {
@@ -54,20 +52,21 @@ internal static class ReleaseJobInputs
                 "npm" => NpmReleaseUnits.Named(unit).Declaration,
                 "github-release" => GithubReleaseUnits.Declaration,
                 "browser-store" => BrowserStorePreparation.Declaration,
-                _ => "tests/private/app/workflow-delivery/fixtures/products/" + unit +
-                    "/workflow-delivery.release-unit.yml",
+                _ => NuGetReleaseUnits.Named(unit).Declaration,
             }, buddy ? "buddy" : "official",
             (ecosystem, buddy) switch
             {
                 ("ruby", true) => "github-packages-ruby",
                 ("npm", true) => "github-packages-npm",
+                ("nuget", true) => "github-packages-nuget",
                 _ => destination,
             }, dry == "true");
-        // Every Ruby, Python, npm and GitHub Release job admits the selected registered unit
-        // before preparation; npm also rejects its smoke unit for live Official.
+        // Every job admits the selected registered unit before preparation; npm also
+        // rejects its smoke unit for live Official, and NuGet rejects it for Official.
         if (ecosystem == "ruby") _ = RubyReleaseUnits.Admit(subject);
         if (ecosystem == "python") _ = PythonReleaseUnits.Admit(subject);
         if (ecosystem == "npm") _ = NpmReleaseUnits.Admit(subject);
+        if (ecosystem == "nuget") _ = NuGetReleaseUnits.Admit(subject);
         if (ecosystem == "github-release") _ = GithubReleaseUnits.Admit(subject);
         // The reviewed store coordinate is bound into the request from repository
         // variables; later jobs compare it with the transferred preparation.
@@ -239,7 +238,7 @@ internal static class ReleaseJobInputs
                     "npm" => Read(At("observation/observation.json"),
                         TransferJson.Default.NpmjsObservationResult).Observation,
                     "nuget" => Read(At("observation/observation.json"),
-                        TransferJson.Default.GithubNuGetObservationResult).Observation,
+                        TransferJson.Default.NuGetObservationResult).Observation,
                     "github-release" => Read(At("observation/observation.json"),
                         TransferJson.Default.GithubReleaseObservationResult).Observation,
                     _ => throw new InvalidDataException("Unsupported Release observation."),

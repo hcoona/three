@@ -16,7 +16,7 @@ public sealed class ReleaseJobInputsTests
     [DataRow("python", "pypi", "official", "pypi")]
     [DataRow("npm", "github-packages", "buddy", "github-packages-npm")]
     [DataRow("npm", "npmjs", "official", "npmjs")]
-    [DataRow("nuget", "github-packages-nuget", "buddy", "github-packages-nuget")]
+    [DataRow("nuget", "github-packages", "buddy", "github-packages-nuget")]
     [DataRow("github-release", "github-release-prerelease", "buddy",
         "github-release-prerelease")]
     [DataRow("github-release", "github-release", "official", "github-release")]
@@ -104,6 +104,55 @@ public sealed class ReleaseJobInputsTests
         Assert.AreEqual(directory + "workflow-delivery.release-unit.yml", subject.Declaration);
         Assert.IsTrue(File.Exists(Path.Combine(RepositoryToolSelection.SourceRoot,
             subject.Declaration)), subject.Declaration);
+    }
+
+    [TestMethod]
+    [DataRow(NuGetReleaseUnits.Smoke, "github-packages",
+        "tests/private/app/workflow-delivery/fixtures/products/" +
+        "hcoona-release-smoke-github-packages/")]
+    [DataRow("circular-list", "github-packages", "src/public/lib/CircularList/")]
+    [DataRow("circular-list", "nugetorg", "src/public/lib/CircularList/")]
+    [DataRow("hjg-pngcs", "nugetorg", "src/public/lib/Hjg.Pngcs/")]
+    [DataRow("memoization", "nugetorg", "src/public/lib/Memoization/")]
+    [DataRow("microsoft-extensions-logging-mstest", "nugetorg",
+        "src/public/lib/MicrosoftExtensions.Logging.MSTest/")]
+    [DataRow("microsoft-extensions-logging-xunit", "nugetorg",
+        "src/public/lib/MicrosoftExtensions.Logging.Xunit/")]
+    [DataRow("microsoft-extensions-options-dedup-change-extensions", "nugetorg",
+        "src/public/lib/MicrosoftExtensions.Options.DedupChangeExtensions/")]
+    [DataRow("phi-failure-detector", "nugetorg", "src/public/lib/PhiFailureDetector/")]
+    [DataRow("webhdfs-extensions-file-providers", "nugetorg",
+        "src/public/lib/WebHdfs.Extensions.FileProviders/")]
+    public void NuGetRequestSelectsTheDispatchedUnit(string unit, string destination,
+        string directory)
+    {
+        using var fixture = new Caller("nuget", destination);
+        fixture.Env["UNIT"] = unit;
+        fixture.Run("request");
+        ReleaseSubject subject = fixture.Subject();
+        Assert.AreEqual(unit, subject.Unit);
+        Assert.AreEqual(destination == "nugetorg" ? "official" : "buddy", subject.Channel);
+        Assert.AreEqual(destination == "nugetorg" ? "nugetorg" : "github-packages-nuget",
+            subject.Destination);
+        Assert.AreEqual(directory + "workflow-delivery.release-unit.yml", subject.Declaration);
+        Assert.IsTrue(File.Exists(Path.Combine(RepositoryToolSelection.SourceRoot,
+            subject.Declaration)), subject.Declaration);
+    }
+
+    [TestMethod]
+    [DataRow(NuGetReleaseUnits.Smoke, "nugetorg")]
+    [DataRow("another-package", "github-packages")]
+    [DataRow("circular-list", "github-packages-nuget")]
+    [DataRow("", "github-packages")]
+    public void UnsupportedNuGetUnitStopsBeforePreparation(string unit, string destination)
+    {
+        using var fixture = new Caller("nuget", destination);
+        fixture.Env["UNIT"] = unit;
+        foreach (string[] entry in new[] { new[] { "request" }, ["receive", "publication"],
+            ["state"] })
+            Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run(entry));
+        Assert.IsFalse(Directory.Exists(fixture.At("prepared")));
+        Assert.IsFalse(Directory.Exists(fixture.At("preparation-scratch")));
     }
 
     [TestMethod]
@@ -313,8 +362,8 @@ public sealed class ReleaseJobInputsTests
                     observation, []), TransferJson.Default.PythonIndexObservationResult),
                 "npm" => JsonSerializer.Serialize(new GithubNpmObservationResult(observation,
                     []), TransferJson.Default.GithubNpmObservationResult),
-                "nuget" => JsonSerializer.Serialize(new GithubNuGetObservationResult(observation,
-                    null, []), TransferJson.Default.GithubNuGetObservationResult),
+                "nuget" => JsonSerializer.Serialize(new NuGetObservationResult(observation,
+                    null, []), TransferJson.Default.NuGetObservationResult),
                 "github-release" => JsonSerializer.Serialize(new GithubReleaseObservationResult(
                     observation, null, []), TransferJson.Default.GithubReleaseObservationResult),
                 _ => throw new InvalidOperationException(),
@@ -368,7 +417,7 @@ public sealed class ReleaseJobInputsTests
             {
                 ["RUNNER_TEMP"] = root, ["DESTINATION"] = destination ?? (
                     ecosystem switch { "ruby" => "github-packages", "python" => "testpypi",
-                        "npm" => "github-packages", "nuget" => "github-packages-nuget",
+                        "npm" => "github-packages", "nuget" => "github-packages",
                         "github-release" => GithubReleaseUnits.Buddy,
                         _ => throw new InvalidOperationException() }),
                 ["GITHUB_SHA"] = new string('a', 40), ["GITHUB_REF"] = "refs/heads/feature",
@@ -383,6 +432,7 @@ public sealed class ReleaseJobInputsTests
                     "python" => PythonReleaseUnits.Smoke,
                     "npm" => NpmReleaseUnits.Smoke,
                     "github-release" => GithubReleaseUnits.ImageOcclusionEditor,
+                    "nuget" => NuGetReleaseUnits.Smoke,
                     _ => RubyReleaseUnits.Smoke,
                 },
             };

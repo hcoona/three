@@ -237,7 +237,13 @@ public sealed class NuGetPreparationTests(TestContext context)
     {
         internal GitFixture Repo { get; } = repo;
         internal ReleaseSubject Subject { get; } = new(revision, "refs/heads/development",
-            "product", DotNetPackageFixture.Declaration, "buddy", "github-packages-nuget", true);
+            Unit, UnitRoot + "workflow-delivery.release-unit.yml", "buddy",
+            "github-packages-nuget", true);
+        // The registered smoke unit; the native SDK commands below are controlled.
+        private const string Unit = "hcoona-release-smoke-github-packages";
+        private const string UnitRoot =
+            "tests/private/app/workflow-delivery/fixtures/products/" + Unit + "/";
+        private const string Project = UnitRoot + Unit + ".csproj";
         private readonly string scratch =
             Directory.CreateTempSubdirectory("nuget-release-").FullName;
         internal Func<NativeCommand, NativeCommandResult?>? Override { get; set; }
@@ -265,10 +271,20 @@ public sealed class NuGetPreparationTests(TestContext context)
 
         internal static async Task<string> CommitAsync(GitFixture repo, string preset)
         {
-            await repo.SetAsync(DotNetPackageFixture.Project, "<Project />");
-            await repo.SetAsync(DotNetPackageFixture.Declaration,
-                DotNetPackageFixture.UnitText);
-            await repo.SetAsync("product/workflow-delivery.quality.yml", $"""
+            await repo.SetAsync(Project, "<Project />");
+            await repo.SetAsync(UnitRoot + "workflow-delivery.release-unit.yml", $"""
+                schema: workflow-delivery/v3/release-unit
+                release-unit: {Unit}
+                builds:
+                  - id: nuget-package
+                    definition: dotnet/nuget-package-v1
+                    entry-point: {Unit}.csproj
+                    outputs:
+                      - id: nuget-package
+                        role: primary-package
+                        kind: nuget-package
+                """);
+            await repo.SetAsync(UnitRoot + "workflow-delivery.quality.yml", $"""
                 schema: workflow-delivery/v3/quality-selection
                 ecosystems:
                   dotnet:
@@ -304,7 +320,7 @@ public sealed class NuGetPreparationTests(TestContext context)
                 var values = DotNetPackageResults.NativeProperties.ToDictionary(name => name,
                     _ => "", StringComparer.Ordinal);
                 values["MSBuildProjectFullPath"] = Path.Combine(Repo.Directory,
-                    DotNetPackageFixture.Project);
+                    Project);
                 values["TargetFramework"] = "net10.0";
                 values["NETCoreSdkVersion"] = "10.0.401";
                 values["IsPackable"] = values["GenerateDocumentationFile"] = "true";

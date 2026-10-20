@@ -8,16 +8,24 @@ using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Ecosystems;
 
+// The consumer program prints Expression and expects Expected. A dependency source resolves
+// every package other than the original from the public NuGet gallery.
+internal sealed record DotNetConsumerProbe(string Framework, string Expression, string Expected,
+    bool Dependencies);
+
 // A concrete external consumer of the inspected original package, not a test launcher.
 internal static class DotNetPackageConsumer
 {
     internal const string Marker = "hcoona-release-smoke-github-packages";
+    internal const string Gallery = "https://api.nuget.org/v3/index.json";
 
     internal static async Task<string> RunAsync(DotNetOriginalPackage original,
         Dictionary<string, string> native, string root, int deadline,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> run,
-        CancellationToken token)
+        CancellationToken token, DotNetConsumerProbe? probe = null)
     {
+        probe ??= new(native["TargetFramework"], "HcoonaReleaseSmokeGithubPackages.Smoke.ProjectId",
+            Marker, false);
         DotNetPackageArchive.RequireOriginal(original);
         PackageIdentity identity = DotNetPackageArchive.Identity(original.Path);
         DotNetPackageArchive.RequireIdentity(identity, native);
@@ -52,7 +60,7 @@ internal static class DotNetPackageConsumer
         new XDocument(new XElement("Project", new XAttribute("Sdk", "Microsoft.NET.Sdk"),
             new XElement("PropertyGroup",
                 new XElement("OutputType", "Exe"),
-                new XElement("TargetFramework", native["TargetFramework"]),
+                new XElement("TargetFramework", probe.Framework),
                 new XElement("UseAppHost", "false"),
                 new XElement("ImportDirectoryBuildProps", "false"),
                 new XElement("ImportDirectoryBuildTargets", "false"),
@@ -64,10 +72,20 @@ internal static class DotNetPackageConsumer
             new XElement("ItemGroup", new XElement("PackageReference",
                 new XAttribute("Include", identity.Id),
                 new XAttribute("Version", range.ToNormalizedString()))))).Save(project);
+        string? gallery = probe.Dependencies ? Gallery : null;
         new XDocument(new XElement("configuration",
             new XElement("packageSources", new XElement("clear"), new XElement("add",
-                new XAttribute("key", "original"), new XAttribute("value", feed))),
-            new XElement("packageSourceMapping", new XElement("clear")),
+                new XAttribute("key", "original"), new XAttribute("value", feed)),
+                gallery is null ? null : new XElement("add", new XAttribute("key", "gallery"),
+                    new XAttribute("value", gallery))),
+            new XElement("packageSourceMapping", new XElement("clear"), gallery is null ? null :
+                new[]
+                {
+                    new XElement("packageSource", new XAttribute("key", "original"),
+                        new XElement("package", new XAttribute("pattern", identity.Id))),
+                    new XElement("packageSource", new XAttribute("key", "gallery"),
+                        new XElement("package", new XAttribute("pattern", "*"))),
+                }),
             new XElement("disabledPackageSources", new XElement("clear")),
             new XElement("fallbackPackageFolders", new XElement("clear")))).Save(config);
         await using (var file = new FileStream(Path.Combine(consumer, "global.json"),
@@ -83,13 +101,13 @@ internal static class DotNetPackageConsumer
             await writer.FlushAsync(token);
         }
         await File.WriteAllTextAsync(Path.Combine(consumer, "Program.cs"),
-            "System.Console.WriteLine(HcoonaReleaseSmokeGithubPackages.Smoke.ProjectId);", token);
+            "System.Console.WriteLine(" + probe.Expression + ");", token);
         await run(new("dotnet", consumer,
             ["restore", DotNetCli.DisableBuildServers, project, "--configfile", config,
                 "--packages", packages],
             deadline, environment), token);
         string assetsPath = Path.Combine(consumer, "obj", "project.assets.json");
-        RequireAssets(assetsPath, project, packages, feed, config, identity, original);
+        RequireAssets(assetsPath, project, packages, feed, config, identity, original, gallery);
         string response = Path.Combine(consumer, "build.json");
         await run(new("dotnet", consumer,
             ["msbuild", DotNetCli.DisableBuildServers, project, "-nologo", "-noAutoResponse",
@@ -113,7 +131,7 @@ internal static class DotNetPackageConsumer
         RequireFile(output);
         NativeCommandResult invocation = await run(new("dotnet", consumer, [output],
             Math.Min(deadline, 30), environment), token);
-        if (invocation.Stdout.Trim() != Marker)
+        if (invocation.Stdout.Trim() != probe.Expected)
             throw new InvalidDataException(
                 "The installed package marker API returned a different value.");
         DotNetPackageArchive.RequireOriginal(original);
@@ -121,7 +139,8 @@ internal static class DotNetPackageConsumer
     }
 
     internal static void RequireAssets(string path, string project, string packages,
-        string feed, string config, PackageIdentity identity, DotNetOriginalPackage original)
+        string feed, string config, PackageIdentity identity, DotNetOriginalPackage original,
+        string? gallery = null)
     {
         RequireFile(path);
         LockFile assets = new LockFileFormat().Read(path) ??
@@ -142,20 +161,28 @@ internal static class DotNetPackageConsumer
             throw AssetsMismatch("package folder", packages, LocalPath(folder.Path));
         if (restore.FallbackFolders.Count != 0)
             throw AssetsMismatch("fallback folder count", 0, restore.FallbackFolders.Count);
-        if (restore.Sources is not [var source])
-            throw AssetsMismatch("source count", 1,
+        int sources = gallery is null ? 1 : 2;
+        if (restore.Sources.Count != sources)
+            throw AssetsMismatch("source count", sources,
                 $"{restore.Sources.Count} [{string.Join(", ",
                     restore.Sources.Take(4).Select(item => LocalPath(item.Source)))}]");
-        if (!SamePath(source.Source, feed))
-            throw AssetsMismatch("source path", feed, LocalPath(source.Source));
+        if (!SamePath(restore.Sources[0].Source, feed))
+            throw AssetsMismatch("source path", feed, LocalPath(restore.Sources[0].Source));
+        if (gallery is not null && restore.Sources[1].Source != gallery)
+            throw AssetsMismatch("dependency source", gallery, restore.Sources[1].Source);
         if (restore.ConfigFilePaths is not [string configured])
             throw AssetsMismatch("configuration file count", 1,
                 $"{restore.ConfigFilePaths.Count} [{string.Join(", ",
                     restore.ConfigFilePaths.Take(4).Select(LocalPath))}]");
         if (!SamePath(configured, config))
             throw AssetsMismatch("configuration file path", config, LocalPath(configured));
-        if (assets.Libraries is not [var library])
-            throw AssetsMismatch("package library count", 1, assets.Libraries.Count);
+        // Without a dependency source the original is the only library; otherwise it is the
+        // one library with the original's identifier.
+        LockFileLibrary[] libraries = gallery is null ? [.. assets.Libraries] :
+            [.. assets.Libraries.Where(item => StringComparer.OrdinalIgnoreCase.Equals(item.Name,
+                identity.Id))];
+        if (libraries is not [var library])
+            throw AssetsMismatch("package library count", 1, libraries.Length);
         if (library.Type != "package")
             throw AssetsMismatch("library type", "package", library.Type);
         if (!PackageIdentityComparer.Default.Equals(new(library.Name, library.Version), identity))
@@ -163,8 +190,11 @@ internal static class DotNetPackageConsumer
                 new PackageIdentity(library.Name, library.Version));
         if (assets.Targets is not [var target])
             throw AssetsMismatch("target count", 1, assets.Targets.Count);
-        if (target.Libraries is not [var restored])
-            throw AssetsMismatch("target package library count", 1, target.Libraries.Count);
+        LockFileTargetLibrary[] targeted = gallery is null ? [.. target.Libraries] :
+            [.. target.Libraries.Where(item => StringComparer.OrdinalIgnoreCase.Equals(item.Name,
+                identity.Id))];
+        if (targeted is not [var restored])
+            throw AssetsMismatch("target package library count", 1, targeted.Length);
         if (restored.Type != "package")
             throw AssetsMismatch("target library type", "package", restored.Type);
         if (string.IsNullOrWhiteSpace(restored.Name))

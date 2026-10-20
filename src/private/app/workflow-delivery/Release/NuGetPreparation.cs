@@ -12,7 +12,9 @@ internal sealed record NuGetPreparationRequest(ReleaseSubject Subject, string Ch
 internal sealed record NuGetPreparationResult(PreparedRelease Prepared,
     Dictionary<string, string> Native, ReleaseCommand[] Commands, string[] Errors);
 
-// The adopted Release recipe uses native versioning and packaging independently of CI.
+// The adopted Release recipes use native versioning and packaging independently of CI. The
+// smoke recipe packs one framework; the shared library recipe packs the native multi-target
+// outer build of an ordinary registered library.
 internal static class NuGetPreparation
 {
     internal const string Preset = "dotnet/hcoona-release-smoke-github-packages-v1";
@@ -23,7 +25,7 @@ internal static class NuGetPreparation
     private static readonly string[] TestProperties = ["IsTestProject",
         "IsTestingPlatformApplication"];
     private static readonly string[] Dimensions = ["-property:Configuration=Release",
-        "-property:TargetFramework=net10.0", "-property:RuntimeIdentifier=",
+        "-property:TargetFramework=", "-property:RuntimeIdentifier=",
         "-property:ContinuousIntegrationBuild=true", "-property:RestoreLockedMode=true"];
 
     internal static Task<NuGetPreparationResult> PrepareAsync(NuGetPreparationRequest request,
@@ -48,6 +50,9 @@ internal static class NuGetPreparation
         var files = new List<ReleaseFile>();
         var native = new Dictionary<string, string>(StringComparer.Ordinal);
         ReleaseUnitDeclaration? unit = null;
+        NuGetReleaseUnit registered = NuGetReleaseUnits.Admit(request.Subject);
+        // The outer multi-target build has no single framework.
+        string framework = registered.Library ? "" : registered.Frameworks[0];
         ReleaseBuild? build = null;
         string project = "";
         DotNetOriginalPackage? original = null;
@@ -56,9 +61,7 @@ internal static class NuGetPreparation
 
         await CheckAsync("native-input", async () =>
         {
-            if (request.Subject.Channel != "buddy" ||
-                request.Subject.Destination != "github-packages-nuget")
-                throw new InvalidDataException("Unsupported NuGet Release channel or destination.");
+            ReleasePolicy.RequireEligible(request.Subject);
             if (!GitReader.IsCommitId(request.Subject.Revision))
                 throw new InvalidDataException(
                     "NuGet Release requires the exact selected revision.");
@@ -80,7 +83,8 @@ internal static class NuGetPreparation
             QualitySelection? quality = await new QualitySelectionReader(checkout,
                 bound.ReadOptionalTextAsync).ReadAsync(DotNetRepositoryReader.Parent(entry),
                     "dotnet", token);
-            if (quality?.Preset != Preset)
+            // Ordinary libraries keep their native CI checks and select no quality preset.
+            if (registered.Library ? quality is not null : quality?.Preset != Preset)
                 throw new InvalidDataException("Unsupported complete NuGet quality selection.");
             string globalText = await bound.ReadOptionalTextAsync("global.json", token) ??
                 throw new InvalidDataException("Missing committed SDK selection.");
@@ -104,7 +108,9 @@ internal static class NuGetPreparation
                     "RuntimeIdentifiers,IsTestProject,IsTestingPlatformApplication"],
                     60, environment, false))).Stdout);
             Dictionary<string, string> recipe = DotNetPackageResults.Properties(shape.RootElement);
-            if (recipe["TargetFramework"] != "net10.0" || recipe["TargetFrameworks"] != "" ||
+            if (recipe["TargetFramework"] != framework || (registered.Library
+                    ? !recipe["TargetFrameworks"].Split(';').SequenceEqual(registered.Frameworks)
+                    : recipe["TargetFrameworks"] != "") ||
                 recipe["RuntimeIdentifier"] != "" || recipe["RuntimeIdentifiers"] != "" ||
                 TestProperties.Any(name =>
                     recipe[name] != "" && !recipe[name].Equals("false",
@@ -112,8 +118,8 @@ internal static class NuGetPreparation
                 throw new InvalidDataException("Unsupported native variants or required tests.");
             native = await ProjectionAsync("native-input", "GetBuildVersion");
             if (native["NETCoreSdkVersion"] != selected ||
-                native["PackageId"] != "Hcoona.ReleaseSmoke.GithubPackages" ||
-                native["AssemblyName"] != "Hcoona.ReleaseSmoke.GithubPackages")
+                native["PackageId"] != registered.PackageId ||
+                native["AssemblyName"] != registered.AssemblyName)
                 throw new InvalidDataException("Unsupported native NuGet product or SDK.");
         });
         await CheckAsync("build", async () => Compare(await ProjectionAsync("build", "Build")));
@@ -126,22 +132,26 @@ internal static class NuGetPreparation
             DotNetPackageResults.Target(document.RootElement, "Pack");
             Dictionary<string, string> packed =
                 DotNetPackageResults.Properties(document.RootElement);
-            DotNetPackageResults.Validate(project, "net10.0", "", packed);
+            DotNetPackageResults.Validate(project, framework, "", packed);
             Compare(packed);
             ReleaseOutput output = build!.Outputs[0];
             original = DotNetPackageResults.Archive(unit!.Id, build.Id, output.Id, output.Role,
-                output.Kind, document.RootElement, originals, packed);
+                output.Kind, document.RootElement, originals, packed, registered.Library &&
+                    packed["IncludeSymbols"].Equals("true", StringComparison.OrdinalIgnoreCase));
             native = packed;
         });
         await CheckAsync("contents", () =>
         {
             DotNetPackageArchive.RequireOriginal(original!);
-            DotNetPackageArchive.Contents(original!.Path, native);
+            DotNetPackageArchive.Contents(original!.Path, native,
+                registered.Library ? registered.Frameworks : null);
             return Task.CompletedTask;
         });
         await CheckAsync("consumer", async () => await DotNetPackageConsumer.RunAsync(original!,
             native, Path.Combine(scratch, "probe"), 300,
-            (command, cancellation) => RunAsync("consumer", command, cancellation), token));
+            (command, cancellation) => RunAsync("consumer", command, cancellation), token,
+            registered.Library ? new("net" + Version.Parse(native["NETCoreSdkVersion"]).Major +
+                ".0", registered.Probe!, registered.AssemblyName, true) : null));
         await CheckAsync("original-bytes", () =>
         {
             DotNetPackageArchive.RequireOriginal(original!);
@@ -161,7 +171,10 @@ internal static class NuGetPreparation
             "dotnet", checkout, ["msbuild", DotNetCli.DisableBuildServers, project, "-nologo",
                 "-noAutoResponse", "-target:" + targets, "-getTargetResult:" + targets,
                 "-getProperty:" + string.Join(',', DotNetPackageResults.NativeProperties),
-                "-getResultOutputFile:" + response, .. Dimensions,
+                "-getResultOutputFile:" + response, .. Dimensions.Where(dimension =>
+                    !registered.Library || dimension != "-property:TargetFramework=").Select(
+                    dimension => dimension == "-property:TargetFramework=" ? dimension + framework
+                        : dimension),
                 "-property:PathMap=" + ProjectCollection.Escape(checkout + "=/_/"),
                 .. (extra ?? [])], 300,
             environment, false);
@@ -174,7 +187,7 @@ internal static class NuGetPreparation
             DotNetPackageResults.Target(document.RootElement, target);
             Dictionary<string, string> values =
                 DotNetPackageResults.Properties(document.RootElement);
-            DotNetPackageResults.Validate(project, "net10.0", "", values);
+            DotNetPackageResults.Validate(project, framework, "", values);
             return values;
         }
 

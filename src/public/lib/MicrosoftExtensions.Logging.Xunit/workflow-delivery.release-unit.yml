@@ -1,0 +1,10 @@
+schema: workflow-delivery/v3/release-unit
+release-unit: microsoft-extensions-logging-xunit
+builds:
+  - id: nuget-package
+    definition: dotnet/nuget-package-v1
+    entry-point: MicrosoftExtensions.Logging.Xunit.csproj
+    outputs:
+      - id: nuget-package
+        role: primary-package
+        kind: nuget-package

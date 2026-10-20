@@ -272,7 +272,7 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/README.md")]
     [DataRow("tests/eng/test_python_runtime.py", ".github/workflows/nested/caller.yml")]
     [DataRow("tests/eng/test_general_ci_workflow.py",
-        ".github/workflows/workflow-delivery-v3-nuget-buddy-smoke.yml")]
+        ".github/workflows/workflow-delivery-v3-nuget-release.yml")]
     [DataRow("tests/private/app/workflow-delivery/Native/Python",
         "src/public/lib/nbgv-python-other/source.py")]
     [DataRow("src/private/app/azureauth-credprovider/tests", "src/other/Directory.Build.props")]

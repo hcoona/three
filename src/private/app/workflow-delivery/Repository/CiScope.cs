@@ -39,7 +39,7 @@ internal static partial class CiScope
         ".python-version", ".config/uv/uv.toml", "conftest.py", "pytest.ini",
         "eng/scripts/sync_python_version.py", "eng/scripts/test-python.sh"];
     private static readonly string[] NuGetPreparationRoots = ["src/private/app/workflow-delivery",
-        "tests/private/app/workflow-delivery", NuGetProduct];
+        "tests/private/app/workflow-delivery", .. Ecosystems.NuGetReleaseUnits.PreparationRoots];
     private static readonly string[] GithubReleasePreparationRoots = [
         "src/private/app/workflow-delivery", "tests/private/app/workflow-delivery",
         GithubReleaseProduct];

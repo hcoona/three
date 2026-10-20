@@ -6,40 +6,42 @@ using NuGet.Packaging;
 using NuGet.Packaging.Core;
 using NuGet.Protocol;
 using NuGet.Versioning;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
 
-internal sealed record GithubNuGetRead(string Stage, int? Status, string Detail);
-internal sealed record GithubNuGetResources(string PackageBaseAddress, string PackagePublish);
-internal sealed record GithubNuGetObservationResult(ReleaseObservation Observation,
-    GithubNuGetResources? Resources, GithubNuGetRead[] Reads);
+internal sealed record NuGetRead(string Stage, int? Status, string Detail);
+internal sealed record NuGetResources(string PackageBaseAddress, string PackagePublish);
+internal sealed record NuGetObservationResult(ReleaseObservation Observation,
+    NuGetResources? Resources, NuGetRead[] Reads);
 
 // NuGet owns service-index, version and archive interpretation. The application
 // constrains its request and compares qualified originals with selected native state.
 internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? clock = null)
 {
-    internal const string Package = "Hcoona.ReleaseSmoke.GithubPackages";
     internal const string ServiceIndex = "https://nuget.pkg.github.com/hcoona/index.json";
-    private const string Api = "https://api.github.com/users/hcoona/packages/nuget/"
-        + "hcoona.releasesmoke.githubpackages";
+    internal static readonly string[] RequiredChecks =
+        ["native-package-control", "native-metadata-visibility"];
     private const int MetadataLimit = 2 * 1024 * 1024;
 
-    internal async Task<GithubNuGetObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal async Task<NuGetObservationResult> ObserveAsync(PreparedRelease prepared,
         string credential, CancellationToken token)
     {
         if (prepared.Subject.Channel != "buddy" ||
             prepared.Subject.Destination != "github-packages-nuget" || prepared.Files is not
                 [{ Kind: "nuget-package" }] ||
-            !StringComparer.OrdinalIgnoreCase.Equals(prepared.Files[0].Name, Package) ||
+            prepared.Files[0].Name != NuGetReleaseUnits.Admit(prepared.Subject).PackageId ||
             string.IsNullOrEmpty(credential) || credential.Any(c => c is '\r' or '\n' or '\0'))
             throw new InvalidDataException("Unsupported GitHub NuGet request.");
         ReleaseFile file = prepared.Files[0];
         var identity = new PackageIdentity(file.Name, NuGetVersion.Parse(file.Version));
         string packageId = identity.Id.ToLowerInvariant();
         string version = identity.Version.ToNormalizedString().ToLowerInvariant();
-        var reads = new List<GithubNuGetRead>();
-        GithubNuGetResources? resources = null;
+        string api = "https://api.github.com/users/hcoona/packages/nuget/" +
+            Uri.EscapeDataString(packageId);
+        var reads = new List<NuGetRead>();
+        NuGetResources? resources = null;
         ReleaseCheckStatus control = ReleaseCheckStatus.Missing;
         int sends = 0;
         using var timer = new CancellationTokenSource(TimeSpan.FromSeconds(90),
@@ -54,10 +56,20 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
             Uri publish = Endpoint(index, "PackagePublish/2.0.0");
             resources = new(packageBase.AbsoluteUri.TrimEnd('/') + "/", publish.AbsoluteUri);
 
-            (status, body) = await ReadAsync("package-control", new(Api));
+            string root = resources.PackageBaseAddress + Uri.EscapeDataString(packageId) + "/";
+            (status, body) = await ReadAsync("package-control", new(api));
+            // An owner package that does not exist yet is created by the first publication,
+            // which links it to the publishing repository; the feed must agree it is absent.
+            if (status == 404)
+            {
+                (status, _) = await ReadAsync("native-versions", new(root + "index.json"));
+                if (status != 404) return Result(ReleaseFileState.Unknown);
+                control = ReleaseCheckStatus.Passed;
+                return Result(ReleaseFileState.Absent);
+            }
             RequireOk(status);
             JObject package = Object(body);
-            if (!StringComparer.OrdinalIgnoreCase.Equals(Text(package, "name"), Package) ||
+            if (!StringComparer.OrdinalIgnoreCase.Equals(Text(package, "name"), identity.Id) ||
                 Text(package, "package_type") != "nuget" || Text(package, "visibility") !=
                     "public" || Text(RequiredObject(package["repository"]), "full_name") !=
                     "hcoona/three" || package["owner"] is { Type: not JTokenType.Null } owner &&
@@ -70,7 +82,7 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
             for (int page = 1; ; page++)
             {
                 (status, body) = await ReadAsync("github-versions",
-                    new(Api + "/versions?state=active&per_page=100&page=" + page));
+                    new(api + "/versions?state=active&per_page=100&page=" + page));
                 RequireOk(status);
                 JArray items = RequiredArray(Parse(body));
                 if (items.Count > 100) throw new InvalidDataException();
@@ -85,7 +97,6 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
                 if (items.Count < 100) break;
             }
 
-            string root = resources.PackageBaseAddress + Uri.EscapeDataString(packageId) + "/";
             (status, body) = await ReadAsync("native-versions", new(root + "index.json"));
             RequireOk(status);
             var nativeVersions = new HashSet<NuGetVersion>(VersionComparer.VersionRelease);
@@ -125,10 +136,10 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
             return Result(ReleaseFileState.Unknown);
         }
 
-        GithubNuGetObservationResult Result(ReleaseFileState state, long? size = null,
+        NuGetObservationResult Result(ReleaseFileState state, long? size = null,
             string? digest = null) => new(new(prepared.Subject,
                 [new(file.Output, file.Name, file.Version, state, size, digest)],
-                ["native-package-control", "native-metadata-visibility"],
+                RequiredChecks,
                 [new("native-package-control", control), new("native-metadata-visibility",
                     state is ReleaseFileState.Exact or ReleaseFileState.Absent
                         ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed)]), resources,

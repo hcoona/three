@@ -31,7 +31,7 @@ public sealed class GithubNuGetObservationTests
         using var handler = new Handler((_, step) => Response(step,
             different ? Archive(extra: true) : original));
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+        NuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(original), Credential, CancellationToken.None);
 
         Assert.AreEqual(Enum.Parse<ReleaseFileState>(expected),
@@ -60,7 +60,7 @@ public sealed class GithubNuGetObservationTests
             return response;
         });
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+        NuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(original), Credential, CancellationToken.None);
 
         ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
@@ -77,7 +77,7 @@ public sealed class GithubNuGetObservationTests
         byte[] remote = Encoding.UTF8.GetBytes("not a NuGet archive");
         using var handler = new Handler((_, step) => Response(step, remote));
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+        NuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(original), Credential, CancellationToken.None);
 
         ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
@@ -103,7 +103,7 @@ public sealed class GithubNuGetObservationTests
             return response;
         });
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+        NuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(original), Credential, CancellationToken.None);
 
         Assert.AreEqual(Enum.Parse<ReleaseFileState>(expected),
@@ -122,7 +122,7 @@ public sealed class GithubNuGetObservationTests
             _ => Json("{\"versions\":[]}"),
         });
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+        NuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
 
         Assert.AreEqual(ReleaseFileState.Absent, result.Observation.Files[0].State);
@@ -145,7 +145,7 @@ public sealed class GithubNuGetObservationTests
         };
         using var handler = new Handler((_, step) => Json(step == 0 ? Index : control));
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+        NuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
 
         Assert.AreEqual(ReleaseFileState.Conflict, result.Observation.Files[0].State);
@@ -158,7 +158,7 @@ public sealed class GithubNuGetObservationTests
         using var handler = new Handler((_, step) => step == 3
             ? Json("{\"versions\":[]}") : Response(step, Archive()));
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+        NuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
@@ -176,7 +176,7 @@ public sealed class GithubNuGetObservationTests
         using var handler = new Handler((_, _) => new((HttpStatusCode)status)
         { Content = new ByteArrayContent([]) });
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+        NuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
@@ -190,7 +190,7 @@ public sealed class GithubNuGetObservationTests
         cancellation.Cancel();
         using var handler = new Handler((_, _) => throw new AssertFailedException());
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+        NuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(Archive()), Credential, cancellation.Token);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
@@ -219,7 +219,7 @@ public sealed class GithubNuGetObservationTests
         };
         using var handler = new Handler((_, _) => Json(index));
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+        NuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
@@ -243,7 +243,7 @@ public sealed class GithubNuGetObservationTests
         using var handler = new Handler((_, step) => step == 2 ? Json(versions)
             : Response(step, Archive()));
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+        NuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
@@ -262,7 +262,7 @@ public sealed class GithubNuGetObservationTests
             return response;
         });
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+        NuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
@@ -277,7 +277,7 @@ public sealed class GithubNuGetObservationTests
                 "{\"id\":" + (step * 100 + offset) + ",\"name\":\"1.0."
                 + (step * 100 + offset) + "\"}")) + "]"));
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client)
+        NuGetObservationResult result = await new GithubNuGetObservation(client)
             .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
@@ -293,7 +293,7 @@ public sealed class GithubNuGetObservationTests
         using var handler = new Handler((_, _) => new(HttpStatusCode.OK)
         { Content = new StreamContent(new ExpiredBody(clock)) });
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client, clock)
+        NuGetObservationResult result = await new GithubNuGetObservation(client, clock)
             .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
@@ -311,7 +311,7 @@ public sealed class GithubNuGetObservationTests
             return Response(step, Archive());
         });
         using var client = new HttpClient(handler);
-        GithubNuGetObservationResult result = await new GithubNuGetObservation(client, clock)
+        NuGetObservationResult result = await new GithubNuGetObservation(client, clock)
             .ObserveAsync(Prepared(Archive()), Credential, CancellationToken.None);
 
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
@@ -381,7 +381,7 @@ public sealed class GithubNuGetObservationTests
             "fixtures/products/hcoona-release-smoke-github-packages/" +
             "workflow-delivery.release-unit.yml",
         "buddy", "github-packages-nuget", false), [new("build", "package", "nuget-package",
-        GithubNuGetObservation.Package, "1.0.0", "original/package.nupkg", original.Length,
+        "Hcoona.ReleaseSmoke.GithubPackages", "1.0.0", "original/package.nupkg", original.Length,
         Convert.ToHexStringLower(SHA256.HashData(original)))], ["contents"],
         [new("contents", ReleaseCheckStatus.Passed)]);
     private static byte[] Archive(bool extra = false)

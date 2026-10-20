@@ -122,10 +122,6 @@ def test_uv_workflow_and_renovate_consumers_use_mise_projection():
         assert {config_path, ".python-version"} <= set(tasks["fileFilters"])
 
 
-# Retired campaign callers.
-UNGUARDED_WORKFLOWS = {
-    "workflow-delivery-v3-nuget-live-attempt.yml",
-}
 # Tools whose exact committed version a workflow could duplicate. Go and Java
 # lock entries are not exact release versions, so only their keys are guarded.
 COMMITTED_TOOLS = ("dotnet", "node", "pnpm", "python", "ruby", "uv", "pkl")
@@ -161,11 +157,7 @@ VERSIONS.loader.exec_module(locked)
 
 def guarded_workflows():
     """Workflows whose tool versions committed configuration owns."""
-    return [
-        path
-        for path in sorted((ROOT / ".github/workflows").glob("*.yml"))
-        if path.name not in UNGUARDED_WORKFLOWS
-    ]
+    return sorted((ROOT / ".github/workflows").glob("*.yml"))
 
 
 def _version_keys(name, node, path=()):

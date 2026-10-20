@@ -9,7 +9,7 @@ using WorkflowDelivery.Release;
 namespace WorkflowDelivery.Tests.Release;
 
 [TestClass]
-public sealed class GithubNuGetPublisherTests(TestContext context)
+public sealed class NuGetPublisherTests(TestContext context)
 {
     private const string Credential = "controlled-publish-secret";
 
@@ -21,7 +21,7 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
         using var handler = new Handler(async (request, token) =>
         {
             Assert.AreEqual(HttpMethod.Put, request.Method);
-            Assert.AreEqual(GithubNuGetPublisher.Endpoint, request.RequestUri!.AbsoluteUri);
+            Assert.AreEqual(NuGetPublisher.GithubEndpoint, request.RequestUri!.AbsoluteUri);
             Assert.AreEqual("Basic", request.Headers.Authorization!.Scheme);
             Assert.AreEqual(Convert.ToBase64String(Encoding.UTF8.GetBytes("hcoona:" + Credential)),
                 request.Headers.Authorization.Parameter);
@@ -31,8 +31,8 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
             body = await request.Content.ReadAsByteArrayAsync(token);
             return new(HttpStatusCode.Created) { Content = new ByteArrayContent([]) };
         });
-        NuGetPushResult result = await GithubNuGetPublisher.PushAsync(fixture.Prepared,
-            fixture.Root, GithubNuGetPublisher.Endpoint, Credential, context.CancellationToken,
+        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+            fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
 
         Assert.IsTrue(result.ReturnedSuccessfully);
@@ -46,13 +46,63 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task NuGetOrgPublisherSendsOnlyTheExchangedApiKey()
+    {
+        using var fixture = new Fixture("circular-list",
+            "IO.Github.Hcoona.Collections.CircularList", "official", "nugetorg",
+            "refs/heads/main");
+        byte[]? body = null;
+        using var handler = new Handler(async (request, token) =>
+        {
+            Assert.AreEqual(HttpMethod.Put, request.Method);
+            Assert.AreEqual(NuGetPublisher.NuGetOrgEndpoint, request.RequestUri!.AbsoluteUri);
+            Assert.IsNull(request.Headers.Authorization);
+            Assert.AreEqual(Credential, Assert.ContainsSingle(request.Headers.GetValues(
+                "X-NuGet-ApiKey")));
+            body = await request.Content!.ReadAsByteArrayAsync(token);
+            return new(HttpStatusCode.Created) { Content = new ByteArrayContent([]) };
+        });
+        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+            fixture.Root, NuGetPublisher.NuGetOrgEndpoint, Credential,
+            context.CancellationToken, handler);
+
+        Assert.IsTrue(result.ReturnedSuccessfully);
+        Assert.AreEqual(1, handler.Sends);
+        Assert.IsTrue(body!.AsSpan().IndexOf(fixture.Original) >= 0);
+    }
+
+    [TestMethod]
+    [DataRow("circular-list", "IO.Github.Hcoona.Collections.CircularList", "official",
+        "nugetorg", "refs/heads/development", "nuget.org")]
+    [DataRow("circular-list", "IO.Github.Hcoona.Collections.CircularList", "official",
+        "nugetorg", "refs/heads/main", "github")]
+    [DataRow("circular-list", "IO.Github.Hcoona.Collections.CircularList", "buddy",
+        "nugetorg", "refs/heads/main", "nuget.org")]
+    [DataRow("hcoona-release-smoke-github-packages", "Hcoona.ReleaseSmoke.GithubPackages",
+        "official", "nugetorg", "refs/heads/main", "nuget.org")]
+    [DataRow("circular-list", "IO.Github.Hcoona.Pngcs", "buddy", "github-packages-nuget",
+        "refs/heads/main", "github")]
+    public async Task PublisherRejectsMismatchedChannelRefEndpointOrIdentity(string unit,
+        string package, string channel, string destination, string reference, string endpoint)
+    {
+        using var fixture = new Fixture(unit, package, channel, destination, reference);
+        using var handler = new Handler((_, _) => throw new AssertFailedException(
+            "Rejected uploads must not send."));
+        await Assert.ThrowsAsync<InvalidDataException>(() => NuGetPublisher.PushAsync(
+            fixture.Prepared, fixture.Root, endpoint == "github" ? NuGetPublisher.GithubEndpoint
+                : NuGetPublisher.NuGetOrgEndpoint, Credential, context.CancellationToken,
+            handler));
+        Assert.AreEqual(0, handler.Sends);
+    }
+
+    [TestMethod]
     public async Task NativeDuplicateRejectionPreservesFailureWithoutApplicationResend()
     {
         using var fixture = new Fixture();
         using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
             HttpStatusCode.Conflict) { Content = new ByteArrayContent([]) }));
-        NuGetPushResult result = await GithubNuGetPublisher.PushAsync(fixture.Prepared,
-            fixture.Root, GithubNuGetPublisher.Endpoint, Credential, context.CancellationToken,
+        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+            fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
 
         Assert.IsFalse(result.ReturnedSuccessfully);
@@ -72,8 +122,8 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
         using var fixture = new Fixture();
         using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
             status) { Content = new ByteArrayContent([]) }));
-        NuGetPushResult result = await GithubNuGetPublisher.PushAsync(fixture.Prepared,
-            fixture.Root, GithubNuGetPublisher.Endpoint, Credential, context.CancellationToken,
+        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+            fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
 
         Assert.IsFalse(result.ReturnedSuccessfully);
@@ -94,8 +144,8 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
             finally { finished = true; }
             return new(HttpStatusCode.Created);
         });
-        NuGetPushResult result = await GithubNuGetPublisher.PushAsync(fixture.Prepared,
-            fixture.Root, GithubNuGetPublisher.Endpoint, Credential, parent.Token, handler);
+        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+            fixture.Root, NuGetPublisher.GithubEndpoint, Credential, parent.Token, handler);
 
         Assert.IsFalse(result.ReturnedSuccessfully);
         Assert.IsTrue(result.Cancelled);
@@ -115,8 +165,8 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
         using var fixture = new Fixture();
         using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
             status) { Content = new ByteArrayContent([]) }));
-        NuGetPushResult result = await GithubNuGetPublisher.PushAsync(fixture.Prepared,
-            fixture.Root, GithubNuGetPublisher.Endpoint, Credential, context.CancellationToken,
+        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+            fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
 
         Assert.IsFalse(result.ReturnedSuccessfully);
@@ -142,8 +192,8 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
             "io" => new IOException("controlled transport failure"),
             _ => (Exception)new TimeoutException("controlled transport failure"),
         }));
-        NuGetPushResult result = await GithubNuGetPublisher.PushAsync(fixture.Prepared,
-            fixture.Root, GithubNuGetPublisher.Endpoint, Credential, context.CancellationToken,
+        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+            fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
 
         Assert.IsFalse(result.ReturnedSuccessfully);
@@ -160,8 +210,8 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
         using var parent = new CancellationTokenSource();
         using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
             HttpStatusCode.Created) { Content = new CancellingContent(parent) }));
-        NuGetPushResult result = await GithubNuGetPublisher.PushAsync(fixture.Prepared,
-            fixture.Root, GithubNuGetPublisher.Endpoint, Credential, parent.Token, handler);
+        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+            fixture.Root, NuGetPublisher.GithubEndpoint, Credential, parent.Token, handler);
 
         Assert.IsFalse(result.ReturnedSuccessfully);
         Assert.IsTrue(result.Cancelled);
@@ -179,8 +229,8 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
             response.Headers.Location = new("https://objects.githubusercontent.com/package");
             return Task.FromResult(response);
         });
-        NuGetPushResult result = await GithubNuGetPublisher.PushAsync(fixture.Prepared,
-            fixture.Root, GithubNuGetPublisher.Endpoint, Credential, context.CancellationToken,
+        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+            fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
 
         Assert.IsFalse(result.ReturnedSuccessfully);
@@ -195,7 +245,7 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
     {
         using var fixture = new Fixture();
         PreparedRelease prepared = fixture.Prepared;
-        string endpoint = GithubNuGetPublisher.Endpoint;
+        string endpoint = NuGetPublisher.GithubEndpoint;
         if (change == "dry-run") prepared = prepared with
             { Subject = prepared.Subject with { DryRun = true } };
         if (change == "endpoint") endpoint = "https://example.com/";
@@ -205,7 +255,7 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
             HttpStatusCode.Created)));
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            GithubNuGetPublisher.PushAsync(prepared, fixture.Root, endpoint, Credential,
+            NuGetPublisher.PushAsync(prepared, fixture.Root, endpoint, Credential,
                 context.CancellationToken, handler));
         Assert.AreEqual(0, handler.Sends);
     }
@@ -217,19 +267,26 @@ public sealed class GithubNuGetPublisherTests(TestContext context)
         internal string Path => System.IO.Path.Combine(Root, "original.nupkg");
         internal byte[] Original { get; }
         internal PreparedRelease Prepared { get; }
-        internal Fixture()
+        internal Fixture() : this("hcoona-release-smoke-github-packages",
+            "Hcoona.ReleaseSmoke.GithubPackages", "buddy", "github-packages-nuget",
+            "refs/heads/development")
+        {
+        }
+        internal Fixture(string unit, string package, string channel, string destination,
+            string reference)
         {
             using var bytes = new MemoryStream();
             using (var zip = new ZipArchive(bytes, ZipArchiveMode.Create, leaveOpen: true))
             using (var writer = new StreamWriter(zip.CreateEntry("package.nuspec").Open()))
-                writer.Write("<package><metadata><id>Hcoona.ReleaseSmoke.GithubPackages</id>"
+                writer.Write($"<package><metadata><id>{package}</id>"
                     + "<version>1.0.0</version><authors>hcoona</authors>"
                     + "<description>Controlled native archive</description></metadata></package>");
             Original = bytes.ToArray();
             File.WriteAllBytes(Path, Original);
-            Prepared = new(new(new string('a', 40), "refs/heads/development", "unit",
-                "release.yml", "buddy", "github-packages-nuget", false),
-                [new("build", "package", "nuget-package", "Hcoona.ReleaseSmoke.GithubPackages",
+            Prepared = new(new(new string('a', 40), reference, unit,
+                WorkflowDelivery.Ecosystems.NuGetReleaseUnits.Named(unit).Declaration, channel,
+                destination, false),
+                [new("build", "package", "nuget-package", package,
                     "1.0.0", "original.nupkg", Original.Length,
                     Convert.ToHexStringLower(SHA256.HashData(Original)))], ["contents"],
                 [new("contents", ReleaseCheckStatus.Passed)]);
