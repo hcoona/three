@@ -256,6 +256,8 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_general_ci_workflow.py", "eng/scripts/hk_scope_drift.py")]
     [DataRow("tests/eng/test_python_runtime.py", "global.json")]
     [DataRow("tests/eng/test_python_release_caller.py", "global.json")]
+    [DataRow("tests/eng/test_browser_store_release_caller.py",
+        ".github/workflows/workflow-delivery-v3-browser-store-release.yml")]
     public void SpecialInputsReachTheirActualTargets(string target, string path)
     {
         var endpoint = Endpoint([target, "tests/unrelated.py"], [path, "docs/unrelated.md"]);

@@ -1,0 +1,324 @@
+name: Workflow Delivery v3 Browser Store Release
+'on':
+  workflow_dispatch:
+    inputs:
+      store:
+        description: Selected browser store
+        type: choice
+        required: true
+        options:
+          - chrome-web-store
+          - firefox-amo
+          - edge-addons
+      channel:
+        description: Release channel; the stores are Official only and Buddy is a dry run
+        type: choice
+        required: true
+        options:
+          - official
+          - buddy
+      dry-run:
+        description: Qualify and describe without publication
+        type: boolean
+        default: true
+permissions: {}
+concurrency:
+  group: ${{ format('workflow-delivery-{0}-steam-account-history-to-csv', inputs.store) }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+env:
+  DESTINATION: ${{ inputs.store }}
+  CHANNEL: ${{ inputs.channel }}
+  DRY_RUN: ${{ inputs.dry-run }}
+  # Reviewed store coordinates are repository variables bound into the request.
+  STORE_ITEM: ${{ inputs.store == 'chrome-web-store' && vars.WORKFLOW_DELIVERY_CWS_EXTENSION_ID || inputs.store == 'firefox-amo' && vars.WORKFLOW_DELIVERY_AMO_ADDON_ID || vars.WORKFLOW_DELIVERY_EDGE_PRODUCT_ID }}
+  STORE_PUBLISHER: ${{ vars.WORKFLOW_DELIVERY_CWS_PUBLISHER_ID }}
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact source without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read committed tool versions
+        id: tools
+        run: python3 eng/scripts/locked_tool_versions.py dotnet node pnpm >> "$GITHUB_OUTPUT"
+      - &mise
+        name: Prepare runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
+        with:
+          version: 2026.10.11
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected runtimes
+        env:
+          DOTNET_VERSION: ${{ steps.tools.outputs.dotnet }}
+          NODE_VERSION: ${{ steps.tools.outputs.node }}
+          PNPM_VERSION: ${{ steps.tools.outputs.pnpm }}
+        run: |
+          set -Eeuo pipefail
+          mise install --yes "dotnet@$DOTNET_VERSION" "node@$NODE_VERSION" "pnpm@$PNPM_VERSION"
+          printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)" >> "$GITHUB_ENV"
+        working-directory: ${{ runner.temp }}
+      - name: Build complete control before product execution
+        run: |
+          set -Eeuo pipefail
+          mise exec --locked dotnet -- dotnet build src/private/app/workflow-delivery/WorkflowDelivery.csproj -p:RestoreLockedMode=true -o "$RUNNER_TEMP/control"
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs browser-store request
+      - name: Retain actual control results
+        id: control
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-store-control-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/control
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+      - name: Prepare frozen dependencies without product scripts
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/dependencies/home" "$RUNNER_TEMP/dependencies/config"
+          touch "$RUNNER_TEMP/dependencies/config/auth.npmrc"
+          # shellcheck disable=SC2016
+          mise exec --locked node pnpm -- sh -c 'exec env -i PATH="$PATH" \
+            HOME="$RUNNER_TEMP/dependencies/home" XDG_CONFIG_HOME="$RUNNER_TEMP/dependencies/config" \
+            pnpm --npmrc-auth-file "$RUNNER_TEMP/dependencies/config/auth.npmrc" \
+            --store-dir "$RUNNER_TEMP/dependencies/store" --state-dir "$RUNNER_TEMP/dependencies/state" \
+            install --frozen-lockfile --ignore-scripts'
+      - name: Build and qualify every store zip once
+        run: |
+          set -Eeuo pipefail
+          export MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
+          mise exec --locked dotnet node pnpm -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-browser-store "$RUNNER_TEMP/prepared/request.json" > "$RUNNER_TEMP/prepared/preparation.json"
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs browser-store originals
+      - name: Retain actual prepared results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-store-prepared-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/prepared
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    outputs:
+      control-id: ${{ steps.control.outputs.artifact-id }}
+      dotnet: ${{ steps.tools.outputs.dotnet }}
+      preparation-id: ${{ steps.retain.outputs.artifact-id }}
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - &control
+        name: Download control by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.control-id }}
+          path: ${{ runner.temp }}/control
+          digest-mismatch: error
+      - &prepared
+        name: Download prepared by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
+          path: ${{ runner.temp }}/prepared
+          digest-mismatch: error
+      - *mise
+      - &dotnet
+        name: Install selected control runtime
+        env:
+          DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+        run: |
+          set -Eeuo pipefail
+          mise install --yes "dotnet@$DOTNET_VERSION"
+          printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)" >> "$GITHUB_ENV"
+        working-directory: ${{ runner.temp }}
+      - name: Receive transferred preparation
+        run: |
+          set -Eeuo pipefail
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs browser-store receive observation
+      - &read-token
+        name: Acquire read-only Chrome Web Store token
+        id: read-token
+        if: inputs.store == 'chrome-web-store'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          workload_identity_provider: ${{ vars.WORKFLOW_DELIVERY_CWS_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.WORKFLOW_DELIVERY_CWS_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore.readonly
+          access_token_lifetime: 900s
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Observe store state and qualified originals
+        env:
+          CWS_ACCESS_TOKEN: ${{ steps.read-token.outputs.access_token }}
+        run: |
+          set -Eeuo pipefail
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-browser-store "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/observation/observation.json"
+      - name: Expose required writes and describe dry run
+        id: state
+        run: |
+          set -Eeuo pipefail
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs browser-store state
+          if [ "$DRY_RUN" = true ]; then
+            "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-browser-store "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/observation/dry-run.json"
+            cat "$RUNNER_TEMP/observation/dry-run.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Retain actual observation results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-store-observation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/observation
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    needs: prepare
+    outputs:
+      write-needed: ${{ steps.state.outputs.write-needed }}
+      observation-id: ${{ steps.retain.outputs.artifact-id }}
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - *control
+      - *prepared
+      - name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - *mise
+      - *dotnet
+      - name: Receive transferred preparation
+        run: |
+          set -Eeuo pipefail
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs browser-store receive publication
+      - name: Acquire publishing Chrome Web Store token
+        id: write-token
+        if: inputs.store == 'chrome-web-store'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          workload_identity_provider: ${{ vars.WORKFLOW_DELIVERY_CWS_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.WORKFLOW_DELIVERY_CWS_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+          access_token_lifetime: 1800s
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Refresh store state and submit the qualified originals
+        env:
+          CWS_ACCESS_TOKEN: ${{ steps.write-token.outputs.access_token }}
+          AMO_JWT_ISSUER: ${{ inputs.store == 'firefox-amo' && secrets.AMO_JWT_ISSUER || '' }}
+          AMO_JWT_SECRET: ${{ inputs.store == 'firefox-amo' && secrets.AMO_JWT_SECRET || '' }}
+          EDGE_API_KEY: ${{ inputs.store == 'edge-addons' && secrets.EDGE_API_KEY || '' }}
+          EDGE_CLIENT_ID: ${{ inputs.store == 'edge-addons' && secrets.EDGE_CLIENT_ID || '' }}
+        run: |
+          set -Eeuo pipefail
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-browser-store "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/publication/publication.json"
+      - name: Retain actual publication results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-store-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publication
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    needs:
+      - prepare
+      - observe
+    if: inputs.dry-run == false && needs.observe.outputs.write-needed == 'true'
+    environment:
+      name: ${{ format('workflow-delivery-v3-{0}', inputs.store) }}
+    outputs:
+      publication-id: ${{ steps.retain.outputs.artifact-id }}
+  verify-result:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - *control
+      - *prepared
+      - name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - name: Download publication by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.publish.outputs.publication-id }}
+          path: ${{ runner.temp }}/publication
+          digest-mismatch: error
+        if: needs.publish.outputs.publication-id != ''
+      - *mise
+      - *dotnet
+      - name: Receive transferred preparation
+        run: |
+          set -Eeuo pipefail
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs browser-store receive verification
+      - *read-token
+      - name: Verify the store-reported version state
+        env:
+          CWS_ACCESS_TOKEN: ${{ steps.read-token.outputs.access_token }}
+        run: |
+          set -Eeuo pipefail
+          # Only the Chrome Web Store is readable outside its publisher; the other stores
+          # complete from the publisher's own post-submission observation.
+          final=-
+          if [ "$DESTINATION" = chrome-web-store ]; then
+            status=0
+            "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-browser-store "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/verification/final.json" || status=$?
+            if [ "$status" -gt 1 ]; then exit "$status"; fi
+            final="$RUNNER_TEMP/verification/final.json"
+          fi
+          publication=-
+          if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-browser-store "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$final" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
+      - name: Show actual available business result
+        run: |
+          set -Eeuo pipefail
+          if [ -s "$RUNNER_TEMP/verification/outcome.json" ]; then
+            cat "$RUNNER_TEMP/verification/outcome.json" >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '%s\n' 'Required browser-store completion result is unavailable.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+        if: always()
+      - name: Retain actual verification results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-store-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verification
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    needs:
+      - prepare
+      - observe
+      - publish
+    if: always() && !cancelled() && inputs.dry-run == false && needs.prepare.result == 'success' && needs.observe.result == 'success'
