@@ -386,7 +386,18 @@ ends a grant. Git and the proposing PR retain the reason and history.
   to the existing Buddy destinations, TestPyPI and GitHub Packages; Official
   stays out of scope. The shared callers are renamed now, with a smoke-only
   Official guard, so a later Official onboarding needs one publisher
-  registration per destination against the new names.
+  registration per destination against the new names. After the first live
+  attempts returned to the owner (evidence in the amendment pull request), the
+  owner decided that the Ruby source read is repaired and latexmath
+  completes its verified publication with a new NBGV version; that Python
+  publication trusts each acknowledged native upload to continue to the next
+  missing file, because the public index gives no read-after-write guarantee,
+  while failure, ambiguity or interruption still stops further writes; that
+  the separate final verification reports an acknowledged file the index does
+  not yet show as unknown, confirmed later by a fresh request rather than
+  application polling; and that nbgv-python `2.1.0.dev1`, which has only its
+  wheel, is completed by a fresh request that uploads only the sdist when the
+  rebuilt wheel is byte-exact and otherwise blocks.
 - **Advancement and outcome:** first amend WD-REL-001 and WD-REL-005 with that
   single named exception, keeping the canonical NBGV version for every other
   unit, and reconcile the HLD and MLD sections that restate it. Then add a
@@ -405,7 +416,11 @@ ends a grant. Git and the proposing PR retain the reason and history.
   selecting Official for nbgv-python or asciidoctor-latexmath fails before
   preparation. Update the
   [Official channel scope](../src/private/app/workflow-delivery/docs/integration/common.md#official-channel-scope), the integration contracts, product
-  READMEs and tests in the same change. The outcome is accepted when ordinary
+  READMEs and tests in the same change. After the first live attempts, repair
+  the Ruby source read as a product fix, and amend the Python integration
+  contract and the MLD publication decision rules to the owner's sequencing and
+  classification before implementing them, for every Python unit and channel.
+  The outcome is accepted when ordinary
   CI qualifies both recipes and callers, a dry run for each product and
   Buddy destination succeeds, and, after the owner registers the TestPyPI
   publisher, each product completes one verified live Buddy publication.
@@ -423,10 +438,13 @@ ends a grant. Git and the proposing PR retain the reason and history.
   ordinary PR/check operations and their normal CI, dry-run dispatches of the
   Release callers, the owner's TestPyPI publisher registration, and up to one
   successful live Buddy publication per product through its existing Buddy
-  Environment.
+  Environment. After the repairs merge, that is one live latexmath request for
+  a new version and one fresh nbgv-python `2.1.0.dev1` request that may upload
+  only the missing sdist.
 - **Exclusions:** no Official (PyPI or RubyGems.org) publication or Official
   Environment change, and no Official caller change beyond the rename, unit
-  selection and smoke-only Official guard above; no NBGV adoption for nbgv-python; no
+  selection and smoke-only Official guard above and the shared Python
+  publication sequencing; no NBGV adoption for nbgv-python; no
   other product or ecosystem onboarding; no change to the npm or NuGet
   callers; no rerun of completed campaigns; no deletion or administration of
   published packages or of existing publisher registrations. Delete this entry
