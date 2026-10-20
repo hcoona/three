@@ -604,9 +604,9 @@ url = "https://github.com/PowerShell/PowerShell/releases/download/v7.5.4/powersh
 url_api = "https://api.github.com/repos/PowerShell/PowerShell/releases/assets/305232425"
 
 [tools.powershell."platforms.linux-x64-musl"]
-checksum = "sha256:78932a3fb60eeb1263986bbf8d398281f2621d8347fd042b93a4d850cb0a9d26"
-url = "https://github.com/PowerShell/PowerShell/releases/download/v7.5.4/powershell-7.5.4-linux-musl-x64.tar.gz"
-url_api = "https://api.github.com/repos/PowerShell/PowerShell/releases/assets/305232382"
+checksum = "sha256:1fd7983fe56ca9e6233f126925edb24bf6b6b33e356b69996d925c4db94e2fef"
+url = "https://github.com/PowerShell/PowerShell/releases/download/v7.5.4/powershell-7.5.4-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/PowerShell/PowerShell/releases/assets/305232425"
 
 [tools.powershell."platforms.macos-arm64"]
 checksum = "sha256:3aaadd7ca62f1e4dbe59145b6af24e926d61f8da8a4782bc535e500c184135f0"
@@ -674,6 +674,7 @@ url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/30730
 [tools.ripgrep."platforms.linux-arm64-musl"]
 checksum = "sha256:2b661c6ef508e902f388e9098d9c4c5aca72c87b55922d94abdba830b4dc885e"
 url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/307306472"
 
 [tools.ripgrep."platforms.linux-x64"]
 checksum = "sha256:1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599"
