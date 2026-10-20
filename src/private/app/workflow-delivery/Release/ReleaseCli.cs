@@ -16,6 +16,7 @@ internal static class ReleaseCli
         if (NuGetReleaseCli.Run(args, output) is { } nugetStatus) return nugetStatus;
         if (RubyReleaseCli.Run(args, output) is { } rubyStatus) return rubyStatus;
         if (GithubReleaseCli.Run(args, output) is { } githubStatus) return githubStatus;
+        if (BrowserStoreReleaseCli.Run(args, output) is { } storeStatus) return storeStatus;
         if (args is ["release", "prepare-npm", var requestPath])
         {
             NpmPreparationResult result = (prepare ?? NpmPreparation.PrepareAsync)(

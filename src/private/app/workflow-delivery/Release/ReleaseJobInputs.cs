@@ -12,7 +12,8 @@ internal static class ReleaseJobInputs
     internal static int? Run(string[] args, Func<string, string?>? environment = null)
     {
         if (args is not ["release", "job-inputs", var ecosystem, .. var operation]) return null;
-        if (ecosystem is not ("ruby" or "python" or "npm" or "nuget" or "github-release"))
+        if (ecosystem is not ("ruby" or "python" or "npm" or "nuget" or "github-release"
+            or "browser-store"))
             throw new InvalidDataException("Unsupported Release caller ecosystem.");
         environment ??= Environment.GetEnvironmentVariable;
         string Env(string name) => environment(name) is { Length: > 0 } value ? value :
@@ -28,13 +29,23 @@ internal static class ReleaseJobInputs
                 ("github-release", GithubReleaseUnits.Buddy) => true,
             ("ruby", "rubygems") or ("python", "pypi") or ("npm", "npmjs") or
                 ("github-release", GithubReleaseUnits.Official) => false,
+            // Browser stores are Official destinations; a Buddy request is a dry run.
+            ("browser-store", BrowserStorePreparation.ChromeWebStore or
+                BrowserStorePreparation.FirefoxAmo or BrowserStorePreparation.EdgeAddons) =>
+                Env("CHANNEL") switch
+                {
+                    "buddy" => true,
+                    "official" => false,
+                    _ => throw new InvalidDataException("Unsupported browser-store channel."),
+                },
             _ => throw new InvalidDataException("Unsupported Release caller destination."),
         };
         string dry = Env("DRY_RUN");
         if (dry is not ("true" or "false")) throw new InvalidDataException(
             "Invalid dry-run input.");
-        string unit = ecosystem is "ruby" or "python" or "npm" or "github-release" ? Env("UNIT")
-            : "hcoona-release-smoke-github-packages";
+        string unit = ecosystem is "ruby" or "python" or "npm" or "github-release" ? Env("UNIT") :
+            ecosystem == "browser-store" ? BrowserStorePreparation.Unit :
+            "hcoona-release-smoke-github-packages";
         var subject = new ReleaseSubject(Env("GITHUB_SHA"), Env("GITHUB_REF"), unit,
             ecosystem switch
             {
@@ -42,6 +53,7 @@ internal static class ReleaseJobInputs
                 "python" => PythonReleaseUnits.Named(unit).Declaration,
                 "npm" => NpmReleaseUnits.Named(unit).Declaration,
                 "github-release" => GithubReleaseUnits.Declaration,
+                "browser-store" => BrowserStorePreparation.Declaration,
                 _ => "tests/private/app/workflow-delivery/fixtures/products/" + unit +
                     "/workflow-delivery.release-unit.yml",
             }, buddy ? "buddy" : "official",
@@ -57,6 +69,12 @@ internal static class ReleaseJobInputs
         if (ecosystem == "python") _ = PythonReleaseUnits.Admit(subject);
         if (ecosystem == "npm") _ = NpmReleaseUnits.Admit(subject);
         if (ecosystem == "github-release") _ = GithubReleaseUnits.Admit(subject);
+        // The reviewed store coordinate is bound into the request from repository
+        // variables; later jobs compare it with the transferred preparation.
+        BrowserStoreTarget? store = ecosystem == "browser-store" ? new(destination,
+            Env("STORE_ITEM"), destination == BrowserStorePreparation.ChromeWebStore
+                ? Env("STORE_PUBLISHER") : null) : null;
+        if (store is not null) BrowserStorePreparation.RequireRequest(subject, store);
         // Live reruns are unsupported (WD-OPS-003). A partial rerun skips the preparation
         // job, so every job entry below applies this one guard rather than workflow YAML.
         if (!subject.DryRun && Env("GITHUB_RUN_ATTEMPT") != "1")
@@ -89,8 +107,11 @@ internal static class ReleaseJobInputs
                 TransferJson.Default.NuGetPreparationResult).Prepared,
             "github-release" => Read(Path.Combine(prepared, "preparation.json"),
                 TransferJson.Default.GithubReleasePreparationResult).Prepared,
+            "browser-store" => Browser().Prepared,
             _ => throw new InvalidDataException("Unsupported Release preparation."),
         };
+        BrowserStorePreparationResult Browser() => Read(Path.Combine(prepared,
+            "preparation.json"), TransferJson.Default.BrowserStorePreparationResult);
         void Receive()
         {
             string path = Path.Combine(prepared, "preparation.json");
@@ -116,6 +137,12 @@ internal static class ReleaseJobInputs
                     GithubReleasePreparationResult github = Read(path,
                         TransferJson.Default.GithubReleasePreparationResult);
                     GithubRelease.Validate(github);
+                    break;
+                case "browser-store":
+                    BrowserStorePreparationResult browser = Browser();
+                    BrowserStoreRelease.Validate(browser);
+                    if (browser.Target != store)
+                        throw new InvalidDataException("Transferred store target mismatch.");
                     break;
                 default:
                     PreparedRelease release = Read(path,
@@ -150,6 +177,11 @@ internal static class ReleaseJobInputs
                         subject,
                         Env("GITHUB_WORKSPACE"), scratch, Env("MISE_DATA_DIR")),
                         TransferJson.Default.PythonPreparationRequest);
+                else if (ecosystem == "browser-store")
+                    Write(Path.Combine(prepared, "request.json"),
+                        new BrowserStorePreparationRequest(subject, store!,
+                            Env("GITHUB_WORKSPACE"), scratch),
+                        TransferJson.Default.BrowserStorePreparationRequest);
                 else if (ecosystem == "npm")
                     Write(Path.Combine(prepared, "request.json"), new NpmPreparationRequest(
                         subject, Env("GITHUB_WORKSPACE"), scratch),
@@ -186,6 +218,14 @@ internal static class ReleaseJobInputs
                 var phase] when phase is "observation" or "publication" or "verification":
                 Receive();
                 Fresh(phase);
+                break;
+            case ["state"] when ecosystem == "browser-store":
+                BrowserStorePreparationResult current = Browser();
+                Same(current.Prepared.Subject);
+                bool write = BrowserStoreRelease.WriteNeeded(current, Read(
+                    At("observation/observation.json"), TransferJson.Default.StoreObservation));
+                File.AppendAllText(Env("GITHUB_OUTPUT"), "write-needed=" + (
+                    write ? "true" : "false") + "\n");
                 break;
             case ["state"]:
                 ReleaseObservation observation = ecosystem switch

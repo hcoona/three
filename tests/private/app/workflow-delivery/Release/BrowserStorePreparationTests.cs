@@ -39,6 +39,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
         Assert.IsTrue(result.Commands.All(command => !command.Command.InheritEnvironment &&
             command.Command.Environment!["HOME"] == Path.Combine(fixture.Scratch, "home") &&
             !command.Command.Environment.ContainsKey("GITHUB_TOKEN")));
+        BrowserStoreRelease.Validate(result);
     }
 
     [TestMethod]
