@@ -141,6 +141,8 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_python_release_caller.py" &&
             path is ".github/workflows/workflow-delivery-v3-python-release.yml" or
                 "global.json") ||
+        (target == "tests/eng/test_browser_store_release_caller.py" &&
+            path == ".github/workflows/workflow-delivery-v3-browser-store-release.yml") ||
         (target.StartsWith("tests/eng/", StringComparison.Ordinal) &&
             path is "eng/scripts/sync_python_version.py" or
                 "eng/scripts/workflow_delivery_v3_hk.py" or "eng/scripts/locked_tool_versions.py" or
