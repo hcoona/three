@@ -1536,7 +1536,7 @@ def _native_test(job: dict[str, Any]) -> str:
 
 
 def test_nuget_native_preparation_runs_selected_rows(workflow):
-    """Per-PR CI runs only the two native NuGet preparation rows."""
+    """Per-PR CI runs the smoke and library native NuGet preparation rows."""
     job = workflow["jobs"]["nuget-native-preparation"]
     assert job["name"] == "NuGet native preparation (Windows)"
     assert job["runs-on"].startswith("windows-")
@@ -1552,7 +1552,7 @@ def test_nuget_native_preparation_runs_selected_rows(workflow):
     run = _native_test(job)
     assert CONTROL_PROJECT in run
     assert "--filter 'TestCategory=NuGetNativePreparation'" in run
-    assert "-- --minimum-expected-tests 2" in run
+    assert "-- --minimum-expected-tests 10" in run
     assert "--report-trx" in run
     assert "native-preparation.binlog" in run
     assert "exit $LASTEXITCODE" in run
