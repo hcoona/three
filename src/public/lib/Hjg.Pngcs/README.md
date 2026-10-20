@@ -49,6 +49,17 @@ See `ChangeLog.md`
 1. Hernan J Gonzalez - <hgonzalez@gmail.com> - [Stack Overflow Profile](http://stackoverflow.com/users/277304/leonbloy) - The original author.
 2. Shuai Zhang - <zhangshuai.ustc@gmail.com> - Current maintainer.
 
+## Releasing
+
+Workflow Delivery releases the `IO.Github.Hcoona.Pngcs` package through the manually
+dispatched `.github/workflows/workflow-delivery-v3-nuget-release.yml` caller with `unit:
+hjg-pngcs`, as declared by `workflow-delivery.release-unit.yml`. Use `registry:
+github-packages` for GitHub Packages (Buddy) from any branch, or `registry: nugetorg`
+for nuget.org (Official) from `main` only. The package version is the NBGV projection of
+this directory's `version.json` at the selected revision. Preparation packs every target
+framework, checks the native package contents and consumes the original package in a
+clean project before any publication.
+
 ## License
 
 This project is licensed under the GNU General Public License v3.0 or later (GPL v3+). See [COPYING](https://github.com/hcoona/three/blob/main/COPYING) for details.

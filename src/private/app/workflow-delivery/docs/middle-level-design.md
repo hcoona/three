@@ -901,7 +901,7 @@ closed; no implementation validation can silently consume a spent external grant
 
 ### Release Integration Review
 
-The [Concrete NuGet Buddy](integration/dotnet.md#concrete-nuget-buddy-integration),
+The [NuGet Release](integration/dotnet.md#concrete-nuget-release-integration),
 [npm Release](integration/node.md#concrete-npm-release-integration),
 [Python Release](integration/python.md#concrete-python-release-integration),
 [Ruby Release](integration/ruby.md#concrete-ruby-release-integration),

@@ -76,6 +76,18 @@ list.OnOverflow += (sender, overwritten) =>
 - Remove/RemoveAt/Insert operations are not supported (throw NotSupportedException)
 - CopyTo/IndexOf/Contains are fully supported for read operations
 
+## Releasing
+
+Workflow Delivery releases the `IO.Github.Hcoona.Collections.CircularList` package
+through the manually dispatched
+`.github/workflows/workflow-delivery-v3-nuget-release.yml` caller with `unit:
+circular-list`, as declared by `workflow-delivery.release-unit.yml`. Use `registry:
+github-packages` for GitHub Packages (Buddy) from any branch, or `registry: nugetorg`
+for nuget.org (Official) from `main` only. The package version is the NBGV projection of
+this directory's `version.json` at the selected revision. Preparation packs every target
+framework, checks the native package contents and consumes the original package in a
+clean project before any publication.
+
 ## License
 
 LGPL-3.0-or-later WITH LGPL-3.0-linking-exception

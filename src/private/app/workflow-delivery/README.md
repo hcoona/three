@@ -195,12 +195,17 @@ claims live completion. Tags remain routing metadata, not original-package
 authority. The [concrete contract](docs/integration/node.md#concrete-npm-release-integration)
 lists the units and their recipes.
 
-### NuGet Buddy Release
+### NuGet Release
 
-The existing entry and reusable caller use native MSBuild/NBGV Build/Pack,
-original nupkg inspection and a clean local consumer. Bounded observation uses
-maintained NuGet interpretation; the publisher uses the official native upload
-invocation. A fresh registry observation and original-byte comparison run in a
+The product-neutral
+[NuGet Release caller](../../../../.github/workflows/workflow-delivery-v3-nuget-release.yml)
+selects a registered `unit`, `registry` (`github-packages` Buddy or `nugetorg`
+Official) and `dry-run`. It uses native MSBuild/NBGV Build/Pack, original nupkg
+inspection and a clean local consumer. Bounded observation uses maintained NuGet
+interpretation; the publisher uses the official native upload invocation. The
+nuget.org publisher holds only a short-lived key from trusted publishing, and
+nuget.org readback compares the original after removing its repository
+signature. A fresh registry observation and original-byte comparison run in a
 separate read-only verification job. A successful upload alone cannot satisfy
 the request.
 
