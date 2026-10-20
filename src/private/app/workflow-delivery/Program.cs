@@ -247,6 +247,7 @@ internal static class Program
                     + " | release prepare-npm <request.json>"
                     + " | release observe-npmjs <preparation.json> <original-directory>"
                     + " | release describe-npmjs <preparation.json> <observation.json>"
+                    + " | release prepare-browser-store <request.json>"
                     + " | ci comparison <event-name> <native-event.json> <tested-candidate>"
                     + " | ci control-inputs <request.json>"
                     + " | ci plan-node <request.json>"
@@ -302,7 +303,7 @@ internal static class Program
     Converters = new[] { typeof(CheckStatusJsonConverter), typeof(NativeTerminationJsonConverter),
         typeof(CheckOriginJsonConverter), typeof(ReleaseCheckStatusJsonConverter),
         typeof(ReleaseFileStateJsonConverter), typeof(ReleaseBusinessStateJsonConverter),
-        typeof(RubySourceStateJsonConverter) },
+        typeof(RubySourceStateJsonConverter), typeof(StoreStateJsonConverter) },
     WriteIndented = true,
     RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true,
@@ -353,6 +354,11 @@ internal static class Program
 [JsonSerializable(typeof(GithubNuGetCompletionResult))]
 [JsonSerializable(typeof(NpmjsObservationResult))]
 [JsonSerializable(typeof(ReleaseDryRun))]
+[JsonSerializable(typeof(BrowserStorePreparationRequest))]
+[JsonSerializable(typeof(BrowserStorePreparationResult))]
+[JsonSerializable(typeof(StoreObservation))]
+[JsonSerializable(typeof(BrowserStorePublicationResult))]
+[JsonSerializable(typeof(BrowserStoreCompletionResult))]
 [JsonSerializable(typeof(ReleaseOutcome))]
 [JsonSerializable(typeof(GithubNpmObservationResult))]
 [JsonSerializable(typeof(GithubNpmPublicationResult))]
@@ -419,3 +425,6 @@ internal sealed class ReleaseBusinessStateJsonConverter()
 
 internal sealed class RubySourceStateJsonConverter()
     : JsonStringEnumConverter<RubySourceState>(allowIntegerValues: false);
+
+internal sealed class StoreStateJsonConverter()
+    : JsonStringEnumConverter<StoreState>(allowIntegerValues: false);
