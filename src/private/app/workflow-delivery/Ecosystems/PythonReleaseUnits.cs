@@ -2,10 +2,9 @@ using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Ecosystems;
 
-// The distribution name equals the unit id. Official accepts only units marked here; a unit
-// with a test path also requires its adopted pytest suite in Release preparation.
-internal sealed record PythonReleaseUnit(string Id, string Declaration, bool Official,
-    string? Tests);
+// The distribution name equals the unit id. A unit with a test path also requires its adopted
+// pytest suite in Release preparation.
+internal sealed record PythonReleaseUnit(string Id, string Declaration, string? Tests);
 
 // Static registration of the supported concrete Python Release recipes.
 internal static class PythonReleaseUnits
@@ -15,8 +14,8 @@ internal static class PythonReleaseUnits
     private static readonly PythonReleaseUnit[] Units =
     [
         new(Smoke, "tests/private/app/workflow-delivery/fixtures/products/" + Smoke +
-            "/workflow-delivery.release-unit.yml", true, null),
-        new(Nbgv, "src/public/lib/" + Nbgv + "/workflow-delivery.release-unit.yml", false,
+            "/workflow-delivery.release-unit.yml", null),
+        new(Nbgv, "src/public/lib/" + Nbgv + "/workflow-delivery.release-unit.yml",
             "src/public/lib/" + Nbgv + "/tests"),
     ];
 
@@ -26,14 +25,9 @@ internal static class PythonReleaseUnits
         Units.SingleOrDefault(unit => unit.Id == id) ??
             throw new InvalidDataException("Unsupported Python Release unit.");
 
-    // The request-path unit check, before any preparation work.
-    internal static PythonReleaseUnit Admit(ReleaseSubject subject)
-    {
-        PythonReleaseUnit unit = Named(subject.Unit);
-        if (subject.Channel == "official" && !unit.Official)
-            throw new InvalidDataException("Official Python Release does not accept this unit.");
-        return unit;
-    }
+    // The request-path unit check, before any preparation work. Every registered unit
+    // accepts both channels.
+    internal static PythonReleaseUnit Admit(ReleaseSubject subject) => Named(subject.Unit);
 
     internal static PythonSmokePackageOperations Package(string id, PythonPackageTools tools,
         string root) => id switch

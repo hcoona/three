@@ -500,8 +500,8 @@ native capability stops for owner disposition without reduced check coverage.
 
 This contract selects the registered `hcoona-release-smoke-python` and
 `nbgv-python` release units, their declared wheel/sdist builds and the adopted
-Python distribution quality preset. TestPyPI is Buddy and PyPI is Official;
-Official accepts only the smoke unit. The product-neutral caller
+Python distribution quality preset. TestPyPI is Buddy and PyPI is Official
+for both units. The product-neutral caller
 `workflow-delivery-v3-python-release.yml` takes the unit as a dispatch input and
 binds it through concurrency, preparation, observation and publication. It adds
 no destination, publication authority or native experiment. Source findings follow the
@@ -515,14 +515,16 @@ metadata through the maintained backend and `nbgv-python`, except that
 `nbgv-python` itself has Hatchling's static `[project].version` and no NBGV
 projection or public-release fact; use the selected
 CPython/UV and the synchronized root lock. [Locked tool selection](common.md#locked-tool-selection)
-accepts whichever CPython and UV the root lock selects. Live Official requires the native public-release
-projection; ref eligibility follows the [Official channel scope](common.md#official-channel-scope).
+accepts whichever CPython and UV the root lock selects. Live Official of the smoke unit requires
+the native public-release projection; `nbgv-python` publishes its static version in both channels
+([WD-REL-001](../requirements.md#release-delivery)). Ref eligibility follows the
+[Official channel scope](common.md#official-channel-scope).
 The Buddy Environment `workflow-delivery-v3-python-testpypi` allows
 every branch (`**`) and keeps its required reviewer; the Official
 Environment remains limited to `main`. Keep one
 source/control revision throughout; do not inject versions or a target witness.
 
-This project's committed NBGV `publicReleaseRefSpec` is `^refs/heads/`.
+The smoke unit's committed NBGV `publicReleaseRefSpec` is `^refs/heads/`.
 Shared CI and Release preparation retain its existing base, prerelease height
 and maintained `SemVer2` normalization. This native public-version mode shapes
 a version; it supplies no

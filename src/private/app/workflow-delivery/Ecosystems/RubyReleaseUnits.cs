@@ -4,9 +4,8 @@ using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Ecosystems;
 
-// The gem name equals the unit id. Official accepts only units marked here.
-internal sealed record RubyReleaseUnit(string Id, string Declaration, string Preset,
-    bool Official);
+// The gem name equals the unit id.
+internal sealed record RubyReleaseUnit(string Id, string Declaration, string Preset);
 
 internal interface IRubyReleasePackage
 {
@@ -32,9 +31,9 @@ internal static class RubyReleaseUnits
     private static readonly RubyReleaseUnit[] Units =
     [
         new(Smoke, "tests/private/app/workflow-delivery/fixtures/products/" + Smoke +
-            "/workflow-delivery.release-unit.yml", RubyPackageChecks.Preset, true),
+            "/workflow-delivery.release-unit.yml", RubyPackageChecks.Preset),
         new(Latexmath, "src/public/lib/" + Latexmath + "/workflow-delivery.release-unit.yml",
-            "ruby/rspec-v1", false),
+            "ruby/rspec-v1"),
     ];
 
     internal static bool Registered(string id) => Units.Any(unit => unit.Id == id);
@@ -43,14 +42,9 @@ internal static class RubyReleaseUnits
         Units.SingleOrDefault(unit => unit.Id == id) ??
             throw new InvalidDataException("Unsupported Ruby Release unit.");
 
-    // The request-path unit check, before any preparation work.
-    internal static RubyReleaseUnit Admit(ReleaseSubject subject)
-    {
-        RubyReleaseUnit unit = Named(subject.Unit);
-        if (subject.Channel == "official" && !unit.Official)
-            throw new InvalidDataException("Official Ruby Release does not accept this unit.");
-        return unit;
-    }
+    // The request-path unit check, before any preparation work. Every registered unit
+    // accepts both channels.
+    internal static RubyReleaseUnit Admit(ReleaseSubject subject) => Named(subject.Unit);
 
     internal static IRubyReleasePackage Package(RubyReleaseUnit unit, RubyFactTools tools,
         string gem, string nbgv, string state, string directory) => unit.Id switch

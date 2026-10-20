@@ -55,6 +55,7 @@ public sealed class ReleaseJobInputsTests
         "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby/")]
     [DataRow(RubyReleaseUnits.Latexmath, "github-packages",
         "src/public/lib/asciidoctor-latexmath/")]
+    [DataRow(RubyReleaseUnits.Latexmath, "rubygems", "src/public/lib/asciidoctor-latexmath/")]
     public void RubyRequestSelectsTheDispatchedUnit(string unit, string destination,
         string directory)
     {
@@ -69,7 +70,6 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
-    [DataRow(RubyReleaseUnits.Latexmath, "rubygems")]
     [DataRow("another-gem", "github-packages")]
     [DataRow("", "github-packages")]
     public void UnsupportedRubyUnitStopsBeforePreparation(string unit, string destination)
@@ -89,6 +89,7 @@ public sealed class ReleaseJobInputsTests
     [DataRow(PythonReleaseUnits.Smoke, "pypi",
         "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-python/")]
     [DataRow(PythonReleaseUnits.Nbgv, "testpypi", "src/public/lib/nbgv-python/")]
+    [DataRow(PythonReleaseUnits.Nbgv, "pypi", "src/public/lib/nbgv-python/")]
     public void PythonRequestSelectsTheDispatchedUnit(string unit, string destination,
         string directory)
     {
@@ -103,7 +104,6 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
-    [DataRow(PythonReleaseUnits.Nbgv, "pypi")]
     [DataRow("another-distribution", "testpypi")]
     [DataRow("", "testpypi")]
     public void UnsupportedPythonUnitStopsBeforePreparation(string unit, string destination)

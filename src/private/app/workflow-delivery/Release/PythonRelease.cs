@@ -40,8 +40,11 @@ internal static class PythonRelease
                 version != prepared.Files[0].Version ||
             !preparation.Native.TryGetValue("commit", out string? commit) ||
                 commit != subject.Revision ||
-            official && !subject.DryRun && (!preparation.Native.TryGetValue("public-release",
-                out string? release) || release != "true"))
+            // Live Official requires the NBGV public-release projection, except for the
+            // static version of the WD-REL-001 exception, which has no projection.
+            official && !subject.DryRun && unit.Id != PythonReleaseUnits.Nbgv &&
+                (!preparation.Native.TryGetValue("public-release", out string? release) ||
+                    release != "true"))
             throw new InvalidDataException("Incomplete or unsupported Python preparation.");
     }
 

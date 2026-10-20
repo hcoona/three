@@ -562,10 +562,15 @@ public sealed class RubyPreparationTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task LatexmathOriginalQualifiesWithLockedRuntimeDependencies()
+    [DataRow("buddy")]
+    [DataRow("official")]
+    public async Task LatexmathOriginalQualifiesWithLockedRuntimeDependencies(string channel)
     {
         using var fixture = await Fixture.CreateAsync(context.CancellationToken,
             unit: Fixture.Latexmath);
+        if (channel == "official")
+            fixture.Subject = fixture.Subject with { Channel = "official",
+                Destination = "rubygems", SelectedRef = "refs/heads/main" };
         var consumer = new List<NativeCommand>();
         fixture.Override = command =>
         {
@@ -575,7 +580,8 @@ public sealed class RubyPreparationTests(TestContext context)
         };
         RubyPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
-        ReleaseCompletion.Validate(result.Prepared);
+        RubyRelease.Validate(result);
+        Assert.AreEqual("true", result.Native["public-release"]);
         Assert.AreEqual(Fixture.Latexmath, Assert.ContainsSingle(result.Prepared.Files).Name);
         Assert.AreEqual(Fixture.Latexmath, result.Native["name"]);
         CollectionAssert.AreEqual(Tested, result.Prepared.RequiredChecks);

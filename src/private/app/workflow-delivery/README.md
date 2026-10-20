@@ -212,7 +212,9 @@ owned by the [native .NET CI group contract](docs/integration/dotnet.md#planning
 
 ### Ordinary Python Release
 
-The existing four-job caller independently qualifies the complete wheel/sdist
+The caller releases the smoke unit and `nbgv-python` to TestPyPI (Buddy) and
+PyPI (Official); the [Official channel scope](docs/integration/common.md#official-channel-scope)
+limits live Official to `main`. It independently qualifies the complete wheel/sdist
 set, including Git-free source-archive consumption. Native public-index and
 installed metadata interpretation retain selected-index origins and original
 hashes. UV owns publication. A supported fresh request may upload only missing
@@ -222,7 +224,10 @@ Final index readback and completion remain required when state is already exact.
 
 ### Ordinary Ruby Release
 
-The existing caller qualifies one original gem through native gemspec evaluation,
+The caller releases the smoke unit and `asciidoctor-latexmath` to GitHub Packages
+(Buddy) and RubyGems.org (Official); the
+[Official channel scope](docs/integration/common.md#official-channel-scope)
+limits live Official to `main`. It qualifies one original gem through native gemspec evaluation,
 archive inspection and clean installed API consumption. GitHub Packages and
 RubyGems retain their separate observation, authorization and publisher
 contracts. The native publisher invocation, command outcome and required

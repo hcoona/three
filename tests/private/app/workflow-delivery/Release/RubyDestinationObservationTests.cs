@@ -36,6 +36,8 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     [DataRow("official", "rubygems", "unknown")]
     [DataRow("buddy", "github-packages-ruby", "exact", RubyReleaseUnits.Latexmath)]
     [DataRow("buddy", "github-packages-ruby", "absent", RubyReleaseUnits.Latexmath)]
+    [DataRow("official", "rubygems", "exact", RubyReleaseUnits.Latexmath)]
+    [DataRow("official", "rubygems", "different", RubyReleaseUnits.Latexmath)]
     public async Task SupportedDestinationsBindOriginalAndObservation(string channel,
         string destination, string scenario, string unit = RubyReleaseUnits.Smoke)
     {
@@ -347,7 +349,6 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     [DataRow("crossed-destination")]
     [DataRow("name")]
     [DataRow("kind")]
-    [DataRow("official-latexmath")]
     public async Task UnsupportedPreparationDoesNotRead(string scenario)
     {
         using var fixture = new Fixture();
@@ -361,10 +362,6 @@ public sealed class RubyDestinationObservationTests(TestContext context)
                 prepared.Subject with { Destination = "rubygems" } },
             "name" => prepared with { Files = [prepared.Files[0] with { Name =
                 "unrelated-package" }] },
-            "official-latexmath" => prepared with { Subject = prepared.Subject with {
-                Unit = RubyReleaseUnits.Latexmath, Channel = "official",
-                Destination = "rubygems" }, Files = [prepared.Files[0] with {
-                    Name = RubyReleaseUnits.Latexmath }] },
             _ => prepared with { Files = [prepared.Files[0] with { Kind = "python-wheel" }] },
         };
         int calls = 0;
