@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.FileSystemGlobbing;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
@@ -11,9 +12,13 @@ namespace WorkflowDelivery.Repository;
 internal sealed record RecordTaskOwner(string Script, string Rule);
 // Committed root HK and Renovate configuration text read at one endpoint.
 internal sealed record ToolingConfiguration(string? Hk, string? Renovate);
+// NuGetPreparationUnits lists the registered NuGet units whose native preparation applies.
 internal sealed record CiScopeApplicability(bool Mise, bool AzureAuth, bool Scholarly,
-    bool NuGetNativePreparation, bool GithubReleaseNativePreparation,
-    SortedDictionary<string, string[]> Reasons);
+    string[] NuGetPreparationUnits, bool GithubReleaseNativePreparation,
+    SortedDictionary<string, string[]> Reasons)
+{
+    internal bool NuGetNativePreparation => NuGetPreparationUnits.Length != 0;
+}
 
 // Finite retained-job applicability and repository responsibility for changed coordinates.
 // Native .NET/PNPM/Python/Ruby facts still own product consumption; a present coordinate
@@ -38,8 +43,11 @@ internal static partial class CiScope
     private static readonly string[] PythonInputs = ["pyproject.toml", "uv.lock", "uv.toml",
         ".python-version", ".config/uv/uv.toml", "conftest.py", "pytest.ini",
         "eng/scripts/sync_python_version.py", "eng/scripts/test-python.sh"];
+    private static readonly string[] NuGetUnits = [.. NuGetReleaseUnits.All.Select(unit =>
+        unit.Id)];
     private static readonly string[] NuGetPreparationRoots = ["src/private/app/workflow-delivery",
-        "tests/private/app/workflow-delivery", .. Ecosystems.NuGetReleaseUnits.PreparationRoots];
+        "tests/private/app/workflow-delivery",
+        .. NuGetReleaseUnits.All.SelectMany(NuGetReleaseUnits.PreparationRoots)];
     private static readonly string[] GithubReleasePreparationRoots = [
         "src/private/app/workflow-delivery", "tests/private/app/workflow-delivery",
         GithubReleaseProduct];
@@ -57,20 +65,21 @@ internal static partial class CiScope
             ["azureauth"] = new(StringComparer.Ordinal),
             ["scholarly"] = new(StringComparer.Ordinal),
         };
-        bool nuget = full, githubRelease = full;
+        var nuget = new SortedSet<string>(full ? NuGetUnits : [], StringComparer.Ordinal);
+        bool githubRelease = full;
         foreach (string path in changed)
         {
             foreach (string job in Jobs(path, gems).Where(reasons.ContainsKey))
                 reasons[job].Add(path);
             bool shared = AllInputs.Contains(path, StringComparer.Ordinal) ||
                 path == "stylecop.json" || resourceInputs.Contains(path, StringComparer.Ordinal);
-            nuget |= shared || NuGetPreparationInput(path);
+            nuget.UnionWith(shared ? NuGetUnits : NuGetPreparationUnits(path));
             githubRelease |= shared || GithubReleasePreparationInput(path);
         }
         if (full)
             foreach (SortedSet<string> why in reasons.Values) why.Add("explicit full validation");
         return new(reasons["mise"].Count != 0, reasons["azureauth"].Count != 0,
-            reasons["scholarly"].Count != 0, nuget, githubRelease,
+            reasons["scholarly"].Count != 0, [.. nuget], githubRelease,
             new(reasons.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray()),
                 StringComparer.Ordinal));
     }
@@ -413,10 +422,21 @@ internal static partial class CiScope
         Under(path, "src/public/lib/nbgv-python") ||
         PythonInputs.Contains(path, StringComparer.Ordinal);
 
-    private static bool NuGetPreparationInput(string path) =>
-        !ControlInputs.InertDocument(path) && (Under(path, Products) && !Under(path, NuGetProduct)
-            ? DotNetInheritedInputs.Consumes(path, [NuGetProduct])
-            : DotNetInheritedInputs.Consumes(path, NuGetPreparationRoots));
+    // A preparation input inside exactly one unit's roots selects that unit; Workflow Delivery
+    // code and inherited or otherwise shared inputs select every unit.
+    private static string[] NuGetPreparationUnits(string path)
+    {
+        if (ControlInputs.InertDocument(path)) return [];
+        if (Under(path, Products) && !Under(path, NuGetProduct))
+            return DotNetInheritedInputs.Consumes(path, [NuGetProduct])
+                ? [NuGetReleaseUnits.Smoke]
+                : [];
+        if (!DotNetInheritedInputs.Consumes(path, NuGetPreparationRoots)) return [];
+        string[] owners = [.. NuGetReleaseUnits.All.Where(unit =>
+            NuGetReleaseUnits.PreparationRoots(unit).Any(root => Under(path, root)))
+            .Select(unit => unit.Id)];
+        return owners.Length == 1 ? owners : NuGetUnits;
+    }
 
     // The real ImageOcclusionEditor recipe consumes its product and the preparation code; the
     // test fixture products are not its inputs.

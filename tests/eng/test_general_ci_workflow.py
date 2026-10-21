@@ -1107,7 +1107,8 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
                 "needs.scope.result": selection,
                 key: applicable,
                 "needs.node-group.result": "success",
-            },
+            }
+            | NUGET_SELECTION,
             workflow=workflow,
             job=job,
         )
@@ -1119,6 +1120,39 @@ def test_ci_scope_guard_rejects_missing_or_failed_selection(
         for step in job["steps"][1:-1]:
             assert "steps.scope.outputs.run == 'true'" in step["if"]
             assert not step.get("continue-on-error", False)
+
+
+NUGET_SELECTION = {
+    "needs.scope.outputs.nuget_native_preparation_filter": "TestCategory=X",
+    "needs.scope.outputs.nuget_native_preparation_tests": "1",
+}
+
+
+@pytest.mark.parametrize(
+    ("selection_filter", "tests"),
+    [("", "1"), ("TestCategory=X", ""), ("TestCategory=X", "0")],
+)
+def test_nuget_preparation_guard_rejects_missing_rows(
+    workflow, tmp_path, selection_filter, tests
+):
+    """Applicable NuGet preparation needs its row filter and count."""
+    job = workflow["jobs"]["nuget-native-preparation"]
+    output = tmp_path / "output"
+    result = run_step(
+        job["steps"][0],
+        cwd=tmp_path,
+        env={"GITHUB_OUTPUT": str(output)},
+        bindings=_bindings(tmp_path)
+        | {
+            "needs.scope.result": "success",
+            "needs.scope.outputs.nuget_native_preparation": "true",
+        }
+        | dict(zip(NUGET_SELECTION, (selection_filter, tests), strict=True)),
+        workflow=workflow,
+        job=job,
+    )
+    assert result.returncode != 0
+    assert not output.exists()
 
 
 def test_required_validate_rejects_missing_or_failed_consumers(
@@ -1455,23 +1489,31 @@ def _native_test(job: dict[str, Any]) -> str:
 
 
 def test_nuget_native_preparation_runs_selected_rows(workflow):
-    """Per-PR CI runs the smoke and library native NuGet preparation rows."""
+    """Per-PR CI runs the selected units' native NuGet preparation rows."""
     job = workflow["jobs"]["nuget-native-preparation"]
     assert job["name"] == "NuGet native preparation (Windows)"
     assert job["runs-on"].startswith("windows-")
-    assert job["steps"][0]["env"]["APPLICABLE"] == (
-        "${{ needs.scope.outputs.nuget_native_preparation }}"
-    )
-    assert workflow["jobs"]["scope"]["outputs"]["nuget_native_preparation"] == (
-        "${{ steps.select.outputs.nuget_native_preparation }}"
-    )
+    for key in ("", "_filter", "_tests"):
+        assert workflow["jobs"]["scope"]["outputs"][
+            f"nuget_native_preparation{key}"
+        ] == (f"${{{{ steps.select.outputs.nuget_native_preparation{key} }}}}")
+    selection = {
+        "APPLICABLE": "${{ needs.scope.outputs.nuget_native_preparation }}",
+        "FILTER": "${{ needs.scope.outputs.nuget_native_preparation_filter }}",
+        "TESTS": "${{ needs.scope.outputs.nuget_native_preparation_tests }}",
+    }
+    assert selection.items() <= job["steps"][0]["env"].items()
     assert "nuget-native-preparation" in workflow["jobs"]["validation"]["needs"]
     checkout = _step_using(job, "actions/checkout@")
     assert checkout["with"]["persist-credentials"] is False
     run = _native_test(job)
     assert CONTROL_PROJECT in run
-    assert "--filter 'TestCategory=NuGetNativePreparation'" in run
-    assert "-- --minimum-expected-tests 10" in run
+    test = next(
+        step for step in job["steps"] if "dotnet test" in step.get("run", "")
+    )
+    assert {k: selection[k] for k in ("FILTER", "TESTS")} == test["env"]
+    assert '--filter "$env:FILTER"' in run
+    assert '-- --minimum-expected-tests "$env:TESTS"' in run
     assert "--report-trx" in run
     assert "native-preparation.binlog" in run
     assert "exit $LASTEXITCODE" in run

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
@@ -8,6 +9,25 @@ namespace WorkflowDelivery.CI.Callers;
 internal static class DotNetCiCaller
 {
     internal const string Scope = "dotnet/native-endpoint-selection-v1";
+    internal const string NuGetPreparationCategory = "NuGetNativePreparation";
+    // Each NuGet native preparation row also carries this prefix and its unit ID.
+    internal const string NuGetUnitCategory = "NuGetUnit:";
+    // The smoke unit runs one preparation row per supported ref; a library runs one row.
+    private const int SmokePreparationRows = 2;
+
+    // Native MTP filter and exact row count for the selected NuGet preparation units. Selecting
+    // every unit keeps the plain category filter, so no preparation row escapes a full run.
+    internal static (string Filter, int Tests) NuGetPreparationTests(string[] units)
+    {
+        if (units.Length == 0) return ("", 0);
+        int tests = units.Sum(unit => unit == NuGetReleaseUnits.Smoke ? SmokePreparationRows
+            : 1);
+        string filter = "TestCategory=" + NuGetPreparationCategory;
+        if (!NuGetReleaseUnits.All.All(unit => units.Contains(unit.Id)))
+            filter += "&(" + string.Join('|', units.Select(unit =>
+                "TestCategory=" + NuGetUnitCategory + unit)) + ")";
+        return (filter, tests);
+    }
 
     // Native shell builds once (Build + TargetPath), copies the complete output and archives
     // helpers. This phase records the already prepared distribution; it cannot build itself.
@@ -124,6 +144,7 @@ internal static class DotNetCiCaller
                 ["scholarly"] = retained.Scholarly,
             },
             ["nuget_native_preparation"] = retained.NuGetNativePreparation,
+            ["nuget_native_preparation_units"] = Strings(retained.NuGetPreparationUnits),
             ["github_release_native_preparation"] = retained.GithubReleaseNativePreparation,
             ["reasons"] = reasons,
         };
@@ -138,6 +159,10 @@ internal static class DotNetCiCaller
                          retained.GithubReleaseNativePreparation),
                      ("full", request.Full) })
             CiCallerTransfer.Output(key, value ? "true" : "false");
+        (string filter, int tests) = NuGetPreparationTests(retained.NuGetPreparationUnits);
+        CiCallerTransfer.Output("nuget_native_preparation_filter", filter);
+        CiCallerTransfer.Output("nuget_native_preparation_tests",
+            tests.ToString(System.Globalization.CultureInfo.InvariantCulture));
         CiCallerTransfer.Output("base", request.Basis.Reference);
         CiCallerTransfer.Output("candidate", request.Candidate.Reference);
         return result;

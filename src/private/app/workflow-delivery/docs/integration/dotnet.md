@@ -304,12 +304,17 @@ The Workflow Delivery test project's native MTP configuration excludes the
 `NuGetNativePreparation` and `NuGetNativeScenarios` categories by default, and
 the `GithubReleaseNativePreparation` category that the
 [GitHub Release integration](github-release.md#caller) owns.
-The Windows `NuGet native preparation (Windows)` CI job owns the two
-preparation rows (real preparation, original package and clean consumer). Its
-applicability follows the existing .NET/Workflow scope selection, which covers
-any Workflow Delivery source or test change (except the inert control `docs/`
-subtree and `README.md`), the fixture product and shared
-.NET/CI inputs; Validate requires its result. Same-input .NET
+The Windows `NuGet native preparation (Windows)` CI job owns the preparation
+rows (real preparation, original package and clean consumer): two smoke rows and
+one row per registered library. Each row carries a `NuGetUnit:<unit>` category.
+Scope selection attributes a preparation input inside exactly one registered
+unit's roots (its project directory, the smoke fixture product, or Memoization's
+generator) to that unit. Any Workflow Delivery source or test change (except the
+inert control `docs/` subtree and `README.md`), inherited .NET input, shared CI
+input or explicit full validation selects every unit. The scope job emits the
+native MTP filter, which always requires the `NuGetNativePreparation` category,
+and the exact selected row count; the job passes them to `--filter` and
+`--minimum-expected-tests`. Validate requires its result. Same-input .NET
 reproducibility was established once ([Issue #948](https://github.com/hcoona/three/issues/948),
 [PR #952](https://github.com/hcoona/three/pull/952)); by owner decision it is build-infrastructure behavior, not
 per-PR evidence. The Windows reproducibility workflow runs the three

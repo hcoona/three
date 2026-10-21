@@ -60,11 +60,15 @@ internal static class NuGetReleaseUnits
 
     internal static IEnumerable<NuGetReleaseUnit> All => Units;
 
-    // Source directories whose changes can alter a registered unit's prepared package: each
+    // Source directories whose changes can alter the unit's prepared package: its
     // declaration's project directory and the generator that Memoization compiles in.
-    internal static string[] PreparationRoots => [.. Units.Select(unit =>
-        unit.Declaration[..unit.Declaration.LastIndexOf('/')]),
-        "src/public/lib/Memoization.Generators"];
+    internal static string[] PreparationRoots(NuGetReleaseUnit unit)
+    {
+        string project = unit.Declaration[..unit.Declaration.LastIndexOf('/')];
+        return unit.Id == "memoization"
+            ? [project, "src/public/lib/Memoization.Generators"]
+            : [project];
+    }
 
     internal static bool Registered(string id) => Units.Any(unit => unit.Id == id);
 

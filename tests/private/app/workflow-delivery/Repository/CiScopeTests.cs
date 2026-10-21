@@ -1,4 +1,6 @@
 using System.Text.Json;
+using WorkflowDelivery.CI.Callers;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
@@ -258,6 +260,38 @@ public sealed class CiScopeTests
         Assert.AreEqual(selected, CiScope.Select([path], Comparison(path), false,
             ["eng/native-resource.json"]).NuGetNativePreparation);
         Assert.IsTrue(CiScope.Select([], Comparison(), true, []).NuGetNativePreparation);
+    }
+
+    [TestMethod]
+    [DataRow("src/public/lib/CircularList/CircularList.cs", "circular-list")]
+    [DataRow("src/public/lib/Memoization.Generators/MemoizationGenerator.cs", "memoization")]
+    [DataRow("src/public/lib/CircularList/CircularList.cs|src/public/lib/Hjg.Pngcs/PngReader.cs",
+        "circular-list|hjg-pngcs")]
+    [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +
+        "hcoona-release-smoke-github-packages/Program.cs", NuGetReleaseUnits.Smoke)]
+    [DataRow("src/public/lib/CircularList/CircularList.cs|" +
+        "src/private/app/workflow-delivery/Native/x.cs", "*")]
+    [DataRow("src/public/lib/CircularList/CircularList.cs|" +
+        "tests/private/app/workflow-delivery/x.cs", "*")]
+    [DataRow("src/public/lib/CircularList/CircularList.cs|Directory.Packages.props", "*")]
+    [DataRow("src/public/lib/Directory.Build.props", "*")]
+    [DataRow("stylecop.json", "*")]
+    public void NuGetNativePreparationSelectsOnlyTheChangedUnitsRows(string changed,
+        string units)
+    {
+        string[] paths = changed.Split('|');
+        string[] all = [.. NuGetReleaseUnits.All.Select(unit => unit.Id)];
+        string[] expected = units == "*" ? all : units.Split('|');
+        string[] selected = CiScope.Select(paths, Comparison(paths), false, [])
+            .NuGetPreparationUnits;
+        CollectionAssert.AreEquivalent(expected, selected);
+        CollectionAssert.AreEquivalent(all, CiScope.Select([], Comparison(), true, [])
+            .NuGetPreparationUnits);
+        (string filter, int tests) = DotNetCiCaller.NuGetPreparationTests(selected);
+        Assert.AreEqual(expected.Sum(unit => unit == NuGetReleaseUnits.Smoke ? 2 : 1), tests);
+        Assert.AreEqual("TestCategory=NuGetNativePreparation" + (units == "*" ? "" :
+            "&(" + string.Join('|', expected.Select(unit => "TestCategory=NuGetUnit:" + unit)) +
+            ")"), filter);
     }
 
     [TestMethod]

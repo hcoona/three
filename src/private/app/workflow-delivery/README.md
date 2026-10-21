@@ -210,7 +210,8 @@ the request.
 
 The Windows `NuGet native preparation (Windows)` CI job and the
 [NuGet reproducibility workflow](../../../../.github/workflows/workflow-delivery-v3-nuget-reproducibility.yml)
-run the `NuGetNativePreparation` and `NuGetNativeScenarios` tests. Their
+run the `NuGetNativePreparation` and `NuGetNativeScenarios` tests; the CI job
+runs only the selected units' preparation rows. Their row selection,
 triggers, evidence carrier, failure ownership and retained diagnostics are
 owned by the [native .NET CI group contract](docs/integration/dotnet.md#planning-execution-and-collection).
 

@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Build.Evaluation;
+using WorkflowDelivery.CI.Callers;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
@@ -18,7 +19,8 @@ namespace WorkflowDelivery.Tests.Release;
 public sealed class NuGetPreparationNativeTests(TestContext context)
 {
     [TestMethod]
-    [TestCategory("NuGetNativePreparation")]
+    [TestCategory(DotNetCiCaller.NuGetPreparationCategory)]
+    [TestCategory(DotNetCiCaller.NuGetUnitCategory + NuGetReleaseUnits.Smoke)]
     [Timeout(600000, CooperativeCancellation = true)]
     // Preparation does not read DryRun; NuGetPreparationTests asserts its subject round-trip.
     [DataRow("refs/heads/development")]
