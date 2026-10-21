@@ -346,23 +346,29 @@ ends a grant. Git and the proposing PR retain the reason and history.
       Release recipe's build and consumer obligations. A missing, failed or
       cancelled gem check fails the group. Reuse the existing check kinds,
       quality-selection YAML and release-unit registration; add no new policy
-      lifecycle, report format or package roster. The smoke gem's checks and
-      Latexmath's RSpec obligations are unchanged.
+      lifecycle, report format or package roster. The implementation may
+      change Latexmath's registered quality and release preset from
+      `ruby/rspec-v1` to a preset that also includes these gem checks, as
+      needed for the reader's preset-match invariant to hold; Release
+      dispatch and publication behavior stays unchanged. The smoke gem's
+      checks and Latexmath's RSpec obligations are unchanged.
     - **Ruby plan/execute split:** split the `ruby-group` job into a planning
       job, which uploads the Ruby facts the Node group consumes and the
       original Ruby plan, and an execution job, which runs that plan without
-      replanning. The Node group waits only on Ruby planning. The Ruby
-      execution result still gates a required check, so a failed, missing or
-      cancelled Ruby result cannot pass CI. Update the Node and Ruby
+      replanning. The Node group waits only on Ruby planning. A failed,
+      missing or cancelled Ruby execution result must block merge through an
+      existing required check, such as the Validate aggregate or the
+      `node-tests` path; no new required check or ruleset change is
+      authorized. Update the Node and Ruby
       integration contracts, the MLD job sequence view and the `tests/eng`
       workflow tests in the same change.
 
     The outcome is accepted when a Latexmath source change selects and passes
     all four Latexmath checks, a credential-free test shows a broken gem
-    package failing a gem check, a change selecting no Ruby work prepares no gems, and measured runs
-    of a Latexmath-touching PR and an ordinary no-Ruby PR show when Node
-    starts relative to Ruby planning and execution and the split's
-    runner-minute cost.
+    package failing a gem check, a change selecting no Ruby work prepares no
+    gems, and measured runs of a Latexmath-touching PR and an ordinary
+    no-Ruby PR show when Node starts relative to Ruby planning and execution
+    and the split's runner-minute cost.
 
 - **Ordering and gates:** land gem qualification before the split, so the
   split is measured with the Ruby execution it overlaps. Follow the existing
@@ -380,6 +386,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
   (the other #1288 candidate, which is HK conformance work, not Ruby CI); no
   change to Ruby Release callers, destinations, release units or channels; no
   release, dispatch, publication, credential, Environment or access change; no
-  reopening of completed Ruby campaigns; no other CI job, ecosystem group or
-  required-check change beyond the Ruby gate above. Delete this entry when the
+  reopening of completed Ruby campaigns; no other CI job, ecosystem group,
+  required-check or ruleset change. Delete this entry when the
   outcome is accepted.
