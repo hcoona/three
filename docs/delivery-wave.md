@@ -314,3 +314,22 @@ ends a grant. Git and the proposing PR retain the reason and history.
   trusted-publisher entries or repository variables (they are listed for the
   owner's separate disposition); no new release route; no release, dispatch,
   publication or credential change.
+
+### Record the browser-extension version_name owner decision
+
+- **Work carrier:** the pull request proposing this entry and its linked
+  documentation pull request.
+- **Accepted inputs:** the
+  [browser-store integration contract](../src/private/app/workflow-delivery/docs/integration/browser-store.md)
+  Known Gaps item on `version_name`.
+- **Owner decisions:** keep the current behavior. Official browser-extension
+  builds keep `version_name` equal to the NBGV npm prerelease string
+  (`1.2.0-dev.<height>`); no product or control change.
+- **Advancement and outcome:** record the decision in the browser-store
+  contract in place of the open item. The outcome is accepted when that change
+  merges with ordinary CI passing.
+- **Ordering and gates:** follow the record-system and OCR review gates.
+- **Effects:** permit documentation changes, independent delegated review and
+  ordinary PR/check operations.
+- **Exclusions:** no product, implementation, workflow or release change.
+- **Acceptance:** delete this entry when the outcome is accepted.
