@@ -32,10 +32,10 @@ public sealed class RubyFactsAssemblerTests
     [TestMethod]
     [DataRow("src/private/app/workflow-delivery/Native/Ruby/source.rb", true)]
     [DataRow("src/private/app/workflow-delivery/Native/contracts/ruby-source.schema.json", true)]
-    [DataRow("src/public/lib/hexo-renderer-asciidoc/Gemfile.lock", true)]
+    [DataRow("tests/native-ruby/contexts/bundler/Gemfile.lock", true)]
     [DataRow("src/public/lib/asciidoctor-latexmath/Gemfile.lock", true)]
     [DataRow("Gemfile.lock", true)]
-    [DataRow("src/public/lib/hexo-renderer-asciidoc/Gemfile", false)]
+    [DataRow("src/public/lib/asciidoctor-latexmath/Gemfile", false)]
     [DataRow("src/private/app/workflow-delivery/Native/contracts/python-x.schema.json", false)]
     public void NativeSuiteConsumesHelpersSchemasAndEveryBundlerLock(string path, bool consumed)
         => Assert.AreEqual(consumed, RubyNativeTestInputs.Consumes(path));

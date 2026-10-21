@@ -188,16 +188,6 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
             "success() && steps.plan.outputs.latexmath == 'true'"
         )
         assert not step.get("continue-on-error", False)
-    elif (
-        key == "node-tests"
-        and step["name"] == "Prepare selected Hexo native bundle"
-    ):
-        assert step["if"] == (
-            "success() && !cancelled() && steps.scope.outputs.run == 'true' && "
-            "contains(fromJSON(needs.node-group.outputs.retained_directories), "
-            "'src/public/lib/hexo-renderer-asciidoc')"
-        )
-        assert not step.get("continue-on-error", False)
     elif (key == "scope" and step["name"] == "Setup basis resource SDK") or (
         key == "python-tests"
         and step["name"] == "Setup candidate NBGV and control SDK"
@@ -1493,24 +1483,14 @@ def test_node_receives_only_successful_original_ruby_artifact(
     assert (result.returncode == 0) is succeeds
 
 
-def test_retained_hexo_prepares_only_its_selected_native_bundle(workflow):
-    """Bundler owns the locked environment for selected Hexo checks."""
+def test_retained_node_uses_committed_pnpm_without_ruby(workflow):
+    """Retained Node checks prepare only their committed Node tooling."""
     job = workflow["jobs"]["node-tests"]
-    ruby = _action(job, "ruby/setup-ruby")
-    assert "steps.scope.outputs.run == 'true'" in ruby["if"]
-    assert (
-        "contains(fromJSON(needs.node-group.outputs.retained_directories), "
-        "'src/public/lib/hexo-renderer-asciidoc')" in ruby["if"]
+    assert not any(
+        step.get("uses", "").startswith("ruby/setup-ruby@")
+        for step in job["steps"]
     )
-    assert ruby["with"] == {
-        "ruby-version": "$" + "{{ steps.tools.outputs.ruby }}",
-        "working-directory": NODE_PACKAGE_DIR,
-        "bundler-cache": True,
-    }
     versions = _committed_versions(job)
-    assert _setup_input(job, "ruby/setup-ruby", "ruby-version", versions) == (
-        _locked("ruby")
-    )
     assert _setup_input(job, "pnpm/action-setup", "version", versions) == (
         _locked("pnpm")
     )

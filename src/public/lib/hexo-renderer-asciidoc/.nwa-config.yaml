@@ -19,7 +19,6 @@ nwa:
     - 'mise.lock'
     - 'COPYING'
     - 'COPYING.LESSER'
-    - 'Gemfile.lock'
     - 'LICENSE'
     - '**/pnpm-lock.yaml'
     - '**/pnpm-workspace.yaml'

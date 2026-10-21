@@ -15,7 +15,6 @@ local generated_files =
     "**/dist/**",
     "**/node_modules/**",
     "mise.lock",
-    "Gemfile.lock",
     "**/pnpm-lock.yaml",
     "**/pnpm-workspace.yaml",
   )
