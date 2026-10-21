@@ -11,6 +11,8 @@ internal sealed class DotNetOwnership
         ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
     private readonly string[] _regions;
     private readonly string[] _paths;
+    // Request-local: graph nodes often share a directory and the same exclusion specs.
+    private readonly Dictionary<(string Directory, string Spec), MSBuildGlob> _globs = [];
 
     internal DotNetOwnership(string root, IEnumerable<ProjectInstance> projects,
         string[] committedPaths)
@@ -55,7 +57,9 @@ internal sealed class DotNetOwnership
                     spec.Contains("%3f", StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException(
                         "Unsupported escaped native ownership wildcard.");
-                MSBuildGlob glob = MSBuildGlob.Parse(directory, ProjectCollection.Unescape(spec));
+                if (!_globs.TryGetValue((directory, spec), out MSBuildGlob? glob))
+                    _globs.Add((directory, spec), glob = MSBuildGlob.Parse(directory,
+                        ProjectCollection.Unescape(spec)));
                 if (!glob.IsLegal)
                     throw new InvalidDataException("Illegal native ownership filespec: " + name);
                 yield return glob;
