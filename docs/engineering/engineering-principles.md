@@ -1,6 +1,6 @@
 # Shared Engineering Principles
 
-The repository owner maintains these principles for authors and reviewers of
+The repository owner curates these principles for authors and reviewers of
 design, security and validation decisions. Apply the relevant sections with the
 owning project's accepted requirements and concern records. Project scope, threat
 models, validation gates and [work authorization](../delivery-wave.md) retain
