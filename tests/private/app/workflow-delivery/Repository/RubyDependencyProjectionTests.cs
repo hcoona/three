@@ -130,21 +130,32 @@ public sealed class RubyDependencyProjectionTests
             case "missing-owner": sources = []; break;
             case "wrong-name": sources = [sources[0] with { Gem = Gem("other") }]; break;
             case "escaped-source":
-                local = local with { Source = local.Source with
-                    { Path = Path.GetFullPath(Path.Combine(Root, "..", "outside")) } }; break;
+                local = local with
+                {
+                    Source = local.Source with
+                    { Path = Path.GetFullPath(Path.Combine(Root, "..", "outside")) }
+                }; break;
             case "installed-as-source":
-                local = local with { Source = local.Source with
-                    { Gemspec = Absolute("cache/a/a.gemspec") } }; break;
+                local = local with
+                {
+                    Source = local.Source with
+                    { Gemspec = Absolute("cache/a/a.gemspec") }
+                }; break;
             case "path-mismatch":
-                local = local with { Source = local.Source with
-                    { Path = Absolute("src/unrelated") } }; break;
+                local = local with
+                {
+                    Source = local.Source with
+                    { Path = Absolute("src/unrelated") }
+                }; break;
             case "missing-direct": bundle = bundle with { DirectDependencies = ["missing"] }; break;
             case "missing-edge": local = local with { Gem = Locked("a", "missing") }; break;
             case "duplicate-spec": bundle = bundle with { Specifications = [local, local] }; break;
-            case "outside-gemfile": bundle = bundle with
+            case "outside-gemfile":
+                bundle = bundle with
                 { Gemfile = Path.GetFullPath(Path.Combine(Root, "..", "Gemfile")) }; break;
             case "duplicate-source": sources = [sources[0], sources[0]]; break;
-            case "duplicate-name": sources = [sources[0],
+            case "duplicate-name":
+                sources = [sources[0],
                 new(Absolute("src/other/a.gemspec"), Gem("a"))]; break;
         }
         if (defect is "escaped-source" or "installed-as-source" or "path-mismatch" or

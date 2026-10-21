@@ -185,8 +185,12 @@ public sealed class RubyDestinationObservationTests(TestContext context)
             "unknown" => "{\"state\":\"unknown\"}",
             "null" => "null",
             "oversized" => "{\"state\":\"absent\"}" + new string(' ', 256 * 1024),
-            _ => JsonSerializer.Serialize(new { state = "absent", padding = new string('é',
-                140000) },
+            _ => JsonSerializer.Serialize(new
+            {
+                state = "absent",
+                padding = new string('é',
+                140000)
+            },
                 NativeJson),
         };
         NativeCommandResult reached = Success(answer);
@@ -355,13 +359,25 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         PreparedRelease prepared = fixture.Prepared;
         prepared = scenario switch
         {
-            "destination" => prepared with { Subject = prepared.Subject with { Destination =
-                "unknown" } },
+            "destination" => prepared with
+            {
+                Subject = prepared.Subject with
+                {
+                    Destination =
+                "unknown"
+                }
+            },
             "channel" => prepared with { Subject = prepared.Subject with { Channel = "unknown" } },
-            "crossed-destination" => prepared with { Subject =
-                prepared.Subject with { Destination = "rubygems" } },
-            "name" => prepared with { Files = [prepared.Files[0] with { Name =
-                "unrelated-package" }] },
+            "crossed-destination" => prepared with
+            {
+                Subject =
+                prepared.Subject with { Destination = "rubygems" }
+            },
+            "name" => prepared with
+            {
+                Files = [prepared.Files[0] with { Name =
+                "unrelated-package" }]
+            },
             _ => prepared with { Files = [prepared.Files[0] with { Kind = "python-wheel" }] },
         };
         int calls = 0;
@@ -392,8 +408,11 @@ public sealed class RubyDestinationObservationTests(TestContext context)
             "relative-ruby" => fixture.Tools with { Ruby = "ruby" },
             "relative-helper" => fixture.Tools with { Helper = "source.rb" },
             "relative-state" => fixture.Tools with { Scratch = "scratch" },
-            "missing-state" => fixture.Tools with { Scratch = Path.Combine(fixture.Root,
-                "missing") },
+            "missing-state" => fixture.Tools with
+            {
+                Scratch = Path.Combine(fixture.Root,
+                "missing")
+            },
             _ => fixture.Tools,
         };
         if (scenario == "used-state") File.WriteAllText(Path.Combine(tools.Scratch, "stale"),

@@ -20,7 +20,8 @@ internal static class PythonExecutionMetadata
             string path = Path.GetFullPath(Path.Combine(checkout, member.Directory));
             nodes[member.Id] = new JsonObject
             {
-                ["kind"] = "package", ["name"] = member.Name,
+                ["kind"] = "package",
+                ["name"] = member.Name,
                 ["source"] = new JsonObject { ["editable"] = path },
                 ["dependencies"] = new JsonArray(),
             };
@@ -34,7 +35,8 @@ internal static class PythonExecutionMetadata
             ["workspace"] = new JsonObject { ["id"] = "workspace-context", ["path"] = checkout },
             ["requires_python"] = ">=3.14",
             ["conflicts"] = new JsonObject { ["sets"] = new JsonArray() },
-            ["resolution"] = nodes, ["members"] = membership,
+            ["resolution"] = nodes,
+            ["members"] = membership,
         };
         return new(NativeTermination.Exited, 0, document.ToJsonString(), "", 0.1, null);
     }

@@ -137,11 +137,14 @@ public sealed class NodeInputConsumersTests
             case "duplicate": projects = [Project("src/a"), Project("src/a")]; break;
             case "missing-quality": quality.Clear(); break;
             case "unknown-quality": quality = LeafSelections("src/b"); break;
-            case "non-ancestor-quality": quality["src/a"] = new("preset", "src/b/" + Declaration);
+            case "non-ancestor-quality":
+                quality["src/a"] = new("preset", "src/b/" + Declaration);
                 break;
-            case "uncommitted-quality": quality["src/a"] = new("preset", "src/" + Declaration);
+            case "uncommitted-quality":
+                quality["src/a"] = new("preset", "src/" + Declaration);
                 break;
-            case "unknown-local-consumer": local = [new("shared/data.txt", false, ["src/b"])];
+            case "unknown-local-consumer":
+                local = [new("shared/data.txt", false, ["src/b"])];
                 break;
             case "root-local-consumer": local = [new("shared/data.txt", false, ["."])]; break;
             case "uncommitted-version-input":

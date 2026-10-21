@@ -19,7 +19,8 @@ public sealed class ProcessResult
             hasExitCode: true,
             standardOutput,
             standardError
-        ) { }
+        )
+    { }
 
     private ProcessResult(
         ProcessExecutionStatus status,

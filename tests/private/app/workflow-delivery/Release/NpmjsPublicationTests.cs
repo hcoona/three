@@ -75,15 +75,26 @@ public sealed class NpmjsPublicationTests
     {
         using var files = new Files();
         int native = 0;
-        PreparedRelease prepared = files.Prepared with { Subject = files.Prepared.Subject with
-            { Channel = channel, Destination = destination, DryRun = dryRun,
-                SelectedRef = selectedRef, Unit = unit } };
+        PreparedRelease prepared = files.Prepared with
+        {
+            Subject = files.Prepared.Subject with
+            {
+                Channel = channel,
+                Destination = destination,
+                DryRun = dryRun,
+                SelectedRef = selectedRef,
+                Unit = unit
+            }
+        };
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             NpmjsPublication.PublishAsync(prepared, files.Originals, files.Runtime, files.Tools,
                 Platform(), (_, _) => { native++; return Task.FromResult(Success("")); },
-                (current, _) => { native++; return Task.FromResult(Observe(current,
-                    ReleaseFileState.Absent)); }, CancellationToken.None));
+                (current, _) =>
+                {
+                    native++; return Task.FromResult(Observe(current,
+                    ReleaseFileState.Absent));
+                }, CancellationToken.None));
 
         Assert.AreEqual(0, native);
     }
@@ -105,8 +116,11 @@ public sealed class NpmjsPublicationTests
             NpmjsPublication.PublishAsync(files.Prepared, files.Originals, files.Runtime,
                 files.Tools, platform, (command, _) => Task.FromResult(Success(
                     Path.GetFileName(command.Executable) == "node" ? "v" + node : npm)),
-                (prepared, _) => { reads++; return Task.FromResult(Observe(prepared,
-                    ReleaseFileState.Absent)); }, CancellationToken.None));
+                (prepared, _) =>
+                {
+                    reads++; return Task.FromResult(Observe(prepared,
+                    ReleaseFileState.Absent));
+                }, CancellationToken.None));
 
         Assert.AreEqual(0, reads);
     }
@@ -120,9 +134,15 @@ public sealed class NpmjsPublicationTests
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             NpmjsPublication.PublishAsync(files.Prepared, files.Originals, files.Runtime,
-                files.Tools, Platform(), (_, _) => { native++; return Task.FromResult(
-                    Success("")); }, (prepared, _) => { native++; return Task.FromResult(
-                    Observe(prepared, ReleaseFileState.Absent)); }, CancellationToken.None));
+                files.Tools, Platform(), (_, _) =>
+                {
+                    native++; return Task.FromResult(
+                    Success(""));
+                }, (prepared, _) =>
+                {
+                    native++; return Task.FromResult(
+                    Observe(prepared, ReleaseFileState.Absent));
+                }, CancellationToken.None));
 
         Assert.AreEqual(0, native);
     }

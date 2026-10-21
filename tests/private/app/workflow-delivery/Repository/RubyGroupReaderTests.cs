@@ -286,7 +286,8 @@ public sealed class RubyGroupReaderTests(TestContext context)
             CancellationToken token, string? owner = null, bool full = false)
         {
             var fixture = new Fixture(Directory.CreateTempSubdirectory(
-                "workflow-ruby-group-").FullName) { ActualCollection = actualCollection };
+                "workflow-ruby-group-").FullName)
+            { ActualCollection = actualCollection };
             try
             {
                 await fixture.RequestAsync(pair.Changed, full, owner, pair.Basis,
@@ -314,7 +315,9 @@ public sealed class RubyGroupReaderTests(TestContext context)
             };
             await File.WriteAllTextAsync(scope, JsonSerializer.Serialize(new
             {
-                @base = before, candidate = after, full,
+                @base = before,
+                candidate = after,
+                full,
                 changed_paths = full ? Array.Empty<string>() : new[] { changed },
                 endpoint_owners = new { basis = Endpoint(before), candidate = Endpoint(after) }
             }), token);

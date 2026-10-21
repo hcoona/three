@@ -359,9 +359,18 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         await Assert.ThrowsAsync<InvalidDataException>(() => BrowserStoreRelease.PublishAsync(
             dry, files.Files, Observation(dry, StoreState.Absent),
             new FakeStore(Observation(dry, StoreState.Absent)), context.CancellationToken));
-        BrowserStorePreparationResult buddy = dry with { Prepared = dry.Prepared with
-            { Subject = dry.Prepared.Subject with { Channel = "buddy", DryRun = false,
-                SelectedRef = "refs/heads/main" } } };
+        BrowserStorePreparationResult buddy = dry with
+        {
+            Prepared = dry.Prepared with
+            {
+                Subject = dry.Prepared.Subject with
+                {
+                    Channel = "buddy",
+                    DryRun = false,
+                    SelectedRef = "refs/heads/main"
+                }
+            }
+        };
         Assert.ThrowsExactly<InvalidDataException>(() => BrowserStoreRelease.Validate(buddy));
     }
 
@@ -379,11 +388,17 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         {
             var env = new Dictionary<string, string>
             {
-                ["RUNNER_TEMP"] = root, ["DESTINATION"] = store, ["CHANNEL"] = "official",
-                ["DRY_RUN"] = "false", ["GITHUB_SHA"] = new string('a', 40),
-                ["GITHUB_REF"] = "refs/heads/main", ["GITHUB_RUN_ATTEMPT"] = "1",
-                ["GITHUB_REPOSITORY"] = "hcoona/three", ["GITHUB_WORKSPACE"] = root,
-                ["STORE_ITEM"] = "item", ["STORE_PUBLISHER"] = "publisher",
+                ["RUNNER_TEMP"] = root,
+                ["DESTINATION"] = store,
+                ["CHANNEL"] = "official",
+                ["DRY_RUN"] = "false",
+                ["GITHUB_SHA"] = new string('a', 40),
+                ["GITHUB_REF"] = "refs/heads/main",
+                ["GITHUB_RUN_ATTEMPT"] = "1",
+                ["GITHUB_REPOSITORY"] = "hcoona/three",
+                ["GITHUB_WORKSPACE"] = root,
+                ["STORE_ITEM"] = "item",
+                ["STORE_PUBLISHER"] = "publisher",
                 ["GITHUB_OUTPUT"] = Path.Combine(root, "output"),
             };
             int Run(params string[] args) => ReleaseJobInputs.Run(
@@ -446,7 +461,7 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         string? location = null)
     {
         var response = new HttpResponseMessage((HttpStatusCode)status)
-            { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+        { Content = new StringContent(body, Encoding.UTF8, "application/json") };
         if (location is not null) response.Headers.Location = new(location, UriKind.Relative);
         return response;
     }

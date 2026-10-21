@@ -39,10 +39,10 @@ public sealed class ScratchRootsTests
         finally
         {
             foreach (string file in Directory.EnumerateFiles(parent, "*", new EnumerationOptions
-                     {
-                         RecurseSubdirectories = true,
-                         AttributesToSkip = FileAttributes.ReparsePoint,
-                     }))
+            {
+                RecurseSubdirectories = true,
+                AttributesToSkip = FileAttributes.ReparsePoint,
+            }))
                 File.SetAttributes(file, FileAttributes.Normal);
             Directory.Delete(parent, recursive: true);
         }

@@ -399,8 +399,11 @@ public sealed class PythonNativeGraphReaderTests(TestContext context)
                 {
                     directory,
                     build_requirements = directory == Consumer ? BuildRequirements.Select(
-                        requirement => new { name = requirement.Name,
-                            extras = requirement.Extras }).ToArray() : null,
+                        requirement => new
+                        {
+                            name = requirement.Name,
+                            extras = requirement.Extras
+                        }).ToArray() : null,
                     sources = directory == Consumer ? new Dictionary<string, string>
                     {
                         ["producer"] = UnsupportedSource ? "unsupported" : "workspace"

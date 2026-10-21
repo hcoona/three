@@ -165,12 +165,14 @@ public sealed class RubyRSpecResultTests
         messages = Messages,
         examples = statuses.Select((status, index) => new
         {
-            id = $"./spec/native_spec.rb[1:{index + 1}]", status,
+            id = $"./spec/native_spec.rb[1:{index + 1}]",
+            status,
             exception = status == "failed" ? new { message = "original failure" } : null,
         }).ToArray(),
         summary = new
         {
-            example_count = statuses.Length, failure_count = statuses.Count(s => s == "failed"),
+            example_count = statuses.Length,
+            failure_count = statuses.Count(s => s == "failed"),
             pending_count = statuses.Count(s => s == "pending"),
             errors_outside_of_examples_count = outside,
         },

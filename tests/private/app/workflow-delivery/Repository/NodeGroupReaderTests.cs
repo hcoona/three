@@ -16,8 +16,10 @@ public sealed class NodeGroupReaderTests
         NodeRevisionInputs basis = Inputs(NodeScenario.Basis) with
         {
             Revision = Inputs(NodeScenario.Basis).Revision with
-            { Entries = [.. Inputs(NodeScenario.Basis).Revision.Entries,
-                NodeScenario.File(removed)] },
+            {
+                Entries = [.. Inputs(NodeScenario.Basis).Revision.Entries,
+                NodeScenario.File(removed)]
+            },
         };
         NodeRevisionInputs candidate = Inputs(NodeScenario.Candidate);
         basis = NodeGroupReader.WithControlInputs(basis,
@@ -145,8 +147,10 @@ public sealed class NodeGroupReaderTests
         inputs = inputs with
         {
             Revision = inputs.Revision with
-            { Entries = [.. inputs.Revision.Entries.Where(entry => entry.Path != path),
-                new(path, mode, type)] },
+            {
+                Entries = [.. inputs.Revision.Entries.Where(entry => entry.Path != path),
+                new(path, mode, type)]
+            },
         };
 
         Assert.ThrowsExactly<InvalidDataException>(() => NodeGroupReader.WithControlInputs(inputs,
@@ -160,8 +164,10 @@ public sealed class NodeGroupReaderTests
         return inputs with
         {
             Revision = inputs.Revision with
-            { Entries = [.. inputs.Revision.Entries,
-                NodeScenario.File(NodeGroupReader.ControlProject)] },
+            {
+                Entries = [.. inputs.Revision.Entries,
+                NodeScenario.File(NodeGroupReader.ControlProject)]
+            },
             Quality = new Dictionary<string, QualitySelection?>(inputs.Quality)
             { [Retained] = null },
         };

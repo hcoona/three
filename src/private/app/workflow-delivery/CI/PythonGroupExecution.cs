@@ -33,10 +33,16 @@ internal static class PythonGroupExecution
                 !(item.Origins.SequenceEqual([CheckOrigin.Preset]) &&
                     item.QualityPresets.SequenceEqual([PythonPackageChecks.Preset])))
                 throw new InvalidDataException("Unsupported native Python group contract.");
-        CiPlan pytestPlan = plan with { Checks = plan.Checks.Where(item =>
-            item.Origins.SequenceEqual([CheckOrigin.NativeRetained])).ToArray() };
-        CiPlan packagePlan = plan with { Checks = plan.Checks.Where(item =>
-            item.Origins.SequenceEqual([CheckOrigin.Preset])).ToArray() };
+        CiPlan pytestPlan = plan with
+        {
+            Checks = plan.Checks.Where(item =>
+            item.Origins.SequenceEqual([CheckOrigin.NativeRetained])).ToArray()
+        };
+        CiPlan packagePlan = plan with
+        {
+            Checks = plan.Checks.Where(item =>
+            item.Origins.SequenceEqual([CheckOrigin.Preset])).ToArray()
+        };
         ResultCollector.Collect(pytestPlan, []);
         ResultCollector.Collect(packagePlan, []);
 

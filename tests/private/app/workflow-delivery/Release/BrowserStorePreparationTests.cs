@@ -76,8 +76,11 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     {
         using Fixture fixture = await Fixture.CreateAsync("chrome-web-store",
             context.CancellationToken);
-        fixture.Request = fixture.Request with { Subject = fixture.Request.Subject with
-            { Channel = channel, SelectedRef = selected, DryRun = dryRun } };
+        fixture.Request = fixture.Request with
+        {
+            Subject = fixture.Request.Subject with
+            { Channel = channel, SelectedRef = selected, DryRun = dryRun }
+        };
 
         await Assert.ThrowsAsync<InvalidDataException>(() => fixture.RunAsync(
             context.CancellationToken));
@@ -88,8 +91,11 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     {
         using Fixture fixture = await Fixture.CreateAsync("edge-addons",
             context.CancellationToken);
-        fixture.Request = fixture.Request with { Subject = fixture.Request.Subject with
-            { Channel = "buddy" } };
+        fixture.Request = fixture.Request with
+        {
+            Subject = fixture.Request.Subject with
+            { Channel = "buddy" }
+        };
 
         BrowserStorePreparationResult result = await fixture.RunAsync(
             context.CancellationToken);
@@ -194,8 +200,12 @@ public sealed class BrowserStorePreparationTests(TestContext context)
             string directory = Path.Combine(repository.Directory,
                 BrowserStorePreparation.Product, ".output");
             Directory.CreateDirectory(directory);
-            string browser = script switch { "zip" => "chrome", "zip:firefox" => "firefox",
-                _ => "edge" };
+            string browser = script switch
+            {
+                "zip" => "chrome",
+                "zip:firefox" => "firefox",
+                _ => "edge"
+            };
             if (Defect == "missing" && browser == "edge") return;
             string Name(string suffix) => Path.Combine(directory,
                 $"steam-account-history-to-csv-1.2.0-dev.7-{suffix}.zip");
@@ -224,8 +234,10 @@ public sealed class BrowserStorePreparationTests(TestContext context)
                 string product = BrowserStorePreparation.Product;
                 var sources = new Dictionary<string, string>
                 {
-                    ["pnpm-lock.yaml"] = "lock", ["pnpm-workspace.yaml"] = "workspace",
-                    [product + "/package.json"] = "{}", [product + "/wxt.config.ts"] = "config",
+                    ["pnpm-lock.yaml"] = "lock",
+                    ["pnpm-workspace.yaml"] = "workspace",
+                    [product + "/package.json"] = "{}",
+                    [product + "/wxt.config.ts"] = "config",
                 };
                 if (Defect == "source-output") sources[product + "/.output/old.zip"] = "x";
                 if (Defect == "source-lockfile") sources.Remove("pnpm-lock.yaml");

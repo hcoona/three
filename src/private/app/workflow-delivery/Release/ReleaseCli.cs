@@ -176,9 +176,12 @@ internal static class ReleaseCli
             throw new InvalidDataException("Mismatched publication result.");
         ReleaseOutcome result = ReleaseCompletion.Evaluate(prepared, observed, uploads ?? []);
         if (published is null && initial.Files.Any(file => file.State == ReleaseFileState.Absent))
-            result = result with { State = ReleaseBusinessState.Unknown,
+            result = result with
+            {
+                State = ReleaseBusinessState.Unknown,
                 Reasons = [.. result.Reasons,
-                    "Required publication result is missing; effects remain unknown."] };
+                    "Required publication result is missing; effects remain unknown."]
+            };
         return result;
     }
 

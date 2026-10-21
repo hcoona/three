@@ -52,20 +52,47 @@ public sealed class RubyReleaseTests(TestContext context)
         RubyPreparationResult result = fixture.Preparation;
         result = defect switch
         {
-            "missing-check" => result with { Prepared = result.Prepared with { Checks =
-                result.Prepared.Checks[..^1] } },
-            "failed-check" => result with { Prepared = result.Prepared with { Checks =
-                result.Prepared.Checks.Select(c => c.Id == "contents" ? c with { Status =
-                ReleaseCheckStatus.Failed } : c).ToArray() } },
+            "missing-check" => result with
+            {
+                Prepared = result.Prepared with
+                {
+                    Checks =
+                result.Prepared.Checks[..^1]
+                }
+            },
+            "failed-check" => result with
+            {
+                Prepared = result.Prepared with
+                {
+                    Checks =
+                result.Prepared.Checks.Select(c => c.Id == "contents" ? c with
+                {
+                    Status =
+                ReleaseCheckStatus.Failed
+                } : c).ToArray()
+                }
+            },
             "missing-command" => result with { Commands = [] },
-            "failed-command" => result with { Commands = [result.Commands[0] with { Result =
-                RubyCallerFixture.Command(NativeTermination.Exited, 17) }] },
-            "command-error" => result with { Commands = [result.Commands[0] with { Result =
-                RubyCallerFixture.Command() with { Error = "Controlled error" } }] },
+            "failed-command" => result with
+            {
+                Commands = [result.Commands[0] with { Result =
+                RubyCallerFixture.Command(NativeTermination.Exited, 17) }]
+            },
+            "command-error" => result with
+            {
+                Commands = [result.Commands[0] with { Result =
+                RubyCallerFixture.Command() with { Error = "Controlled error" } }]
+            },
             "errors" => result with { Errors = ["Incomplete qualification"] },
-            "extra-file" => result with { Prepared = result.Prepared with { Files =
+            "extra-file" => result with
+            {
+                Prepared = result.Prepared with
+                {
+                    Files =
                 [fixture.Original, fixture.Original with { Output = "extra", Path = "extra.gem",
-                Version = "2.0.0" }] } },
+                Version = "2.0.0" }]
+                }
+            },
             _ => result with { Native = new(result.Native) { [defect] = "another-native-value" } },
         };
         Assert.ThrowsExactly<InvalidDataException>(() => RubyRelease.Validate(result));
@@ -117,10 +144,20 @@ public sealed class RubyReleaseTests(TestContext context)
         using var fixture = new RubyCallerFixture(channel, dry, unit);
         var preparation = fixture.Preparation with
         {
-            Prepared = fixture.Prepared with { Subject = fixture.Prepared.Subject with { Destination
-                = destination, SelectedRef = selectedRef } },
-            Native = new(fixture.Preparation.Native) { ["public-release"] = publicRelease ? "true" :
-                "false" },
+            Prepared = fixture.Prepared with
+            {
+                Subject = fixture.Prepared.Subject with
+                {
+                    Destination
+                = destination,
+                    SelectedRef = selectedRef
+                }
+            },
+            Native = new(fixture.Preparation.Native)
+            {
+                ["public-release"] = publicRelease ? "true" :
+                "false"
+            },
         };
         if (accepted) RubyRelease.Validate(preparation);
         else Assert.ThrowsExactly<InvalidDataException>(() => RubyRelease.Validate(preparation));
@@ -138,10 +175,16 @@ public sealed class RubyReleaseTests(TestContext context)
         int reads = 0, writes = 0;
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => RubyRelease.PublishAsync(
             fixture.Preparation, fixture.Root, fixture.Observe(ReleaseFileState.Absent),
-            (_, _) => { reads++; File.AppendAllText(fixture.Archive, "substitution"); return
-                Task.FromResult(fixture.Observe(ReleaseFileState.Absent)); },
-            (_, _, _) => { writes++; throw new
-                AssertFailedException("Substituted bytes cannot be written."); },
+            (_, _) =>
+            {
+                reads++; File.AppendAllText(fixture.Archive, "substitution"); return
+                Task.FromResult(fixture.Observe(ReleaseFileState.Absent));
+            },
+            (_, _, _) =>
+            {
+                writes++; throw new
+                AssertFailedException("Substituted bytes cannot be written.");
+            },
                 context.CancellationToken));
         Assert.AreEqual(duringRefresh ? 1 : 0, reads);
         Assert.AreEqual(0, writes);
@@ -182,10 +225,19 @@ public sealed class RubyReleaseTests(TestContext context)
                         "remote.gem");
                     File.WriteAllText(path, state == ReleaseFileState.Exact ? "original" :
                         "different");
-                    answer = JsonSerializer.Serialize(new { state = "present", path, name =
-                        fixture.Original.Name, version = fixture.Original.Version, platform =
-                        "ruby", size = new FileInfo(path).Length, sha256 =
-                        Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))) });
+                    answer = JsonSerializer.Serialize(new
+                    {
+                        state = "present",
+                        path,
+                        name =
+                        fixture.Original.Name,
+                        version = fixture.Original.Version,
+                        platform =
+                        "ruby",
+                        size = new FileInfo(path).Length,
+                        sha256 =
+                        Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path)))
+                    });
                 }
                 else answer = state == ReleaseFileState.Absent ? "{\"state\":\"absent\"}" :
                     "{broken";
@@ -220,8 +272,11 @@ public sealed class RubyReleaseTests(TestContext context)
         int writes = 0;
         RubyPublicationResult publication = await RubyRelease.PublishAsync(fixture.Preparation,
             fixture.Root, initial,
-            (_, _) => Task.FromResult(fresh), (_, _, _) => { writes++; throw new
-                AssertFailedException("Refresh forbids mutation."); }, context.CancellationToken);
+            (_, _) => Task.FromResult(fresh), (_, _, _) =>
+            {
+                writes++; throw new
+                AssertFailedException("Refresh forbids mutation.");
+            }, context.CancellationToken);
         context.WriteLine("refresh receipt: " + JsonSerializer.Serialize(publication,
             TransferJson.Default.RubyPublicationResult));
         Assert.AreEqual(0, writes);
@@ -257,11 +312,17 @@ public sealed class RubyReleaseTests(TestContext context)
         int reads = 0, writes = 0;
         RubyPublicationResult publication = await RubyRelease.PublishAsync(fixture.Preparation,
             fixture.Root, absent,
-            (prepared, _) => { Assert.AreSame(fixture.Prepared, prepared); return
-                Task.FromResult(reads++ == 0 ? absent : final); },
-            (prepared, originals, _) => { writes++; Assert.AreSame(fixture.Preparation, prepared);
+            (prepared, _) =>
+            {
+                Assert.AreSame(fixture.Prepared, prepared); return
+                Task.FromResult(reads++ == 0 ? absent : final);
+            },
+            (prepared, originals, _) =>
+            {
+                writes++; Assert.AreSame(fixture.Preparation, prepared);
                 Assert.AreEqual(fixture.Root, originals); Assert.AreEqual(1, reads); return
-                Task.FromResult(fixture.Publish(command)); }, context.CancellationToken);
+                Task.FromResult(fixture.Publish(command));
+            }, context.CancellationToken);
         RubyCompletionResult result = RubyRelease.Complete(fixture.Prepared, absent, final,
             publication);
         context.WriteLine("publication receipt: " + JsonSerializer.Serialize(publication,
@@ -294,8 +355,11 @@ public sealed class RubyReleaseTests(TestContext context)
         int reads = 0, writes = 0;
         RubyPublicationResult publication = await RubyRelease.PublishAsync(fixture.Preparation,
             fixture.Root, absent,
-            (_, token) => { if (reads++ != 0) token.ThrowIfCancellationRequested(); return
-                Task.FromResult(absent); },
+            (_, token) =>
+            {
+                if (reads++ != 0) token.ThrowIfCancellationRequested(); return
+                Task.FromResult(absent);
+            },
             (_, _, _) => { writes++; cancellation.Cancel(); return Task.FromResult(attempt); },
                 cancellation.Token);
         context.WriteLine("publication receipt: " + JsonSerializer.Serialize(publication,
@@ -354,8 +418,13 @@ public sealed class RubyReleaseTests(TestContext context)
         using var fixture = new RubyCallerFixture("official");
         NativeCommandResult reached =
             RubyCallerFixture.Command(Enum.Parse<NativeTermination>(termination), 17)
-            with { Stdout = "partial unsafe output", Stderr = "unsafe diagnostic", Error =
-                "unsafe detail" };
+            with
+            {
+                Stdout = "partial unsafe output",
+                Stderr = "unsafe diagnostic",
+                Error =
+                "unsafe detail"
+            };
         RubyObservationResult result = await
             RubyDestinationObservation.ObserveAsync(fixture.Prepared,
             new(Path.Combine(fixture.Root, "ruby"), Path.Combine(fixture.Root, "source.rb"),
@@ -391,14 +460,31 @@ public sealed class RubyReleaseTests(TestContext context)
             fixture.Publish(RubyCallerFixture.Command()), exact, []);
         publication = defect switch
         {
-            "subject" => publication with { Subject = publication.Subject with { Revision = new('b',
-                40) } },
-            "output" => publication with { Invocation = publication.Invocation! with { Upload =
-                publication.Invocation.Upload with { Output = "another-output" } } },
+            "subject" => publication with
+            {
+                Subject = publication.Subject with
+                {
+                    Revision = new('b',
+                40)
+                }
+            },
+            "output" => publication with
+            {
+                Invocation = publication.Invocation! with
+                {
+                    Upload =
+                publication.Invocation.Upload with { Output = "another-output" }
+                }
+            },
             "before-exact" => publication with { Before = exact },
             "unbound-readback" => publication with { Invocation = null },
-            _ => publication with { Invocation = fixture.Publish(RubyCallerFixture.Command() with {
-                DurationSeconds = double.NaN }) },
+            _ => publication with
+            {
+                Invocation = fixture.Publish(RubyCallerFixture.Command() with
+                {
+                    DurationSeconds = double.NaN
+                })
+            },
         };
         Assert.ThrowsExactly<InvalidDataException>(() => RubyRelease.Complete(fixture.Prepared,
             absent, exact, publication));
@@ -414,10 +500,15 @@ public sealed class RubyReleaseTests(TestContext context)
         await Assert.ThrowsAsync<OperationCanceledException>(() =>
             RubyRelease.PublishAsync(fixture.Preparation, fixture.Root,
             fixture.Observe(ReleaseFileState.Absent), (_, _) =>
-            { cancelled.Cancel(); return Task.FromResult(fixture.Observe(ReleaseFileState.Absent));
-                },
-            (_, _, _) => { writes++; throw new
-                AssertFailedException("Cancellation must stop mutation."); }, cancelled.Token));
+            {
+                cancelled.Cancel();
+                return Task.FromResult(fixture.Observe(ReleaseFileState.Absent));
+            },
+            (_, _, _) =>
+            {
+                writes++; throw new
+                AssertFailedException("Cancellation must stop mutation.");
+            }, cancelled.Token));
         Assert.AreEqual(0, writes);
     }
 
@@ -433,12 +524,19 @@ public sealed class RubyReleaseTests(TestContext context)
         var tools = new RubyPublisherTools(Path.Combine(fixture.Root, "ruby"),
             Path.Combine(fixture.Root, "gem"), fixture.Directory("publisher"));
         // Inert input for the controlled executor; never used for authentication.
-        var platform = new Dictionary<string, string?> { [channel == "buddy" ? "GITHUB_TOKEN" :
-            "GEM_HOST_API_KEY"] = "controlled-placeholder" };
+        var platform = new Dictionary<string, string?>
+        {
+            [channel == "buddy" ? "GITHUB_TOKEN" :
+            "GEM_HOST_API_KEY"] = "controlled-placeholder"
+        };
         NativeCommandResult reached =
             RubyCallerFixture.Command(Enum.Parse<NativeTermination>(termination), code)
-            with { Stdout = "unsafe partial native diagnostic", Stderr = "unsafe native diagnostic",
-                Error = code == 0 ? null : "unsafe failure detail" };
+            with
+            {
+                Stdout = "unsafe partial native diagnostic",
+                Stderr = "unsafe native diagnostic",
+                Error = code == 0 ? null : "unsafe failure detail"
+            };
         int invocations = 0;
         RubyPublishResult result = await RubyNativePublisher.PublishAsync(fixture.Preparation,
             fixture.Root, tools, platform,
@@ -473,8 +571,11 @@ public sealed class RubyReleaseTests(TestContext context)
         Assert.AreEqual("", result.Upload.Command.Stdout);
         Assert.AreEqual("", result.Upload.Command.Stderr);
         if (reached.Error is null) Assert.IsNull(result.Upload.Command.Error);
-        else { Assert.AreNotEqual(reached.Error, result.Upload.Command.Error);
-            Assert.Contains("effects remain uncertain", result.Upload.Command.Error!); }
+        else
+        {
+            Assert.AreNotEqual(reached.Error, result.Upload.Command.Error);
+            Assert.Contains("effects remain uncertain", result.Upload.Command.Error!);
+        }
     }
 
     [TestMethod]
@@ -485,8 +586,11 @@ public sealed class RubyReleaseTests(TestContext context)
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             RubyRelease.PublishAsync(fixture.Preparation, fixture.Root,
             fixture.Observe(ReleaseFileState.Absent),
-            (_, _) => { calls++; throw new
-                AssertFailedException("Dry run cannot refresh for push."); },
+            (_, _) =>
+            {
+                calls++; throw new
+                AssertFailedException("Dry run cannot refresh for push.");
+            },
             (_, _, _) => { calls++; throw new AssertFailedException("Dry run cannot push."); },
                 context.CancellationToken));
         RubyObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
@@ -521,9 +625,17 @@ internal sealed class RubyCallerFixture : IDisposable
             : ["native-input", "build", "contents", "consumer", "original-bytes"];
         var prepared = new PreparedRelease(subject, [file], required, required.Select(id => new
             ReleaseCheck(id, ReleaseCheckStatus.Passed)).ToArray());
-        Preparation = new(prepared, new() { ["name"] = file.Name, ["version"] = file.Version,
-            ["platform"] = "ruby", ["commit"] = subject.Revision, ["public-release"] = "true",
-            ["ruby"] = "4.0.7", ["rubygems"] = "4.0.7", ["nbgv"] = "3.10.94" },
+        Preparation = new(prepared, new()
+        {
+            ["name"] = file.Name,
+            ["version"] = file.Version,
+            ["platform"] = "ruby",
+            ["commit"] = subject.Revision,
+            ["public-release"] = "true",
+            ["ruby"] = "4.0.7",
+            ["rubygems"] = "4.0.7",
+            ["nbgv"] = "3.10.94"
+        },
             [new("build", new(Path.Combine(Root, "ruby"), Root, ["controlled-build"], 30),
                 Command())], []);
     }

@@ -99,8 +99,13 @@ public sealed class PythonPreparationTests(TestContext context)
     public void ChannelRefAndDryRunRemainIndependent(string channel, string destination,
         string selectedRef, bool dryRun, string rejection)
     {
-        ReleaseSubject subject = Fixture.SubjectFor(Revision) with { Channel = channel,
-            Destination = destination, SelectedRef = selectedRef, DryRun = dryRun };
+        ReleaseSubject subject = Fixture.SubjectFor(Revision) with
+        {
+            Channel = channel,
+            Destination = destination,
+            SelectedRef = selectedRef,
+            DryRun = dryRun
+        };
         if (rejection.Length == 0)
             Assert.AreEqual(channel == "official", PythonPreparation.Admit(subject).Official);
         else
@@ -134,8 +139,12 @@ public sealed class PythonPreparationTests(TestContext context)
     [DataRow("public_release", "false")]
     public void NativeFactsCannotQualifyAnotherProduct(string field, string value)
     {
-        ReleaseSubject subject = Fixture.SubjectFor(Revision) with { Channel = "official",
-            Destination = "pypi", SelectedRef = "refs/heads/main" };
+        ReleaseSubject subject = Fixture.SubjectFor(Revision) with
+        {
+            Channel = "official",
+            Destination = "pypi",
+            SelectedRef = "refs/heads/main"
+        };
         JsonObject facts = Fixture.Facts(Revision, "1.0.0");
         Change(facts, field, value);
         using JsonDocument document = JsonDocument.Parse(facts.ToJsonString());
@@ -152,8 +161,11 @@ public sealed class PythonPreparationTests(TestContext context)
     public void NativeFactsQualifyTheirProduct(string channel, bool dryRun, string field,
         string value, bool publicRelease)
     {
-        ReleaseSubject subject = Fixture.SubjectFor(Revision) with { Channel = channel,
-            DryRun = dryRun };
+        ReleaseSubject subject = Fixture.SubjectFor(Revision) with
+        {
+            Channel = channel,
+            DryRun = dryRun
+        };
         JsonObject facts = Fixture.Facts(Revision, "1.0.0");
         if (field.Length > 0) Change(facts, field, value);
         if (field == "local_version") facts["public_release"] = false;
@@ -190,8 +202,12 @@ public sealed class PythonPreparationTests(TestContext context)
     public async Task NativeFactsStopBeforeBuild(string field)
     {
         using var fixture = Fixture.Shared(shared!, sharedRevision);
-        fixture.Subject = fixture.Subject with { Channel = "official", Destination = "pypi",
-            SelectedRef = "refs/heads/main" };
+        fixture.Subject = fixture.Subject with
+        {
+            Channel = "official",
+            Destination = "pypi",
+            SelectedRef = "refs/heads/main"
+        };
         fixture.ChangeFacts = facts => facts[field] = field == "commit"
             ? JsonValue.Create(new string('0', 40)) : JsonValue.Create(false);
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
@@ -207,8 +223,11 @@ public sealed class PythonPreparationTests(TestContext context)
         using var fixture = Fixture.Shared(shared!, sharedRevision);
         fixture.Subject = fixture.Subject with { DryRun = true, SelectedRef = "refs/tags/preview" };
         fixture.Version = "1.0.0+g1234567";
-        fixture.ChangeFacts = facts => { facts["local_version"] = "g1234567";
-            facts["public_release"] = false; };
+        fixture.ChangeFacts = facts =>
+        {
+            facts["local_version"] = "g1234567";
+            facts["public_release"] = false;
+        };
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors);
         Assert.HasCount(2, result.Prepared.Files);
@@ -379,8 +398,12 @@ public sealed class PythonPreparationTests(TestContext context)
         using var fixture = await Fixture.CreateAsync(context.CancellationToken,
             unit: Fixture.Nbgv);
         if (channel == "official")
-            fixture.Subject = fixture.Subject with { Channel = "official", Destination = "pypi",
-                SelectedRef = "refs/heads/main" };
+            fixture.Subject = fixture.Subject with
+            {
+                Channel = "official",
+                Destination = "pypi",
+                SelectedRef = "refs/heads/main"
+            };
         fixture.Version = "2.1.0.dev1";
         PythonPreparationResult result = await fixture.RunAsync(context.CancellationToken);
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
@@ -546,18 +569,24 @@ public sealed class PythonPreparationTests(TestContext context)
 
         internal static JsonObject Facts(string revision, string version,
             string? interpreter = null) => new()
-        {
-            ["name"] = "hcoona-release-smoke-python", ["version"] = version,
-            ["commit"] = revision, ["public_release"] = true, ["local_version"] = null,
-            ["dependencies"] = new JsonArray(), ["implementation"] = "cpython",
-            ["interpreter_version"] = interpreter ?? Interpreter,
-        };
+            {
+                ["name"] = "hcoona-release-smoke-python",
+                ["version"] = version,
+                ["commit"] = revision,
+                ["public_release"] = true,
+                ["local_version"] = null,
+                ["dependencies"] = new JsonArray(),
+                ["implementation"] = "cpython",
+                ["interpreter_version"] = interpreter ?? Interpreter,
+            };
 
         // Hatchling's static version facts of the nbgv-python distribution.
         internal static JsonObject StaticFacts(string version, string? interpreter = null) =>
             new()
             {
-                ["name"] = Nbgv, ["version"] = version, ["local_version"] = null,
+                ["name"] = Nbgv,
+                ["version"] = version,
+                ["local_version"] = null,
                 ["dependencies"] = new JsonArray("packaging>=24.0"),
                 ["implementation"] = "cpython",
                 ["interpreter_version"] = interpreter ?? Interpreter,
@@ -604,7 +633,7 @@ public sealed class PythonPreparationTests(TestContext context)
             if (arguments.Contains("--short"))
                 return Success(ToolDefect == ("uv", "readback") ? "0.0.0" : Selected("uv"));
             if (arguments.Contains("identity")) return Success(JsonSerializer.Serialize(new
-                { name = Subject.Unit, version = Version }));
+            { name = Subject.Unit, version = Version }));
             if (arguments.Contains("static-version-facts"))
             {
                 JsonObject facts = StaticFacts(Version, Selected("python"));
@@ -628,10 +657,15 @@ public sealed class PythonPreparationTests(TestContext context)
             }
             if (arguments.Contains("outputs"))
                 return Success(JsonSerializer.Serialize(Directory.GetFiles(arguments[3])
-                    .Select(path => new { kind = path.EndsWith(".whl", StringComparison.Ordinal)
-                        ? "python-wheel" : "python-sdist", path,
-                        length = new FileInfo(path).Length, sha256 = Convert.ToHexStringLower(
-                            SHA256.HashData(File.ReadAllBytes(path))) })));
+                    .Select(path => new
+                    {
+                        kind = path.EndsWith(".whl", StringComparison.Ordinal)
+                        ? "python-wheel" : "python-sdist",
+                        path,
+                        length = new FileInfo(path).Length,
+                        sha256 = Convert.ToHexStringLower(
+                            SHA256.HashData(File.ReadAllBytes(path)))
+                    })));
             return Success("{}");
         }
 

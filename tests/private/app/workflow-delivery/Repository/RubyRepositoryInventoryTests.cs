@@ -105,9 +105,11 @@ public sealed class RubyRepositoryInventoryTests
             case "missing-bundle": bundles = []; break;
             case "duplicate-source": sources = [source, source]; break;
             case "duplicate-bundle": bundles = [bundle, bundle]; break;
-            case "foreign-source": sources = [source with
+            case "foreign-source":
+                sources = [source with
                 { Gemspec = Absolute("other/native.gemspec") }]; break;
-            case "foreign-bundle": bundles = [bundle with
+            case "foreign-bundle":
+                bundles = [bundle with
                 { Gemfile = Absolute("other/Gemfile") }]; break;
         }
         Assert.ThrowsExactly<InvalidDataException>(() => inventory.Bind(Root, sources, bundles));

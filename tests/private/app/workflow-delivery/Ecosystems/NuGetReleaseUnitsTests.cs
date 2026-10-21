@@ -48,8 +48,12 @@ public sealed class NuGetReleaseUnitsTests
         NuGetReleaseUnit unit = NuGetReleaseUnits.Named("memoization");
         var buddy = new ReleaseSubject(new string('a', 40), "refs/heads/feature", unit.Id,
             unit.Declaration, "buddy", "github-packages-nuget", true);
-        var official = buddy with { SelectedRef = "refs/heads/main", Channel = "official",
-            Destination = "nugetorg" };
+        var official = buddy with
+        {
+            SelectedRef = "refs/heads/main",
+            Channel = "official",
+            Destination = "nugetorg"
+        };
         Assert.AreEqual(unit, NuGetReleaseUnits.Admit(buddy));
         Assert.AreEqual(unit, NuGetReleaseUnits.Admit(official));
 

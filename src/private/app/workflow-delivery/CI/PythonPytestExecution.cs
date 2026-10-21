@@ -87,7 +87,8 @@ internal static class PythonPytestExecution
             return Finish();
         }
         var executionEnvironment = new Dictionary<string, string?>(environment,
-            StringComparer.Ordinal) { ["UV_PROJECT_ENVIRONMENT"] = null };
+            StringComparer.Ordinal)
+        { ["UV_PROJECT_ENVIRONMENT"] = null };
         int ordinal = 0;
         foreach (PlannedCheck item in plan.Checks)
         {

@@ -30,9 +30,9 @@ internal static class PythonPackageChecks
                 throw new InvalidDataException("Unresolved native Python package subject.");
             if (build.Outputs.Length != 2 ||
                 build.Outputs.Count(output => output is
-                    { Role: "primary-package", Kind: "python-wheel" }) != 1 ||
+                { Role: "primary-package", Kind: "python-wheel" }) != 1 ||
                 build.Outputs.Count(output => output is
-                    { Role: "source-package", Kind: "python-sdist" }) != 1)
+                { Role: "source-package", Kind: "python-sdist" }) != 1)
                 throw new InvalidDataException("Unsupported complete Python distribution set.");
             var subject = new PackageTarget(unit.Id, unit.SourcePath, build.Id, build.Definition,
                 directory, entry, null, version, build.Outputs.Select(output =>

@@ -196,7 +196,8 @@ public sealed class NativeProcessTests
                 }
                 catch (FileNotFoundException) { }
                 catch (IOException exception) when (OperatingSystem.IsWindows() &&
-                    (exception.HResult & 0xffff) is 32 or 33) { }
+                    (exception.HResult & 0xffff) is 32 or 33)
+                { }
                 if (pidText is null) await Task.Delay(50, cancellation.Token);
             }
             Assert.IsNotNull(pidText,

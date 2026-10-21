@@ -43,9 +43,9 @@ public sealed class NuGetOrgObservationTests(TestContext context)
             Root + "index.json" => served switch
             {
                 "no-versions" => new(HttpStatusCode.NotFound)
-                    { Content = new ByteArrayContent([]) },
+                { Content = new ByteArrayContent([]) },
                 "index-error" => new(HttpStatusCode.InternalServerError)
-                    { Content = new ByteArrayContent([]) },
+                { Content = new ByteArrayContent([]) },
                 "not-listed" => Json("{\"versions\":[\"0.9.0\",\"1.0.0-beta.1\"]}"),
                 "listed-unnormalized" => Json("{\"versions\":[\"0.9.0\",\"1.0.0.0\"]}"),
                 "duplicate" => Json("{\"versions\":[\"1.0.0\",\"1.0.0\"]}"),
@@ -80,8 +80,11 @@ public sealed class NuGetOrgObservationTests(TestContext context)
     {
         PreparedRelease prepared = Prepared();
         if (change == "buddy")
-            prepared = prepared with { Subject = prepared.Subject with
-                { Channel = "buddy", Destination = "github-packages-nuget" } };
+            prepared = prepared with
+            {
+                Subject = prepared.Subject with
+                { Channel = "buddy", Destination = "github-packages-nuget" }
+            };
         if (change == "package")
             prepared = prepared with { Files = [prepared.Files[0] with { Name = "Other" }] };
         var handler = new Handler(_ => throw new AssertFailedException("Unexpected read."));
@@ -102,7 +105,7 @@ public sealed class NuGetOrgObservationTests(TestContext context)
         [], []);
 
     private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK)
-        { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+    { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
     private sealed class Handler(Func<HttpRequestMessage, HttpResponseMessage> operation)
         : HttpMessageHandler

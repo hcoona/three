@@ -154,10 +154,13 @@ internal static class GithubRelease
         // Completion is the readback of every asset against its original bytes (WD-REL-009).
         ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, final.Observation, uploads);
         if (publication is null && initialMissing.Length != 0)
-            return new(outcome with { State = ReleaseBusinessState.Unknown,
+            return new(outcome with
+            {
+                State = ReleaseBusinessState.Unknown,
                 Reasons = [.. outcome.Reasons,
                     "Required GitHub Release publication result is missing; " +
-                        "effects remain unknown."] },
+                        "effects remain unknown."]
+            },
                 null, null);
         return new(outcome, publication is null ? false :
             publication.Creation is not null || uploads.Length != 0, publication);
@@ -181,7 +184,7 @@ internal static class GithubRelease
                 !initialMissing.Contains(upload.Output, StringComparer.Ordinal) ||
                 i > 0 && !publication.Uploads[i - 1].Command.Succeeded ||
                 publication.Before.ReleaseId is null && publication.Creation is not
-                    { Succeeded: true } ||
+                { Succeeded: true } ||
                 !double.IsFinite(upload.Command.DurationSeconds) ||
                     upload.Command.DurationSeconds < 0)
                 throw new InvalidDataException("Unsupported GitHub Release write sequence.");

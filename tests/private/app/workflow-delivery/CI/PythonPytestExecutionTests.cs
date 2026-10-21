@@ -231,17 +231,30 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         (CiPlan plan, PythonPytestRunRequest request, GitRevision revision) =
             Fixture.Contract(Fixture.Revision("0123456789abcdef0123456789abcdef01234567"),
                 "/checkout", "/scratch");
-        if (defect == "binding") request = request with { Targets = request.Targets with
-        { Targets = [request.Targets.Targets[0] with { Inputs = [] },
-            .. request.Targets.Targets[1..]] } };
-        if (defect == "member") request = request with { Targets = request.Targets with
-        { Targets = [request.Targets.Targets[0],
+        if (defect == "binding") request = request with
+        {
+            Targets = request.Targets with
+            {
+                Targets = [request.Targets.Targets[0] with { Inputs = [] },
+            .. request.Targets.Targets[1..]]
+            }
+        };
+        if (defect == "member") request = request with
+        {
+            Targets = request.Targets with
+            {
+                Targets = [request.Targets.Targets[0],
             request.Targets.Targets[1] with { Member = "pkg-b" },
-            request.Targets.Targets[2]] } };
+            request.Targets.Targets[2]]
+            }
+        };
         if (defect == "root") request = request with { Members = request.Members[1..] };
-        if (defect == "duplicate-name") request = request with { Members =
+        if (defect == "duplicate-name") request = request with
+        {
+            Members =
             [request.Members[0], request.Members[1] with { Name = request.Members[0].Name },
-                .. request.Members[2..]] };
+                .. request.Members[2..]]
+        };
         if (defect is "check" or "variant" or "runner" or "dimension" or "origin")
         {
             PlannedCheck first = plan.Checks[0];
@@ -251,8 +264,11 @@ public sealed class PythonPytestExecutionTests(TestContext context)
             { Work = first.Work with { Key = first.Work.Key with { Variant = "foreign" } } };
             if (defect == "runner")
                 first = first with { Work = first.Work with { Runner = "foreign" } };
-            if (defect == "dimension") first = first with { Work = first.Work with
-            { Dimensions = new(first.Work.Dimensions) { ["testPath"] = "pkg-a/tests" } } };
+            if (defect == "dimension") first = first with
+            {
+                Work = first.Work with
+                { Dimensions = new(first.Work.Dimensions) { ["testPath"] = "pkg-a/tests" } }
+            };
             if (defect == "origin") first = first with
             { Origins = [CheckOrigin.Preset], QualityPresets = ["foreign"] };
             plan = plan with { Checks = [first, .. plan.Checks[1..]] };
@@ -280,9 +296,12 @@ public sealed class PythonPytestExecutionTests(TestContext context)
         CiPlan plan = fixture.Plan;
         if (defect == "candidate") request = request with
         { Targets = request.Targets with { Revision = "foreign" } };
-        if (defect == "check") plan = plan with { Checks = [plan.Checks[0] with { Work =
+        if (defect == "check") plan = plan with
+        {
+            Checks = [plan.Checks[0] with { Work =
             plan.Checks[0].Work with { Key = plan.Checks[0].Work.Key with
-            { Check = "unsupported" } } }, .. plan.Checks[1..]] };
+            { Check = "unsupported" } } }, .. plan.Checks[1..]]
+        };
         if (defect == "dirty")
         {
             await fixture.Repo.SetAsync("pyproject.toml", "changed");
@@ -325,9 +344,12 @@ public sealed class PythonPytestExecutionTests(TestContext context)
             request = request with
             {
                 Members = [members[0], .. members[2..]],
-                Targets = request.Targets with { Targets = [request.Targets.Targets[0],
+                Targets = request.Targets with
+                {
+                    Targets = [request.Targets.Targets[0],
                     request.Targets.Targets[1] with { Member = null,
-                        Inputs = ["pkg-a/tests/test_a.py"] }, request.Targets.Targets[2]] },
+                        Inputs = ["pkg-a/tests/test_a.py"] }, request.Targets.Targets[2]]
+                },
             };
         else request = request with { Members = members };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
@@ -342,8 +364,10 @@ public sealed class PythonPytestExecutionTests(TestContext context)
     {
         using var fixture = await Fixture.CreateAsync(context.CancellationToken);
         PythonPytestRunRequest request = fixture.Request with
-        { Members = fixture.Request.Members.Reverse().Select(member => member with
-            { Id = "previous-context:" + member.Id }).ToArray() };
+        {
+            Members = fixture.Request.Members.Reverse().Select(member => member with
+            { Id = "previous-context:" + member.Id }).ToArray()
+        };
         PythonPytestRunResult result = await fixture.RunAsync(fixture.Plan,
             context.CancellationToken, request);
         Assert.IsTrue(ResultCollector.Collect(fixture.Plan, result.Results).Satisfied);
@@ -444,16 +468,21 @@ public sealed class PythonPytestExecutionTests(TestContext context)
                     [CheckOrigin.NativeRetained])).ToArray());
             return (plan, new(checkout, scratch, "controlled-uv",
                 Path.Combine(scratch, "python"), members, configuration, targets, operation, 30,
-                new Dictionary<string, string?> { ["PYTEST_ADDOPTS"] = "--collect-only",
+                new Dictionary<string, string?>
+                {
+                    ["PYTEST_ADDOPTS"] = "--collect-only",
                     ["PYTHONSAFEPATH"] = "1",
                     ["MISE_TASK_RUN_AUTO_INSTALL"] = "false",
                     ["MISE_EXEC_AUTO_INSTALL"] = "0",
-                    ["UV_PROJECT_ENVIRONMENT"] = "query-environment" }), revision);
+                    ["UV_PROJECT_ENVIRONMENT"] = "query-environment"
+                }), revision);
         }
 
         internal CiPlan Select(params string[] targets) => Plan with
-        { Checks = Plan.Checks.Where(item => targets.Contains(item.Work.Dimensions["testPath"],
-            StringComparer.Ordinal)).ToArray() };
+        {
+            Checks = Plan.Checks.Where(item => targets.Contains(item.Work.Dimensions["testPath"],
+            StringComparer.Ordinal)).ToArray()
+        };
 
         internal Task<PythonPytestRunResult> RunAsync(CiPlan plan, CancellationToken token,
             PythonPytestRunRequest? request = null) => PythonPytestExecution.RunAsync(plan,

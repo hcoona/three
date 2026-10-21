@@ -166,8 +166,12 @@ internal static class RubyPreparation
         async Task<NativeCommandResult> RunAsync(NativeCommand command,
             CancellationToken? cancellation = null)
         {
-            command = command with { Environment = command.Environment ?? environment,
-                InheritEnvironment = false, CloseStandardInput = true };
+            command = command with
+            {
+                Environment = command.Environment ?? environment,
+                InheritEnvironment = false,
+                CloseStandardInput = true
+            };
             NativeCommandResult result = await execute(command, cancellation ?? token);
             commands.Add(new(current, command, result));
             if (result.Termination == NativeTermination.Cancelled)
@@ -226,8 +230,11 @@ internal static class RubyPreparation
                 throw new InvalidDataException("Missing committed Ruby release declaration."),
             subject.Declaration);
         if (unit.Id != subject.Unit || unit.Builds is not
-            [{ Definition: "ruby/gem-v1", Outputs:
-                [{ Role: "primary-package", Kind: "ruby-gem" }] }])
+            [
+            {
+                Definition: "ruby/gem-v1", Outputs:
+                [{ Role: "primary-package", Kind: "ruby-gem" }]
+            }])
             throw new InvalidDataException("Unsupported complete Ruby Release recipe.");
         ReleaseBuild build = unit.Builds[0];
         string parent = Path.GetDirectoryName(subject.Declaration)!.Replace('\\', '/');

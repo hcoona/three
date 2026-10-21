@@ -370,11 +370,17 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             : Fixture.Shared(shared!, sharedPlan!);
         CiPlan plan = fixture.Plan;
         if (defect == "missing-check") plan = plan with { Checks = plan.Checks[..3] };
-        if (defect == "preset") plan = plan with { Checks = [plan.Checks[0] with
-            { QualityPresets = ["other"] }, .. plan.Checks[1..]] };
-        if (defect == "prerequisite") plan = plan with { Checks = [plan.Checks[0],
+        if (defect == "preset") plan = plan with
+        {
+            Checks = [plan.Checks[0] with
+            { QualityPresets = ["other"] }, .. plan.Checks[1..]]
+        };
+        if (defect == "prerequisite") plan = plan with
+        {
+            Checks = [plan.Checks[0],
             plan.Checks[1] with { Work = plan.Checks[1].Work with { Prerequisites = [] } },
-            .. plan.Checks[2..]] };
+            .. plan.Checks[2..]]
+        };
         if (defect == "dirty") await File.WriteAllTextAsync(Path.Combine(fixture.Repo.Directory,
             "product/pyproject.toml"), "dirty", context.CancellationToken);
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
@@ -399,8 +405,11 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             "short" => fixture.Plan.Candidate[..8],
             _ => "HEAD",
         };
-        CiPlan plan = fixture.Plan with { Candidate = candidate,
-            Checks = emptyPartition ? [] : fixture.Plan.Checks };
+        CiPlan plan = fixture.Plan with
+        {
+            Candidate = candidate,
+            Checks = emptyPartition ? [] : fixture.Plan.Checks
+        };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(context.CancellationToken, plan));
         Assert.IsEmpty(fixture.Commands);
@@ -524,10 +533,12 @@ public sealed class PythonPackageExecutionTests(TestContext context)
             if (Failure == "original-changed" && arguments.Contains("archive"))
                 await File.WriteAllTextAsync(arguments[3], "changed!", token);
             if (arguments.Contains("identity")) stdout = JsonSerializer.Serialize(new
-            { name = "hcoona-release-smoke-python",
+            {
+                name = "hcoona-release-smoke-python",
                 version = Failure == "version" ? "2.0" :
                     command.InheritEnvironment && AmbientVersion is not null ? AmbientVersion :
-                        "1.0.0" });
+                        "1.0.0"
+            });
             if (arguments.Contains("outputs"))
             {
                 string directory = arguments[3];
@@ -538,7 +549,8 @@ public sealed class PythonPackageExecutionTests(TestContext context)
                 {
                     kind = path.EndsWith(".whl",
                         StringComparison.Ordinal) ? "python-wheel" : "python-sdist",
-                    path, length = new FileInfo(path).Length,
+                    path,
+                    length = new FileInfo(path).Length,
                     sha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))),
                 }));
             }

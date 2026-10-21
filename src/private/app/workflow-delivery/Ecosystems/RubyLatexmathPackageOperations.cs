@@ -33,7 +33,8 @@ internal sealed class RubyLatexmathPackageOperations(RubyFactTools tools, string
             .Select(entry => entry.Path[prefix.Length..]), "README.md", "LICENSE"];
         string archive = Path.Combine(state, "original.gem");
         var environment = new Dictionary<string, string?>(tools.Environment,
-            StringComparer.Ordinal) { ["THREE_WORKFLOW_RELEASE_NBGV_PATH"] = nbgv };
+            StringComparer.Ordinal)
+        { ["THREE_WORKFLOW_RELEASE_NBGV_PATH"] = nbgv };
         await RubySmokePackageOperations.RunAsync(new(tools.Ruby,
             Path.Combine(checkout.Root, directory),
             [gem, "build", "--norc", Path.Combine(checkout.Root, entryPoint), "--output", archive],

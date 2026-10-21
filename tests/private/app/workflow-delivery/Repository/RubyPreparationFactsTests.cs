@@ -11,14 +11,20 @@ public sealed class RubyPreparationFactsTests
 {
     private static readonly string Root = Path.GetFullPath("ruby preparation facts");
     private static string NativePath(string path) => Path.GetFullPath(Path.Combine(Root, path));
-    private static JsonObject Context() => new() {
+    private static JsonObject Context() => new()
+    {
         ["gemfile"] = NativePath("bundle/Gemfile"),
         ["lockfile"] = NativePath("bundle/Gemfile.lock"),
-        ["bundler_version"] = "2.7.2", ["locked_bundler_version"] = "2.4.20" };
-    private static JsonObject Version() => new() {
+        ["bundler_version"] = "2.7.2",
+        ["locked_bundler_version"] = "2.4.20"
+    };
+    private static JsonObject Version() => new()
+    {
         ["gemspec"] = NativePath("source/native.gemspec"),
-        ["raw"] = "1.2.3-beta.4+gabcdef0", ["version"] = "1.2.3.pre.beta.4",
-        ["literal"] = "\"1.2.3.pre.beta.4\"" };
+        ["raw"] = "1.2.3-beta.4+gabcdef0",
+        ["version"] = "1.2.3.pre.beta.4",
+        ["literal"] = "\"1.2.3.pre.beta.4\""
+    };
 
     [TestMethod]
     public void ContextKeepsTheInstalledProbeSeparateFromTheLockedSelection()

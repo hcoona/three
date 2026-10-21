@@ -94,7 +94,7 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
             Assert.AreEqual(NuGetPublisher.GithubEndpoint, request.RequestUri!.AbsoluteUri);
             Sends++;
             return Task.FromResult(new HttpResponseMessage(status)
-                { Content = new ByteArrayContent([]), RequestMessage = request });
+            { Content = new ByteArrayContent([]), RequestMessage = request });
         }
     }
 }

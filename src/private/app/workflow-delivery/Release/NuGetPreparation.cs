@@ -72,8 +72,11 @@ internal static class NuGetPreparation
                 throw new InvalidDataException("Missing committed NuGet release declaration."),
                 request.Subject.Declaration);
             if (unit.Id != request.Subject.Unit || unit.Builds is not
-                [{ Definition: "dotnet/nuget-package-v1", Outputs:
-                    [{ Role: "primary-package", Kind: "nuget-package" }] }])
+                [
+                {
+                    Definition: "dotnet/nuget-package-v1", Outputs:
+                    [{ Role: "primary-package", Kind: "nuget-package" }]
+                }])
                 throw new InvalidDataException("Unsupported complete NuGet Release recipe.");
             build = unit.Builds[0];
             string entry = DotNetReleaseUnits.Entry(unit, build);
@@ -227,9 +230,12 @@ internal static class NuGetPreparation
         {
             if (checks.Any(check => check.Status != ReleaseCheckStatus.Passed))
             { checks.Add(new(id, ReleaseCheckStatus.Skipped)); return; }
-            try { token.ThrowIfCancellationRequested(); await action();
+            try
+            {
+                token.ThrowIfCancellationRequested(); await action();
                 token.ThrowIfCancellationRequested(); checks.Add(new(id,
-                    ReleaseCheckStatus.Passed)); }
+                    ReleaseCheckStatus.Passed));
+            }
             catch (OperationCanceledException)
             { checks.Add(new(id, ReleaseCheckStatus.Cancelled)); errors.Add(id + " cancelled."); }
             catch (TimeoutException)

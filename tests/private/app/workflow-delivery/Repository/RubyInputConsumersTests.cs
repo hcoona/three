@@ -55,8 +55,10 @@ public sealed class RubyInputConsumersTests
         NbgvInputs version = new("candidate", "src/gem",
             ["version.json", "src/version.json", "src/gem/version.json"],
             ["shared/version-input.txt", "version.json"]);
-        var quality = new Dictionary<string, QualitySelection?> {
-            ["src/gem"] = new("ruby/rspec-v1", "src/workflow-delivery.quality.yml") };
+        var quality = new Dictionary<string, QualitySelection?>
+        {
+            ["src/gem"] = new("ruby/rspec-v1", "src/workflow-delivery.quality.yml")
+        };
         RubyRepositoryInputs result = Map(revision, versions: [version], quality: quality);
         foreach (string path in new[] { "shared/version-input.txt", "src/gem/version.json",
             "src/gem/workflow-delivery.quality.yml", "src/workflow-delivery.quality.yml" })
@@ -150,28 +152,45 @@ public sealed class RubyInputConsumersTests
         {
             case "missing-quality-owner": quality.Clear(); break;
             case "foreign-quality-owner": quality = Quality("other"); break;
-            case "uncommitted-quality": quality["src/gem"] = new("ruby/rspec-v1",
+            case "uncommitted-quality":
+                quality["src/gem"] = new("ruby/rspec-v1",
                 "src/workflow-delivery.quality.yml"); break;
-            case "foreign-quality-location": quality["src/gem"] = new("ruby/rspec-v1",
+            case "foreign-quality-location":
+                quality["src/gem"] = new("ruby/rspec-v1",
                 "other/workflow-delivery.quality.yml"); break;
             case "foreign-version": versions = [version with { Commit = "other" }]; break;
             case "foreign-version-owner": versions = [version with { Directory = "other" }]; break;
-            case "uncommitted-version-input": versions = [version with
+            case "uncommitted-version-input":
+                versions = [version with
                 { Paths = ["missing/input.txt"] }]; break;
             case "duplicate-version": versions = [version, version]; break;
             case "uncommitted-bundle-input":
-                revision = revision with { Entries = [.. revision.Entries,
-                    new("node/client/Gemfile", "100644", "blob")] };
+                revision = revision with
+                {
+                    Entries = [.. revision.Entries,
+                    new("node/client/Gemfile", "100644", "blob")]
+                };
                 bundles = [new(Absolute("node/client/Gemfile"),
                     Absolute("node/client/Gemfile.lock"), "2.7.2", [], [], [])]; break;
-            case "nonregular-project-input": revision = revision with { Entries =
-                [.. revision.Entries, new("src/gem/link", "120000", "blob")] }; break;
+            case "nonregular-project-input":
+                revision = revision with
+                {
+                    Entries =
+                [.. revision.Entries, new("src/gem/link", "120000", "blob")]
+                }; break;
             case "nonregular-version-input":
-                revision = revision with { Entries = [.. revision.Entries,
-                    new("shared/version-input.txt", "120000", "blob")] };
+                revision = revision with
+                {
+                    Entries = [.. revision.Entries,
+                    new("shared/version-input.txt", "120000", "blob")]
+                };
                 versions = [version with { Paths = ["shared/version-input.txt"] }]; break;
-            case "nonregular-quality-input": revision = revision with { Entries =
-                [.. revision.Entries, new("workflow-delivery.quality.yml", "120000", "blob")] };
+            case "nonregular-quality-input":
+                revision = revision with
+                {
+                    Entries =
+                [.. revision.Entries, new("workflow-delivery.quality.yml", "120000", "blob")]
+                };
                 break;
         }
         Assert.ThrowsExactly<InvalidDataException>(() =>

@@ -160,7 +160,8 @@ public sealed class RegistryHttpClientTests(TestContext context)
             listener.Stop();
             try { await loop; }
             catch (Exception error) when (error is OperationCanceledException or
-                SocketException or ObjectDisposedException) { }
+                SocketException or ObjectDisposedException)
+            { }
             stop.Dispose();
         }
     }

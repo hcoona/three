@@ -69,8 +69,12 @@ internal static class RubySourceReader
         NativeCommandResult reached = await execute(new(tools.Ruby, scratch,
             [tools.Helper, input], 90, environment, InheritEnvironment: false,
             CloseStandardInput: true), token);
-        NativeCommandResult command = reached with { Stdout = "", Stderr = "",
-            Error = reached.Error is null ? null : "Native Ruby source process failed." };
+        NativeCommandResult command = reached with
+        {
+            Stdout = "",
+            Stderr = "",
+            Error = reached.Error is null ? null : "Native Ruby source process failed."
+        };
         if (!reached.Succeeded || reached.Error is not null || token.IsCancellationRequested)
             return Unknown("Native Ruby source process did not complete.");
         try

@@ -107,8 +107,11 @@ public sealed class GithubNpmPublicationTests
         await Assert.ThrowsAsync<InvalidDataException>(() => GithubNpmPublication.PublishAsync(
             files.Prepared, files.Originals, files.Runtime, files.Tools, Files.Credential,
             (_, _) => { native++; return Task.FromResult(Success("")); },
-            (prepared, _, _) => { native++; return Task.FromResult(Observe(prepared,
-                ReleaseFileState.Absent)); }, CancellationToken.None));
+            (prepared, _, _) =>
+            {
+                native++; return Task.FromResult(Observe(prepared,
+                ReleaseFileState.Absent));
+            }, CancellationToken.None));
 
         Assert.AreEqual(0, native);
     }

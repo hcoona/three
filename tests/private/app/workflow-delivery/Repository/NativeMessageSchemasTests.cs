@@ -37,9 +37,16 @@ public sealed class NativeMessageSchemasTests
     public void RubyWireReaderRejectsMalformedShapeAndRetainsSemanticBinding()
     {
         string path = Path.Combine(Path.GetTempPath(), "native.gemspec");
-        var message = new RubySourceMessage { Gemspec = path, Name = "native", Version = "1.0",
-            Platform = "ruby", RequirePaths = ["lib"], Files = ["lib/native.rb"],
-                RuntimeDependencies = [] };
+        var message = new RubySourceMessage
+        {
+            Gemspec = path,
+            Name = "native",
+            Version = "1.0",
+            Platform = "ruby",
+            RequirePaths = ["lib"],
+            Files = ["lib/native.rb"],
+            RuntimeDependencies = []
+        };
         string json = JsonSerializer.Serialize(message, RubyFactJson.Default.RubySourceMessage);
         Assert.AreEqual("native", RubyNativeFactsReader.ParseSource(json, path).Gem.Name);
         JsonObject wrong = JsonNode.Parse(json)!.AsObject();

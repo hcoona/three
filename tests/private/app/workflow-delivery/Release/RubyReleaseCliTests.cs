@@ -24,9 +24,13 @@ public sealed class RubyReleaseCliTests(TestContext context)
         string path = fixture.Write("request.json", request,
             TransferJson.Default.RubyPreparationRequest);
         RubyPreparationResult native = fixture.Preparation;
-        if (failed) native = native with { Errors = ["Controlled build failure"], Commands =
+        if (failed) native = native with
+        {
+            Errors = ["Controlled build failure"],
+            Commands =
             [native.Commands[0] with { Result = RubyCallerFixture.Command(NativeTermination.Exited,
-            17) }] };
+            17) }]
+        };
         int calls = 0;
         using var output = new StringWriter();
         int? exit = RubyReleaseCli.Run(["release", "prepare-ruby", path], output, prepare: (actual,
@@ -287,8 +291,11 @@ public sealed class RubyReleaseCliTests(TestContext context)
         using var fixture = new RubyCallerFixture();
         ReleaseSubject other = fixture.Prepared.Subject with { SelectedRef = "refs/heads/another" };
         RubyObservationResult exact = fixture.Observe(ReleaseFileState.Exact);
-        RubyObservationResult final = target == "observation" ? exact with { Observation =
-            exact.Observation with { Subject = other } } : exact;
+        RubyObservationResult final = target == "observation" ? exact with
+        {
+            Observation =
+            exact.Observation with { Subject = other }
+        } : exact;
         var publication = new RubyPublicationResult(target == "publication" ? other :
             fixture.Prepared.Subject, fixture.Observe(ReleaseFileState.Absent),
             fixture.Publish(RubyCallerFixture.Command()), exact, []);
@@ -314,8 +321,11 @@ public sealed class RubyReleaseCliTests(TestContext context)
         Assert.ThrowsExactly<InvalidDataException>(() => RubyReleaseCli.Run(["release",
             "observe-ruby", Preparation(fixture), fixture.Root, Path.Combine(fixture.Root,
             "unread-tools.json")], output,
-            observe: (_, _, _, _) => { calls++; throw new
-                AssertFailedException("Invalid transfer must stop before read."); }));
+            observe: (_, _, _, _) =>
+            {
+                calls++; throw new
+                AssertFailedException("Invalid transfer must stop before read.");
+            }));
         Assert.AreEqual(0, calls);
         Assert.AreEqual("", output.ToString());
     }

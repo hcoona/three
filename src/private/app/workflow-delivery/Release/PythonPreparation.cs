@@ -203,9 +203,9 @@ internal static class PythonPreparation
             throw new InvalidDataException("Unsupported complete Python Release recipe.");
         ReleaseBuild build = unit.Builds[0];
         if (build.Outputs.Count(output => output is
-                { Role: "primary-package", Kind: "python-wheel" }) != 1 ||
+            { Role: "primary-package", Kind: "python-wheel" }) != 1 ||
             build.Outputs.Count(output => output is
-                { Role: "source-package", Kind: "python-sdist" }) != 1)
+            { Role: "source-package", Kind: "python-sdist" }) != 1)
             throw new InvalidDataException("Unsupported complete Python distribution set.");
         string parent = Path.GetDirectoryName(subject.Declaration)!.Replace('\\', '/');
         string entry = parent.Length == 0 ? build.EntryPoint : parent + "/" + build.EntryPoint;

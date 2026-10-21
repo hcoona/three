@@ -245,7 +245,8 @@ public sealed class GitReaderTests(TestContext context)
         {
             try { System.IO.Directory.Delete(TemplateRoot, recursive: true); }
             catch (Exception exception) when (exception is IOException or
-                UnauthorizedAccessException) { }
+                UnauthorizedAccessException)
+            { }
         };
 
         private static Lazy<Task<string>> InitializeAsync(string format) =>

@@ -40,8 +40,11 @@ public sealed class NpmPreparationTests(TestContext context)
         bool dryRun)
     {
         using var fixture = Fixture.Shared(shared!, sharedCommit);
-        fixture.Request = fixture.Request with { Subject = fixture.Request.Subject with
-            { Channel = "buddy", Destination = "github-packages-npm", DryRun = dryRun } };
+        fixture.Request = fixture.Request with
+        {
+            Subject = fixture.Request.Subject with
+            { Channel = "buddy", Destination = "github-packages-npm", DryRun = dryRun }
+        };
 
         NpmPreparationResult result = await fixture.RunAsync(context.CancellationToken);
 
@@ -148,8 +151,11 @@ public sealed class NpmPreparationTests(TestContext context)
     {
         using var fixture = Fixture.Product(shared!, sharedCommit, "official", "npmjs", false,
             selectedRef);
-        fixture.Request = fixture.Request with { Subject = fixture.Request.Subject with
-            { Unit = unit } };
+        fixture.Request = fixture.Request with
+        {
+            Subject = fixture.Request.Subject with
+            { Unit = unit }
+        };
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(context.CancellationToken));
@@ -418,16 +424,21 @@ public sealed class NpmPreparationTests(TestContext context)
                 packageName = args[^1]["name=".Length..];
             else if (args.Contains("pkg"))
                 output = args.Contains("publishConfig.directory")
-                    ? JsonSerializer.Serialize(new { name = IsProduct ? Hexo : packageName,
-                        scripts = new { build = "native build", test = "native test" } })
+                    ? JsonSerializer.Serialize(new
+                    {
+                        name = IsProduct ? Hexo : packageName,
+                        scripts = new { build = "native build", test = "native test" }
+                    })
                     : IsProduct ? JsonSerializer.Serialize(new
                     {
-                        name = packageName ?? Hexo, version = ExpectedVersion, type = "module",
+                        name = packageName ?? Hexo,
+                        version = ExpectedVersion,
+                        type = "module",
                         main = "./dist/index.cjs",
                         dependencies = new Dictionary<string, string>
-                            { ["@asciidoctor/core"] = "4.1.1" },
+                        { ["@asciidoctor/core"] = "4.1.1" },
                         peerDependencies = new Dictionary<string, string>
-                            { ["hexo"] = ">=8.0.0" },
+                        { ["hexo"] = ">=8.0.0" },
                     }) : NodeExecutionFixture.Metadata;
             else if (args.Contains("pack"))
             {

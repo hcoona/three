@@ -62,11 +62,14 @@ internal static class NuGetPublisher
         cancellation.ThrowIfCancellationRequested();
         using var standard = new HttpClientHandler
         {
-            AllowAutoRedirect = false, UseCookies = false, UseProxy = false,
-            UseDefaultCredentials = false, AutomaticDecompression = DecompressionMethods.None,
+            AllowAutoRedirect = false,
+            UseCookies = false,
+            UseProxy = false,
+            UseDefaultCredentials = false,
+            AutomaticDecompression = DecompressionMethods.None,
         };
         using var handler = new PublishHandler(endpoint, credential, cancellation)
-            { InnerHandler = controlledTransport ?? standard };
+        { InnerHandler = controlledTransport ?? standard };
         var resource = new HttpHandlerResourceV3(standard, handler);
         using var source = new HttpSource(new PackageSource(endpoint),
             () => Task.FromResult<HttpHandlerResource>(resource), NullThrottle.Instance);

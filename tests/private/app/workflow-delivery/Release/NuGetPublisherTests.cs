@@ -100,7 +100,8 @@ public sealed class NuGetPublisherTests(TestContext context)
     {
         using var fixture = new Fixture();
         using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
-            HttpStatusCode.Conflict) { Content = new ByteArrayContent([]) }));
+            HttpStatusCode.Conflict)
+        { Content = new ByteArrayContent([]) }));
         NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
             fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
@@ -121,7 +122,8 @@ public sealed class NuGetPublisherTests(TestContext context)
     {
         using var fixture = new Fixture();
         using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
-            status) { Content = new ByteArrayContent([]) }));
+            status)
+        { Content = new ByteArrayContent([]) }));
         NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
             fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
@@ -164,7 +166,8 @@ public sealed class NuGetPublisherTests(TestContext context)
     {
         using var fixture = new Fixture();
         using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
-            status) { Content = new ByteArrayContent([]) }));
+            status)
+        { Content = new ByteArrayContent([]) }));
         NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
             fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
@@ -209,7 +212,8 @@ public sealed class NuGetPublisherTests(TestContext context)
         using var fixture = new Fixture();
         using var parent = new CancellationTokenSource();
         using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
-            HttpStatusCode.Created) { Content = new CancellingContent(parent) }));
+            HttpStatusCode.Created)
+        { Content = new CancellingContent(parent) }));
         NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
             fixture.Root, NuGetPublisher.GithubEndpoint, Credential, parent.Token, handler);
 
@@ -225,7 +229,7 @@ public sealed class NuGetPublisherTests(TestContext context)
         using var handler = new Handler((_, _) =>
         {
             var response = new HttpResponseMessage(HttpStatusCode.Redirect)
-                { Content = new ByteArrayContent([]) };
+            { Content = new ByteArrayContent([]) };
             response.Headers.Location = new("https://objects.githubusercontent.com/package");
             return Task.FromResult(response);
         });
@@ -247,7 +251,7 @@ public sealed class NuGetPublisherTests(TestContext context)
         PreparedRelease prepared = fixture.Prepared;
         string endpoint = NuGetPublisher.GithubEndpoint;
         if (change == "dry-run") prepared = prepared with
-            { Subject = prepared.Subject with { DryRun = true } };
+        { Subject = prepared.Subject with { DryRun = true } };
         if (change == "endpoint") endpoint = "https://example.com/";
         if (change == "changed-bytes") File.AppendAllText(fixture.Path, "changed");
         if (change == "missing-check") prepared = prepared with { Checks = [] };

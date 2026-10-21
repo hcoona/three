@@ -20,8 +20,10 @@ public sealed class ReleaseCliTests
     {
         using var files = new Files();
         PreparedRelease prepared = files.Prepared with
-        { Subject = files.Prepared.Subject with
-            { Channel = "buddy", Destination = "github-packages-npm", DryRun = false } };
+        {
+            Subject = files.Prepared.Subject with
+            { Channel = "buddy", Destination = "github-packages-npm", DryRun = false }
+        };
         ReleaseFile file = prepared.Files[0];
         string preparation = files.Write("buddy-prepared.json", JsonSerializer.Serialize(
             new NpmPreparationResult(prepared, [], []), TransferJson.Default.NpmPreparationResult));
@@ -31,15 +33,25 @@ public sealed class ReleaseCliTests
             ["visibility"], [new("visibility", ReleaseCheckStatus.Passed)]), []);
         ReleaseFileState state = Enum.Parse<ReleaseFileState>(finalState);
         string observation = files.Write("buddy-observed.json", JsonSerializer.Serialize(exact with
-        { Observation = exact.Observation with { Files = [exact.Observation.Files[0] with
+        {
+            Observation = exact.Observation with
+            {
+                Files = [exact.Observation.Files[0] with
             { State = state, Size = state == ReleaseFileState.Exact ? file.Size : null,
-                Sha256 = state == ReleaseFileState.Exact ? file.Sha256 : null }] } },
+                Sha256 = state == ReleaseFileState.Exact ? file.Sha256 : null }]
+            }
+        },
             TransferJson.Default.GithubNpmObservationResult));
         string initial = files.Write("buddy-initial.json", JsonSerializer.Serialize(exact with
-        { Observation = exact.Observation with { Files = [exact.Observation.Files[0] with
+        {
+            Observation = exact.Observation with
+            {
+                Files = [exact.Observation.Files[0] with
             { State = initiallyAbsent ? ReleaseFileState.Absent : ReleaseFileState.Exact,
                 Size = initiallyAbsent ? null : file.Size,
-                Sha256 = initiallyAbsent ? null : file.Sha256 }] } },
+                Sha256 = initiallyAbsent ? null : file.Sha256 }]
+            }
+        },
             TransferJson.Default.GithubNpmObservationResult));
         using var output = new StringWriter();
         using var error = new StringWriter();

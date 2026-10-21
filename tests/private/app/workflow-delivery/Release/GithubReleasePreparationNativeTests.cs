@@ -45,9 +45,14 @@ public sealed class GithubReleasePreparationNativeTests(TestContext context)
             Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(result.Commands
                 .Where(command => !command.Result.Succeeded).Select(command => new
                 {
-                    command.Check, command.Command.Executable, command.Command.Arguments,
-                    command.Result.Termination, command.Result.ExitCode, command.Result.Error,
-                    command.Result.Stdout, command.Result.Stderr,
+                    command.Check,
+                    command.Command.Executable,
+                    command.Command.Arguments,
+                    command.Result.Termination,
+                    command.Result.ExitCode,
+                    command.Result.Error,
+                    command.Result.Stdout,
+                    command.Result.Stderr,
                 })));
             GithubRelease.Validate(result);
             GithubRelease.Originals(result, scratch);

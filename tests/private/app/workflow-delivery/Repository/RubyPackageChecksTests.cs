@@ -37,8 +37,10 @@ public sealed class RubyPackageChecksTests
         string directory, string expectedVersion)
     {
         ReleaseUnitDeclaration unit = Unit(directory);
-        var sources = new Dictionary<string, RubySourceGemFacts> {
-            [directory] = Source(directory, expectedVersion) };
+        var sources = new Dictionary<string, RubySourceGemFacts>
+        {
+            [directory] = Source(directory, expectedVersion)
+        };
         CheckSpec[] checks = RubyPackageChecks.Expand(unit, Root, sources);
         CollectionAssert.AreEqual(RubyPackageChecks.Kinds,
             checks.Select(check => check.Key.Check).ToArray());
@@ -86,9 +88,12 @@ public sealed class RubyPackageChecksTests
         if (defect != "missing-source") sources.Add(directory, source);
         ReleaseUnitDeclaration unit = Unit(directory);
         if (defect == "extra-output")
-            unit = unit with { Builds = [unit.Builds[0] with {
+            unit = unit with
+            {
+                Builds = [unit.Builds[0] with {
                 Outputs = [.. unit.Builds[0].Outputs, new("other", "source-package", "ruby-gem")]
-            }] };
+            }]
+            };
         Assert.ThrowsExactly<InvalidDataException>(() =>
             RubyPackageChecks.Expand(unit, Root, sources));
     }
@@ -105,7 +110,9 @@ public sealed class RubyPackageChecksTests
             Declaration.Replace(before, after, StringComparison.Ordinal),
             directory + "/workflow-delivery.release-unit.yml");
         Assert.ThrowsExactly<InvalidDataException>(() => RubyPackageChecks.Expand(unit, Root,
-            new Dictionary<string, RubySourceGemFacts> {
-                [directory] = Source(directory, "1.2.3") }));
+            new Dictionary<string, RubySourceGemFacts>
+            {
+                [directory] = Source(directory, "1.2.3")
+            }));
     }
 }

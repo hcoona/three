@@ -45,9 +45,16 @@ public sealed class RubyBundlePreparationTests(TestContext context)
                     await File.ReadAllTextAsync(command.Arguments[^1], token));
                 Assert.AreEqual("bundle-context",
                     request.RootElement.GetProperty("operation").GetString());
-                return Success with { Stdout = JsonSerializer.Serialize(new { gemfile,
-                    lockfile = gemfile + ".lock", bundler_version = "2.7.2",
-                    locked_bundler_version = "2.4.20" }) };
+                return Success with
+                {
+                    Stdout = JsonSerializer.Serialize(new
+                    {
+                        gemfile,
+                        lockfile = gemfile + ".lock",
+                        bundler_version = "2.7.2",
+                        locked_bundler_version = "2.4.20"
+                    })
+                };
             }, context.CancellationToken);
         Assert.HasCount(2, result.Commands);
         Assert.AreEqual("2.7.2", result.Commands[0].Command.Arguments[4]);
@@ -68,7 +75,7 @@ public sealed class RubyBundlePreparationTests(TestContext context)
         RubyBundlePreparationException error = await Assert.ThrowsExactlyAsync<
             RubyBundlePreparationException>(() => RubyBundlePreparation.PrepareAsync(checkout,
                 Tools(repo.Directory), (_, _) => Task.FromResult(Success with
-                    { ExitCode = 7, Stderr = stderr }),
+                { ExitCode = 7, Stderr = stderr }),
                 context.CancellationToken));
         RubyPreparationCommand command = Assert.ContainsSingle(error.Commands);
         Assert.AreEqual(7, command.Result.ExitCode);
@@ -96,9 +103,16 @@ public sealed class RubyBundlePreparationTests(TestContext context)
                     await File.ReadAllTextAsync(command.Arguments[^1], token));
                 Assert.AreEqual("bundle-context",
                     request.RootElement.GetProperty("operation").GetString());
-                return Success with { Stdout = JsonSerializer.Serialize(new { gemfile,
-                    lockfile = gemfile + ".lock", bundler_version = "2.7.2",
-                    locked_bundler_version = "2.7.2" }) };
+                return Success with
+                {
+                    Stdout = JsonSerializer.Serialize(new
+                    {
+                        gemfile,
+                        lockfile = gemfile + ".lock",
+                        bundler_version = "2.7.2",
+                        locked_bundler_version = "2.7.2"
+                    })
+                };
             }, context.CancellationToken);
         await Assert.ThrowsExactlyAsync<InvalidDataException>(RunAsync);
     }

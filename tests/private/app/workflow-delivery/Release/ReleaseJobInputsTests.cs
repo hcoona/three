@@ -415,19 +415,33 @@ public sealed class ReleaseJobInputsTests
             Directory.CreateDirectory(At("control"));
             Env = new()
             {
-                ["RUNNER_TEMP"] = root, ["DESTINATION"] = destination ?? (
-                    ecosystem switch { "ruby" => "github-packages", "python" => "testpypi",
-                        "npm" => "github-packages", "nuget" => "github-packages",
+                ["RUNNER_TEMP"] = root,
+                ["DESTINATION"] = destination ?? (
+                    ecosystem switch
+                    {
+                        "ruby" => "github-packages",
+                        "python" => "testpypi",
+                        "npm" => "github-packages",
+                        "nuget" => "github-packages",
                         "github-release" => GithubReleaseUnits.Buddy,
-                        _ => throw new InvalidOperationException() }),
-                ["GITHUB_SHA"] = new string('a', 40), ["GITHUB_REF"] = "refs/heads/feature",
-                ["GITHUB_RUN_ID"] = "123", ["GITHUB_RUN_ATTEMPT"] = "2", ["DRY_RUN"] = "true",
-                ["GITHUB_REPOSITORY"] = "hcoona/three", ["GITHUB_WORKSPACE"] = root,
-                ["RUBY_EXECUTABLE"] = "selected-ruby", ["GEM_EXECUTABLE"] = "selected-gem",
-                ["DOTNET_EXECUTABLE"] = "selected-dotnet", ["UV_EXECUTABLE"] = "selected-uv",
+                        _ => throw new InvalidOperationException()
+                    }),
+                ["GITHUB_SHA"] = new string('a', 40),
+                ["GITHUB_REF"] = "refs/heads/feature",
+                ["GITHUB_RUN_ID"] = "123",
+                ["GITHUB_RUN_ATTEMPT"] = "2",
+                ["DRY_RUN"] = "true",
+                ["GITHUB_REPOSITORY"] = "hcoona/three",
+                ["GITHUB_WORKSPACE"] = root,
+                ["RUBY_EXECUTABLE"] = "selected-ruby",
+                ["GEM_EXECUTABLE"] = "selected-gem",
+                ["DOTNET_EXECUTABLE"] = "selected-dotnet",
+                ["UV_EXECUTABLE"] = "selected-uv",
                 ["MISE_EXECUTABLE"] = "selected-mise",
-                ["PYTHON_EXECUTABLE"] = "selected-python", ["MISE_DATA_DIR"] = At("mise"),
-                ["GITHUB_OUTPUT"] = At("output"), ["UNIT"] = ecosystem switch
+                ["PYTHON_EXECUTABLE"] = "selected-python",
+                ["MISE_DATA_DIR"] = At("mise"),
+                ["GITHUB_OUTPUT"] = At("output"),
+                ["UNIT"] = ecosystem switch
                 {
                     "python" => PythonReleaseUnits.Smoke,
                     "npm" => NpmReleaseUnits.Smoke,

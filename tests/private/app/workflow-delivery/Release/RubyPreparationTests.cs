@@ -569,8 +569,12 @@ public sealed class RubyPreparationTests(TestContext context)
         using var fixture = await Fixture.CreateAsync(context.CancellationToken,
             unit: Fixture.Latexmath);
         if (channel == "official")
-            fixture.Subject = fixture.Subject with { Channel = "official",
-                Destination = "rubygems", SelectedRef = "refs/heads/main" };
+            fixture.Subject = fixture.Subject with
+            {
+                Channel = "official",
+                Destination = "rubygems",
+                SelectedRef = "refs/heads/main"
+            };
         var consumer = new List<NativeCommand>();
         fixture.Override = command =>
         {
@@ -1155,9 +1159,14 @@ public sealed class RubyPreparationTests(TestContext context)
                             status = failed ? "failed" : "passed",
                             file_path = "./spec/suite_spec.rb", line_number = 1,
                             run_time = 0.01 } },
-                        summary = new { duration = 0.01, example_count = 1,
-                            failure_count = failed ? 1 : 0, pending_count = 0,
-                            errors_outside_of_examples_count = 0 },
+                        summary = new
+                        {
+                            duration = 0.01,
+                            example_count = 1,
+                            failure_count = failed ? 1 : 0,
+                            pending_count = 0,
+                            errors_outside_of_examples_count = 0
+                        },
                     }), token);
                 return failed ? Success("") with { ExitCode = 1 } : Success("");
             }
