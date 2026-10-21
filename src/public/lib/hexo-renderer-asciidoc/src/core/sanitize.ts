@@ -14,3 +14,4 @@ const CURLY_CLOSE = /\}/g;
  */
 export const escapeCurlyBraces = (html: string): string =>
   html.replace(CURLY_OPEN, '&#123;').replace(CURLY_CLOSE, '&#125;');
+// CI cost probe 3 after #1380.
