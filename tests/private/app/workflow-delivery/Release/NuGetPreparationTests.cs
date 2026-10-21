@@ -215,7 +215,10 @@ public sealed class NuGetPreparationTests(TestContext context)
             .ToArray();
         Assert.IsNotEmpty(queries);
         foreach (NativeCommand query in queries)
+        {
             Assert.Contains(pathMap, query.Arguments);
+            Assert.Contains(NuGetPreparation.SuppressCloudVariables, query.Arguments);
+        }
         foreach (ReleaseCommand command in result.Commands)
         {
             Assert.IsFalse(command.Command.InheritEnvironment);
