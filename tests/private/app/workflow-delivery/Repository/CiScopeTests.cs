@@ -103,6 +103,7 @@ public sealed class CiScopeTests
     [DataRow("tests/eng/test_repository_records.py", "record-system",
         "record-regression:records:test")]
     [DataRow(".github/CODEOWNERS", "github", "native-codeowners-routing")]
+    [DataRow(".git-blame-ignore-revs", "github", "native-git-blame-ignore-revs")]
     [DataRow("hk.pkl", "conformance", "native-hk-configuration")]
     [DataRow("src/private/lib/hk/Config.pkl", "conformance", "native-hk-configuration")]
     [DataRow("src/private/lib/hk/steps/Typos.pkl", "conformance", "native-hk-configuration")]
@@ -159,6 +160,7 @@ public sealed class CiScopeTests
     [DataRow("docs/unbound/notes.md")]
     [DataRow("src/public/lib/hexo-renderer-asciidoc/index.js")]
     [DataRow("docs/root-gem.md")]
+    [DataRow("docs/.git-blame-ignore-revs")]
     public void UnownedPresentCoordinatesStayUnresolvedForNativeConsumers(string path)
     {
         // A root gemspec is not a retained owner of every repository path.
@@ -167,6 +169,23 @@ public sealed class CiScopeTests
             [("delivery-wave", "docs/delivery-wave.md")], Tasks, Hk));
         Assert.IsTrue(row.Present);
         Assert.IsEmpty(row.Reasons);
+    }
+
+    [TestMethod]
+    public void GitBlameIgnoreListTargetsItselfAndDeletionKeepsConfirmedAbsence()
+    {
+        const string path = ".git-blame-ignore-revs";
+        ScopeResponsibility reason = Assert.ContainsSingle(Assert.ContainsSingle(CiScope.Owners(
+            Revision(path), [path], [], [("delivery-wave", "docs/delivery-wave.md")], Tasks,
+            Hk)).Reasons);
+        Assert.AreEqual("github", reason.Owner);
+        Assert.AreEqual(path, reason.Target);
+        Assert.AreEqual("native-git-blame-ignore-revs", reason.Rule);
+        Assert.AreEqual(path, Assert.ContainsSingle(reason.Sources));
+        ScopeCoordinate deleted = Assert.ContainsSingle(CiScope.Owners(Revision(), [path], [],
+            [("delivery-wave", "docs/delivery-wave.md")], Tasks, Hk));
+        Assert.IsFalse(deleted.Present);
+        Assert.IsEmpty(deleted.Reasons);
     }
 
     [TestMethod]
@@ -190,6 +209,7 @@ public sealed class CiScopeTests
     [DataRow("uv.lock", false, true, false)]
     [DataRow("src/private/lib/scholarly-publication/tests/test_x.py", false, false, true)]
     [DataRow("apm.lock.yaml", false, false, true)]
+    [DataRow(".git-blame-ignore-revs", false, false, false)]
     public void RetainedJobsFollowTheirFiniteInputs(string path, bool mise, bool azure,
         bool scholarly)
     {

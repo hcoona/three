@@ -139,6 +139,8 @@ internal static partial class CiScope
             }
             if (path == ".github/CODEOWNERS")
                 Add("github", path, "native-codeowners-routing", path);
+            if (path == ".git-blame-ignore-revs")
+                Add("github", path, "native-git-blame-ignore-revs", path);
             if (RenovateInput(path))
                 Add("renovate", RenovateWorkflow, "native-renovate-configuration", path);
             if (tooling is not null)
