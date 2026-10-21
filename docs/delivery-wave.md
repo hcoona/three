@@ -314,3 +314,72 @@ ends a grant. Git and the proposing PR retain the reason and history.
   trusted-publisher entries or repository variables (they are listed for the
   owner's separate disposition); no new release route; no release, dispatch,
   publication or credential change.
+
+### Qualify the Latexmath gem artifact in CI and split Ruby planning
+
+- **Work carrier:** the pull request proposing this entry and its linked
+  implementation pull requests;
+  [Issue #1288](https://github.com/hcoona/three/issues/1288) retains the
+  deferred Ruby plan/execute split. An independent gap analysis found that
+  `asciidoctor-latexmath`, a released gem with Official and Buddy Ruby release
+  units, selects only whole-project RSpec in CI: its registered release recipe
+  uses the `ruby/rspec-v1` preset, so CI never builds, inspects or consumes the
+  gem its release unit declares, contrary to WD-CI-004. The repository owner
+  authorized one entry for this gap and the Ruby part of #1288.
+- **Accepted inputs:** the Workflow Delivery
+  [CI qualification requirements](../src/private/app/workflow-delivery/docs/requirements.md#ci-qualification)
+  (WD-CI-004 to WD-CI-006, WD-NFR-005 and WD-NFR-006), the
+  [Ruby integration contract](../src/private/app/workflow-delivery/docs/integration/ruby.md),
+  the Node [workflow and results contract](../src/private/app/workflow-delivery/docs/integration/node.md#workflow-runtime-variants-and-results),
+  the [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
+  the [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md),
+  `.github/workflows/ci.yml` and Latexmath's committed
+  `workflow-delivery.quality.yml` and `workflow-delivery.release-unit.yml`.
+- **Advancement and outcome:**
+    - **Gem artifact qualification:** a change that selects Latexmath plans,
+      besides its whole-project RSpec, the existing `ruby/gem-v1`,
+      `ruby/gem-contents-v1` and `ruby/gem-install-require-v1` checks for the
+      gem output its release unit declares, and the Ruby group executes them
+      through Latexmath's registered package operations rather than the smoke
+      gem's. These are native gem build, RubyGems metadata/content inspection
+      and a clean installed require of the built gem, equivalent to the
+      Release recipe's build and consumer obligations. A missing, failed or
+      cancelled gem check fails the group. Reuse the existing check kinds,
+      quality-selection YAML and release-unit registration; add no new policy
+      lifecycle, report format or package roster. The smoke gem's checks and
+      Latexmath's RSpec obligations are unchanged.
+    - **Ruby plan/execute split:** split the `ruby-group` job into a planning
+      job, which uploads the Ruby facts the Node group consumes and the
+      original Ruby plan, and an execution job, which runs that plan without
+      replanning. The Node group waits only on Ruby planning. The Ruby
+      execution result still gates a required check, so a failed, missing or
+      cancelled Ruby result cannot pass CI. Update the Node and Ruby
+      integration contracts, the MLD job sequence view and the `tests/eng`
+      workflow tests in the same change.
+
+    The outcome is accepted when a Latexmath source change selects and passes
+    all four Latexmath checks, a credential-free test shows a broken gem
+    package failing a gem check, a change selecting no Ruby work prepares no gems, and measured runs
+    of a Latexmath-touching PR and an ordinary no-Ruby PR show when Node
+    starts relative to Ruby planning and execution and the split's
+    runner-minute cost.
+
+- **Ordering and gates:** land gem qualification before the split, so the
+  split is measured with the Ruby execution it overlaps. Follow the existing
+  Workflow Delivery engineering, OCR and record-system review gates;
+  independently classify material findings before repair. If measurement shows
+  the split gives no Node start benefit for Ruby-executing PRs, return the
+  tradeoff to the owner instead of merging it. Do not simulate gem checks
+  with RSpec or replace native gem build or install with file inspection.
+- **Effects:** permit source and repository/GitHub inspection, documentation,
+  workflow and implementation changes, locked tool preparation, isolated local
+  builds and credential-free tests, independent delegated review, ordinary
+  PR/check operations and their normal CI, and closing #1288 when the split
+  is accepted.
+- **Exclusions:** no trim of the Source conformance job's tool installation
+  (the other #1288 candidate, which is HK conformance work, not Ruby CI); no
+  change to Ruby Release callers, destinations, release units or channels; no
+  release, dispatch, publication, credential, Environment or access change; no
+  reopening of completed Ruby campaigns; no other CI job, ecosystem group or
+  required-check change beyond the Ruby gate above. Delete this entry when the
+  outcome is accepted.
