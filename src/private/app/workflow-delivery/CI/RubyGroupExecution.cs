@@ -44,7 +44,8 @@ internal static class RubyGroupExecution
         {
             if (!check.Origins.SequenceEqual([CheckOrigin.Preset]))
                 throw new InvalidDataException("Unsupported Ruby execution origin.");
-            if (check.QualityPresets.SequenceEqual([RubyProjectChecks.Preset]) &&
+            if (check.QualityPresets is [RubyProjectChecks.Preset or
+                    RubyPackageChecks.RSpecPreset] &&
                 check.Work.Key.Check == RubyProjectChecks.RSpec &&
                 check.Work.Key.Variant == "default" && check.Work.Package is null &&
                 check.Work.Dimensions.Count == 0 && check.Work.Prerequisites.Length == 0)
@@ -56,7 +57,8 @@ internal static class RubyGroupExecution
                     throw new InvalidDataException("Selected RSpec bundle is unresolved.");
                 suites.Add((check, contexts[0]));
             }
-            else if (check.QualityPresets.SequenceEqual([RubyPackageChecks.Preset]) &&
+            else if (check.QualityPresets is [RubyPackageChecks.Preset or
+                    RubyPackageChecks.RSpecPreset] &&
                 RubyPackageChecks.Kinds.Contains(check.Work.Key.Check, StringComparer.Ordinal))
                 packages.Add(check);
             else throw new InvalidDataException("Unsupported adopted Ruby execution recipe.");

@@ -14,6 +14,8 @@ public sealed class RubyGroupExecutionTests(TestContext context)
     private static readonly string[] Files = ["LICENSE", "README.md",
         "lib/hcoona_release_smoke_ruby.rb", "lib/hcoona_release_smoke_ruby/version.rb"];
     private static readonly string[] RequirePaths = ["lib"];
+    private static readonly string[] LatexmathFiles = ["LICENSE", "README.md",
+        "lib/asciidoctor-latexmath.rb", "lib/asciidoctor/latexmath/version.rb"];
     private static NativeCommandResult Answer(object value) => new(NativeTermination.Exited,
         0, JsonSerializer.Serialize(value), "", 0, null);
 
@@ -42,6 +44,7 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         await repo.SetAsync(Suite + "/asciidoctor-latexmath.gemspec");
         await repo.SetAsync(Suite + "/Gemfile");
         await repo.SetAsync(Suite + "/Gemfile.lock");
+        foreach (string file in LatexmathFiles) await repo.SetAsync(Suite + "/" + file);
         await repo.SetAsync(Gem + "/hcoona-release-smoke-ruby.gemspec");
         string head = await repo.CommitAsync();
         await repo.GitAsync("reset", "--hard", head);
@@ -162,6 +165,116 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         Assert.AreEqual(failedSuite ? CheckStatus.Failed : CheckStatus.Passed,
             Assert.ContainsSingle(result.RSpec).Run.Status);
         Assert.IsTrue(result.Results.All(check => check.Candidate == plan.Candidate));
+    }
+
+    // The registered Latexmath unit composes its whole suite with its own native gem recipe.
+    private static CiPlan LatexmathPlan(CiPlan plan, RubyGroupRunRequest request)
+    {
+        RubySourceGemFacts source = request.Candidate.Sources.Single(item =>
+            item.Gem.Name == "asciidoctor-latexmath");
+        var unit = new ReleaseUnitDeclaration(Suite + "/workflow-delivery.release-unit.yml",
+            "asciidoctor-latexmath", [new("ruby-gem", RubyPackageChecks.Build,
+                "asciidoctor-latexmath.gemspec", [new("gem", "primary-package", "ruby-gem")])]);
+        CheckSpec[] checks = [RubyProjectChecks.Suite(Suite), .. RubyPackageChecks.Expand(unit,
+            request.Checkout, new Dictionary<string, RubySourceGemFacts> { [Suite] = source })];
+        return plan with { Checks = [.. checks.Select(check => new PlannedCheck(check,
+            [RubyPackageChecks.RSpecPreset], [], [CheckOrigin.Preset]))] };
+    }
+
+    private static async Task<NativeCommandResult> LatexmathAsync(RubyGroupRunRequest request,
+        NativeCommand command, string defect, CancellationToken token)
+    {
+        Assert.IsFalse(command.InheritEnvironment);
+        string gemfile = Path.GetFullPath(Path.Combine(request.Checkout, Suite, "Gemfile"));
+        if (command.Arguments is ["-r", "bundler", ..])
+            return Answer(new { }) with { Stdout = "2.4.20\n" };
+        if (command.Arguments is [var bundle, "_2.4.20_", "install"] &&
+            bundle != request.Bundle)
+        {
+            // The consumer resolves runtime dependencies from Latexmath's own frozen lock.
+            Assert.StartsWith(request.Scratch, bundle);
+            Assert.AreEqual(gemfile, command.Environment!["BUNDLE_GEMFILE"]);
+            Assert.AreEqual("development", command.Environment["BUNDLE_WITHOUT"]);
+            Assert.IsNull(command.Environment["BUNDLE_PATH"]);
+            return Answer(new { });
+        }
+        if (command.Arguments[0] == request.Gem)
+        {
+            if (command.Arguments[1] == "build")
+            {
+                if (defect == "failed-build") return Answer(new { }) with { ExitCode = 1 };
+                await File.WriteAllTextAsync(command.Arguments[^1], "original gem", token);
+            }
+            else Assert.StartsWith(request.Scratch, command.Environment!["GEM_HOME"]!);
+            return Answer(new { });
+        }
+        if (command.Arguments[0] == "-e")
+        {
+            Assert.StartsWith("require 'asciidoctor-latexmath'", command.Arguments[1]);
+            return defect == "failed-require" ? Answer(new { }) with
+                { ExitCode = 1, Stderr = "cannot load such file" } : Answer(new { });
+        }
+        if (command.Executable == request.Nbgv || command.Arguments is [_, _, "install"] ||
+            command.Arguments.Contains("rspec", StringComparer.Ordinal))
+            return await NativeAsync(request, command, false, token);
+        using JsonDocument input = JsonDocument.Parse(
+            await File.ReadAllTextAsync(command.Arguments[^1], token));
+        string path = input.RootElement.GetProperty("path").GetString()!;
+        string operation = input.RootElement.GetProperty("operation").GetString()!;
+        if (operation == "version") return Answer(new { gemspec = path, raw = "1.2.3",
+            version = "1.2.3", literal = "\"1.2.3\"" });
+        var gem = new { name = "asciidoctor-latexmath", version = "1.2.3", platform = "ruby",
+            require_paths = RequirePaths, files = LatexmathFiles,
+            runtime_dependencies = new[] { new { name = "asciidoctor",
+                requirement = ">= 2.0, < 3.0" } } };
+        return operation == "gemspec" ? Answer(new { gemspec = path, gem.name, gem.version,
+            gem.platform, gem.require_paths, gem.files, gem.runtime_dependencies }) :
+            Answer(new { archive = path, gem.name, gem.version, gem.platform,
+                gem.require_paths, gem.files, gem.runtime_dependencies,
+                extensions = Array.Empty<string>(),
+                metadata = new { github_repo = "https://github.com/hcoona/three" },
+                contents = defect == "missing-content" ? LatexmathFiles[1..] : LatexmathFiles });
+    }
+
+    [TestMethod]
+    [DataRow("")]
+    [DataRow("failed-build")]
+    [DataRow("missing-content")]
+    [DataRow("failed-require")]
+    public async Task LatexmathSuiteAndOriginalGemChecksAllBlockTheGroup(string defect)
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        var (plan, request) = await PrepareAsync(repo);
+        plan = LatexmathPlan(plan, request);
+        // Group preparation shares a bundle path; the clean consumer must not inherit it.
+        request = request with { Facts = request.Facts with { Environment =
+            new Dictionary<string, string?>(request.Facts.Environment)
+                { ["BUNDLE_PATH"] = Path.Combine(request.Scratch, "shared-bundle") } } };
+        RubyGroupRun result = await RubyGroupExecution.RunAsync(plan, request,
+            (command, token) => LatexmathAsync(request, command, defect, token),
+            context.CancellationToken);
+        CheckStatus Status(string check) => result.Results.Single(item =>
+            item.Key.Check == check).Status;
+        Assert.AreEqual(CheckStatus.Passed, Status(RubyProjectChecks.RSpec));
+        Assert.AreEqual(defect.Length == 0, result.Outcome.Satisfied,
+            JsonSerializer.Serialize(result));
+        Assert.HasCount(4, result.Results);
+        Assert.AreEqual(defect == "failed-build" ? CheckStatus.Failed : CheckStatus.Passed,
+            Status(RubyPackageChecks.Build));
+        Assert.AreEqual(defect switch
+        {
+            "failed-build" => CheckStatus.Skipped,
+            "missing-content" => CheckStatus.Failed,
+            _ => CheckStatus.Passed,
+        }, Status(RubyPackageChecks.Contents));
+        Assert.AreEqual(defect switch
+        {
+            "" => CheckStatus.Passed,
+            "failed-require" => CheckStatus.Failed,
+            _ => CheckStatus.Skipped,
+        }, Status(RubyPackageChecks.Consumer));
+        Assert.AreEqual(defect is "" or "failed-require", result.Packages.Commands.Any(
+            command => command.Command.Arguments[0] == "-e"));
     }
 
     [TestMethod]

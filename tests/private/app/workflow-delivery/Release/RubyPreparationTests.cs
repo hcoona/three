@@ -1035,7 +1035,7 @@ public sealed class RubyPreparationTests(TestContext context)
                     """.Replace(
                         "ruby/hcoona-release-smoke-ruby-v1",
                         defect == "quality" ? "ruby/unknown-v1"
-                            : unit == Latexmath ? "ruby/rspec-v1"
+                            : unit == Latexmath ? "ruby/rspec-gem-v1"
                             : "ruby/hcoona-release-smoke-ruby-v1",
                         StringComparison.Ordinal
                     )

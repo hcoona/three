@@ -7,6 +7,9 @@ namespace WorkflowDelivery.Repository;
 internal static class RubyPackageChecks
 {
     internal const string Preset = "ruby/hcoona-release-smoke-ruby-v1";
+    // Composes the whole-project RSpec suite with the gem checks of the same release unit.
+    internal const string RSpecPreset = "ruby/rspec-gem-v1";
+    internal static readonly string[] Presets = [Preset, RSpecPreset];
     internal const string Build = "ruby/gem-v1";
     internal const string Contents = "ruby/gem-contents-v1";
     internal const string Consumer = "ruby/gem-install-require-v1";

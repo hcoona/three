@@ -33,7 +33,7 @@ internal static class RubyReleaseUnits
         new(Smoke, "tests/private/app/workflow-delivery/fixtures/products/" + Smoke +
             "/workflow-delivery.release-unit.yml", RubyPackageChecks.Preset),
         new(Latexmath, "src/public/lib/" + Latexmath + "/workflow-delivery.release-unit.yml",
-            "ruby/rspec-v1"),
+            RubyPackageChecks.RSpecPreset),
     ];
 
     internal static bool Registered(string id) => Units.Any(unit => unit.Id == id);

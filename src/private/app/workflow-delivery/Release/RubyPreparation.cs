@@ -23,7 +23,7 @@ internal static class RubyPreparation
 
     // A unit adopting the native RSpec suite also requires its successful complete result.
     internal static string[] RequiredFor(RubyReleaseUnit unit) =>
-        unit.Preset == RubyProjectChecks.Preset ? Tested : Required;
+        unit.Preset == RubyPackageChecks.RSpecPreset ? Tested : Required;
     private static readonly string[] ToolConfiguration = ["mise.toml", "mise.lock"];
 
     internal static Task<RubyPreparationResult> PrepareAsync(RubyPreparationRequest request,

@@ -67,12 +67,15 @@ become a successful check. Apply project quality requirements to pending results
 a universal extra quality policy is not introduced here.
 
 The registered `ruby/project-rspec-v1` check invokes that whole native RSpec
-recipe and is required by the `ruby/rspec-v1` preset. Latexmath adopts this preset
-in its source-local `workflow-delivery.quality.yml`, preserving its required suite
-and external tools. Check registration, the adopted preset and actual selection
+recipe and is required by the `ruby/rspec-v1` preset. Latexmath adopts the
+`ruby/rspec-gem-v1` preset in its source-local `workflow-delivery.quality.yml`. That
+preset composes the same RSpec check with the existing `ruby/gem-v1`,
+`ruby/gem-contents-v1` and `ruby/gem-install-require-v1` checks. It preserves the
+required suite and external tools. Its gem checks run Latexmath's registered native
+build, content inspection and clean consumer, not the smoke gem's. Check registration, the adopted preset and actual selection
 remain prerequisites for planning and caller qualification. Structural discovery does not supply a default
 quality selection. The smoke gem retains its separate content/clean-require
-preset.
+preset and recipe.
 
 An explicitly quality-adopted bundle-only RSpec carrier can own a native suite
 without a synthetic gemspec or publishable unit. The Ruby helper carrier consumes
@@ -116,8 +119,8 @@ separate producer/check/input responsibilities; no generated package roster or
 package-file-based RSpec selection is justified. Quality adoption fits the
 existing YAML preset composition rather than a new policy lifecycle.
 
-The required `ruby/project-rspec-v1` check and `ruby/rspec-v1` preset use
-Latexmath's source-local quality selection. This explicitly adopts the existing whole-project RSpec
+The required `ruby/project-rspec-v1` check and gem checks, through the
+`ruby/rspec-gem-v1` preset, use Latexmath's source-local quality selection. This explicitly adopts the existing whole-project RSpec
 obligation; it does not strengthen its policy or infer quality from directory
 structure. Retain the smoke gem's separate adopted distribution checks. The native recipe and actual YAML selection
 change with their corresponding reader, executor and caller.
@@ -225,8 +228,8 @@ latexmath consumer installs its runtime dependencies with the Bundler version
 and frozen resolution of the committed product `Gemfile.lock`, without
 development gems, then installs the original locally; RubyGems/Bundler own that
 resolution. Its clean `require` uses RubyGems' native default path, so gems
-bundled with the selected Ruby remain loadable. Latexmath's adopted
-`ruby/rspec-v1` suite is its required `tests` check: the whole native RSpec
+bundled with the selected Ruby remain loadable. The RSpec suite in
+Latexmath's adopted `ruby/rspec-gem-v1` preset is its required `tests` check: the whole native RSpec
 invocation runs from the exact checkout with the complete frozen locked bundle in
 separate owned gem state, and the preparation job installs the suite's CI system
 tools. No CI verdict substitutes for it. Retain actual reached command termination and

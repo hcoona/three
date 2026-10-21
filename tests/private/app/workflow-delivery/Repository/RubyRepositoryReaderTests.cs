@@ -353,7 +353,16 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         }
         else if (adoption == "latexmath")
         {
-            Assert.AreEqual(RubyProjectChecks.RSpec, Assert.ContainsSingle(owner.Checks).Key.Check);
+            // The committed selection composes whole-project RSpec with the declared gem checks.
+            Assert.AreEqual(RubyPackageChecks.RSpecPreset, owner.QualityPreset);
+            CollectionAssert.AreEquivalent(
+                (string[])[RubyProjectChecks.RSpec, .. RubyPackageChecks.Kinds],
+                owner.Checks.Select(check => check.Key.Check).ToArray());
+            Assert.AreEqual(directory, owner.Checks.Single(check =>
+                check.Key.Check == RubyProjectChecks.RSpec).Key.Target);
+            Assert.IsTrue(owner.Checks.Where(check => check.Package is not null).All(check =>
+                check.Package!.Unit == "asciidoctor-latexmath" &&
+                check.Package.ExpectedVersion == "1.2.3"));
             Assert.AreEqual("asciidoctor-latexmath", owner.ReleaseUnit);
             Assert.AreEqual(owner.Id, Assert.ContainsSingle(
                 result.Facts.OperationInputs.Single(input => input.Path ==
