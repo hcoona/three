@@ -298,3 +298,4 @@ namespace IO.Github.Hcoona.Collections
 // CI cost probe sample 4 for #1289.
 // CI cost probe sample 5 for #1289.
 // CI cost probe sample 6 for #1289.
+// CI cost probe sample 7 for #1289.
