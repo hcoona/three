@@ -76,7 +76,7 @@ internal static class RubyPackageExecution
             IRubyReleasePackage operations = subject.Unit == RubyReleaseUnits.Latexmath
                 ? RubyReleaseUnits.Package(RubyReleaseUnits.Named(subject.Unit), request.Facts,
                     request.Gem, request.Nbgv, state,
-                    Path.Combine(checkoutRoot, subject.Directory))
+                    Path.GetFullPath(Path.Combine(checkoutRoot, subject.Directory)))
                 : new RubySmokePackageOperations(request.Facts, request.Gem, request.Nbgv, state);
             RubyGemArchive? original = null;
             foreach (string kind in RubyPackageChecks.Kinds)
