@@ -181,9 +181,8 @@ Each store must already list the extension; the caller only updates existing
 listings. AMO needs the add-on's listed channel; Edge needs a published or
 draft product in Partner Center.
 
-## Known Gaps
-
-These remain owner decisions; the integration does not compensate for them.
+## Owner Decisions
 
 - `version_name` carries the NBGV npm prerelease string (`1.2.0-dev.<height>`)
-  on Official; this is the product's existing behavior.
+  on Official, which Chrome and Edge display. The owner keeps this existing
+  product behavior.
