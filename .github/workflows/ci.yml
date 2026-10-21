@@ -695,7 +695,7 @@ jobs:
       - name: Read committed tool versions
         id: tools
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
-        run: python3 eng/scripts/locked_tool_versions.py pnpm ruby >> "$GITHUB_OUTPUT"
+        run: python3 eng/scripts/locked_tool_versions.py pnpm >> "$GITHUB_OUTPUT"
 
       - name: Setup .NET SDK
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
@@ -716,14 +716,6 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
-      - name: Prepare selected Hexo native bundle
-        if: success() && !cancelled() && steps.scope.outputs.run == 'true' && contains(fromJSON(needs.node-group.outputs.retained_directories), 'src/public/lib/hexo-renderer-asciidoc')
-        uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1.329.0
-        with:
-          ruby-version: ${{ steps.tools.outputs.ruby }}
-          working-directory: src/public/lib/hexo-renderer-asciidoc
-          bundler-cache: true
 
       - name: Install dependencies
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
@@ -1169,7 +1161,7 @@ jobs:
         id: plan
         run: |
           probe=$(ruby -rbundler -e 'print Bundler::LockfileParser.new(File.read(ARGV[0])).bundler_version' \
-            src/public/lib/hexo-renderer-asciidoc/Gemfile.lock)
+            tests/private/app/workflow-delivery/Native/Ruby/Gemfile.lock)
           dotnet "$RUNNER_TEMP/ruby-control/control/WorkflowDelivery.dll" ci caller-ruby plan \
             "$RUNNER_TEMP/ruby-group" "$RUNNER_TEMP/ruby-scope/ci-scope.json" \
             "$(command -v ruby)" "$(command -v gem)" "$(command -v bundle)" "$(command -v dotnet)" "$probe"

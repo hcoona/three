@@ -367,8 +367,7 @@
       "matchManagers": ["bundler"],
       "matchFileNames": [
         "src/public/lib/asciidoctor-latexmath/Gemfile",
-        "src/public/lib/asciidoctor-latexmath/asciidoctor-latexmath.gemspec",
-        "src/public/lib/hexo-renderer-asciidoc/Gemfile"
+        "src/public/lib/asciidoctor-latexmath/asciidoctor-latexmath.gemspec"
       ],
       "matchPackageNames": ["asciidoctor"],
       "rangeStrategy": "update-lockfile"
@@ -378,8 +377,7 @@
       "matchManagers": ["bundler"],
       "matchFileNames": [
         "src/public/lib/asciidoctor-latexmath/Gemfile",
-        "src/public/lib/asciidoctor-latexmath/asciidoctor-latexmath.gemspec",
-        "src/public/lib/hexo-renderer-asciidoc/Gemfile"
+        "src/public/lib/asciidoctor-latexmath/asciidoctor-latexmath.gemspec"
       ],
       "matchPackageNames": ["asciidoctor"],
       "groupName": "Ruby Runtime Dependencies",

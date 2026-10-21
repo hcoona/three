@@ -72,29 +72,6 @@ url = "https://github.com/pnpm/pnpm/releases/download/v12.14.0/pnpm-win32-x64.zi
 url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/643957404"
 provenance = "github-attestations"
 
-[[tools.ruby]]
-version = "3.4.10"
-backend = "core:ruby"
-
-[tools.ruby."platforms.windows-x64"]
-checksum = "sha256:89e3c5e235ac88b9b7e8daaf639eaaab74d7c470667354f6bf0f7432f3191ebb"
-url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-3.4.10-1/rubyinstaller-3.4.10-1-x64.7z"
-
-[[tools.ruby]]
-version = "3.4.10"
-backend = "core:ruby"
-
-[tools.ruby.options]
-compile = "false"
-precompiled_url = "jdx/ruby"
-ruby_build_repo = "https://github.com/rbenv/ruby-build.git"
-ruby_install = "false"
-
-[tools.ruby."platforms.linux-x64"]
-checksum = "sha256:81ce58b056ee2765e46785b4c6befb9852d9c3e50ff9385e7eb1cf3e0314d0bd"
-url = "https://github.com/jdx/ruby/releases/download/3.4.10-2/ruby-3.4.10.x86_64_linux.tar.gz"
-provenance = "github-attestations"
-
 [[tools.trivy]]
 version = "0.69.3"
 backend = "aqua:aquasecurity/trivy"
