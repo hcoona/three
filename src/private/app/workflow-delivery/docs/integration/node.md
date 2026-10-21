@@ -214,11 +214,10 @@ invocation reuse, not an artifact cache or replay contract.
 
 ### Workflow, Runtime Variants and Results
 
-Add one static Ubuntu group job after the existing Windows scope job and the
-Ruby group. Their uploads expose same-run immutable artifact IDs. The group
-downloads the scope selection, the complete candidate control transfer and
-Ruby's typed contribution by those IDs, relying on the native download digest
-check. Its caller binds the scope comparison to the checked-out candidate before
+Add one static Ubuntu group job after the existing Windows scope job. Its
+uploads expose same-run immutable artifact IDs. The group downloads the scope
+selection and the complete candidate control transfer by those IDs, relying on
+the native download digest check. Its caller binds the scope comparison to the checked-out candidate before
 planning and binds the resulting plan to that comparison. Add no signature,
 admission mirror or producer download/readmission loop. Plan every change,
 independently of the old coarse Node Boolean. The job runs the transferred

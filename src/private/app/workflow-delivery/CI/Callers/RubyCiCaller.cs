@@ -57,9 +57,6 @@ internal static class RubyCiCaller
             TransferJson.Default.RubyCiCallerReadback);
         CiCallerTransfer.Write(Path.Combine(directory, "plan.json"), readback.Plan,
             TransferJson.Default.CiPlan);
-        CiCallerTransfer.Write(Path.Combine(directory, "node-inputs.json"),
-            new RubyNodeContribution(readback.Basis.Facts, readback.Candidate.Facts),
-            TransferJson.Default.RubyNodeContribution);
         CiCallerTransfer.Output("selected", (readback.Plan.Checks.Length !=
             0).ToString().ToLowerInvariant());
         CiCallerTransfer.Output("latexmath", readback.Plan.Checks.Any(check =>

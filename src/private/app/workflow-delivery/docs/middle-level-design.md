@@ -466,7 +466,8 @@ the retained jobs that do not exchange Workflow Delivery artifacts. Validate's
 declared `needs` also include the omitted `conformance` and `scholarly-tests`
 jobs. The repository ruleset's required checks are Validate, `dotnet-tests`,
 `python-tests` and the `node-tests` matrix; `ruby-group` and `node-group` are
-not required checks and gate merge only through `node-tests`.
+not required checks and gate merge only through Validate and `node-tests`
+respectively.
 
 ```mermaid
 sequenceDiagram
@@ -489,8 +490,8 @@ sequenceDiagram
     Store->>DotNet: ci-dotnet-plan
     DotNet->>Store: dotnet-group-results
     Store->>Ruby: ci-scope, ci-dotnet-plan
-    Ruby->>Store: ruby-node-inputs, ruby-group-results
-    Store->>Node: ci-scope, ruby-node-inputs, ci-dotnet-plan
+    Ruby->>Store: ruby-group-results
+    Store->>Node: ci-scope, ci-dotnet-plan
     Node->>Store: node-group-results
     Node-->>NodeTests: retained selection outputs
     Store->>NodeTests: ci-dotnet-plan
@@ -504,6 +505,7 @@ sequenceDiagram
     Prep-->>Validate: job result
     NuGet-->>Validate: job result
     Github-->>Validate: job result
+    Ruby-->>Validate: job result
 ```
 
 Native tool setup and queries consume each endpoint's committed locks without

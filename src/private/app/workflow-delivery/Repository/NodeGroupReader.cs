@@ -5,9 +5,7 @@ namespace WorkflowDelivery.Repository;
 
 internal sealed record NodeGroupRequest(MaterializedEndpoint Basis,
     MaterializedEndpoint Candidate, bool Full, string ScopePath,
-    DotNetReadFiles? BasisControlFiles, DotNetReadFiles CandidateControlFiles,
-    RubyNodeContribution? Ruby = null);
-internal sealed record RubyNodeContribution(RubyFactsEndpoint Basis, RubyFactsEndpoint Candidate);
+    DotNetReadFiles? BasisControlFiles, DotNetReadFiles CandidateControlFiles);
 internal sealed record NodeGroupReadback(CiPlan Adopted, RetainedNodeSelection[] Retained,
     string AdoptedDirectory, NodeRuntimeInputs Runtime);
 
@@ -44,10 +42,6 @@ internal static class NodeGroupReader
         var candidateReader = new NodeRepositoryReader(after);
         NodeRevisionInputs basis = await basisReader.ReadAsync(token);
         NodeRevisionInputs candidate = await candidateReader.ReadAsync(token);
-        if (request.Ruby is not null)
-        {
-            (basis, candidate) = WithRubyInputs(basis, candidate, request.Ruby);
-        }
         ControlInputFacts? basisControl = await ControlAsync(before,
             request.BasisControlFiles, false, token);
         ControlInputFacts candidateControl = await ControlAsync(after,
@@ -65,11 +59,6 @@ internal static class NodeGroupReader
             candidateReader.NpmVersionAsync, token);
         return new(runtime.Expand(plan.Adopted), plan.Retained, fixture.Directory, runtime);
     }
-
-    internal static (NodeRevisionInputs Basis, NodeRevisionInputs Candidate) WithRubyInputs(
-        NodeRevisionInputs basis, NodeRevisionInputs candidate, RubyNodeContribution ruby) =>
-        (RubyNodeInputConsumers.Join(basis, ruby.Basis),
-            RubyNodeInputConsumers.Join(candidate, ruby.Candidate));
 
     internal static NodeRevisionInputs WithControlInputs(NodeRevisionInputs inputs,
         ControlInputFacts? control, bool candidate)
