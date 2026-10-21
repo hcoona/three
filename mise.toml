@@ -144,7 +144,7 @@ run = "uv run --script tests/eng/test_repository_records.py"
 
 [tasks.slngen]
 description = "Generate .NET solution file for local development"
-run = 'dotnet slngen --nologo --ignoreMainProject --launch false --loadprojects false --folders true --collapsefolders true -o main.sln'
+run = 'dotnet slngen --nologo --ignoreMainProject --launch false --loadprojects false --folders true --collapsefolders true -o ./main.sln'
 
 [tasks.update-pnpm-lockfiles]
 description = "Refresh tracked pnpm lockfiles"

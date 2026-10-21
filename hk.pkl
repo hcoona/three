@@ -202,14 +202,31 @@ local pwsh_linters = new Mapping<String, Step> {
 }
 
 local dotnet_linters = new Mapping<String, Step> {
-  ["csharpier"] = (Steps.csharpier) {
+  local csharp_files = List("*.cs")
+
+  // `dotnet format whitespace` applies the EditorConfig formatting rules. Folder mode needs no
+  // project workspace (`dotnet format` cannot load the dirs.proj traversal project); `dotnet
+  // build` already enforces style and analyzer diagnostics (EnforceCodeStyleInBuild).
+  ["dotnet-format"] {
     profiles = List("medium")
     exclude = general_exclude_list
-    prefix = "dotnet tool run"
+    batch = true
+    glob = csharp_files
+    stage = csharp_files
+    env {
+      ["HK_EXEC_PER_FILE"] = "0"
+    }
+    check =
+      "python eng/scripts/hk_exec.py dotnet format whitespace --folder --verify-no-changes --include --hk-files {{files}}"
+    fix =
+      "python eng/scripts/hk_exec.py dotnet format whitespace --folder --include --hk-files {{files}}"
   }
 
   ["dotnet-lock-verify"] = (Steps.dotnet_lock_verify) {
     profiles = List("medium")
+    // Name the traversal project; `mise run slngen` adds main.sln to the repository root.
+    check = "dotnet restore dirs.proj --locked-mode"
+    fix = "dotnet restore dirs.proj --force-evaluate"
   }
 }
 
@@ -336,7 +353,7 @@ local file_steps = new Mapping<String, Step> {
   ...docker_linters
   ...bash_linters
   ...pwsh_linters
-  // ...dotnet_linters
+  ...dotnet_linters
   ...javascript_typescript_linters
   ...python_linters
   ...dotenv_linter

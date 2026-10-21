@@ -11,9 +11,11 @@ local GlobList =
   )
 
 dotnet_lock_verify = new Config.Step {
-  batch = true
+  // The commands restore the whole repository and take no {{files}}; batching would run
+  // concurrent whole-repository restores that write the same lock files.
+  batch = false
   glob = GlobList
   stage = GlobList
   check = "dotnet restore --locked-mode"
-  fix = "dotnet restore --forced-evaluate"
+  fix = "dotnet restore --force-evaluate"
 }

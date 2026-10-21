@@ -172,8 +172,9 @@ wrappers) or whose linter has no entry in its provider lock at either endpoint
 (for example `taplo`, which `pnpm exec` finds on the mise `PATH`) also runs on
 all its files. Resolution never narrows a run, and a failed Pkl evaluation
 fails the helper. Other steps, including lock and configuration checks, keep
-the changed-path input. `.config/dotnet-tools.json` joins these locks once a
-step runs a .NET tool ([#1262](https://github.com/hcoona/three/issues/1262)).
+the changed-path input. The SDK's `dotnet format` resolves to the mise
+`dotnet` entry; `.config/dotnet-tools.json` joins these locks once a step runs
+a local .NET tool.
 With `--staged`, the endpoints are `HEAD` and the index.
 
 ## Quoted Paths and Watchdogs
