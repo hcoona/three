@@ -34,6 +34,8 @@ jobs:
       azureauth: ${{ steps.select.outputs.azureauth }}
       scholarly: ${{ steps.select.outputs.scholarly }}
       nuget_native_preparation: ${{ steps.select.outputs.nuget_native_preparation }}
+      nuget_native_preparation_filter: ${{ steps.select.outputs.nuget_native_preparation_filter }}
+      nuget_native_preparation_tests: ${{ steps.select.outputs.nuget_native_preparation_tests }}
       github_release_native_preparation: ${{ steps.select.outputs.github_release_native_preparation }}
       base: ${{ steps.select.outputs.base }}
       candidate: ${{ steps.select.outputs.candidate }}
@@ -772,9 +774,16 @@ jobs:
         env:
           SELECTION_RESULT: ${{ needs.scope.result }}
           APPLICABLE: ${{ needs.scope.outputs.nuget_native_preparation }}
+          FILTER: ${{ needs.scope.outputs.nuget_native_preparation_filter }}
+          TESTS: ${{ needs.scope.outputs.nuget_native_preparation_tests }}
         run: |
           case "$SELECTION_RESULT:$APPLICABLE" in
-            success:true) echo 'run=true' >> "$GITHUB_OUTPUT" ;;
+            success:true)
+              if [[ -z "$FILTER" || ! "$TESTS" =~ ^[1-9][0-9]*$ ]]; then
+                echo 'Scope selection omitted the NuGet preparation rows.' >&2; exit 1
+              fi
+              echo 'run=true' >> "$GITHUB_OUTPUT"
+              echo "Selected $TESTS rows: $FILTER" ;;
             success:false) echo 'run=false' >> "$GITHUB_OUTPUT"; echo 'Not applicable to this change.' ;;
             *) echo 'Scope selection failed or omitted applicability.' >&2; exit 1 ;;
           esac
@@ -801,12 +810,15 @@ jobs:
       - name: Verify native release preparation and clean consumer
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         shell: pwsh
+        env:
+          FILTER: ${{ needs.scope.outputs.nuget_native_preparation_filter }}
+          TESTS: ${{ needs.scope.outputs.nuget_native_preparation_tests }}
         run: |
           dotnet test --project tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj `
-            -p:RestoreLockedMode=true --filter 'TestCategory=NuGetNativePreparation' `
+            -p:RestoreLockedMode=true --filter "$env:FILTER" `
             --report-trx --results-directory "$env:WDV3_NUGET_PREPARATION_EVIDENCE" `
             "-bl:$env:WDV3_NUGET_PREPARATION_EVIDENCE/native-preparation.binlog" `
-            -- --minimum-expected-tests 10
+            -- --minimum-expected-tests "$env:TESTS"
           exit $LASTEXITCODE
       - name: Retain original archives and native evidence
         if: always() && steps.scope.outputs.run == 'true'

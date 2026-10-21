@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text.Json;
+using WorkflowDelivery.CI.Callers;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
@@ -11,11 +12,15 @@ namespace WorkflowDelivery.Tests.Release;
 [TestClass]
 public sealed class NuGetLibraryPreparationNativeTests(TestContext context)
 {
-    public static IEnumerable<object[]> Libraries => NuGetReleaseUnits.All
-        .Where(unit => unit.Library).Select(unit => new object[] { unit.Id });
+    // Each row carries its unit category, so CI can select only the changed units' rows.
+    public static IEnumerable<TestDataRow<string>> Libraries => NuGetReleaseUnits.All
+        .Where(unit => unit.Library).Select(unit => new TestDataRow<string>(unit.Id)
+        {
+            TestCategories = [DotNetCiCaller.NuGetUnitCategory + unit.Id],
+        });
 
     [TestMethod]
-    [TestCategory("NuGetNativePreparation")]
+    [TestCategory(DotNetCiCaller.NuGetPreparationCategory)]
     [Timeout(900000, CooperativeCancellation = true)]
     [DynamicData(nameof(Libraries))]
     public async Task NativeLibraryPreparationPacksEveryFrameworkForACleanConsumer(string id)

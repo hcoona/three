@@ -485,7 +485,7 @@ sequenceDiagram
     Scope->>Scope: Build candidate control, read paired native facts, select work
     Scope->>Store: ci-scope (selection and reasons)
     Scope->>Store: ci-dotnet-plan (control output, python-control.zip, Ruby facts helper, original .NET plan)
-    Scope-->>NuGet: nuget_native_preparation applicability output
+    Scope-->>NuGet: nuget_native_preparation applicability, row filter and count outputs
     Scope-->>Github: github_release_native_preparation applicability output
     Store->>DotNet: ci-dotnet-plan
     DotNet->>Store: dotnet-group-results
