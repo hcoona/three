@@ -141,3 +141,4 @@ product's scope, threat model or release gates. The source
 [security-source]: https://github.com/hcoona/microsoft-authentication-cli/blob/f2e36bbccbda134ed8aa21f783cd76a9cdbeaf64/docs/security/threat-model.md#security-design-tradeoffs
 [testing-source]: https://github.com/hcoona/microsoft-authentication-cli/blob/f2e36bbccbda134ed8aa21f783cd76a9cdbeaf64/docs/validation/strategy.md#test-design-and-evidence-selection
 <!-- CI cost probe sample 1 for #1289. -->
+<!-- CI cost probe sample 2 for #1289. -->
