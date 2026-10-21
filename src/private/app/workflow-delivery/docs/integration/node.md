@@ -100,6 +100,14 @@ malformed or out-of-checkout read fails planning instead of dropping
 responsibility. Directory names and a repository-local Pkl parser do not infer
 this responsibility.
 
+Two exact paths that GitHub reads natively own themselves. A present
+`.github/CODEOWNERS` receives owner `github`, target `.github/CODEOWNERS` and
+rule `native-codeowners-routing`; a present root `.git-blame-ignore-revs`
+receives owner `github`, target `.git-blame-ignore-revs` and rule
+`native-git-blame-ignore-revs`, because GitHub blame reads that file. Neither
+rule matches another path or selects a retained job, and a deleted coordinate
+keeps confirmed absence.
+
 Five finite rules cover repository tooling configuration. `renovate.json`,
 `.github/renovate/**` and `.github/workflows/renovate.yml` receive owner
 `renovate`, target `.github/workflows/renovate.yml` and rule
