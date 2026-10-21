@@ -207,6 +207,7 @@ testpaths = [
   "tests/eng/test_typos_config.py",
   "tests/eng/test_workflow_delivery_v3_hk.py",
   "src/private/app/azureauth-credprovider/python/tests",
+  "src/private/app/factorio-cycle-calculator/tests",
   "src/private/app/git-commit-heatmap/tests",
   "src/private/app/llm-text-splitter/tests",
   "src/public/lib/nbgv-python/tests",
