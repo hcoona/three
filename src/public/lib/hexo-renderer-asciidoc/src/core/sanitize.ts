@@ -16,3 +16,4 @@ export const escapeCurlyBraces = (html: string): string =>
   html.replace(CURLY_OPEN, '&#123;').replace(CURLY_CLOSE, '&#125;');
 // CI cost probe sample 1 for #1289.
 // CI cost probe sample 2 for #1289.
+// CI cost probe sample 3 for #1289.
