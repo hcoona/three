@@ -1,5 +1,6 @@
 using System.Text.Json;
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Repository;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
@@ -192,6 +193,28 @@ public sealed class RubyGroupReaderTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task OnlyTheCandidateIsHeldToTheRegisteredUnitPreset(bool candidateMismatch)
+    {
+        // A basis retains its own earlier adoption; the candidate must match the registration.
+        using var fixture = await Fixture.SharedAsync(sharedSpec!, false,
+            context.CancellationToken);
+        fixture.UnitPresets[fixture.Request.Basis.Checkout.Reference] = RubyProjectChecks.Preset;
+        fixture.UnitPresets[fixture.Request.Candidate.Checkout.Reference] = candidateMismatch
+            ? RubyProjectChecks.Preset : RubyPackageChecks.RSpecPreset;
+        if (candidateMismatch)
+        {
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+                fixture.ReadAsync(context.CancellationToken));
+            return;
+        }
+        RubyGroupReadback result = await fixture.ReadAsync(context.CancellationToken);
+        Assert.AreEqual(RubyProjectChecks.RSpec, Assert.ContainsSingle(result.Plan.Checks)
+            .Work.Key.Check);
+    }
+
+    [TestMethod]
     public async Task CancelledCollectionCannotReturnPlan()
     {
         using var fixture = await Fixture.SharedAsync(sharedSpec!, false,
@@ -212,6 +235,7 @@ public sealed class RubyGroupReaderTests(TestContext context)
         internal bool ActualCollection { get; set; }
         internal string? FailedEndpoint { get; set; }
         internal Action? AfterBasis { get; set; }
+        internal Dictionary<string, string> UnitPresets { get; } = new(StringComparer.Ordinal);
         internal List<string> Collected { get; } = [];
 
         internal sealed record Pair(string Changed, string Basis, string BasisRoot,
@@ -353,8 +377,10 @@ public sealed class RubyGroupReaderTests(TestContext context)
                         }, cancellation);
                 var check = new CheckSpec(new("src/input", RubyProjectChecks.RSpec, "default"),
                     [], "ubuntu-latest", true, []);
-                var owner = new ProjectFacts("ruby:src/input", "src/input", [], [], null,
-                    RubyProjectChecks.Preset, [check]);
+                string? preset = UnitPresets.GetValueOrDefault(checkout.Revision.Commit);
+                var owner = new ProjectFacts("ruby:src/input", "src/input", [], [],
+                    preset is null ? null : RubyReleaseUnits.Latexmath,
+                    preset ?? RubyProjectChecks.Preset, [check]);
                 SharedInput[] inputs = CrossInput ? [new("src/other/code.cs", ["src/input"])] : [];
                 var graph = new RubyDependencyGraph(
                     [new("src/input", "asciidoctor-latexmath", [])], []);

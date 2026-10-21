@@ -255,6 +255,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
     [DataRow("gem")]
     [DataRow("latexmath")]
     [DataRow("latexmath-package")]
+    [DataRow("latexmath-rspec")]
     public async Task NativeSourceAdoptionPreservesRequiredChecksAndVersionInputs(string adoption)
     {
         using var repo = await GitFixture.CreateAsync(context.CancellationToken);
@@ -276,6 +277,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
                 "schema: workflow-delivery/v3/quality-selection\n" +
                 "ecosystems:\n  ruby:\n    preset: " +
                 (adoption is "gem" or "latexmath-package" ? RubyPackageChecks.Preset :
+                    adoption == "latexmath-rspec" ? RubyProjectChecks.Preset :
                     RubyProjectChecks.Preset) +
                 "\n");
         if (adoption == "gem")
@@ -321,13 +323,18 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
                     runtime_dependencies = Array.Empty<object>()
                 });
             }, context.CancellationToken);
-        if (adoption == "latexmath-package")
+        RubyRevisionInputs result = await read();
+        if (adoption is "latexmath-package" or "latexmath-rspec")
         {
-            // A registered unit keeps its own adopted obligations; another preset is not admitted.
-            await Assert.ThrowsExactlyAsync<InvalidDataException>(read);
+            // A basis keeps its own adoption, such as the earlier RSpec-only selection, but a
+            // registered unit's candidate is held to its registered obligations.
+            Assert.AreEqual(adoption == "latexmath-rspec" ? RubyProjectChecks.RSpec :
+                RubyPackageChecks.Build, result.Facts.Owners.Single().Checks[0].Key.Check);
+            Assert.ThrowsExactly<InvalidDataException>(() =>
+                RubyRepositoryReader.RequireRegisteredPresets(result));
             return;
         }
-        RubyRevisionInputs result = await read();
+        RubyRepositoryReader.RequireRegisteredPresets(result);
         Assert.AreEqual(directory, Assert.ContainsSingle(result.Facts.Native.Graph.Projects)
             .Directory);
         Assert.Contains(directory, result.Facts.Native.Inputs.Single(input =>

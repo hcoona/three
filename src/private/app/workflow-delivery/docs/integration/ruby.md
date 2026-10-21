@@ -72,7 +72,7 @@ recipe and is required by the `ruby/rspec-v1` preset. Latexmath adopts the
 preset composes the same RSpec check with the existing `ruby/gem-v1`,
 `ruby/gem-contents-v1` and `ruby/gem-install-require-v1` checks. It preserves the
 required suite and external tools. Its gem checks run Latexmath's registered native
-build, content inspection and clean consumer, not the smoke gem's. Check registration, the adopted preset and actual selection
+build, content inspection and clean consumer, not the smoke gem's. A release unit's candidate selection must equal its registered preset; a basis keeps its own earlier adoption, so a preset change still compares against it. Check registration, the adopted preset and actual selection
 remain prerequisites for planning and caller qualification. Structural discovery does not supply a default
 quality selection. The smoke gem retains its separate content/clean-require
 preset and recipe.
