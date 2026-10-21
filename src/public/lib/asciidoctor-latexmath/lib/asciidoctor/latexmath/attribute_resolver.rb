@@ -485,3 +485,4 @@ module Asciidoctor
 end
 # CI cost probe sample 1 for #1289.
 # CI cost probe sample 2 for #1289.
+# CI cost probe sample 3 for #1289.
