@@ -212,5 +212,6 @@ testpaths = [
   "src/private/app/html-sm-processor/tests",
   "src/private/app/llm-text-splitter/tests",
   "src/private/app/music-flash-card-generator/tests",
+  "src/private/app/rag-postgresql-openai/tests",
   "src/public/lib/nbgv-python/tests",
 ]
