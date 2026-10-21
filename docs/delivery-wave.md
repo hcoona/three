@@ -315,77 +315,87 @@ ends a grant. Git and the proposing PR retain the reason and history.
   owner's separate disposition); no new release route; no release, dispatch,
   publication or credential change.
 
-### Qualify the Latexmath gem artifact in CI and split Ruby planning
+### Qualify the Latexmath gem artifact and remove Hexo's Ruby environment
 
 - **Work carrier:** the pull request proposing this entry and its linked
-  implementation pull requests;
-  [Issue #1288](https://github.com/hcoona/three/issues/1288) retains the
-  deferred Ruby plan/execute split. An independent gap analysis found that
+  implementation pull requests. An independent gap analysis found that
   `asciidoctor-latexmath`, a released gem with Official and Buddy Ruby release
   units, selects only whole-project RSpec in CI: its registered release recipe
   uses the `ruby/rspec-v1` preset, so CI never builds, inspects or consumes the
-  gem its release unit declares, contrary to WD-CI-004. The repository owner
-  authorized one entry for this gap and the Ruby part of #1288.
+  gem its release unit declares, contrary to WD-CI-004. The same review found
+  that `hexo-renderer-asciidoc` keeps a bundle-only Ruby environment that no
+  script, test, CI or packaging step consumes (the package uses
+  `@asciidoctor/core`), and that it alone keeps the Ruby → Node fact transfer
+  and the `node-group` dependency on `ruby-group`. The repository owner
+  authorized one entry for both.
 - **Accepted inputs:** the Workflow Delivery
   [CI qualification requirements](../src/private/app/workflow-delivery/docs/requirements.md#ci-qualification)
-  (WD-CI-004 to WD-CI-006, WD-NFR-005 and WD-NFR-006), the
+  (WD-CI-004 to WD-CI-006), the
   [Ruby integration contract](../src/private/app/workflow-delivery/docs/integration/ruby.md),
   the Node [workflow and results contract](../src/private/app/workflow-delivery/docs/integration/node.md#workflow-runtime-variants-and-results),
+  the [Python integration contract](../src/private/app/workflow-delivery/docs/integration/python.md),
   the [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
   the [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md),
-  `.github/workflows/ci.yml` and Latexmath's committed
-  `workflow-delivery.quality.yml` and `workflow-delivery.release-unit.yml`.
+  `.github/workflows/ci.yml`, Latexmath's committed
+  `workflow-delivery.quality.yml` and `workflow-delivery.release-unit.yml`,
+  and the committed `src/public/lib/hexo-renderer-asciidoc/` configuration.
 - **Advancement and outcome:**
-    - **Gem artifact qualification:** a change that selects Latexmath plans,
-      besides its whole-project RSpec, the existing `ruby/gem-v1`,
-      `ruby/gem-contents-v1` and `ruby/gem-install-require-v1` checks for the
-      gem output its release unit declares, and the Ruby group executes them
-      through Latexmath's registered package operations rather than the smoke
-      gem's. These are native gem build, RubyGems metadata/content inspection
-      and a clean installed require of the built gem, equivalent to the
-      Release recipe's build and consumer obligations. A missing, failed or
-      cancelled gem check fails the group. Reuse the existing check kinds,
-      quality-selection YAML and release-unit registration; add no new policy
-      lifecycle, report format or package roster. The implementation may
-      change Latexmath's registered quality and release preset from
-      `ruby/rspec-v1` to a preset that also includes these gem checks, as
-      needed for the reader's preset-match invariant to hold; Release
-      dispatch and publication behavior stays unchanged. The smoke gem's
-      checks and Latexmath's RSpec obligations are unchanged.
-    - **Ruby plan/execute split:** split the `ruby-group` job into a planning
-      job, which uploads the Ruby facts the Node group consumes and the
-      original Ruby plan, and an execution job, which runs that plan without
-      replanning. The Node group waits only on Ruby planning. A failed,
-      missing or cancelled Ruby execution result must block merge through an
-      existing required check, such as the Validate aggregate or the
-      `node-tests` path; no new required check or ruleset change is
-      authorized. Update the Node and Ruby
-      integration contracts, the MLD job sequence view and the `tests/eng`
-      workflow tests in the same change.
+    - **Latexmath gem artifact qualification:** a change that selects
+      Latexmath plans, besides its whole-project RSpec, the existing
+      `ruby/gem-v1`, `ruby/gem-contents-v1` and `ruby/gem-install-require-v1`
+      checks for the gem output its release unit declares, and the Ruby group
+      executes them through Latexmath's registered package operations rather
+      than the smoke gem's. These are native gem build, RubyGems
+      metadata/content inspection and a clean installed require of the built
+      gem, equivalent to the Release recipe's build and consumer obligations.
+      A missing, failed or cancelled gem check fails the group. Reuse the
+      existing check kinds, quality-selection YAML and release-unit
+      registration; add no new policy lifecycle, report format or package
+      roster. The implementation may change Latexmath's registered quality and
+      release preset from `ruby/rspec-v1` to a preset that also includes these
+      gem checks, as needed for the reader's preset-match invariant to hold;
+      Release dispatch and publication behavior stays unchanged. The smoke
+      gem's checks and Latexmath's RSpec obligations are unchanged. The
+      outcome is accepted when a Latexmath source change selects and passes
+      all four Latexmath checks and a credential-free test shows a broken gem
+      package failing a gem check.
+    - **Hexo Ruby environment removal:** delete
+      `src/public/lib/hexo-renderer-asciidoc/Gemfile` and `Gemfile.lock`, the
+      `ruby` tool in its `.mise.toml` and the corresponding Ruby entries in its
+      `mise.lock`, and the `Gemfile.lock` exclusions in its `hk.pkl` and
+      `.nwa-config.yaml`. Leave its CHANGELOG history unchanged.
+    - **Ruby → Node fact transfer contraction:** remove the Ruby → Node
+      contribution (`RubyNodeContribution` and its `node-inputs.json`
+      artifact), the `RubyNodeInputConsumers` join, the Node caller's Ruby
+      input argument and the `node-group` dependency on `ruby-group`. A
+      failed, missing or cancelled Ruby group result must still block merge
+      through an existing required check, such as the Validate aggregate; no
+      new required check or ruleset change is authorized. A Ruby bundle that
+      no Ruby producer or quality-adopted owner claims fails planning instead
+      of gaining a cross-ecosystem consumer. Update the Ruby, Node and Python
+      integration contracts, the MLD and the tests that describe Hexo's
+      bundle-only Ruby responsibility in the same change. The outcome is
+      accepted when Hexo selection still follows its own directory ownership,
+      a PR selecting no Ruby work starts its Node group without waiting on
+      Ruby, a forced Ruby failure still blocks a required check, and Ruby
+      product planning and execution are otherwise unchanged.
 
-    The outcome is accepted when a Latexmath source change selects and passes
-    all four Latexmath checks, a credential-free test shows a broken gem
-    package failing a gem check, a change selecting no Ruby work prepares no
-    gems, and measured runs of a Latexmath-touching PR and an ordinary
-    no-Ruby PR show when Node starts relative to Ruby planning and execution
-    and the split's runner-minute cost.
-
-- **Ordering and gates:** land gem qualification before the split, so the
-  split is measured with the Ruby execution it overlaps. Follow the existing
-  Workflow Delivery engineering, OCR and record-system review gates;
-  independently classify material findings before repair. If measurement shows
-  the split gives no Node start benefit for Ruby-executing PRs, return the
-  tradeoff to the owner instead of merging it. Do not simulate gem checks
-  with RSpec or replace native gem build or install with file inspection.
+- **Ordering and gates:** the Hexo product deletion lands before or in an
+  earlier commit than the transfer contraction; Latexmath qualification is
+  independent of both. Follow the existing Workflow Delivery engineering, OCR
+  and record-system review gates; independently classify material findings
+  before repair. Do not simulate gem checks with RSpec or replace native gem
+  build or install with file inspection.
 - **Effects:** permit source and repository/GitHub inspection, documentation,
-  workflow and implementation changes, locked tool preparation, isolated local
-  builds and credential-free tests, independent delegated review, ordinary
-  PR/check operations and their normal CI, and closing #1288 when the split
-  is accepted.
-- **Exclusions:** no trim of the Source conformance job's tool installation
-  (the other #1288 candidate, which is HK conformance work, not Ruby CI); no
-  change to Ruby Release callers, destinations, release units or channels; no
-  release, dispatch, publication, credential, Environment or access change; no
-  reopening of completed Ruby campaigns; no other CI job, ecosystem group,
-  required-check or ruleset change. Delete this entry when the
-  outcome is accepted.
+  workflow, product configuration and implementation changes, locked tool
+  preparation, isolated local builds and credential-free tests, independent
+  delegated review, ordinary PR/check operations and their normal CI.
+- **Exclusions:** no Ruby plan/execute job split (Issue
+  [#1288](https://github.com/hcoona/three/issues/1288) remains deferred) and
+  no Source conformance tool trim; no change to Ruby support for Latexmath or
+  the Ruby smoke gem beyond the gem qualification above; no change to Hexo's
+  Node package, tests or release behavior; no change to Ruby Release callers,
+  destinations, release units or channels; no release, dispatch, publication,
+  credential, Environment or access change; no reopening of completed Ruby
+  campaigns; no other CI job, ecosystem group, required-check or ruleset
+  change. Delete this entry when the outcome is accepted.
