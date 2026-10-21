@@ -463,9 +463,12 @@ and `Pack,_GetOutputItemsFromPack` use those same dimensions; compare their nati
 package and assembly version projections. The outer build runs
 `GetBuildVersion` before Build or Pack, because it otherwise dispatches to inner
 builds without its own version projection. Native NBGV evaluates the selected ref,
-so a public-release ref yields a version without the commit suffix. Native
-reproducibility configuration remains authoritative. Inject neither frozen
-versions nor a package witness.
+so a public-release ref yields a version without the commit suffix. Its
+cloud-build variables are not consumed, so these MSBuild commands set
+`NBGV_SetCloudBuildVersionVars=false`; concurrent inner builds otherwise append
+to one scratch `GITHUB_ENV` file and can fail on its lock. Native reproducibility
+configuration remains authoritative. Inject neither frozen versions nor a
+package witness.
 
 Library contents require exactly one library group per declared framework, each
 with the assembly and its XML documentation, dependency groups only for declared

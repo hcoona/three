@@ -27,6 +27,8 @@ internal static class NuGetPreparation
     private static readonly string[] Dimensions = ["-property:Configuration=Release",
         "-property:TargetFramework=", "-property:RuntimeIdentifier=",
         "-property:ContinuousIntegrationBuild=true", "-property:RestoreLockedMode=true"];
+    internal const string SuppressCloudVariables =
+        "-property:NBGV_SetCloudBuildVersionVars=false";
 
     internal static Task<NuGetPreparationResult> PrepareAsync(NuGetPreparationRequest request,
         CancellationToken token) => PrepareAsync(request, NativeProcess.ExecuteAsync, token);
@@ -183,7 +185,9 @@ internal static class NuGetPreparation
                     dimension => dimension == "-property:TargetFramework=" ? dimension + framework
                         : dimension),
                 "-property:PathMap=" + ProjectCollection.Escape(checkout + "=/_/"),
-                .. (extra ?? [])], 300,
+                // Concurrent inner builds would each append NBGV's discarded cloud-build
+                // variables to the one GITHUB_ENV file and can collide on its lock.
+                SuppressCloudVariables, .. (extra ?? [])], 300,
             environment, false);
 
         async Task<Dictionary<string, string>> ProjectionAsync(string check, string target)
