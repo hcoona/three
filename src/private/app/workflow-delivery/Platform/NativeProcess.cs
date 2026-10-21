@@ -131,7 +131,8 @@ internal static class NativeProcess
     }
 
     internal static async Task<string> RunAsync(string executable, string directory,
-        string[] arguments, CancellationToken cancellationToken)
+        string[] arguments, CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -149,6 +150,8 @@ internal static class NativeProcess
         };
         foreach (string argument in arguments)
             process.StartInfo.ArgumentList.Add(argument);
+        foreach ((string name, string value) in environment ?? new Dictionary<string, string>())
+            process.StartInfo.Environment[name] = value;
         try
         {
             if (!process.Start())
