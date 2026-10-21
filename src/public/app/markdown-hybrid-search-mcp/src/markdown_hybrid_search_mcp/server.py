@@ -3,3 +3,4 @@
 Note: This module is a placeholder. The indexing and retrieval implementation
 will be added in a later change.
 """
+# CI cost probe sample 1 for #1289.
