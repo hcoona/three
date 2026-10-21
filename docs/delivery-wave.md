@@ -223,6 +223,37 @@ ends a grant. Git and the proposing PR retain the reason and history.
   classes; no release, dispatch, publication,
   credential or access change. Delete this entry when the outcome is accepted.
 
+### Give the Git blame ignore list CI scope responsibility
+
+- **Work carrier:** the pull request proposing this entry and one linked
+  implementation pull request, PR
+  [#1368](https://github.com/hcoona/three/pull/1368), which adds root
+  `.git-blame-ignore-revs` and failed CI scope selection with
+  `Unresolved endpoint responsibility: .git-blame-ignore-revs`; the repository
+  owner approved a bounded fix through a Wave entry.
+- **Accepted inputs:** the Workflow Delivery
+  [endpoint responsibility contract](../src/private/app/workflow-delivery/docs/integration/node.md#endpoint-responsibility-and-selection),
+  the [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md)
+  and root `.git-blame-ignore-revs`.
+- **Advancement and outcome:** CI scope selection gives a present changed root
+  `.git-blame-ignore-revs` (that exact path only) owner `github` with the path
+  itself as target and rule `native-git-blame-ignore-revs`, because GitHub
+  blame reads this file natively; this mirrors `.github/CODEOWNERS`. The reason
+  selects no retained job, and deleted coordinates keep confirmed absence.
+  Update the owning integration contract and tests in the same change. The
+  outcome is accepted when #1368 passes scope selection and merges.
+- **Ordering and gates:** follow the existing Workflow Delivery engineering,
+  OCR and record-system review gates. Independently classify material findings
+  before repair. Do not add a blanket fallback owner or infer responsibility
+  from directory names.
+- **Effects:** permit source and repository/GitHub inspection, documentation
+  and implementation changes, locked tool preparation, isolated local builds
+  and credential-free tests, independent delegated review, ordinary PR/check
+  operations and their normal CI.
+- **Exclusions:** no responsibility for other path classes; no retained-job
+  selection from this reason; no release, dispatch, publication, credential or
+  access change. Delete this entry when the outcome is accepted.
+
 ### Retire the legacy v1 release workflow stack
 
 - **Work carrier:** the pull request proposing this entry and one linked
