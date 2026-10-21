@@ -309,9 +309,13 @@ rows (real preparation, original package and clean consumer): two smoke rows and
 one row per registered library. Each row carries a `NuGetUnit:<unit>` category.
 Scope selection attributes a preparation input inside exactly one registered
 unit's roots (its project directory, the smoke fixture product, or Memoization's
-generator) to that unit. Any Workflow Delivery source or test change (except the
-inert control `docs/` subtree and `README.md`), inherited .NET input, shared CI
-input or explicit full validation selects every unit. The scope job emits the
+generator) to that unit, including an inherited input such as its `version.json`.
+A change under another fixture product selects only the smoke unit, and only
+when the smoke fixture consumes it. Any other consumed preparation input selects
+every unit. This covers Workflow Delivery source, and Workflow Delivery tests
+outside the fixture products, except the inert control `docs/` subtree and
+`README.md`. It also covers inherited .NET and shared CI inputs outside any
+single unit's roots, and explicit full validation. The scope job emits the
 native MTP filter, which always requires the `NuGetNativePreparation` category,
 and the exact selected row count; the job passes them to `--filter` and
 `--minimum-expected-tests`. Validate requires its result. Same-input .NET
