@@ -291,3 +291,5 @@ namespace IO.Github.Hcoona.Collections
         }
     }
 }
+
+// CI cost probe 1 after #1380.
