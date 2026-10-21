@@ -358,24 +358,29 @@ public sealed class RubyFactsAssemblerTests
     }
 
     [TestMethod]
-    public void BundleOnlyInputsRemainKnownWithoutInventingARubyQualityOwner()
+    public void UnclaimedBundleFailsPlanningUnlessTheCandidateRemovesIt()
     {
-        RubyFactsEndpoint endpoint = Endpoint("candidate", [], [],
-            "node/Gemfile", "node/Gemfile.lock");
-        endpoint = endpoint with
+        RubyFactsEndpoint Unclaimed(string revision)
         {
-            Native = endpoint.Native with
+            RubyFactsEndpoint endpoint = Endpoint(revision, [], [],
+                "node/Gemfile", "node/Gemfile.lock");
+            return endpoint with
             {
-                Graph = new([],
-            [new("node/Gemfile", "node", ["node/Gemfile", "node/Gemfile.lock"], [])])
-            }
-        };
-        RubyFactAssembly assembly = RubyFactsAssembler.Assemble(endpoint, endpoint,
-            ["node/Gemfile"], false);
-        Assert.IsEmpty(assembly.Request.Candidate.Projects);
+                Native = endpoint.Native with
+                {
+                    Graph = new([],
+                [new("node/Gemfile", "node", ["node/Gemfile", "node/Gemfile.lock"], [])])
+                }
+            };
+        }
+        Assert.ThrowsExactly<InvalidDataException>(() => RubyFactsAssembler.Assemble(
+            Endpoint("basis", [], []), Unclaimed("candidate"), [], false));
+        RubyFactAssembly assembly = RubyFactsAssembler.Assemble(Unclaimed("basis"),
+            Endpoint("candidate", [], []), ["node/Gemfile"], false);
         Assert.IsEmpty(Plan(assembly).Checks);
         Assert.IsEmpty(assembly.PairedReasons);
-        Assert.AreEqual("node/Gemfile.lock", endpoint.Native.Graph.Bundles[0].Inputs[1]);
+        Assert.AreEqual("node/Gemfile",
+            Assert.ContainsSingle(assembly.Request.Basis.UnaffectedPaths));
     }
 
     [TestMethod]

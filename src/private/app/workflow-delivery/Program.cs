@@ -318,7 +318,6 @@ internal static class Program
 [JsonSerializable(typeof(PythonCiCallerContext))]
 [JsonSerializable(typeof(RubyCiCallerContext))]
 [JsonSerializable(typeof(NodeCiCallerContext))]
-[JsonSerializable(typeof(RubyNodeContribution))]
 [JsonSerializable(typeof(PythonCiCallerReadback))]
 [JsonSerializable(typeof(RubyCiCallerReadback))]
 [JsonSerializable(typeof(GithubNpmToolSelection))]

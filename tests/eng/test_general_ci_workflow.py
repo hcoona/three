@@ -393,10 +393,9 @@ def test_required_general_ci_checks_remain_eligible(
                     "nuget-native-preparation",
                     "github-release-native-preparation",
                     "native-preparation-tests",
+                    "ruby-group",
                 ]
                 if key == "validation"
-                else ["scope", "ruby-group"]
-                if key == "node-group"
                 else ["scope", "node-group"]
                 if key == "node-tests"
                 else "scope"
@@ -615,9 +614,10 @@ def test_node_group_requires_received_immutable_scope(
 ):
     """Group always plans and consumes the actual scope upload identity."""
     job = workflow["jobs"]["node-group"]
-    assert job["needs"] == ["scope", "ruby-group"]
+    assert job["needs"] == "scope"
     assert job["if"] == "${{ !cancelled() }}"
     assert "needs.scope.outputs.node" not in json.dumps(job)
+    assert "ruby" not in json.dumps(job).lower()
     upload = _action(workflow["jobs"]["scope"], "actions/upload-artifact")
     assert upload["id"] == "retain"
     assert workflow["jobs"]["scope"]["outputs"]["artifact_id"] == (
@@ -639,8 +639,6 @@ def test_node_group_requires_received_immutable_scope(
         bindings={
             "needs.scope.result": selection,
             "needs.scope.outputs.artifact_id": artifact,
-            "needs.ruby-group.result": "success",
-            "needs.ruby-group.outputs.node_artifact_id": "1154",
         },
         workflow=workflow,
         job=job,
@@ -1135,6 +1133,7 @@ def test_required_validate_rejects_missing_or_failed_consumers(
         "nuget-native-preparation",
         "github-release-native-preparation",
         "native-preparation-tests",
+        "ruby-group",
     ]
     assert job["if"] == "always()"
     step = job["steps"][0]
@@ -1146,6 +1145,7 @@ def test_required_validate_rejects_missing_or_failed_consumers(
         "needs.nuget-native-preparation.result": "success",
         "needs.github-release-native-preparation.result": "success",
         "needs.native-preparation-tests.result": "success",
+        "needs.ruby-group.result": "success",
     }
     scenarios = [successful]
     for dependency in (
@@ -1154,6 +1154,7 @@ def test_required_validate_rejects_missing_or_failed_consumers(
         "nuget-native-preparation",
         "github-release-native-preparation",
         "native-preparation-tests",
+        "ruby-group",
     ):
         for result in ("failure", "cancelled", "skipped", ""):
             scenarios.append(
@@ -1379,6 +1380,7 @@ def test_native_ruby_transfers_original_control_and_complete_plan(workflow):
     """One receiver and plan feed the sole native Ruby PR owner."""
     job = workflow["jobs"]["ruby-group"]
     assert job["needs"] == "scope"
+    assert "outputs" not in job
     assert job["permissions"] == {"contents": "read", "actions": "read"}
     assert "environment" not in job
     runs = [step["run"] for step in job["steps"] if "run" in step]
@@ -1418,69 +1420,6 @@ def test_native_ruby_retains_failed_outcomes_and_uses_native_runtime(workflow):
     assert "*.json" in retained["with"]["path"]
     assert "*.stderr" in retained["with"]["path"]
     assert job["steps"][-1]["if"] == "cancelled()"
-
-
-@pytest.mark.parametrize(
-    ("ruby_result", "artifact", "succeeds"),
-    [
-        ("success", "19", True),
-        ("failure", "19", False),
-        ("skipped", "19", False),
-        ("success", "", False),
-        ("success", "0", False),
-    ],
-)
-def test_node_receives_only_successful_original_ruby_artifact(
-    workflow, tmp_path, ruby_result, artifact, succeeds
-):
-    """Require original Ruby facts before Node product execution."""
-    ruby = workflow["jobs"]["ruby-group"]
-    node = workflow["jobs"]["node-group"]
-    transfer = next(
-        step for step in ruby["steps"] if step.get("id") == "node-facts"
-    )
-    assert transfer.get("if", "success()") == "success()"
-    assert transfer["with"] == {
-        "name": "ruby-node-inputs",
-        "path": "${{ runner.temp }}/ruby-group/node-inputs.json",
-        "if-no-files-found": "error",
-        "retention-days": 7,
-    }
-    assert (
-        ruby["outputs"]["node_artifact_id"]
-        == "${{ steps.node-facts.outputs.artifact-id }}"
-    )
-    receive = next(
-        step
-        for step in node["steps"]
-        if step.get("with", {}).get("path") == "artifacts/node-ruby"
-    )
-    assert (
-        receive["with"]["artifact-ids"]
-        == "${{ needs.ruby-group.outputs.node_artifact_id }}"
-    )
-    assert "name" not in receive["with"]
-    assert "pattern" not in receive["with"]
-    entry = next(
-        step["run"] for step in node["steps"] if step.get("id") == "execute"
-    )
-    assert '"$GITHUB_WORKSPACE/artifacts/node-ruby/node-inputs.json"' in entry
-    assert "caller-artifact" not in entry
-    assert "run_ruby_ci_group.py" not in json.dumps(node)
-    result = run_step(
-        node["steps"][0],
-        cwd=tmp_path,
-        env={},
-        bindings={
-            "needs.scope.result": "success",
-            "needs.scope.outputs.artifact_id": "17",
-            "needs.ruby-group.result": ruby_result,
-            "needs.ruby-group.outputs.node_artifact_id": artifact,
-        },
-        workflow=workflow,
-        job=node,
-    )
-    assert (result.returncode == 0) is succeeds
 
 
 def test_retained_node_uses_committed_pnpm_without_ruby(workflow):

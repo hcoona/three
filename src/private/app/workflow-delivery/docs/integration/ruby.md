@@ -38,8 +38,10 @@ library compatibility layer.
 Join native local Path source identity and active local Git override identity to
 repository producers by their original source paths. Installed cache locations
 and names alone cannot establish these relations. Preserve native transitive
-edges and cross-ecosystem bundle consumers. A bundle-only consumer does not gain
-an invented gemspec or package identity. Missing required local owners, native
+edges. A bundle-only consumer does not gain an invented gemspec or package
+identity. Every candidate bundle must be claimed by a Ruby producer or a
+quality-adopted owner; an unclaimed bundle fails planning instead of gaining a
+cross-ecosystem consumer. Missing required local owners, native
 incomplete dependency answers, or an unsupported relevant source shape fail
 collection instead of choosing full mode or maintaining a second input roster.
 
@@ -70,8 +72,7 @@ in its source-local `workflow-delivery.quality.yml`, preserving its required sui
 and external tools. Check registration, the adopted preset and actual selection
 remain prerequisites for planning and caller qualification. Structural discovery does not supply a default
 quality selection. The smoke gem retains its separate content/clean-require
-preset; Hexo remains a bundle-only dependency consumer without an invented Ruby
-package or check owner.
+preset.
 
 An explicitly quality-adopted bundle-only RSpec carrier can own a native suite
 without a synthetic gemspec or publishable unit. The Ruby helper carrier consumes
@@ -109,8 +110,7 @@ C# consumes structured answers and does not implement Gemfile/lock syntax,
 version resolution or group/platform selection.
 
 The current source gem consumers are `asciidoctor-latexmath` and the adopted
-Ruby smoke gem; Hexo separately consumes a bundle environment without its own
-gemspec. Latexmath's Gemfile does not load its source gemspec, whose project-owned
+Ruby smoke gem. Latexmath's Gemfile does not load its source gemspec, whose project-owned
 version projection invokes NBGV. Its gemspec file list omits tests. Preserve these
 separate producer/check/input responsibilities; no generated package roster or
 package-file-based RSpec selection is justified. Quality adoption fits the
@@ -119,16 +119,14 @@ existing YAML preset composition rather than a new policy lifecycle.
 The required `ruby/project-rspec-v1` check and `ruby/rspec-v1` preset use
 Latexmath's source-local quality selection. This explicitly adopts the existing whole-project RSpec
 obligation; it does not strengthen its policy or infer quality from directory
-structure. Retain the smoke gem's separate adopted distribution checks and Hexo's
-bundle-only input responsibility. The native recipe and actual YAML selection
+structure. Retain the smoke gem's separate adopted distribution checks. The native recipe and actual YAML selection
 change with their corresponding reader, executor and caller.
 
 Public Bundler source exposes native evaluated Gemfile inputs and dependency
 closure, but the two committed locks select different versions and public method
 shapes. Native Path source and active local Git override identity also differ.
 Qualify the exact activated interfaces, frozen input invariance, nested Gemfiles,
-direct/transitive local sources, removed/missing owners and existing cross-group
-consumers when changing the dependent integration. Do not call private APIs, copy native
+direct/transitive local sources and removed/missing owners when changing the dependent integration. Do not call private APIs, copy native
 selection logic or replace a missing answer with installed-name/path inference.
 Unbounded relevant dynamic Ruby inputs remain unsupported.
 
@@ -142,8 +140,9 @@ when the source has no Gemfile/spec directory.
 The complete native Ruby group qualified combined planning, preparation,
 execution and original result transfer in ordinary [PR #1123](https://github.com/hcoona/three/pull/1123) CI.
 Root `ruby-group` now owns PR checks; the duplicate root job and shadow PR
-workflow are retired with the fixture relocation. Node receives the original
-paired Ruby facts from the same successful native group. Manual Release uses its
+workflow are retired with the fixture relocation. Ruby's group result gates merge
+through the existing required Validate aggregate; Ruby transfers no facts to
+another ecosystem group. Manual Release uses its
 ordinary caller; historical readers use their pinned producers. Public source establishes interface candidates,
 not current native qualification; source findings and bounded validation limits
 must be accepted before observations. Further work requires the current Wave

@@ -129,7 +129,7 @@ jobs:
   validation:
     name: Validate
     runs-on: ubuntu-latest
-    needs: [conformance, scholarly-tests, nuget-native-preparation, github-release-native-preparation, native-preparation-tests]
+    needs: [conformance, scholarly-tests, nuget-native-preparation, github-release-native-preparation, native-preparation-tests, ruby-group]
     if: always()
     steps:
       - name: Require complete validation results
@@ -140,9 +140,10 @@ jobs:
           NUGET_PREPARATION_RESULT: ${{ needs.nuget-native-preparation.result }}
           GITHUB_RELEASE_PREPARATION_RESULT: ${{ needs.github-release-native-preparation.result }}
           PREPARATION_RESULT: ${{ needs.native-preparation-tests.result }}
+          RUBY_RESULT: ${{ needs.ruby-group.result }}
         run: |
-          if [[ "$CONFORMANCE_RESULT" != 'success' || "$SCHOLARLY_RESULT" != 'success' || "$NUGET_PREPARATION_RESULT" != 'success' || "$GITHUB_RELEASE_PREPARATION_RESULT" != 'success' || "$PREPARATION_RESULT" != 'success' ]]; then
-            echo "Required validation did not complete: source=$CONFORMANCE_RESULT, scholarly=$SCHOLARLY_RESULT, nuget=$NUGET_PREPARATION_RESULT, github-release=$GITHUB_RELEASE_PREPARATION_RESULT, preparation=$PREPARATION_RESULT." >&2
+          if [[ "$CONFORMANCE_RESULT" != 'success' || "$SCHOLARLY_RESULT" != 'success' || "$NUGET_PREPARATION_RESULT" != 'success' || "$GITHUB_RELEASE_PREPARATION_RESULT" != 'success' || "$PREPARATION_RESULT" != 'success' || "$RUBY_RESULT" != 'success' ]]; then
+            echo "Required validation did not complete: source=$CONFORMANCE_RESULT, scholarly=$SCHOLARLY_RESULT, nuget=$NUGET_PREPARATION_RESULT, github-release=$GITHUB_RELEASE_PREPARATION_RESULT, preparation=$PREPARATION_RESULT, ruby=$RUBY_RESULT." >&2
             exit 1
           fi
       - name: Reject canceled validation
@@ -538,7 +539,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MISE_EXEC_AUTO_INSTALL: '0'
-    needs: [scope, ruby-group]
+    needs: scope
     if: ${{ !cancelled() }}
     permissions:
       contents: read
@@ -552,12 +553,8 @@ jobs:
         env:
           SELECTION_RESULT: ${{ needs.scope.result }}
           SCOPE_ARTIFACT_ID: ${{ needs.scope.outputs.artifact_id }}
-          RUBY_RESULT: ${{ needs.ruby-group.result }}
-          RUBY_ARTIFACT_ID: ${{ needs.ruby-group.outputs.node_artifact_id }}
         run: |
           test "$SELECTION_RESULT" = success
-          test "$RUBY_RESULT" = success
-          [[ "$RUBY_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$SCOPE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
       - name: Checkout tested candidate
         uses: actions/checkout@v7
@@ -576,12 +573,6 @@ jobs:
         with:
           artifact-ids: ${{ needs.scope.outputs.artifact_id }}
           path: artifacts/node-scope
-          merge-multiple: true
-      - name: Receive exact original Ruby facts
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          artifact-ids: ${{ needs.ruby-group.outputs.node_artifact_id }}
-          path: artifacts/node-ruby
           merge-multiple: true
       - name: Receive complete candidate control
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -612,8 +603,7 @@ jobs:
               fi
             )
           done
-          dotnet "$control" ci caller-node plan "$state" "$scope" \
-            "$GITHUB_WORKSPACE/artifacts/node-ruby/node-inputs.json"
+          dotnet "$control" ci caller-node plan "$state" "$scope"
           status=0
           if [[ $(jq '.adopted.checks|length' "$state/group-plan.json") -gt 0 ]]; then
             while IFS= read -r runtime; do
@@ -1103,8 +1093,6 @@ jobs:
     permissions:
       contents: read
       actions: read
-    outputs:
-      node_artifact_id: ${{ steps.node-facts.outputs.artifact-id }}
     defaults:
       run:
         shell: bash
@@ -1206,14 +1194,6 @@ jobs:
 
       - name: Execute and collect every original selected check
         run: dotnet "$RUNNER_TEMP/ruby-control/control/WorkflowDelivery.dll" ci caller-ruby execute "$RUNNER_TEMP/ruby-group"
-      - name: Transfer original Ruby facts to Node planning
-        id: node-facts
-        uses: actions/upload-artifact@v7
-        with:
-          name: ruby-node-inputs
-          path: ${{ runner.temp }}/ruby-group/node-inputs.json
-          if-no-files-found: error
-          retention-days: 7
       - name: Retain native planning, execution and collection outcomes
         if: always()
         uses: actions/upload-artifact@v7

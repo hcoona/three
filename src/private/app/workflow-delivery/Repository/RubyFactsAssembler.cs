@@ -15,6 +15,13 @@ internal static class RubyFactsAssembler
         RubyFactsEndpoint candidate, string[] changedPaths, bool full)
     {
         RepositoryFacts before = Validate(basis), after = Validate(candidate);
+        // Only the candidate must claim each bundle, so a basis bundle can still be removed.
+        if (candidate.Native.Graph.Bundles.Any(bundle =>
+                !NativeDirectories(candidate).Contains(bundle.Directory, StringComparer.Ordinal) &&
+                !candidate.Owners.Any(owner => Governs(owner.Directory, bundle.Directory,
+                    NativeDirectories(candidate)))))
+            throw new InvalidDataException(
+                "A Ruby bundle has no Ruby producer or quality owner.");
         if (changedPaths.Distinct(StringComparer.Ordinal).Count() != changedPaths.Length)
             throw new InvalidDataException("Duplicate Ruby changed coordinate.");
         var downstream = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);

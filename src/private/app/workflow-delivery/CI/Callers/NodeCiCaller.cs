@@ -26,7 +26,7 @@ internal static class NodeCiCaller
     }
 
     internal static async Task<NodeGroupReadback> PlanAsync(string directory, string scopePath,
-        string? rubyInputs, CancellationToken token)
+        CancellationToken token)
     {
         NodeCiCallerContext context = Context(directory);
         GitRevision before = await new
@@ -39,10 +39,7 @@ internal static class NodeCiCaller
             Path.Combine(directory, name + "-control-request.json"),
             Path.Combine(directory, name + "-control-graph.json"), 900);
         var request = new NodeGroupRequest(context.Basis, context.Candidate, context.Full,
-            scopePath,
-            OwnerPresent(before) ? files("basis") : null, files("candidate"), rubyInputs is null
-                ? null :
-                CiCallerTransfer.Read(rubyInputs, TransferJson.Default.RubyNodeContribution));
+            scopePath, OwnerPresent(before) ? files("basis") : null, files("candidate"));
         CiCallerTransfer.Write(Path.Combine(directory, "planning-request.json"), request,
             TransferJson.Default.NodeGroupRequest);
         NodeGroupReadback group = await NodeGroupReader.ReadAsync(request, token);

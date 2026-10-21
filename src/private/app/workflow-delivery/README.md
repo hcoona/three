@@ -42,7 +42,7 @@ artifact, ambient fallback or second dependency declaration.
 | `ci native-preparation-plan`                                                        | Select the original Linux managed preparation scenarios                                           |
 | `ci plan`, `ci plan-node`, `ci plan-node-group`                                     | Select declared work from native paired facts and reasons                                         |
 | `ci prepare-python-group`, `ci plan-python-group`, `ci run-python-group`            | Prepare, select and execute the original Python plan                                              |
-| `ci prepare-ruby-group`, `ci plan-ruby-group`, `ci run-ruby-group`                  | Prepare, select and execute Ruby checks and transfer native Node contributions                    |
+| `ci prepare-ruby-group`, `ci plan-ruby-group`, `ci run-ruby-group`                  | Prepare, select and execute Ruby checks                                                           |
 | `ci run-dotnet`                                                                     | Execute native managed work                                                                       |
 | `ci run-node`, `ci run-python-package`, `ci result`                                 | Execute selected work or collect its candidate-bound results                                      |
 | `release prepare-*`, destination observation/description                            | Independently qualify originals and describe exact, absent, partial, conflicting or unknown state |
@@ -111,9 +111,7 @@ concurrency. The application supplies no general graph scheduler or cache layer.
 The supported PNPM CLI supplies workspace and resolved dependency facts. Source
 projects and publish directories retain their distinct identities; Workflow
 combines native endpoint facts without parsing or resolving dependencies itself.
-Root CI runs the adopted package and selected retained Node matrix. Ruby's
-successful same-run typed contribution is received once by Node, with no native
-recollection or parallel declaration. Planning needs synchronized frozen native
+Root CI runs the adopted package and selected retained Node matrix. Planning needs synchronized frozen native
 locks and tool preparation, without endpoint product installation. Execution
 installs selected product dependencies. The existing workflow matrix and native
 mise selection own runtime variants and the configured packaging context.
