@@ -93,7 +93,9 @@ internal static class DotNetGraph
                 producers.Validate(helper.ProjectInstance, reason => Unavailable(
                     identities[consumer], "RepositoryTarget", reason));
             }
-        DotNetGraphNode[] nodes = retained.Select(node =>
+        Func<string[]>[] owned = ownership.Read(retained.Select(node =>
+            node.ProjectInstance).ToArray());
+        DotNetGraphNode[] nodes = retained.Select((node, index) =>
         {
             ProjectInstance project = node.ProjectInstance;
             producers.Validate(project, reason => Unavailable(identities[node],
@@ -107,7 +109,7 @@ internal static class DotNetGraph
                     project.GetPropertyValue("TargetFramework"),
                     project.GetPropertyValue("RuntimeIdentifier")),
                 project.GetPropertyValue("TargetFrameworks"),
-                project.GetPropertyValue("RuntimeIdentifiers"), ownership.Read(project),
+                project.GetPropertyValue("RuntimeIdentifiers"), owned[index](),
                 TestCapability(project, identities[node]), VersionBase(project));
         }).ToArray();
         DotNetGraphEdge[] edges = retained.SelectMany(node =>
