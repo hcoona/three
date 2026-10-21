@@ -822,20 +822,19 @@ def test_scope_prepares_exact_native_endpoints_from_native_line_records(
         commands = [
             row["command"] for row in native if row["cwd"] == str(endpoint)
         ]
-        assert commands[:2] == [
-            ["mise", "install", "--locked", "dotnet", "node", "pnpm", "pkl"],
-            [
-                "mise",
-                "exec",
-                "--locked",
-                "dotnet",
-                "--",
-                "dotnet",
-                "tool",
-                "restore",
-            ],
+        assert commands[0] == [
+            "mise",
+            "install",
+            "--locked",
+            "dotnet",
+            "node",
+            "pnpm",
+            "pkl",
         ]
-        assert commands[2][:8] == [
+        assert ["dotnet", "tool", "restore"] not in [
+            command[-3:] for command in commands
+        ]
+        assert commands[1][:8] == [
             "mise",
             "exec",
             "--locked",
@@ -845,7 +844,7 @@ def test_scope_prepares_exact_native_endpoints_from_native_line_records(
             "restore",
             "dirs.proj",
         ]
-        assert "-property:RestoreLockedMode=true" in commands[2]
+        assert "-property:RestoreLockedMode=true" in commands[1]
     assert observations[-1]["command"][2:5] == [
         "ci",
         "caller-dotnet",
@@ -858,19 +857,9 @@ def test_scope_prepares_exact_native_endpoints_from_native_line_records(
     "failed_command",
     [
         ["mise", "install"],
-        [
-            "mise",
-            "exec",
-            "--locked",
-            "dotnet",
-            "--",
-            "dotnet",
-            "tool",
-            "restore",
-        ],
         ["mise", "exec", "--locked", "dotnet", "--", "dotnet", "restore"],
     ],
-    ids=["install", "tool-restore", "graph-restore"],
+    ids=["install", "graph-restore"],
 )
 def test_scope_endpoint_native_failure_blocks_dependent_preparation(
     workflow: dict[str, Any],
