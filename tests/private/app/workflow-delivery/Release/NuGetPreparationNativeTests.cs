@@ -34,14 +34,22 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
         ReleaseSubject subject = result.Prepared.Subject;
         Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(new
         {
-            Errors = result.Errors, Revision = revision, SelectedRef = selectedRef,
+            Errors = result.Errors,
+            Revision = revision,
+            SelectedRef = selectedRef,
             FailedCommands = result.Commands.Where(command => !command.Result.Succeeded)
                 .Select(command => new
                 {
-                    command.Check, command.Command.Executable, command.Command.Arguments,
-                    command.Command.DeadlineSeconds, command.Result.Termination,
-                    command.Result.ExitCode, command.Result.DurationSeconds,
-                    command.Result.Error, command.Result.Stdout, command.Result.Stderr,
+                    command.Check,
+                    command.Command.Executable,
+                    command.Command.Arguments,
+                    command.Command.DeadlineSeconds,
+                    command.Result.Termination,
+                    command.Result.ExitCode,
+                    command.Result.DurationSeconds,
+                    command.Result.Error,
+                    command.Result.Stdout,
+                    command.Result.Stderr,
                 }),
         }));
         ReleaseCompletion.Validate(result.Prepared);
@@ -415,25 +423,33 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                             arguments = [.. arguments, "-property:RestoreConfigFile=" +
                                 ProjectCollection.Escape(config), "-property:NuGetAudit=false"];
                     }
-                    NativeCommand actual = WithBinlog(command with { Arguments = arguments,
-                        Environment = environment }, scratch, commands.Count);
+                    NativeCommand actual = WithBinlog(command with
+                    {
+                        Arguments = arguments,
+                        Environment = environment
+                    }, scratch, commands.Count);
                     NativeCommandResult outcome =
                         await NativeProcess.ExecuteAsync(actual, cancellation);
                     commands.Add(new("preparation", actual, outcome));
                     return outcome;
                 }, token);
             ReleaseCommand[] executed = result.Commands.Select((command, offset) => command with
-                { Command = commands[firstCommand + offset].Command }).ToArray();
+            { Command = commands[firstCommand + offset].Command }).ToArray();
             Attach("preparation-" + index + ".json", result);
             Attach("executed-preparation-" + index + ".json", executed);
             Attach("inputs-" + index + ".json", new
             {
-                SourceRoot = source, Checkout = checkout, Scratch = scratch, Cache = cache,
-                Subject = subject, SourceSha256 = sourceHash,
+                SourceRoot = source,
+                Checkout = checkout,
+                Scratch = scratch,
+                Cache = cache,
+                Subject = subject,
+                SourceSha256 = sourceHash,
                 SourceMtime = File.GetLastWriteTimeUtc(smoke),
                 TimestampOverride = timestamp,
                 SourceDateEpoch = timestamp is null ? null : "315532802",
-                NativeDefaultTimestamp = "315532800", DerivedCommit = changeSource,
+                NativeDefaultTimestamp = "315532800",
+                DerivedCommit = changeSource,
                 SourceInputs = RootInputs.Select(name => Path.Combine(checkout, name))
                     .Concat(Directory.EnumerateFiles(Path.Combine(checkout, Product)))
                     .Where(File.Exists).Select(path => new
@@ -463,9 +479,12 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             Attach("pdb-documents-" + index + ".json", metadata.Documents.Select(handle =>
             {
                 Document document = metadata.GetDocument(handle);
-                return new { Name = metadata.GetString(document.Name),
+                return new
+                {
+                    Name = metadata.GetString(document.Name),
                     Algorithm = metadata.GetGuid(document.HashAlgorithm),
-                    Hash = Convert.ToHexStringLower(metadata.GetBlobBytes(document.Hash)) };
+                    Hash = Convert.ToHexStringLower(metadata.GetBlobBytes(document.Hash))
+                };
             }).ToArray());
             Attach("paths-" + index + ".json", paths);
             Assert.IsNotEmpty(documents);
@@ -513,9 +532,13 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                     Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
                     File.Copy(file, destination);
                     if (file.EndsWith(".nupkg", StringComparison.Ordinal))
-                        inputs.Add(new { Path = file, OwnedPath = destination,
+                        inputs.Add(new
+                        {
+                            Path = file,
+                            OwnedPath = destination,
                             Bytes = new FileInfo(file).Length,
-                            Sha256 = DotNetPackageArchive.Digest(file) });
+                            Sha256 = DotNetPackageArchive.Digest(file)
+                        });
                 }
             }
             Attach(Path.GetFileName(cache) + "-tools.json", inputs);
@@ -532,8 +555,10 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
 
         internal static NativeCommand WithBinlog(NativeCommand command, string directory, int index)
             => command.Arguments[0] is "msbuild" or "restore" ? command with
-            { Arguments = [.. command.Arguments, "-binaryLogger:" + Path.Combine(directory,
-                "native-" + index + ".binlog")] } : command;
+            {
+                Arguments = [.. command.Arguments, "-binaryLogger:" + Path.Combine(directory,
+                "native-" + index + ".binlog")]
+            } : command;
 
         internal string Attach<T>(string name, T value)
         {
@@ -636,16 +661,19 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                     """);
             else if (uri.AbsolutePath.EndsWith(".nupkg", StringComparison.Ordinal))
                 response = new(original is null ? HttpStatusCode.NotFound : HttpStatusCode.OK)
-                    { Content = new ByteArrayContent(original ?? []) };
+                { Content = new ByteArrayContent(original ?? []) };
             else if (uri.AbsolutePath.EndsWith("/index.json", StringComparison.Ordinal))
-                response = Json(JsonSerializer.Serialize(new { versions = original is null ?
-                    Array.Empty<string>() : new[] { version } }));
+                response = Json(JsonSerializer.Serialize(new
+                {
+                    versions = original is null ?
+                    Array.Empty<string>() : new[] { version }
+                }));
             else throw new AssertFailedException("Unexpected controlled read: " + uri);
             response.RequestMessage = request;
             return Task.FromResult(response);
         }
 
         private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK)
-            { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+        { Content = new StringContent(body, Encoding.UTF8, "application/json") };
     }
 }

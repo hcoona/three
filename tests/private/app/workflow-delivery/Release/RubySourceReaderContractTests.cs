@@ -227,8 +227,13 @@ public sealed class RubySourceReaderContractTests(TestContext context)
                 "cache")).FullName, $"{Name}-{version}.gem"), cached);
             string request = Path.Combine(scratch, "request.json");
             File.WriteAllText(request, System.Text.Json.JsonSerializer.Serialize(new Dictionary<
-                string, string> { ["host"] = selected, ["name"] = Name, ["version"] = version,
-                    ["directory"] = download }));
+                string, string>
+            {
+                ["host"] = selected,
+                ["name"] = Name,
+                ["version"] = version,
+                ["directory"] = download
+            }));
             var environment = Isolated("native-" + Path.GetFileName(scratch));
             NativeCommandResult result = await NativeProcess.ExecuteAsync(new(ruby, scratch,
                 ["-r", Path.Combine(Seams, "loopback_source.rb"), Path.Combine(
@@ -352,8 +357,12 @@ public sealed class RubySourceReaderContractTests(TestContext context)
                                 StringComparison.Ordinal) && File.Exists(file)
                                 ? (200, await File.ReadAllBytesAsync(file, stop.Token))
                                 : (404, Encoding.UTF8.GetBytes("not found"));
-                        string reason = status switch { 200 => "OK", 404 => "Not Found",
-                            _ => "Internal Server Error" };
+                        string reason = status switch
+                        {
+                            200 => "OK",
+                            404 => "Not Found",
+                            _ => "Internal Server Error"
+                        };
                         await secure.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 " + status +
                             " " + reason + "\r\nContent-Length: " + body.Length + "\r\n\r\n"),
                             stop.Token);
@@ -362,7 +371,8 @@ public sealed class RubySourceReaderContractTests(TestContext context)
                 }
                 catch (Exception error) when (error is IOException or
                     OperationCanceledException or System.Security.Authentication
-                        .AuthenticationException) { }
+                        .AuthenticationException)
+                { }
             }
         }
 
@@ -389,7 +399,8 @@ public sealed class RubySourceReaderContractTests(TestContext context)
             listener.Stop();
             try { await loop; }
             catch (Exception error) when (error is OperationCanceledException or
-                SocketException or ObjectDisposedException) { }
+                SocketException or ObjectDisposedException)
+            { }
             Task[] pending;
             lock (connections) pending = [.. connections];
             await Task.WhenAll(pending);

@@ -71,8 +71,11 @@ internal static class NpmPreparation
                 ?? throw new InvalidDataException("Missing selected release declaration."),
             request.Subject.Declaration);
         if (unit.Id != request.Subject.Unit || unit.Builds is not
-            [{ Definition: "node/npm-package-v1", Outputs:
-                [{ Role: "primary-package", Kind: "npm-tarball" }] }])
+            [
+            {
+                Definition: "node/npm-package-v1", Outputs:
+                [{ Role: "primary-package", Kind: "npm-tarball" }]
+            }])
             throw new InvalidDataException("Unsupported complete npm release definition.");
         ReleaseBuild build = unit.Builds[0];
         string parent = NodePackageChecks.Parent(unit.SourcePath);

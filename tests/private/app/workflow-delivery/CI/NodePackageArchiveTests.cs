@@ -31,9 +31,11 @@ public sealed class NodePackageArchiveTests(TestContext context)
             case "missing-payload": members.RemoveAt(1); break;
             case "duplicate-manifest": members.Add(members[0]); break;
             case "duplicate-payload": members.Add(members[1]); break;
-            case "linked-manifest": members[0] = members[0] with
+            case "linked-manifest":
+                members[0] = members[0] with
                 { Kind = TarEntryType.SymbolicLink }; break;
-            case "directory-payload": members[1] = members[1] with
+            case "directory-payload":
+                members[1] = members[1] with
                 { Kind = TarEntryType.Directory }; break;
             case "empty-manifest": members[0] = members[0] with { Bytes = [] }; break;
             case "empty-payload": members[1] = members[1] with { Bytes = [] }; break;
@@ -62,7 +64,7 @@ public sealed class NodePackageArchiveTests(TestContext context)
         {
             case "manifest":
                 required[0] = required[0] with
-                    { Bytes = new byte[NodePackageArchive.ManifestLimit + 1] };
+                { Bytes = new byte[NodePackageArchive.ManifestLimit + 1] };
                 break;
             case "expanded":
                 members = required.Append(new ArchiveMember("package/expanded.bin",

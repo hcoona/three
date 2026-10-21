@@ -51,11 +51,11 @@ public sealed class PythonNativeContractTests(TestContext context)
             RepositoryToolSelection.SourceRoot, ["sync", "--frozen", "--only-group", "dev",
                 "--only-group", "workflow-delivery-python", "--no-editable", "--python",
                 interpreter], 600, new Dictionary<string, string?>
-            {
-                ["UV_PROJECT_ENVIRONMENT"] = Path.Combine(tools, "env"),
-                ["UV_PYTHON_DOWNLOADS"] = "never",
-                ["UV_NO_SYSTEM_CONFIG"] = "1",
-            }), token);
+                {
+                    ["UV_PROJECT_ENVIRONMENT"] = Path.Combine(tools, "env"),
+                    ["UV_PYTHON_DOWNLOADS"] = "never",
+                    ["UV_NO_SYSTEM_CONFIG"] = "1",
+                }), token);
         AssertExited(sync, true);
     }
 
@@ -461,7 +461,8 @@ public sealed class PythonNativeContractTests(TestContext context)
                     string[] arguments = [.. command.Arguments];
                     arguments[url] = upload;
                     var environment = new Dictionary<string, string?>(command.Environment!,
-                        StringComparer.Ordinal) { ["SSL_CERT_FILE"] = authority.Bundle };
+                        StringComparer.Ordinal)
+                    { ["SSL_CERT_FILE"] = authority.Bundle };
                     return NativeProcess.ExecuteAsync(command with
                     {
                         Arguments = arguments,
@@ -550,7 +551,7 @@ public sealed class PythonNativeContractTests(TestContext context)
             {
                 byte[] content = Encoding.UTF8.GetBytes(text);
                 tar.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, entry)
-                    { DataStream = new MemoryStream(content) });
+                { DataStream = new MemoryStream(content) });
             }
         }
         return path;
@@ -675,7 +676,8 @@ public sealed class PythonNativeContractTests(TestContext context)
                 }
                 catch (Exception error) when (error is IOException or
                     OperationCanceledException or System.Security.Authentication
-                        .AuthenticationException) { }
+                        .AuthenticationException)
+                { }
             }
         }
 
@@ -738,7 +740,8 @@ public sealed class PythonNativeContractTests(TestContext context)
             listener.Stop();
             try { await loop; }
             catch (Exception error) when (error is OperationCanceledException or
-                SocketException or ObjectDisposedException) { }
+                SocketException or ObjectDisposedException)
+            { }
             Task[] pending;
             lock (connections) pending = [.. connections];
             await Task.WhenAll(pending);

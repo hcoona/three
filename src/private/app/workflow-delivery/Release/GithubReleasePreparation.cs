@@ -263,15 +263,18 @@ internal static class GithubReleasePreparation
             await read(subject.Declaration, token) ??
                 throw new InvalidDataException("Missing committed GitHub Release declaration."),
             subject.Declaration);
-        if (unit.Id != subject.Unit || unit.Builds is not [{ Definition:
+        if (unit.Id != subject.Unit || unit.Builds is not [
+            {
+                Definition:
                 GithubReleaseUnits.Definition, EntryPoint: GithubReleaseUnits.Entry,
-                Outputs: { Length: 2 } }])
+                Outputs: { Length: 2 }
+            }])
             throw new InvalidDataException("Unsupported complete GitHub Release recipe.");
         ReleaseBuild build = unit.Builds[0];
         if (build.Outputs.Count(output => output is
-                { Role: "primary-package", Kind: "inno-installer" }) != 1 ||
+            { Role: "primary-package", Kind: "inno-installer" }) != 1 ||
             build.Outputs.Count(output => output is
-                { Role: "portable-package", Kind: "portable-zip" }) != 1)
+            { Role: "portable-package", Kind: "portable-zip" }) != 1)
             throw new InvalidDataException("Unsupported complete GitHub Release asset set.");
         foreach (string input in Inputs)
             if (await read(input, token) is null)

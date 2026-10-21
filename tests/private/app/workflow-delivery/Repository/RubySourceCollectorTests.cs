@@ -59,15 +59,27 @@ public sealed class RubySourceCollectorTests(TestContext context)
                 Assert.AreEqual(Path.GetFullPath(gemspec),
                     Path.GetFullPath(request.RootElement.GetProperty("path").GetString()!));
                 if (request.RootElement.GetProperty("operation").GetString() == "version")
-                    return Answer(new { gemspec, raw = "1.2.3-beta.4+gabcdef0",
-                        version = "1.2.3.pre.beta.4", literal = "\"1.2.3.pre.beta.4\"" });
+                    return Answer(new
+                    {
+                        gemspec,
+                        raw = "1.2.3-beta.4+gabcdef0",
+                        version = "1.2.3.pre.beta.4",
+                        literal = "\"1.2.3.pre.beta.4\""
+                    });
                 if (name == "hcoona-release-smoke-ruby")
                     Assert.Contains("VERSION = \"1.2.3.pre.beta.4\"",
                         await File.ReadAllTextAsync(Path.Combine(repo.Directory, project,
                             "lib/hcoona_release_smoke_ruby/version.rb"), token));
-                return Answer(new { gemspec, name, version = "1.2.3.pre.beta.4", platform = "ruby",
-                    require_paths = RequirePaths, files = NativeFiles,
-                    runtime_dependencies = Array.Empty<object>() });
+                return Answer(new
+                {
+                    gemspec,
+                    name,
+                    version = "1.2.3.pre.beta.4",
+                    platform = "ruby",
+                    require_paths = RequirePaths,
+                    files = NativeFiles,
+                    runtime_dependencies = Array.Empty<object>()
+                });
             }, context.CancellationToken);
         RubySourceGemFacts source = Assert.ContainsSingle(result);
         Assert.AreEqual(name, source.Gem.Name);
@@ -123,13 +135,25 @@ public sealed class RubySourceCollectorTests(TestContext context)
                     string gemspec = Path.Combine(repo.Directory, project,
                         "hcoona-release-smoke-ruby.gemspec");
                     if (request.RootElement.GetProperty("operation").GetString() == "version")
-                        return Answer(new { gemspec, raw = "1.2.3", version = "1.2.3",
-                            literal = "\"1.2.3\"" });
-                    return Answer(new { gemspec, name = defect == "wrong-name" ? "other" :
-                        "hcoona-release-smoke-ruby", version = defect == "wrong-version" ?
-                        "9.9.9" : "1.2.3", platform = "ruby", require_paths = RequirePaths,
+                        return Answer(new
+                        {
+                            gemspec,
+                            raw = "1.2.3",
+                            version = "1.2.3",
+                            literal = "\"1.2.3\""
+                        });
+                    return Answer(new
+                    {
+                        gemspec,
+                        name = defect == "wrong-name" ? "other" :
+                        "hcoona-release-smoke-ruby",
+                        version = defect == "wrong-version" ?
+                        "9.9.9" : "1.2.3",
+                        platform = "ruby",
+                        require_paths = RequirePaths,
                         files = Array.Empty<string>(),
-                        runtime_dependencies = Array.Empty<object>() });
+                        runtime_dependencies = Array.Empty<object>()
+                    });
                 }, context.CancellationToken));
     }
 

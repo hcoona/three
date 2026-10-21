@@ -29,8 +29,11 @@ public sealed class GithubNpmObservationTests
         {
             0 => Json(Control),
             1 => Json(Metadata("https://npm.pkg.github.com/archive")),
-            _ => new(HttpStatusCode.OK) { Content = new ByteArrayContent(
-                different ? [4, 5, 6] : Original) },
+            _ => new(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(
+                different ? [4, 5, 6] : Original)
+            },
         });
         using var client = new HttpClient(handler);
 
@@ -92,7 +95,7 @@ public sealed class GithubNpmObservationTests
         string expected)
     {
         using var handler = new Handler((_, _) => new((HttpStatusCode)status)
-            { Content = new ByteArrayContent([]) });
+        { Content = new ByteArrayContent([]) });
         using var client = new HttpClient(handler);
 
         GithubNpmObservationResult result = await new GithubNpmObservation(client)
@@ -160,7 +163,7 @@ public sealed class GithubNpmObservationTests
     {
         using var handler = new Handler((_, index) => index == 0 ? Json(Control)
             : defect == "missing-package" ? new(HttpStatusCode.NotFound)
-                { Content = new ByteArrayContent([]) }
+            { Content = new ByteArrayContent([]) }
             : Json(defect == "missing-versions"
                 ? "{\"name\":\"@hcoona/hcoona-release-smoke-npm\"}"
                 : "{\"name\":\"@hcoona/hcoona-release-smoke-npm\","
@@ -179,7 +182,7 @@ public sealed class GithubNpmObservationTests
     public async Task OversizedCompleteResponseAndCancellationRemainUnknown()
     {
         using var handler = new Handler((_, _) => new(HttpStatusCode.OK)
-            { Content = new ByteArrayContent(new byte[1_000_001]) });
+        { Content = new ByteArrayContent(new byte[1_000_001]) });
         using var client = new HttpClient(handler);
         var reader = new GithubNpmObservation(client);
 
@@ -201,7 +204,7 @@ public sealed class GithubNpmObservationTests
     {
         var clock = new ManualClock();
         using var handler = new Handler((_, _) => new(HttpStatusCode.OK)
-            { Content = new StreamContent(new ExpiredBody(clock)) });
+        { Content = new StreamContent(new ExpiredBody(clock)) });
         using var client = new HttpClient(handler);
 
         GithubNpmObservationResult result = await new GithubNpmObservation(client, clock)
@@ -273,13 +276,17 @@ public sealed class GithubNpmObservationTests
         name = AdoptedNpmPackage.PackageName,
         versions = new Dictionary<string, object>
         {
-            ["1.2.3"] = new { name = AdoptedNpmPackage.PackageName, version = "1.2.3",
-                dist = new { tarball = archive } },
+            ["1.2.3"] = new
+            {
+                name = AdoptedNpmPackage.PackageName,
+                version = "1.2.3",
+                dist = new { tarball = archive }
+            },
         },
     });
 
     private static HttpResponseMessage Json(string value) => new(HttpStatusCode.OK)
-        { Content = new StringContent(value, Encoding.UTF8, "application/json") };
+    { Content = new StringContent(value, Encoding.UTF8, "application/json") };
 
     private sealed class Handler(Func<HttpRequestMessage, int, HttpResponseMessage> respond)
         : HttpMessageHandler

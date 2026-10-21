@@ -68,18 +68,22 @@ public sealed class PythonReleaseCliTests
                 Reject(new PythonPreparationRequest(f.Prepared.Subject, f.Root, f.Root, f.Root),
                     TransferJson.Default.PythonPreparationRequest, "checkout");
                 break;
-            case "preparation": Reject(f.Preparation, TransferJson.Default.PythonPreparationResult,
+            case "preparation":
+                Reject(f.Preparation, TransferJson.Default.PythonPreparationResult,
                 "native"); break;
-            case "index-tools": Reject(f.IndexTools, TransferJson.Default.PythonIndexTools,
+            case "index-tools":
+                Reject(f.IndexTools, TransferJson.Default.PythonIndexTools,
                 "helper"); break;
-            case "publisher-tools": Reject(f.PublisherTools,
+            case "publisher-tools":
+                Reject(f.PublisherTools,
                 TransferJson.Default.PythonPublisherTools, "uv"); break;
             case "index-tool-request":
                 Reject(new PythonIndexToolRequest(f.PublisherTools.Uv, f.IndexTools.Interpreter,
                     f.Root, f.Root),
                     TransferJson.Default.PythonIndexToolRequest, "requirements");
                 break;
-            case "observation": Reject(f.Observe(),
+            case "observation":
+                Reject(f.Observe(),
                 TransferJson.Default.PythonIndexObservationResult, "observation"); break;
             case "publication":
                 Reject(new PythonPublicationResult(f.Prepared.Subject, f.Observe(), [], []),
@@ -210,20 +214,55 @@ public sealed class PythonReleaseCliTests
         bad = defect switch
         {
             "missing-format" => bad with { Prepared = p with { Files = [p.Files[0]] } },
-            "duplicate-format" => bad with { Prepared = p with { Files = [p.Files[0], p.Files[1]
-                with { Kind = "python-wheel" }] } },
-            "required-check" => bad with { Prepared = p with { RequiredChecks =
-                p.RequiredChecks[..^1] } },
-            "failed-check" => bad with { Prepared = p with { Checks = p.Checks.Select(c => c with {
-                Status = ReleaseCheckStatus.Failed }).ToArray() } },
+            "duplicate-format" => bad with
+            {
+                Prepared = p with
+                {
+                    Files = [p.Files[0], p.Files[1]
+                with { Kind = "python-wheel" }]
+                }
+            },
+            "required-check" => bad with
+            {
+                Prepared = p with
+                {
+                    RequiredChecks =
+                p.RequiredChecks[..^1]
+                }
+            },
+            "failed-check" => bad with
+            {
+                Prepared = p with
+                {
+                    Checks = p.Checks.Select(c => c with
+                    {
+                        Status = ReleaseCheckStatus.Failed
+                    }).ToArray()
+                }
+            },
             "commands-missing" => bad with { Commands = [] },
-            "command-failed" => bad with { Commands = [bad.Commands[0] with { Result =
-                Fixture.Success with { ExitCode = 19 } }] },
-            "command-error" => bad with { Commands = [bad.Commands[0] with { Result =
-                Fixture.Success with { Error = "cleanup failed" } }] },
+            "command-failed" => bad with
+            {
+                Commands = [bad.Commands[0] with { Result =
+                Fixture.Success with { ExitCode = 19 } }]
+            },
+            "command-error" => bad with
+            {
+                Commands = [bad.Commands[0] with { Result =
+                Fixture.Success with { Error = "cleanup failed" } }]
+            },
             "errors" => bad with { Errors = ["incomplete preparation"] },
-            "destination" => bad with { Prepared = p with { Subject = p.Subject with { Destination =
-                "pypi" } } },
+            "destination" => bad with
+            {
+                Prepared = p with
+                {
+                    Subject = p.Subject with
+                    {
+                        Destination =
+                "pypi"
+                    }
+                }
+            },
             _ => bad,
         };
         if (defect.StartsWith("native-", StringComparison.Ordinal))
@@ -249,8 +288,11 @@ public sealed class PythonReleaseCliTests
         if (release is not null) native["public-release"] = release;
         PythonPreparationResult official = f.Preparation with
         {
-            Prepared = f.Prepared with { Subject = f.Prepared.Subject with
-            { Channel = "official", Destination = "pypi", SelectedRef = "refs/heads/main" } },
+            Prepared = f.Prepared with
+            {
+                Subject = f.Prepared.Subject with
+                { Channel = "official", Destination = "pypi", SelectedRef = "refs/heads/main" }
+            },
             Native = native,
         };
         if (valid) PythonRelease.Validate(official);
@@ -285,8 +327,11 @@ public sealed class PythonReleaseCliTests
             f.Save(f.Preparation, TransferJson.Default.PythonPreparationResult),
             f.Save(f.Observe(ReleaseFileState.Exact),
                 TransferJson.Default.PythonIndexObservationResult)], output,
-            publish: (_, _, _, _, _) => { writes++; throw new
-                AssertFailedException("Publisher reached."); }));
+            publish: (_, _, _, _, _) =>
+            {
+                writes++; throw new
+                AssertFailedException("Publisher reached.");
+            }));
         ReleaseDryRun result = Fixture.Parse(output, TransferJson.Default.ReleaseDryRun);
         Assert.AreEqual(f.Prepared.Subject, result.Subject);
         Assert.IsTrue(result.Ready);
@@ -378,8 +423,11 @@ public sealed class PythonReleaseCliTests
         Assert.AreEqual(1, PythonReleaseCli.Run(f.PublishArgs(f.Observe(ReleaseFileState.Exact)),
             output,
             observe: (_, _, _) => Task.FromResult(f.Observe()),
-            publish: (_, _, _, _, _) => { writes++; throw new
-                AssertFailedException("Unreviewed write."); }));
+            publish: (_, _, _, _, _) =>
+            {
+                writes++; throw new
+                AssertFailedException("Unreviewed write.");
+            }));
         var result = Fixture.Parse(output, TransferJson.Default.PythonPublicationResult);
         Assert.AreEqual(0, writes);
         Assert.IsEmpty(result.Invocations);
@@ -397,10 +445,16 @@ public sealed class PythonReleaseCliTests
         Assert.ThrowsExactly<InvalidDataException>(() => PythonReleaseCli.Run(
             f.PublishArgs(dry ? f.Observe() : f.Observe(ReleaseFileState.Exact,
                 ReleaseFileState.Exact)), output,
-            observe: (_, _, _) => { calls++; throw new
-                AssertFailedException("Observation reached."); },
-            publish: (_, _, _, _, _) => { calls++; throw new
-                AssertFailedException("Publication reached."); }));
+            observe: (_, _, _) =>
+            {
+                calls++; throw new
+                AssertFailedException("Observation reached.");
+            },
+            publish: (_, _, _, _, _) =>
+            {
+                calls++; throw new
+                AssertFailedException("Publication reached.");
+            }));
         Assert.AreEqual(0, calls);
         Assert.AreEqual("", output.ToString());
     }
@@ -426,8 +480,11 @@ public sealed class PythonReleaseCliTests
         using var published = new StringWriter();
         Assert.AreEqual(0, PythonReleaseCli.Run(f.PublishArgs(f.Observe()), published,
             observe: (_, _, _) => { reads++; return Task.FromResult(f.Observe()); },
-            publish: (_, _, selected, _, _) => { writes++; return
-                Task.FromResult(f.PublishResult(selected, failed)); }));
+            publish: (_, _, selected, _, _) =>
+            {
+                writes++; return
+                Task.FromResult(f.PublishResult(selected, failed));
+            }));
         Assert.AreEqual(1, writes);
         Assert.AreEqual(1, reads);
         string publication = f.SaveText(published.ToString());
@@ -499,15 +556,30 @@ public sealed class PythonReleaseCliTests
         {
             Observation = defect switch
             {
-                "subject" => value with { Subject = value.Subject with { Revision = new string('b',
-                    40) } },
+                "subject" => value with
+                {
+                    Subject = value.Subject with
+                    {
+                        Revision = new string('b',
+                    40)
+                    }
+                },
                 "missing-file" => value with { Files = [value.Files[0]] },
-                "extra-file" => value with { Files = [.. value.Files, value.Files[0] with { Output =
-                    "other" }] },
-                "digest" => value with { Files = [value.Files[0] with { Sha256 = new string('f', 64)
-                    }, value.Files[1]] },
-                "size" => value with { Files = [value.Files[0] with { Size = value.Files[0].Size + 1
-                    }, value.Files[1]] },
+                "extra-file" => value with
+                {
+                    Files = [.. value.Files, value.Files[0] with { Output =
+                    "other" }]
+                },
+                "digest" => value with
+                {
+                    Files = [value.Files[0] with { Sha256 = new string('f', 64)
+                    }, value.Files[1]]
+                },
+                "size" => value with
+                {
+                    Files = [value.Files[0] with { Size = value.Files[0].Size + 1
+                    }, value.Files[1]]
+                },
                 _ => value with { RequiredChecks = [] },
             },
         };
@@ -516,8 +588,11 @@ public sealed class PythonReleaseCliTests
         Assert.ThrowsExactly<InvalidDataException>(() => PythonReleaseCli.Run(f.ObserveArgs(),
             output,
             observe: (_, _, _) => Task.FromResult(observed),
-            publish: (_, _, _, _, _) => { writes++; throw new
-                AssertFailedException("Publisher reached."); }));
+            publish: (_, _, _, _, _) =>
+            {
+                writes++; throw new
+                AssertFailedException("Publisher reached.");
+            }));
         Assert.AreEqual(0, writes);
         Assert.AreEqual("", output.ToString());
     }
@@ -542,8 +617,12 @@ public sealed class PythonReleaseCliTests
             PreparedRelease prepared = new(subject, files, PreparationChecks,
                 PreparationChecks.Select(id => new ReleaseCheck(id,
                     ReleaseCheckStatus.Passed)).ToArray());
-            Preparation = new(prepared, new() { ["name"] = subject.Unit, ["version"] = "1.0.0",
-                ["commit"] = subject.Revision },
+            Preparation = new(prepared, new()
+            {
+                ["name"] = subject.Unit,
+                ["version"] = "1.0.0",
+                ["commit"] = subject.Revision
+            },
                 [new("build", Command(), Success)], []);
             IndexTools = new(Path.Combine(Root, "python"), Path.Combine(Root, "packages.py"),
                 Directory.CreateDirectory(Path.Combine(Root, "index")).FullName);

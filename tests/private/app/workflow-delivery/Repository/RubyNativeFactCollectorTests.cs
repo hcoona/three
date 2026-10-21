@@ -20,8 +20,12 @@ public sealed class RubyNativeFactCollectorTests
 
     private RubyFactTools Tools() => new(Path.Combine(root, "ruby"),
         Path.Combine(root, "facts.rb"), root,
-        new Dictionary<string, string?> { ["GEM_HOME"] = Path.Combine(root, "gems"),
-            ["BUNDLE_FROZEN"] = "0", ["BUNDLE_GEMFILE"] = "old context" }, 30);
+        new Dictionary<string, string?>
+        {
+            ["GEM_HOME"] = Path.Combine(root, "gems"),
+            ["BUNDLE_FROZEN"] = "0",
+            ["BUNDLE_GEMFILE"] = "old context"
+        }, 30);
 
     private static JsonObject Gem() => JsonNode.Parse("""
         {"name":"native-gem","version":"1.2.3","platform":"ruby",
@@ -119,11 +123,16 @@ public sealed class RubyNativeFactCollectorTests
                 command.Arguments[4], token));
             Assert.AreEqual("bundle", request.RootElement.GetProperty("operation").GetString());
             Assert.AreEqual(path, request.RootElement.GetProperty("path").GetString());
-            return Answer(new JsonObject { ["gemfile"] = path,
+            return Answer(new JsonObject
+            {
+                ["gemfile"] = path,
                 ["lockfile"] = Path.Combine(root, "gems.locked"),
-                ["bundler_version"] = version, ["locked_bundler_version"] = version,
-                ["gemfiles"] = new JsonArray(path), ["direct_dependencies"] = new JsonArray(),
-                ["specifications"] = new JsonArray() });
+                ["bundler_version"] = version,
+                ["locked_bundler_version"] = version,
+                ["gemfiles"] = new JsonArray(path),
+                ["direct_dependencies"] = new JsonArray(),
+                ["specifications"] = new JsonArray()
+            });
         });
         RubyBundleFacts result = await collector.BundleAsync(path, version, CancellationToken.None);
         Assert.AreEqual(version, result.BundlerVersion);

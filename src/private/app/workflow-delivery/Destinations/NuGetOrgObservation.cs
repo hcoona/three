@@ -133,7 +133,7 @@ internal sealed class NuGetOrgObservation(HttpClient client, TimeProvider? clock
     private static JToken Parse(byte[] bytes) => JToken.Parse(new UTF8Encoding(false, true)
         .GetString(bytes),
         new JsonLoadSettings
-            { DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error });
+        { DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error });
     private static JObject Object(byte[] bytes) => Parse(bytes) as JObject ??
         throw new InvalidDataException("Expected native metadata object.");
     private static JArray RequiredArray(JToken? token) => token as JArray ??

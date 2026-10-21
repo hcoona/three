@@ -64,8 +64,11 @@ public sealed class BrowserStorePreparationNativeTests(TestContext context)
             await File.WriteAllTextAsync(binding, JsonSerializer.Serialize(result),
                 context.CancellationToken);
             context.AddResultFile(binding);
-            Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(new { result.Errors,
-                FailedCommands = result.Commands.Where(command => !command.Result.Succeeded) }));
+            Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(new
+            {
+                result.Errors,
+                FailedCommands = result.Commands.Where(command => !command.Result.Succeeded)
+            }));
             BrowserStoreRelease.Validate(result);
             Assert.IsTrue(result.Prepared.Checks.All(check =>
                 check.Status == ReleaseCheckStatus.Passed));

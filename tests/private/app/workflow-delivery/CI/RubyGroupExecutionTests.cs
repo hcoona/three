@@ -120,9 +120,14 @@ public sealed class RubyGroupExecutionTests(TestContext context)
                     description = "whole suite", full_description = "whole suite",
                     status = failedSuite ? "failed" : "passed", file_path = "./spec/whole_spec.rb",
                     line_number = 1, run_time = 0.01 } },
-                summary = new { duration = 0.01, example_count = 1,
-                    failure_count = failedSuite ? 1 : 0, pending_count = 0,
-                    errors_outside_of_examples_count = 0 }
+                summary = new
+                {
+                    duration = 0.01,
+                    example_count = 1,
+                    failure_count = failedSuite ? 1 : 0,
+                    pending_count = 0,
+                    errors_outside_of_examples_count = 0
+                }
             }), token);
             return failedSuite ? Answer(new { }) with { ExitCode = 1 } : Answer(new { });
         }
@@ -137,15 +142,43 @@ public sealed class RubyGroupExecutionTests(TestContext context)
             await File.ReadAllTextAsync(command.Arguments[^1], token));
         string path = input.RootElement.GetProperty("path").GetString()!;
         string operation = input.RootElement.GetProperty("operation").GetString()!;
-        if (operation == "version") return Answer(new { gemspec = path, raw = "1.2.3",
-            version = "1.2.3", literal = "\"1.2.3\"" });
-        var gem = new { name = "hcoona-release-smoke-ruby", version = "1.2.3", platform = "ruby",
-            require_paths = RequirePaths, files = Files,
-            runtime_dependencies = Array.Empty<object>() };
-        return operation == "gemspec" ? Answer(new { gemspec = path, gem.name, gem.version,
-            gem.platform, gem.require_paths, gem.files, gem.runtime_dependencies }) :
-            Answer(new { archive = path, gem.name, gem.version, gem.platform,
-                gem.require_paths, gem.files, gem.runtime_dependencies, contents = Files });
+        if (operation == "version") return Answer(new
+        {
+            gemspec = path,
+            raw = "1.2.3",
+            version = "1.2.3",
+            literal = "\"1.2.3\""
+        });
+        var gem = new
+        {
+            name = "hcoona-release-smoke-ruby",
+            version = "1.2.3",
+            platform = "ruby",
+            require_paths = RequirePaths,
+            files = Files,
+            runtime_dependencies = Array.Empty<object>()
+        };
+        return operation == "gemspec" ? Answer(new
+        {
+            gemspec = path,
+            gem.name,
+            gem.version,
+            gem.platform,
+            gem.require_paths,
+            gem.files,
+            gem.runtime_dependencies
+        }) :
+            Answer(new
+            {
+                archive = path,
+                gem.name,
+                gem.version,
+                gem.platform,
+                gem.require_paths,
+                gem.files,
+                gem.runtime_dependencies,
+                contents = Files
+            });
     }
 
     [TestMethod]
@@ -177,8 +210,11 @@ public sealed class RubyGroupExecutionTests(TestContext context)
                 "asciidoctor-latexmath.gemspec", [new("gem", "primary-package", "ruby-gem")])]);
         CheckSpec[] checks = [RubyProjectChecks.Suite(Suite), .. RubyPackageChecks.Expand(unit,
             request.Checkout, new Dictionary<string, RubySourceGemFacts> { [Suite] = source })];
-        return plan with { Checks = [.. checks.Select(check => new PlannedCheck(check,
-            [RubyPackageChecks.RSpecPreset], [], [CheckOrigin.Preset]))] };
+        return plan with
+        {
+            Checks = [.. checks.Select(check => new PlannedCheck(check,
+            [RubyPackageChecks.RSpecPreset], [], [CheckOrigin.Preset]))]
+        };
     }
 
     private static async Task<NativeCommandResult> LatexmathAsync(RubyGroupRunRequest request,
@@ -212,7 +248,7 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         {
             Assert.StartsWith("require 'asciidoctor-latexmath'", command.Arguments[1]);
             return defect == "failed-require" ? Answer(new { }) with
-                { ExitCode = 1, Stderr = "cannot load such file" } : Answer(new { });
+            { ExitCode = 1, Stderr = "cannot load such file" } : Answer(new { });
         }
         if (command.Executable == request.Nbgv || command.Arguments is [_, _, "install"] ||
             command.Arguments.Contains("rspec", StringComparer.Ordinal))
@@ -221,19 +257,46 @@ public sealed class RubyGroupExecutionTests(TestContext context)
             await File.ReadAllTextAsync(command.Arguments[^1], token));
         string path = input.RootElement.GetProperty("path").GetString()!;
         string operation = input.RootElement.GetProperty("operation").GetString()!;
-        if (operation == "version") return Answer(new { gemspec = path, raw = "1.2.3",
-            version = "1.2.3", literal = "\"1.2.3\"" });
-        var gem = new { name = "asciidoctor-latexmath", version = "1.2.3", platform = "ruby",
-            require_paths = RequirePaths, files = LatexmathFiles,
+        if (operation == "version") return Answer(new
+        {
+            gemspec = path,
+            raw = "1.2.3",
+            version = "1.2.3",
+            literal = "\"1.2.3\""
+        });
+        var gem = new
+        {
+            name = "asciidoctor-latexmath",
+            version = "1.2.3",
+            platform = "ruby",
+            require_paths = RequirePaths,
+            files = LatexmathFiles,
             runtime_dependencies = new[] { new { name = "asciidoctor",
-                requirement = ">= 2.0, < 3.0" } } };
-        return operation == "gemspec" ? Answer(new { gemspec = path, gem.name, gem.version,
-            gem.platform, gem.require_paths, gem.files, gem.runtime_dependencies }) :
-            Answer(new { archive = path, gem.name, gem.version, gem.platform,
-                gem.require_paths, gem.files, gem.runtime_dependencies,
+                requirement = ">= 2.0, < 3.0" } }
+        };
+        return operation == "gemspec" ? Answer(new
+        {
+            gemspec = path,
+            gem.name,
+            gem.version,
+            gem.platform,
+            gem.require_paths,
+            gem.files,
+            gem.runtime_dependencies
+        }) :
+            Answer(new
+            {
+                archive = path,
+                gem.name,
+                gem.version,
+                gem.platform,
+                gem.require_paths,
+                gem.files,
+                gem.runtime_dependencies,
                 extensions = Array.Empty<string>(),
                 metadata = new { github_repo = "https://github.com/hcoona/three" },
-                contents = defect == "missing-content" ? LatexmathFiles[1..] : LatexmathFiles });
+                contents = defect == "missing-content" ? LatexmathFiles[1..] : LatexmathFiles
+            });
     }
 
     [TestMethod]
@@ -247,9 +310,15 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         var (plan, request) = await PrepareAsync(repo);
         plan = LatexmathPlan(plan, request);
         // Group preparation shares a bundle path; the clean consumer must not inherit it.
-        request = request with { Facts = request.Facts with { Environment =
+        request = request with
+        {
+            Facts = request.Facts with
+            {
+                Environment =
             new Dictionary<string, string?>(request.Facts.Environment)
-                { ["BUNDLE_PATH"] = Path.Combine(request.Scratch, "shared-bundle") } } };
+            { ["BUNDLE_PATH"] = Path.Combine(request.Scratch, "shared-bundle") }
+            }
+        };
         RubyGroupRun result = await RubyGroupExecution.RunAsync(plan, request,
             (command, token) => LatexmathAsync(request, command, defect, token),
             context.CancellationToken);
@@ -288,23 +357,29 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         // A nested lock context belongs to the suite; a nested native gem's bundle does not.
         RubyBundleFacts nested = suite with { Gemfile = Gemfile(Suite + "/contexts/b") };
         RubyBundleFacts native = suite with { Gemfile = Gemfile(Suite + "/vendor/gem") };
-        request = request with { Candidate = request.Candidate with
+        request = request with
         {
-            Bundles = [native, nested, suite],
-            Facts = request.Candidate.Facts with { Native = request.Candidate.Facts.Native with
+            Candidate = request.Candidate with
             {
-                Graph = new([new(Suite + "/vendor/gem", "vendored", [])], [])
-            } }
-        } };
+                Bundles = [native, nested, suite],
+                Facts = request.Candidate.Facts with
+                {
+                    Native = request.Candidate.Facts.Native with
+                    {
+                        Graph = new([new(Suite + "/vendor/gem", "vendored", [])], [])
+                    }
+                }
+            }
+        };
         var order = new List<string>();
         RubyGroupRun result = await RubyGroupExecution.RunAsync(plan with
-            { Checks = plan.Checks[..1] }, request, (command, token) =>
-            {
-                order.Add(command.Arguments is [_, _, "install"]
-                    ? command.Environment!["BUNDLE_GEMFILE"]! : "rspec");
-                return command.Arguments is [_, _, "install"] ? Task.FromResult(Answer(new { }))
-                    : NativeAsync(request, command, false, token);
-            }, context.CancellationToken);
+        { Checks = plan.Checks[..1] }, request, (command, token) =>
+        {
+            order.Add(command.Arguments is [_, _, "install"]
+                ? command.Environment!["BUNDLE_GEMFILE"]! : "rspec");
+            return command.Arguments is [_, _, "install"] ? Task.FromResult(Answer(new { }))
+                : NativeAsync(request, command, false, token);
+        }, context.CancellationToken);
         Assert.IsTrue(result.Outcome.Satisfied);
         CollectionAssert.AreEqual(new[] { suite.Gemfile, nested.Gemfile, "rspec" }, order);
         CollectionAssert.AreEqual(new[] { suite.Gemfile, nested.Gemfile },
@@ -323,7 +398,7 @@ public sealed class RubyGroupExecutionTests(TestContext context)
                 Assert.DoesNotContain("rspec", command.Arguments);
                 return command.Arguments is [_, _, "install"]
                     ? Task.FromResult(Answer(new { }) with
-                        { ExitCode = 5, Stderr = "native frozen bundle failed" })
+                    { ExitCode = 5, Stderr = "native frozen bundle failed" })
                     : NativeAsync(request, command, false, token);
             }, context.CancellationToken);
         Assert.IsFalse(result.Outcome.Satisfied);
@@ -344,7 +419,7 @@ public sealed class RubyGroupExecutionTests(TestContext context)
         var (plan, request) = await SharedAsync(scratch.Directory);
         if (defect == "partial-gem") plan = plan with { Checks = plan.Checks[..^1] };
         if (defect == "missing-bundle") request = request with
-            { Candidate = request.Candidate with { Bundles = [] } };
+        { Candidate = request.Candidate with { Bundles = [] } };
         if (defect == "candidate") plan = plan with { Candidate = plan.Candidate[..8] };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => RubyGroupExecution.RunAsync(
             plan, request, (_, _) =>

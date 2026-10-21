@@ -19,7 +19,7 @@ public sealed class PythonDependencyProjectionTests
     private static readonly string[] Dev = ["dev"];
     private static readonly Dictionary<string, string> None = [];
     private static readonly Dictionary<string, string> Workspace = new()
-        { ["producer"] = "workspace" };
+    { ["producer"] = "workspace" };
     private static readonly string[] NativeBuildConsumers =
     [
         "src/lab/azure-document-intelligence-lab", "src/private/app/azureauth-credprovider/python",
@@ -91,9 +91,9 @@ public sealed class PythonDependencyProjectionTests
         IReadOnlyDictionary<string, string> project = failure switch
         {
             "project-unsupported" => new Dictionary<string, string>
-                { ["producer"] = "unsupported" },
+            { ["producer"] = "unsupported" },
             "registry-workspace-source" => new Dictionary<string, string>
-                { ["hatchling"] = "workspace" },
+            { ["hatchling"] = "workspace" },
             "no-source" => None,
             _ => Workspace,
         };

@@ -214,7 +214,7 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
     private static JToken Parse(byte[] bytes) => JToken.Parse(new UTF8Encoding(false, true)
         .GetString(bytes),
         new JsonLoadSettings
-            { DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error });
+        { DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error });
     private static JObject Object(byte[] bytes) => RequiredObject(Parse(bytes));
     private static JObject RequiredObject(JToken? token) => token as JObject ??
         throw new InvalidDataException("Expected native metadata object.");

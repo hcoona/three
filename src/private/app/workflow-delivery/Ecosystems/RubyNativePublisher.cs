@@ -70,8 +70,13 @@ internal static class RubyNativePublisher
             InheritEnvironment: false, CloseStandardInput: true), token);
         // Runner masking does not sanitize retained result files. Omit all native
         // diagnostics, including partial output after cancellation or timeout.
-        result = result with { Stdout = "", Stderr = "", Error = result.Error is null ? null :
-            "Native Ruby publisher process failed; effects remain uncertain." };
+        result = result with
+        {
+            Stdout = "",
+            Stderr = "",
+            Error = result.Error is null ? null :
+            "Native Ruby publisher process failed; effects remain uncertain."
+        };
         return new(prepared.Subject, new(original.Output, result));
     }
 }

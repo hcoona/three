@@ -147,13 +147,19 @@ internal static class PythonRelease
         ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, final.Observation, uploads);
         string[] pending = Pending(prepared, final, publication);
         if (pending.Length != 0)
-            outcome = outcome with { State = ReleaseBusinessState.Unknown,
+            outcome = outcome with
+            {
+                State = ReleaseBusinessState.Unknown,
                 Reasons = [.. pending.Select(output =>
-                    $"Acknowledged Python upload is not yet visible: {output}.")] };
+                    $"Acknowledged Python upload is not yet visible: {output}.")]
+            };
         if (publication is null && initialMissing.Length != 0)
-            return new(outcome with { State = ReleaseBusinessState.Unknown,
+            return new(outcome with
+            {
+                State = ReleaseBusinessState.Unknown,
                 Reasons = [.. outcome.Reasons,
-                    "Required Python publication result is missing; effects remain unknown."] },
+                    "Required Python publication result is missing; effects remain unknown."]
+            },
                 null, null);
         return new(outcome, uploads.Length != 0, publication);
     }

@@ -356,7 +356,8 @@ public sealed class PythonGroupReaderTests(TestContext context)
             string? owner = null, string target = DefaultTarget)
         {
             var fixture = new Fixture(Directory.CreateTempSubdirectory(
-                "workflow-python-group-").FullName) { testTarget = target };
+                "workflow-python-group-").FullName)
+            { testTarget = target };
             try
             {
                 await fixture.RequestAsync(pair, owner, token);
@@ -383,7 +384,9 @@ public sealed class PythonGroupReaderTests(TestContext context)
             };
             await File.WriteAllTextAsync(scopePath, JsonSerializer.Serialize(new
             {
-                @base = pair.Basis, candidate = pair.Candidate, full,
+                @base = pair.Basis,
+                candidate = pair.Candidate,
+                full,
                 changed_paths = full ? Array.Empty<string>() : new[] { changed },
                 endpoint_owners = new
                 { basis = Endpoint(pair.Basis), candidate = Endpoint(pair.Candidate) }

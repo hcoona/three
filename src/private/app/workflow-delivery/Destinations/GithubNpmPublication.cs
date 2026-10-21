@@ -125,9 +125,12 @@ internal static partial class GithubNpmRuntime
     }
 
     internal static NativeCommandResult Sanitize(NativeCommandResult result, string credential) =>
-        result with { Stdout = CleanValue(result.Stdout, credential),
+        result with
+        {
+            Stdout = CleanValue(result.Stdout, credential),
             Stderr = CleanValue(result.Stderr, credential),
-            Error = result.Error is null ? null : CleanValue(result.Error, credential) };
+            Error = result.Error is null ? null : CleanValue(result.Error, credential)
+        };
 
     private static string CleanValue(string value, string credential)
     {

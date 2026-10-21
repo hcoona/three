@@ -129,7 +129,7 @@ internal static class DotNetCiCaller
         };
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
         File.WriteAllText(output, result.ToJsonString(new JsonSerializerOptions
-            { WriteIndented = true }) + "\n", new System.Text.UTF8Encoding(false, true));
+        { WriteIndented = true }) + "\n", new System.Text.UTF8Encoding(false, true));
         foreach ((string key, bool value) in new[] { ("validation", true),
                      ("mise", retained.Mise), ("azureauth", retained.AzureAuth),
                      ("scholarly", retained.Scholarly),

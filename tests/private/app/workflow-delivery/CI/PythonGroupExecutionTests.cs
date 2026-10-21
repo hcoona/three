@@ -84,10 +84,13 @@ public sealed class PythonGroupExecutionTests(TestContext context)
         CiPlan plan = fixture.Plan;
         PythonGroupRunRequest request = fixture.Request;
         if (defect == "package") plan = plan with { Checks = plan.Checks[..^1] };
-        if (defect == "pytest") plan = plan with { Checks = [plan.Checks[0] with
+        if (defect == "pytest") plan = plan with
+        {
+            Checks = [plan.Checks[0] with
         { Work = plan.Checks[0].Work with
             { Dimensions = new(plan.Checks[0].Work.Dimensions) { ["testPath"] = "foreign" } } },
-            .. plan.Checks[1..]] };
+            .. plan.Checks[1..]]
+        };
         if (defect == "helper") request = request with { PackageHelper = "relative.py" };
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             fixture.RunAsync(context.CancellationToken, plan, request));
@@ -255,8 +258,13 @@ public sealed class PythonGroupExecutionTests(TestContext context)
     {
         using var fixture = await SharedAsync();
         PythonGroupRunRequest request = fixture.Request with
-        { Native = fixture.Request.Native with { Members = fixture.Request.Native.Members
-            .Reverse().Select(member => member with { Id = "previous:" + member.Id }).ToArray() } };
+        {
+            Native = fixture.Request.Native with
+            {
+                Members = fixture.Request.Native.Members
+            .Reverse().Select(member => member with { Id = "previous:" + member.Id }).ToArray()
+            }
+        };
         PythonGroupRunResult result = await fixture.RunAsync(context.CancellationToken,
             request: request);
         Assert.IsTrue(result.Outcome.Satisfied);

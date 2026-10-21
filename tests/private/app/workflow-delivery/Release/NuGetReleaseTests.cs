@@ -142,14 +142,17 @@ public sealed class NuGetReleaseTests(TestContext context)
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
             CancellationToken cancellation) => Task.FromResult(
             request.RequestUri!.AbsoluteUri == GithubNuGetObservation.ServiceIndex
-                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(
+                ? new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
                     "{\"version\":\"3.0.0\",\"resources\":["
                     + "{\"@type\":\"PackageBaseAddress/3.0.0\","
                     + "\"@id\":\"https://nuget.pkg.github.com/hcoona/download/\"},"
                     + "{\"@type\":\"PackagePublish/2.0.0\","
-                    + "\"@id\":\"https://nuget.pkg.github.com/hcoona\"}]}") }
+                    + "\"@id\":\"https://nuget.pkg.github.com/hcoona\"}]}")
+                }
                 : new HttpResponseMessage(HttpStatusCode.NotFound)
-                    { Content = new ByteArrayContent([]) });
+                { Content = new ByteArrayContent([]) });
     }
 
     [TestMethod]
@@ -340,8 +343,11 @@ public sealed class NuGetReleaseTests(TestContext context)
         PreparedRelease prepared = Official();
         NuGetObservationResult available = OfficialObservation(prepared,
             ReleaseFileState.Available);
-        NuGetObservationResult sized = available with { Observation = available.Observation with
-            { Files = [available.Observation.Files[0] with { Size = 1 }] } };
+        NuGetObservationResult sized = available with
+        {
+            Observation = available.Observation with
+            { Files = [available.Observation.Files[0] with { Size = 1 }] }
+        };
         Assert.ThrowsExactly<InvalidDataException>(() => NuGetRelease.Complete(prepared,
             sized, sized, null));
     }

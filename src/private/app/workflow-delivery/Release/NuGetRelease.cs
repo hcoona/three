@@ -110,8 +110,11 @@ internal static class NuGetRelease
             {
                 return result with
                 {
-                    Observation = result.Observation with { Files = [.. result.Observation.Files
-                        .Select(file => file with { State = ReleaseFileState.Unknown })] },
+                    Observation = result.Observation with
+                    {
+                        Files = [.. result.Observation.Files
+                        .Select(file => file with { State = ReleaseFileState.Unknown })]
+                    },
                     Reads = [.. result.Reads, new("settle", null,
                         "Coordinate not observed before the settle deadline.")],
                 };
@@ -134,9 +137,12 @@ internal static class NuGetRelease
         if (published is null)
         {
             if (Present(initial.Observation)) return new(outcome, false, null);
-            return new(outcome with { State = ReleaseBusinessState.Unknown,
+            return new(outcome with
+            {
+                State = ReleaseBusinessState.Unknown,
                 Reasons = [.. outcome.Reasons,
-                    "Required publication result is missing; effects remain unknown."] }, null,
+                    "Required publication result is missing; effects remain unknown."]
+            }, null,
                 null);
         }
         if (published.Subject != prepared.Subject)
@@ -154,16 +160,22 @@ internal static class NuGetRelease
             (published.Invocation is null ? Present(published.Before.Observation)
                 : published.Before.Observation.Files[0].State == ReleaseFileState.Absent);
         if (!allowed || published.Errors.Length != 0)
-            return new(outcome with { State = ReleaseBusinessState.Unsatisfied,
-                Reasons = [.. outcome.Reasons, "Publication did not establish a supported path."] },
+            return new(outcome with
+            {
+                State = ReleaseBusinessState.Unsatisfied,
+                Reasons = [.. outcome.Reasons, "Publication did not establish a supported path."]
+            },
                 published.Invocation is not null, published.Invocation);
         // An attempted upload whose coordinate is still absent or unknown after the bounded
         // wait has unresolved effects; the owner re-dispatches the same revision later.
         if (published.Invocation is not null && final.Observation.Files[0].State is
                 ReleaseFileState.Absent or ReleaseFileState.Unknown)
-            return new(outcome with { State = ReleaseBusinessState.Unknown,
+            return new(outcome with
+            {
+                State = ReleaseBusinessState.Unknown,
                 Reasons = [.. outcome.Reasons, "Uploaded coordinate was not observed within " +
-                    "the bounded wait; re-dispatch the same revision later."] }, true,
+                    "the bounded wait; re-dispatch the same revision later."]
+            }, true,
                 published.Invocation);
         return new(outcome, published.Invocation is not null, published.Invocation);
     }

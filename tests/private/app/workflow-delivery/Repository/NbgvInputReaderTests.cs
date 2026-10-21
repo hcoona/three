@@ -290,7 +290,7 @@ public sealed class NbgvInputReaderTests(TestContext context)
         var reader = new NbgvInputReader(repo.Directory);
 
         Assert.ThrowsExactly<InvalidDataException>(() => reader.Read(revision with
-            { Commit = "HEAD" }, "product", context.CancellationToken));
+        { Commit = "HEAD" }, "product", context.CancellationToken));
         // Native evaluation failures propagate; their exception classes belong to NBGV.
         Assert.Throws<Exception>(() => reader.Read(revision with { Commit = new string('f', 40) },
             "product", context.CancellationToken));

@@ -38,7 +38,8 @@ internal static class RubySourceCollector
         RubySourceLocation source = RubyRepositoryInventory.Discover(checkout.Revision).Sources
             .Single(item => item.Gemspec == entryPoint);
         var environment = new Dictionary<string, string?>(tools.Environment,
-            StringComparer.Ordinal) { ["THREE_WORKFLOW_RELEASE_NBGV_PATH"] = nbgv };
+            StringComparer.Ordinal)
+        { ["THREE_WORKFLOW_RELEASE_NBGV_PATH"] = nbgv };
         var collector = new RubyNativeFactCollector(tools with { Environment = environment },
             execute);
         string name = Path.GetFileNameWithoutExtension(source.Gemspec);

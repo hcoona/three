@@ -116,8 +116,12 @@ public sealed class RubyNativePublisherContractTests(TestContext context)
             NativeCommandResult built = await NativeProcess.ExecuteAsync(new(ruby, source,
                 [gem, "build", "--norc", "probe.gemspec", "--output",
                     Path.Combine(originals, "original.gem")], 120,
-                new Dictionary<string, string?> { ["HOME"] = home, ["GEM_HOME"] = home,
-                    ["PATH"] = Path.GetDirectoryName(ruby) + ":/usr/bin:/bin" },
+                new Dictionary<string, string?>
+                {
+                    ["HOME"] = home,
+                    ["GEM_HOME"] = home,
+                    ["PATH"] = Path.GetDirectoryName(ruby) + ":/usr/bin:/bin"
+                },
                 InheritEnvironment: false, CloseStandardInput: true), token);
             AssertExited(built, true);
             string path = Path.Combine(originals, "original.gem");
@@ -139,7 +143,7 @@ public sealed class RubyNativePublisherContractTests(TestContext context)
             string scratch = Directory.CreateDirectory(Path.Combine(root, "publisher"))
                 .FullName;
             var platform = new Dictionary<string, string?>
-                { [buddy ? "GITHUB_TOKEN" : "GEM_HOST_API_KEY"] = Key };
+            { [buddy ? "GITHUB_TOKEN" : "GEM_HOST_API_KEY"] = Key };
             string production = buddy ? "https://rubygems.pkg.github.com/hcoona"
                 : "https://rubygems.org";
             string loopback = "https://127.0.0.1:" + host.Port + (buddy ? "/hcoona" : "");
@@ -276,7 +280,8 @@ public sealed class RubyNativePublisherContractTests(TestContext context)
                 }
                 catch (Exception error) when (error is IOException or
                     OperationCanceledException or System.Security.Authentication
-                        .AuthenticationException) { }
+                        .AuthenticationException)
+                { }
             }
         }
 
@@ -307,7 +312,8 @@ public sealed class RubyNativePublisherContractTests(TestContext context)
             listener.Stop();
             try { await loop; }
             catch (Exception error) when (error is OperationCanceledException or
-                SocketException or ObjectDisposedException) { }
+                SocketException or ObjectDisposedException)
+            { }
             Task[] pending;
             lock (connections) pending = [.. connections];
             await Task.WhenAll(pending);

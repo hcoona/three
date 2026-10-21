@@ -72,8 +72,11 @@ internal static class RubyRelease
     {
         ValidateObservation(prepared, result);
         if (!Qualified(result.Observation.RequiredChecks, result.Observation.Checks) ||
-            result.Observation.Files is not [{ State: ReleaseFileState.Exact or
-                ReleaseFileState.Absent }])
+            result.Observation.Files is not [
+                {
+                    State: ReleaseFileState.Exact or
+                ReleaseFileState.Absent
+                }])
             throw new InvalidDataException("Current Ruby state cannot permit creation.");
         return result.Observation.Files[0].State == ReleaseFileState.Absent;
     }
@@ -148,9 +151,12 @@ internal static class RubyRelease
         // Completion is the native source observation of the exact gem and its original bytes.
         ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, final.Observation, uploads);
         if (publication is null && initiallyMissing)
-            return new(outcome with { State = ReleaseBusinessState.Unknown,
+            return new(outcome with
+            {
+                State = ReleaseBusinessState.Unknown,
                 Reasons = [.. outcome.Reasons,
-                    "Required Ruby publication result is missing; effects remain unknown."] },
+                    "Required Ruby publication result is missing; effects remain unknown."]
+            },
                 null, null);
         return new(outcome, uploads.Length != 0, publication);
     }

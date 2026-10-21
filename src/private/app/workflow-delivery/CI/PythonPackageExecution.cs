@@ -113,8 +113,10 @@ internal static class PythonPackageExecution
                         UnauthorizedAccessException or ArgumentException or
                             InvalidOperationException
                             or KeyNotFoundException)
-                    { status = CheckStatus.Failed; failures.Add(new(check.Key,
-                        exception.Message)); }
+                    {
+                        status = CheckStatus.Failed; failures.Add(new(check.Key,
+                        exception.Message));
+                    }
                 results.Add(check.Key, new(plan.Candidate, check.Key, status));
 
                 async Task<NativeCommandResult> RunAsync(NativeCommand command,
@@ -152,8 +154,11 @@ internal static class PythonPackageExecution
             ReleaseUnitDeclaration declaration = ReleaseUnitDeclarationReader.Read(text,
                 subject.Declaration);
             CheckSpec[] declared = PythonPackageChecks.Expand(
-                declaration with { Builds = declaration.Builds.Where(build =>
-                    build.Id == subject.Build).ToArray() }, members,
+                declaration with
+                {
+                    Builds = declaration.Builds.Where(build =>
+                    build.Id == subject.Build).ToArray()
+                }, members,
                 new Dictionary<string, string> { [subject.Directory] = subject.ExpectedVersion });
             CheckSpec[] expected = declared.Where(check => check.Package!.Build == subject.Build)
                 .ToArray();

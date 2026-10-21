@@ -80,7 +80,8 @@ public sealed class GithubReleaseTests(TestContext context)
         if (defect == "official-unreleased")
             fixture.Subject = fixture.Subject with
             {
-                Channel = "official", Destination = GithubReleaseUnits.Official,
+                Channel = "official",
+                Destination = GithubReleaseUnits.Official,
                 SelectedRef = "refs/heads/main",
             };
         GithubReleasePreparationResult result = await fixture.RunAsync(context.CancellationToken);
@@ -107,7 +108,8 @@ public sealed class GithubReleaseTests(TestContext context)
     {
         ReleaseSubject subject = Subject(destination == "github-release") with
         {
-            Destination = destination, SelectedRef = reference,
+            Destination = destination,
+            SelectedRef = reference,
         };
         if (admitted) _ = GithubReleaseUnits.Admit(subject);
         else Assert.ThrowsExactly<InvalidDataException>(() =>
@@ -361,7 +363,9 @@ public sealed class GithubReleaseTests(TestContext context)
                     .Select(id => new ReleaseCheck(id, ReleaseCheckStatus.Passed))]),
             new()
             {
-                ["name"] = subject.Unit, ["version"] = Version, ["commit"] = Revision,
+                ["name"] = subject.Unit,
+                ["version"] = Version,
+                ["commit"] = Revision,
                 ["public-release"] = "true",
                 ["tag"] = GithubReleaseUnits.Tag(subject, Version),
             },
@@ -466,7 +470,8 @@ public sealed class GithubReleaseTests(TestContext context)
                         ["ref"] = "refs/tags/" + tag,
                         ["object"] = new JsonObject
                         {
-                            ["type"] = AnnotatedTag ? "tag" : "commit", ["sha"] = commit,
+                            ["type"] = AnnotatedTag ? "tag" : "commit",
+                            ["sha"] = commit,
                         },
                     });
             }
@@ -475,7 +480,9 @@ public sealed class GithubReleaseTests(TestContext context)
                 return !releases.TryGetValue(path[(Repo + "/releases/tags/").Length..],
                     out Hosted? release) ? new(HttpStatusCode.NotFound) : Json(new JsonObject
                     {
-                        ["id"] = release.Id, ["tag_name"] = release.Tag, ["draft"] = false,
+                        ["id"] = release.Id,
+                        ["tag_name"] = release.Tag,
+                        ["draft"] = false,
                         ["prerelease"] = release.Prerelease,
                     });
             if (request.Method == HttpMethod.Get && owner is not null &&
@@ -494,12 +501,12 @@ public sealed class GithubReleaseTests(TestContext context)
             if (request.Method == HttpMethod.Post && path == Repo + "/releases")
             {
                 if (Failing == "create") return new(HttpStatusCode.UnprocessableEntity)
-                    { Content = new StringContent("{}") };
+                { Content = new StringContent("{}") };
                 JsonObject body = JsonNode.Parse(await request.Content!.ReadAsStringAsync(
                     token))!.AsObject();
                 string tag = (string)body["tag_name"]!;
                 if (releases.ContainsKey(tag)) return new(HttpStatusCode.UnprocessableEntity)
-                    { Content = new StringContent("{}") };
+                { Content = new StringContent("{}") };
                 tags.TryAdd(tag, (string)body["target_commitish"]!);
                 Release = releases[tag] = new(next++, tag, (string)body["name"]!,
                     (bool)body["prerelease"]!, (string?)body["make_latest"], []);
@@ -510,7 +517,7 @@ public sealed class GithubReleaseTests(TestContext context)
                 path == Repo + "/releases/" + owner.Id + "/assets")
             {
                 if (Failing == "upload") return new(HttpStatusCode.InternalServerError)
-                    { Content = new StringContent("{}") };
+                { Content = new StringContent("{}") };
                 string name = Uri.UnescapeDataString(request.RequestUri.Query["?name=".Length..]);
                 owner.Assets.Add(new(next++, name, "uploaded",
                     await request.Content!.ReadAsByteArrayAsync(token)));
@@ -521,8 +528,11 @@ public sealed class GithubReleaseTests(TestContext context)
 
         private static HttpResponseMessage Json(JsonNode value,
             HttpStatusCode status = HttpStatusCode.OK) =>
-            new(status) { Content = new StringContent(value.ToJsonString(), Encoding.UTF8,
-                "application/json") };
+            new(status)
+            {
+                Content = new StringContent(value.ToJsonString(), Encoding.UTF8,
+                "application/json")
+            };
     }
 
     // A committed product checkout and a controlled Windows toolchain: the product scripts
@@ -586,7 +596,8 @@ public sealed class GithubReleaseTests(TestContext context)
             else if (command.Executable == "dotnet" && args.Contains("get-version"))
                 stdout = new JsonObject
                 {
-                    ["SemVer2"] = Version + ".g0123456", ["GitCommitId"] = Subject.Revision,
+                    ["SemVer2"] = Version + ".g0123456",
+                    ["GitCommitId"] = Subject.Revision,
                     ["PublicRelease"] = Defect != "official-unreleased",
                 }.ToJsonString();
             else if (args.Any(arg => arg.EndsWith("Publish-ImageOcclusionEditor.ps1",

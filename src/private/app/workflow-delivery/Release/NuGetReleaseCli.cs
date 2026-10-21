@@ -33,7 +33,7 @@ internal static class NuGetReleaseCli
             using HttpClient client = RegistryHttpClient.Create();
             bool settle = publicationPath != "-" && ReleaseCli.Read(publicationPath,
                 TransferJson.Default.NuGetPublicationResult).Invocation is
-                    { ReturnedSuccessfully: true };
+            { ReturnedSuccessfully: true };
             NuGetObservationResult result = NuGetRelease.SettleAsync(preparation.Prepared,
                 observe ?? Observer(preparation.Prepared, client), ObserveCredential(
                     preparation.Prepared), settle ? NuGetRelease.SettleDeadline : TimeSpan.Zero,

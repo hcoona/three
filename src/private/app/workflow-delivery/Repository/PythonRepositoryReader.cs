@@ -19,7 +19,8 @@ internal sealed class PythonRepositoryReader
     private readonly Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute;
 
     internal PythonRepositoryReader(GitMaterialization checkout) : this(checkout,
-        new PythonNativeGraphReader().ReadAsync, NativeProcess.ExecuteAsync) { }
+        new PythonNativeGraphReader().ReadAsync, NativeProcess.ExecuteAsync)
+    { }
 
     internal PythonRepositoryReader(GitMaterialization checkout,
         Func<PythonGraphRequest, Func<PythonMetadata, PythonGroupOperation[]>,

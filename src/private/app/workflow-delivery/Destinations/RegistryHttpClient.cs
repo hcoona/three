@@ -12,11 +12,14 @@ internal static class RegistryHttpClient
 
     internal static HttpClientHandler CreateHandler() => new()
     {
-        AllowAutoRedirect = true, MaxAutomaticRedirections = MaxRedirects,
-        UseCookies = false, UseProxy = false, UseDefaultCredentials = false,
+        AllowAutoRedirect = true,
+        MaxAutomaticRedirections = MaxRedirects,
+        UseCookies = false,
+        UseProxy = false,
+        UseDefaultCredentials = false,
         AutomaticDecompression = DecompressionMethods.None,
     };
 
     internal static HttpClient Create() => new(CreateHandler())
-        { Timeout = Timeout.InfiniteTimeSpan };
+    { Timeout = Timeout.InfiniteTimeSpan };
 }

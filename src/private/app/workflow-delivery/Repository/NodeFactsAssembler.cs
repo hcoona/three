@@ -75,9 +75,12 @@ internal static class NodeFactsAssembler
             foreach (CheckSpec check in packages)
                 work[identities[check.Package!.Directory]].Add(check);
         }
-        after = after with { Projects = after.Projects.Select(project =>
+        after = after with
+        {
+            Projects = after.Projects.Select(project =>
             work.TryGetValue(project.Id, out List<CheckSpec>? checks)
-                ? project with { Checks = [.. checks] } : project).ToArray() };
+                ? project with { Checks = [.. checks] } : project).ToArray()
+        };
         return ImpactPlanner.PlanSelected(request with { Candidate = after }, selected);
     }
 

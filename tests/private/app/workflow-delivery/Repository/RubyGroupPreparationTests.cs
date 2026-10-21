@@ -65,10 +65,15 @@ public sealed class RubyGroupPreparationTests(TestContext context)
         string scope = Path.Combine(parent, "scope.json");
         await File.WriteAllTextAsync(scope, JsonSerializer.Serialize(new
         {
-            @base = revision, candidate = revision, full = true,
+            @base = revision,
+            candidate = revision,
+            full = true,
             changed_paths = Array.Empty<string>(),
-            endpoint_owners = new { basis = new { revision, paths = Array.Empty<object>() },
-                candidate = new { revision, paths = Array.Empty<object>() } }
+            endpoint_owners = new
+            {
+                basis = new { revision, paths = Array.Empty<object>() },
+                candidate = new { revision, paths = Array.Empty<object>() }
+            }
         }), token);
         string scratch = Directory.CreateDirectory(Path.Combine(parent, "preparation")).FullName;
         string Tool(string name) => Path.Combine(parent, "tools", name);
@@ -112,16 +117,33 @@ public sealed class RubyGroupPreparationTests(TestContext context)
         {
             string gemspec = input.RootElement.GetProperty("path").GetString()!;
             if (operation == "version")
-                return Answer(new { gemspec, raw = "1.2.3-beta.4",
-                    version = "1.2.3.pre.beta.4", literal = "\"1.2.3.pre.beta.4\"" });
-            return Answer(new { gemspec, name = "hcoona-release-smoke-ruby",
-                version = "1.2.3.pre.beta.4", platform = "ruby", require_paths = RequirePaths,
-                files = Array.Empty<string>(), runtime_dependencies = Array.Empty<object>() });
+                return Answer(new
+                {
+                    gemspec,
+                    raw = "1.2.3-beta.4",
+                    version = "1.2.3.pre.beta.4",
+                    literal = "\"1.2.3.pre.beta.4\""
+                });
+            return Answer(new
+            {
+                gemspec,
+                name = "hcoona-release-smoke-ruby",
+                version = "1.2.3.pre.beta.4",
+                platform = "ruby",
+                require_paths = RequirePaths,
+                files = Array.Empty<string>(),
+                runtime_dependencies = Array.Empty<object>()
+            });
         }
         Assert.AreEqual("bundle-context", operation);
         string gemfile = Path.Combine(request.Candidate.Directory, "node/Gemfile");
-        return Answer(new { gemfile, lockfile = gemfile + ".lock", bundler_version = "2.7.2",
-            locked_bundler_version = "2.4.20" });
+        return Answer(new
+        {
+            gemfile,
+            lockfile = gemfile + ".lock",
+            bundler_version = "2.7.2",
+            locked_bundler_version = "2.4.20"
+        });
     }
 
     [TestMethod]

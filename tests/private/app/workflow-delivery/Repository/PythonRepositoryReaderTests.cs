@@ -111,8 +111,10 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         {
             Passive = fixture.Native.Passive.Select(input => input.Project.Directory ==
                 Path.Combine(fixture.Root, "src", "a") ? input with
-                { Nbgv = new(fixture.Root,
-                    Path.Combine(fixture.Root, "src", "a", "generated.py")) } :
+                {
+                    Nbgv = new(fixture.Root,
+                    Path.Combine(fixture.Root, "src", "a", "generated.py"))
+                } :
                 input).ToArray()
         };
         PythonRevisionInputs inputs = await fixture.ReadAsync(context.CancellationToken);
@@ -269,8 +271,10 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         PythonRevisionInputs basis = await fixture.ReadAsync(context.CancellationToken);
         await fixture.UpdateAsync("src/a/source.py", "changed", context.CancellationToken);
         fixture.Native = fixture.Native with
-        { Projects = fixture.Native.Projects.Select(project => project.Directory == "src/b" ?
-            project with { Ordinary = [] } : project).ToArray() };
+        {
+            Projects = fixture.Native.Projects.Select(project => project.Directory == "src/b" ?
+            project with { Ordinary = [] } : project).ToArray()
+        };
         PythonRevisionInputs candidate = await fixture.ReadAsync(context.CancellationToken);
         CiPlan plan = PythonGroupPlanning.Plan(basis, candidate,
             new(basis.Facts.Revision, candidate.Facts.Revision, ["src/a/source.py"]), false);
@@ -293,9 +297,14 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
         PythonRevisionInputs inputs = await fixture.ReadAsync(context.CancellationToken);
         var comparison = new GitComparison(fixture.Revision, fixture.Revision,
             ["src/a/source.py"]);
-        inputs = inputs with { Facts = inputs.Facts with
-        { Projects = inputs.Facts.Projects.Select(project => project with
-            { Ordinary = [], Build = [] }).ToArray() } };
+        inputs = inputs with
+        {
+            Facts = inputs.Facts with
+            {
+                Projects = inputs.Facts.Projects.Select(project => project with
+                { Ordinary = [], Build = [] }).ToArray()
+            }
+        };
         Assert.IsEmpty(PythonGroupPlanning.Plan(inputs, inputs, comparison, false).Checks);
         Assert.HasCount(5, PythonGroupPlanning.Plan(inputs, inputs, comparison, true).Checks);
     }
@@ -479,10 +488,13 @@ public sealed class PythonRepositoryReaderTests(TestContext context)
                 return Task.FromResult(PytestError ? new(NativeTermination.Exited, 1, "", "", 0,
                     null) : Success(JsonSerializer.Serialize(new
                     {
-                        directory = Root, root = Root,
+                        directory = Root,
+                        root = Root,
                         configuration_file = Path.Combine(Root, "pyproject.toml"),
-                        testpaths = new[] { Target }, addopts = ImportOptions,
-                        pythonpath = Array.Empty<string>(), required_plugins = Array.Empty<string>()
+                        testpaths = new[] { Target },
+                        addopts = ImportOptions,
+                        pythonpath = Array.Empty<string>(),
+                        required_plugins = Array.Empty<string>()
                     })));
             }).ReadAsync(Request, new Dictionary<string, string?>(), token);
         }

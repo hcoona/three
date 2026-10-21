@@ -44,8 +44,13 @@ public sealed class NuGetLibraryPreparationNativeTests(TestContext context)
             {
                 result.Errors,
                 Failed = result.Commands.Where(command => !command.Result.Succeeded).Select(
-                    command => new { command.Check, command.Command.Arguments,
-                        command.Result.Stdout, command.Result.Stderr }),
+                    command => new
+                    {
+                        command.Check,
+                        command.Command.Arguments,
+                        command.Result.Stdout,
+                        command.Result.Stderr
+                    }),
             }));
             NuGetRelease.Validate(result);
             ReleaseFile file = Assert.ContainsSingle(result.Prepared.Files);

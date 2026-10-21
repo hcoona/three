@@ -221,11 +221,11 @@ public sealed class PythonGroupPreparationTests(TestContext context)
         if (defect == "reused")
             File.WriteAllText(Path.Combine(fixture.Request.Scratch, "old-state"), "old");
         else if (defect == "source-overlap") fixture.Request = fixture.Request with
-            { Scratch = fixture.Request.Basis.Directory };
+        { Scratch = fixture.Request.Basis.Directory };
         else if (defect == "missing-source")
             Directory.Delete(fixture.Request.ControlSources, recursive: true);
         else if (defect == "relative-tool") fixture.Request = fixture.Request with
-            { Tools = fixture.Request.Tools with { Uv = "uv" } };
+        { Tools = fixture.Request.Tools with { Uv = "uv" } };
         else if (defect == "deadline")
             fixture.Request = fixture.Request with { DeadlineSeconds = 0 };
         else fixture.Request = fixture.Request with { Full = true };
@@ -302,7 +302,7 @@ public sealed class PythonGroupPreparationTests(TestContext context)
                 full, Path.Combine(directory, "scope.json"), sources, scratch,
                 new(Tool("uv"), Tool("python"), Tool("dotnet")),
                 new("ubuntu-latest", "python-3.14", new()
-                    { ["python"] = "3.14", ["platform"] = "linux" }), 600);
+                { ["python"] = "3.14", ["platform"] = "linux" }), 600);
         }
 
         internal static async Task<Fixture> CreateAsync(bool full, CancellationToken token)

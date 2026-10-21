@@ -69,8 +69,11 @@ public sealed class PythonPreparationNativeTests(TestContext context)
             await File.WriteAllTextAsync(binding, JsonSerializer.Serialize(result),
                 context.CancellationToken);
             context.AddResultFile(binding);
-            Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(new { result.Errors,
-                FailedCommands = result.Commands.Where(command => !command.Result.Succeeded) }));
+            Assert.IsEmpty(result.Errors, JsonSerializer.Serialize(new
+            {
+                result.Errors,
+                FailedCommands = result.Commands.Where(command => !command.Result.Succeeded)
+            }));
             ReleaseCompletion.Validate(result.Prepared);
             Assert.HasCount(2, result.Prepared.Files);
             Assert.IsTrue(result.Prepared.Checks.All(check =>
@@ -200,10 +203,14 @@ public sealed class PythonPreparationNativeTests(TestContext context)
             ReleaseSubject subject = preparation.Prepared.Subject;
             var callerEnvironment = new Dictionary<string, string?>
             {
-                ["RUNNER_TEMP"] = directory, ["GITHUB_OUTPUT"] = output,
-                ["GITHUB_SHA"] = subject.Revision, ["GITHUB_REF"] = subject.SelectedRef,
-                ["DESTINATION"] = subject.Destination, ["DRY_RUN"] = "false",
-                ["UNIT"] = subject.Unit, ["GITHUB_RUN_ID"] = "native-preparation",
+                ["RUNNER_TEMP"] = directory,
+                ["GITHUB_OUTPUT"] = output,
+                ["GITHUB_SHA"] = subject.Revision,
+                ["GITHUB_REF"] = subject.SelectedRef,
+                ["DESTINATION"] = subject.Destination,
+                ["DRY_RUN"] = "false",
+                ["UNIT"] = subject.Unit,
+                ["GITHUB_RUN_ID"] = "native-preparation",
                 ["GITHUB_RUN_ATTEMPT"] = "1",
             };
             Assert.AreEqual(0, ReleaseJobInputs.Run(["release", "job-inputs", "python", "state"],
