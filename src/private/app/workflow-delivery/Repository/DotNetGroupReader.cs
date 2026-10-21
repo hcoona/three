@@ -1,3 +1,4 @@
+using System.Text.Json;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 
@@ -59,10 +60,12 @@ internal static class DotNetGroupReader
         ControlInputFacts? controlBasis = ControlInputs.Read(before, false);
         ControlInputFacts controlCandidate = ControlInputs.Read(after, true) ??
             throw new InvalidDataException("Missing candidate control inputs.");
-        (GroupEndpointFacts first, _) = Facts(before,
-            await NodeReader(basis).ReadAsync(token), controlBasis, false);
-        (GroupEndpointFacts second, after) = Facts(after,
-            await NodeReader(candidate).ReadAsync(token), controlCandidate, true);
+        NodeRepositoryReader basisNode = await NodeReaderAsync(basis, token);
+        (GroupEndpointFacts first, _) = Facts(before, await basisNode.ReadAsync(token),
+            controlBasis, false);
+        NodeRepositoryReader candidateNode = await NodeReaderAsync(candidate, token);
+        (GroupEndpointFacts second, after) = Facts(after, await candidateNode.ReadAsync(token),
+            controlCandidate, true);
         ScopeInputs joined = Join(scope, comparison, first, second);
         PlanRequest bound = joined.Bind(first.DotNet, second.DotNet);
         CiPlan plan = await DotNetFactsAssembler.CompleteAsync(
@@ -70,9 +73,23 @@ internal static class DotNetGroupReader
         return new(plan, joined.Basis, joined.Candidate);
     }
 
-    private static NodeRepositoryReader NodeReader(GitMaterialization endpoint) =>
-        new(endpoint, (arguments, token) => NativeProcess.RunAsync("mise", endpoint.Root,
-            ["exec", "--locked", "node", "pnpm", "--", "pnpm", .. arguments], token));
+    // Resolve the endpoint's locked mise environment and PNPM executable once, as
+    // `mise exec --locked node pnpm` would for each query, then run PNPM directly.
+    private static async Task<NodeRepositoryReader> NodeReaderAsync(
+        GitMaterialization endpoint, CancellationToken token)
+    {
+        using JsonDocument variables = JsonDocument.Parse(await NativeProcess.RunAsync("mise",
+            endpoint.Root, ["env", "--locked", "--json", "node", "pnpm"], token));
+        Dictionary<string, string> environment = variables.RootElement.EnumerateObject()
+            .ToDictionary(variable => variable.Name, variable => variable.Value.GetString() ??
+                throw new InvalidDataException("Unsupported mise environment value."));
+        string pnpm = (await NativeProcess.RunAsync("mise", endpoint.Root,
+            ["which", "--locked", "pnpm"], token)).Trim();
+        if (!Path.IsPathFullyQualified(pnpm))
+            throw new InvalidDataException("mise did not resolve a locked PNPM executable.");
+        return new(endpoint, (arguments, query) => NativeProcess.RunAsync(pnpm, endpoint.Root,
+            arguments, query, environment));
+    }
 
     internal static (GroupEndpointFacts Facts, DotNetRevisionInputs DotNet) Facts(
         DotNetRevisionInputs dotnet, NodeRevisionInputs node, ControlInputFacts? control,
