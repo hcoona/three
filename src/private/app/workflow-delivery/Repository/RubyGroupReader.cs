@@ -47,6 +47,7 @@ internal static class RubyGroupReader
         token.ThrowIfCancellationRequested();
         RubyRevisionInputs after = await collect(candidate, request.Candidate, token);
         token.ThrowIfCancellationRequested();
+        RubyRepositoryReader.RequireRegisteredPresets(after);
         RubyFactsEndpoint beforeFacts = WithOtherResponsibilities(before.Facts, scope.Basis);
         RubyFactsEndpoint afterFacts = WithOtherResponsibilities(after.Facts, scope.Candidate);
         if (beforeFacts.Revision.Commit != comparison.Basis.Commit ||
