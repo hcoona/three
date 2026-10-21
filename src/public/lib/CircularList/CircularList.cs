@@ -291,3 +291,4 @@ namespace IO.Github.Hcoona.Collections
         }
     }
 }
+// CI cost probe sample 1 for #1289.
