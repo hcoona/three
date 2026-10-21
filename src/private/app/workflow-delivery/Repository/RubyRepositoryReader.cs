@@ -94,9 +94,11 @@ internal static class RubyRepositoryReader
                 throw new InvalidDataException("Unsupported adopted Ruby quality obligations.");
             if (selection.Preset == RubyProjectChecks.Preset)
                 checks = RubyProjectChecks.Expand(selection, source.Directory);
-            else if (selection.Preset == RubyPackageChecks.Preset && unit is not null)
-                checks = RubyPackageChecks.Expand(unit, checkout.Root, native)
-                    .Where(check => check.Package!.Directory == source.Directory).ToArray();
+            else if (RubyPackageChecks.Presets.Contains(selection.Preset) && unit is not null)
+                checks = [.. selection.Preset == RubyPackageChecks.RSpecPreset
+                        ? [RubyProjectChecks.Suite(source.Directory)] : Array.Empty<CheckSpec>(),
+                    .. RubyPackageChecks.Expand(unit, checkout.Root, native)
+                        .Where(check => check.Package!.Directory == source.Directory)];
             else
                 throw new InvalidDataException("Unsupported adopted Ruby quality obligations.");
             string id = "ruby:" + source.Directory;

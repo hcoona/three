@@ -145,6 +145,8 @@ internal sealed class RubyLatexmathPackageOperations(RubyFactTools tools, string
             ["GEM_PATH"] = gems,
             ["RUBYLIB"] = null,
             ["RUBYOPT"] = null,
+            // Bundler installs into the owned GEM_HOME, not a caller's shared bundle path.
+            ["BUNDLE_PATH"] = null,
             ["BUNDLE_GEMFILE"] = Path.Combine(project, "Gemfile"),
             ["BUNDLE_FROZEN"] = "1",
             ["BUNDLE_WITHOUT"] = without,

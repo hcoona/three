@@ -11,7 +11,13 @@ internal static class RubyProjectChecks
     {
         if (selection?.Preset != Preset)
             throw new InvalidDataException("Unresolved Ruby project quality preset.");
+        return [Suite(directory)];
+    }
+
+    // The whole-project suite shared by every preset that adopts native RSpec.
+    internal static CheckSpec Suite(string directory)
+    {
         ImpactPlanner.ValidatePath(directory);
-        return [new(new(directory, RSpec, "default"), [], "ubuntu-latest", true, [])];
+        return new(new(directory, RSpec, "default"), [], "ubuntu-latest", true, []);
     }
 }
