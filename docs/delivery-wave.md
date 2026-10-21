@@ -324,8 +324,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
   uses the `ruby/rspec-v1` preset, so CI never builds, inspects or consumes the
   gem its release unit declares, contrary to WD-CI-004. The same review found
   that `hexo-renderer-asciidoc` keeps a bundle-only Ruby environment that no
-  script, test, CI or packaging step consumes (the package uses
-  `@asciidoctor/core`), and that it alone keeps the Ruby → Node fact transfer
+  product script, test or packaging step consumes (the package uses
+  `@asciidoctor/core`); its only consumers are CI and Renovate configuration
+  that exist to serve the bundle itself. It alone keeps the Ruby → Node fact transfer
   and the `node-group` dependency on `ruby-group`. The repository owner
   authorized one entry for both.
 - **Accepted inputs:** the Workflow Delivery
@@ -336,7 +337,7 @@ ends a grant. Git and the proposing PR retain the reason and history.
   the [Python integration contract](../src/private/app/workflow-delivery/docs/integration/python.md),
   the [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
   the [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md),
-  `.github/workflows/ci.yml`, Latexmath's committed
+  `.github/workflows/ci.yml`, `renovate.json`, Latexmath's committed
   `workflow-delivery.quality.yml` and `workflow-delivery.release-unit.yml`,
   and the committed `src/public/lib/hexo-renderer-asciidoc/` configuration.
 - **Advancement and outcome:**
@@ -363,7 +364,18 @@ ends a grant. Git and the proposing PR retain the reason and history.
       `src/public/lib/hexo-renderer-asciidoc/Gemfile` and `Gemfile.lock`, the
       `ruby` tool in its `.mise.toml` and the corresponding Ruby entries in its
       `mise.lock`, and the `Gemfile.lock` exclusions in its `hk.pkl` and
-      `.nwa-config.yaml`. Leave its CHANGELOG history unchanged.
+      `.nwa-config.yaml`. Leave its CHANGELOG history unchanged. In the same
+      change, remove the bundle's CI and configuration consumers:
+        - the `node-tests` "Prepare selected Hexo native bundle" step and the
+          Ruby version its committed-tool read supplies only to that step;
+        - the `ruby-group` Bundler probe's read of Hexo's `Gemfile.lock`,
+          which instead reads the version from another committed native lock
+          that remains, such as Latexmath's or the Workflow Delivery Ruby
+          test bundle's; the choice is left to implementation, but the
+          version must not come from a duplicated version roster;
+        - the Hexo `Gemfile` paths in the two `renovate.json` bundler rules;
+        - the `tests/eng` workflow tests and the Workflow Delivery tests
+          that preserve these consumers or use the Hexo bundle paths.
     - **Ruby → Node fact transfer contraction:** remove the Ruby → Node
       contribution (`RubyNodeContribution` and its `node-inputs.json`
       artifact), the `RubyNodeInputConsumers` join, the Node caller's Ruby
@@ -387,9 +399,10 @@ ends a grant. Git and the proposing PR retain the reason and history.
   before repair. Do not simulate gem checks with RSpec or replace native gem
   build or install with file inspection.
 - **Effects:** permit source and repository/GitHub inspection, documentation,
-  workflow, product configuration and implementation changes, locked tool
-  preparation, isolated local builds and credential-free tests, independent
-  delegated review, ordinary PR/check operations and their normal CI.
+  workflow, Renovate and product configuration and implementation changes,
+  locked tool preparation, isolated local builds and credential-free tests,
+  independent delegated review, ordinary PR/check operations and their normal
+  CI.
 - **Exclusions:** no Ruby plan/execute job split (Issue
   [#1288](https://github.com/hcoona/three/issues/1288) remains deferred) and
   no Source conformance tool trim; no change to Ruby support for Latexmath or
@@ -398,4 +411,5 @@ ends a grant. Git and the proposing PR retain the reason and history.
   destinations, release units or channels; no release, dispatch, publication,
   credential, Environment or access change; no reopening of completed Ruby
   campaigns; no other CI job, ecosystem group, required-check or ruleset
-  change. Delete this entry when the outcome is accepted.
+  change beyond the bounded `node-tests`, Bundler probe, `node-group`
+  dependency and Renovate path changes named above. Delete this entry when the outcome is accepted.
