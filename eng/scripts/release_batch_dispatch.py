@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 import time
@@ -160,12 +161,24 @@ def observe(run: Run) -> None:
     run.conclusion = response.get("conclusion") or ""
 
 
+def interval(text: str) -> float:
+    """Accept a finite, non-negative number of seconds."""
+    seconds = float(text)
+    if not math.isfinite(seconds) or seconds < 0:
+        message = "must be a finite, non-negative number of seconds"
+        raise argparse.ArgumentTypeError(message)
+    return seconds
+
+
 def main(argv: list[str] | None = None) -> int:
     """Validate, dispatch, await and summarize the requested runs."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--ref", required=True, help="branch or tag to run on")
     parser.add_argument(
-        "--poll-interval", type=float, default=30, help="seconds between polls"
+        "--poll-interval",
+        type=interval,
+        default=30,
+        help="seconds between polls",
     )
     parser.add_argument("entries", nargs="+", metavar="CALLER:INPUT=VALUE,...")
     arguments = parser.parse_args(argv)
