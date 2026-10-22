@@ -73,15 +73,15 @@ inputs. A changed .NET product does not by itself require AzureAuth artifacts or
 unrelated Python tests.
 
 The scope job builds the candidate control application, then installs locked
-tools, restores dotnet tools and performs a locked `dotnet restore dirs.proj`
+tools and performs a locked `dotnet restore dirs.proj`
 at each endpoint before selection; it runs no tests or full validation.
 Each existing required GitHub context remains present and fails if selection
 fails, is canceled, or omits required output. Successful explicit
 non-applicability may omit work; selected work must complete successfully.
-The stable required `Validate` context consumes the source-conformance,
-scholarly-test, NuGet native preparation and native preparation test job
-results. Its short result guard rejects failed, skipped, missing or canceled
-results, including workflow cancellation. All four workers
+The stable required `Validate` context consumes the results of the jobs listed
+in its `needs` in [ci.yml](../../.github/workflows/ci.yml). Its short result
+guard rejects failed, skipped, missing or canceled
+results, including workflow cancellation. These workers
 retain explicit successful non-applicability and run independently; this
 summary does not move project tests back into HK or precede language jobs.
 Worker jobs use `!cancelled()` so failed selection still reaches the scope
@@ -180,10 +180,9 @@ With `--staged`, the endpoints are `HEAD` and the index.
 ## Quoted Paths and Watchdogs
 
 [hk_exec.py](../../eng/scripts/hk_exec.py) normalizes quoted file arguments
-and splits the command from the file list at the **last** `--`. This matters
-for commands such as `pnpm exec -- prettier --check -- <files>`, where the
-first separator belongs to pnpm. It also supports per-file execution,
-heartbeats, timeout handling, and process-tree termination. Its controls are
+and splits the command from the file list at the first `--hk-files` marker,
+falling back to the **last** `--` for the legacy form, as described above.
+It also supports per-file execution, heartbeats, timeout handling, and process-tree termination. Its controls are
 `HK_EXEC_TIMEOUT_SECONDS`, `HK_EXEC_HEARTBEAT_SECONDS`, and `HK_EXEC_PER_FILE`;
 the implementation owns their defaults and command-line overrides.
 

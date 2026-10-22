@@ -79,10 +79,13 @@ required publication information remains unknown even when final bytes match.
 
 ## Implemented Scope
 
-Native package recipes currently cover the four real products under
-[`tests/private/app/workflow-delivery/fixtures/products/`](../../../../tests/private/app/workflow-delivery/fixtures/products/).
-Their ordinary coordinates are unchanged. They have no special trust, admission
-policy or source witness. Moving a fixture changes its native source/version
+The four release-smoke fixtures under
+[`tests/private/app/workflow-delivery/fixtures/products/`](../../../../tests/private/app/workflow-delivery/fixtures/products/)
+exercise the native package recipes; the
+[integration contracts](docs/middle-level-design.md#integration-mapping) and
+their release-unit registrations own the public product inventory.
+The fixtures' ordinary coordinates are unchanged. They have no special trust,
+admission policy or source witness. Moving a fixture changes its native source/version
 inputs; it promises neither old/new byte equality nor republication.
 
 The public [nbgv-python](../../../public/lib/nbgv-python/README.md) component

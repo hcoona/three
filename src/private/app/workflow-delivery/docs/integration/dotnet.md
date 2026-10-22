@@ -529,9 +529,10 @@ checked.
 
 Observe Official nuget.org anonymously through the same shared client
 (`Destinations/NuGetOrgObservation`). Official `ServiceIndexResourceV3`
-interprets `https://api.nuget.org/v3/index.json`, which must name exactly
+interprets `https://api.nuget.org/v3/index.json`, which must name
 `https://api.nuget.org/v3-flatcontainer/` as PackageBaseAddress and
-`https://www.nuget.org/api/v2/package` as PackagePublish. nuget.org's
+`https://www.nuget.org/api/v2/package` as PackagePublish, compared after
+normalizing each to one trailing slash. nuget.org's
 trusted-publishing policy and package ownership own package control, so the
 application reads no owner metadata. nuget.org repository-signs every accepted
 package and its versions are immutable, so under the WD-REL-009 nuget.org
@@ -556,8 +557,8 @@ For Buddy, the standard handler supplies Basic authentication only to the select
 GitHub NuGet origin; the API-key delegate supplies the same scoped native
 capability, and GitHub metadata API reads use Bearer authentication separately. For Official,
 the only credential is the API key in the native `X-NuGet-ApiKey` header to
-`https://www.nuget.org/api/v2/package`, with no Basic authentication. The
-caller obtains it from the official `NuGet/login` action, which exchanges the
+the canonical `https://www.nuget.org/api/v2/package/` endpoint, with no Basic
+authentication. The caller obtains it from the official `NuGet/login` action, which exchanges the
 job's GitHub OIDC token (audience `https://www.nuget.org`) at
 `https://www.nuget.org/api/v2/token` for a short-lived key. The repository
 variable `NUGET_USER` names the nuget.org account that owns the
