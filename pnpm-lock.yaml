@@ -27,8 +27,8 @@ importers:
         specifier: 0.0.83
         version: 0.0.83
       '@upstash/context7-mcp':
-        specifier: 4.4.3
-        version: 4.4.3
+        specifier: 4.4.4
+        version: 4.4.4
       ap-style-title-case:
         specifier: ^2.0.0
         version: 2.0.0
@@ -980,8 +980,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@upstash/context7-mcp@4.4.3':
-    resolution: {integrity: sha512-COt1AT3cStZ1wWZ9u1zThqFiVT/nb4rPdYrgyu3ZT6dwnstUaJpfGztq8EJEL9ZPyu9XlOSX3I/jNIcvSdloog==}
+  '@upstash/context7-mcp@4.4.4':
+    resolution: {integrity: sha512-T2DkjhweDnC2mRAclDiTrPG3KI1zYKhhjgY2SMKD9PVrbEaGD8x35VsIOqpwwDc2qiKBvfYCF/jqr+jQMu5PUA==}
     engines: {node: '>=20.18.1'}
     hasBin: true
 
@@ -3559,7 +3559,7 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
-  '@upstash/context7-mcp@4.4.3':
+  '@upstash/context7-mcp@4.4.4':
     dependencies:
       '@modelcontextprotocol/node': 2.1.1(@modelcontextprotocol/server@2.3.1)
       '@modelcontextprotocol/server': 2.3.1
