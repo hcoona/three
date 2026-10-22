@@ -88,9 +88,10 @@ application; consumption proves installation and file layout, not runtime
 behavior.
 
 The editor download in `Update-LocalSvgEditor.ps1` is the product's own
-resolution of its pinned `svgedit` npm version. It has no separate integrity
-pin, and the retired v1 stack did not bundle the editor; that remains a
-recorded gap.
+resolution of its pinned `svgedit` npm version. The script pins that version's
+npm integrity (`sha512` SRI) and verifies the downloaded package before
+extraction; a mismatch deletes the package and fails preparation, and a
+different version without a supplied integrity fails before download.
 
 ### Observation and Publication
 
