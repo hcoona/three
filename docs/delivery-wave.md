@@ -93,7 +93,10 @@ ends a grant. Git and the proposing PR retain the reason and history.
   `.github/workflows/ci.yml`.
 - **Advancement and outcome:** determine the stall's root cause from the
   captured diagnostics. If no recurrence yields evidence, use a bounded
-  reproduction on a Windows runner through ordinary PR CI. Fix the cause with
+  reproduction on a Windows runner through ordinary PR CI: one draft
+  reproduction PR, at most 10 CI runs and at most 50 harness launches per run,
+  stopping at the first captured stall; close the PR and delete its branch when
+  done. Fix the cause with
   scenario tests. Evaluate the 5 s production doctor probe budget against
   measured interpreter startup and fix it with its tests if it is wrong.
 - **Ordering and gates:** follow the existing engineering, OCR and
