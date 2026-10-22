@@ -55,7 +55,7 @@ jobs:
         id: tools
         run: python3 eng/scripts/locked_tool_versions.py dotnet node >> "$GITHUB_OUTPUT"
       - name: Prepare selected native tools
-        uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           version: '2026.10.11'
           experimental: true
@@ -121,7 +121,7 @@ jobs:
           path: ${{ runner.temp }}/control
           digest-mismatch: error
       - name: Prepare native runtime without product execution
-        uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           install: false
           working_directory: ${{ runner.temp }}
@@ -205,7 +205,7 @@ jobs:
           path: ${{ runner.temp }}/control
           digest-mismatch: error
       - name: Prepare native runtime without product execution
-        uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           install: false
           working_directory: ${{ runner.temp }}
@@ -279,7 +279,7 @@ jobs:
           path: ${{ runner.temp }}/control
           digest-mismatch: error
       - name: Prepare native runtime without product execution
-        uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           install: false
           working_directory: ${{ runner.temp }}
@@ -352,7 +352,7 @@ jobs:
           path: ${{ runner.temp }}/control
           digest-mismatch: error
       - name: Prepare native runtime without product execution
-        uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           install: false
           working_directory: ${{ runner.temp }}
