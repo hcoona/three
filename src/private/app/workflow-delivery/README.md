@@ -177,6 +177,32 @@ Completion, retry and recovery semantics are owned by the
 per-destination completion conditions in each
 [integration contract](docs/middle-level-design.md#integration-mapping).
 
+### Dispatching Release Requests
+
+Each caller run is one request for one unit and destination. To request several
+units, dispatch the ordinary runs together and await them from the repository
+root:
+
+```shell
+mise run release:batch -- --ref main \
+  python:unit=hcoona-release-smoke-python,registry=testpypi,dry-run=true \
+  ruby:destination=github-packages,unit=hcoona-release-smoke-ruby,dry-run=true
+```
+
+An entry is `CALLER:INPUT=VALUE,...`; `CALLER` names the
+`.github/workflows/workflow-delivery-v3-CALLER-release.yml` caller
+(`browser-store`, `github`, `npm`, `nuget`, `python` or `ruby`). The
+[entry point](../../../../eng/scripts/release_batch_dispatch.py) validates every
+entry against the caller's `workflow_dispatch` inputs in the current checkout
+before dispatching anything. Each entry must give every input, including
+`dry-run`. It dispatches one run per entry on `--ref` through the GitHub API,
+which returns each created run's ID. It then waits for every run and prints each
+run's ID, URL and conclusion. It exits `0` only when every run succeeded, `1`
+when any run failed, was not dispatched or could not be read, and `2` for
+invalid entries. The runs remain independent: each live run waits for its own
+Environment approval in GitHub, and one failure does not stop the others. A
+single request is `gh workflow run <caller> --ref <ref> -f <input>=<value>`.
+
 ### npm Release
 
 The product-neutral caller

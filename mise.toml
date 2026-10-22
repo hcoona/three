@@ -142,6 +142,10 @@ run = "uv run --script eng/scripts/check_repository_records.py"
 description = "Run the bounded repository record checker regression suite"
 run = "uv run --script tests/eng/test_repository_records.py"
 
+[tasks."release:batch"]
+description = "Dispatch and await one ordinary Release caller run per entry"
+run = "uv run --script eng/scripts/release_batch_dispatch.py"
+
 [tasks.slngen]
 description = "Generate .NET solution file for local development"
 run = 'dotnet slngen --nologo --ignoreMainProject --launch false --loadprojects false --folders true --collapsefolders true -o ./main.sln'
