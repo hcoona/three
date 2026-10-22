@@ -7,7 +7,12 @@ non-reuse boundary, Environment removal, both failed native generations,
 active-lifecycle correction, admitted native v2 evidence, first real failure,
 second real publication, and both spent dispatch grants. The current handoff
 owns the operating boundary; historical disabled or pending states below do
-not reopen completed work or unresolved original-D recovery.
+not reopen completed work. The owner (@hcoona) closed the original-D matter by
+disposition on 2026-10-22: deleted original D `1224723835` is retained as a
+tombstone record and active replacement `1224727284` remains as-is, with no
+administrative action required or authorized. The verbatim sections below still
+describe that matter as unresolved or a separate recovery decision as of their
+dates.
 
 The source is [`docs/wiki/log.md` at the accepted base](https://github.com/hcoona/three/blob/b673ee27aab8553a4ee259bcaca87a197178463c/docs/wiki/log.md),
 Git blob `6764f2e8f6aede4894bc4ef826329fe81081e9f5`. Each dated heading and
