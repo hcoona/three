@@ -10,7 +10,8 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 // Temporary bounded reproduction for Issue #1395. This file is never merged.
 public sealed partial class PythonPhase11ProductDoctorTests
 {
-    private const int ReproLaunchLimit = 50;
+    // The original test contributes the 50th launch of each run.
+    private const int ReproLaunchLimit = 49;
     private static readonly TimeSpan ReproLaunchTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ReproSlowThreshold = TimeSpan.FromSeconds(5);
 
@@ -343,6 +344,96 @@ public sealed partial class PythonPhase11ProductDoctorTests
         );
         return $"{result.Status} {result.StandardOutput.ReplaceLineEndings(" ")} "
             + result.StandardError.ReplaceLineEndings(" ");
+    }
+
+    private static async Task<string> WatchOriginalLaunchAsync(
+        DateTime launch,
+        CancellationToken stop
+    )
+    {
+        var evidence = new StringBuilder();
+        foreach (TimeSpan at in new[] { ReproSlowThreshold, TimeSpan.FromMilliseconds(9500) })
+        {
+            TimeSpan wait = launch + at - DateTime.Now;
+            try
+            {
+                if (wait > TimeSpan.Zero)
+                {
+                    await Task.Delay(wait, stop);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return evidence.ToString();
+            }
+
+            evidence.Append(CultureInfo.InvariantCulture, $"[@{at.TotalMilliseconds:F0}ms ");
+            foreach (Process candidate in Process.GetProcessesByName("python"))
+            {
+                using (candidate)
+                {
+                    try
+                    {
+                        if (candidate.StartTime < launch.AddSeconds(-1))
+                        {
+                            continue;
+                        }
+
+                        evidence.Append(CultureInfo.InvariantCulture,
+                            $"start={candidate.StartTime:O} "
+                                + $"path={candidate.MainModule?.FileName} ");
+                    }
+                    catch (Exception exception) when (exception is InvalidOperationException
+                        or System.ComponentModel.Win32Exception or NotSupportedException)
+                    {
+                        evidence.Append(CultureInfo.InvariantCulture,
+                            $"candidateFailed={exception.Message} ");
+                    }
+
+                    evidence.Append(Snapshot(candidate)).Append(' ');
+                }
+            }
+
+            evidence.Append(']');
+        }
+
+        return evidence.ToString();
+    }
+
+    private static async Task RecordOriginalLaunchAsync(
+        DateTime launch,
+        TimeSpan wall,
+        ProcessResult result,
+        IEnumerable<SystemProcessRunner.ProcessMilestone> milestones,
+        string watchdogEvidence
+    )
+    {
+        var text = new StringBuilder();
+        text.Append(CultureInfo.InvariantCulture,
+            $"AZSTALL_ORIGINAL launchLocal={launch:O} wallMs={wall.TotalMilliseconds:F0} ");
+        text.Append(CultureInfo.InvariantCulture,
+            $"status={result.Status} exit={result.ExitCode} ");
+        text.Append(CultureInfo.InvariantCulture,
+            $"resolved={ResolveCommandForDiagnostics("python") ?? "<unresolved>"} milestones=");
+        foreach (SystemProcessRunner.ProcessMilestone milestone in milestones)
+        {
+            text.Append(CultureInfo.InvariantCulture,
+                $"{milestone.Name}@{milestone.Elapsed.TotalMilliseconds:F0}ms, ");
+        }
+
+        text.AppendLine();
+        text.AppendLine(CultureInfo.InvariantCulture, $"watchdog={watchdogEvidence}");
+        text.AppendLine(CultureInfo.InvariantCulture, $"stdout={result.StandardOutput}");
+        text.AppendLine(CultureInfo.InvariantCulture, $"stderr={result.StandardError}");
+        string outputDirectory =
+            Environment.GetEnvironmentVariable("TESTINGPLATFORM_DIAGNOSTIC_OUTPUT_DIRECTORY")
+            ?? AppContext.BaseDirectory;
+        Directory.CreateDirectory(outputDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(outputDirectory, "azstall-original.txt"),
+            text.ToString(),
+            CancellationToken.None
+        );
     }
 
     private sealed record LaunchRecord(

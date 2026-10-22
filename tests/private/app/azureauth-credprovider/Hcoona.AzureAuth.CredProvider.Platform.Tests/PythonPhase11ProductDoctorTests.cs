@@ -186,6 +186,10 @@ public sealed partial class PythonPhase11ProductDoctorTests
         string pythonCommand = OperatingSystem.IsWindows() ? "python" : "python3";
         var milestones = new System.Collections.Concurrent.ConcurrentQueue<
             SystemProcessRunner.ProcessMilestone>();
+        using var watchdogStop = new CancellationTokenSource();
+        DateTime watchdogLaunch = DateTime.Now;
+        Task<string> watchdog = WatchOriginalLaunchAsync(watchdogLaunch, watchdogStop.Token);
+        var originalWall = System.Diagnostics.Stopwatch.StartNew();
         ProcessResult result = await new SystemProcessRunner(milestones.Enqueue)
             .RunAsync(
                 new ProcessStartSpec(
@@ -195,6 +199,16 @@ public sealed partial class PythonPhase11ProductDoctorTests
                 ),
                 TestContext.Current.CancellationToken
             );
+        originalWall.Stop();
+        await watchdogStop.CancelAsync();
+        string watchdogEvidence = await watchdog;
+        await RecordOriginalLaunchAsync(
+            watchdogLaunch,
+            originalWall.Elapsed,
+            result,
+            milestones,
+            watchdogEvidence
+        );
         Assert.SkipWhen(
             result.Status == ProcessExecutionStatus.LaunchFailure,
             $"The {pythonCommand} command is required for this integration test."
@@ -209,6 +223,7 @@ public sealed partial class PythonPhase11ProductDoctorTests
                 + string.Join(", ", milestones.Select(milestone =>
                     $"{milestone.Name}@{milestone.Elapsed.TotalMilliseconds:F0}ms"))
                 + $"; stdout={result.StandardOutput}; stderr={result.StandardError}"
+                + $"; watchdog={watchdogEvidence}"
         );
         Assert.Equal(33, result.ExitCode);
         Assert.Equal(
