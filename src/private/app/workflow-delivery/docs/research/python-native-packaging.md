@@ -7,7 +7,7 @@ build its complete wheel/sdist set and consume the original distributions
 without a second dependency declaration or application implementation of UV.
 The native-interface findings below are pinned public-source evidence and narrow
 design inference. The separate
-[completed corrected Linux observation](python-native-package-qualification.md#completed-corrected-linux-package-observation)
+[completed corrected Linux observation](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#completed-corrected-linux-package-observation)
 qualifies the exact four-check integration, retaining the separately classified
 audit-method exception. Historical failures remain in that protocol/evidence record.
 The [Python integration contract](../integration/python.md#native-python-package-execution) owns the selected
@@ -116,13 +116,12 @@ The complete original product build retains prepared tools, shared mode and
 native build-dependency checking. Same-tools noneditable reconciliation and
 Git-free original-archive consumption remain unchanged.
 
-This is source evidence and a correction inference, not successful runtime
-qualification. Accept the affected contract before implementation, then bind and
-review a fresh exact subject/protocol/readiness before using the remaining
-package lifetime. Existing owned public-only installation/build/cache effects,
-credentials/TLS restrictions and finite bounds apply. No additional owner decision
-was identified for this bounded candidate; changed effects, reduced guarantees or
-exhausted allowance still require owner disposition.
+This is source evidence and a correction inference, separate from the later
+exact Linux observation linked above. The selected integration follows the
+current Python package contract. Historical package lifetimes are spent or
+expired; any further native experiment requires its own accepted exact subject,
+protocol, readiness and effects authorization. No remaining lifetime or
+historical preparation reserve supplies current permission.
 
 ## Native Original-Archive Build Identity
 
@@ -231,8 +230,8 @@ controlled coverage do not establish actual corrected output adoption or consume
 Historical package lifetimes remain spent. The
 [fresh package reserve](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#fresh-output-option-package-reserve)
 records the approved buffer and unchanged first subject. The
-[completed corrected Linux observation](python-native-package-qualification.md#completed-corrected-linux-package-observation)
-now qualifies exact native output adoption and both original consumers, with the
+[completed corrected Linux observation](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#completed-corrected-linux-package-observation)
+qualifies only its recorded native output adoption and both original consumers, with the
 separately classified audit-method exception retained. One package lifetime was spent
 and both unused slots expired. Existing callers, root pytest and Release retain
 separate qualification requirements.

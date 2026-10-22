@@ -823,6 +823,44 @@ NAPI and embedded-runtime findings stay unselected. Hoisted or global virtual
 stores, dedicated lock layouts and multiple peer contexts are rejected or
 unobserved shapes, as recorded above. Windows remains the owner's assumption.
 
+## Native Execution Evidence and Pin Guard
+
+The [closed Node execution observation](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/node-ci-native-execution.md)
+qualifies the adopted npm fixture's five-check recipe in two executions of one
+same-candidate plan on its recorded Linux/tool/lock context. It does not qualify
+other presets, hosted event/transfer/caller integration, whole-repository
+coverage or Windows. The owner's [Windows assumption](../high-level-design.md#versions-original-bytes-and-provenance)
+is separate. The original protocol, source/caller identities, complete archive,
+failed initial generation, effects limits and independent reviews remain in
+that historical record and its original PR carriers. Its finite allowance and
+unused reserve are stopped; no execution, cleanup or publication follows.
+
+The observation stays bound to Node 24.21.0, PNPM 12.8.2 and npm 11.19.0.
+`NpmPackContractTests` guards the consumed execution facts at the locked Node
+and PNPM in the Linux native-preparation job, with the selection and isolation
+above. Tests use the production command builders on the committed
+`fixtures/npm-contract` workspace and assert:
+
+- the Node and PNPM version readback used by preparation;
+- the runtime reader's acceptance of the real
+  `mise ls --json --current --locked` selection, with locked Node as packaging
+  variant and locked PNPM as plan dimension, and rejection for another root;
+- build/test scripts execute with
+  `--config.verify-deps-before-run=false` without PNPM's implicit install;
+- `pack --out` writes exactly its requested path after successful prepack,
+  writes nothing after failed prepack, injects the root license and retains
+  the payload required by `NodePackageArchive`;
+- multi-field `pkg get --json` returns flat dotted keys for the recipe's
+  `engines.runtime` rejection and Release's `publishConfig.directory` read;
+- isolated offline installation imports the original archive, while a missing
+  archive or skipped install fails.
+
+`RepositoryPinContractsTests.LockedNodeRuntimeHasItsPackagingMatrixEntry` keeps
+the locked Node major in the `node-tests` matrix. npm is bundled with the Node
+selected by the dispatch-only Buddy workflow rather than separately pinned.
+These checks do not establish npm publication, registry authentication or
+GitHub Packages behavior beyond the separately recorded runs.
+
 ## Actual Reader and Script Metadata Observation
 
 The separately accepted

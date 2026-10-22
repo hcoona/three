@@ -250,7 +250,7 @@ Different-commit packages may differ despite equal versions.
 
 The owner chose to proceed assuming native NBGV and the combined helpers are
 viable on Windows, without a separate feasibility run. The
-[feasibility record](research/contraction-feasibility.md) keeps its unadmitted
+[historical feasibility record](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/contraction-feasibility.md) keeps its unadmitted
 local observations apart from that assumption; they are not a passed Windows
 observation. Ordinary implementation and CI failures still require correction
 or explicit disposition.

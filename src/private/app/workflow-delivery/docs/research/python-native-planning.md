@@ -68,6 +68,25 @@ edge can conceal that omission. This is not an observed failed UV invocation or
 CI run. Metadata alone therefore lacks a necessary premise for the required
 Python impact closure.
 
+## Group Metadata Limitation
+
+The [independently classified finding](https://github.com/hcoona/three/pull/1081#discussion_r4214344232)
+retains a support gap, not a regression from the historical empty-vector fix.
+Native [resolver applicability][uv-group-applicability] can discard every
+requirement in a nonempty flattened group when its marker is disjoint from
+the workspace Python range; [resolved group construction][uv-resolved-groups]
+then need not create a metadata group entry. A synchronized lock does not
+guarantee a graph node for every nonempty declaration. The metadata-free preview
+preservation path is not a guarantee for ordinary locks or a selected workaround.
+
+This valid UV shape remains unsupported by the strict application association;
+missing metadata alone does not suppress a required fact. At the next Python
+integration review, its author must define and independently review a maintained
+native no-contribution transfer before claiming support for that shape or
+complete group-transfer behavior. These are source findings, not a new runtime
+observation; the current contract tests' marker-disjoint fixture does not itself
+establish application support.
+
 ## Native Library Candidate and Its Limits
 
 This section retains the original candidate assessment. The
@@ -297,12 +316,12 @@ Python check/prerequisite/execution mapping and caller cutover.
 Undeclared dynamic inputs retain the implementation plan's unsupported boundary.
 No generic helper framework is implied.
 
-The [current-tool collector observation](python-native-graph-qualification.md#completed-ordinary-and-no-dev-observation)
+The [historical collector observation](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/python-native-graph-qualification.md#completed-ordinary-and-no-dev-observation)
 qualifies exact complete ordinary/no-dev graph composition, separately from
 this source assessment and the primitive observation. Its failed lifetimes,
 corrections and final cleanup remain retained; the first accepted success stopped
 all remaining captures. The separate
-[planning-input observation](python-planning-enrichment-qualification.md#completed-planning-input-observation)
+[planning-input observation](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/python-planning-enrichment-qualification.md#completed-planning-input-observation)
 qualifies native pytest, committed NBGV/quality inputs and producer input mapping
 on those exact Linux subjects. It reused retained graph answers without another
 UV query; its campaign and cleanup are complete, and both unused diagnostics
@@ -318,12 +337,15 @@ a concrete accepted isolated protocol. Reuse the retained primitive evidence
 for its qualified boundary; do not repeat it as a complete-reader test.
 
 The metadata, passive-extraction and identity facts these findings rely on are
-guarded by `PythonNativeContractTests` at the locked pins. The pytest query is guarded by
+guarded by `PythonNativeContractTests` and `PythonPreparationNativeTests` in the
+Linux native-preparation job at the locked pins. The pytest query is guarded by
 `Native/Python/test_pytest_configuration_contract.py`, which runs the locked
 pytest. A change to the Python planning facts or caller that relies on other
 native behavior still evaluates it in that change. Keep immutable source
 findings separate from later operation observations and support claims.
 
+[uv-group-applicability]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-resolver/src/resolver/requirements.rs#L255
+[uv-resolved-groups]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-lock/src/lock/mod.rs#L6688
 [uv-pin]: https://github.com/astral-sh/uv/tree/46b84fd0bfec23b72f29e8e2185ba68a65052f48
 [metadata-doc]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/docs/reference/internals/metadata.md#L3-L35
 [metadata-source]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-lock/src/lock/export/metadata.rs
