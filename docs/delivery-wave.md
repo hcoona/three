@@ -159,15 +159,18 @@ ends a grant. Git and the proposing PR retain the reason and history.
   published package pages on GitHub Packages and each Official destination,
   and the [engineering principles](engineering/engineering-principles.md).
 - **Advancement and outcome:** record, per ecosystem and destination, which
-  README each package and version page shows; fix any product whose package
-  metadata does not ship or declare its own README; report on Issue #1350 any
-  remaining case that is a platform rendering limit for the owner to accept.
+  README each package and version page shows; fix any NuGet, npm, PyPI or
+  RubyGems product whose package metadata does not ship or declare its own
+  README; report on Issue #1350 any remaining case that is a platform
+  rendering limit for the owner to accept. Browser-store and GitHub Release
+  units are observed only.
 - **Ordering and gates:** follow the existing engineering, OCR and
   record-system review gates. Platform-limit acceptance is an owner decision.
-- **Acceptance:** every publishable product's packed artifact ships and
-  declares its own README, verified by locally packing or inspecting the
-  artifact; the per-destination observations and any owner-accepted platform
-  limit are recorded on Issue #1350. Delete this entry when accepted.
+- **Acceptance:** every NuGet, npm, PyPI and RubyGems product's packed
+  artifact ships and declares its own README, verified by locally packing or
+  inspecting the artifact; the per-destination observations, including
+  browser-store and GitHub Release units, and any owner-accepted platform limit
+  are recorded on Issue #1350. Delete this entry when accepted.
 - **Effects:** permit source and repository/GitHub and public package-page
   inspection, product packaging-metadata and README changes, isolated local
   builds, packs and credential-free tests, independent delegated review, and
