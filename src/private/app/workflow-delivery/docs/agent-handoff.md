@@ -106,9 +106,11 @@ establish narrower credential reach or protect against a malicious accepted
 writer. Environment self-approval is not independent security review.
 
 The completed v2 generation and both normal-Live runs are spent. Preserve the
-first failed run and the second actual publication independently. The original
-D and active replacement remain an unresolved exceptional administrative
-recovery matter; do not delete, restore, recreate or compensate for them.
+first failed run and the second actual publication independently. By owner
+disposition (@hcoona, 2026-10-22), the original D administrative matter is
+closed: the deleted original D is retained as a tombstone record and the active
+replacement remains as-is. No deletion, restoration, recreation or compensation
+is required or authorized.
 Active non-overwrite does not promise lifetime-global reservation after
 administrative deletion. The removed legacy Environment must not be recreated.
 [Original native and publication evidence](validation/native-and-normal-live-evidence.md)
