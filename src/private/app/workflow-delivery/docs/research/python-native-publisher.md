@@ -43,6 +43,26 @@ The original public source responses, retrieval requests, source hashes and
 independent assessments remain in the delivery work carrier. They establish
 source behavior, not this repository's effective native authorization.
 
+## Destination Source Basis and Rechecks
+
+The [original Python destination/build study](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/research/python-smoke-evidence.md)
+retains the service-source findings: uploads create one file at a time, PyPI
+prohibits filename reuse, TestPyPI may prune its separate database, and the
+destinations have distinct endpoints and OIDC audiences. These findings do not
+promise an atomic wheel/sdist set, immediate visibility or permanent retention.
+Its Warehouse identical-file source findings, failed native counterexample and
+subsequent owner platform-reliance decision remain distinct evidence.
+
+Before a destination or publisher-profile selection relies on mutable upload,
+filename, retention, index or OIDC sources, the implementer rechecks the cited
+official documentation; contrary observations also trigger this check. An
+independent evidence reviewer assesses material changes, and the next Wave
+selecting Python implementation or operations is the fallback review event.
+Recheck backend/build documentation when selecting or changing its version,
+and reevaluate repository-code findings when the selected adapter changes.
+Record results in the Issue/PR and update affected current conclusions before
+execution. These rechecks do not reopen a closed campaign or authorize a probe.
+
 ## Development-Branch Native Version Projection
 
 The current Python project's non-inheriting `version.json` matches only

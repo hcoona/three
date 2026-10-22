@@ -114,5 +114,6 @@ ends a grant. Git and the proposing PR retain the reason and history.
 - **Exclusions:** no Python 3.15 migration (tracked by #1247) and no change to
   the Renovate Python hold; no release, proving or campaign dispatch,
   publication, credential, Environment, account, publisher or other access
-  change; no change to the retained legacy `release-orchestrate.yml` stack
-  beyond an owner decision recorded separately; no new runtime matrix.
+  change; no restoration or modification of the retired legacy
+  `release-orchestrate.yml` stack beyond an owner decision recorded separately;
+  no new runtime matrix.

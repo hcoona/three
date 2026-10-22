@@ -105,7 +105,9 @@ failures. A bare `SocketException` is not covered because the real
 `SocketsHttpHandler` wraps socket errors in `HttpRequestException`. The
 `NUGET_RETRY_HTTP_429` and `NUGET_ENHANCED_*` environment settings are outside
 the guard: CI sets none of them, and the guard asserts the defaults. Live GitHub
-Packages behavior remains bound to the recorded runs. A change that alters the
+Packages behavior remains bound to the
+[historical native/publication records](../validation/historical-readers.md#retired-campaign-records).
+A change that alters the
 bound fails CI; it does not add an application retry mechanism.
 
 [commit]: https://github.com/NuGet/NuGet.Client/tree/977537e19c6be57fead1411e6cf05f936bf1baf4
