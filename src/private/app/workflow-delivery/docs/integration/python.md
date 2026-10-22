@@ -20,7 +20,7 @@ interpreter, resolver or compatibility promise. A nonempty flattened
 dependency group whose every requirement has a marker disjoint from the
 workspace Python range can lack a metadata node; that valid UV
 shape remains an unsupported
-[group-transfer gap](../research/python-native-graph-qualification.md#failed-captures-and-counterexamples)
+[group-transfer gap](../research/python-native-planning.md#group-metadata-limitation)
 with its recorded review obligation.
 
 For each exact basis/candidate checkout, bind revision, workspace root,
@@ -482,7 +482,7 @@ and the applicable project API check must agree with the intended native version
 and outputs; command exit alone cannot satisfy them. A source finding about
 native Hatchling metadata reuse alone does not establish Git-free runtime
 qualification. The adopted composition retains its exact original-wheel and
-Git-free original-sdist [package observations](../research/python-native-package-qualification.md);
+Git-free original-sdist [package observations](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#completed-corrected-linux-package-observation);
 current caller qualification and affected changes remain scoped to their actual
 source, tools and environment. This establishes no universal backend/version
 support. Do not rewrite `pyproject.toml` to force success.

@@ -121,6 +121,26 @@ integration and recheck boundaries remain in the native publisher records.
 | [Ruby destination/build study](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/research/ruby-smoke-evidence.md)                      | Original source findings, failed bootstrap, separate redirect observation and publisher assumptions                         |
 | [Ruby normal-Live evidence](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/ruby-normal-live-evidence.md)                 | Separate destination publications, clean consumers, failed attempts and spent operation budgets                             |
 
+## Retired Local Qualification Records
+
+These completed local records retain their original protocols, exact subjects,
+source and environment identities, original-byte hashes, audit/classification
+carriers, failures, cleanup and spent ceilings at snapshot
+`e90543cf4b9c5b069053221f7b9d38ee6035ea11`. That snapshot preserves text, not a
+replacement actual producer or new evidence admission. Follow each record's
+original source/protocol/output bindings; unavailable local originals remain an
+evidence limitation. No retired allowance, reserve or cleanup may be reused.
+Current native findings and pin guards remain in the planning/packaging records,
+and the HLD owns the Windows assumption.
+
+| Historical record                                                                                                                                                                                   | Original role and evidence limit                                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Contraction feasibility](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/contraction-feasibility.md)                 | Unadmitted Linux author observations and their missing protocol acceptance, separate from the owner's Windows assumption                           |
+| [Node CI execution](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/node-ci-native-execution.md)                      | Exact adopted-fixture five-check Linux composition; failed initial generation, complete original packet, independent reviews and expired reserve   |
+| [Python native graph](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/python-native-graph-qualification.md)           | Exact UV 0.12.23 ordinary/no-dev collector composition, three failed captures, separate cleanup recovery and stopped unused attempts               |
+| [Python planning inputs](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/python-planning-enrichment-qualification.md) | Exact Linux pytest/NBGV/quality input composition reusing retained graphs, without another UV query or full caller qualification                   |
+| [Python package execution](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md)    | Exact original-wheel/Git-free-sdist four-check Linux observation, separately classified audit-method exception, failed lifetimes and expired slots |
+
 ## Retired records
 
 These Workflow Delivery records were deleted from the current tree. Their

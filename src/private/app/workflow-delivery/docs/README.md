@@ -29,15 +29,14 @@ native contract test that names it fails. Pin changes are guarded by those
 tests; the remaining rechecks are the service and decision-time checks the
 records name.
 
-| Integration                     | Source and bounded observations                                                                                                                                                                          | Read when                                                                                                               |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Git and managed inputs          | [Git facts](research/git-native-facts.md), [MSBuild items](research/msbuild-native-items.md), [NBGV inputs](research/nbgv-native-inputs.md)                                                              | Changing Git comparison/path reading, the control-test resource query or NBGV input mapping                             |
-| PNPM and Node                   | [PNPM 12 planning](research/pnpm-native-planning.md), [native Node execution](research/node-ci-native-execution.md)                                                                                      | Changing the [Node integration](integration/node.md) or the PNPM pin                                                    |
-| Python planning and preparation | [Native planning](research/python-native-planning.md), [graph qualification](research/python-native-graph-qualification.md), [planning enrichment](research/python-planning-enrichment-qualification.md) | Changing Python planning facts, the UV/PyPA pins or the pytest query in the [Python integration](integration/python.md) |
-| Python package execution        | [Packaging assessment](research/python-native-packaging.md), [finite qualification](research/python-native-package-qualification.md)                                                                     | Changing Python package preparation, build or consumers                                                                 |
-| Native publishers               | [NuGet](research/nuget-native-publisher.md), [Python](research/python-native-publisher.md), [Ruby](research/ruby-native-publisher.md)                                                                    | Changing that ecosystem's Release publisher, observation or completion                                                  |
-| Contraction assumptions         | [Feasibility](research/contraction-feasibility.md)                                                                                                                                                       | Questioning the owner's Windows assumption or native NBGV build execution                                               |
-| Registry support                | [GitHub Packages registries](research/github-packages-supported-registries.md)                                                                                                                           | A destination decision relying on the supported ecosystem matrix                                                        |
+| Integration                     | Source and bounded observations                                                                                                             | Read when                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Git and managed inputs          | [Git facts](research/git-native-facts.md), [MSBuild items](research/msbuild-native-items.md), [NBGV inputs](research/nbgv-native-inputs.md) | Changing Git comparison/path reading, the control-test resource query or NBGV input mapping                             |
+| PNPM and Node                   | [PNPM planning and execution](research/pnpm-native-planning.md)                                                                             | Changing the [Node integration](integration/node.md) or the PNPM pin                                                    |
+| Python planning and preparation | [Native planning](research/python-native-planning.md)                                                                                       | Changing Python planning facts, the UV/PyPA pins or the pytest query in the [Python integration](integration/python.md) |
+| Python package execution        | [Packaging assessment](research/python-native-packaging.md)                                                                                 | Changing Python package preparation, build or consumers                                                                 |
+| Native publishers               | [NuGet](research/nuget-native-publisher.md), [Python](research/python-native-publisher.md), [Ruby](research/ruby-native-publisher.md)       | Changing that ecosystem's Release publisher, observation or completion                                                  |
+| Registry support                | [GitHub Packages registries](research/github-packages-supported-registries.md)                                                              | A destination decision relying on the supported ecosystem matrix                                                        |
 
 The Python package record preserves failed output adoption and spent lifetimes
 beside later bounded success. Neither tool readiness nor corrected source
@@ -55,7 +54,11 @@ the failed Python native generation and
 [retired campaign records](validation/historical-readers.md#retired-campaign-records).
 Git retains the original studies, protocols, publication results and recovery
 evidence; current native publisher records retain applicable source/recheck
-boundaries.
+boundaries. Completed local graph, planning-input, package and Node execution
+observations, plus unadmitted contraction observations, are indexed separately
+as [retired local qualification records](validation/historical-readers.md#retired-local-qualification-records).
+The HLD retains the current Windows assumption; an old observation does not
+qualify changed source or tools.
 
 ## Historical Source Rule
 

@@ -898,7 +898,7 @@ separately from legitimately broad changes; fast full execution is not successfu
 impact selection.
 
 Local/controlled results do not establish live platform acceptance. The owner's
-[Windows assumption](research/contraction-feasibility.md#decision-and-evidence-scope)
+[Windows assumption](high-level-design.md#versions-original-bytes-and-provenance)
 remains accepted without a separate experiment gate. Completed campaigns remain
 closed; no implementation validation can silently consume a spent external grant.
 
