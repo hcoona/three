@@ -87,51 +87,21 @@ complete group-transfer behavior. These are source findings, not a new runtime
 observation; the current contract tests' marker-disjoint fixture does not itself
 establish application support.
 
-## Native Library Candidate and Its Limits
+## Passive Extraction and Retired Library Candidate
 
-This section retains the original candidate assessment. The
-[planning-fact contract](../integration/python.md#native-python-planning-facts)
-no longer selects it; see the [retirement recheck](#embedded-uv-supplement-retirement).
-
-UV [documents][build-sources] that its build frontend respects `tool.uv.sources`
-for build requirements. PyPA `build` does not provide those UV source semantics.
-Using `--no-sources` changes the operation and cannot qualify the source-aware
-planning path.
-
-UV publicly exports
-[`BuildRequires::from_project_maybe_workspace`][build-lowering], used by its own
-build frontend. It delegates workspace discovery, source/index lowering and
-markers to native UV code. Workspace sources produce typed directory coordinates,
-which a finite adapter could join to native project roots. This is source
-association, not complete build dependency resolution, exact version-satisfaction
-proof or arbitrary file-read discovery.
-
-The passive extraction interface has limits. UV's
-[build-system extractor][uv-extractor] is private. Public
-[build setup][uv-build-setup] [resolves and installs][uv-build-setup-effects]
-build requirements under build isolation; it is not a passive graph query.
 PyPA `build` offers the public
 [`ProjectBuilder.build_system_requires`][pypa-build] property for declared/default
-requirements. The planning contract bounds its composition with UV's native
-parsing/lowering to an explicit declared shape. The source finding alone does not
-qualify error and identity behavior; arbitrary default contexts remain unestablished.
-Dynamic PEP 517 hooks execute backend code and do not promise a complete input
-inventory.
+requirements. The current [planning-fact contract](../integration/python.md#native-python-planning-facts)
+bounds that passive extraction to an explicit declared shape. Dynamic PEP 517
+hooks execute backend code and do not promise complete input discovery.
+UV [documents][build-sources] source-aware build requirements; PyPA extraction
+alone does not supply those semantics, and `--no-sources` changes the operation.
 
-UV [labels][uv-versioning] its component crates internal and unstable. Public Rust
-exports do not establish a supported external integration or compatibility
-promise. The pinned [workspace manifest][uv-cargo] declares Rust 1.97.0, and
-[`uv-distribution`][uv-distribution-cargo] declares version 0.0.90. A supplement adds a real Rust preparation dependency alongside Python
-requirement extraction. These source findings alone do not establish compilation,
-runtime availability or platform feasibility.
-
-This candidate does not yet establish an unavoidable product tradeoff. The
-accepted HLD permits native-language library helpers; the owner's PNPM-specific
-CLI choice does not impose a Python CLI-only requirement. The planning contract selects a finite composition from this evidence. Its
-complete integration and support/maintenance cost remain unqualified. Source
-findings alone must not claim complete relations have already
-been recovered, relax completeness, add duplicate declarations, or implement UV
-source semantics in the application.
+The [retired library assessment][library-assessment] preserves the former Rust
+supplement's exact API, source, dependency and feasibility findings. It is not a
+fallback or a selected reader. The
+[retirement recheck](#embedded-uv-supplement-retirement) owns the source basis for
+the guarded application association that replaced it.
 
 ## Embedded UV Supplement Retirement
 
@@ -277,35 +247,26 @@ The wheel was inspected as source bytes, not imported, installed or executed.
 
 This supports the narrow property-consumption source contract for the admitted
 explicit Hatchling/no-backend-path shape. It does not qualify actual composition
-with 1.6.1 or the current UV lock revision. The primitive observation below remains
-bound to its original tools, including PyPA 1.4.1; its stopped campaign and expired
-reserves are unchanged. A future complete collector/caller protocol must bind the
-actual accepted dependencies and lock format instead of upgrading the old observation.
+with 1.6.1 or another UV lock revision. The primitive observation remains bound
+to its original tools, including PyPA 1.4.1; its stopped campaign and expired
+reserves are unchanged. Any qualification for other tools or lock formats must
+bind those actual subjects instead of upgrading the old observation.
 
 ## Primitive Native Observation
 
-The independently accepted [native outcome](https://github.com/hcoona/three/pull/1063#issuecomment-6045152503)
-and [retained originals](https://github.com/hcoona/three/pull/1063#issuecomment-6045108404)
-qualify the pinned ordered C# reader, passive extraction and UV Rust supplement
-on Linux 6.6.157.1-1.azl3/x86_64/glibc 2.38, CPython 3.14.3, UV 0.12.23 and
-Rust 1.97.0. The evidence archive SHA256 is
-`f8952378e7b7341d20ae6f12ae8657f67150ac965a3ed4eadc85189d2b11ce25`.
-The protocol manifest SHA256 is
-`83e68edfa26e634ed8d3b0d504ddb2d67bc92f4c8d81d61fb69f6a880cd22a06`.
-The actual composition preserves build-only and ordinary-plus-build associations,
-local build chains/extras, native marker/interpreter/group answers and finite
-negative diagnostic outcomes. The two actual repository endpoints deliberately
-materialize the same reviewed tree. Synthetic ordinary relations are controls,
-not observed native ordinary edges.
+The [original primitive observation][primitive-observation] retains exact
+protocol/source/environment identities, archive/manifest hashes, native outcome
+and independent acceptance. It qualifies only its ordered C# reader, passive
+extraction and former UV Rust supplement at UV 0.12.23/PyPA 1.4.1 on the recorded
+Linux subject. Same-tree endpoints and synthetic ordinary controls do not
+establish different-commit deletion/rename, full ownership/caller integration,
+package execution, Windows, publication or future compatibility. It also
+establishes neither universal containment nor zero egress.
 
-This observation does not establish complete Workflow ownership/activity/impact
-assembly, different-commit deletion/rename, check execution, package consumers,
-caller cutover, Windows, publication, future compatibility, zero egress or
-universal containment. The first independently accepted success stopped the
-campaign; both unused diagnostic reserves expired. Retained replay fixtures
-exercise application adaptation without reopening that campaign. Any necessary
-later native experiment needs its own accepted concrete protocol and effects
-bounds; these results do not authorize it.
+The first accepted success stopped that campaign and expired both unused
+diagnostics. Retained fixtures replay application adaptation, not new native
+qualification. Further experiments require their own accepted protocol and
+effects authorization.
 
 ## Later Evidence and Recheck
 
@@ -345,6 +306,8 @@ native behavior still evaluates it in that change. Keep immutable source
 findings separate from later operation observations and support claims.
 
 [uv-group-applicability]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-resolver/src/resolver/requirements.rs#L255
+[library-assessment]: https://github.com/hcoona/three/blob/938bb34c458da1ce5c94e93fa4f4d3f9ade2e058/src/private/app/workflow-delivery/docs/research/python-native-planning.md#native-library-candidate-and-its-limits
+[primitive-observation]: https://github.com/hcoona/three/blob/938bb34c458da1ce5c94e93fa4f4d3f9ade2e058/src/private/app/workflow-delivery/docs/research/python-native-planning.md#primitive-native-observation
 [uv-resolved-groups]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-lock/src/lock/mod.rs#L6688
 [uv-pin]: https://github.com/astral-sh/uv/tree/46b84fd0bfec23b72f29e8e2185ba68a65052f48
 [metadata-doc]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/docs/reference/internals/metadata.md#L3-L35
@@ -354,17 +317,10 @@ findings separate from later operation observations and support claims.
 [smoke-manifest]: https://github.com/hcoona/three/blob/48539dd209a5247b86b7c7e28bfce405e15a0c7c/src/public/lib/hcoona-release-smoke-python/pyproject.toml
 [sample-manifest]: https://github.com/hcoona/three/blob/48539dd209a5247b86b7c7e28bfce405e15a0c7c/src/sample/nbgv-hatch-demo/pyproject.toml
 [build-sources]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/docs/concepts/projects/dependencies.md#L800-L838
-[build-lowering]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-distribution/src/metadata/build_requires.rs#L18-L168
 [pypa-build]: https://github.com/pypa/build/blob/bd889569a1b9e2e7722682378c2d0cec469166a2/src/build/_builder.py#L199-L226
-[uv-versioning]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/docs/reference/policies/versioning.md#L14-L28
 [repository-uv-pin]: https://github.com/hcoona/three/blob/5eb196692be8b45298a506c71f521e19f9a9d226/mise.toml#L25-L27
 [repository-uv-lock]: https://github.com/hcoona/three/blob/5eb196692be8b45298a506c71f521e19f9a9d226/mise.lock#L815-L817
 [tree-warning]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/project/tree.rs#L84-L90
-[uv-extractor]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-build-frontend/src/lib.rs#L661-L678
-[uv-build-setup]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-build-frontend/src/lib.rs#L289-L335
-[uv-build-setup-effects]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-build-frontend/src/lib.rs#L391-L417
-[uv-cargo]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/Cargo.toml#L10-L16
-[uv-distribution-cargo]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-distribution/Cargo.toml#L1-L6
 [metadata-preview]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/docs/reference/internals/metadata.md#L160-L170
 [metadata-warning]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv/src/commands/workspace/metadata.rs#L66-L73
 [uv-lock-flags]: https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-cli/src/lib.rs#L7879-L7892

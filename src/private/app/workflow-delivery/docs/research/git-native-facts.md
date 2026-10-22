@@ -70,9 +70,10 @@ Raw-byte process cases preserve leading U+FEFF and reject malformed/BOM-looking
 invalid UTF-8. Index metadata avoids requiring OS symlink privileges or checking
 out unusual names. Results and exact reviewed trees belong in the delivery PR.
 
-This component supplies committed tree/path inputs. Complete RepositoryFacts,
-ownership/input expansion, ecosystem evaluation at each revision
-and caller cutover remain pending. Missing objects required by a selected query
+This component supplies committed tree/path inputs. Its tests do not establish
+complete RepositoryFacts, ownership/input expansion, ecosystem evaluation or
+caller integration; those follow the owning integration contracts and their
+own qualification. Missing objects required by a selected query
 fail; no unrelated blob/history audit, fetching, repair, retry, trust record or
 full-run fallback is added. Ordinary Windows changed-code CI remains the existing
 validation path; its feasibility is the owner's accepted assumption. No external

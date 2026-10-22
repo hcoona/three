@@ -85,8 +85,9 @@ qualify project evaluation. Windows feasibility remains the owner's accepted
 assumption; actual changed-code CI failures still require correction.
 
 This component is not complete .NET inputs, roster/import/reference discovery,
-owner routing, cross-runner transfer or CI group cutover. Retained Python consumers
-and wider facts remain integration prerequisites. No registry operation, release
+owner routing, cross-runner transfer or CI group qualification. Retained Python
+consumers and wider facts belong to their owning integration contracts rather
+than this narrow resource projection. No registry operation, release
 dispatch, new dependency declaration, credentials, native buffer generation,
 generic fact service or application trust protocol follows from this projection.
 The `Native*` rows of `MsBuildResourceReaderTests` guard the native switches and
