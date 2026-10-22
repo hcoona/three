@@ -2,781 +2,207 @@
 
 ## Scope and Premise
 
-This source assessment supports the application's
+This assessment supplies source evidence for the application's
 [native fact integration](../middle-level-design.md#native-fact-integration).
-Its original interface assessment and native observations use PNPM 12.8.1;
-the [12.9.0 pin recheck](#pnpm-1290-pin-recheck) assessed the repository pin of that time, 12.9.0,
-and the [12.11.2 pin recheck](#pnpm-12112-pin-recheck) assessed the pin selected on 2026-10-12, 12.11.2.
-It does not audit
-the former V3 implementation or assert runtime coverage. The
-[Node integration contract](../integration/node.md#native-pnpm-facts)
-records the owner's CLI selection. Maintainers and integration reviewers use this assessment to avoid choosing
-an incomplete API or introducing a second PNPM resolver.
+The [Node integration contract](../integration/node.md#native-pnpm-facts)
+owns the selected CLI integration; this record does not select a second resolver,
+helper runtime or dependency/output declaration.
 
-The owner confirmed that valid, synchronized repository locks are an existing
-premise. The [MLD](../middle-level-design.md#minimum-facts) owns that analysis
-contract. Missing-target diagnostics in a manifest-only graph are consequently
-not a reason to create another lock-validation gate. Revision selection and
-installed-state selection remain different concerns.
+Valid synchronized repository locks are an existing analysis premise. Reading
+the selected revision's wanted lock is distinct from reading installed state;
+neither requires another lock-validation gate.
 
-## Immutable Source Basis
+Original source findings below use PNPM 12.8.1, commit
+`57e7b9b76ac3a5ef67461093071b2264335a1a01`. The
+[historical assessment][historical-assessment] retains the unselected NAPI,
+external-helper and embedded-Node alternatives, original package/source
+identities, finite CLI protocols, results and version-specific rechecks.
+The Rust v12 CLI and maintained v11 JavaScript packages are distinct source
+bases; the latter do not establish v12 CLI behavior. No alternative is a current
+fallback, and historical execution budgets remain exhausted.
 
-Except for the explicitly versioned pin recheck, source findings below use PNPM release `v12.8.1`, commit
-`57e7b9b76ac3a5ef67461093071b2264335a1a01`.
+## Native CLI Source Findings
 
-The release [README][release-readme] identifies the v12 CLI as Rust and the
-`pnpm11/` TypeScript line as maintained for bug fixes. Findings about a v11
-JavaScript project-graph package cannot establish v12 CLI behavior. In particular,
-the v12 [workspace graph implementation][workspace-graph] handles `link:` paths
-and npm aliases; this differs from the earlier v11 interface assessment.
+| Interface                                 | Useful contract                                             | Limit for Workflow analysis                                         |
+| ----------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------- |
+| Recursive `list` with JSON and depth `-1` | Native workspace discovery and project directory identities | Membership, not dependency edges                                    |
+| Native directory/dependency selector      | PNPM's project reachability                                 | A transitive closure, not an exported direct-edge graph             |
+| `list --lockfile-only --json`             | Wanted-lock dependencies, paths and groups                  | Presentation output does not expose every source-identity field     |
+| `list --only-projects`                    | Linked importer and publish-directory association           | Omits package-snapshot edges, including some local directory inputs |
 
-The public [npm version metadata][napi-metadata] inspected on 2026-10-03 identifies
-`@pnpm/napi@12.8.1`, its [distribution archive][napi-archive] and optional platform
-packages at the same version. Registry integrity is
-`sha512-T1TczlkTX3Cd6Vj3AhHWGiIJfrUjgkmPwCSoYXzvd4Yu/ngFIJ1XRlCQWrjZDDZSr+myZ8chRkQ31mUTah94VA==`.
-This establishes published availability, not successful installation or execution
-on any platform. No binding was installed or exercised for this assessment.
+[Recursive listing][list-recursive] discovers projects before listing them;
+[the command][list-command] propagates `--lockfile-only` and implements depth
+`-1` without dependency traversal. [Structured output][list-json] supplies each
+root's path and each dependency's native path. The
+[inspection graph][inspection-graph] distinguishes package-snapshot nodes from
+importer targets. [Package information][pkg-info] can expose a virtual-store
+installation path rather than an injected workspace source directory; the
+native [directory resolution][resolution] retains that source separately.
 
-The [binding README][napi-readme] describes the package as the Rust engine's
-programmatic API, with Bit as a reference consumer. It explicitly exposes native
-lockfile operations to avoid a second implementation of the engine-owned format.
-It also retains ordinary JavaScript packages for type definitions and small pure
-helpers. The Rust rewrite does not make every maintained JavaScript helper an
-inappropriate dependency.
+## CLI Fact Extraction
 
-## Source Findings
+[Recursive selection][recursive-selection] builds PNPM's project graph and
+applies directory/dependency selectors before rendering. Its
+[project view][project-graph-view] includes peer, development, optional and
+production groups. The source-supported composition is:
 
-| Interface                                 | Useful contract                                                                                                            | Limit for Workflow analysis                                                                                          |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `readLockfile({dir, kind: 'wanted'})`     | Reads the committed lock with the Rust parser; returns the file shape, including importers, package metadata and snapshots | Parsing is not workspace discovery or a resolved project graph                                                       |
-| `filterLockfileByImporters`               | Native package-snapshot closure for selected importers and dependency groups                                               | Other importer entries remain unchanged; `link:` edges end that package-graph walk                                   |
-| `getDependents`                           | Native reverse trees used by `pnpm why`                                                                                    | Prefers the current installed lock; workspace leaf nodes have name/version/field but no directory identity           |
-| `readConfig`                              | Native configuration cascade                                                                                               | Published projection has no workspace-membership patterns and includes credentials; never serialize the whole result |
-| `parseBareSpecifier`                      | Splits alias and bare specifier                                                                                            | The pinned implementation leaves `fetchSpec` and `type` unset; it is not a local-path resolver                       |
-| Recursive `list` with JSON and depth `-1` | Native workspace discovery and project directory identities                                                                | Provides membership, not dependency edges                                                                            |
-| `list --lockfile-only --json`             | Wanted-lock dependency listing with native paths and dependency groups                                                     | JSON is a presentation of the graph; it does not expose every source-identity field                                  |
-| `list --only-projects`                    | Follows linked importer nodes and recognizes publish directories                                                           | Its project-edge filter excludes package-snapshot nodes, including local directory dependencies represented that way |
+1. Discover source projects with `pnpm list --recursive --include-workspace-root
+--lockfile-only --json --depth -1`.
+2. Query each discovered directory with the same native command and an exact
+   dependency selector such as `--filter '{./packages/app}...'`. Remove only
+   the initiating project from the adapted relation set; preserve every other
+   returned project identity. Do not decode specifiers, aliases or semver.
+3. Retain each revision's reachability separately and combine them under the
+   MLD impact algorithm. Native transitive closure is not a direct-edge graph.
+4. Complement this with singleton full wanted-lock queries and the
+   [directory association](#directory-coordinate-adaptation-candidate) below;
+   neither filter closure nor `--only-projects` alone establishes completeness.
 
-The [typed binding contract][napi-types] defines the public inputs and outputs.
-The following implementation passages establish the material details:
+The [graph's directory lookup][workspace-graph] matches project roots, not
+every nested publish directory. The [linked-project view][list-linked-projects]
+has its own publish-directory association. Workflow owns exact selectors and
+returned identity checks; PNPM owns their interpretation. Native selector
+glob/legacy behavior must not turn one intended directory into a subtree.
 
-- [Lockfile binding][napi-lockfile] reads the wanted file explicitly and returns
-  the engine's file-shaped JSON. [Native filtering][lock-filter] narrows package
-  snapshots and metadata, carries other importers through, and stops on links.
-- [Dependents binding][napi-dependents] calls `LoadedState::load(..., false)`;
-  [loaded state][loaded-state] interprets that flag as current-lock preference
-  with wanted-lock fallback. The binding exposes no wanted-only option.
-- [Specifier binding][napi-specifier] returns alias/bare-specifier fields with
-  no resolved path or type. Field names in the declaration alone do not imply
-  those facts are populated.
-- [Recursive listing][list-recursive] discovers projects before listing them.
-  [Listing][list-command] propagates `--lockfile-only` and implements depth `-1`
-  without walking dependencies. [Structured output][list-json] supplies each
-  root's path and each dependency's native path.
-- [Inspection graph][inspection-graph] treats a resolved package key as a package
-  node; `only_projects` keeps importer targets instead. [Package information][pkg-info]
-  locates package nodes in the virtual store and omits directory resolution from
-  the `resolved` field. Such a path is not the source directory of an injected
-  workspace dependency. The native lock's [directory resolution][resolution]
-  preserves the source directory separately.
+The narrow layout queries and explicit selector setting have pinned source
+support. [`config get --json`][config-values] renders an unset key as JSON null;
+the [override parser][config-overrides] accepts
+`--config.legacy-dir-filtering=false`, and [configuration loading][config-loading]
+applies CLI values over workspace settings. These are source findings; the old
+12.8.1 observations did not exercise those queries or that explicit override.
 
-The [workspace][workspace-crate] and [workspace-graph][graph-crate] Rust crates are
-marked `publish = false` at this release. Their internal public Rust functions
-are source evidence, not an established published embedding contract.
+The global full listing is not independently complete for every consumer:
+PNPM [shares a materialization cache][materialization-cache] and
+[elides repeated subtrees][subtree-elision]. Use an exact singleton directory
+selector without ellipsis for each project's full `Infinity` query, separately
+from the dependency closure. Within one consumer's tree, the expanded occurrence
+supplies its reachable inputs. The [selector parser][selector-parser] and
+[exact glob matching][selector-glob] support this composition. The original
+observations did not exercise singleton full queries or nonempty deduplicated
+subtrees.
 
-## Candidate Composition and Tradeoffs
+Wanted-lock selection does not make every output group revision-bound.
+The [builder][unsaved-builder] also scans installed modules for extraneous
+packages; the [renderer][unsaved-renderer] emits `unsavedDependencies`.
+Ignore that entire group when reading saved facts; retain production,
+development and optional dependencies. A synchronized lock does not imply an
+empty or synchronized installation.
 
-The owner selected the supported PNPM CLI for the C# application's Node
-integration after considering the external helper and embedded runtime. Calling the CLI satisfies the same native
-ownership boundary as calling an ecosystem library. There is no general preference
-for libraries when the host cannot use them directly.
-
-The [binding loader][napi-loader] runs in Node.js and loads a platform-specific
-native addon. An external Node helper would add a runtime requirement, package
-preparation and addon distribution while retaining a child process and
-structured-result transfer. That external-helper arrangement provides no
-in-process library benefit to the C# caller. The CLI is already a required PNPM
-tool. A helper is justified only by a concrete required capability or a
-demonstrated reduction in integration code that outweighs those dependencies;
-neither has been established by this assessment. The embedded arrangement below
-has different benefits and costs.
-
-This is an architectural recommendation with moderate confidence, not an accepted
-complete extraction recipe. The NAPI binding alone currently lacks exposed
-workspace discovery. The `list` JSON view can hide local directory source
-identities behind virtual-store paths; that limitation does not establish that
-every supported CLI interface lacks the required facts. Assess the actual CLI
-commands and output contracts before adding a binding to compensate. Maintained
-PNPM helpers remain candidates for specific capabilities, and Workflow must not
-reimplement specifier grammar, semver matching or dependency resolution.
-
-Before implementing an integration, specify which native result supplies each
-required fact and verify the identity joins. Use meaningful integration cases
-with valid PNPM-produced locks: ordinary workspace links, aliases, `link:` and
-`file:` directory inputs, injected workspace instances, peer variants, publish
-directories, cycles, and changed/deleted relations across two revisions. Include
-an installed state from another revision to check wanted-lock selection; that
-case does not question validity of the committed lock. Test application adaptation
-and impact results rather than independently proving PNPM's resolver.
-
-## Embedded Node Assessment
-
-The assessed `Microsoft.JavaScript.NodeApi` arrangement is distinct from an
-external Node helper. The owner subsequently selected CLI integration and did
-not select this arrangement. Microsoft's
-[README][nodeapi-readme] explicitly supports loading JavaScript packages and
-calling their APIs in a .NET process. Source inspection at
-`microsoft/node-api-dotnet@958b8c3c04dff5414781a88f069062c6528f7427` establishes
-the following contracts. Public NuGet package `Microsoft.JavaScript.NodeApi`
-`0.9.27` identifies that same source commit in its
-[package metadata][nodeapi-package]. No embedded runtime or PNPM addon was
-executed for this assessment.
-
-- [Embedding guidance][nodeapi-embedding] describes loading `libnode`, importing
-  installed packages and running their APIs on the JavaScript thread. This can
-  remove the helper process and stdout/JSON transport; C# still adapts JavaScript
-  values into application facts. The
-  [thread-runtime implementation][nodeapi-thread-runtime] supplies CommonJS and
-  asynchronous module imports. Loading this exact PNPM native addon and its
-  promises remains an integration assumption, not an observed result.
-- The README marks the project Public Preview; the embedding guide separately
-  marks embedding experimental. Node-API addon compatibility does not establish
-  embedding-ABI compatibility. The guide requires shared `libnode` with its
-  embedding API and matching package versions; an ordinary installed `node`
-  executable is not that shared library. The project's
-  [package pins][nodeapi-package-pins] select `Microsoft.JavaScript.LibNode`
-  `20.1800.203`. The newer public
-  [LibNode `20.1800.215` package][libnode-package] still identifies the Node 20
-  line and distributes platform-specific packages. Neither newer package
-  compatibility nor availability of a suitable Node 24 embedding binary has
-  been established here. The repository already pins Node 24 in `mise.toml`.
-- The guide's referenced [Node.js embedding PR][node-embedding-pr] was inspected
-  on 2026-10-03: closed and unmerged. That mutable status is not evidence that
-  every other embedding route is unavailable. The selected Microsoft source
-  still imports its own embedding API; its broad Node-API compatibility statement
-  must not be extended to arbitrary `libnode` builds.
-- [Platform lifetime][nodeapi-platform] permits one platform per process and
-  prevents reinitialization after disposal. Multiple environments are supported,
-  but values have thread affinity and reference lifetimes. Embedding therefore
-  adds runtime lifecycle and value-marshalling responsibilities and shares native
-  process failure with the C# host. No startup, throughput or memory advantage
-  has been measured for this short-lived planner.
-
-The proposed workspace-discovery branch also needs a concrete PNPM interface
-selection. Public `@pnpm/workspace.find-packages@1000.0.65` is available; its
-[published archive][workspace-find-archive], with integrity
-`sha512-76n06rXBgK9FaLuexbvah0cQzLxKCK/5SwwCJ1i9xLDV7anZTPkSiJQpGTmUlDr9hbQPXOG1nSorV031hjG7QA==`,
-exposes discovery with caller-supplied `patterns` (`lib/index.js` and
-`lib/index.d.ts`). It does not itself read workspace membership configuration.
-At the pinned PNPM 12 release, the maintained JavaScript
-[workspace reader][workspace-reader] is instead
-`@pnpm/workspace.projects-reader@1101.1.1`; its
-[package contract][workspace-reader-package] requires Node `>=22.13`, also
-declared in the public [version metadata][workspace-reader-metadata]. The observed
-Node 20 LibNode packages do not satisfy that engine declaration. Selecting an
-older helper, obtaining a newer embedding runtime, or changing the discovery
-interface would require a separate, explicit pairing assessment; do not ignore
-the declared engine requirement. Workspace configuration must still come from
-a PNPM-owned reader rather than application YAML/glob interpretation.
-
-Its source-backed benefit is real in-process access; a usable runtime/package
-pairing and sufficient fact coverage were not established. The owner chose the
-CLI to avoid relying on embedded LibNode. The binding's install, network
-resolution and peer APIs do not require the planner to reinstall or re-resolve
-an already valid lock. Changing the calling mechanism does not remove the PNPM
-interface limits listed above or supply missing project edges automatically.
-
-## CLI Fact Extraction Candidate
-
-The CLI can supply more than a rendered installed dependency tree. At the pinned
-release, [recursive selection][recursive-selection] builds PNPM's own project
-graph and applies directory/dependency selectors before rendering the selected
-projects. The [project view][project-graph-view] includes peer, development,
-optional and production dependency groups. This is a native project graph,
-not a graph reconstructed by Workflow from dependency specifiers.
-
-The concrete candidate is:
-
-1. Run `pnpm list --recursive --include-workspace-root --lockfile-only --json
---depth -1` in the selected revision's workspace to discover source projects.
-2. For each discovered directory, run the same command with its native directory
-   selector and dependency expansion, such as `--filter '{./packages/app}...'`.
-   The returned project paths supply PNPM's dependency closure, including the
-   initiating project. Workflow removes that project from its adapted relation
-   set and preserves every other returned project identity. Do not infer an edge
-   by matching package names or parsing `workspace:`, `file:`, aliases or semver.
-3. Retain the two revisions' relations separately and combine them under the MLD
-   impact algorithm. A native transitive closure can be consumed as dependency
-   reachability; it must not be described as an exported direct-edge graph.
-4. Use `list --only-projects --lockfile-only --json` as a second native view only
-   when validation identifies a concrete need. Its package-snapshot omission is
-   still relevant; it is not a complete graph merely because it returns JSON.
-
-Source inspection supports this candidate, not complete coverage. In particular,
-the [graph's directory lookup][workspace-graph] matches workspace project roots;
-it does not automatically map every local dependency on a nested publish
-directory to its owning source project. The linked-project listing has a
-[separate publish-directory mapping][list-linked-projects]. Verify the actual
-command composition before implementing or asserting supported coverage. Native
-directory-selector glob/legacy behavior must not accidentally select a subtree
-when the caller intended one project. The application owns its selectors and
-returned identity checks, while PNPM owns interpreting them.
-
-The reader's narrow layout queries and explicit selector setting also have source
-support at the pinned commit. [`config get --json`](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/config/values.rs#L261)
-renders an unset key as JSON null. The
-[CLI override parser](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/config_overrides.rs)
-accepts `--config.legacy-dir-filtering=false`; configuration
-[loading](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/config/src/loading.rs#L242)
-applies the generic CLI setting values over workspace settings. This is source
-evidence for the invocation, not a new runtime observation. The retained native
-observations below did not execute these layout queries or that explicit override.
-
-The global full listing is a presentation tree, not independently complete for
-every initiating consumer. PNPM
-[shares a materialization cache](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/build.rs#L73)
-across selected projects and
-[elides repeated subtrees](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/get_tree.rs#L294).
-This can hide the second consumer of a nested non-workspace local input. Use an
-exact singleton directory selector without ellipsis for each project's full
-`Infinity` query; keep the separate native dependency-closure query. Within one
-consumer's tree, the original expanded occurrence still supplies that consumer's
-reachable inputs. The
-[selector parser](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/workspace-projects-filter/src/parse_project_selector.rs#L53)
-and [exact glob matching](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/workspace-projects-filter/src/glob.rs#L50)
-support this composition. These are source findings and a corrective inference;
-the retained observations did not execute singleton full queries or exercise
-nonempty deduplicated subtrees.
-
-The wanted-lock selection does not make every output group revision-bound.
-The native [builder](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/build.rs#L139)
-also scans the installed modules directory for extraneous packages, and the
-[renderer](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/list/render/structured.rs#L134)
-emits those as `unsavedDependencies`. Ignore that entire group when reading saved
-facts; retain production, development and optional dependencies. A synchronized
-lock does not require an empty or synchronized installation directory.
-
-`Infinity` also retains a native safety limit. The
-[inspection limit](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/lib.rs#L34)
-and [materializer](https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/get_tree.rs#L115)
-permit dependency level 256 but omit its children without a truncation flag.
-Reject that indistinguishable boundary. The renderer nests two JSON containers
-per dependency level inside the array/project pair; a JSON maximum depth of 512
-accepts the complete level-255 shape and rejects level 256. These are pinned
-source findings and adapter inferences, not a claim of unbounded graph support.
-The [pin guard](#pin-guard) now exercises the boundary with the pinned PNPM.
-
-## Bounded Local CLI Validation Protocol
-
-This historical protocol supported the decision whether the candidate above was
-sufficient and the later credential-free adapter tests. It was admitted under the
-[then-accepted contraction Wave](https://github.com/hcoona/three/blob/057a7a0f420f0d9adbce236bd6c808a2ed783cd0/docs/delivery-wave.md#complete-the-workflow-v3-contraction).
-The retained recipe supplies no current execution permission; future work requires
-the [current Wave](../../../../../../docs/delivery-wave.md) and applicable concrete
-authorization. It grants no external experiment, registry publication or hosted dispatch.
-
-- **Subject and environment:** the repository-pinned PNPM 12.8.1 CLI on the
-  active Linux host. Record the exact executable/tool versions, fixture inputs,
-  commands, exit codes and JSON outputs. Windows feasibility remains the owner's
-  accepted assumption; this protocol does not add a Windows experiment.
-- **Isolation:** use at most two disposable workspace copies, independent of the
-  repository checkout. Use empty fixture-local npmrc auth input and isolated
-  store/state directories. Fixtures contain only local packages and no scripts,
-  hooks or credentials. Do not modify the repository locks or installed state.
-- **Preparation:** create a finite fixture graph with a transitive consumer and
-  unrelated project; ordinary workspace links, workspace and npm aliases, local
-  `link:` and `file:` directories, injected workspace instances, local peer
-  inputs, cycles and publish directories. Generate valid synchronized locks
-  with native `pnpm install --lockfile-only --offline --ignore-scripts`; use only
-  local inputs. At most four preparation commands are permitted. A registry/cache
-  dependency, invalid lock or unsupported fixture ends that case; do not repair
-  it with a handwritten lock or online resolution.
-- **Queries and expected observations:** at most 80 read-only list/filter/SBOM
-  queries, each bounded to 30 seconds; preparation commands to 120 seconds.
-  Observe native workspace identities and consumers for each required local
-  input, keeping unrelated projects excluded. Compare two valid revisions with
-  removed references or deleted projects. A matching empty selection is evidence
-  only for that query and case. No current-directory or full-run fallback.
-- **Installed-state case:** if a materialized state is needed to check wanted-lock
-  selection, use at most one offline, script-disabled install from a valid base
-  fixture before making a second valid revision. Subsequent queries still use
-  wanted-lock mode. This is a state-selection case, not a new lock validity gate.
-- **Stop and outcome:** stop dependent implementation if a required source
-  identity/relation is omitted and no supported CLI composition exposes it.
-  Record the exact counterexample, command/output and affected requirement;
-  return the gap to the owner. Do not compensate with a custom resolver or a
-  Node/LibNode integration. Tool crashes, malformed output, unexpected external
-  effects or exhausted command/time bounds also stop the affected case.
-- **Cleanup and limits:** retain sanitized inputs and observations in the
-  governing work carrier, remove only generated disposable fixture state, and
-  leave source caches available for review. No installation scripts, external
-  registry reads, package publication, authentication, access/configuration or
-  host-trust changes. Local success covers the tested CLI composition and
-  fixture shapes; it does not certify PNPM or all monorepo structures.
-
-## Local CLI Observations
-
-The protocol accepted in [PR #1006](https://github.com/hcoona/three/pull/1006),
-commit `057a7a0f420f0d9adbce236bd6c808a2ed783cd0`, was exercised with PNPM
-12.8.1 on Linux x86_64 on 2026-10-03. Two disposable workspaces, four preparation
-commands and 57 read-only queries were used. The fixture commands used no registry reads, scripts, hooks,
-credentials or hosted operations. The governing observation PR retains
-the sanitized fixtures, native-generated locks, runner, command outputs and
-environment identity; these are local integration observations, not a PNPM
-support certification or an accepted native reader.
-
-The first workspace's optional `packageManager` directive caused an offline
-package-manager metadata cache miss before any graph query. That case stopped.
-The second workspace used the already pinned executable without that directive;
-its base and candidate locks were generated natively. One script-disabled offline
-install supplied base installed state before candidate manifests and the wanted
-lock changed. The four-command preparation ceiling includes the stopped case.
-
-| Fixture shape                                                                              | Observed native result                                                                                                                                       |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Ordinary workspace links, workspace/npm aliases, root-directory `link:` and `file:` inputs | Directory-selector dependency closure included the source projects                                                                                           |
-| Transitive consumers, cycles, nested projects and a path containing a space                | Closure included the expected projects and excluded unrelated projects; the parent selector did not select its nested child with `legacyDirFiltering: false` |
-| Removed reference and deleted project                                                      | Candidate closure dropped the old relation; the retained base closure still identified the old consumer                                                      |
-| Candidate wanted lock with base installed state                                            | Wanted-lock queries returned candidate relations rather than substituting installed base relations                                                           |
-| Workspace reference to a project with `publishConfig.directory`                            | Closure included the source project                                                                                                                          |
-| Explicit `link:` reference to that publish subdirectory                                    | Filter closure omitted the source project; complementary `list --only-projects` returned its source-root path                                                |
-| Explicit `file:` reference to that publish subdirectory                                    | Filter closure omitted the source project; `list --only-projects` omitted the package-snapshot edge                                                          |
-
-The local-peer declaration appeared in filter closure. The fixture declaring
-`dependenciesMeta.injected: true` also appeared there, but its generated lock
-still represented the dependency as a link. This is not evidence for a
-materialized injected snapshot or peer-variant coverage. Those shapes remain
-unobserved; no additional preparation is permitted under this execution's budget.
-
-For the nested `file:` case, full list JSON retained a package coordinate such as
-`version: "file:packages/publisher/dist"` and a virtual-store installation path.
-CycloneDX retained the same coordinate as a component version and package URL.
-Neither queried view returned a separate source-directory field. This is not a
-claim that the CLI exposes no useful information: the coordinate is visible.
-However, a complete source join cannot be claimed from these observations or
-by matching package names. Follow-up source inspection corrects the initial
-version-overwrite concern: the pinned [lock writer][directory-version] explicitly
-excludes directory resolutions from metadata `version`. For these directory
-records, [package information][pkg-info] therefore renders the package-key
-coordinate. This correction is source evidence, not another runtime observation.
-
-The selected filter/list composition therefore does not yet establish complete
-coverage for every required local-input shape. The owner's CLI choice remains
-unchanged. The owner directed further CLI research without duplicate declarations
-or unnecessary complexity. The candidate below uses the existing native
-publish-directory configuration; this known relationship does not need a second
-Workflow declaration. The MLD's extra-input contract remains for relationships
-actually unavailable from native metadata.
-
-The source assessment and local composition have not established an unavoidable
-gap in every supported CLI interface.
-If a required source identity or relation cannot be obtained through supported
-native interfaces, follow the [HLD boundary](../high-level-design.md#native-integrations)
-and return that concrete gap to the owner. Do not fill it with custom parsing or
-weaken selective CI to a full-run fallback.
+`Infinity` has a native safety limit. The [inspection limit][inspection-limit]
+and [materializer][materializer-limit] permit level 256 but omit its children
+without a truncation flag. Reject that indistinguishable boundary. Two JSON
+containers per dependency level inside the array/project pair make a maximum
+JSON depth of 512 accept complete level 255 and reject level 256. These are
+pinned source findings and adapter inferences, not unbounded graph support.
+The [pin guard](#pin-guard) exercises this boundary at the locked PNPM.
 
 ## Directory Coordinate Adaptation Candidate
 
-Additional immutable source findings at the same PNPM release establish:
+The source basis for the selected association is:
 
 - The [local resolver][local-coordinate] normalizes copied directory coordinates
-  relative to the lockfile directory, uses forward slashes, and can preserve an
-  explicitly absolute input when configured. The
-  [directory resolution writer][local-resolution] retains that same directory.
+  relative to the lockfile directory, uses forward slashes and can preserve an
+  explicitly absolute input. The [resolution writer][local-resolution] retains
+  the same directory.
 - The [lock writer][directory-version] omits metadata `version` for directory
-  resolutions. [Package information][pkg-info] then uses the package-key version;
-  [its formatter][coordinate-format] emits `file:<path>` without the peer suffix.
-  The virtual-store installation path need not be decoded.
-- Package information emits `resolved` for tarball resolutions and omits it for
-  directory resolutions. Absence alone is not a directory type discriminator:
-  other native resolution kinds also omit it.
-- Native [`pkg get`][pkg-command] can read `publishConfig.directory` through
-  PNPM's manifest reader. A non-recursive query in each discovered source
-  directory preserves that directory's identity. The recursive report is keyed
-  by package name and is unsuitable as a general directory join.
+  resolutions. [Package information][pkg-info] uses the package-key version;
+  [formatting][coordinate-format] emits `file:<path>` without the peer suffix.
+- Package information emits `resolved` for tarballs and omits it for directories.
+  Other resolution kinds also omit it, so absence alone does not prove directory
+  identity.
+- Native [`pkg get`][pkg-command] reads `publishConfig.directory`. Query each
+  discovered source directory non-recursively; recursive name-keyed results do
+  not preserve a general directory identity.
 
-The revised candidate keeps the native filter reachability above, including its
-peer dimensions, and complements it with full wanted-lock `list` JSON. Use
-`--depth Infinity` for that complementary view so a resolved local input below
-another package is not dropped. Obtain existing publish-directory configuration
-with `pnpm --dir <discovered-directory> pkg get publishConfig.directory --json`.
-An absent directory field produces no output; other publish settings do not add
-an output-directory association.
+Complement native filter reachability with singleton full wanted-lock list JSON.
+Read existing publish metadata with
+`pnpm --dir <discovered-directory> pkg get publishConfig.directory --json`.
+An absent field returns no output; other publish settings add no output-directory
+association.
 
-For each discovered source directory and its declared publish directory, form
-the pinned native coordinate encoding, such as
-`file:packages/publisher/dist`, and compare the whole value with returned
-`version` fields that have no `resolved` field. Native link paths can likewise be
-compared with those known directories. Preserve exact source-directory identity,
-reject ambiguous ownership and retain the initiating project's relation to each
-matched producer. Combine these relations with native filter reachability and
-the base/candidate impact algorithm. Do not use package names, installation-path
-decoding, directory-prefix guesses or an unmatched field's prefix to infer a
-producer. A local tarball is an archive input, not its same-named source project.
+For each known source/publish directory, form its pinned native coordinate
+encoding, for example `file:packages/publisher/dist`, and compare the entire
+value with returned `version` fields without `resolved`. Compare native link
+paths with those same known directories. Preserve exact source identity,
+initiating consumer and both revisions' relations; reject ambiguity.
+Do not infer producers from package names, installation paths, prefixes or
+unmatched coordinate spelling. A local tarball is an archive input, not its
+same-named source project.
 
-This is output adaptation: PNPM has already selected and resolved the dependency.
-Workflow associates its returned identity with known project/output identities.
-It does not parse manifest dependency specifiers, implement aliases or ranges,
-read lock YAML, or resolve a missing dependency. Ordinary repository path handling
-and encoding a known identity do not constitute a second dependency resolver.
-The HLD's native ownership boundary remains in force. Unmatched relevant inputs
-and ambiguous ownership still cannot justify exclusion.
+PNPM has already selected and resolved the dependency; this is output identity
+association, not manifest/lock parsing, semver evaluation or resolution.
+Unmatched necessary inputs and ambiguous ownership still block planning.
+The original [directory-join observation][directory-observation] supports only
+its tested shared-root lock shapes: actual wanted-lock peer snapshots are not
+installed-package qualification, and reused links do not establish injection
+conversion or regeneration. Dedicated layouts, absolute-path preservation and
+other unobserved shapes do not inherit that coverage.
 
-The follow-up below observes these identity joins for the pinned CLI and local
-fixture shapes. It supports this composition without a duplicate declaration;
-it does not accept a native reader or arbitrary extraction coverage. Existing
-observations and immutable source findings retain their separate evidence levels.
+## Native Script Metadata
 
-## Bounded Directory Join Follow-up Protocol
-
-This historical follow-up was distinct from the exhausted original preparation
-budget and did not permit repeating or refilling that execution. It was admitted
-under its own [then-accepted contraction Wave](https://github.com/hcoona/three/blob/73d47a43edf76749e78a8b92702e15d6d5555411/docs/delivery-wave.md#complete-the-workflow-v3-contraction).
-Its consumer was the decision whether the directory adaptation above avoided a
-second manually maintained declaration while retaining meaningful impact selection.
-The retained recipe supplies no current execution permission; future work requires
-the [current Wave](../../../../../../docs/delivery-wave.md) and applicable concrete
-authorization. The original and follow-up budgets remain exhausted.
-
-- **Subject and environment:** PNPM 12.8.1 on the active Linux x86_64 host. Record
-  executable identity/hash, environment, accepted protocol revision, exact
-  commands, elapsed times, exit codes, fixture inputs and JSON output. Windows
-  remains an accepted assumption and is not tested here.
-- **Isolation and inputs:** at most two disposable workspace copies outside the
-  checkout, starting from the retained local fixture inputs of PR #1007. At most
-  32 local package manifests, including output/peer fixture manifests, and one
-  locally assembled tarball. No scripts, hooks, credentials or registry inputs.
-  Use empty fixture-local npmrc auth input and isolated store/state directories;
-  leave repository locks and installed state unchanged.
-- **Preparation:** at most three native preparation commands, each bounded to
-  120 seconds: two script-disabled offline lock generations for base/candidate
-  and, only if needed, one script-disabled offline base install. Use native
-  `injectWorkspacePackages` configuration to seek actual directory snapshots;
-  include two local peer-provider contexts, a publish-directory alias, a space
-  in an output path and a local tarball. Change/remove a publish-directory
-  relation in the candidate. Fixture file creation and tarball assembly use only
-  the finite local inputs. A missing cache/registry input or invalid lock stops
-  the affected case; do not repair it online or edit generated locks.
-- **Queries and checks:** at most 60 read-only `list`/filter/`pkg get` queries,
-  each bounded to 30 seconds. Compare native metadata and directory coordinates
-  with known source/output identities, retaining unrelated projects as negative
-  controls. Check actual injected/peer shapes from generated output rather than
-  equating a manifest declaration with runtime coverage. Observe the composed
-  producer/consumer relation in each revision and retention of removed base
-  relations. Keep native source findings distinct from experiment observations;
-  source inspection suffices for interfaces that clearly cannot answer the join.
-- **Stop and limits:** unexpected external effects, malformed output, crashes,
-  ambiguous joins or exhausted bounds stop the affected execution. A required
-  relation still unavailable after the supported composition blocks dependent
-  implementation and returns the concrete gap to the owner. No custom resolver,
-  Node/LibNode helper, duplicate declaration or silent full-run fallback follows.
-- **Evidence and cleanup:** retain sanitized inputs, native locks, runner,
-  commands, outputs and comparison results in the governing PR before removing
-  only generated disposable state. Leave source caches available for review.
-  No external experiment, publication, hosted dispatch, authentication,
-  access/configuration or host-trust changes. Conclusions cover only the pinned
-  CLI composition and observed shapes; peer/injection cases that do not actually
-  materialize remain unobserved rather than inferred successes.
-
-## Directory Join Observations
-
-The follow-up protocol was accepted in
-[PR #1008](https://github.com/hcoona/three/pull/1008), commit
-`73d47a43edf76749e78a8b92702e15d6d5555411`, and executed on 2026-10-03 with
-the same PNPM 12.8.1 executable as the first observation set. Two isolated local
-workspaces used 30 base manifests, one local tarball, two offline/script-disabled
-lock generations and 38 read-only queries. No install, registry access, scripts,
-hooks or credentials were needed. The delivery PR retains sanitized inputs,
-native locks, runner, exact commands/outputs, environment/hash and comparisons;
-generated state is removed only after durable retention.
-
-The observation runner combines native filter reachability with full wanted-lock
-list JSON and exact known-directory/coordinate matches. Four source directories
-per revision are queried for publish metadata in this finite fixture; only the
-publisher declares a directory. This is a local composition probe, not the C#
-reader or a claim that every project's metadata was evaluated by that reader.
-
-| Scenario                                                           | Observed result                                                                                                                                                                             |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `file:` dependency on a publish directory with a space in its path | Native `version` retains the directory coordinate; exact association selects the source publisher, which native filter closure alone omits                                                  |
-| Publish-directory alias and explicit `link:` input                 | Both associate with the source publisher; no name or manifest-specifier join is needed                                                                                                      |
-| Existing native publish metadata                                   | Direct `pkg get publishConfig.directory --json` returns `dist output` in base and `build output` in candidate; an access-only `publishConfig` yields no output                              |
-| New injected peer library in two local provider contexts           | Native locks contain two directory snapshots; list returns two distinct installation identities with the same `file:packages/peer-lib` coordinate, both associating with the source library |
-| Same-named local tarball                                           | List returns ordinary version `1.0.0` and `resolved: file:fixtures/publisher.tgz`; it is not associated with the source publisher                                                           |
-| Transitive consumer and unrelated control                          | The composed base relation includes the publisher below a consumer that filter closure alone omits; the unrelated project has no local source relation                                      |
-| Removed file relation and changed publish directory                | Candidate drops the removed relation, updated alias/link targets still associate with the producer, and the base/candidate union retains the old consumer relation                          |
-
-All 18 recorded adaptation comparisons matched their expected values; there were
-no ambiguous directory joins. This does not certify the native resolver or
-complete input coverage. The two new peer-library snapshots are actual wanted-lock
-observations, not installed-package qualification. Reused core entries remained
-links despite injection declarations, so they do not demonstrate conversion of
-an existing link into an injected snapshot. The pre-existing workspace publisher
-link also retained its old directory spelling while native filter reachability
-continued to identify the source publisher. Do not infer link regeneration or
-installation success from these observations.
-
-The resulting recommendation has high confidence for the observed shared-root
-lock layout: implement native filter/list composition with existing publish
-metadata and exact identity association. No second PNPM dependency/output
-declaration, helper runtime or custom resolver is needed for these cases. The
-remaining reader work is ordinary application integration, revision/root handling,
-ownership ambiguity and unsupported relevant inputs. Dedicated lock layouts,
-absolute-path preservation and other unobserved shapes must not inherit this
-runtime coverage. The existing rule remains: unresolved required scope blocks
-planning rather than broadening execution silently.
-
-The selected CLI composition is guarded at the pinned PNPM instead of rechecked;
-see [Pin Guard](#pin-guard). A concrete integration change that exposes a missing
-fact is evaluated by its author. Embedded-runtime facts are rechecked only if the
-owner reopens that selection.
-
-## Native Script Metadata Candidate
-
-The pinned Rust `pkg get` implementation uses native manifest parsing and field
-selection. Selecting one field with `--json` returns that native value; an absent
-field produces no output. Recursive results are keyed by package name, which is
-unsuitable for general directory identity association. These are source findings
-from [`pkg.rs`, lines 175–236][pkg-command], not runtime observations.
-The same file at the repository-selected 12.8.2 commit
-`b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce` was retrieved on 2026-10-04 and is
-byte-identical: SHA-256
+At the original pin, [`pkg.rs`, lines 175–236][pkg-command] reads native manifests
+and selects fields: a single field with `--json` returns its value, or no output
+when absent. Recursive results are keyed by package name and do not supply a
+general directory join. These are source findings, not runtime observations.
+The same file at PNPM 12.8.2 commit
+`b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce` was byte-identical, SHA-256
 `0555e7feb6067d7425a6fc40763806168597e9b41fc4e580b2424c63dd80a6be`.
 
-Query `pnpm --dir <already-discovered-directory> pkg get scripts --json` for
-registered native check presence. Treat script text as opaque; selected execution
-uses `pnpm run`. Existing quality YAML selects registered contracts. No shell
-dependency parser, duplicate script declaration or YAML command language is added.
-The [application qualification protocol](nbgv-native-inputs.md#bounded-local-application-qualification-protocol)
-includes finite actual metadata queries and execution of the accepted graph reader;
-the completed CLI research protocols do not authorize those new runs.
+Use `pnpm --dir <already-discovered-directory> pkg get scripts --json` for
+registered native check presence. Script text remains opaque; execution uses
+`pnpm run`. Existing quality declarations select registered contracts, without
+shell dependency parsing, a duplicate script declaration or YAML command language.
 
-## PNPM 12.8.2 Pin Recheck
+## Historical Qualification and Source Rechecks
 
-The repository pin changed through [PR #1011](https://github.com/hcoona/three/pull/1011).
-The official [`v12.8.2` tag](https://github.com/pnpm/pnpm/releases/tag/v12.8.2)
-peels to `b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce`. A public-source recheck
-compared 50 selected source and license paths at that commit with the original
-12.8.1 commit. [PR #1013](https://github.com/hcoona/three/pull/1013) retains the
-exact source bytes, retrieval identities, hashes, comparison and independent review.
-The comparison uses exact files rather than absence from a capped change list.
+The [original CLI observations][cli-observation], [directory-join follow-up][directory-observation]
+and [actual C# reader/script observation][reader-observation] remain bound to
+their separate 12.8.1/12.8.2 subjects. The actual reader used copied production
+source with unchanged native locks; its 169 queries included four separate
+script queries, not script execution inside the graph reader. The complete
+protocols retain original inputs, commands, failures, hashes, effects, cleanup,
+independent reviews and spent ceilings. The record snapshot is not their actual
+producer. These observations do not qualify current tools, complete ownership,
+caller integration, Windows, publication or new repetitions.
 
-The consumed membership, workspace filter/graph, recursive list, linked-project,
-JSON renderer, wanted-lock selection, package/directory identity and
-`pkg get publishConfig.directory` branches are unchanged in those files.
-In particular, the native [shared materialization cache][recheck-build] and
-[subtree deduplication and depth cutoff][recheck-tree] are byte-identical;
-the [maximum walk depth][recheck-inspection] remains 256. The existing singleton
-queries and depth limitation retain this source basis.
+The [12.8.2][recheck-1282], [12.9.0][recheck-1290] and
+[12.11.2][recheck-12112] assessments retain exact source commits, retrieved
+inventories, comparisons and original PR carriers. They are bounded source
+findings and integration inferences, not complete upstream equivalence.
+The 12.11.2 local fixture runs lacked accepted pre-execution protocol and remain
+unadmitted corroboration; source conclusions do not depend on admitting them.
 
-Five selected files changed: CLI config set/delete validation, version and
-child-concurrency defaults, and the restriction on machine-level `globalShims`.
-Inspection found no change in the consumed config read or explicit-override
-branches. This bounded source comparison supports continuing the selected CLI
-composition without a second resolver or metadata declaration.
+Two continuing source limits matter to current consumers:
 
-This recheck is a source finding and integration inference, not a runtime
-observation or complete upstream equivalence claim. Earlier CLI observations
-remain bound to 12.8.1; the separate application observation below uses 12.8.2.
-Unobserved layouts and identities retain their existing limits. No completed
-native campaign was repeated for this source recheck.
+- At 12.9.0, an ordinary failure of implicit pre-run installation could warn and
+  still run scripts. Its success therefore did not prove dependency freshness.
+  The adopted executor disables that gate; explicit frozen installation remains
+  a separately checked prerequisite.
+- At 12.11.2, an `updateConfig` hook could narrow an unfiltered membership query.
+  Current layout guards reject that unsupported configuration, rather than
+  treating the old repository's absence of hooks as a permanent guarantee.
 
-## PNPM 12.9.0 Pin Recheck
+The PNPM pin recheck trigger is retired in favor of the native guards below.
+Reopening an unselected embedded-runtime arrangement requires its own source
+assessment; the retained alternatives do not qualify it.
 
-The repository pin changed through [PR #1044](https://github.com/hcoona/three/pull/1044).
-The official [`v12.9.0` tag](https://github.com/pnpm/pnpm/releases/tag/v12.9.0)
-peels to `247bfc45e5f011185e9a7088d9c39ac6bc084e44`. The source comparison
-uses complete, untruncated Git-tree inventories at that commit and the 12.8.2
-commit above. It selects 69 source/license files, including complete dependency
-inspection, workspace graph/discovery and CLI list/config subtrees: 48 Git blobs
-are unchanged and 21 changed. Changed source bytes and decision-relevant callees
-are retained with native Git-blob verification and SHA256 in
-[PR #1042](https://github.com/hcoona/three/pull/1042), rather than inferred from
-absence in a capped comparison response.
+## Current Layout Limits
 
-The singleton wanted-lock list, linked-project association, JSON rendering,
-materialization cache and depth cutoff retain their exact source branches.
-Changed recursive execution code extracts dependency/scheduling helpers and
-extends native dependency freshness verification; that preparation gate is
-separate from runnable project selection. The adopted executor already disables
-this gate for its prepared, version-stamped checkout. Retained executors keep
-PNPM's ordinary installed-dependency behavior and native selected commands.
-In 12.9.0, an ordinary error from an implicit pre-run installation warns and
-allows scripts to run; it no longer makes that preparation gate fail. Gate
-success therefore does not prove dependency freshness. The caller's explicit
-frozen installation remains a separately checked prerequisite, and selected
-script failures still fail the check. Interruptions retain native failure.
-Recursive `pkg get` changes report keys for duplicate names; the application
-queries metadata non-recursively in each discovered directory. Local tilde-path
-resolution changes its home-directory helper; external local inputs remain
-outside the supported repository-root layout. No second resolver, metadata
-manifest or preparation service follows from these changes.
+`PnpmGraphReader` reads `pnpmfile`, `config-dependencies`, `node-linker` and
+`global-pnpmfile` through native config queries. Planning requires the hook and
+configuration-dependency settings to be unset, and the linker unset or
+`isolated`; `PnpmGraphReaderTests` covers each rejection.
 
-This is a bounded source assessment and integration inference, not complete
-upstream equivalence or a new 12.9.0 runtime observation. Earlier native results
-remain bound to their original 12.8.1/12.8.2 versions. Ordinary changed-code CI
-must still qualify the actual group transfer, selected native commands and
-adopted results with the then-current 12.9.0 pin before caller replacement and retirement.
-No completed native campaign is reopened.
-
-## PNPM 12.11.2 Pin Recheck
-
-The pin moved through 12.9.1 ([PR #1056](https://github.com/hcoona/three/pull/1056)),
-12.10.0 ([PR #1109](https://github.com/hcoona/three/pull/1109)) and 12.11.2
-([PR #1153](https://github.com/hcoona/three/pull/1153), merged 2026-10-12) without
-a recorded recheck. This recheck was performed on 2026-10-17 at repository commit
-`305f0f734c370b19c482aabc4bcd1e6bc3493b55`. The official
-[`v12.11.2` tag](https://github.com/pnpm/pnpm/releases/tag/v12.11.2) peels to
-`1e37c514f247e89da8725afb8b96969996d9b409`; the
-[12.9.1](https://github.com/pnpm/pnpm/releases/tag/v12.9.1),
-[12.10.0](https://github.com/pnpm/pnpm/releases/tag/v12.10.0),
-[12.11.0](https://github.com/pnpm/pnpm/releases/tag/v12.11.0),
-[12.11.1](https://github.com/pnpm/pnpm/releases/tag/v12.11.1) and 12.11.2 release
-notes were read in full.
-
-**Source comparison.** Complete, untruncated Git-tree inventories at the 12.9.0
-and 12.11.2 tags were compared for 64 non-test source/license files. They cover
-the dependency-inspection crate, CLI list/recursive/`pkg`/config and override
-code, configuration loading, workspace discovery, workspace graph and filter,
-local resolver, lock resolution/coordinate formats and the lock writer's
-`version` rule. 46 Git blobs are unchanged and 18 changed or were added.
-The unchanged set includes the singleton/closure [recursive selection][recheck2-recursive],
-[structured renderer][recheck2-structured], [recursive list][recheck2-list-recursive],
-[linked-project mapping][recheck2-linked], [shared materialization cache][recheck2-build],
-[subtree elision and depth cutoff][recheck2-tree], [maximum walk depth 256][recheck2-lib],
-`pkg get` field selection, `config get --json` rendering, the selector parser,
-exact glob matching, the workspace graph, the directory resolution and coordinate
-formats, and the local specifier parser.
-
-The changed files were read in full. None changes a consumed result:
-
-- [Package-path resolution][recheck2-resolve-path] gains a hoisted-linker branch
-  (release note: correct `list` paths under `nodeLinker: hoisted`). The
-  isolated-linker path construction is moved unchanged. Directory coordinates
-  still come from the package key, not the installation path. The repository
-  uses the default isolated linker.
-- [Wanted-lock selection][recheck2-loaded-state] keeps `lockfile_to_use`
-  unchanged; the new fields only carry hoisted layout state.
-- The [workspace inventory walk][recheck2-traversal] now prunes nested checkouts
-  holding a `.git` directory or `pnpm-workspace.yaml`. Upstream
-  [commit `a9c9a2fa`](https://github.com/pnpm/pnpm/commit/a9c9a2fa0e24c1d6889b80fda6976b7863768f17)
-  limits this to Cargo/Python ecosystem discovery. PNPM project discovery does
-  not call that walk; an unadmitted local observation below corroborates it.
-- The [lock writer][recheck2-packages] records a non-registry `version` only when
-  it is a valid package version. Directory resolutions still omit it.
-- The [local resolver][recheck2-local-resolver] reports an unsupported protocol for
-  a missing path-shaped input. That is an install-time resolution error, not a
-  change to written coordinates.
-- Config/override changes add `--global`-scoped `config get` reads and record raw
-  `--config.*` tokens for verify-deps installs (they forward these tokens to that
-  install). The unscoped `config get` and `--config.legacy-dir-filtering` application
-  are unchanged. The `list` change only concerns global tool listing; the filter
-  change adds a Git-version error for `[<since>]`; dependents only changes
-  importer path context.
-
-Release-note changes outside these files that bear on the composition:
-
-- 12.10.0 moves `devEngines`/`packageManager` warnings to stderr, so `list --json`
-  stdout keeps only JSON. It also reads `failIfNoMatch` from `pnpm-workspace.yaml`.
-  The reader only issues selectors for discovered directories; the repository
-  sets neither `failIfNoMatch` nor a package-manager directive.
-- 12.10.0 adds opt-in `lockfile.includeResolutionSettings`; the repository does
-  not set it.
-- 12.11.2 applies `filter`/`filterProd` set by an `updateConfig` hook to recursive
-  commands ([commit `bcc903a9`](https://github.com/pnpm/pnpm/commit/bcc903a9da91c187eec2394e4235df2274aa29cb)).
-  Command-line `--filter` outranks it. However, the reader's unfiltered membership
-  query could now be narrowed by such a hook. This is a new source-backed limit
-  for workspaces with config-dependency hooks, not a runtime observation. The
-  repository has no pnpmfile or `configDependencies`.
-
-**Unadmitted local CLI observations.** The pinned executable
-(`mise exec --locked pnpm`, lock tarball checksum
-`sha256:358f30541b42371360c0d48a8daddc0c0850a90c36fcbea598032a9850e2c9ab`,
-executable SHA256
-`87191f7a097efa1ff87d3e502a2b7d2a67e9c7d146b3b87a10390498845af58d`)
-ran on Linux x86_64. A disposable fixture outside the checkout used an empty npm
-user configuration, isolated XDG/store directories, local packages only and no
-scripts or credentials. It contains ordinary links, a workspace alias, `file:`
-and `link:` inputs to a publish directory with a space in its path, a
-transitive consumer, a cycle, a nested child, an injected peer library, a local
-tarball, a non-workspace directory input and an unrelated project. Locks were
-generated with `install --lockfile-only --offline --ignore-scripts`. A
-candidate copy received one offline frozen script-disabled install of the base
-lock, followed by manifest edits, a lockfile-only regeneration and an extraneous
-installed package. The reader's exact query set ran against both fixtures and the
-repository: layout `config get`, recursive depth `-1` membership, per-directory
-`pkg get publishConfig.directory`/`scripts`, the
-`{./<dir>}...` closure, the singleton `Infinity` listing and `list --only-projects`.
-There were 72, 68 and 32 queries; all exited 0 with empty stderr. Two further
-fixtures probed nested checkouts and directory-selector subtree behaviour. The
-same queries under the previously pinned 12.9.0 executable produced
-byte-identical outputs for all three main runs and equal results for both probes.
-
-The repository owner assigned this recheck, and the current Wave permits its
-local, credential-free effects. However, no concrete experiment protocol was
-accepted before the fixture installs, the queries or the 12.9.0 comparison ran.
-These local CLI results are therefore unadmitted working observations. They
-corroborate, but do not establish, the source findings above. The recheck's
-conclusions rest on the source comparison and the release notes. Retaining the
-results does not admit them retroactively. An admitted runtime result would
-require a separately accepted protocol and a rerun.
-
-| 12.9.0-era conclusion                                                         | Result (source basis; local runs unadmitted)                                                                                                                                                                                                                                                                                |
-| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Layout queries: unset/shared settings render as JSON values                   | Holds: `true` for the shared setting and `null` for `lockfile-dir` in fixture and repository                                                                                                                                                                                                                                |
-| Recursive depth `-1` list supplies membership and directories, not edges      | Holds: root plus members with `path`, no dependency groups; repository returned its seven projects                                                                                                                                                                                                                          |
-| Exact selector with legacy filtering disabled does not select a subtree       | Holds for `{./packages/outer}` with a nested `packages/outer/inner` member. Workspace `legacyDirFiltering: true` without the override: `['packages/outer/inner']`; with `--config.legacy-dir-filtering=false`: `['packages/outer']`, and the same for the closure selector; default workspace setting: `['packages/outer']` |
-| Native filter closure includes linked/alias/transitive/cycle projects         | Holds; the unrelated project stays alone                                                                                                                                                                                                                                                                                    |
-| Filter closure omits `file:`/`link:` inputs to a publish directory            | Holds; complementary list output still supplies them                                                                                                                                                                                                                                                                        |
-| Directory input: `version` is the `file:<path>` coordinate without `resolved` | Holds, including the space; the installation path is a virtual-store path                                                                                                                                                                                                                                                   |
-| Explicit `link:` path names the publish directory                             | Holds in the singleton list; `--only-projects` maps it to the source root                                                                                                                                                                                                                                                   |
-| Local tarball: ordinary version plus `resolved: file:<path>`                  | Holds; it is not a directory coordinate                                                                                                                                                                                                                                                                                     |
-| `--only-projects` omits package-snapshot edges                                | Holds for the `file:` and injected-peer edges                                                                                                                                                                                                                                                                               |
-| Injected peer library is a directory snapshot                                 | Holds by source (lock writer, directory resolution and coordinate format unchanged); corroborated by an unadmitted local observation with one provider context, where the peer-variant suffix appears in the installation path, not in `version`                                                                            |
-| Singleton full query keeps a transitive local input                           | Holds: the top consumer reaches the publish-directory coordinate at depth 2                                                                                                                                                                                                                                                 |
-| Wanted-lock queries ignore stale installed relations                          | Holds: after the base install, candidate queries returned candidate relations; the removed transitive relation and deleted project were absent                                                                                                                                                                              |
-| Installed extraneous packages appear as `unsavedDependencies`                 | Holds: each singleton listing carried the extraneous root package in that group                                                                                                                                                                                                                                             |
-| `pkg get <field> --json` returns the native value or nothing                  | Holds: `"dist output"`, then `"build output"` in the candidate; absent fields produced no output; repository `scripts` returned objects                                                                                                                                                                                     |
-| New: membership still lists members containing nested checkouts               | Holds by source (PNPM project discovery does not call the pruned walk); corroborated by an unadmitted local observation in which members holding a `.git` directory or `pnpm-workspace.yaml` were still listed                                                                                                              |
-| Depth-256 cutoff without truncation flag                                      | Unchanged source; exercised by the pin guard at 12.14.0 (the repository's deepest walked level is 11)                                                                                                                                                                                                                       |
-| NAPI, embedded-runtime and v11 helper findings                                | Not rechecked: unselected and outside the trigger                                                                                                                                                                                                                                                                           |
-| 12.9.0 preparation-gate and recursive `pkg get` findings                      | Hold; 12.10.0 now forwards `--config.*` tokens to a verify-deps install, and the adopted executor still disables that gate                                                                                                                                                                                                  |
-
-The C# adapter needs no change for the repository's layout. `PnpmGraphReader`
-consumes only the unchanged `path`, `name`, `version` and `resolved` fields and the
-three saved dependency groups. Its 512 JSON-depth bound still follows the
-unchanged 256 cutoff. On the same commit, the existing focused suite (`dotnet
-test` filtered to `Pnpm` or `Node`, locked restore) passed 407 of 407 tests.
-These tests replay controlled or recorded 12.8.1 outputs; they did not execute
-PNPM. The repository has no local entry for real-repository Node planning: the
-Node caller runs only from CI scope artifacts. The repository queries above stand
-in for that read and are not caller qualification.
-
-These are bounded source findings at 12.11.2, corroborated by unadmitted local
-CLI observations of the tested fixture shapes. They are not complete upstream equivalence, hosted
-qualification or Windows evidence. Unobserved shapes keep their limits: hoisted
-or global virtual stores, dedicated lock layouts, absolute-path preservation,
-multiple peer contexts and updateConfig-hook filters. The earlier observation
-and application-qualification sections remain bound to 12.8.1/12.8.2. The
-sanitized runner, inventory comparison, output hashes and summaries are retained
-in this recheck's pull request; the disposable fixtures were then removed.
-The PNPM pin trigger is retired; see [Pin Guard](#pin-guard). The hook-filter
-limit is guarded by two guards. `PnpmGraphReader` reads `pnpmfile`, `config-dependencies` and
-`node-linker` through `pnpm config get --json` and fails planning unless the
-first two are unset and the linker is unset or `isolated`; `PnpmGraphReaderTests`
-covers each rejection. It also requires `global-pnpmfile` to be unset, because a
-user-level pnpmfile loads ahead of the project's and can narrow the same queries. A default pnpmfile is discovered without any setting, so
-`config get pnpmfile` stays `null` for it. `NodeRepositoryReader` therefore
-fails planning when `.npmrc` or a hook file exists at the workspace root, checked
-even when PNPM reports no other member, or at a member ancestor: `.pnpmfile.mjs` and `.pnpmfile.cjs`, the two names the
-12.14.0 [finder](https://github.com/pnpm/pnpm/blob/fe4a0c232384289de82be3d502896ca7e070050c/pnpm/crates/hooks/src/finder.rs#L17-L27)
-probes, and the retained undotted `pnpmfile.cjs`, which 12.14.0 does not load.
-`NodeRepositoryReaderTests` covers each name.
-`PnpmGraphContractTests.EveryDefaultHookFilePnpmLoadsIsRejectedByTheReader` runs
-the pinned PNPM with a narrowing hook under each candidate name and requires
-every name that narrows membership to be in that list. Adopting a hook or another
-linker therefore returns to the owner as a reader change rather than a merge-time
-recheck.
+A default pnpmfile can load while `config get pnpmfile` is null.
+`NodeRepositoryReader` therefore rejects `.npmrc` or hook files at the workspace
+root, even if PNPM reports no other member, or at a member ancestor.
+The PNPM 12.14.0 [finder][hook-finder] probes `.pnpmfile.mjs` and
+`.pnpmfile.cjs`; the retained undotted `pnpmfile.cjs` is also rejected although
+12.14.0 does not load it. `NodeRepositoryReaderTests` covers each name.
+`PnpmGraphContractTests.EveryDefaultHookFilePnpmLoadsIsRejectedByTheReader`
+runs the pinned PNPM with narrowing hooks and requires every loaded name to be
+rejected. Adopting a hook or another linker returns to the owner as a reader
+change, not a merge-time recheck.
 
 ## Pin Guard
 
@@ -821,7 +247,7 @@ member. The tests assert:
 
 NAPI and embedded-runtime findings stay unselected. Hoisted or global virtual
 stores, dedicated lock layouts and multiple peer contexts are rejected or
-unobserved shapes, as recorded above. Windows remains the owner's assumption.
+unobserved shapes. Windows remains the owner's assumption.
 
 ## Native Execution Evidence and Pin Guard
 
@@ -861,96 +287,37 @@ selected by the dispatch-only Buddy workflow rather than separately pinned.
 These checks do not establish npm publication, registry authentication or
 GitHub Packages behavior beyond the separately recorded runs.
 
-## Actual Reader and Script Metadata Observation
-
-The separately accepted
-[application protocol and observation](nbgv-native-inputs.md#local-application-observation)
-qualified the actual C# `PnpmGraphReader` and `NativeProcess` with PNPM 12.8.2
-on Linux x86_64 on 2026-10-04. Exact accepted production source bytes were copied
-and compiled into the disposable probe. Both calls used copies of the retained
-PR #1009 directory-join fixtures and unchanged native locks; no install or lock
-regeneration occurred. One existing base manifest gained only an opaque script
-map for the protocol's present-field case. Its original/prepared bytes and exact
-delta are retained; dependencies and identities were unchanged.
-
-The base returned 27 native workspace projects and the candidate 26, including
-root `.`. Fixture assertions passed for resolved source/publish-directory joins,
-aliases, peer contexts and local inputs. A local tarball remained an input rather
-than becoming a same-named workspace producer. Unrelated work stayed excluded;
-unioning both revisions retained removed file, transitive-output and deleted
-project consumer relations. Four native `pkg get scripts --json` queries returned
-the exact opaque present map or no output for absent fields; scripts were not
-executed.
-
-The two qualification processes made 169 native queries: 165 through the actual
-graph reader and four separate script metadata queries through `NativeProcess`.
-Script discovery is not implemented in the graph reader.
-Combined reader wall clock was 10.7984 seconds. Full query arguments, stdout,
-stderr, budgets, graph results and assertions are retained in the qualification
-packet linked from the NBGV observation. The evidence-only query recorder
-launched the pinned CLI and preserved its outputs; production query handling and
-source were unchanged.
-
-These observations qualify the tested reader composition and present/absent
-script shapes at 12.8.2. They do not relabel earlier 12.8.1 observations or
-establish complete ownership/shared-input assembly, preset expansion, execution
-or caller cutover. Root graph membership still needs input-consumer adaptation
-before ordinary CI project facts. Unobserved layouts retain their limits;
-required unresolved scope remains a planning failure. Both complete reader-call
-slots are spent, and evidence acceptance grants no repetition.
-
-[recheck-build]: https://github.com/pnpm/pnpm/blob/b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce/pnpm/crates/deps-inspection/src/build.rs#L74-L90
-[recheck-tree]: https://github.com/pnpm/pnpm/blob/b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce/pnpm/crates/deps-inspection/src/get_tree.rs#L108-L118
-[recheck-inspection]: https://github.com/pnpm/pnpm/blob/b952ea2c7dfa0c50dbddfeadad6f57e4a86a7fce/pnpm/crates/deps-inspection/src/lib.rs#L34-L40
-[recheck2-recursive]: https://github.com/pnpm/pnpm/blob/1e37c514f247e89da8725afb8b96969996d9b409/pnpm/crates/cli/src/cli_args/recursive.rs
-[recheck2-structured]: https://github.com/pnpm/pnpm/blob/1e37c514f247e89da8725afb8b96969996d9b409/pnpm/crates/cli/src/cli_args/list/render/structured.rs
-[recheck2-list-recursive]: https://github.com/pnpm/pnpm/blob/1e37c514f247e89da8725afb8b96969996d9b409/pnpm/crates/cli/src/cli_args/list/recursive.rs
-[recheck2-linked]: https://github.com/pnpm/pnpm/blob/1e37c514f247e89da8725afb8b96969996d9b409/pnpm/crates/cli/src/cli_args/list/linked_projects.rs
-[recheck2-build]: https://github.com/pnpm/pnpm/blob/1e37c514f247e89da8725afb8b96969996d9b409/pnpm/crates/deps-inspection/src/build.rs
-[recheck2-tree]: https://github.com/pnpm/pnpm/blob/1e37c514f247e89da8725afb8b96969996d9b409/pnpm/crates/deps-inspection/src/get_tree.rs
-[recheck2-lib]: https://github.com/pnpm/pnpm/blob/1e37c514f247e89da8725afb8b96969996d9b409/pnpm/crates/deps-inspection/src/lib.rs#L39
-[recheck2-resolve-path]: https://github.com/pnpm/pnpm/blob/1e37c514f247e89da8725afb8b96969996d9b409/pnpm/crates/deps-inspection/src/pkg_info/resolve_path.rs#L28-L45
-[recheck2-loaded-state]: https://github.com/pnpm/pnpm/blob/1e37c514f247e89da8725afb8b96969996d9b409/pnpm/crates/deps-inspection/src/build/loaded_state.rs#L67-L73
-[recheck2-traversal]: https://github.com/pnpm/pnpm/blob/1e37c514f247e89da8725afb8b96969996d9b409/pnpm/crates/workspace/src/inventory/traversal.rs#L70-L115
-[recheck2-packages]: https://github.com/pnpm/pnpm/blob/1e37c514f247e89da8725afb8b96969996d9b409/pnpm/crates/package-manager/src/dependencies_graph_to_lockfile/packages.rs#L219-L237
-[recheck2-local-resolver]: https://github.com/pnpm/pnpm/blob/1e37c514f247e89da8725afb8b96969996d9b409/pnpm/crates/resolving-local-resolver/src/local_resolver.rs#L377-L395
-[release-readme]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/README.md
+[historical-assessment]: https://github.com/hcoona/three/blob/938bb34c458da1ce5c94e93fa4f4d3f9ade2e058/src/private/app/workflow-delivery/docs/research/pnpm-native-planning.md
+[cli-observation]: https://github.com/hcoona/three/blob/938bb34c458da1ce5c94e93fa4f4d3f9ade2e058/src/private/app/workflow-delivery/docs/research/pnpm-native-planning.md#local-cli-observations
+[directory-observation]: https://github.com/hcoona/three/blob/938bb34c458da1ce5c94e93fa4f4d3f9ade2e058/src/private/app/workflow-delivery/docs/research/pnpm-native-planning.md#directory-join-observations
+[reader-observation]: https://github.com/hcoona/three/blob/938bb34c458da1ce5c94e93fa4f4d3f9ade2e058/src/private/app/workflow-delivery/docs/research/pnpm-native-planning.md#actual-reader-and-script-metadata-observation
+[recheck-1282]: https://github.com/hcoona/three/blob/938bb34c458da1ce5c94e93fa4f4d3f9ade2e058/src/private/app/workflow-delivery/docs/research/pnpm-native-planning.md#pnpm-1282-pin-recheck
+[recheck-1290]: https://github.com/hcoona/three/blob/938bb34c458da1ce5c94e93fa4f4d3f9ade2e058/src/private/app/workflow-delivery/docs/research/pnpm-native-planning.md#pnpm-1290-pin-recheck
+[recheck-12112]: https://github.com/hcoona/three/blob/938bb34c458da1ce5c94e93fa4f4d3f9ade2e058/src/private/app/workflow-delivery/docs/research/pnpm-native-planning.md#pnpm-12112-pin-recheck
 [workspace-graph]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/workspace-projects-graph/src/create_projects_graph.rs
-[napi-metadata]: https://registry.npmjs.org/@pnpm/napi/12.8.1
-[napi-archive]: https://registry.npmjs.org/@pnpm/napi/-/napi-12.8.1.tgz
-[napi-readme]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/npm/napi/README.md
-[napi-loader]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/npm/napi/index.js
-[napi-types]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/npm/napi/index.d.ts
-[napi-lockfile]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/napi/src/lockfile.rs
-[lock-filter]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/lockfile/src/filter_by_importers.rs
-[napi-dependents]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/napi/src/dependents.rs
-[loaded-state]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/build/loaded_state.rs
-[napi-specifier]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/napi/src/specifier.rs
 [list-recursive]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/list/recursive.rs
 [list-command]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/list.rs
 [list-json]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/list/render/structured.rs
 [inspection-graph]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/graph.rs
 [pkg-info]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/pkg_info.rs
 [resolution]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/lockfile/src/resolution.rs
-[workspace-crate]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/workspace/Cargo.toml
-[graph-crate]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/workspace-projects-graph/Cargo.toml
-[nodeapi-readme]: https://github.com/microsoft/node-api-dotnet/blob/958b8c3c04dff5414781a88f069062c6528f7427/README.md
-[nodeapi-embedding]: https://github.com/microsoft/node-api-dotnet/blob/958b8c3c04dff5414781a88f069062c6528f7427/docs/scenarios/dotnet-js.md
-[nodeapi-thread-runtime]: https://github.com/microsoft/node-api-dotnet/blob/958b8c3c04dff5414781a88f069062c6528f7427/src/NodeApi/Runtime/NodeEmbeddingThreadRuntime.cs
-[nodeapi-platform]: https://github.com/microsoft/node-api-dotnet/blob/958b8c3c04dff5414781a88f069062c6528f7427/src/NodeApi/Runtime/NodeEmbeddingPlatform.cs
-[nodeapi-package-pins]: https://github.com/microsoft/node-api-dotnet/blob/958b8c3c04dff5414781a88f069062c6528f7427/Directory.Packages.props
-[nodeapi-package]: https://api.nuget.org/v3-flatcontainer/microsoft.javascript.nodeapi/0.9.27/microsoft.javascript.nodeapi.0.9.27.nupkg
-[libnode-package]: https://api.nuget.org/v3-flatcontainer/microsoft.javascript.libnode/20.1800.215/microsoft.javascript.libnode.20.1800.215.nupkg
-[node-embedding-pr]: https://github.com/nodejs/node/pull/54660
-[workspace-find-archive]: https://registry.npmjs.org/@pnpm/workspace.find-packages/-/workspace.find-packages-1000.0.65.tgz
-[workspace-reader]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm11/workspace/projects-reader/src/index.ts
-[workspace-reader-package]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm11/workspace/projects-reader/package.json
-[workspace-reader-metadata]: https://registry.npmjs.org/@pnpm/workspace.projects-reader/1101.1.1
 [recursive-selection]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/recursive.rs
 [project-graph-view]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/workspace/src/projects_graph_view.rs
 [list-linked-projects]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/list/linked_projects.rs
+[config-values]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/config/values.rs#L261
+[config-overrides]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/config_overrides.rs
+[config-loading]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/config/src/loading.rs#L242
+[materialization-cache]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/build.rs#L73
+[subtree-elision]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/get_tree.rs#L294
+[selector-parser]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/workspace-projects-filter/src/parse_project_selector.rs#L53
+[selector-glob]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/workspace-projects-filter/src/glob.rs#L50
+[unsaved-builder]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/build.rs#L139
+[unsaved-renderer]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/list/render/structured.rs#L134
+[inspection-limit]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/lib.rs#L34
+[materializer-limit]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/deps-inspection/src/get_tree.rs#L115
 [directory-version]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/package-manager/src/dependencies_graph_to_lockfile/packages.rs#L215-L236
 [local-coordinate]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/resolving-local-resolver/src/parse_bare_specifier.rs#L123-L161
 [local-resolution]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/resolving-local-resolver/src/local_resolver.rs#L216-L269
 [coordinate-format]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/lockfile/src/pkg_ver_peer.rs#L7-L40
 [pkg-command]: https://github.com/pnpm/pnpm/blob/57e7b9b76ac3a5ef67461093071b2264335a1a01/pnpm/crates/cli/src/cli_args/pkg.rs#L162-L238
+[hook-finder]: https://github.com/pnpm/pnpm/blob/fe4a0c232384289de82be3d502896ca7e070050c/pnpm/crates/hooks/src/finder.rs#L17-L27

@@ -1,14 +1,13 @@
-# NBGV Native Inputs and Application Qualification
+# NBGV Native Inputs
 
 ## Question and Evidence Scope
 
 Can repository analysis consume native NBGV configuration and path matching
 without another version-file parser, inheritance evaluator or filter language?
-The [middle-level contract](../middle-level-design.md#minimum-facts) consumes this
-research. Source inspection identifies the integration; the
-[local application observation](#local-application-observation) qualifies
-ordinary compilation and runtime dependency delivery on Linux. Complete CI
-integration is outside that observation's evidence scope.
+The [middle-level contract](../middle-level-design.md#minimum-facts) consumes
+these source findings. The [original application qualification][qualification]
+separately records bounded Linux compilation/runtime dependency delivery and
+PNPM reader observations, not complete CI or Windows qualification.
 
 The source pin is NBGV 3.10.94, commit
 `dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb`, retrieved on 2026-10-03/04.
@@ -26,15 +25,13 @@ retrieved source bytes, the upstream MIT notice, package inventories and hashes.
 | Public `FilterPath` exposes resolved paths and inclusion, exclusion and descendant matching; managed repository case behavior is available                             | [`FilterPath`][filter], lines 34–189; [`GitRepository`][repository], lines 100–111, 865–900 |
 | Include/exclude composition is documented; complete version-height commit relevance and history traversal remain private                                               | [Path-filter documentation][filter-doc]; [`GitExtensions`][height], lines 187–274           |
 | The standard package ships the core and managed dependencies as build assets and defines `NerdbankGitVersioningTasksPath`; the core project is not separately packable | [Package definition][package]; [Common targets][targets]; [Core project][core]              |
-| The maintained Cake wrapper defines ordinary `lib/net8.0` packaging, with additional wrapper dependencies                                                              | [Cake project][cake], lines 4–16, 55–80                                                     |
 
-The exact standard NuGet archive contains
+The standard archive contains
 `build/MSBuildCore/Nerdbank.GitVersioning.dll` and its managed dependencies.
-This package inventory does not establish that normal assembly resolution and
-publish will deliver every runtime dependency to an application. Cake packaging
-is a source finding, not an inspected Cake archive or selected integration.
-No public single-call complete input list was found in the inspected interfaces;
-this is not an exhaustive claim about every maintained extension.
+Inventory alone does not establish runtime delivery by assembly resolution and
+publish. No public single-call complete input list was found in the inspected
+interfaces; this is not an exhaustive claim about maintained extensions.
+The historical assessment retains the unselected Cake packaging alternative.
 
 ## Native MSBuild Caching
 
@@ -63,7 +60,7 @@ remain complete and unsupported endpoint-dependent product globals still fail.
 These pinned source findings establish the adaptation basis; the delivery PR
 retains local integration and changed-source hosted qualification separately.
 
-## Integration Candidate and Limits
+## Native API Integration and Limits
 
 Use the pinned official public API through a compile-time assembly reference.
 The imported task-path property is defined in targets, so a scoped target must
@@ -113,129 +110,26 @@ pin-specific. Leaf matching does not implement historical commit relevance,
 version-height evaluation or artifact equality. Other project, build, dependency,
 toolchain and quality inputs remain necessary for CI coverage.
 
-The source-backed integration choices have the bounded Linux packaging evidence
-below. The accepted protocol qualified that boundary before application
-implementation; it does not establish complete input-consumer mapping.
 A concrete gap stops dependent work for owner disposition; it does not authorize
 a replacement evaluator or a full-run fallback.
 
-## Bounded Local Application Qualification Protocol
+## Historical Application Evidence
 
-This historical protocol was admitted under the
-[then-accepted contraction Wave](https://github.com/hcoona/three/blob/ab0b6f67afa73e842e3d70d9c09a881c83f6b351/docs/delivery-wave.md#complete-the-workflow-v3-contraction).
-It qualified the official-library delivery candidate and the already implemented
-PNPM reader at the repository-selected pin, as recorded in the observation below.
-Its retained recipe supplies no current execution permission; future work requires
-the [current Wave](../../../../../../docs/delivery-wave.md) and applicable concrete
-authorization. It was a distinct application qualification, not a refill or
-repetition of either completed PNPM CLI research budget.
+The [closed protocol][qualification] and [original observation][observation]
+retain exact source/tool/fixture identities, original commands and hashes,
+packaging corrections, the committed versus externally compiled assertion
+runners, independent reviews and spent limits. The source snapshot preserves
+that text; it is not the original producer. Local-only restore/build/publish
+and relocated native projection succeeded on the recorded Linux subject.
+Initial restore/build failures remain failures; the historical assertion runner
+exited 1 after 23 assertions, and its separate read-only verifier does not
+relabel it as a passing process.
 
-- **Subject and environment:** active Linux x86_64 host, repository-pinned .NET
-  SDK, NBGV 3.10.94 and PNPM 12.8.2. Record the accepted protocol commit, exact
-  application/reader tree, native executable/package identities and hashes,
-  environment, commands, elapsed times, exit codes and observations. Windows
-  remains the owner's accepted assumption; no separate Windows experiment.
-- **Isolation:** use one disposable NBGV probe project/repository with at most
-  three local commits and two project directories, plus copies of the retained
-  base/candidate inputs and native locks from the directory-join observation
-  packet of PR #1009. Keep at most 32 manifests per PNPM copy. Use empty local
-  auth inputs and isolated store/state/cache directories. Disable Git hooks;
-  no credentials, registry reads, package scripts, install or lock regeneration.
-  Restore probe dependencies from prepared local packages/caches; a missing
-  dependency stops that case. Do not mutate repository locks or installed state.
-- **NBGV operations:** at most five `dotnet` restore/build/publish commands,
-  each bounded to five minutes, and four probe launches bounded to 30 seconds.
-  The ceiling includes one bounded packaging correction, if necessary. Verify
-  normal build and relocated publish execution with an actual public native
-  context, effective options, filter calls and `VersionOracle` projection. Check
-  historical committed-options/filter binding against a different worktree/HEAD,
-  native inheritance and shared/excluded source association, configuration
-  addition/deletion and a missing required subject. Qualify full oracle projection
-  separately on clean exact-target materialization with the intended ref and
-  target's native tags; the different-HEAD options test cannot establish it.
-  Assert application use of native results rather than re-proving the parser or
-  history algorithm. Retain failures before correction.
-- **PNPM operations:** at most two complete calls to the accepted C# graph reader,
-  one per fixture revision, with a combined ceiling of 240 native queries and
-  15 minutes. Each native query retains the reader's 30-second deadline/output
-  bounds. The ceiling also includes at most six direct
-  `pnpm --dir <discovered-directory> pkg get scripts --json` queries. Check actual
-  root membership, local/publish-directory joins, peer snapshots, local tarball
-  consumers, unrelated exclusions and retention of removed base relations.
-  Exercise a present script map and an absent field without executing scripts.
-  The existing synchronized locks are inputs, not a new admission subject.
-- **Stops and interpretation:** crashes, unexpected effects, missing inputs,
-  ambiguous facts, invalid output or exhausted bounds stop the affected case.
-  Report a necessary unavailable capability to the owner. A source-supported
-  but unobserved shape remains unobserved; no complete-CI or repository-wide
-  coverage claim follows from component success. No custom PNPM/NBGV evaluator,
-  duplicate declaration, helper runtime or automatic full-run fallback.
-- **Evidence and cleanup:** retain sanitized fixture/probe inputs, native locks,
-  runner, full command outputs, package/deployment inventories, failed/successful
-  results and hashes in the governing PR before deleting only generated owned
-  state. Leave source caches available for review. No hosted dispatch,
-  publication, authentication, account/Environment/access or host-trust changes.
-
-## Local Application Observation
-
-The protocol was accepted at `ab0b6f67afa73e842e3d70d9c09a881c83f6b351`,
-tree `7f7d59119c121f030e73f621980d2ddeb39c244d`, and executed on
-2026-10-04 on Linux x86_64 with SDK 10.0.401, NBGV 3.10.94 and PNPM 12.8.2.
-[PR #1015](https://github.com/hcoona/three/pull/1015) retains the qualification
-packet: exact protocol, native/source identities, fixtures, runner, command
-outputs, original failures, package/deployment inventories and independent
-reviews. These are component integration observations, not complete CI or
-Windows runtime evidence.
-
-The standard official package supplied a compile-time reference through a
-scoped `BeforeTargets="ResolveAssemblyReferences"` target using
-`NerdbankGitVersioningTasksPath`. Local-only restore, ordinary build and
-framework-dependent publish succeeded. The copied publish directory ran with
-the same full native oracle result; its managed dependency bytes matched the
-official package. No dynamic loading or additional helper runtime was needed.
-Restore used only the prepared local feed, with audit disabled; build and
-publish prohibited implicit restore.
-
-Native committed options and filters were exercised across configuration
-absence, addition with inheritance, and deletion. Effective product versions
-were `1.2-beta`, `2.4-beta` and `1.2-beta`. Shared/project inclusion, explicit
-exclusion and unrelated-input exclusion matched the fixture. Historical options
-remained bound to their selected commit with a different HEAD and deliberately
-different working-copy options. Full projection was observed separately at clean
-exact-target HEAD with `release/native-qualification` and its target-associated
-`vqualification` tag; normal and relocated projections were equal.
-
-Two preparation failures remain failures: initial restore could not discover the
-archive under its acquisition-carrier filename, and an incorrectly attempted
-dependent build failed on the same missing package. One bounded correction copied
-the identical prepared archive under NuGet's native flat-feed filename, without
-new acquisition. The historical runner then passed 23 assertions and exited 1
-because the native missing-commit rejection was `GitException`, while the runner
-expected `ArgumentException`. Its original source/output and failed status remain
-retained. A separate read-only verifier confirms the actual explicit native
-rejection; it does not turn that process into a passing run.
-
-The fixture's committed runner and the corrected external assertion runner are
-recorded separately. Two count/descendant assertion corrections preceded native
-evaluation. Build compiled the corrected external runner, then restored the
-committed file before clean exact-target oracle calls; publish reused that build.
-The fixture repository supplied the oracle's product inputs, not the identity of
-the externally compiled assertion runner. The copied production PNPM sources
-were unchanged.
-
-The [PNPM application observation](pnpm-native-planning.md#actual-reader-and-script-metadata-observation)
-qualifies both actual reader revisions and native script metadata. Six read-only
-retained-output tests passed, covering native options, missing-subject rejection,
-relocated projection, reader relations/scripts, removed-base consumers, exact
-inputs and finite effects. They execute no native operations.
-
-The original cumulative ledger used all five restore/build/publish commands,
-three of four NBGV launches, all three local commits, both reader calls,
-169 of 240 PNPM queries and four of six direct script queries. Combined reader
-wall clock was 10.7984 seconds within 900 seconds. Acceptance retains these spent
-limits; no operation is repeated or budget renewed by this observation.
-Consumer mapping, complete native fact assembly, quality/check expansion and
-workflow cutover still require implementation and their own ordinary validation.
+The separate [PNPM reader result][pnpm-observation] retains both reader calls,
+native script metadata, original fixtures and query accounting.
+These component observations do not establish current complete fact assembly,
+caller integration, Windows or publication. Their finite protocols grant no
+repetition, cleanup, refilled allowance or new operation.
 
 ## Pin Guard
 
@@ -263,6 +157,9 @@ the Windows CI run are not covered either. PNPM reader queries are guarded by
 the PNPM [Pin Guard](pnpm-native-planning.md#pin-guard). Existing observations
 keep their original pins and limits.
 
+[qualification]: https://github.com/hcoona/three/blob/938bb34c458da1ce5c94e93fa4f4d3f9ade2e058/src/private/app/workflow-delivery/docs/research/nbgv-native-inputs.md#bounded-local-application-qualification-protocol
+[observation]: https://github.com/hcoona/three/blob/938bb34c458da1ce5c94e93fa4f4d3f9ade2e058/src/private/app/workflow-delivery/docs/research/nbgv-native-inputs.md#local-application-observation
+[pnpm-observation]: https://github.com/hcoona/three/blob/938bb34c458da1ce5c94e93fa4f4d3f9ade2e058/src/private/app/workflow-delivery/docs/research/pnpm-native-planning.md#actual-reader-and-script-metadata-observation
 [cli]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/nbgv/Program.cs#L597-L657
 [oracle]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/NerdBank.GitVersioning/VersionOracle.cs#L44-L82
 [context]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/NerdBank.GitVersioning/GitContext.cs#L197-L232
@@ -276,7 +173,6 @@ keep their original pins and limits.
 [package]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/Nerdbank.GitVersioning.Tasks/Nerdbank.GitVersioning.nuspec
 [targets]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/Nerdbank.GitVersioning.Tasks/build/Nerdbank.GitVersioning.Common.targets
 [core]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/NerdBank.GitVersioning/Nerdbank.GitVersioning.csproj
-[cake]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/Cake.GitVersioning/Cake.GitVersioning.csproj#L55-L80
 [projection-context]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/NerdBank.GitVersioning/VersionOracle.cs#L44-L117
 [managed-context]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/NerdBank.GitVersioning/Managed/ManagedGitContext.cs#L50-L67
 [cache-props]: https://github.com/dotnet/Nerdbank.GitVersioning/blob/dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb/src/Nerdbank.GitVersioning.Tasks/build/Nerdbank.GitVersioning.props
