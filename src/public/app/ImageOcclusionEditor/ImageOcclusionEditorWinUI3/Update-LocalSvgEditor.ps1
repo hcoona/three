@@ -21,13 +21,17 @@
 .DESCRIPTION
     This script downloads the svgedit package from the NPM registry, extracts it, and replaces the svg-edit folder in the current directory.
     The script performs the following steps:
-    1. Download svgedit-7.3.8.tgz file
+    1. Download svgedit-7.3.8.tgz file and verify its npm integrity (SHA-512)
     2. Use 7-Zip to extract the tgz file (requires two extractions)
     3. Extract /package/dist/editor directory
     4. Replace the svg-edit folder in the current directory
 
 .PARAMETER Version
     The svgedit version to download. Default is "7.3.8"
+.PARAMETER Integrity
+    The npm Subresource Integrity string (sha512-<base64>) of the svgedit package.
+    Defaults to the pinned value for version 7.3.8. Required when -Version differs from the default;
+    obtain it with: npm view svgedit@<version> dist.integrity
 .PARAMETER Force
     Force the operation, overwrite even if the target directory exists
 .PARAMETER KeepDownload
@@ -37,7 +41,7 @@
     .\Update-LocalSvgEditor.ps1
     Update SVG Editor with default version 7.3.8
 .EXAMPLE
-    .\Update-LocalSvgEditor.ps1 -Version "7.4.0" -Force
+    .\Update-LocalSvgEditor.ps1 -Version "7.4.0" -Integrity "sha512-..." -Force
     Force update SVG Editor with version 7.4.0
 .EXAMPLE
     .\Update-LocalSvgEditor.ps1 -KeepDownload -Verbose
@@ -63,6 +67,10 @@ param(
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')]
     [string]$Version = "7.3.8",
 
+    [Parameter(HelpMessage = "npm integrity (sha512-<base64>) of the svgedit package")]
+    [ValidatePattern('^sha512-[A-Za-z0-9+/]+={0,2}$')]
+    [string]$Integrity,
+
     [Parameter(HelpMessage = "Force operation, overwrite existing files")]
     [switch]$Force,
 
@@ -83,6 +91,14 @@ if (-not $ScriptRoot) {
 Write-Verbose "Script running directory: $ScriptRoot"
 
 # Define variables
+$PinnedVersion = "7.3.8"
+$PinnedIntegrity = "sha512-+miJUrUabSZCIscDsyZHRpg+EmVcMUOP11mPSgH4bh768bGmE43CdHuB5uYAWDulb5E7zuq+UTJIjjKG3tiHhA=="
+if (-not $Integrity) {
+    if ($Version -ne $PinnedVersion) {
+        throw "No integrity pinned for svgedit $Version. Pass -Integrity with the value from: npm view svgedit@$Version dist.integrity"
+    }
+    $Integrity = $PinnedIntegrity
+}
 $DownloadUrl = "https://registry.npmjs.org/svgedit/-/svgedit-$Version.tgz"
 $TempDir = Join-Path $env:TEMP "svgedit-update-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 $TgzFile = Join-Path $TempDir "svgedit-$Version.tgz"
@@ -177,6 +193,37 @@ function Get-SvgEditPackage {
     catch {
         throw "Download failed: $($_.Exception.Message)"
     }
+}
+
+function Test-PackageIntegrity {
+    <#
+    .SYNOPSIS
+    Verify the downloaded package against its npm integrity; delete it on mismatch
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [ValidateScript({ Test-Path $_ -PathType Leaf })]
+        [string]$Path,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ExpectedIntegrity
+    )
+
+    $hashHex = (Get-FileHash -Path $Path -Algorithm SHA512).Hash
+    $hashBytes = [byte[]]::new($hashHex.Length / 2)
+    for ($i = 0; $i -lt $hashBytes.Length; $i++) {
+        $hashBytes[$i] = [Convert]::ToByte($hashHex.Substring($i * 2, 2), 16)
+    }
+    $actualIntegrity = "sha512-" + [Convert]::ToBase64String($hashBytes)
+    Write-Verbose "Package integrity: $actualIntegrity"
+
+    if ($actualIntegrity -cne $ExpectedIntegrity) {
+        Remove-Item $Path -Force
+        throw "Integrity mismatch for $(Split-Path $Path -Leaf): expected $ExpectedIntegrity, got $actualIntegrity"
+    }
+
+    Write-Information "Package integrity verified" -InformationAction Continue
 }
 
 function Expand-TgzFile {
@@ -337,6 +384,8 @@ try {
 
         try {
             Get-SvgEditPackage -Url $DownloadUrl -OutputPath $TgzFile
+
+            Test-PackageIntegrity -Path $TgzFile -ExpectedIntegrity $Integrity
 
             Expand-TgzFile -TgzPath $TgzFile -TarPath $TarFile -ExtractPath $ExtractDir
 
