@@ -87,7 +87,7 @@ def batch(tmp_path, state, *arguments):
         "FAKE_GH_LOG": str(log),
     }
     completed = subprocess.run(  # noqa: S603
-        [sys.executable, SCRIPT, "--poll-interval", "0", *arguments],
+        [sys.executable, SCRIPT, "--poll-interval=0", *arguments],
         capture_output=True,
         text=True,
         env=environment,
@@ -285,3 +285,19 @@ def test_entries_follow_every_release_caller_input_shape(tmp_path):
         f"workflow-delivery-v3-{caller}-release.yml/dispatches"
         for caller in ("browser-store", "github", "nuget")
     ]
+
+
+@pytest.mark.parametrize("value", ["-1", "nan", "inf"])
+def test_invalid_poll_interval_dispatches_nothing(tmp_path, value):
+    """A poll interval that cannot be awaited stops the batch first."""
+    completed, calls = batch(
+        tmp_path,
+        {"dispatch": {}, "runs": {}},
+        f"--poll-interval={value}",
+        "--ref",
+        "main",
+        PYTHON,
+    )
+
+    assert completed.returncode == 2
+    assert calls == []
