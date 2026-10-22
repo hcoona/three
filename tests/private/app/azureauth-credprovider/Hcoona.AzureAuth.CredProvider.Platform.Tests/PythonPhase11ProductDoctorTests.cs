@@ -6,7 +6,7 @@ using Xunit;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
-public sealed class PythonPhase11ProductDoctorTests
+public sealed partial class PythonPhase11ProductDoctorTests
 {
     private const string SelectedPythonPath = "/workspace/.venv/bin/python";
     private const string ExpectedShimPath =
