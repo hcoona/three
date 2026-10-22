@@ -8,6 +8,50 @@ ends a grant. Git and the proposing PR retain the reason and history.
 
 ## Authorized Advancements
 
+### Reconcile Workflow V1, V2 and V3 documentation
+
+- **Work carrier:** [Issue #1406](https://github.com/hcoona/three/issues/1406)
+  and its linked authorization and implementation pull requests. The repository
+  owner requested this cleanup and the explicit closure condition below.
+- **Accepted inputs:** the [governance policy](governance/governance-system.md),
+  [record policy](governance/record-system.md), [documentation portal](README.md),
+  and Workflow Delivery's
+  [project portal](../src/private/app/workflow-delivery/docs/README.md),
+  [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
+  [design and integration contracts](../src/private/app/workflow-delivery/docs/middle-level-design.md#integration-mapping),
+  [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md) and
+  [historical readers](../src/private/app/workflow-delivery/docs/validation/historical-readers.md).
+- **Advancement and outcome:** audit and reconcile Workflow V1, V2 and V3
+  documentation against the current implementation and accepted authorities.
+  Delete superseded records after migrating current consumers, links and any
+  unique current rationale or evidence. Use immutable Git references for
+  historical bodies rather than an archive or duplicate authority. Begin with
+  closed-campaign validation records and the mixed smoke research records;
+  preserve current native-integration findings, recheck obligations, provenance,
+  evidence limits, stable requirement identifiers, legal notices and immutable
+  human-source inputs.
+- **Ordering and gates:** merge this authorization before substantive cleanup.
+  Migrate consumers and navigation atomically with retirement. Retain independent
+  record-system, research-evidence and applicable engineering/OCR reviews,
+  independent classification of material findings, record checks and affected
+  HK validation. Product, evidence-level or authority changes outside faithful
+  documentation reconciliation return to the owner.
+- **Acceptance and closure:** the current tree has one authority per retained
+  concern, accurate implementation/status routing and no superseded body
+  without a current consumer. Only an explicit further repository-owner request
+  may close or delete this entry; completing or merging an individual cleanup
+  PR does not authorize its closure. Retaining the entry does not enlarge this
+  bounded documentation scope. Keep progress and results in the Issue and PRs.
+- **Effects:** permit repository and read-only GitHub inspection, documentation
+  and directly affected record-routing/catalog changes, local record and
+  conformance checks, independent delegated review, and ordinary Issue/PR/check
+  operations and their normal CI.
+- **Exclusions:** no runtime, dependency, workflow-execution or product-behavior
+  changes; no new empirical experiments or support claims; no release/proving
+  dispatch, publication, authentication, Environment, account, publisher or
+  access change. All closed-campaign failures, spent ceilings and operation
+  limits remain unchanged.
+
 ### Derive tool and runtime versions from committed configuration
 
 - **Work carrier:** the pull request proposing this entry and its linked
