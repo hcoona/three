@@ -37,6 +37,7 @@ records name.
 | Python package execution        | [Packaging assessment](research/python-native-packaging.md), [finite qualification](research/python-native-package-qualification.md)                                                                     | Changing Python package preparation, build or consumers                                                                 |
 | Native publishers               | [NuGet](research/nuget-native-publisher.md), [Python](research/python-native-publisher.md), [Ruby](research/ruby-native-publisher.md)                                                                    | Changing that ecosystem's Release publisher, observation or completion                                                  |
 | Contraction assumptions         | [Feasibility](research/contraction-feasibility.md)                                                                                                                                                       | Questioning the owner's Windows assumption or native NBGV build execution                                               |
+| Registry support                | [GitHub Packages registries](research/github-packages-supported-registries.md)                                                                                                                           | A destination decision relying on the supported ecosystem matrix                                                        |
 
 The Python package record preserves failed output adoption and spent lifetimes
 beside later bounded success. Neither tool readiness nor corrected source
@@ -48,17 +49,13 @@ from local observations and from completed publication campaigns.
 
 Read the campaign records only to interpret or audit a closed campaign, or when
 the [handoff](agent-handoff.md#authorization-and-closed-campaigns) limits route
-to them; they are not current behavior. The registry support research also
-listed here remains current source research.
-
-| Concern                                             | Original outcomes, controls and limits                                                                                                                         | Read when                                                                                                  |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| npm native and normal publication                   | [Evidence](validation/native-and-normal-live-evidence.md), [registry support research](research/github-packages-supported-registries.md)                       | Auditing npm publication or credential reach, or a destination decision relying on GitHub Packages support |
-| NuGet profile, native and normal publication        | [Research/evidence](research/nuget-smoke-evidence.md), [normal-Live evidence](validation/nuget-normal-live-evidence.md)                                        | Auditing NuGet Native R4 or normal-Live results                                                            |
-| Python preparation and native failure               | [Retired native acceptance](validation/historical-readers.md#retired-python-native-acceptance), [source evidence](research/python-smoke-evidence.md)           | Interpreting the failed Python native generation                                                           |
-| Python bootstrap, publication and ordinary recovery | [Bootstrap](validation/python-bootstrap.md), [normal publication](validation/python-normal-live-evidence.md), [recovery](validation/python-hosted-recovery.md) | Auditing Python bootstrap, publication or recovery outcomes                                                |
-| Ruby original publication                           | [Normal-Live evidence](validation/ruby-normal-live-evidence.md), [research](research/ruby-smoke-evidence.md)                                                   | Auditing Ruby publication outcomes                                                                         |
-| Historical implementation and record recovery       | [Producer-qualified readers and retired records](validation/historical-readers.md)                                                                             | Recovering an original producer or a retired record's text                                                 |
+to them; they are not current behavior. The
+[historical readers](validation/historical-readers.md) locate actual producers,
+the failed Python native generation and
+[retired campaign records](validation/historical-readers.md#retired-campaign-records).
+Git retains the original studies, protocols, publication results and recovery
+evidence; current native publisher records retain applicable source/recheck
+boundaries.
 
 ## Historical Source Rule
 

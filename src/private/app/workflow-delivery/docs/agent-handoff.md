@@ -80,8 +80,9 @@ draft-path delivery lessons as historical lessons, not rules.
 ## Authorization and Closed Campaigns
 
 All npm, NuGet, Python and Ruby proving campaigns are complete and stopped.
-[Domain values](high-level-design.md#domain-values) define campaign, original D,
-Native R4 and normal-Live, and note how generation, slot and lifetime are used. Their operation slots, failed lifetimes and dispatch/recovery ceilings remain
+Their record-specific terms and original outcomes remain in the
+[historical campaign records](validation/historical-readers.md#retired-campaign-records).
+Their operation slots, failed lifetimes and dispatch/recovery ceilings remain
 spent. No source change, artifact download, requirements revision, Wave
 contraction or evidence acceptance authorizes a new campaign generation, rerun,
 release/proving dispatch, publication, authentication, Environment, account,
@@ -113,15 +114,15 @@ replacement remains as-is. No deletion, restoration, recreation or compensation
 is required or authorized.
 Active non-overwrite does not promise lifetime-global reservation after
 administrative deletion. The removed legacy Environment must not be recreated.
-[Original native and publication evidence](validation/native-and-normal-live-evidence.md)
+[Original native and publication evidence](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/native-and-normal-live-evidence.md)
 retains exact identities, external observations, accepted reach and counterexamples.
 
 ### NuGet retained limits
 
 Native R4, ready historical configuration, actual publication and the joined
-postpublication audit ([domain values](high-level-design.md#domain-values)) retain their original source and support scope. The
-[normal-Live evidence](validation/nuget-normal-live-evidence.md) and
-[research evidence](research/nuget-smoke-evidence.md) preserve separate profile,
+postpublication audit retain their original source and support scope. The
+[normal-Live evidence](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/nuget-normal-live-evidence.md) and
+[research evidence](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/research/nuget-smoke-evidence.md) preserve separate profile,
 fixture/provider, prebuilt consumer, native suite and normal-run lifetimes.
 Do not replay, rebuild historical helpers as current qualification, dispatch,
 republish, change feed/package access or repeat completed verification.
@@ -132,16 +133,16 @@ Future exceptional or live operations require their own concrete authorization.
 The first native generation remains failed and incomplete. Later corrected
 preparation and caller evidence does not relabel it, refund its slots or
 replace its actual producer. [Retired native acceptance](validation/historical-readers.md#retired-python-native-acceptance),
-[bootstrap](validation/python-bootstrap.md),
-[ordinary recovery](validation/python-hosted-recovery.md) and
-[normal-Live evidence](validation/python-normal-live-evidence.md) retain their
+[bootstrap](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/python-bootstrap.md),
+[ordinary recovery](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/python-hosted-recovery.md) and
+[normal-Live evidence](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/python-normal-live-evidence.md) retain their
 actual subjects and spent ceilings. Python's native per-file guarantees do not
 promise an atomic wheel/sdist set or permanent registry retention.
 
 ### Ruby retained limits
 
 The [operation protocol](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/ruby-operation-protocol.md) and
-[normal-Live evidence](validation/ruby-normal-live-evidence.md) retain stopped
+[normal-Live evidence](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/ruby-normal-live-evidence.md) retain stopped
 destinations, original publication/consumer observations and spent bootstrap,
 native, normal and recovery slots. Linux caller qualification does not claim
 Windows Ruby operations or deployed authentication/destination behavior.

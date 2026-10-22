@@ -95,8 +95,31 @@ The [former public interface](https://github.com/hcoona/three/blob/d5aefae965e24
 and [former operating handoff](https://github.com/hcoona/three/blob/d5aefae965e240c15b7b834ae4b04df40a31ea12/src/public/lib/three-workflow-delivery-v3/docs/agent-handoff.md)
 are last-source navigation aids only. They do not replace any actual producer
 above or revive their deleted runtime admission, campaign workflows or commands.
-The original npm, Python and Ruby operation records retain their own immutable
+The [original campaign records](#retired-campaign-records) retain their own immutable
 sources, observations, failed lifetimes and spent ceilings.
+
+## Retired Campaign Records
+
+These bodies are retained in Git rather than as current protocols or status
+pages. The linked `0bd6f5049f683d9b9963e1855f21a87e64849556` snapshot preserves
+their complete text, source locators, original hashes, audit/packet links and
+evidence limits. It is not a producer revision: use the producer-qualified
+readers above and each record's original source/run bindings when auditing
+observations. Current operation limits remain in the
+[handoff](../agent-handoff.md#authorization-and-closed-campaigns); current
+integration and recheck boundaries remain in the native publisher records.
+
+| Historical record                                                                                                                                                                                         | Original role                                                                                                               |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| [npm native and normal-Live evidence](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/native-and-normal-live-evidence.md) | Original failures, native acceptance, both normal-Live runs, credential reach and original-D disposition                    |
+| [NuGet smoke research and evidence](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/research/nuget-smoke-evidence.md)                | Source findings, profile and fixture identities, failed generations and independently accepted Native R4                    |
+| [NuGet normal-Live evidence](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/nuget-normal-live-evidence.md)               | Actual publication and joined postpublication capture/consumer audit, separate from Native R4                               |
+| [Python destination/build study](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/research/python-smoke-evidence.md)                  | Original service/build findings, immediate-readback failure, identical-duplicate counterexample and owner platform reliance |
+| [Python first-project bootstrap](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/python-bootstrap.md)                     | Closed first-project protocol and resource boundary; neither failed bootstrap becomes successful                            |
+| [Python normal-Live evidence](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/python-normal-live-evidence.md)             | Separate TestPyPI/PyPI publication and consumer results, failures and recoverable public packets                            |
+| [Python hosted recovery](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/python-hosted-recovery.md)                       | Failed partial seed and fresh successful missing-sdist recovery; inverse path remains local-only evidence                   |
+| [Ruby destination/build study](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/research/ruby-smoke-evidence.md)                      | Original source findings, failed bootstrap, separate redirect observation and publisher assumptions                         |
+| [Ruby normal-Live evidence](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/ruby-normal-live-evidence.md)                 | Separate destination publications, clean consumers, failed attempts and spent operation budgets                             |
 
 ## Retired records
 

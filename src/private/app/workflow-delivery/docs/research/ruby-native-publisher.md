@@ -106,6 +106,11 @@ process deadlines and output bounds in the concrete contract before cutover.
 
 ## Native Timestamp and Installation Order
 
+The [original Ruby destination/build study](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/research/ruby-smoke-evidence.md)
+retains the earlier native-version normalization, package-building and registry
+source findings, separately from its failed bootstrap and redirect observations.
+Those observations do not qualify the current native reader or publisher.
+
 The same pinned [RubyGems source][rubygems], line 150, defines
 `DEFAULT_SOURCE_DATE_EPOCH` as the fixed value `315619200`.
 `source_date_epoch_string` uses the explicit environment value or that constant.
@@ -189,7 +194,7 @@ the native reuse and the reader's refusal of used scratch. This contract found a
 application defect: `source.rb` never loaded `rubygems/remote_fetcher`, which
 `Gem::Source` calls but does not autoload, so every real read answered unknown.
 The helper now requires it. The hosted Ruby smoke runs recorded in
-[normal-live evidence](../validation/ruby-normal-live-evidence.md) (2026-10-02)
+[normal-live evidence](https://github.com/hcoona/three/blob/0bd6f5049f683d9b9963e1855f21a87e64849556/src/private/app/workflow-delivery/docs/validation/ruby-normal-live-evidence.md) (2026-10-02)
 predate this helper (added 2026-10-12); no hosted Ruby smoke run has used it.
 
 The native helper's RSpec carrier asserts the exact specification and archive
@@ -209,6 +214,15 @@ contracts; the Action is a dispatch-only workflow pin and gets static
 validation only. Windows remains the owner's assumption. A missing native
 capability blocks the affected path rather than expanding the application into a
 generic credential, resolver or trust service.
+
+Before implementation or admission relies on mutable destination support,
+authentication, publisher behavior or registry APIs, the implementer rechecks
+the official guide; an independent evidence reviewer assesses material changes.
+Changed service behavior, ownership or publication tuple also triggers that
+check. The next Wave selecting Ruby implementation or operations is the fallback
+review event. Retain results in the Issue/PR and update affected current
+conclusions; pinned source identity does not establish continuing applicability
+or authorize new service operations.
 
 [push]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/commands/push_command.rb
 [gemcutter]: https://github.com/rubygems/rubygems/blob/7f2502dc32b4e10a099c398ad93d2d2534873205/lib/rubygems/gemcutter_utilities.rb
