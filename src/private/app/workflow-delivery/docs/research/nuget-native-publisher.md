@@ -49,13 +49,12 @@ behavior; it did not select zero retries.
 
 ## Client Distribution Selection
 
-The selected SDK 10.0.401's NuGet.Protocol and NuGet.Commands assemblies report
-informational version
-`7.9.0-rc.42413+e34a38d2ae1fc26406a317517196e55c68ff83ab`, which differs from the
-packaged 7.9.0 source pin above. Read-only file inspection on 2026-10-11
-established that identity difference. Exact public source-file retrievals returned
-404 and the public commit lookup returned 422; those failed acquisitions do not
-establish SDK incompatibility or a matching source basis.
+The [original SDK inspection][sdk-inspection] retains the exact SDK-shipped and
+packaged client identities, unsuccessful public-source acquisitions and package
+metadata. The 2026-10-11 inspection found different assembly identities; failed
+lookups established neither SDK incompatibility nor a matching source basis.
+That recorded SDK is an observation subject, not the current SDK-selection
+authority.
 
 Select the coherent official packaged 7.9.0 NuGet group instead of assuming
 equivalence with the SDK copy. Its NuGet.Packaging `net8.0` dependency group
@@ -122,3 +121,4 @@ bound fails CI; it does not add an application retry mechanism.
 [push-doc]: https://learn.microsoft.com/dotnet/core/tools/dotnet-nuget-push
 [env-doc]: https://learn.microsoft.com/nuget/reference/cli-reference/cli-ref-environment-variables
 [removed]: https://learn.microsoft.com/dotnet/core/compatibility/sdk/10.0/nuget-enhanced-http-retry-removed
+[sdk-inspection]: https://github.com/hcoona/three/blob/dcea74ff7c2cfb9e3a1540467346b0167715b213/src/private/app/workflow-delivery/docs/research/nuget-native-publisher.md#client-distribution-selection

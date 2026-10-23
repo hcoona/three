@@ -65,10 +65,10 @@ execution. These rechecks do not reopen a closed campaign or authorize a probe.
 
 ## Development-Branch Native Version Projection
 
-The current Python project's non-inheriting `version.json` matches only
-`refs/heads/main` for public-release mode and selects `0.1.0-beta.{height}`.
-Its backend selects maintained `nbgv-python` `SemVer2` normalization. Current
-configuration does not establish development-branch index compatibility.
+The [concrete Python contract](../integration/python.md#concrete-python-release-integration)
+owns committed public-version ref selection and the separate CI/Release version
+contexts. The source findings below explain their native constraints; they do not
+establish a new branch query, package build or index observation.
 
 Pinned NBGV 3.10.94 source at
 `dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb` provides the supported boundary:
@@ -86,15 +86,18 @@ Pinned Warehouse source at
 HTTP Bad Request. It establishes the source constraint, rather than a newly
 observed deployed rejection.
 
-Use committed native public-version ref configuration for the selected Buddy
-branches, preserving base/prerelease/height and the same CI/Release projection.
-Public-version mode is not Official channel authorization. Detached checkout
+Use the contract-owned committed native ref configuration for selected Buddy
+branches, preserving base/prerelease/height and maintained plugin normalization.
+CI's ambient-ref-free package qualification and selected-ref Release preparation
+use distinct native contexts; CI construction evidence does not qualify the
+Release version string. Public-version mode is not Official channel authorization.
+Detached checkout
 queries still need faithful selected native ref/commit context; extra local
 metadata remains inadmissible for live publication. Do not strip a suffix in
 the workflow/application or change global plugin normalization. Equal public
 versions across commits remain possible and conflicting originals remain
-conflicts. The concrete contract selects the ref set; later component/native
-qualification must establish the actual projection and original consumers.
+conflicts. Qualification remains bound to the actual native context, tools and
+original consumers.
 
 ## Remote Native Consumption Boundary
 
@@ -210,38 +213,23 @@ changed path rather than expanding the application into another publisher.
 
 ## UV 0.12.24 to 0.13.1 Recheck
 
-The selected UV changed from 0.12.24 to 0.13.0 in
-[PR #1155](https://github.com/hcoona/three/pull/1155) and to 0.13.1 in
-[PR #1238](https://github.com/hcoona/three/pull/1238). Tag `0.13.1` resolves to
-commit [`62faed3351cfee2121b3c28b937b1f4b93233a93`][uv-0131]. This recheck compares the cited files between
-`5411378eb76dc1ea1ad90aeb10e84e997e5bbd96` and that commit; no UV 0.13.1 binary, publisher or index was
-executed for it.
+The [original source recheck][publisher-recheck] compares UV 0.12.24 commit
+`5411378eb76dc1ea1ad90aeb10e84e997e5bbd96` with
+[0.13.1 commit `62faed3351cfee2121b3c28b937b1f4b93233a93`][uv-0131].
+It retains the file-level comparison, dependency-change PRs and reviewed
+verdicts. No 0.13.1 binary, publisher or index was executed for that recheck.
 
-| Cited source                                                                   | 0.12.24 → 0.13.1                         | Reviewed verdict                                                                                                                                        |
-| ------------------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `crates/uv-publish/src/trusted_publishing.rs` and `trusted_publishing/pypi.rs` | Identical                                | Audience, OIDC exchange, masking and token invalidation findings unchanged                                                                              |
-| `crates/uv-cli/src/lib.rs` `PublishArgs`                                       | Identical struct; file changed elsewhere | Publish arguments unchanged. `HashCheckingArgs` gains only a documentation pointer to the new opt-in `--require-build-hashes`                           |
-| `crates/uv-publish-commands/src/lib.rs`                                        | Changed (2 lines)                        | Passes `TarBackend::from_env()` to the session; the retry policy, file loop and finalization are unchanged                                              |
-| `crates/uv-publish/src/lib.rs`                                                 | Changed                                  | See the `TarBackend` verdict below; upload, existing-file checking and redirect handling are unchanged                                                  |
-| `crates/uv-pip-commands/src/install.rs`                                        | Changed                                  | Build-dependency hash checking becomes a separate, resolved mode; runtime `HashStrategy::from_requirements` for pinned hashed requirements is unchanged |
-| `crates/uv-types/src/hash.rs`, `crates/uv-installer/src/preparer.rs`           | Identical                                | Hash strategy and archive rejection unchanged                                                                                                           |
-| `crates/uv-distribution/src/source/mod.rs`                                     | Changed                                  | Build-settings cache sharding moves before the metadata cache lookup; every "check that the hashes match" guard before a build remains                  |
+The comparison preserved this record's publisher, trusted-publishing and native
+consumption source basis, including `ambient-id` 0.0.11. At 0.13.1 the default
+sdist metadata reader changed to tar-codec, with `UV_LEGACY_TAR_BACKEND` selecting
+`tokio-tar`; both retain the single top-level `PKG-INFO` requirement. That change
+does not alter the selected original, one-invocation boundary, retries or
+independent original-byte verification. No conclusion above depends on which tar
+reader is selected.
 
-UV's `ambient-id` dependency remains 0.0.11 in both lockfiles.
-
-`TarBackend` verdict: at 0.12.24 the publisher read an sdist's `PKG-INFO` with the
-tar-codec reader only under a preview feature and otherwise with `tokio-tar`. At
-0.13.1 `TarBackend::from_env()` selects the tar-codec reader by default and
-`tokio-tar` only when `UV_LEGACY_TAR_BACKEND` is true. Both readers keep the
-same single top-level `PKG-INFO` requirement and its tests. The change affects
-how UV reads upload metadata from the qualified sdist, not which file is
-uploaded, the one-invocation boundary, retries or the application's independent
-original-byte verification. No finding above depends on the tar reader.
-
-Conclusion: the source basis of this record is unchanged at UV 0.13.1 for the
-publisher, trusted-publishing and native consumption findings. This recheck
-establishes no publisher, index, runtime, Windows or live-publication behavior.
-Its dependency-change review is recorded in the governing pull request.
+These remain source-comparison findings, not publisher, index, runtime, Windows
+or live-publication qualification. Current native guards and destination rechecks
+above retain their separate responsibilities.
 
 [command]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-publish-commands/src/lib.rs
 [publisher]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-publish/src/lib.rs
@@ -261,3 +249,4 @@ Its dependency-change review is recorded in the governing pull request.
 [consumer-preparer]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-installer/src/preparer.rs#L174
 [consumer-sdist]: https://github.com/astral-sh/uv/blob/5411378eb76dc1ea1ad90aeb10e84e997e5bbd96/crates/uv-distribution/src/source/mod.rs#L665
 [uv-0131]: https://github.com/astral-sh/uv/tree/62faed3351cfee2121b3c28b937b1f4b93233a93
+[publisher-recheck]: https://github.com/hcoona/three/blob/dcea74ff7c2cfb9e3a1540467346b0167715b213/src/private/app/workflow-delivery/docs/research/python-native-publisher.md#uv-01224-to-0131-recheck
