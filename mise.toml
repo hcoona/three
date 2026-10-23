@@ -28,7 +28,7 @@ pnpm = "12.14.0"
 uv = "0.13.4"
 
 # Git Commit Hook Manager
-"aqua:jdx/hk" = "2.7.1"
+"aqua:jdx/hk" = "2.8.0"
 
 #
 # Linters and Formatters
