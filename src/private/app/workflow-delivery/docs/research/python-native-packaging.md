@@ -49,9 +49,7 @@ delivery carrier; immutable public locations below recover each passage.
 The existing root `dev` group declares Hatchling and quality tools;
 `workflow-delivery-python` declares `build` and workspace `nbgv-python`. The
 maintained plugin has its own static version and Hatchling backend. Reusing
-these declarations avoids a backend roster or lock parser. The candidate
-earlier bootstrap excluded local products first, then selected both existing
-groups with shared build mode and native workspace editability for source building.
+these declarations avoids a backend roster or lock parser.
 The [first native preparation failure](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#first-native-preparation-failure)
 shows that selecting only the build/plugin group removes the previously installed
 backend tools. Shared build mode does not preserve an omitted group.
@@ -68,7 +66,7 @@ or operator defect is established.
 After complete original archives exist, one additional frozen both-groups sync
 with shared build mode and `--no-editable` reconciles the same owned tools before
 Git-free sdist consumption. Noneditable installation avoids an implicit editable
-source-checkout input in that consumer. The proposed source phase and conversion
+source-checkout input in that consumer. The selected source phase and conversion
 retain native dependency checks and the same declarations; neither source finding
 proves actual installation, removal of source links or clean consumer behavior.
 
@@ -81,13 +79,11 @@ make an arbitrary isolated backend resolution lock-frozen.
 
 ## Native Editable Tool Preparation
 
-The separately audited second corrected-campaign lifetime failed while preparing
-editable `nbgv-python`: Hatchling could not import `editables`. Product build,
-contents and both original consumers were not reached. Independent triage
-classified `EDITABLE-PREPARATION-001` as a true positive, confidence 10/10 for the
-observed failure and 9/10 for the integration cause. The
-[actual observation](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
-retains the exact subject, failed results and remaining allowance.
+The [historical editable-preparation failure](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#second-lifetime-editable-preparation-failure)
+retains the failed `editables` import, unreached product/consumer checks and
+independent `EDITABLE-PREPARATION-001` classification. The observed failure and
+integration cause retain their separate confidence and evidence. Later correction
+does not relabel that failed lifetime or restore any allowance.
 
 At pinned Hatchling `c4abc454f908bb4fc2a92452a82cb33dac14abf3`, the public
 [editable requirement hook](https://github.com/pypa/hatch/blob/c4abc454f908bb4fc2a92452a82cb33dac14abf3/backend/src/hatchling/build.py#L61-L69)
@@ -163,9 +159,10 @@ project/core version before consulting its dynamic source.
 lines 72–92 maps the native Version header.
 
 For the adopted package, a normal Hatchling sdist carrying `PKG-INFO` should
-therefore retain its version during a Git-free wheel build. This is an inference
-to observe, not tested consumption or general support for metadata hooks and
-generated-version variants. Preserve the maintained plugin/backend and original
+therefore retain its version during a Git-free wheel build. This source inference
+is distinct from the bounded Linux observation above and does not establish
+general support for metadata hooks and generated-version variants.
+Preserve the maintained plugin/backend and original
 archive; do not rewrite static project metadata or substitute a computed version.
 
 ## Qualification and Recheck Boundary
@@ -205,15 +202,12 @@ Its [output-directory preparation](https://github.com/astral-sh/uv/blob/46b84fd0
 otherwise creates a `.gitignore` containing `*`. This is native directory metadata,
 not a distribution or an extra product output.
 
-The [third-lifetime actual audit](https://github.com/hcoona/three/pull/1104#issuecomment-6073057562)
-observed successful corrected tool preparation, identity and checked product build,
-then output adoption failed with `InvalidSdistFilename`. Both native archives and
-the output marker remain in failed state. The
-[separate classification](https://github.com/hcoona/three/pull/1104#issuecomment-6073153756)
-confirmed the output-adoption mismatch at confidence 9/10. The exact offending path
-and producer are supported inferences; no per-file creation trace was recorded.
-Parsing every directory entry and requiring exactly two total entries both conflict
-with that retained directory. The second guard was not reached after helper failure.
+The [historical output-adoption audit](https://github.com/hcoona/three/pull/1104#issuecomment-6073057562)
+and [independent classification](https://github.com/hcoona/three/pull/1104#issuecomment-6073153756)
+retain the `InvalidSdistFilename` failure, unreached second guard and
+confidence-9/10 output-adoption mismatch. The offending path and producer remain
+inferences without a per-file creation trace. Those outputs remain failed;
+later success does not relabel them.
 
 The faithful invocation correction requests `--no-create-gitignore` on both the
 source-product build and the original-sdist consumer wheel build, using fresh owned
@@ -228,8 +222,6 @@ default represented by the command substitute, plus rejection of extra or missin
 outputs and retention of completed independent results on later failure. Source and
 controlled coverage do not establish actual corrected output adoption or consumers.
 Historical package lifetimes remain spent. The
-[fresh package reserve](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#fresh-output-option-package-reserve)
-records the approved buffer and unchanged first subject. The
 [completed corrected Linux observation](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#completed-corrected-linux-package-observation)
 qualifies only its recorded native output adoption and both original consumers, with the
 separately classified audit-method exception retained. One package lifetime was spent

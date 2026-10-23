@@ -9,7 +9,7 @@ deployed download routes, authentication or a newly executed Release request.
 The completed Ruby campaigns retain their actual original evidence and spent
 operation boundaries.
 
-The [replacement MLD](../middle-level-design.md#destination-interface) separates
+The [MLD](../middle-level-design.md#destination-interface) separates
 native publication, fresh complete observation and required consumption. A
 native command result alone does not establish the business result, and the
 application does not resend an ambiguous publication.
@@ -101,8 +101,10 @@ diagnostics or files are credential-free. Keep credential-bearing URIs out of
 arguments, ordinary request records and retained output. Sanitize native results
 before persistence; omit unsafe diagnostics while retaining actual termination,
 exit code, duration and effect uncertainty. Runner masking alone does not
-sanitize result artifacts. Close configuration, home/cache ownership, stdin,
-process deadlines and output bounds in the concrete contract before cutover.
+sanitize result artifacts. The
+[concrete contract](../integration/ruby.md#concrete-ruby-release-integration)
+owns configuration, home/cache ownership, stdin, process deadlines and output
+bounds; this source assessment does not qualify deployed caller behavior.
 
 ## Native Timestamp and Installation Order
 
