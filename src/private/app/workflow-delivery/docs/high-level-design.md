@@ -319,10 +319,12 @@ ref restrictions do not block it.
    qualified files with native state and classify intended work. Dry run reports
    hypothetical operations and its actual validation boundary, then stops with
    no mutation or live-completion claim. A live Chrome Web Store request is
-   read with a read-only token. AMO and Edge Add-ons are read only with publish
-   credentials, so their observation moves to the publisher in step 5
-   ([WD-REL-008](requirements.md#release-delivery)). Every browser-store dry
-   run acquires no store credential and reports store state as unobserved.
+   read with a read-only token. AMO observation requires publish credentials,
+   so it moves to the publisher in step 5. Edge has no version read endpoint;
+   its first submission may proceed with an `Unobserved` prestate under
+   [WD-REL-008](requirements.md#release-delivery), not a claim of absence.
+   Every browser-store dry run acquires no store credential and reports store
+   state as unobserved.
 4. If exact complete state and required verification conditions hold,
    report satisfaction without a write gate; a live AMO or Edge request always
    reaches the gate. If a write remains, retain and
@@ -333,7 +335,8 @@ ref restrictions do not block it.
    when needed; only the AMO and Edge Add-ons publishers use their Environment's
    long-lived secrets under the [WD-REL-008](requirements.md#release-delivery)
    exception. A changed plan cannot enlarge the reviewed request. Exact state
-   can remove a now-unnecessary write; conflict/unknown state blocks it. Execute
+   can remove a now-unnecessary write; conflict/unknown required state blocks
+   it except for Edge's accepted `Unobserved` prestate under WD-REL-008. Execute
    supported native publisher invocations in order, once per still-needed file
    or native operation. Delegate their built-in bounded transport retries;
    failure, ambiguity or interruption of an invocation stops further
@@ -344,14 +347,19 @@ ref restrictions do not block it.
    downloaded served bytes with the qualified originals. For the three
    browser-extension stores, readback instead observes the store-reported state
    of the submitted version under the
-   [WD-REL-009](requirements.md#release-delivery) exception; for AMO and Edge
-   the publisher makes this read and emits credential-free, request-bound
-   observations that result collection evaluates. For nuget.org, readback
+   [WD-REL-009](requirements.md#release-delivery) exception. The AMO publisher
+   reads the version, while the Edge publisher polls submission operation
+   status; both emit credential-free, request-bound observations that result
+   collection evaluates. For nuget.org, readback
    instead observes the exact package ID and normalized version as available
    through the public API under the same exception, waiting a bounded time for
    indexing. Report command
    outcomes, business completion and uncertainty separately. Missing required
    verification prevents a satisfaction claim.
+
+Live AMO and Edge requests take the gated publisher path below. Their completion
+observations come from the publisher rather than an independent verification
+read; Edge's prestate remains `Unobserved` under WD-REL-008.
 
 ```mermaid
 sequenceDiagram
@@ -363,22 +371,22 @@ sequenceDiagram
     participant Verify as Verification and result
     Operator->>Prep: Unit, revision, channel, destination, mode
     Prep->>Prep: Native build and complete qualification
-    Prep->>Registry: Read required state
-    Registry-->>Prep: Exact, absent, partial, conflict or unknown
+    Prep->>Registry: Read state where available before the gate
+    Registry-->>Prep: Available observation or deferred store state
     alt Dry run
         Prep-->>Operator: Simulation and hypothetical operations
-    else Exact complete state
-        Prep->>Verify: Qualified request and current observation; no write
-        Verify->>Registry: Required completion readback (step 6)
+    else Exact complete state established before the gate
+        Prep->>Verify: Qualified request and current observation, no write
+        Verify->>Registry: Required completion readback where supported (step 6)
         Verify-->>Operator: Satisfaction and known effects
-    else Supported write remains
+    else Supported write remains or live AMO/Edge request
         Prep->>Gate: Qualified request and intended operations
         Gate->>Publisher: Native authorization permits job
-        Publisher->>Registry: Reobserve; perform only still-needed writes
-        Publisher->>Verify: Actual command outcomes and known effects
-        Verify->>Registry: Required bounded completion readback (step 6)
+        Publisher->>Registry: Observe where supported, submit permitted operations
+        Publisher->>Verify: Outcomes, effects and AMO/Edge completion observations
+        Verify->>Registry: Bounded completion readback outside publisher where supported (step 6)
         Verify-->>Operator: Satisfaction, command results and uncertainty
-    else Conflict, unknown or unsupported partial state
+    else Blocking conflict, unknown or unsupported partial state
         Prep-->>Operator: Blocked request and reason
     end
 ```
