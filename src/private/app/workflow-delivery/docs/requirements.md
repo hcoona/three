@@ -188,10 +188,17 @@ application must not claim isolation beyond that scope.
   available only to the publish job. The Chrome Web Store publisher obtains a
   short-lived token through Google Cloud Workload Identity Federation; its live
   observation uses a separate read-only token of that identity with only the
-  `chromewebstore.readonly` scope. The AMO and Edge APIs have no read access
-  apart from the write credentials, so only their publish job observes them,
-  before and after submission, and emits credential-free, request-bound
-  observations for result evaluation. A live AMO or Edge request therefore
+  `chromewebstore.readonly` scope. AMO reads require the write credentials,
+  so only its publish job observes the version before and after submission.
+  Edge has no listing/version read endpoint: its first submission may proceed
+  with an `Unobserved` prestate as the sole exception to the pre-mutation
+  observation rules in WD-OPS-001 and WD-OPS-002. This does not establish absence
+  or exact state. Its publisher polls the upload and submission operations;
+  completion still requires WD-REL-009. After an unknown outcome, a fresh live
+  Edge request requires the owner to check Partner Center and establish that
+  the version was not received; no automatic retry or resubmission is allowed.
+  Both publishers emit credential-free, request-bound observations for result
+  evaluation. A live AMO or Edge request therefore
   always passes the native gate, even when already satisfied
   ([WD-REL-007](#release-delivery)). Because the Chrome identity is
   write-capable, a browser-store dry run acquires no store credential, including
@@ -309,10 +316,12 @@ application must not claim isolation beyond that scope.
 - **WD-OPS-001:** Observe the selected destination before mutation and compare
   its native coordinates and actual required artifact state with the qualified
   set. The adapter reports absent, exact, partial, conflicting or unknown state
-  where applicable. Routing labels are not source or artifact identity.
+  where applicable, subject to the Edge first-submission exception in
+  WD-REL-008. Routing labels are not source or artifact identity.
 - **WD-OPS-002:** Exact complete state can satisfy a request without a write.
   Absent state can permit native creation. Conflicting or unknown required state
-  blocks mutation. A supported, explicitly verified exact subset can permit
+  blocks mutation, except for Edge's `Unobserved` prestate under WD-REL-008.
+  A supported, explicitly verified exact subset can permit
   missing-file completion in a fresh request; this is not a general promise to
   repair partial releases. Never implement publication by active-version
   overwrite, delete-and-recreate or application-driven blind mutation retries.
@@ -333,6 +342,8 @@ application must not claim isolation beyond that scope.
   authorization when a write remains. It must not reuse prior approval or
   silently substitute older artifacts. A same-version rebuild from another
   commit is not proof of exact recovery; mismatched bytes block publication.
+  Edge cannot reobserve its version; a fresh request after an unknown outcome
+  instead requires the owner check defined in WD-REL-008.
 - **WD-OPS-005:** A control-code fix produces a new revision. Ordinary recovery
   does not combine repaired latest tooling with an older target. A defect may
   require a new product version or a separately decided exceptional operation;

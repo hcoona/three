@@ -28,9 +28,9 @@ one group per store and product, never cancelled.
 
 The publisher runs only for a live request whose observation needs a write.
 A live CWS request that is already satisfied completes without entering the
-gate ([WD-REL-007](../requirements.md#release-delivery)). AMO and Edge
-observation needs the publish credentials, so a live AMO or Edge request
-always enters the gate.
+gate ([WD-REL-007](../requirements.md#release-delivery)). AMO version reads
+and Edge operation-status reads need the publish credentials,
+so a live AMO or Edge request always enters the gate.
 
 A dry run, from any ref and either channel, acquires no store credential, not
 even the CWS read-only token: that token comes from the one write-capable
@@ -46,8 +46,10 @@ was not observed. Only a live Official request on `main` authenticates.
 committed [release unit](../../../../../public/lib/steam-account-history-to-csv/workflow-delivery.release-unit.yml)
 and runs, from the checkout, the product's own WXT scripts once per required
 output: `pnpm run zip` (Chrome), `zip:firefox` (the Firefox zip and the AMO
-sources zip) and `zip:edge`. Each store's preparation retains only its own
-outputs (`chrome-zip`; `firefox-zip` and `firefox-sources`; `edge-zip`).
+sources zip) and `zip:edge`. Preparation builds and qualifies all four ZIPs
+in scratch. Only the selected store's outputs enter `Prepared.Files` and the
+retained workflow artifact (`chrome-zip`; `firefox-zip` and `firefox-sources`;
+`edge-zip`).
 
 The manifest version is NBGV `Major.Minor.Build.VersionHeight` with each part
 at most 65,535; the control projects it independently
@@ -80,9 +82,11 @@ its mutation unknown, even when the final observation shows the version.
 | Firefox AMO      | JWT issuer and secret (Environment secrets); one HS256 token per request                              | In the publisher: add-on `versions/v<version>/` (`unreviewed` in review, `public` published); add-on 404 is a conflict                                         | API v5 listed upload, upload validation polling, then version creation with the sources zip; re-observes the version                         |
 | Edge Add-ons     | API v1.1 `Authorization: ApiKey` and `X-ClientID` (Environment secrets)                               | None: the API has no read endpoint, so state is `Unobserved` before submission                                                                                 | Package upload and submission, polling each operation; a succeeded submission is received, a failed one a conflict                           |
 
-Edge fails closed. Without a read endpoint, a live Edge request cannot tell
-whether an earlier request already submitted the version, so it never retries
-or resubmits on its own: an upload or submission whose operation fails or does
+Under [WD-REL-008](../requirements.md#release-delivery), Edge's first submission
+may proceed with an `Unobserved` prestate; this does not establish absence or
+exact state. Without a read endpoint, a live Edge request cannot tell whether
+an earlier request already submitted the version, so it never retries or
+resubmits on its own: an upload or submission whose operation fails or does
 not finish leaves the request unknown or conflicting and returns it to the
 owner, and a rerun of the same request is rejected (WD-OPS-002 and WD-OPS-003
 in [Observation, Retry, and Recovery](../requirements.md#observation-retry-and-recovery)).

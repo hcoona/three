@@ -683,9 +683,10 @@ extra probe records.
 
 | Observed condition                                                    | Write behavior                                                        | Business result                                                     |
 | --------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Complete exact state and all required checks                          | No write or write approval                                            | Satisfied by observed state                                         |
+| Complete exact state and all required checks                          | No mutation; live AMO/Edge still enter the WD-REL-008 credential gate | Satisfied by observed state                                         |
 | Absent required state with supported creation                         | Native gate, fresh observation, then only still-needed writes         | Pending until complete required verification                        |
 | Verified exact subset supported by the destination                    | Fresh request qualifies the complete set and plans only missing files | Pending until the full set is verified                              |
+| Edge first submission with `Unobserved` prestate under WD-REL-008     | Native gate, qualified upload and submission without a version read   | Pending until the submission operation establishes receipt          |
 | Conflicting bytes or unknown required state                           | No mutation                                                           | Unsatisfied or unknown, with the blocking reason                    |
 | Acknowledged upload and complete required verification                | No additional write                                                   | Satisfied; preserve the acknowledged command result                 |
 | Acknowledged upload with missing required verification                | No additional write                                                   | Unsatisfied or unknown; retain the successful command result        |
@@ -739,6 +740,9 @@ rebuilds and qualifies its own complete set, and observes current destination st
 It obtains current native authorization only if a write remains. Do not reuse
 old approval, old output files or a prior model as authority. A tooling fix is a
 new revision; it cannot silently be combined with the old source for recovery.
+For Edge, which cannot reobserve its version, a fresh request after an unknown
+outcome requires the owner check under
+[WD-REL-008](requirements.md#release-delivery); no automatic resubmission is allowed.
 
 Conflicting bytes, unsupported partial state, missing necessary facts or required
 administrative operations need a separate operator decision. Normal release does
@@ -817,15 +821,19 @@ and verification/result. Combine or split them according to actual runner,
 credential, product-execution and transfer boundaries. Verification readback runs
 outside the privileged publisher; the Chrome Web Store uses a read-only
 `chromewebstore.readonly` token there. AMO and Edge Add-ons are the exception:
-their status APIs need the publish credentials, so the publish job makes both
-the pre-submission and the completion reads and emits credential-free,
+AMO version reads require the publish credentials, while Edge has no version
+read endpoint and accepts an `Unobserved` first-submission prestate. The AMO
+publish job makes the pre-submission and completion reads; the Edge publish
+job polls upload and submission operations. Both emit credential-free,
 request-bound observations that result collection evaluates
 ([WD-REL-008](requirements.md#release-delivery)). A live AMO or Edge request
 therefore always enters the write gate. A browser-store dry run acquires no
 store credential, including the Chrome read token from the one write-capable
 service account, and reports state as unobserved
-([WD-CHN-004](requirements.md#buddy-and-official-channels)). Exact-state and dry-run paths do not enter a
-write gate; dry run reports hypothetical operations and actual validation limits.
+([WD-CHN-004](requirements.md#buddy-and-official-channels)). Dry-run paths do not
+enter a write gate. Exact-state paths bypass it except for live AMO and Edge
+requests under WD-REL-008; dry run reports hypothetical operations and actual
+validation limits.
 
 Serialize this repository's publication operation by physical registry and normalized
 package, including required read-before-write and verification. If that operation

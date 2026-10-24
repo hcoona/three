@@ -21,11 +21,13 @@ dotnet src/private/app/workflow-delivery/bin/Debug/net10.0/WorkflowDelivery.dll 
   ci plan request.json
 ```
 
-The application emits JSON on stdout; diagnostics use stderr. CI returns `0`
-for a valid plan or satisfied result, `1` for an unsatisfied result, and `2` for
-invalid input, failed planning or unsupported usage. Release preserves actual
-command outcomes independently of business satisfaction. Redirect stdout when
-a receiving process needs a file.
+Commands returning structured results emit JSON on stdout; diagnostics use
+stderr. `ci caller-dotnet prepare` instead writes the request JSON to a file
+and prints its path. CI returns `0` for a valid plan or satisfied result, `1`
+for an unsatisfied result, and `2` for invalid input, failed planning or
+unsupported usage. Release preserves actual command outcomes independently of
+business satisfaction. Redirect stdout when a receiving process needs that
+command's output in a file.
 
 Use the checked-in ordinary workflows and the finite typed
 [CI callers](CI/Callers/CiCallerCli.cs) to compose native preparation and requests. The
