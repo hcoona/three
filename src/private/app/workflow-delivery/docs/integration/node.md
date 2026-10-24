@@ -319,7 +319,7 @@ conditions and observation.
 | GitHub Packages npm Buddy | Scoped package/version, intended repository association/access and original tarball; native non-overwrite/duplicate semantics    | Package control, version manifest naming the exact version, downloaded tarball size/SHA-256 equal to the original                |
 | npmjs Official            | Exact public package/version metadata and original tarball or authoritative absence; native non-overwrite of a published version | Public version metadata naming the exact version, downloaded tarball size/SHA-256 equal to the original; dry run is hypothetical |
 
-The [npm Release integration](../../README.md#npm-release)
+The [concrete npm Release integration](#concrete-npm-release-integration)
 owns complete selected preparation,
 native package-control/exact original-byte reads, Environment on the actual
 publisher, one standard native upload, separate no-write registry readback and

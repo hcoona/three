@@ -53,8 +53,9 @@ these declarations avoids a backend roster or lock parser.
 The [first native preparation failure](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#first-native-preparation-failure)
 shows that selecting only the build/plugin group removes the previously installed
 backend tools. Shared build mode does not preserve an omitted group.
-The final failed observation established that noneditable sync before checked
-source building does not satisfy this workspace requirement.
+The [final package failure, PKG-EDITABILITY-001](https://github.com/hcoona/three/blob/f525bf29a581da2ad92f143827b0c06b9b818c03/src/private/app/workflow-delivery/docs/research/python-native-package-qualification.md#final-package-failure-and-spent-campaign)
+established that noneditable sync before checked source building does not satisfy
+the editable workspace build requirement.
 [Build requirement extraction](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-build-frontend/src/lib.rs#L770-L787)
 lowers native workspace requirements with editability enabled;
 [workspace lowering](https://github.com/astral-sh/uv/blob/46b84fd0bfec23b72f29e8e2185ba68a65052f48/crates/uv-distribution/src/metadata/lowering.rs#L816-L858)

@@ -57,48 +57,81 @@ root [`ci.yml`](../../../../../../.github/workflows/ci.yml) and the artifacts th
 transfer by same-run immutable artifact ID. It omits steps inside each job and
 the retained jobs that do not exchange Workflow Delivery artifacts. Validate's
 declared `needs` also include the omitted `conformance` and `scholarly-tests`
-jobs. The repository ruleset's required checks are Validate, `dotnet-tests`,
-`python-tests` and the `node-tests` matrix; `ruby-group` and `node-group` are
-not required checks and gate merge only through Validate and `node-tests`
-respectively.
+jobs. The participant mapping uses YAML job IDs, not displayed check names. The ruleset
+requires Validate and the check contexts emitted by `dotnet-tests`,
+`python-tests` and each `node-tests` matrix job. Their displayed names come from
+the linked workflow's `name` fields and matrix expansion. `ruby-group` and
+`node-group` are not directly required; they gate merge through Validate and
+`node-tests` respectively.
+
+The diagram uses the aliases below. `Artifacts` is the Actions artifact store,
+not a job. The parallel branches show permitted independence after `scope`,
+not a guarantee of simultaneous scheduling. Node tests still wait for Node's
+retained-selection outputs; Validate joins only its declared prerequisites.
+
+| Alias      | YAML job ID                         | Runner       |
+| ---------- | ----------------------------------- | ------------ |
+| Scope      | `scope`                             | Windows      |
+| .NET       | `dotnet-tests`                      | Windows      |
+| Ruby       | `ruby-group`                        | Linux        |
+| Node       | `node-group`                        | Linux        |
+| Node tests | `node-tests`                        | Linux matrix |
+| Python     | `python-tests`                      | Linux        |
+| Prep       | `native-preparation-tests`          | Linux        |
+| NuGet      | `nuget-native-preparation`          | Windows      |
+| GitHub     | `github-release-native-preparation` | Windows      |
+| Validate   | `validation`                        | Linux        |
+
+`ci-scope` carries selection and reasons. `ci-dotnet-plan` carries the complete
+control output, including `python-control.zip` and the Ruby facts helper, and
+the original .NET plan.
 
 ```mermaid
+%%{init: {"sequence": {"width": 70, "actorMargin": 20, "mirrorActors": false}}}%%
 sequenceDiagram
-    participant Scope as scope (Windows)
-    participant Store as Actions artifacts
-    participant DotNet as dotnet-tests (Windows)
-    participant Ruby as ruby-group (Linux)
-    participant Node as node-group (Linux)
-    participant Python as python-tests (Linux)
-    participant Prep as native-preparation-tests (Linux)
-    participant NuGet as nuget-native-preparation (Windows)
-    participant Github as github-release-native-preparation (Windows)
-    participant NodeTests as node-tests (Linux matrix)
-    participant Validate as validation: Validate (Linux)
-    Scope->>Scope: Build candidate control, read paired native facts, select work
-    Scope->>Store: ci-scope (selection and reasons)
-    Scope->>Store: ci-dotnet-plan (control output, python-control.zip, Ruby facts helper, original .NET plan)
-    Scope-->>NuGet: nuget_native_preparation applicability, row filter and count outputs
-    Scope-->>Github: github_release_native_preparation applicability output
-    Store->>DotNet: ci-dotnet-plan
-    DotNet->>Store: dotnet-group-results
-    Store->>Ruby: ci-scope, ci-dotnet-plan
-    Ruby->>Store: ruby-group-results
-    Store->>Node: ci-scope, ci-dotnet-plan
-    Node->>Store: node-group-results
-    Node-->>NodeTests: retained selection outputs
-    Store->>NodeTests: ci-dotnet-plan
-    NodeTests->>Store: retained-node-*
-    Store->>Python: ci-scope, ci-dotnet-plan
-    Python->>Store: python-group-results
-    Store->>Prep: ci-scope, ci-dotnet-plan
-    Prep->>Store: native-preparation-results
-    NuGet->>Store: nuget-native-preparation-windows
-    Github->>Store: github-release-native-preparation-windows
-    Prep-->>Validate: job result
-    NuGet-->>Validate: job result
-    Github-->>Validate: job result
-    Ruby-->>Validate: job result
+    participant Scope
+    participant Store as Artifacts
+    participant DotNet as .NET
+    participant Ruby
+    participant Node
+    participant NodeTests as Node tests
+    participant Python
+    participant Prep
+    participant NuGet
+    participant Github as GitHub
+    participant Validate
+    Scope->>Scope: Build candidate control<br/>Read paired native facts<br/>Select work
+    Scope->>Store: ci-scope
+    Scope->>Store: ci-dotnet-plan
+    Scope-->>NuGet: nuget_native_preparation<br/>Applicability, row filter, count
+    Scope-->>Github: github_release_native_preparation<br/>Applicability
+    par .NET
+        Store->>DotNet: ci-dotnet-plan
+        DotNet->>Store: dotnet-group-results
+    and Ruby
+        Store->>Ruby: ci-scope,<br/>ci-dotnet-plan
+        Ruby->>Store: ruby-group-results
+        Ruby-->>Validate: job result
+    and Node
+        Store->>Node: ci-scope,<br/>ci-dotnet-plan
+        Node->>Store: node-group-results
+        Node-->>NodeTests: Retained-selection<br/>outputs
+        Store->>NodeTests: ci-dotnet-plan
+        NodeTests->>Store: retained-node-*
+    and Python
+        Store->>Python: ci-scope,<br/>ci-dotnet-plan
+        Python->>Store: python-group-results
+    and Native preparation
+        Store->>Prep: ci-scope,<br/>ci-dotnet-plan
+        Prep->>Store: native-preparation-<br/>results
+        Prep-->>Validate: job result
+    and NuGet preparation
+        NuGet->>Store: nuget-native-<br/>preparation-windows
+        NuGet-->>Validate: job result
+    and GitHub preparation
+        Github->>Store: github-release-native-<br/>preparation-windows
+        Github-->>Validate: job result
+    end
 ```
 
 ### Native Execution

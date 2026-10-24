@@ -20,21 +20,28 @@ ecosystem and destination differences remain with the
 C4Component
     title Workflow Delivery CLI - component responsibilities
     Container_Boundary(cli, "Workflow Delivery CLI - one C# application") {
-        Component(ci, "CI", "CI/", "Select candidate work and evaluate required results")
-        Component(release, "Release", "Release/", "Prepare, choose permitted operations and evaluate completion")
         Component(repository, "Repository", "Repository/", "Native facts, ownership, declarations and impact inputs")
+        Component(ci, "CI", "CI/", "Select candidate work and evaluate required results")
         Component(ecosystems, "Ecosystems", "Ecosystems/", "Native versions, builds, package checks and local consumers")
+        Component(release, "Release", "Release/", "Prepare, choose permitted operations and evaluate completion")
         Component(destinations, "Destinations", "Destinations/", "Native coordinates, observations, upload and verification")
         Component(platform, "Platform helpers", "Git, processes, HTTP and artifacts", "Shared native mechanisms")
     }
-    Rel(ci, repository, "Reads paired native facts")
-    Rel(ci, ecosystems, "Runs selected native checks")
-    Rel(release, repository, "Resolves the requested closure")
-    Rel(release, ecosystems, "Builds and qualifies its own originals")
-    Rel(release, destinations, "Observes, publishes when allowed and verifies")
-    Rel(repository, platform, "Reads committed/native inputs")
-    Rel(ecosystems, platform, "Invokes bounded native tools")
-    Rel(destinations, platform, "Uses native clients and bounded reads")
+    Rel(ci, repository, "Paired native<br/>facts")
+    Rel(ci, ecosystems, "Selected native<br/>checks")
+    Rel(release, repository, "Requested closure")
+    Rel(release, ecosystems, "Builds and qualifies<br/>own originals")
+    Rel(release, destinations, "Observe<br/>Publish if allowed<br/>Verify")
+    Rel(repository, platform, "Committed/native inputs")
+    Rel(ecosystems, platform, "Bounded native tools")
+    Rel(destinations, platform, "Native clients<br/>Bounded reads")
+    UpdateLayoutConfig("3", "1")
+    UpdateRelStyle(release, ecosystems, $offsetX="130", $offsetY="-35")
+    UpdateRelStyle(repository, platform, $offsetX="90", $offsetY="35")
+    UpdateRelStyle(ci, repository, $offsetX="-45", $offsetY="-18")
+    UpdateRelStyle(ci, ecosystems, $offsetX="-45", $offsetY="-18")
+    UpdateRelStyle(release, destinations, $offsetX="-50", $offsetY="-18")
+    UpdateRelStyle(destinations, platform, $offsetX="-45", $offsetY="-18")
 ```
 
 Arrows are responsibility dependencies, not a mandatory class/interface graph.

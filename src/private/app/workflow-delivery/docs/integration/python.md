@@ -64,8 +64,9 @@ are unsupported. Malformed manifests remain errors.
 
 Treat every edge and build-requirement marker as active: the finite union over
 interpreters and platforms can only add consumers. Groups follow UV's default
-`dev` group unless no-dev is requested; the guard rejects `default-groups`,
-`dev-dependencies` and `dependency-groups`. Root pytest preparation includes
+`dev` group unless no-dev is requested; the guard rejects `tool.uv.default-groups`,
+`tool.uv.dev-dependencies` and `tool.uv.dependency-groups`, not ordinary top-level
+`[dependency-groups]` declarations. Root pytest preparation includes
 root plus selected quality owners; no-dev operations and build-requirement
 ordinary legs select no groups. Operation extras start empty; build-requirement
 extras select producer extra entry IDs. Unknown necessary group/extra selection and nonempty native conflicts fail
