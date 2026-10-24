@@ -94,7 +94,7 @@ Do not build an envelope registry or independent schema version service.
 | `release prepare-<ecosystem>` before write capability                                                                                                                | Source/control revision, unit, channel, destination, live/dry-run mode                                  | Complete qualified original files with native coordinates/version, qualification results, applicable completion checks and maximum intended writes                   |
 | `release observe-*`, `describe-*` without product execution                                                                                                          | Prepared request/files and scoped read access where needed                                              | Per-file absent/exact/conflict/unknown, native metadata, remaining required checks and proposed missing writes                                                       |
 | `release publish-*` in the gated publisher                                                                                                                           | Prepared selected-control artifact, qualified input identities, maximum writes and native authorization | Fresh observation, one native invocation per needed operation, raw command outcomes and bounded readback; stop application writes after invocation failure/ambiguity |
-| Final `release observe-*` in the unprivileged verification job; [AMO and Edge](browser-store.md#caller-and-channel) instead use publisher-emitted final observations | Prepared request/files and destination read access where required                                       | Required [post-publication completion](../middle-level-design.md#post-publication-completion) observations for the complete intended set                             |
+| Final `release observe-*` in the unprivileged verification job; [AMO and Edge](browser-store.md#caller-and-channel) instead use publisher-emitted final observations | Prepared request/files and destination read access where required                                       | Required [post-publication completion](../design/release.md#post-publication-completion) observations for the complete intended set                                  |
 | `release complete-*` in collection                                                                                                                                   | Preparation, initial and final observations and publication result (`-` only when omitted)              | Satisfied/unsatisfied/unknown with command abnormality and unresolved effects kept distinct                                                                          |
 
 In-process callers use the same typed operations without serializing each row.
@@ -113,7 +113,7 @@ and check header lines are neutralized the same way.
 Each `##[` becomes `#\#[`, so native text cannot start an Actions workflow
 command ([`RunnerLog`](../../Platform/RunnerLog.cs)).
 The finite [GitHub comparison
-mapping](../middle-level-design.md#github-event-comparison) reads native payload
+mapping](../design/repository-and-selection.md#github-event-comparison) reads native payload
 fields directly rather than adding another event declaration. Its implementation
 alone does not switch root CI or establish group coverage. Artifact references
 crossing jobs carry the same-run immutable artifact ID, and the native download

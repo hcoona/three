@@ -7,7 +7,7 @@ recursive path inventory and complete changed-name sets through supported Git
 interfaces, without implementing revision/tree/diff semantics or adding fetching?
 The internal [Git reader](../../Repository/GitReader.cs)
 consumes these findings under the HLD's [native boundary](../high-level-design.md#native-integrations)
-and MLD's [selection contract](../middle-level-design.md#selection-algorithm).
+and MLD's [selection contract](../design/repository-and-selection.md#selection-algorithm).
 The CI event caller chooses its candidate and comparison basis.
 
 ## Public Source Findings

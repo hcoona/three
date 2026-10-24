@@ -310,7 +310,7 @@ returns to the owner.
 
 ## npm Release and Destination Completion
 
-The MLD's [post-publication completion](../middle-level-design.md#post-publication-completion)
+The MLD's [post-publication completion](../design/release.md#post-publication-completion)
 contract applies to these destinations; this table owns their concrete
 conditions and observation.
 
@@ -361,7 +361,7 @@ obligation beyond the code it cites.
   ([`NpmPreparation`](../../Release/NpmPreparation.cs)). It neither reopens the completed npm
   proving work nor authorizes publication, dispatch, authentication or access
   changes. Changes follow the
-  [shared review core](../middle-level-design.md#release-integration-review).
+  [shared review core](../design/release.md#release-integration-review).
 
 - **Endpoints.** GitHub Packages Buddy observes package control at
   `https://api.github.com/users/hcoona/packages/npm/<unscoped name>` and
@@ -384,7 +384,7 @@ obligation beyond the code it cites.
   its Bearer credential only to `api.github.com` and `npm.pkg.github.com`
   ([`ReadAsync`](../../Destinations/GithubNpmObservation.cs)); npmjs reads
   are public. Both use the shared registry client and redirect contract in the
-  [MLD](../middle-level-design.md#registry-observation-and-retention).
+  [MLD](../design/release.md#registry-observation-and-retention).
 - **Preparation tools.** Node and PNPM follow the root
   [locked tool selection](common.md#locked-tool-selection)
   ([NpmPreparation](../../Release/NpmPreparation.cs);

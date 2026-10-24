@@ -9,7 +9,7 @@ deployed download routes, authentication or a newly executed Release request.
 The completed Ruby campaigns retain their actual original evidence and spent
 operation boundaries.
 
-The [MLD](../middle-level-design.md#destination-interface) separates
+The [MLD](../design/release.md#destination-interface) separates
 native publication, fresh complete observation and required consumption. A
 native command result alone does not establish the business result, and the
 application does not resend an ambiguous publication.

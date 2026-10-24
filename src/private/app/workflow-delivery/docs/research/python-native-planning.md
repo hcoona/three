@@ -4,7 +4,7 @@
 
 This source assessment supported the Python CI integration, delivered in
 [PR #1114](https://github.com/hcoona/three/pull/1114) under the
-[integration contract](../middle-level-design.md#native-fact-integration).
+[integration contract](../design/repository-and-selection.md#native-fact-integration).
 It identifies the native facts available at the repository's former UV 0.12.23
 pin and a specific missing relation. It is not an accepted reader, complete
 Python graph, implementation choice or complete runtime qualification. The later

@@ -10,7 +10,7 @@ original client, source, protocol and run identities.
 The owner accepted one application invocation of a supported native publisher,
 including its built-in bounded transport retries. This decision is expressed in
 [WD-OPS-002](../requirements.md#observation-retry-and-recovery) and the
-[MLD destination contract](../middle-level-design.md#destination-interface).
+[MLD destination contract](../design/release.md#destination-interface).
 It does not promise one network write, authorize application automatic resend or
 remove fresh manual same-revision recovery. After a native invocation returns
 failure or ambiguity, or is interrupted, subsequent application writes stop;

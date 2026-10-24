@@ -60,7 +60,7 @@ product globals. Quality adoption continues to use the product directory.
 Unsupported external or ambiguous native version contexts remain unavailable.
 
 The
-.NET adapter populates [`ProjectFacts.OwnedPaths`](../middle-level-design.md#minimum-facts).
+.NET adapter populates [`ProjectFacts.OwnedPaths`](../design/repository-and-selection.md#minimum-facts).
 It derives ordinary regions from native project directories, preserving
 nearest-project ownership and multiple projects sharing a directory, and narrows
 them with native evaluated default excludes using the official MSBuild glob
@@ -255,9 +255,9 @@ comparison/responsibility binder and impact planner rather than duplicating them
 The old coarse .NET Boolean is not selected-plan authority.
 
 Resolve adopted presets and explicit native-retained checks under the MLD's
-[quality-origin contract](../middle-level-design.md#declarations-and-quality-autonomy).
+[quality-origin contract](../design/repository-and-selection.md#declarations-and-quality-autonomy).
 Emit the original .NET
-[`CiPlan`](../middle-level-design.md#implementation-type-names) as a distinct artifact for the existing
+[`CiPlan`](../design/repository-and-selection.md#implementation-type-names) as a distinct artifact for the existing
 `dotnet-tests` execution/collection consumer, with native artifact ID and resolved
 applicability. Failed/missing/cancelled planning cannot become a successful skip.
 Successful empty work remains valid; required CI composition still accounts for
@@ -434,7 +434,7 @@ one `net10.0` `.nupkg`) or one of eight ordinary library products, each with a
 
 The `registry` input selects GitHub Packages NuGet
 (`https://nuget.pkg.github.com/hcoona/index.json`) as
-[Buddy](../high-level-design.md#domain-values) or nuget.org
+[Buddy](../middle-level-design.md#domain-values) or nuget.org
 (`https://api.nuget.org/v3/index.json`) as Official. `NuGetReleaseUnits.Admit`
 accepts only those two channel/destination pairs, a unit's own committed
 declaration and, for Official, a library unit; the smoke unit stays Buddy-only.
@@ -509,7 +509,7 @@ and JIT; no AOT claim is made.
 
 Observe the selected Buddy `https://nuget.pkg.github.com/hcoona/index.json` through the
 shared registry HTTP client described in the
-[MLD](../middle-level-design.md#registry-observation-and-retention). Official `ServiceIndexResourceV3` interprets the service
+[MLD](../design/release.md#registry-observation-and-retention). Official `ServiceIndexResourceV3` interprets the service
 index; require unique HTTPS owner-origin PackageBaseAddress and PackagePublish
 endpoints without user information, query or fragment. Native NuGet identity
 comparison owns normalized package/version equality. Require the selected
@@ -618,7 +618,7 @@ dry runs are supported; dry runs enter no write gate and make no live claim.
 Retained closed-campaign readers keep their actual historical consumers; there
 is no compatibility alias for old runtime schemas.
 
-Changes follow the [shared review core](../middle-level-design.md#release-integration-review) and preserve
+Changes follow the [shared review core](../design/release.md#release-integration-review) and preserve
 this contract and its governing native-invocation boundary. Validate application
 journeys, authentication separation, cancellation, transfer/result completeness
 and official-client binding with controlled contract tests and real
@@ -629,11 +629,11 @@ campaign replay, configuration changes or postmerge tests.
 
 ### NuGet Destination Completion
 
-The MLD's [post-publication completion](../middle-level-design.md#post-publication-completion)
+The MLD's [post-publication completion](../design/release.md#post-publication-completion)
 contract applies to these destinations; this table owns their concrete
 conditions and observation.
 
-| Existing destination/use    | Native completion conditions to preserve                                                 | Post-publication observation                                                                                                                                                                                                            |
-| --------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub Packages NuGet Buddy | Normalized package/version, intended owner/feed/repository, exact `.nupkg`               | [Package control](../high-level-design.md#domain-values), GitHub and flat-container (NuGet v3 package content resource) version sets containing the version, downloaded `.nupkg` size/SHA-256 equal to the original and native identity |
-| nuget.org Official          | Normalized package/version, trusted-publishing policy owner, qualified original `.nupkg` | Flat-container version set containing the exact normalized version (WD-REL-009 nuget.org exception; no served-byte comparison)                                                                                                          |
+| Existing destination/use    | Native completion conditions to preserve                                                 | Post-publication observation                                                                                                                                                                                                              |
+| --------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub Packages NuGet Buddy | Normalized package/version, intended owner/feed/repository, exact `.nupkg`               | [Package control](../middle-level-design.md#domain-values), GitHub and flat-container (NuGet v3 package content resource) version sets containing the version, downloaded `.nupkg` size/SHA-256 equal to the original and native identity |
+| nuget.org Official          | Normalized package/version, trusted-publishing policy owner, qualified original `.nupkg` | Flat-container version set containing the exact normalized version (WD-REL-009 nuget.org exception; no served-byte comparison)                                                                                                            |

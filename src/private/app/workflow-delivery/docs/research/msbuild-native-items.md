@@ -7,7 +7,7 @@ version input through MSBuild's supported native interface, without maintaining
 another resource declaration or interpreting project XML?
 The internal [resource reader](../../Repository/MsBuildResourceReader.cs)
 consumes the native answer under the HLD's [native boundary](../high-level-design.md#native-integrations)
-and MLD's [minimum facts](../middle-level-design.md#minimum-facts). The first actual
+and MLD's [minimum facts](../design/repository-and-selection.md#minimum-facts). The first actual
 consumer is `tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj`:
 its resource input crosses the npm fixture and existing .NET test-owner boundary.
 This concrete relation preserves that existing test owner; it is not complete

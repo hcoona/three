@@ -10,7 +10,7 @@ Release request, current publisher configuration or deployed runner behavior.
 The closed Python campaigns keep their original source, client and run identities;
 their operation slots remain spent.
 
-The [MLD destination contract](../middle-level-design.md#destination-interface)
+The [MLD destination contract](../design/release.md#destination-interface)
 permits one application invocation per still-needed original, including supported
 bounded native retries. A returned failure, ambiguity or interruption stops
 subsequent application writes. This is not transport-level exactly-once delivery.
@@ -173,7 +173,7 @@ command can succeed without creating a new file; a failed command can coexist
 with satisfied observed state. Neither outcome attributes unique insertion.
 
 Wheel/sdist ordering and supported exact-subset recovery follow the
-[MLD](../middle-level-design.md#decision-table). Fresh recovery rebuilds and
+[MLD](../design/release.md#decision-table). Fresh recovery rebuilds and
 qualifies its own complete set from the original revision. Native package
 identity and provenance remain owned by packaging, the backend and NBGV; no
 application witness or source-code bundle is added.

@@ -150,7 +150,7 @@ Dry run
 runs preparation and observation, enters no write gate and never invokes the
 create or upload endpoints.
 
-Changes follow the [shared review core](../middle-level-design.md#release-integration-review).
+Changes follow the [shared review core](../design/release.md#release-integration-review).
 Controlled scenario tests cover preparation with a controlled Windows
 toolchain, observation, publication order, non-overwrite and caller steps.
 The Windows `GitHub Release native preparation (Windows)` CI job runs the
@@ -163,7 +163,7 @@ GitHub behavior or the Environments' configuration.
 
 ### GitHub Release Destination Completion
 
-The MLD's [post-publication completion](../middle-level-design.md#post-publication-completion)
+The MLD's [post-publication completion](../design/release.md#post-publication-completion)
 contract applies to this destination; this table owns its concrete conditions
 and observation.
 
