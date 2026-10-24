@@ -35,7 +35,7 @@ An unadopted member needs no replacement preset merely to retain its checks.
 
 ### Endpoint Responsibility and Selection
 
-Extend the existing `ci-scope` JSON with `endpoint_owners`, alongside its existing
+The existing `ci-scope` JSON carries `endpoint_owners`, alongside its
 retained other-job selections. Each `basis`/`candidate` endpoint carries its exact
 `revision` and one `paths` row for every changed coordinate. A row contains
 `path`, committed `present`, nullable Git `mode`, and `reasons`; each positive
@@ -118,7 +118,7 @@ path occurs as a complete path token in the endpoint's committed root
 A complete token is not preceded or followed by a path character, so
 `PklProject` does not match `PklProject.deps.json`. This is a literal
 reference, not proof that a step reads the file, and it parses no shell
-commands: locked HK 2.6.0 `check --plan --json` reports step status, reasons
+commands: native HK `check --plan --json` reports step status, reasons
 and file counts but no per-step files. Imported HK modules keep their native
 import route. A present direct child of the root `.github/workflows/` ending in
 `.yml` or `.yaml` receives owner `conformance`, target
@@ -222,7 +222,7 @@ invocation reuse, not an artifact cache or replay contract.
 
 ### Workflow, Runtime Variants and Results
 
-Add one static Ubuntu group job after the existing Windows scope job. Its
+One static Ubuntu group job follows the existing Windows scope job. Its
 uploads expose same-run immutable artifact IDs. The group downloads the scope
 selection and the complete candidate control transfer by those IDs, relying on
 the native download digest check. Its caller binds the scope comparison to the checked-out candidate before

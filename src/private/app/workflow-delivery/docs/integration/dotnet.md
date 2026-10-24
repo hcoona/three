@@ -1,6 +1,6 @@
 # Workflow Delivery .NET and NuGet Integration Contract
 
-This integration contract owns the .NET native facts, CI group, NuGet Buddy
+This integration contract owns the .NET native facts, CI group, NuGet
 Release caller and NuGet destination conditions. It refines the
 [MLD](../middle-level-design.md), whose [integration
 mapping](../middle-level-design.md#integration-mapping) states the shared scope
@@ -248,7 +248,7 @@ policy, universal tracer or claim about every locked package's hidden I/O.
 
 ### Planning, Execution and Collection
 
-Extend existing Windows `scope`; do not add a planning job for runner availability.
+The existing Windows `scope` owns planning; do not add a job for runner availability.
 Reuse its prepared candidate application and native event/comparison handoff.
 Obtain both endpoint facts before .NET applicability, and reuse the shared
 comparison/responsibility binder and impact planner rather than duplicating them.
