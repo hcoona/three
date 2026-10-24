@@ -51,9 +51,9 @@
       },
       "Microsoft.Playwright": {
         "type": "Direct",
-        "requested": "[1.63.0, )",
-        "resolved": "1.63.0",
-        "contentHash": "O9F45Tt5vjauIo7mTTgQtahigL7cfRLvBMpErLJfdvgCnQ14yue5BmRASNnfNBWRBni4Mqp2YiD1eFGIO4nUUw==",
+        "requested": "[1.64.0, )",
+        "resolved": "1.64.0",
+        "contentHash": "Bf+FpWu5tYpNCSYtSJLWLMYcDoN/qVjCoX8BNLNyLtqzlS1/zQFklMB2g0NEkebrVUpvrdV/D/zQMUAG4CZFGg==",
         "dependencies": {
           "Microsoft.Bcl.AsyncInterfaces": "6.0.0",
           "System.ComponentModel.Annotations": "5.0.0"
