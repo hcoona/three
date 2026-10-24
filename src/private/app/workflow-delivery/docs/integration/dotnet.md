@@ -375,11 +375,12 @@ helper and the original .NET plan, as the `ci-dotnet-plan` transfer that the
 later CI jobs consume. Resolve the native event comparison once with `ci
 comparison`, then resolve its actual Git objects.
 
-Confirm the named test
-project's committed entry, materialize exact endpoints outside the candidate
-source root, install each endpoint's selected `global.json` SDK, and perform
-necessary locked restore of that test project and its native reference closure
-under Debug before the single evaluation query. Candidate preparation never
+Confirm the named test project's committed entry, materialize exact endpoints
+outside the candidate source root and install each endpoint's selected
+`global.json` SDK. Reuse that endpoint's already-required locked `dirs.proj`
+preparation; do not restore the test project again. Run the single resource
+query in its default Debug context, distinct from the full root graph's
+additional globals. Candidate preparation never
 substitutes for unavailable base inputs. Native preparation/evaluation is
 unprivileged; the scope job runs no second test suite. Confirmed base absence
 requires successful inventory inspection; the candidate owner must remain

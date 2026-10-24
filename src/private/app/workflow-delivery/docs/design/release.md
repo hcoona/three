@@ -23,8 +23,12 @@ sequenceDiagram
     participant Verify as Verification and result
     Operator->>Prep: Unit, revision, channel, destination, mode
     Prep->>Prep: Native build and complete qualification
-    Prep->>Registry: Read supported state with allowed credentials before the gate
-    Registry-->>Prep: Available observation or deferred store state
+    alt Pre-gate observation is supported and permitted
+        Prep->>Registry: Read current state with allowed credentials
+        Registry-->>Prep: Available observation
+    else Live AMO/Edge or browser-store dry run
+        Prep->>Prep: Retain deferred or Unobserved state, no store contact
+    end
     alt Dry run
         Prep-->>Operator: Simulation and hypothetical operations
     else Exact complete state established before the gate
@@ -200,9 +204,12 @@ A later request never changes it retrospectively.
 
 Fresh recovery uses the original source/control revision and relevant inputs,
 rebuilds and qualifies its own complete set, and observes current destination state.
-It obtains current native authorization only if a write remains. Do not reuse
-old approval, old output files or a prior model as authority. A tooling fix is a
-new revision; it cannot silently be combined with the old source for recovery.
+It obtains current native authorization for remaining writes; live AMO/Edge
+requests always enter the native gate under
+[WD-REL-008](../requirements.md#release-delivery), even if no write is needed.
+Do not reuse old approval, old output files or a prior model as authority.
+A tooling fix is a new revision; it cannot silently be combined with the old
+source for recovery.
 For Edge, which cannot reobserve its version, a fresh request after an unknown
 outcome requires the owner check under
 [WD-REL-008](../requirements.md#release-delivery); no automatic resubmission is allowed.
