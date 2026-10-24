@@ -11,8 +11,9 @@ PNPM reader observations, not complete CI or Windows qualification.
 
 The source pin is NBGV 3.10.94, commit
 `dea9a6c17cd9bd2dab3a87f2d1f9098735c820cb`, retrieved on 2026-10-03/04.
-The repository's package and CLI pins are both 3.10.94. The delivery PR retains
-retrieved source bytes, the upstream MIT notice, package inventories and hashes.
+At that assessment, the repository's package and CLI pins were both 3.10.94.
+The delivery PR retains retrieved source bytes, the upstream MIT notice,
+package inventories and hashes.
 
 ## Public Source Findings
 

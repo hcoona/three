@@ -14,8 +14,8 @@ The CI event caller chooses its candidate and comparison basis.
 
 Git sources below are pinned to v2.45.4, commit
 `f94b90ad6e49cc7f15c4171c5a434aa459e82d2d`, retrieved on 2026-10-03.
-The installed local Git is 2.45.4. These are source findings, not hosted execution
-or a claim of every Git version/configuration's behavior.
+At that assessment, the installed local Git was 2.45.4. These are source findings,
+not hosted execution or a claim of every Git version/configuration's behavior.
 
 | Finding                                                                                                                                     | Immutable supporting source                                                                 |
 | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |

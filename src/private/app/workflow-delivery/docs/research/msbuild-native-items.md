@@ -10,8 +10,8 @@ consumes the native answer under the HLD's [native boundary](../high-level-desig
 and MLD's [minimum facts](../middle-level-design.md#minimum-facts). The first actual
 consumer is `tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj`:
 its resource input crosses the npm fixture and existing .NET test-owner boundary.
-Getting this relation is a prerequisite to preserving that owner during group
-cutover, not a reason to migrate every .NET project first.
+This concrete relation preserves that existing test owner; it is not complete
+.NET project discovery.
 
 ## Public Source Findings
 
@@ -79,9 +79,10 @@ than repeating that implementation's full matrix in this reader. These ordinary
 tests are not a new native observation campaign or external experiment.
 
 Exact reviewed source, command results, TRX results and independent reviews belong
-in the delivery PR. The repository tool pin is SDK 10.0.401; separate installed
-version inspection reports MSBuild `18.9.11.42413`. That inspection alone does not
-qualify project evaluation. Windows feasibility remains the owner's accepted
+in the delivery PR. The recorded repository pin was SDK 10.0.401; separate
+installed-version inspection reported MSBuild `18.9.11.42413`. That inspection
+alone does not qualify project evaluation. Current SDK selection comes from root
+`global.json`. Windows feasibility remains the owner's accepted
 assumption; actual changed-code CI failures still require correction.
 
 This component is not complete .NET inputs, roster/import/reference discovery,
