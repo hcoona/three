@@ -8,483 +8,157 @@ Implementation qualification follows the actual source, native scenarios and
 ordinary hosted checks. Architecture acceptance does not establish live
 publication behavior or permission to reopen a completed campaign.
 
-The [middle-level design](middle-level-design.md) owns the component,
-selection, execution, transfer and outcome contracts for this architecture.
-It also owns the shared project and caller inventories; the
-[integration contracts](middle-level-design.md#integration-mapping) own the
-ecosystem-specific native facts, callers and destination conditions. The
-[Wave](../../../../../docs/delivery-wave.md) owns current work authorization;
+Read the system context, then the container view, then
+[middle-level components and scope routes](middle-level-design.md).
+The [Wave](../../../../../docs/delivery-wave.md) owns work authorization;
 the [handoff](agent-handoff.md) retains operational limits. Historical records
 keep their original scope under the
 [historical source rule](README.md#historical-source-rule).
 
-## Architecture and Responsibilities
+## System Context
 
-One repository-internal C# CLI implements CI and Release use cases. Shared code
-adapts native repository facts, builds, checks, package inspection and platform
-clients where behavior is actually shared. Ecosystem-language helpers may call
-their native libraries; the C# entry point does not require translating those
-libraries' behavior into C#. CI and Release have different
-responsibilities; they need no symmetric planners, finalizers, aggregates or
-record hierarchies. Ordinary functions express planning and result evaluation.
+Workflow Delivery selects and evaluates CI work and carries independently
+qualified Release requests to their selected destinations. GitHub and native
+ecosystem tools provide the execution, authorization and package semantics it
+uses; the application does not replace those systems.
 
-The application location is `src/private/app/workflow-delivery/`, with
-one test project under `tests/private/app/workflow-delivery/`. Modules are source
-organization inside that application, not independently deployed services or a
-public framework. Additional projects need a concrete dependency or runtime
-reason. Documentation lives in this private application namespace; portals and
-family bindings route its current consumers and retained historical readers.
+```mermaid
+C4Context
+    title Workflow Delivery - system context
+    Person(contributor, "Contributor", "Proposes a candidate for CI")
+    Person(operator, "Release operator", "Requests an explicit release or fresh recovery")
+    System(delivery, "Workflow Delivery", "Repository-internal CI and Release application")
+    System_Ext(actions, "GitHub Actions and Environments", "Events, runners, jobs, permissions and native approval")
+    System_Ext(repository, "Git repository", "Committed source, native manifests and product declarations")
+    System_Ext(native, "Native ecosystem tools", "Git, NBGV, project evaluation, builds, checks and publishing clients")
+    System_Ext(destinations, "Selected registry or platform", "Package identity, supported mutation and authoritative state")
+    Rel(contributor, actions, "Submits a candidate")
+    Rel(operator, actions, "Requests a release")
+    Rel(actions, delivery, "Invokes the selected revision in scoped jobs")
+    Rel(delivery, repository, "Reads exact committed inputs")
+    Rel(delivery, native, "Delegates native semantics")
+    Rel(delivery, destinations, "Observes and, when authorized, publishes")
+    Rel(delivery, actions, "Reports CI and Release results")
+```
 
-The following C4 container view shows applications and stores. CLI invocations
-are short-lived processes on Actions runners, not a persistent service. The CLI
-starts the native Python and Ruby helpers as separate short-lived processes on
-the same runner when it needs their native library bindings.
+## Container View
+
+One internal C# CLI owns the use cases. Its modules are source organization,
+not independently deployed services or a public framework. Invocations are
+short-lived processes on Actions runners. The CLI starts Python and Ruby
+helpers as separate short-lived processes on the same runner when it needs
+their native library bindings.
 
 ```mermaid
 C4Container
-    title Workflow Delivery — container view
-    Person(contributor, "Contributor / operator", "Proposes changes and requests releases")
-    System_Ext(actions, "GitHub Actions and Environments", "Events, runners, jobs, permissions and native approval")
-    System_Ext(native, "Git and native ecosystem tools", "Repository facts, NBGV, builds and checks")
-    System_Ext(registry, "Selected registry", "Native creation, identity and observable package state")
-    ContainerDb(repository, "Git repository", "Git", "Source, product declarations and quality selections")
-    Container(tool, "Workflow Delivery", "Internal C# CLI", "CI and Release use cases and native integrations")
-    Container(pyhelpers, "Native Python helpers", "Python processes", "PyPA, NBGV and pytest bindings in the prepared environment")
-    Container(rbhelpers, "Native Ruby helpers", "Ruby processes", "RubyGems/Bundler evaluation and source reads")
-    ContainerDb(artifacts, "Artifacts and results", "GitHub storage", "Qualified files and cross-job business data")
-    Rel(contributor, actions, "Submits candidate or explicit request")
-    Rel(actions, tool, "Invokes selected-revision commands in scoped jobs")
+    title Workflow Delivery - containers and native dependencies
+    System_Ext(actions, "GitHub Actions and Environments", "Invocations, jobs and native gates")
+    System_Ext(native, "Git and native ecosystem tools", "Facts, versions, builds, checks and publisher clients")
+    System_Ext(destination, "Selected destination", "Package or platform state")
+    System_Ext(repository, "Git repository", "Source and native declarations")
+    System_Boundary(application, "Workflow Delivery") {
+        Container(tool, "Workflow Delivery CLI", "C#", "CI and Release use cases and native integrations")
+        Container(pyhelpers, "Native Python helpers", "Python processes", "Prepared PyPA, NBGV and pytest bindings")
+        Container(rbhelpers, "Native Ruby helpers", "Ruby processes", "RubyGems and Bundler evaluation and source reads")
+    }
+    System_Ext(artifacts, "GitHub artifact storage", "Qualified files, prepared control and cross-job data")
+    Rel(actions, tool, "Invokes selected-revision commands")
     Rel(tool, repository, "Reads immutable source and declarations")
-    Rel(tool, native, "Obtains facts; builds and checks without publication capability")
-    Rel(tool, pyhelpers, "Starts per query; receives typed native answers")
-    Rel(tool, rbhelpers, "Starts per query; receives typed native answers")
-    Rel(pyhelpers, native, "Calls maintained Python libraries; the CLI runs UV")
+    Rel(tool, native, "Obtains facts and invokes native work")
+    Rel(tool, pyhelpers, "Starts per query and receives native answers")
+    Rel(tool, rbhelpers, "Starts per query and receives native answers")
+    Rel(pyhelpers, native, "Calls maintained Python libraries, including NBGV bindings")
     Rel(rbhelpers, native, "Calls RubyGems and Bundler")
-    Rel(tool, artifacts, "Transfers required outputs and reports")
-    Rel(tool, registry, "Observes; publishes only in an authorized invocation")
+    Rel(tool, artifacts, "Transfers required outputs and results")
+    Rel(tool, destination, "Observes and publishes only with the scoped capability")
 ```
 
-| Responsibility                                           | Owner                                                         | Deliberate limit                                              |
-| -------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------- |
-| Candidate scope and required CI result                   | CI use case                                                   | Does not authorize Release                                    |
-| Complete product preparation and request completion      | Release use case                                              | Does not adopt CI qualification or artifacts                  |
-| Project/dependency facts, versions, builds and consumers | Ecosystem integrations                                        | Does not replace native build scheduling or version authority |
-| Coordinates, observation, upload and readback            | Destination integrations                                      | Does not simulate missing registry guarantees                 |
-| Execution, waiting, permission and approval              | Actions, Environments and destination publisher configuration | No application approval mirror or dynamic admission authority |
-| Dependency and compiler caches                           | Native build tools and platform cache facilities              | No general V3 cache or intermediate-output reuse service      |
-
-CI control comes from the exact candidate revision. Release control and product
-source come from the selected release revision. The publisher uses a prepared
-CLI artifact from that control revision, transferred by same-run immutable
-artifact ID with the native download digest check. It does not build the CLI
-while holding publication credentials. An authorized control-code writer is
-inside this trust boundary; application checks do not confine a malicious
-accepted writer's effective token.
-
-## Repository Facts and Selection
-
-### Domain Values
-
-| Value                   | Meaning and consumer                                                                                                                                                                                                                                                 |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Project                 | Native build/package unit, including non-published dependencies; used for ownership, impact and checks                                                                                                                                                               |
-| Release unit            | Independently versioned product with explicit native entry points and complete publishable variants                                                                                                                                                                  |
-| Candidate               | Exact tree tested by CI and the event-appropriate comparison basis                                                                                                                                                                                                   |
-| Endpoint, paired        | The comparison basis and candidate are the two endpoints; paired facts or reasons combine both endpoints' native facts                                                                                                                                               |
-| Release request         | One release unit, full source commit, channel, destination and explicit live/dry-run mode                                                                                                                                                                            |
-| Selected work           | Projects, variants, required/advisory checks and real prerequisites, with selection reasons                                                                                                                                                                          |
-| Retained job            | A root CI job outside the native ecosystem groups (for example mise lock, AzureAuth or scholarly); [retained-job scope](middle-level-design.md#shared-inputs-and-retained-job-scope) selects it                                                                      |
-| Input-only member       | A native workspace member with no runnable check of its own; it stays in the graph as a producer or input owner                                                                                                                                                      |
-| Qualified output set    | Release's complete files, native coordinates, source/version bindings and successful required qualification                                                                                                                                                          |
-| Destination observation | Required native state: absent, exact, partial, conflicting or unknown                                                                                                                                                                                                |
-| Package control         | The registry's package-level record (type, name, visibility, owner/repository association) that observation reads before version state                                                                                                                               |
-| Release result          | Business satisfaction, attempted effects, command outcomes, verification and uncertainty                                                                                                                                                                             |
-| Buddy channel           | Distributable previews from allowed development branches, distinct from Official ([WD-CHN-001](requirements.md#buddy-and-official-channels))                                                                                                                         |
-| Official channel        | Canonical NBGV version (or the WD-REL-001 static version) from an eligible, reviewed official ref ([WD-CHN-002](requirements.md#buddy-and-official-channels)); the [Official channel scope](integration/common.md#official-channel-scope) states the implemented set |
-| Control                 | The Workflow Delivery application built from the selected control revision: the candidate in CI, the release revision in Release; transferred as a prepared CLI artifact                                                                                             |
-| Control distribution    | The complete prepared output of that application, transferred once to the CI jobs that run it                                                                                                                                                                        |
-| Original                | An exact qualified package file of a Release request; a request never substitutes another or older artifact for its qualified originals, and fresh recovery rebuilds and qualifies its own set ([WD-OPS-004](requirements.md#observation-retry-and-recovery))        |
-
-These are values, not a required set of persistent aggregates. Historical
-campaign terminology belongs to the
-[original records](validation/historical-readers.md#retired-campaign-records),
-not the current application model. Product version,
-source commit and execution are distinct facts. Different commits can share an
-NBGV version without equal bytes or a global version-to-commit index.
-
-### Native Facts and Declarations
-
-Read native project membership, references, package identities, version inputs
-and shared build inputs. Release-unit declarations add product boundaries,
-variants and entry points. Explicit relations cover cross-ecosystem/generated
-dependencies unavailable from native tools. Project quality YAML selects checks.
-Do not reauthor native facts as a second manifest or compile dynamic Governance
-into this model.
-
-CI needs enough ownership and reverse-dependency information to identify affected
-projects and transitive consumers. Release resolves the requested unit's complete
-build/input and qualification closure; it need not execute unrelated projects
-to compile a universal repository model. Native evaluation that executes project
-code runs in the unprivileged build context.
-
-Impact selection starts with the event's correct base and candidate, maps changed
-paths to owners and shared-input consumers, closes dependency effects, then
-selects release units and checks. Deletions and renames need ownership facts from
-the comparison basis as well as the candidate. Changed dependency declarations
-must not hide affected consumers.
-
-Select all required variants of each affected unit. Global inputs and native
-workspace/aggregate boundaries may broaden execution with an explanation.
-Unknown ownership, missing dependencies, failed evaluation and unsupported
-relevant structures fail planning; they do not silently trigger a full run.
-Explicit full validation is a separate mode and states its supported coverage.
-Excluding known-unrelated work is part of correctness, not optional optimization.
-
-### Project Quality Autonomy
-
-Retain project YAML selection and ecosystem presets. The current implementation
-selects a preset per ecosystem; this design does not introduce a new composition
-language or remove existing configuration capabilities. Selecting existing
-checks is configuration. New native execution behavior may need implementation.
-
-A stronger required baseline has an identifiable revision and explicit project
-adoption. Projects can adopt gradually; equivalent implementation fixes need no
-policy version change. Required and advisory results stay distinct. There is no
-policy migration service or mandatory monorepo-wide baseline upgrade.
-
-HK owns source/configuration conformance. CI owns project unit, scenario and
-integration checks. The tool's own tests have one ordinary CI owner and are
-selected by actual inputs and dependencies. Smoke packages follow the same
-dependency and quality rules as other projects.
+The CLI also runs native commands, including UV; helpers do not become a
+parallel scheduler. The [component view](middle-level-design.md#component-view)
+zooms into the CLI, while
+[execution boundaries](design/execution-boundaries.md#execution-view) show its
+separate runner and permission instances.
 
 ## Native Integrations
 
-Native ecosystem libraries and supported tool interfaces own manifest and
-configuration interpretation, project evaluation, dependency resolution,
-version computation and package-format semantics. Ecosystem integrations invoke
-those interfaces and project their results into the facts needed by Workflow.
-This boundary applies to ecosystem-specific helpers as well as shared code.
-Do not implement a second parser or resolver, fill missing native facts with
-protocol-prefix heuristics, or replay a native evaluator's rules in another
-language. Workflow owns impact selection, its quality and unit declarations,
-request constraints and business result evaluation.
+Native tools own project evaluation, dependency resolution, compilation
+ordering, version computation and caches. Workflow owns selecting required work,
+adapting native answers and interpreting business results. Actions owns jobs,
+waiting, cancellation and concurrency; Environments and destination publisher
+configuration own authorization.
 
-Adapting a native resolved identity is permitted: decode its supported output
-format or compare it with the encoding of a known project/output identity. This
-does not authorize interpreting unresolved dependency declarations or guessing a
-missing producer from a protocol prefix. One bounded exception exists because
-native UV metadata stubs build nodes: the
-[Python planning contract](integration/python.md#native-python-planning-facts)
-joins PyPA-parsed Hatchling build-requirement names to native workspace members
-only under an absent or exact workspace source, and fails on every other shape.
-It is not UV lowering and is guarded by the native contract tests its research
-record names. Reuse native output-directory metadata when available rather than
-requiring a duplicate Workflow declaration.
+Use maintained native libraries or supported tool interfaces. Use a
+native-language helper when the maintained library exposes the necessary
+semantics there. Do not rebuild Git, MSBuild, PNPM, UV, package metadata, native
+publishing or version semantics in C#. If a required native capability is
+missing, stop for owner disposition rather than inventing a parser, scheduler,
+reservation or approval mirror.
 
-Before implementing an integration, identify the native interface and verify
-that its output supports the required scope and errors. A successful call does
-not imply that a partial listing covers the whole required dependency graph.
-If a necessary capability is unavailable, stop the dependent work and present
-the gap and tradeoff to the owner; do not compensate with application machinery
-or silently reduce the required behavior.
+Static registration selects supported ecosystem and destination combinations.
+Application adapters compose native results and supported operations; a new
+native behavior or special project may require implementation. Do not introduce
+an arbitrary command DSL, dynamic policy registry or general V3 cache/reuse
+service. Separate responsibilities for actual callers, not an interface for each
+noun or a universal optional-method adapter. Smoke recipes are concrete product
+recipes, not universal ecosystem qualification promises. The scoped design owns the
+[native fact boundary and narrow Python planning exception](design/repository-and-selection.md#native-identity-adaptation)
+and [native build differences](design/build-and-qualification.md#ecosystem-qualification).
 
-Ecosystem integrations also invoke builds, package inspection and clean
-consumption. Destination code owns endpoint/coordinate
-semantics, observation, supported upload and interpretation of remote state.
-Release owns completion and whether another mutation is allowed.
+## Design Assumptions
 
-Use concrete implementations and static registration for supported combinations.
-Separate responsibilities where callers need them, without an interface for
-each noun, a universal optional-method adapter or a Cartesian plugin framework.
-Adding a special project can require an explicit implementation; this is an
-accepted extension cost. Existing smoke recipes are concrete product recipes,
-not universal ecosystem qualification promises. Application orchestration belongs
-in the C# use cases; native-language helpers exist only for required native
-library bindings. Actions retains job/permission orchestration.
-
-The same boundary governs CI callers: the existing C# application assembles typed
-requests and owns plan binding and result interpretation. Native shell/Actions
-build the initial control distribution and prepare tools from maintained native
-configuration. A helper's behavior is tested in its own language; managed tests
-protect the C# counterpart and concrete cross-language integration. A different
-language must supply a real native capability to justify an intervening layer.
-Temporary fixture creation remains scenario code; fixed tool/dependency recipes
-belong to native configuration rather than another application setup registry.
-
-| Ecosystem | Build and qualification                                                                                                                                 | Destination consequence                                                                                         |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| npm       | Native NBGV projection, original archive and clean install                                                                                              | Exact version state; tags are routing metadata; no lifecycle scripts with publication capability                |
-| NuGet     | MSBuild/NBGV, original nupkg and local clean consumer                                                                                                   | Native package identity and archive state; no npm tag assumptions                                               |
-| Python    | nbgv-python projection (static version for the [WD-REL-001](requirements.md#release-delivery) exception), wheel and sdist, local clean consumer of both | Complete two-file set; verified exact subsets may permit missing-file completion under the destination contract |
-| Ruby      | Native version/gem build, metadata and local clean consumer                                                                                             | Evaluate gemspecs unprivileged; destination-specific original-gem observation and upload                        |
-
-Each destination contract states normalization, required files, native
-non-overwrite behavior, readback, visibility/time bounds, credential scope and
-partial-set behavior. Missing necessary guarantees leave the path unsupported;
-tests or application locks cannot supply them. Existing ecosystem evidence keeps
-its original scope. This table is not new support or publication authorization.
-
-### Versions, Original Bytes and Provenance
-
-Planning obtains the expected native NBGV projection. Builds may invoke NBGV
-again with the same target, relevant Git history/ref, version configuration,
-dependency inputs and supported toolchain. Compare the required package/assembly
-version projections with the selected values. Missing native facts block the
-operation; no invented version or ambient fallback is allowed. For the single
-[WD-REL-001](requirements.md#release-delivery) exception, `nbgv-python`, its
-committed static native version replaces the projection under the same rules.
-
-Retain deterministic build configuration: stable source and generated-source
-paths, appropriate package timestamps, dependency locks and toolchain inputs.
-Routine releases need not build twice. Native caches remain the build system's
-concern. An isolated source-distribution build may need native static version
-materialization; normal NBGV support does not require Git inside every downstream
-source-archive consumer.
-
-Preserve native provenance appropriate to the package: assembly source
-information, package repository metadata or supported platform attestations.
-Do not require an identical commit field across ecosystems or a V3 package
-witness. Configure and inspect the chosen carrier; availability is not automatic.
-Provenance does not replace required destination byte/state comparison.
-Different-commit packages may differ despite equal versions.
+Repository-maintained dependency locks are valid and synchronized with their
+native manifests. Evaluation must still consume the addressed revision's
+committed inputs; installed state from another revision is not a substitute.
 
 The owner chose to proceed assuming native NBGV and the combined helpers are
 viable on Windows, without a separate feasibility run. The
-[historical feasibility record](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/contraction-feasibility.md) keeps its unadmitted
-local observations apart from that assumption; they are not a passed Windows
-observation. Ordinary implementation and CI failures still require correction
-or explicit disposition.
+[historical feasibility record](https://github.com/hcoona/three/blob/e90543cf4b9c5b069053221f7b9d38ee6035ea11/src/private/app/workflow-delivery/docs/research/contraction-feasibility.md)
+keeps its unadmitted local observations apart from that assumption; they are not
+a passed Windows observation. Ordinary implementation and CI failures still
+require correction or explicit disposition.
 
-## Execution and Permission Boundaries
+## Main Journeys
 
-Workflows have a static phase structure. Planning supplies selected lists and
-native matrices, not an arbitrary runtime graph or general queue. Native build
-tools own compilation ordering in their project graph. Workflows express actual
-inter-job prerequisites.
+| Journey              | System responsibility                                                                                                                                                     | Zoom in                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| CI                   | Compare the tested candidate, justify selected and excluded work, run complete required checks and evaluate candidate-bound results                                       | [CI sequence](design/ci.md#ci-journey), then [selection](design/repository-and-selection.md#selection-view)                 |
+| Release              | Resolve an explicit request, independently prepare and qualify its complete outputs, observe the destination, gate remaining permitted operations and evaluate completion | [Release sequence](design/release.md#release-journey), then [outcome model](design/release.md#release-operations-and-state) |
+| Shared qualification | Obtain native versions, build complete outputs and test clean local consumers without publication capability                                                              | [Build and qualification](design/build-and-qualification.md#qualification-journey)                                          |
 
-Jobs/processes separate publication permissions, project-code execution,
-runner/toolchain needs and transfers with independent lifetime. An internal
-method or conceptual phase does not require a job, record or proof. General C#
-builds continue on Windows unless a declared variant selects another runner;
-Python, JavaScript/TypeScript and Ruby may use Ubuntu. Runner choices do not require
-matching CI and Release graphs.
+CI does not authorize Release. Release does not adopt CI artifacts or
+qualification. A dry run prepares and qualifies without writes or write
+capability; it is not a separate product execution path.
 
-Project evaluation, build, package scripts and consumers run without publication
-capability and cannot mutate the publisher's execution context. The publisher
-receives selected control, required request data and qualified files through
-their transfer contracts. Building first and then adding write credentials to
-the same product-mutated job is insufficient isolation. Metadata readers must
-not execute product code in that privileged context.
+## Global Invariants
 
-Environment protections, workflow permissions and destination trust configuration
-own authorization. Effective native approval, including permitted bypass, is
-the policy. Do not maintain reviewer inventories, deployment-history proofs,
-protected-path touch histories or an extra authorization certificate. Native
-cancellation/revocation has its real limits; unrelated repository changes do
-not invalidate the selected in-flight revision.
-
-## CI Journey
-
-1. Resolve the exact candidate and event comparison basis. Obtain required native
-   facts in their appropriate execution context.
-2. Select affected work and explain its dependency reasons. Close all required
-   variants and project checks before execution.
-3. Execute builds/checks using native tools and runner matrices without
-   publication capability. HK retains its conformance responsibility.
-4. Join candidate-bound results and publish the applicable GitHub check and
-   explanation. Every required result must pass. Absent, skipped, cancelled,
-   unknown or conflicting required work cannot pass. Advisory results remain
-   visible without being relabeled as required failures.
-
-Superseded candidate work may be cancelled. Finalization is an ordinary result
-operation that accounts for failed dependencies, not a verdict database or
-independent CI record genealogy.
-
-## Release Journey
-
-Buddy, Official and dry run share preparation and qualification code. Buddy can
-publish from allowed development refs. Official live publication requires an
-eligible reviewed official ref; the
-[Official channel scope](integration/common.md#official-channel-scope) states
-the refs and destinations the implemented callers support. Dry run can use
-development revisions and their release code without write capability; live
-ref restrictions do not block it.
-
-1. Resolve one immutable source/control revision, unit, destination and mode.
-   Select its native version, complete outputs and quality obligations. Reject
-   unsupported live reruns and invalid live channel/ref combinations.
-2. Independently build and qualify Release's complete set, including package
-   contents and clean consumers. CI results cannot substitute.
-3. Observe the destination with public or minimally scoped read access. Compare
-   qualified files with native state and classify intended work. Dry run reports
-   hypothetical operations and its actual validation boundary, then stops with
-   no mutation or live-completion claim. A live Chrome Web Store request is
-   read with a read-only token. AMO observation requires publish credentials,
-   so it moves to the publisher in step 5. Edge has no version read endpoint;
-   its first submission may proceed with an `Unobserved` prestate under
-   [WD-REL-008](requirements.md#release-delivery), not a claim of absence.
-   Every browser-store dry run acquires no store credential and reports store
-   state as unobserved.
-4. If exact complete state and required verification conditions hold,
-   report satisfaction without a write gate; a live AMO or Edge request always
-   reaches the gate. If a write remains, retain and
-   expose target, native coordinate, complete outputs, destination and intended
-   operations before the native gate.
-5. In the authorized publisher context, consume the qualified request, check
-   current destination state and acquire supported short-lived write capability
-   when needed; only the AMO and Edge Add-ons publishers use their Environment's
-   long-lived secrets under the [WD-REL-008](requirements.md#release-delivery)
-   exception. A changed plan cannot enlarge the reviewed request. Exact state
-   can remove a now-unnecessary write; conflict/unknown required state blocks
-   it except for Edge's accepted `Unobserved` prestate under WD-REL-008. Execute
-   supported native publisher invocations in order, once per still-needed file
-   or native operation. Delegate their built-in bounded transport retries;
-   failure, ambiguity or interruption of an invocation stops further
-   application mutation. One invocation does not promise one network write.
-   No separate pre-mutation marker or marker readback is required.
-6. While execution is active, perform bounded registry readback outside the
-   privileged publisher context: observe each exact coordinate and compare the
-   downloaded served bytes with the qualified originals. For the three
-   browser-extension stores, readback instead observes the store-reported state
-   of the submitted version under the
-   [WD-REL-009](requirements.md#release-delivery) exception. The AMO publisher
-   reads the version, while the Edge publisher polls submission operation
-   status; both emit credential-free, request-bound observations that result
-   collection evaluates. For nuget.org, readback
-   instead observes the exact package ID and normalized version as available
-   through the public API under the same exception, waiting a bounded time for
-   indexing. Report command
-   outcomes, business completion and uncertainty separately. Missing required
-   verification prevents a satisfaction claim.
-
-Live AMO and Edge requests take the gated publisher path below. Their completion
-observations come from the publisher rather than an independent verification
-read; Edge's prestate remains `Unobserved` under WD-REL-008.
-
-```mermaid
-sequenceDiagram
-    actor Operator
-    participant Prep as Unprivileged Release preparation
-    participant Registry
-    participant Gate as Native Environment / permissions
-    participant Publisher as Isolated publisher
-    participant Verify as Verification and result
-    Operator->>Prep: Unit, revision, channel, destination, mode
-    Prep->>Prep: Native build and complete qualification
-    Prep->>Registry: Read state where available before the gate
-    Registry-->>Prep: Available observation or deferred store state
-    alt Dry run
-        Prep-->>Operator: Simulation and hypothetical operations
-    else Exact complete state established before the gate
-        Prep->>Verify: Qualified request and current observation, no write
-        Verify->>Registry: Required completion readback where supported (step 6)
-        Verify-->>Operator: Satisfaction and known effects
-    else Supported write remains or live AMO/Edge request
-        Prep->>Gate: Qualified request and intended operations
-        Gate->>Publisher: Native authorization permits job
-        Publisher->>Registry: Observe where supported, submit permitted operations
-        Publisher->>Verify: Outcomes, effects and AMO/Edge completion observations
-        Verify->>Registry: Bounded completion readback outside publisher where supported (step 6)
-        Verify-->>Operator: Satisfaction, command results and uncertainty
-    else Blocking conflict, unknown or unsupported partial state
-        Prep-->>Operator: Blocked request and reason
-    end
-```
-
-### Completion and Recovery
-
-The MLD's [decision table](middle-level-design.md#decision-table),
-[result behavior](middle-level-design.md#result-and-exit-behavior) and
-[recovery contract](middle-level-design.md#recovery) own the business result for
-each observed condition and fresh same-revision recovery under
-[WD-OPS](requirements.md#observation-retry-and-recovery).
-
-### Concurrency
-
-Use Actions concurrency to serialize this repository's publication work for a
-physical registry and normalized package. Keep read-before-write and necessary
-verification in the serialized operation. Do not partition colliding coordinates
-solely by channel/version. A newer request does not automatically cancel live
-publication. Pending requests may be rejected/coalesced within native semantics;
-FIFO, fairness and lossless enqueueing are not promised.
-
-External writers remain subject to registry guarantees. Observation,
-non-overwriting creation and duplicate/conflict handling determine outcomes;
-Actions concurrency is not a global lock. Python's ordered wheel/sdist uploads
-do not imply atomic sets or cross-registry transactions. No general
-mutable-resource-set scheduler is introduced.
-
-## Data Crossing Boundaries
-
-Persist information for a concrete transfer, permission or interruption/recovery
-consumer; inside a trusted invocation, ordinary typed values suffice. The MLD's
-[data-crossing contract](middle-level-design.md#data-crossing-boundaries) owns
-the necessary information, consumer validation and retention for each boundary.
-
-## Implementation and Retirement Boundaries
-
-The application and its tests use the final private locations. The old Python
-framework is retired rather than relocated or ported class for class.
-
-Native fact/impact and build/check code serve the retained CI groups. Common
-Release preparation, dry run and destination/result contracts serve the ordinary
-callers. Each journey has one active authoritative path; historical comparisons
-and evidence readers do not create a second runtime. Changes preserve complete
-journeys and their actual dependency, permission and transfer boundaries.
-
-Provider and native-consumer helpers are internal modules with actual process
-boundaries. The static-reference scanner and its admission callers are retired.
-Real ecosystem manifests and consumer projects remain ordinary fixtures without
-special trust. The independently useful `nbgv-python` remains public. Necessary
-native fixtures do not contradict the one-application/one-test starting point.
-
-Workflow/CLI callers, tests, schemas and dependencies follow their current
-journey owners. There is no old-format/API compatibility requirement. Historical
-outcomes and provenance remain with their actual readers and pinned producer
-source, without a legacy replay product. Old design/implementation carriers
-remain only for concrete evidence consumers.
-
-## Validation Basis and Integration Contracts
-
-Scenario tests cover selected CI and complete variants/checks, development dry
-runs, Buddy/Official eligibility, exact-state completion, supported missing-file
-recovery, conflict and interruption. Focused unit tests protect impact closure
-and outcome classification; contract tests protect real transfers. Exercise
-native integrations where needed, without re-proving platform authorization or
-scheduling guarantees.
-
-Selection validation includes unrelated changes, shared inputs, deletion/rename,
-transitive effects and failed analysis. Measure the ordinary-PR 12-minute
-objective separately from legitimate broad changes; fast full execution is not
-successful impact selection. Package validation covers native versions, complete
-files, clean consumption and same-input reproducibility without cross-commit or
-old/new-format byte equality.
-
-The [middle-level design](middle-level-design.md) closes common selection,
-quality, package/consumer, Release-state and transfer behavior. The
-[integration contracts](middle-level-design.md#integration-mapping) specify
-ecosystem native fact extraction coverage, destination completion conditions and
-ecosystem runner specifics; the [common tables](integration/common.md) specify concrete
-command/transfer fields, and the MLD's
-[registry observation contract](middle-level-design.md#registry-observation-and-retention)
-specifies shared read bounds and retention. Changes validate/review these boundaries
-with their affected caller group. These are bounded implementation contracts,
-not new frameworks or automatic owner questions.
-New behavior, trust-boundary or material scope/cost conflicts return for owner
-disposition.
-
-Completed live campaigns stay closed, and documentation grants no new
-publication, credential, Environment or account operations.
+| Invariant                                                                                                                                     | Owning detail                                                                                                                        |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Native facts justify selection and exclusion; unresolved required scope fails, never silently becomes a full run                              | [Repository and selection](design/repository-and-selection.md)                                                                       |
+| Project quality follows its effective registered contract, with required and advisory results distinguished                                   | [Quality autonomy](design/repository-and-selection.md#declarations-and-quality-autonomy)                                             |
+| CI control is the exact candidate; Release control and source are the selected release revision                                               | [Execution and transfers](design/execution-boundaries.md)                                                                            |
+| Product evaluation and qualification never hold publication capability; an accepted control-code writer is inside the trust boundary          | [Permission boundary](design/execution-boundaries.md#workflow-permission-and-transfer-boundaries)                                    |
+| One request's originals remain its qualified bytes; fresh recovery rebuilds and qualifies its own complete set                                | [Build provenance](design/build-and-qualification.md#versions-original-bytes-and-provenance), [recovery](design/release.md#recovery) |
+| Native command outcomes, attempted effects, observed state and business satisfaction are distinct                                             | [Release result](design/release.md#result-and-exit-behavior)                                                                         |
+| Unknown state does not authorize mutation except the accepted Edge first-submission exception; later requests never rewrite terminal outcomes | [Release decision table](design/release.md#decision-table), [WD-REL-008](requirements.md#release-delivery)                           |
+| Ordinary completion requires authoritative served originals; browser stores and nuget.org retain only their explicit WD-REL-009 exceptions    | [Post-publication completion](design/release.md#post-publication-completion)                                                         |
 
 ## Requirement Coverage
+
+The [requirements](requirements.md) remain the behavior authority.
 
 | Requirements    | Owning design                                                                                |
 | --------------- | -------------------------------------------------------------------------------------------- |
 | WD-SYS, WD-AUTH | Internal CLI, distinct use cases, selected-revision control and native authorization         |
-| WD-CI           | Native facts, meaningful impact selection, quality autonomy and complete CI result           |
-| WD-REL, WD-CHN  | Shared Release journey, independent qualification, native versions and channel/mode behavior |
-| WD-SEC          | Project-code isolation, qualified transfers and build-free publisher                         |
+| WD-CI           | Native facts, meaningful selection, quality autonomy and complete CI results                 |
+| WD-REL, WD-CHN  | Independent qualification, native versions, Release journey and channel/mode behavior        |
+| WD-SEC          | Product-code isolation, qualified transfers and build-free publisher                         |
 | WD-OPS          | Destination contracts, truthful completion, same-revision recovery and native provenance     |
 | WD-EVD, WD-RET  | Consumer-specific data, required retention and uncertainty                                   |
 | WD-CON          | Static Actions phases and registry/package concurrency within native guarantees              |
 | WD-NFR          | Scenario validation, explainable results, explicit integration cost and selective CI latency |
+
+The [middle-level overview](middle-level-design.md#scope-routes) routes each
+concern to its contract and concrete integration. Validation follows the
+[behavioral basis](middle-level-design.md#behavioral-validation-basis), not a
+second acceptance protocol. Current source acceptance never supplies permission
+to reopen a closed campaign or perform publication, dispatch or access changes.

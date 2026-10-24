@@ -4,7 +4,7 @@
 
 Can repository analysis consume native NBGV configuration and path matching
 without another version-file parser, inheritance evaluator or filter language?
-The [middle-level contract](../middle-level-design.md#minimum-facts) consumes
+The [middle-level contract](../design/repository-and-selection.md#minimum-facts) consumes
 these source findings. The [original application qualification][qualification]
 separately records bounded Linux compilation/runtime dependency delivery and
 PNPM reader observations, not complete CI or Windows qualification.

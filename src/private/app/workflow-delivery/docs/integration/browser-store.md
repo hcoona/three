@@ -4,9 +4,9 @@ This contract owns the concrete browser-extension Release integration: the
 `steam-account-history-to-csv` preparation, the Chrome Web Store, Firefox AMO
 and Microsoft Edge Add-ons destinations, their completion conditions and the
 owner setup they need. The [requirements](../requirements.md#release-delivery)
-and the MLD's [workflow boundaries](../middle-level-design.md#workflow-permission-and-transfer-boundaries)
+and the MLD's [workflow boundaries](../design/execution-boundaries.md#workflow-permission-and-transfer-boundaries)
 remain the authority; this section adds no obligation beyond the code it cites.
-Changes follow the [shared review core](../middle-level-design.md#release-integration-review).
+Changes follow the [shared review core](../design/release.md#release-integration-review).
 
 ## Caller and Channel
 
@@ -94,7 +94,7 @@ Before dispatching a new live Edge request after an unknown outcome, the owner
 checks the product in Partner Center and dispatches only if the version was not
 received.
 
-The adapters live in [`Destinations/`](../../Destinations/) (`ChromeWebStore`,
+The adapters live in [`Destinations/`](../../Destinations) (`ChromeWebStore`,
 `FirefoxAmo`, `EdgeAddons` and the shared bounded `StoreHttp`).
 [`BrowserStoreRelease`](../../Release/BrowserStoreRelease.cs) owns describe,
 publish and complete. Scenario tests use HTTP fakes in

@@ -52,7 +52,7 @@ inventory. Unknown dynamic Ruby IO or external input cannot be proven closed by
 loaded-feature enumeration; such a required shape remains unsupported. Native
 facts from both endpoints join the existing paired impact selection, including
 removed local producers and their previous consumers, through the
-[paired direct-selection reasons](../middle-level-design.md#paired-direct-selection-reasons).
+[paired direct-selection reasons](../design/repository-and-selection.md#paired-direct-selection-reasons).
 
 ## Native Ruby CI Group
 
@@ -209,7 +209,7 @@ private application.
 `CI/RubyPackageExecution` and `Release/RubyPreparation` consume those operations
 while retaining distinct plan/check and request/qualification decisions. Release
 does not consume `CiPlan` or `CheckSpec`
-([implementation types](../middle-level-design.md#implementation-type-names)). The common mechanisms use the selected
+([implementation types](../design/repository-and-selection.md#implementation-type-names)). The common mechanisms use the selected
 Ruby/RubyGems/NBGV tools, closed environment and native builder. The request also
 carries the caller's mise data directory and mise executable. The closed `PATH`
 includes that executable's directory because the mise-installed Ruby's own
@@ -322,7 +322,7 @@ with no publication credential acquisition or `gem push`. Exact/dry-run paths
 enter no write gate. The common result separates attempted effects, actual
 command outcomes, observed state and required business satisfaction.
 
-Changes follow the [shared review core](../middle-level-design.md#release-integration-review). Controlled
+Changes follow the [shared review core](../design/release.md#release-integration-review). Controlled
 credential-free component tests and ordinary Linux CI must qualify native
 command/configuration/output boundaries, original build/inspection/consumption,
 failure-after-effect, cancellation, missing transfers and complete results on
@@ -333,7 +333,7 @@ intact; no runtime schema compatibility alias is added.
 
 ### Ruby Destination Completion
 
-The MLD's [post-publication completion](../middle-level-design.md#post-publication-completion)
+The MLD's [post-publication completion](../design/release.md#post-publication-completion)
 contract applies to these destinations; this table owns their concrete
 conditions and observation.
 

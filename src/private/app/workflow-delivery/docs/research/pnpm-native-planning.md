@@ -3,7 +3,7 @@
 ## Scope and Premise
 
 This assessment supplies source evidence for the application's
-[native fact integration](../middle-level-design.md#native-fact-integration).
+[native fact integration](../design/repository-and-selection.md#native-fact-integration).
 The [Node integration contract](../integration/node.md#native-pnpm-facts)
 owns the selected CLI integration; this record does not select a second resolver,
 helper runtime or dependency/output declaration.
@@ -255,7 +255,7 @@ The [closed Node execution observation](https://github.com/hcoona/three/blob/e90
 qualifies the adopted npm fixture's five-check recipe in two executions of one
 same-candidate plan on its recorded Linux/tool/lock context. It does not qualify
 other presets, hosted event/transfer/caller integration, whole-repository
-coverage or Windows. The owner's [Windows assumption](../high-level-design.md#versions-original-bytes-and-provenance)
+coverage or Windows. The owner's [Windows assumption](../high-level-design.md#design-assumptions)
 is separate. The original protocol, source/caller identities, complete archive,
 failed initial generation, effects limits and independent reviews remain in
 that historical record and its original PR carriers. Its finite allowance and

@@ -75,7 +75,7 @@ markerless `ProjectFacts.Dependencies`, and union both endpoints so removed or
 renamed producers retain consumers. `uv sync --frozen --python <interpreter>`
 during preparation enforces `requires-python` for the operation interpreter.
 
-Adapt into the existing [implementation types](../middle-level-design.md#implementation-type-names)
+Adapt into the existing [implementation types](../design/repository-and-selection.md#implementation-type-names)
 `RepositoryFacts`/`ProjectFacts`/`SharedInput`/`CheckSpec` and
 impact closure, keeping quality consumers separate from build inputs and root ownership
 explicit. Managed
@@ -87,7 +87,7 @@ fallback or all-run.
 ## Python Quality Owners and Input-Only Members
 
 Terms such as endpoint, paired and input-only member are defined in the
-[HLD domain values](../high-level-design.md#domain-values).
+[MLD domain values](../middle-level-design.md#domain-values).
 
 Native workspace membership does not imply a build or test obligation. Keep the
 complete native producer graph, including tableless members (a `pyproject.toml`
@@ -107,7 +107,7 @@ resolve executable work against surviving candidate owners. Do not infer native
 identity matches from package names or opaque graph ID spelling.
 
 Paired input associations reach runnable owners through the
-[paired direct-selection reasons](../middle-level-design.md#paired-direct-selection-reasons).
+[paired direct-selection reasons](../design/repository-and-selection.md#paired-direct-selection-reasons).
 Only actual endpoint runnable owners become `ProjectFacts` with nonempty resolved
 checks; input-only members retain their graph role without synthetic builds,
 empty-check policy, candidate-only basis proxies or a new core origin.
@@ -245,7 +245,7 @@ ordinary PR CI together with the tests with controlled fixtures above; only a ne
 native collection or query experiment needs its own accepted protocol.
 
 The shared core owns the
-[paired direct-reason transfer](../middle-level-design.md#paired-direct-selection-reasons)
+[paired direct-reason transfer](../design/repository-and-selection.md#paired-direct-selection-reasons)
 used by Python fact assembly. Keep both endpoint project sets actual; no
 candidate-only owner proxy is inserted into basis facts. Controlled integration
 must cover a basis-only input reaching candidate-only `C`, deleted quality owners,
@@ -664,7 +664,7 @@ retains attempted effects, actual command outcomes, observed state and business
 satisfaction separately. Historical readers retain their actual consumers;
 there is no runtime-schema compatibility alias.
 
-Changes follow the [shared review core](../middle-level-design.md#release-integration-review). Validate
+Changes follow the [shared review core](../design/release.md#release-integration-review). Validate
 native command/configuration and output boundaries, original
 preparation/consumption, partial-state order, failure-after-effect,
 cancellation, missing transfers and complete results with controlled contract
@@ -676,7 +676,7 @@ the stopped Python package or publication campaigns.
 
 ### Python Destination Completion
 
-The MLD's [post-publication completion](../middle-level-design.md#post-publication-completion)
+The MLD's [post-publication completion](../design/release.md#post-publication-completion)
 contract applies to these destinations; this table owns their concrete
 conditions and observation.
 

@@ -52,7 +52,7 @@ artifact, ambient fallback or second dependency declaration.
 | `native-message-schemas <directory>`                                                | Regenerate static descriptions of maintained native helper messages                               |
 | Destination publication and completion commands                                     | Invoke the native publisher, require separate registry readback and report truthful results       |
 
-The [static native helper contracts](Native/contracts/) come from actual serializer
+The [static native helper contracts](Native/contracts) come from actual serializer
 metadata. Managed tests check regeneration; native helper tests use the static
 schemas directly. Native identity and business checks remain separate.
 
@@ -82,7 +82,7 @@ required publication information remains unknown even when final bytes match.
 ## Implemented Scope
 
 The four release-smoke fixtures under
-[`tests/private/app/workflow-delivery/fixtures/products/`](../../../../tests/private/app/workflow-delivery/fixtures/products/)
+[`tests/private/app/workflow-delivery/fixtures/products/`](../../../../tests/private/app/workflow-delivery/fixtures/products)
 exercise the native package recipes; the
 [integration contracts](docs/middle-level-design.md#integration-mapping) and
 their release-unit registrations own the public product inventory.
@@ -174,8 +174,8 @@ application does not mirror reviewers or re-prove platform approval.
 
 Completion, retry and recovery semantics are owned by the
 [requirements](docs/requirements.md#observation-retry-and-recovery), the MLD's
-[decision table](docs/middle-level-design.md#decision-table) and
-[recovery contract](docs/middle-level-design.md#recovery), and the
+[decision table](docs/design/release.md#decision-table) and
+[recovery contract](docs/design/release.md#recovery), and the
 per-destination completion conditions in each
 [integration contract](docs/middle-level-design.md#integration-mapping).
 
