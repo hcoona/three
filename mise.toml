@@ -21,7 +21,7 @@ node = "24.22.1"
 pkl = "0.32.2"
 powershell = "7"
 python = "3.14"
-ruby = "4.0.8"
+ruby = "4.0.9"
 
 # Package Managers
 pnpm = "12.15.0"
