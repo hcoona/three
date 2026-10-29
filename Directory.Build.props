@@ -32,7 +32,7 @@
   <ItemGroup>
     <GlobalPackageReference Include="DotNet.ReproducibleBuilds" Version="2.0.5" />
     <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.10.94" />
-    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.402" />
+    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.403" />
   </ItemGroup>
 
   <PropertyGroup Label="SourceLink">
