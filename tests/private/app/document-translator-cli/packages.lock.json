@@ -354,7 +354,7 @@
         "dependencies": {
           "Azure.AI.Translation.Document": "[3.0.0, )",
           "Azure.Identity": "[1.21.0, )",
-          "Markdig": "[1.5.0, )",
+          "Markdig": "[1.5.1, )",
           "System.CommandLine": "[2.0.14, )"
         }
       },
@@ -378,9 +378,9 @@
       },
       "Markdig": {
         "type": "CentralTransitive",
-        "requested": "[1.5.0, )",
-        "resolved": "1.5.0",
-        "contentHash": "oEm6N4PYFPUZiJ5e89993AE6hfC8EWRGD5M8nyoSJbwD4GgW818mjlQCk++SdTV4godaN50Ybcmm4j2Dp76oIQ=="
+        "requested": "[1.5.1, )",
+        "resolved": "1.5.1",
+        "contentHash": "NtHwU5t5yKr6Gnylhs8/hlR0mOAftTFQURDz2ID8bkunxps1neOzKw0dYKKlwNuwiYIGLHjJTXK91f809Ko1ww=="
       },
       "System.CommandLine": {
         "type": "CentralTransitive",
