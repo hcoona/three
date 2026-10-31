@@ -33,7 +33,7 @@
     <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.10.0" Condition="'$(UsingMSTestSdk)' != 'true'" />
     <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.3.3" Condition="'$(UsingMSTestSdk)' != 'true'" />
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
-    <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2957" />
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.6.4" />
     <PackageVersion Include="Nito.Guids" Version="1.1.1" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
