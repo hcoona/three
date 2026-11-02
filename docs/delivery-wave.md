@@ -150,9 +150,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
     - On Ruby 4.0, `logger` is a bundled gem. `asciidoctor` 2.0.26 requires it
       without declaring it; Aruba 2 supplied it transitively through its
       dependencies. No spec uses Aruba, whose 3.0 release also removed the
-      configured `working_directory` option. Native RSpec failures with a
-      readable JSON report omit the bounded command diagnostic, so CI showed
-      only the exit status.
+      configured `working_directory` option. The caller already reports bounded
+      stderr for failed native commands; in #1323, the RSpec load error was on
+      stdout and stderr was empty, so CI showed only termination and exit.
 - **Owner decisions:** `uv.lock` alone selects the Hatchling version for the
   smoke fixture. The Node compatibility matrix becomes `22.x`, `24.x` and
   `26.x`; `engines.node` stays `>=22`. `logger` is declared in the
@@ -169,8 +169,10 @@ ends a grant. Git and the proposing PR retain the reason and history.
     - Declare `logger` in the `asciidoctor-latexmath` Gemfile; remove Aruba
       from its Gemfile, lockfile, spec helper and Renovate rule; update
       current documentation that names Aruba as the isolation mechanism.
-    - Attach the bounded native command diagnostic to failed Ruby RSpec
-      results whose JSON report was read, with a scenario test.
+    - Include bounded native stdout in caller-visible failed Ruby RSpec
+      diagnostics alongside the existing stderr, without changing the retained
+      native result or report; cover the observed load-error pattern with a
+      scenario test.
 - **Ordering and gates:** the repairs are independent. Workflow Delivery
   changes follow its engineering, OCR, record-system and research-evidence
   review gates; research-evidence review confirms that removing the fixture pin
@@ -181,8 +183,8 @@ ends a grant. Git and the proposing PR retain the reason and history.
   #1474 pass ordinary CI without further dependency-specific edits; #1475 and
   #1323 are closed as superseded by fixture-pin and Aruba removal, respectively;
   a later backend-only or lock-maintenance Hatchling update needs no fixture
-  edit; a Ruby RSpec load failure shows its bounded stderr in caller-visible
-  output. Delete this entry when accepted.
+  edit; an RSpec load failure with empty stderr exposes its bounded stdout
+  diagnostic in caller-visible output. Delete this entry when accepted.
 - **Effects:** permit source and repository/GitHub inspection, documentation,
   workflow, Renovate, dependency-manifest, lockfile and implementation
   changes, locked tool preparation, isolated local builds and credential-free
