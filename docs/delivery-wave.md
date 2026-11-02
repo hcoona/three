@@ -117,3 +117,79 @@ ends a grant. Git and the proposing PR retain the reason and history.
   change; no restoration or modification of the retired legacy
   `release-orchestrate.yml` stack beyond an owner decision recorded separately;
   no new runtime matrix.
+
+### Repair the root causes blocking the open Renovate pull requests
+
+- **Work carrier:** the pull request proposing this entry and its linked
+  implementation pull requests. The repository owner requested root-cause
+  repairs after Renovate pull requests
+  [#1449](https://github.com/hcoona/three/pull/1449),
+  [#1475](https://github.com/hcoona/three/pull/1475),
+  [#1474](https://github.com/hcoona/three/pull/1474) and
+  [#1323](https://github.com/hcoona/three/pull/1323) failed CI, and selected
+  the decisions below.
+- **Accepted inputs:** the [engineering principles](engineering/engineering-principles.md),
+  Workflow Delivery's
+  [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
+  [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md) and
+  [Python native packaging research](../src/private/app/workflow-delivery/docs/research/python-native-packaging.md),
+  the `asciidoctor-latexmath`
+  [specification](../src/public/lib/asciidoctor-latexmath/specs/001-asciidoctor-latexmath-asciidoctor/spec.md),
+  root `mise.toml`, `mise.lock`, `pyproject.toml` and `uv.lock`,
+  `renovate.json` and the GitHub workflows.
+- **Diagnosis:**
+    - The Workflow Delivery Python smoke fixture pins `hatchling==1.32.4` while
+      the root `uv.lock` selects the backend used by its
+      `--no-build-isolation` build. Lock maintenance and backend updates move
+      them separately; the existing Renovate grouping rule cannot keep them
+      equal.
+    - The Node packaging runtime must appear in the `node-tests` compatibility
+      matrix. Node 26 became Active LTS on 2026-10-28, Node 22 remains
+      supported until 2027-04-30, and the public packages declare
+      `engines.node >=22`.
+    - On Ruby 4.0, `logger` is a bundled gem. `asciidoctor` 2.0.26 requires it
+      without declaring it; Aruba 2 supplied it transitively through its
+      dependencies. No spec uses Aruba, whose 3.0 release also removed the
+      configured `working_directory` option. Native RSpec failures with a
+      readable JSON report omit the bounded command diagnostic, so CI showed
+      only the exit status.
+- **Owner decisions:** `uv.lock` alone selects the Hatchling version for the
+  smoke fixture. The Node compatibility matrix becomes `22.x`, `24.x` and
+  `26.x`; `engines.node` stays `>=22`. `logger` is declared in the
+  `asciidoctor-latexmath` development Gemfile, not its gemspec, until a
+  supported `asciidoctor` release no longer requires the undeclared library.
+  Aruba is removed rather than migrated.
+- **Advancement and outcome:**
+    - Replace the smoke fixture's exact backend requirement with an unbounded
+      `hatchling` requirement and delete the Renovate rule that tried to keep
+      the pin equal to the workspace tooling.
+    - Add `26.x` to the `node-tests` matrix; describe the matrix update in the
+      Renovate Node major rule; remove the pytest assertion that duplicates the
+      Workflow Delivery locked-Node matrix contract test.
+    - Declare `logger` in the `asciidoctor-latexmath` Gemfile; remove Aruba
+      from its Gemfile, lockfile, spec helper and Renovate rule; update
+      current documentation that names Aruba as the isolation mechanism.
+    - Attach the bounded native command diagnostic to failed Ruby RSpec
+      results whose JSON report was read, with a scenario test.
+- **Ordering and gates:** the repairs are independent. Workflow Delivery
+  changes follow its engineering, OCR, record-system and research-evidence
+  review gates; research-evidence review confirms that removing the fixture pin
+  stays within the packaging research's version-change guard. Independently
+  classify material findings before repair. New feasibility or product
+  tradeoffs return to the owner.
+- **Acceptance:** after rebasing, or after Renovate recreates them, #1449 and
+  #1474 pass ordinary CI without further dependency-specific edits; #1475 and
+  #1323 are closed as superseded by fixture-pin and Aruba removal, respectively;
+  a later backend-only or lock-maintenance Hatchling update needs no fixture
+  edit; a Ruby RSpec load failure shows its bounded stderr in caller-visible
+  output. Delete this entry when accepted.
+- **Effects:** permit source and repository/GitHub inspection, documentation,
+  workflow, Renovate, dependency-manifest, lockfile and implementation
+  changes, locked tool preparation, isolated local builds and credential-free
+  tests, independent delegated review, ordinary PR/check operations and their
+  normal CI, rebasing or closing the four named Renovate pull requests.
+- **Exclusions:** no Node 22 removal or `engines` change; no `asciidoctor` 3
+  migration or gemspec dependency change; no change to the Renovate Python
+  hold or Python 3.15 migration; no release, proving or campaign dispatch,
+  publication, credential, Environment, account, publisher or other access
+  change.
