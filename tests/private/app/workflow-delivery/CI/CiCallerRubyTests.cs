@@ -85,6 +85,70 @@ public sealed class CiCallerRubyTests(TestContext context)
             "stderr: [truncated] " + tail + Environment.NewLine, diagnostics.ToString());
     }
 
+    [TestMethod]
+    public async Task RSpecLoadFailureReportsBoundedStdoutAndPreservesOriginalResults()
+    {
+        using var files = new CiCallerFiles();
+        (string checkout, _, RubyQueryTools tools, _, _, _, _) = Arrange(files);
+        const string reportJson = """
+            {
+              "version": "3.13.6",
+              "messages": ["No examples found."],
+              "examples": [],
+              "summary": {
+                "example_count": 0, "failure_count": 0, "pending_count": 0,
+                "errors_outside_of_examples_count": 1
+              }
+            }
+            """;
+        string stdout = "omitted native output " + new string('x', NativeDiagnostic.TailLength) +
+            "\nLoadError: cannot load such file -- logger\n::error::not a workflow command" +
+            "\n##[error]also not a command";
+        using var diagnostics = new StringWriter();
+
+        CiOutcome outcome = await RubyCiCaller.ExecuteAsync(files.Root, context.CancellationToken,
+            async (received, request, token) =>
+            {
+                CheckKey key = received.Checks[0].Work.Key;
+                RubyRSpecRun run = await RubyRSpecExecution.RunAsync(key,
+                    new(checkout, tools.Ruby, tools.Bundle, "2.7.2",
+                        Path.Combine(checkout, "Gemfile"), files.Root, 900,
+                        new Dictionary<string, string?>()),
+                    (command, _) =>
+                    {
+                        File.WriteAllText(command.Arguments[^1], reportJson);
+                        return Task.FromResult(new NativeCommandResult(NativeTermination.Exited,
+                            1, stdout, "", 2, null));
+                    }, token);
+                CheckResult[] results = [new(Candidate, key, run.Status)];
+                return new RubyGroupRun(results, [new(key, run, [])],
+                    new([], [], [], []), ResultCollector.Collect(received, results));
+            }, diagnostics);
+
+        Assert.IsFalse(outcome.Satisfied);
+        Assert.AreEqual("failed", outcome.Checks.Single().Status);
+        string text = diagnostics.ToString();
+        Assert.Contains("Exited, exit 1.", text);
+        Assert.Contains("stdout: [truncated]", text);
+        Assert.Contains("LoadError: cannot load such file -- logger", text);
+        Assert.DoesNotContain("omitted native output", text);
+        Assert.Contains("  | ::error::not a workflow command", text);
+        Assert.Contains(@"  | #\#[error]also not a command", text);
+        Assert.DoesNotContain("##[", text);
+        Assert.IsLessThan(NativeDiagnostic.TailLength + 512, text.Length);
+
+        RubyGroupRun retained = CiCallerTransfer.Read(Path.Combine(files.Root, "result.json"),
+            TransferJson.Default.RubyGroupRun);
+        RubyRSpecRun original = retained.RSpec.Single().Run;
+        Assert.AreEqual(stdout, original.Result.Stdout);
+        Assert.AreEqual("", original.Result.Stderr);
+        Assert.IsNull(original.ReportError);
+        Assert.IsNotNull(original.Report);
+        Assert.AreEqual(1, original.Report.ErrorsOutsideExamples);
+        Assert.AreEqual(JsonSerializer.Serialize(RubyRSpecResult.Read(reportJson).Original),
+            JsonSerializer.Serialize(original.Report.Original));
+    }
+
     private static (string Checkout, MaterializedEndpoint Endpoint, RubyQueryTools Tools,
         RubyFactTools Facts, RubyGroupEndpoint PreparedEndpoint,
         RubyGroupPreparationResult Prepared, CiPlan Plan) Arrange(CiCallerFiles files)

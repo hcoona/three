@@ -112,8 +112,10 @@ internal static class RubyCiCaller
                 TransferJson.Default.RubyGroupRun);
             results = result.Results;
             outcome = CiCallerTransfer.Outcome(plan, result.Outcome);
-            failures = [.. result.RSpec.Where(run => run.Run.ReportError is not null)
-                    .Select(run => new CiCallerFailure(run.Check, run.Run.ReportError!)),
+            failures = [.. result.RSpec
+                    .Select(run => (run.Check, Error: RSpecDiagnostic(run.Run)))
+                    .Where(run => run.Error is not null)
+                    .Select(run => new CiCallerFailure(run.Check, run.Error!)),
                 .. result.Packages.Failures.Select(failure => new CiCallerFailure(failure.Check,
                     failure.Error))];
             // A failed install is also the suite's Run; report each native command once.
@@ -130,6 +132,16 @@ internal static class RubyCiCaller
             TransferJson.Default.CiOutcome);
         CiCallerTransfer.Report(outcome, failures, commands, diagnostics);
         return outcome;
+    }
+
+    private static string? RSpecDiagnostic(RubyRSpecRun run)
+    {
+        if (run.Status == CheckStatus.Passed || string.IsNullOrWhiteSpace(run.Result.Stdout))
+            return run.ReportError;
+        if (run.ReportError is { } error)
+            return error + " stdout: " + Platform.NativeDiagnostic.Tail(run.Result.Stdout);
+        return $"Native command {Platform.NativeDiagnostic.Operation(run.Command)} returned: " +
+            Platform.NativeDiagnostic.Describe(run.Result, includeStdout: true);
     }
 
     private static RubyCiCallerContext Context(string directory) => CiCallerTransfer.Read(

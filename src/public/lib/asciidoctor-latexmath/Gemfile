@@ -9,8 +9,9 @@ source "https://rubygems.org"
 gem "asciidoctor", ">= 2.0", "< 3.0"
 
 group :development do
+  # Asciidoctor 2.0.26 loads logger without declaring it on Ruby 4.
+  gem "logger"
   gem "rake", "~> 13.3"
   gem "rspec", "~> 3.13"
-  gem "aruba", "~> 2.3"
   gem "standard", "~> 1.54"
 end

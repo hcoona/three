@@ -73,6 +73,15 @@ Rules:
 
 ## Development Workflow & Quality Gates
 
+Current integration examples use `SpecSupport::TmpDir` (`Dir.mktmpdir`) and
+block-scoped `Dir.chdir` in the
+[RSpec suite](../../spec/spec_helper.rb), not Aruba. Removing unused Aruba
+setup does not relax
+[FR-041](../../specs/001-asciidoctor-latexmath-asciidoctor/spec.md)'s per-example
+temporary-directory, environment-cleanup and real-HOME/global-cache isolation
+requirements. Aruba references in dated clarifications, imported baseline
+rationale and completed tasks retain their historical scope.
+
 Phases (Waterfall):
 
 1. Interface Definition: Attribute matrix + processor responsibilities + renderer pipeline documented.
