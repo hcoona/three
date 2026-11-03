@@ -506,7 +506,12 @@ def classify(path: str) -> str:  # noqa: C901, PLR0911, PLR0912 - Ordered indepe
                 ".github/codeql",
             )
         )
-        or path in {".github/lsp.json", ".github/mcp.json"}
+        or path
+        in {
+            ".github/lsp.json",
+            ".github/mcp.json",
+            "eng/node-release-schedule.json",
+        }
     ):
         return "configuration-source"
     if name in {

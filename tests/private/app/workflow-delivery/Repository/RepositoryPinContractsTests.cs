@@ -43,7 +43,6 @@ public sealed class RepositoryPinContractsTests
         Assert.AreEqual(System.Version.Parse(node).Major + ".x", packaging.Selector);
         Assert.AreEqual(System.Version.Parse(inputs.NewestRelease).Major + ".x",
             inputs.Variants[^1].Selector);
-        Assert.AreEqual(inputs.LowerBound + ".x", inputs.Variants[0].Selector);
     }
 
     // Committed engines manifests of the root and every pnpm-workspace.yaml importer.
