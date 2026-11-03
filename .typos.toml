@@ -77,3 +77,7 @@ extend-ignore-re = ["const PAYMENT_CLASS = 'wth_payment';"]
 [type.python-native-metadata]
 extend-glob = ["python-metadata.json"]
 extend-words = { certifi = "certifi" } # Preserve the native package name in recorded output.
+
+[type.node-release-schedule]
+extend-glob = ["node-release-schedule.json"]
+extend-words = { Jod = "Jod" } # Upstream Node.js 22 release codename.

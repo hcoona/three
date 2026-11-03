@@ -157,7 +157,7 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
         CollectionAssert.AreEqual(NativeCommands.Take(queries).ToArray(), commands);
     }
     [TestMethod]
-    public async Task RuntimeProjectionPreservesTwoObligationsPerRuntimePlusPackagingAndOriginalSubject()
+    public async Task RuntimeProjectionKeepsTwoObligationsPerRuntimePlusPackagingAndSubject()
     {
         CiPlan original = await PackagePlanAsync();
         CiPlan plan = Inputs(original.Candidate).Expand(original);
