@@ -38,6 +38,9 @@ $skipped = @(
     foreach ($file in $trxFiles) {
         try {
             [xml]$trx = Get-Content -LiteralPath $file.FullName -Raw
+            if ($null -eq $trx) {
+                throw 'The file is empty.'
+            }
         }
         catch {
             Write-Warning "Unreadable TRX $($file.FullName): $($_.Exception.Message)"
