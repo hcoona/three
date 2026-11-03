@@ -263,7 +263,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
   [Issue #1503](https://github.com/hcoona/three/issues/1503) and their linked
   pull requests. The AzureAuth Python doctor harness timed out repeatedly in
   `Build & Test (.NET 10)`. The repository owner then reviewed the external
-  tools that job's tests launch and requested the three advancements below.
+  tools that job's tests launch and requested the two advancements below.
+  Running tests that need a locked external runtime belongs to the entry
+  "Add an external-tool dimension to the Workflow Delivery .NET group".
 - **Accepted inputs:** the [engineering principles](engineering/engineering-principles.md),
   root `mise.toml`, `mise.lock`, `.python-version`, `global.json`,
   `eng/scripts/locked_tool_versions.py`, the GitHub workflows, and the
@@ -285,16 +287,10 @@ ends a grant. Git and the proposing PR retain the reason and history.
     - The AzureAuth Python and npm integration tests skip rather than fail
       when their tool is missing, so CI can pass without running them.
 - **Owner decisions:**
-    - Order the work as advancement 1, then 2, then 3.
-    - Real-tool tests move to CI jobs that provision locked versions; the work
-      adds no tool installation to `Build & Test (.NET 10)`.
-    - Neither moved tests nor their destination jobs gain new mise tool
-      installation (`mise install`, `mise exec --locked`, `jdx/mise-action`
-      installing tools, or an equivalent); destinations provision through
-      official setup actions reading committed versions, as the
-      `conformance` and `azureauth-foundation-artifacts` jobs do. Whether
-      workflows should stop using mise installation generally is a separate
-      decision in [Issue #1505](https://github.com/hcoona/three/issues/1505).
+    - Order the work as advancement 1, then 2.
+    - Advancement 2 does not wait for the external-tool dimension entry. It
+      applies fail-closed behavior in whichever job runs each test at the
+      time; a later move into a tool-provisioning group keeps that behavior.
     - Tests whose subject is a workflow `shell: bash` or `shell: pwsh` step,
       such as `BashWorkflowCallerTests` and `NuGetWorkflowCallerTests`, keep
       the runner image's shells and git, which GitHub Actions itself uses,
@@ -307,29 +303,18 @@ ends a grant. Git and the proposing PR retain the reason and history.
        process with an in-repository test helper process. Repair other
        principle findings in those tests, such as missing launch deadlines.
        Record the inventory and dispositions in #1501.
-    2. Give each remaining test that needs a locked external runtime (Python,
-       Node.js or npm) a test category, exclude it from
-       `Build & Test (.NET 10)`, and run it in a CI job that provisions the
-       locked version. Prefer an existing job of the owning project; add a
-       job or step to `ci.yml` only when no existing job fits.
-    3. Under #1503, decide which real-tool tests CI must run. In CI, those
+    2. Under #1503, decide which real-tool tests CI must run. In CI, those
        tests fail rather than skip when their tool is missing. CI results
        name skipped tests and their reasons.
 - **Ordering and gates:** merge this entry before any of the work. Each pull
   request follows the owning project's engineering and OCR review gates. It
   also follows record-system review for record changes, and
-  research-evidence review for evidence claims such as the #1501 cause
-  analysis. Independently classify material findings before repair. A
-  destination job that would need to become a newly required check, or any
-  new feasibility or product tradeoff, returns to the owner.
+  research-evidence review for evidence claims. Independently classify
+  material findings before repair. Any new feasibility or product tradeoff
+  returns to the owner.
 - **Acceptance:**
-    - `Build & Test (.NET 10)` launches no Python, Node.js or npm.
-    - Each moved test runs against its locked version in its destination job.
     - Each remaining external-executable test has a recorded disposition.
     - Tests that CI must run fail when their tool is missing.
-    - #1501 records whether the timeout recurs once the doctor test runs
-      against the locked Python. Toolcache prewarming is considered only if
-      it does, and only by a further owner decision.
     - Delete this entry when accepted.
 - **Effects:** permit source and repository/GitHub inspection,
   documentation, test, test-configuration and CI workflow changes,
@@ -341,5 +326,202 @@ ends a grant. Git and the proposing PR retain the reason and history.
     - No change to existing mise tool installation in workflows (#1505).
     - No toolcache prewarming.
     - No required-check or ruleset change.
+    - No release, proving or campaign dispatch, publication, credential,
+      Environment, account, publisher or other access change.
+
+### Gate merges only through the Validate aggregate
+
+- **Work carrier:** [Issue #1511](https://github.com/hcoona/three/issues/1511)
+  and its linked pull requests. The repository owner reviewed how
+  `.github/workflows/ci.yml` gates merges and approved a single gate.
+- **Accepted inputs:** the [engineering principles](engineering/engineering-principles.md),
+  the [HK execution boundary](engineering/hk-execution.md), the GitHub
+  workflows and `tests/eng/test_general_ci_workflow.py`, the `main` ruleset,
+  and Workflow Delivery's
+  [CI design](../src/private/app/workflow-delivery/docs/design/ci.md) and
+  [repository and selection design](../src/private/app/workflow-delivery/docs/design/repository-and-selection.md).
+- **Diagnosis:**
+    - The `main` ruleset requires `Validate`, `Build & Test (.NET 10)`,
+      `Test (Python)`, `Test & Build (Node.js 22.x)` and
+      `Test & Build (Node.js 24.x)`. `Validate` aggregates `conformance`,
+      `scholarly-tests`, `nuget-native-preparation`,
+      `github-release-native-preparation`, `native-preparation-tests`,
+      `ruby-group` and `node-tests`.
+    - No rule separates the two mechanisms. `mise-lock` and
+      `azureauth-foundation-artifacts` gate nothing, although the latter is
+      the only job that runs the AzureAuth host tests on Linux and macOS.
+    - A matrix job named in the ruleset breaks when its matrix changes.
+- **Owner decisions:**
+    - `Validate` is the only merge gate. Every other job in `ci.yml`,
+      including `mise-lock` and `azureauth-foundation-artifacts`, is a direct
+      or transitive dependency of `Validate`; no job is exempt.
+    - A repository check fails when any other `ci.yml` job is not a direct or
+      transitive dependency of `Validate`.
+    - The owner authorizes changing the `main` ruleset so that `Validate` is
+      its only required status check.
+- **Advancement and outcome:**
+    1. Make every job a direct or transitive dependency of `Validate`, make
+       each job report success when it does not apply, and add the enforcing
+       check. Update the records and tests that describe the gated set.
+    2. After that merges and `Validate` passes on `main`, change the `main`
+       ruleset to require only `Validate`, and update the tests and records
+       that name the former required checks.
+- **Ordering and gates:** merge this entry before any of the work, and
+  advancement 1 before advancement 2, so `main` is never less protected.
+  Each pull request follows the Workflow Delivery engineering and OCR review
+  gates and record-system review for record changes, with independent
+  classification of material findings. A gated job that fails on `main`
+  for a reason outside this entry returns to the owner.
+- **Acceptance:**
+    - Every other `ci.yml` job is a direct or transitive dependency of
+      `Validate`, and the enforcing check passes.
+    - The `main` ruleset requires only `Validate`.
+    - Delete this entry when accepted.
+- **Effects:** permit source and repository/GitHub inspection,
+  documentation, test and CI workflow changes, credential-free local
+  tests, independent delegated review, ordinary Issue/PR/check operations
+  and their normal CI, and the owner-authorized `main` ruleset
+  required-check change.
+- **Exclusions:**
+    - No other ruleset, branch-protection, permission or access change.
+    - No change to which checks a job runs, its tools or its applicability.
+    - No change to existing mise tool installation in workflows (#1505).
+    - No release, proving or campaign dispatch, publication, credential,
+      Environment, account or publisher change.
+
+### Add an external-tool dimension to the Workflow Delivery .NET group
+
+- **Work carrier:** [Issue #1509](https://github.com/hcoona/three/issues/1509)
+  and its linked pull requests. Issue #1501 holds the triggering timeout and
+  the external-tool inventory. The repository owner chose this managed
+  design over hand-written retained jobs.
+- **Accepted inputs:** the [engineering principles](engineering/engineering-principles.md),
+  root `mise.toml`, `mise.lock`, `.python-version` and `global.json`, the
+  GitHub workflows, and Workflow Delivery's
+  [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
+  [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
+  [CI design](../src/private/app/workflow-delivery/docs/design/ci.md) and
+  [.NET integration](../src/private/app/workflow-delivery/docs/integration/dotnet.md),
+  and the accepted records of AzureAuth CredProvider and
+  vscode-copilot-telegram-hook. The stall analysis in #1501 is an
+  unreviewed input.
+- **Diagnosis:**
+    - The .NET group plans every check on `windows-latest`, and
+      `Build & Test (.NET 10)` provisions only the .NET SDK. Tests that need
+      Python, Node.js or npm resolve them from the runner image, which can
+      differ from the locked versions. The timed-out harness ran the image's
+      Python 3.12.10 while `.python-version` selects 3.14.3.
+    - The Python group already plans a runtime dimension read from the
+      candidate's committed `.python-version`.
+- **Owner decisions:**
+    - A whole .NET test project declares the external tools it requires in
+      its project file. The plan carries that tool dimension, with versions
+      read from the candidate's committed configuration.
+    - The managed caller executes the plan in groups by tool set. Each group
+      provisions its tools through official setup actions reading committed
+      versions, without mise installation (`mise install`,
+      `mise exec --locked`, `jdx/mise-action` installing tools, or an
+      equivalent). Results join to cover the whole plan exactly.
+    - Each execution group is gated through `Validate`.
+    - Runner selection, filtered subsets of one project and selection
+      inputs outside the project graph belong to
+      [Issue #1512](https://github.com/hcoona/three/issues/1512), which this
+      entry does not authorize.
+- **Advancement and outcome:** amend the Workflow Delivery design and .NET
+  integration records, implement the tool dimension in planning, execution
+  and result collection, and declare the required tools in the AzureAuth
+  CredProvider and vscode-copilot-telegram-hook test projects whose tests
+  launch Python, Node.js or npm.
+- **Ordering and gates:** merge this entry before any of the work. Accept the
+  design record changes before code relies on them. Start execution grouping
+  only after the `main` ruleset no longer names `Build & Test (.NET 10)`
+  under advancement 2 of the `Validate` entry. Each pull request
+  follows the Workflow Delivery engineering and OCR review gates,
+  record-system review for record changes, and research-evidence review for
+  evidence claims such as the #1501 cause analysis, with independent
+  classification of material findings. New feasibility or product tradeoffs
+  return to the owner.
+- **Acceptance:**
+    - The .NET execution group without declared tools launches no Python,
+      Node.js or npm.
+    - Each declaring test project runs against its locked tool versions.
+    - #1501 records whether the timeout recurs once the doctor test runs
+      against the locked Python. Toolcache prewarming is considered only if
+      it does, and only by a further owner decision.
+    - Delete this entry when accepted.
+- **Effects:** permit source and repository/GitHub inspection, Workflow
+  Delivery source, documentation, test, test-project and CI workflow changes,
+  isolated local builds and credential-free tests, independent delegated
+  review, ordinary Issue/PR/check operations and their normal CI, and
+  ordinary reruns of failed CI jobs.
+- **Exclusions:**
+    - No runner dimension, filtered subsets or extra selection inputs
+      (#1512).
+    - No AzureAuth CredProvider or vscode-copilot-telegram-hook product
+      behavior change, and no runtime or dependency version change.
+    - No change to existing mise tool installation in workflows (#1505).
+    - No toolcache prewarming.
+    - No ruleset change beyond the `Validate` entry.
+    - No release, proving or campaign dispatch, publication, credential,
+      Environment, account, publisher or other access change.
+
+### Derive the Node.js CI matrix from declared engines
+
+- **Work carrier:** [Issue #1508](https://github.com/hcoona/three/issues/1508)
+  and its linked pull requests. The repository owner chose committed
+  release-schedule data over an online query.
+- **Accepted inputs:** the [engineering principles](engineering/engineering-principles.md),
+  the root `package.json` and the `package.json` files of packages the Node
+  group selects, root `mise.toml`,
+  `renovate.json`, the GitHub workflows, and Workflow Delivery's
+  [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
+  [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
+  [CI design](../src/private/app/workflow-delivery/docs/design/ci.md) and
+  [Node integration](../src/private/app/workflow-delivery/docs/integration/node.md)
+  records.
+- **Diagnosis:**
+    - The `node-tests` matrix in `ci.yml` is the literal
+      `[22.x, 24.x, 26.x]`, unconnected to any declared `engines.node`
+      range, so it drifts silently when either changes.
+    - The declared ranges differ. The root, `hexo-renderer-asciidoc` and
+      `steam-account-history-to-csv` declare `>=22`; the
+      `im-acp-gateway/poc/*` packages declare `>=22.6.0`; the
+      `hcoona-release-smoke-npm` test fixture declares `>=24.0.0`.
+- **Owner decisions:**
+    - The matrix is every LTS major from the lowest version satisfying the
+      declared `engines.node` up to the newest release, plus the newest
+      Node.js major.
+    - The release schedule comes from data committed to the repository and
+      updated through reviewable pull requests, preferably by Renovate.
+      Planning never queries the network, so one commit always plans the
+      same matrix.
+    - The Workflow Delivery Node group plans the matrix; the workflow does
+      not hard-code it. Each matrix job is gated through `Validate`.
+- **Advancement and outcome:** amend the Node integration and CI design
+  records, commit the schedule data and its update mechanism, implement the
+  planning, and replace the literal matrix.
+- **Ordering and gates:** merge this entry before any of the work. Replace
+  the matrix only after the `main` ruleset no longer names Node.js matrix
+  jobs under the `Validate` entry. Each pull request follows the Workflow
+  Delivery engineering and OCR review gates and record-system review for
+  record changes, with independent classification of material findings. A
+  new scheduled workflow with write access, differing `engines` ranges whose
+  combination is a product tradeoff, or another new feasibility or product
+  tradeoff returns to the owner.
+- **Acceptance:**
+    - No Node.js version list remains hard-coded in `ci.yml`.
+    - Changing `engines.node` or the committed schedule data changes the
+      planned matrix without a workflow edit.
+    - A schedule update arrives as an ordinary reviewable pull request.
+    - Delete this entry when accepted.
+- **Effects:** permit source and repository/GitHub inspection, Workflow
+  Delivery source, documentation, test, Renovate configuration, committed
+  schedule data and CI workflow changes, credential-free local tests,
+  independent delegated review, ordinary Issue/PR/check operations and their
+  normal CI.
+- **Exclusions:**
+    - No change to declared `engines` ranges or the locked Node.js version.
+    - No change to existing mise tool installation in workflows (#1505).
+    - No ruleset change beyond the `Validate` entry.
     - No release, proving or campaign dispatch, publication, credential,
       Environment, account, publisher or other access change.
