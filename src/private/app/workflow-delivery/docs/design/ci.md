@@ -65,15 +65,17 @@ fails when one is not. The participant mapping uses YAML job IDs, not displayed
 check names. The ruleset requires only Validate. Displayed job names come
 from the linked workflow's `name` fields and matrix expansion and may change
 without a ruleset edit. Validate consumes the aggregate `node-tests` result,
-so every configured compatibility variant gates merge. Every other job,
-including `ruby-group` and `node-group`, gates merge through Validate,
-directly or transitively.
+so every planned compatibility variant gates merge. The `node-tests` matrix
+comes from the Node group's
+[planned runtime matrix](../integration/node.md#planned-runtime-matrix), so its
+displayed names vary with the plan. Every other job, including `ruby-group`
+and `node-group`, gates merge through Validate, directly or transitively.
 
 The diagram uses the aliases below. `Artifacts` is the Actions artifact store,
 not a job. The parallel branches show permitted independence after `scope`,
 not a guarantee of simultaneous scheduling. Node tests still wait for Node's
-retained-selection outputs; Validate joins only its declared prerequisites.
-The .NET rows show the
+retained-selection and planned-matrix outputs; Validate joins only its declared
+prerequisites. The .NET rows show the
 [tool-grouped execution](../integration/dotnet.md#external-tool-dimension) that
 starts after the ruleset no longer names `Build & Test (.NET 10)`; until then,
 `dotnet-tests` is one job and no `dotnet-results` job exists.
@@ -130,7 +132,7 @@ sequenceDiagram
     and Node
         Store->>Node: ci-scope,<br/>ci-dotnet-plan
         Node->>Store: node-group-results
-        Node-->>NodeTests: Retained-selection<br/>outputs
+        Node-->>NodeTests: Retained-selection and<br/>planned-matrix outputs
         Store->>NodeTests: ci-dotnet-plan
         NodeTests->>Store: retained-node-*
         NodeTests-->>Validate: matrix job result
