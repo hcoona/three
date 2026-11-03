@@ -62,14 +62,12 @@ declared `needs` also include the omitted `mise-lock`, `conformance`,
 the workflow is a direct or transitive Validate prerequisite, and
 [`test_general_ci_workflow.py`](../../../../../../tests/eng/test_general_ci_workflow.py)
 fails when one is not. The participant mapping uses YAML job IDs, not displayed
-check names. The ruleset requires Validate and, until it is narrowed to
-Validate alone, the existing separately named .NET, Python and Node check
-contexts. Their displayed names come from the linked workflow's `name` fields
-and matrix expansion. Validate consumes the aggregate `node-tests` result,
-so every configured compatibility variant gates merge even when it is not
-separately named in the ruleset. `ruby-group` and
-`node-group` are not directly required; they gate merge through Validate and
-`node-tests` respectively.
+check names. The ruleset requires only Validate. Displayed job names come
+from the linked workflow's `name` fields and matrix expansion and may change
+without a ruleset edit. Validate consumes the aggregate `node-tests` result,
+so every configured compatibility variant gates merge. Every other job,
+including `ruby-group` and `node-group`, gates merge through Validate,
+directly or transitively.
 
 The diagram uses the aliases below. `Artifacts` is the Actions artifact store,
 not a job. The parallel branches show permitted independence after `scope`,
