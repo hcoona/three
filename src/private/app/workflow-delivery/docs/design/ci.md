@@ -58,9 +58,11 @@ transfer by same-run immutable artifact ID. It omits steps inside each job and
 the retained jobs that do not exchange Workflow Delivery artifacts. Validate's
 declared `needs` also include the omitted `conformance` and `scholarly-tests`
 jobs. The participant mapping uses YAML job IDs, not displayed check names. The ruleset
-requires Validate and the check contexts emitted by `dotnet-tests`,
-`python-tests` and each `node-tests` matrix job. Their displayed names come from
-the linked workflow's `name` fields and matrix expansion. `ruby-group` and
+requires Validate and the existing separately named .NET, Python and Node check
+contexts. Their displayed names come from the linked workflow's `name` fields
+and matrix expansion. Validate also consumes the aggregate `node-tests` result,
+so every configured compatibility variant gates merge even when it is not
+separately named in the ruleset. `ruby-group` and
 `node-group` are not directly required; they gate merge through Validate and
 `node-tests` respectively.
 
@@ -118,6 +120,7 @@ sequenceDiagram
         Node-->>NodeTests: Retained-selection<br/>outputs
         Store->>NodeTests: ci-dotnet-plan
         NodeTests->>Store: retained-node-*
+        NodeTests-->>Validate: matrix job result
     and Python
         Store->>Python: ci-scope,<br/>ci-dotnet-plan
         Python->>Store: python-group-results

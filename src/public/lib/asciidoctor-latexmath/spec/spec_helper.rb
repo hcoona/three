@@ -2,7 +2,6 @@
 
 require "bundler/setup"
 require "rspec"
-require "aruba/rspec"
 require "fileutils"
 require "tmpdir"
 require "pathname"
@@ -43,18 +42,4 @@ RSpec.configure do |config|
   config.include SpecSupport::ToolStubHelpers
 
   config.shared_context_metadata_behavior = :apply_to_host_groups
-
-  Aruba.configure do |aruba|
-    aruba.working_directory = "tmp/aruba"
-    aruba.exit_timeout = ENV.fetch("ARUBA_TIMEOUT", 10).to_i
-  end
-
-  config.include Aruba::Api, type: :aruba
-  config.before(:each, type: :aruba) do
-    setup_aruba
-  end
-
-  config.after(:each, type: :aruba) do
-    FileUtils.rm_rf(aruba.working_directory)
-  end
 end

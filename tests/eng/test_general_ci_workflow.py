@@ -394,6 +394,7 @@ def test_required_general_ci_checks_remain_eligible(
                     "github-release-native-preparation",
                     "native-preparation-tests",
                     "ruby-group",
+                    "node-tests",
                 ]
                 if key == "validation"
                 else ["scope", "node-group"]
@@ -1157,6 +1158,7 @@ def test_required_validate_rejects_missing_or_failed_consumers(
         "github-release-native-preparation",
         "native-preparation-tests",
         "ruby-group",
+        "node-tests",
     ]
     assert job["if"] == "always()"
     step = job["steps"][0]
@@ -1169,6 +1171,7 @@ def test_required_validate_rejects_missing_or_failed_consumers(
         "needs.github-release-native-preparation.result": "success",
         "needs.native-preparation-tests.result": "success",
         "needs.ruby-group.result": "success",
+        "needs.node-tests.result": "success",
     }
     scenarios = [successful]
     for dependency in (
@@ -1178,6 +1181,7 @@ def test_required_validate_rejects_missing_or_failed_consumers(
         "github-release-native-preparation",
         "native-preparation-tests",
         "ruby-group",
+        "node-tests",
     ):
         for result in ("failure", "cancelled", "skipped", ""):
             scenarios.append(

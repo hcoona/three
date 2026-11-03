@@ -307,13 +307,6 @@
       "automerge": true
     },
     {
-      "description": "Keep the exact smoke backend pin and workspace tooling requirement compatible.",
-      "matchManagers": ["pep621"],
-      "matchPackageNames": ["hatchling"],
-      "groupName": "Python Build Backend",
-      "automerge": true
-    },
-    {
       "description": "Group Azure Python SDK updates.",
       "matchManagers": ["pep621"],
       "matchFileNames": [
@@ -386,13 +379,13 @@
     {
       "description": "Group Ruby development and test tooling updates.",
       "matchManagers": ["bundler"],
-      "matchPackageNames": ["rake", "rspec", "aruba", "standard"],
+      "matchPackageNames": ["rake", "rspec", "standard"],
       "rangeStrategy": "replace"
     },
     {
       "description": "Group Ruby development and test tooling updates.",
       "matchManagers": ["bundler"],
-      "matchPackageNames": ["rake", "rspec", "aruba", "standard"],
+      "matchPackageNames": ["rake", "rspec", "standard"],
       "groupName": "Ruby Development Dependencies",
       "automerge": true
     },
@@ -613,7 +606,7 @@
       "automerge": true
     },
     {
-      "description": "Review Node major updates manually.",
+      "description": "Review Node major updates manually and add the packaging major to the CI compatibility matrix while retaining supported engines.",
       "matchManagers": ["mise"],
       "matchDepNames": ["node"],
       "matchUpdateTypes": ["major"],
