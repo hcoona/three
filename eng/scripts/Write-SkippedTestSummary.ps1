@@ -32,9 +32,18 @@ $trxFiles = @(
     }
 )
 
+# A test host killed mid-run can leave a truncated TRX; name it and keep reporting the rest.
+$unreadable = [System.Collections.Generic.List[string]]::new()
 $skipped = @(
     foreach ($file in $trxFiles) {
-        [xml]$trx = Get-Content -LiteralPath $file.FullName -Raw
+        try {
+            [xml]$trx = Get-Content -LiteralPath $file.FullName -Raw
+        }
+        catch {
+            Write-Warning "Unreadable TRX $($file.FullName): $($_.Exception.Message)"
+            $unreadable.Add($file.FullName)
+            continue
+        }
         foreach ($result in $trx.SelectNodes("//*[local-name()='UnitTestResult']")) {
             $outcome = $result.GetAttribute('outcome')
             if ($outcome -notin $skippedOutcomes) {
@@ -82,6 +91,14 @@ else {
             $_.Replace('|', '\|')
         }
         $lines.Add("| $($cells -join ' | ') |")
+    }
+}
+
+if ($unreadable.Count -gt 0) {
+    $lines.Add('')
+    $lines.Add("$($unreadable.Count) TRX file(s) could not be read:")
+    foreach ($file in $unreadable) {
+        $lines.Add("- ``$file``")
     }
 }
 
