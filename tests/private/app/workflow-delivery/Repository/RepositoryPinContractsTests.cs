@@ -23,8 +23,8 @@ public sealed class RepositoryPinContractsTests
             manifest["tools"]!["nbgv"]!["version"]!.GetValue<string>());
     }
 
-    // Runs the application's runtime rules over the committed ci.yml, mise.toml and mise.lock:
-    // the locked Node major must have a node-tests matrix entry to carry packaging.
+    // Runs the application's runtime rules over the committed ci.yml, release schedule,
+    // engines manifests, mise.toml and mise.lock: the planned matrix must carry packaging.
     [TestMethod]
     public void LockedNodeRuntimeHasItsPackagingMatrixEntry()
     {
@@ -32,14 +32,38 @@ public sealed class RepositoryPinContractsTests
         string node = RepositoryToolSelection.Locked("node");
         NodeRuntimeInputs inputs = NodeRuntimeReader.Read(new(Candidate, []), root,
             File.ReadAllText(Path.Combine(root, NodeRuntimeReader.Workflow)),
+            File.ReadAllText(Path.Combine(root, NodeRuntimeReader.Schedule)),
             RepositoryToolSelection.MiseToml, RepositoryToolSelection.MiseLock,
-            MiseAnswer(root, "node", node), MiseAnswer(root, "pnpm",
+            NodeManifests(root), MiseAnswer(root, "node", node), MiseAnswer(root, "pnpm",
                 RepositoryToolSelection.Locked("pnpm")));
 
         NodeRuntimeVariant packaging = inputs.Variants.Single(variant =>
             variant.Key == inputs.PackagingVariant);
         Assert.AreEqual(node, packaging.ExactVersion);
         Assert.AreEqual(System.Version.Parse(node).Major + ".x", packaging.Selector);
+        Assert.AreEqual(System.Version.Parse(inputs.NewestRelease).Major + ".x",
+            inputs.Variants[^1].Selector);
+        Assert.AreEqual(inputs.LowerBound + ".x", inputs.Variants[0].Selector);
+    }
+
+    // Committed engines manifests of the root and every pnpm-workspace.yaml importer.
+    internal static NodeEnginesManifest[] NodeManifests(string root)
+    {
+        var importers = new List<string>();
+        foreach (string line in File.ReadLines(Path.Combine(root, "pnpm-workspace.yaml"))
+            .SkipWhile(line => line != "packages:").Skip(1).TakeWhile(line =>
+                line.StartsWith(' ')))
+        {
+            string pattern = line.Trim();
+            if (!pattern.StartsWith("- ", StringComparison.Ordinal)) continue;
+            pattern = pattern[2..];
+            importers.AddRange(!pattern.EndsWith("/*", StringComparison.Ordinal) ? [pattern]
+                : Directory.GetDirectories(Path.Combine(root, pattern[..^2]))
+                    .Where(path => File.Exists(Path.Combine(path, "package.json")))
+                    .Select(path => pattern[..^1] + Path.GetFileName(path)));
+        }
+        return NodeRuntimeReader.ManifestPaths(importers).Select(path => new NodeEnginesManifest(
+            path, File.ReadAllText(Path.Combine(root, path)))).ToArray();
     }
 
     // The shape of `mise ls --json --current --locked <tool>` for one committed selection.

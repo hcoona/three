@@ -368,7 +368,7 @@ drop a line: for example, Node.js 25 was released before 24 entered LTS. An LTS
 major stays in the matrix after its end of life while the declared engines still
 admit it. Narrowing then requires an engines change. With today's data
 (`L = 22`, `N = 26`) the matrix is `22.x`, `24.x`, `26.x`, which is identical
-to the current literal matrix.
+to the former literal workflow matrix.
 
 **Engines inputs.** Inputs are the root `package.json` and every importer in the
 candidate's native PNPM workspace facts. The roster is complete and independent
@@ -383,9 +383,10 @@ Current inputs declare `>=22` (root, Hexo renderer, Steam exporter),
 adopted npm fixture). The fixture is a selected member: it is the group's
 adopted package, and it currently runs on every matrix runtime.
 
-**Combining differing ranges (pending an owner decision).** The Wave entry
-returns this product tradeoff to the owner. Implementation must not start until
-the owner chooses:
+**Combining differing ranges.** The Wave entry returns this product tradeoff
+to the owner. The implementation uses A, the recommendation below, and records
+the disposition in Issue #1508; choosing another option is a reviewed reader
+change. The options were:
 
 - **A. Lowest minimum (union).** `L` is the smallest input major (22 today).
   Every member runs on every planned major. This keeps today's coverage,
@@ -425,10 +426,8 @@ become a skip, and Validate observes the failure.
 
 Job names keep the form `Test & Build (Node.js <selector>)`. These names change
 with the plan, so no ruleset entry may name them. Every matrix job gates merge
-only through Validate (Issue #1511). The literal matrix is replaced only after
-the ruleset no longer names Node.js matrix contexts. Until then, planning may
-ship while the literal remains; the reader then requires the literal to equal
-the planned selectors and fails on any difference.
+only through Validate (Issue #1511), and the ruleset names no Node.js matrix
+context.
 
 Validate this section with algorithm cases: current data; a new Current major;
 odd and even majors before 27 and the all-LTS schedule from 27; an end-of-life

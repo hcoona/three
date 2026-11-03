@@ -94,7 +94,8 @@ public sealed class CiCallerNodeTests
                     [CheckOrigin.Preset]))).ToArray();
         return new(new(Candidate, Candidate, NodeFactsAssembler.Scope, checks), [], "src/node",
             new(Candidate, [new("node22", "22.x", "22.1.0"), new("node24", "24.x", null)],
-                "10.0.0", ["mise.toml", ".github/workflows/ci.yml"], "node22"));
+                "10.0.0", ["mise.toml", "eng/node-release-schedule.json"], "node22",
+                new string('d', 40), "24.1.0", 22));
     }
 
     private static NodeRunResult Result(NodeGroupReadback group, string runtime, CheckStatus

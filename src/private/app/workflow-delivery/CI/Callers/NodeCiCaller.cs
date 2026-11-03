@@ -51,6 +51,9 @@ internal static class NodeCiCaller
             TransferJson.Default.NodeGroupReadback);
         CiCallerTransfer.Write(Path.Combine(directory, "parent-plan.json"), group.Adopted,
             TransferJson.Default.CiPlan);
+        // The complete runtime plan is the retained matrix even when no work applies.
+        CiCallerTransfer.OutputArray("node_versions",
+            group.Runtime.Variants.Select(variant => variant.Selector).ToArray());
         CiCallerTransfer.Output("retained", (group.Retained.Length !=
             0).ToString().ToLowerInvariant());
         CiCallerTransfer.OutputArray("retained_directories",

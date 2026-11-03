@@ -47,7 +47,8 @@ internal static class NodeGroupReader
         ControlInputFacts candidateControl = await ControlAsync(after,
             request.CandidateControlFiles, true, token)
             ?? throw new InvalidDataException("Missing candidate control build.");
-        NodeRuntimeInputs runtime = await new NodeRuntimeReader(after).ReadAsync(token);
+        NodeRuntimeInputs runtime = await new NodeRuntimeReader(after).ReadAsync(
+            candidate.Graph.Projects.Select(project => project.Directory), token);
         basis = WithControlInputs(basis, basisControl, false);
         candidate = WithControlInputs(candidate, candidateControl, true);
         PnpmProject fixture = candidate.Graph.Projects.SingleOrDefault(project =>
@@ -78,7 +79,10 @@ internal static class NodeGroupReader
             Add(input.Path, input.Consumers);
         foreach (ControlSourceInput input in control?.Sources ?? [])
             Add(input.Path, consumers);
-        foreach (string path in CallerSources)
+        // Release-schedule data and every engines manifest plan one matrix for all members.
+        string[] runtime = [NodeRuntimeReader.Schedule, .. NodeRuntimeReader.ManifestPaths(
+            inputs.Graph.Projects.Select(project => project.Directory))];
+        foreach (string path in CallerSources.Concat(runtime))
         {
             GitEntry? entry = inputs.Revision.Entries.SingleOrDefault(entry => entry.Path == path);
             if (entry is not null && (entry.ObjectType != "blob" ||

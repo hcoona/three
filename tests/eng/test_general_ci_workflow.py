@@ -577,6 +577,23 @@ def _retained_command(tmp_path: Path) -> list[str]:
     ]
 
 
+def test_node_matrix_consumes_the_complete_planned_runtime_selectors(
+    workflow: dict[str, Any],
+) -> None:
+    """Workflow Delivery plans the matrix; the workflow repeats no selector."""
+    group = workflow["jobs"]["node-group"]
+    job = workflow["jobs"]["node-tests"]
+    assert group["outputs"]["node_versions"] == (
+        "${{ steps.execute.outputs.node_versions }}"
+    )
+    planned = "fromJSON(needs.node-group.outputs.node_versions)"
+    assert job["strategy"]["matrix"] == {
+        "node-version": f"${{{{ {planned} }}}}"
+    }
+    assert "node-group" in job["needs"]
+    assert job["name"] == "Test & Build (Node.js ${{ matrix.node-version }})"
+
+
 def test_node_checks_execute_selected_retained_members(
     workflow: dict[str, Any],
     tmp_path: Path,
@@ -584,7 +601,7 @@ def test_node_checks_execute_selected_retained_members(
     """Both retained contexts install before native filtered execution."""
     job = workflow["jobs"]["node-tests"]
     setup = _action(job, "actions/setup-node")
-    for version in job["strategy"]["matrix"]["node-version"]:
+    for version in ("22.x", "24.x", "26.x"):
         assert (
             resolve(
                 setup["with"]["node-version"], {"matrix.node-version": version}

@@ -684,6 +684,7 @@ jobs:
       retained: ${{ steps.execute.outputs.retained }}
       retained_directories: ${{ steps.execute.outputs.retained_directories }}
       adopted_directory: ${{ steps.execute.outputs.adopted_directory }}
+      node_versions: ${{ steps.execute.outputs.node_versions }}
     steps:
       - name: Require the actual scope artifact
         env:
@@ -785,7 +786,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [22.x, 24.x, 26.x]
+        node-version: ${{ fromJSON(needs.node-group.outputs.node_versions) }}
 
     env:
       NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages

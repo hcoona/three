@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 using YamlDotNet.Core;
@@ -8,7 +10,8 @@ namespace WorkflowDelivery.Repository;
 
 internal sealed record NodeRuntimeVariant(string Key, string Selector, string? ExactVersion);
 internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] Variants,
-    string PnpmVersion, string[] Sources, string PackagingVariant)
+    string PnpmVersion, string[] Sources, string PackagingVariant, string ScheduleCommit,
+    string NewestRelease, int LowerBound)
 {
     internal CiPlan Expand(CiPlan plan)
     {
@@ -57,10 +60,24 @@ internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] V
     }
 }
 
-// The existing workflow and native mise metadata own the runtime declarations.
+internal sealed record NodeEnginesManifest(string Path, string? Text);
+
+// Committed release-schedule data, declared engines and native mise metadata own the
+// runtime plan; the workflow only consumes the planned selectors.
 internal sealed class NodeRuntimeReader
 {
     internal const string Workflow = ".github/workflows/ci.yml";
+    internal const string Schedule = "eng/node-release-schedule.json";
+    internal const string MatrixConsumer =
+        "${{ fromJSON(needs.node-group.outputs.node_versions) }}";
+    private static readonly JsonDocumentOptions Strict = new() { AllowDuplicateProperties = false };
+    private static readonly Regex ExactRelease = new(
+        "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$", RegexOptions.CultureInvariant);
+    private static readonly Regex Commit = new("^[0-9a-f]{40}$", RegexOptions.CultureInvariant);
+    private static readonly Regex Release = new("^v(0\\.[0-9]+|[1-9][0-9]*)$",
+        RegexOptions.CultureInvariant);
+    private static readonly Regex Engines = new(
+        "^>=(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*)){0,2}$", RegexOptions.CultureInvariant);
     private readonly GitMaterialization checkout;
     private readonly Func<string[], CancellationToken, Task<string>> query;
 
@@ -76,34 +93,61 @@ internal sealed class NodeRuntimeReader
         this.query = query;
     }
 
-    internal async Task<NodeRuntimeInputs> ReadAsync(CancellationToken token)
+    // Importers are the candidate's complete native PNPM workspace roster.
+    internal async Task<NodeRuntimeInputs> ReadAsync(IEnumerable<string> importers,
+        CancellationToken token)
     {
         string? workflow = await checkout.ReadOptionalTextAsync(Workflow, token);
+        string? schedule = await checkout.ReadOptionalTextAsync(Schedule, token);
         string? mise = await checkout.ReadOptionalTextAsync("mise.toml", token);
         string? miseLock = await checkout.ReadOptionalTextAsync("mise.lock", token);
+        var manifests = new List<NodeEnginesManifest>();
+        foreach (string path in ManifestPaths(importers))
+            manifests.Add(new(path, await checkout.ReadOptionalTextAsync(path, token)));
         // Committed rules are checked before each native query, as the pure core repeats.
-        RequireDeclarations(workflow, mise, miseLock);
-        _ = Matrix(workflow!);
+        _ = Plan(workflow, schedule, mise, miseLock, manifests);
         string node = await query(["ls", "--json", "--current", "--locked", "node"], token);
         token.ThrowIfCancellationRequested();
         _ = Tool(checkout.Root, node, "node", false);
         string pnpm = await query(["ls", "--json", "--current", "--locked", "pnpm"], token);
         token.ThrowIfCancellationRequested();
-        return Read(checkout.Revision, checkout.Root, workflow, mise, miseLock, node, pnpm);
+        return Read(checkout.Revision, checkout.Root, workflow, schedule, mise, miseLock,
+            manifests, node, pnpm);
     }
+
+    internal static string[] ManifestPaths(IEnumerable<string> importers) => importers
+        .Append(".").Distinct(StringComparer.Ordinal).Select(directory =>
+        {
+            string path = directory == "." ? "package.json" : directory + "/package.json";
+            ImpactPlanner.ValidatePath(path);
+            return path;
+        }).Order(StringComparer.Ordinal).ToArray();
 
     // Pure runtime rules over committed declarations and the native mise answers.
     internal static NodeRuntimeInputs Read(GitRevision revision, string root, string? workflow,
-        string? mise, string? miseLock, string nodeJson, string pnpmJson)
+        string? schedule, string? mise, string? miseLock,
+        IReadOnlyList<NodeEnginesManifest> manifests, string nodeJson, string pnpmJson)
     {
-        RequireDeclarations(workflow, mise, miseLock);
-        object? matrix = Matrix(workflow!);
+        NodeRuntimePlan plan = Plan(workflow, schedule, mise, miseLock, manifests);
         string node = Tool(root, nodeJson, "node", false);
         string pnpm = Tool(root, pnpmJson, "pnpm", true);
-        return Read(revision, (List<object?>)Field(matrix, "node-version")!, node, pnpm);
+        int packaging = System.Version.Parse(node).Major;
+        if (!plan.Majors.Contains(packaging))
+            throw new InvalidDataException(
+                "The configured packaging runtime is absent from the matrix.");
+        NodeRuntimeVariant[] variants = plan.Majors.Select(major => new NodeRuntimeVariant(
+            "node" + Major(major), Major(major) + ".x", major == packaging ? node : null))
+            .ToArray();
+        return new(revision.Commit, variants, pnpm,
+            [Schedule, "mise.toml", "mise.lock", .. manifests.Select(m => m.Path)],
+            "node" + Major(packaging), plan.ScheduleCommit, plan.NewestRelease, plan.LowerBound);
     }
 
-    private static void RequireDeclarations(string? workflow, string? mise, string? miseLock)
+    private sealed record NodeRuntimePlan(int[] Majors, string ScheduleCommit,
+        string NewestRelease, int LowerBound);
+
+    private static NodeRuntimePlan Plan(string? workflow, string? schedule, string? mise,
+        string? miseLock, IReadOnlyList<NodeEnginesManifest> manifests)
     {
         if (mise is null)
             throw new InvalidDataException("Missing committed runtime authority: mise.toml");
@@ -111,9 +155,31 @@ internal sealed class NodeRuntimeReader
             throw new InvalidDataException("Missing committed runtime authority: mise.lock");
         if (workflow is null)
             throw new InvalidDataException("Missing committed Node runtime workflow.");
+        RequireMatrixConsumer(workflow);
+        if (schedule is null)
+            throw new InvalidDataException("Missing committed Node release schedule: " +
+                Schedule);
+        (string commit, string newest, Dictionary<int, bool> lts) = ReadSchedule(schedule);
+        if (manifests.Count == 0 || !manifests.Any(m => m.Path == "package.json"))
+            throw new InvalidDataException("Missing root Node engines manifest.");
+        // Lowest minimum (union): every member runs on every planned major.
+        int lower = manifests.Min(LowerMajor);
+        int newestMajor = int.Parse(newest.Split('.')[0], CultureInfo.InvariantCulture);
+        if (lower > newestMajor)
+            throw new InvalidDataException(
+                "The declared Node lower bound is above the newest release.");
+        var majors = new List<int>();
+        for (int major = lower; major <= newestMajor; major++)
+        {
+            if (!lts.TryGetValue(major, out bool designated))
+                throw new InvalidDataException("The Node release schedule has no row: v" +
+                    Major(major));
+            if (designated || major == newestMajor) majors.Add(major);
+        }
+        return new([.. majors], commit, newest, lower);
     }
 
-    private static object? Matrix(string workflow)
+    private static void RequireMatrixConsumer(string workflow)
     {
         object? yaml;
         try
@@ -128,29 +194,84 @@ internal sealed class NodeRuntimeReader
         object? matrix = Field(Field(Field(Field(yaml, "jobs"), "node-tests"),
             "strategy"), "matrix");
         if (matrix is not IDictionary<object, object?> { Count: 1 } ||
-            Field(matrix, "node-version") is not List<object?> values ||
-            values.Count == 0 || values.OfType<string>().Distinct().Count() != values.Count ||
-            values.OfType<string>().Count() != values.Count ||
-            values.OfType<string>().Any(value => !System.Text.RegularExpressions.Regex.IsMatch(
-                value, "^[1-9][0-9]*\\.x$",
-                    System.Text.RegularExpressions.RegexOptions.CultureInvariant)))
+            Field(matrix, "node-version") is not string consumer ||
+            consumer != MatrixConsumer)
             throw new InvalidDataException("Unsupported complete Node runtime matrix.");
-        return matrix;
     }
 
-    private static NodeRuntimeInputs Read(GitRevision revision, List<object?> values,
-        string node, string pnpm)
+    private static (string Commit, string Newest, Dictionary<int, bool> Lts) ReadSchedule(
+        string text)
     {
-        string packagingSelector = System.Version.Parse(node).Major + ".x";
-        if (!values.Contains(packagingSelector))
-            throw new InvalidDataException(
-                "The configured packaging runtime is absent from the matrix.");
-        NodeRuntimeVariant[] variants = values.Cast<string>().Select(selector =>
-            new NodeRuntimeVariant("node" + selector[..^2], selector,
-                selector == packagingSelector ? node : null)).ToArray();
-        return new(revision.Commit, variants, pnpm,
-            [Workflow, "mise.toml", "mise.lock"], "node" + packagingSelector[..^2]);
+        const string invalid = "Invalid committed Node release schedule.";
+        try
+        {
+            using JsonDocument json = JsonDocument.Parse(text, Strict);
+            JsonElement data = json.RootElement;
+            if (!Members(data, "newestRelease", "schedule") ||
+                !Members(data.GetProperty("schedule"), "commit", "releases"))
+                throw new InvalidDataException(invalid);
+            JsonElement schedule = data.GetProperty("schedule");
+            string newest = data.GetProperty("newestRelease").ValueKind ==
+                JsonValueKind.String ? data.GetProperty("newestRelease").GetString()! : "";
+            string commit = schedule.GetProperty("commit").ValueKind == JsonValueKind.String
+                ? schedule.GetProperty("commit").GetString()! : "";
+            JsonElement releases = schedule.GetProperty("releases");
+            if (!ExactRelease.IsMatch(newest) || !Commit.IsMatch(commit) ||
+                releases.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException(invalid);
+            var lts = new Dictionary<int, bool>();
+            foreach (JsonProperty row in releases.EnumerateObject())
+            {
+                if (!Release.IsMatch(row.Name) || row.Value.ValueKind != JsonValueKind.Object)
+                    throw new InvalidDataException(invalid);
+                bool designated = row.Value.TryGetProperty("lts", out JsonElement value) &&
+                    value.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrEmpty(value.GetString());
+                // Pre-1.0 lines (v0.x) are valid schedule rows but no planned major.
+                if (!row.Name.StartsWith("v0.", StringComparison.Ordinal))
+                    lts.Add(int.Parse(row.Name[1..], CultureInfo.InvariantCulture), designated);
+            }
+            return (commit, newest, lts);
+        }
+        catch (Exception error) when (error is JsonException or FormatException or
+            OverflowException or ArgumentException)
+        {
+            throw new InvalidDataException(invalid, error);
+        }
     }
+
+    private static bool Members(JsonElement value, params string[] names) =>
+        value.ValueKind == JsonValueKind.Object &&
+        value.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal)
+            .SequenceEqual(names.Order(StringComparer.Ordinal), StringComparer.Ordinal);
+
+    private static int LowerMajor(NodeEnginesManifest manifest)
+    {
+        if (manifest.Text is null)
+            throw new InvalidDataException("Unreadable Node engines manifest: " + manifest.Path);
+        string? range;
+        try
+        {
+            using JsonDocument json = JsonDocument.Parse(manifest.Text, Strict);
+            range = json.RootElement.ValueKind == JsonValueKind.Object &&
+                json.RootElement.TryGetProperty("engines", out JsonElement engines) &&
+                engines.ValueKind == JsonValueKind.Object &&
+                engines.TryGetProperty("node", out JsonElement node) &&
+                node.ValueKind == JsonValueKind.String ? node.GetString() : null;
+        }
+        catch (JsonException error)
+        {
+            throw new InvalidDataException("Unreadable Node engines manifest: " +
+                manifest.Path, error);
+        }
+        Match match = Engines.Match(range ?? "");
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, NumberStyles.None,
+                CultureInfo.InvariantCulture, out int major))
+            throw new InvalidDataException("Unsupported Node engines range: " + manifest.Path);
+        return major;
+    }
+
+    private static string Major(int major) => major.ToString(CultureInfo.InvariantCulture);
 
     private static string Tool(string root, string answer, string tool, bool pinned)
     {
@@ -165,7 +286,7 @@ internal sealed class NodeRuntimeReader
         if (!System.Version.TryParse(version, out System.Version? parsed) || parsed.Build < 0 ||
             (pinned ? requested != version :
                 requested != version && requested != parsed.Major.ToString(
-                    System.Globalization.CultureInfo.InvariantCulture)) ||
+                    CultureInfo.InvariantCulture)) ||
             value.GetProperty("active").ValueKind != JsonValueKind.True ||
             Text(source, "type") != "mise.toml" ||
             Text(source, "path") != Path.Combine(root, "mise.toml"))

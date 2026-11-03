@@ -669,7 +669,8 @@ public sealed class CiScopeTests
             File.ReadAllText(Path.Combine(root, CiScope.HkConfiguration)),
             File.ReadAllText(Path.Combine(root, CiScope.RenovateConfiguration)));
         foreach (string path in new[] { "eng/scripts/Update-RenovateGlobalJsonArtifacts.ps1",
-            "eng/scripts/sync_python_version.py" })
+            "eng/scripts/sync_python_version.py", "eng/scripts/update_node_release_schedule.py",
+            "eng/node-release-schedule.json" })
             Assert.IsTrue(CiScope.ReferencesPath(tooling.Renovate!, path), path);
         Assert.IsFalse(CiScope.ReferencesPath(tooling.Hk!, "PklProject"));
         Assert.IsFalse(CiScope.ReferencesPath(tooling.Hk!, ".editorconfig"));
