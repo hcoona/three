@@ -226,7 +226,8 @@ internal static class DotNetCiCaller
     internal const string GroupResults = "group-results.json";
 
     // The downloaded group artifacts hold one <key>/group-results.json each. A missing group
-    // leaves missing results; any other entry or misplaced, repeated or extra result fails.
+    // leaves missing results and fails the join; any other entry or misplaced, repeated or
+    // extra result fails.
     internal static CiOutcome Join(string root, string transfer, string results,
         string directory, string basis, string candidate)
     {
@@ -273,7 +274,16 @@ internal static class DotNetCiCaller
                     ".NET group result does not cover exactly its planned checks: " + key);
         }
         CheckResult[] union = sets.Values.SelectMany(set => set.Results).ToArray();
-        return (union, ResultCollector.Collect(plan, union));
+        CiOutcome outcome = ResultCollector.Collect(plan, union);
+        // Every planned group, including one with no checks, must report its own result set.
+        string[] absent = DotNetTools.Groups(plan).Select(group => group.Key)
+            .Where(key => !sets.ContainsKey(key)).ToArray();
+        return absent.Length == 0 ? (union, outcome) : (union, outcome with
+        {
+            Satisfied = false,
+            Errors = [.. outcome.Errors, .. absent.Select(key =>
+                ".NET group reported no result set: " + key)],
+        });
     }
 }
 

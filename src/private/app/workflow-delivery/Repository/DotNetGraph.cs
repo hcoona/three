@@ -210,7 +210,8 @@ internal static class DotNetGraph
         {
             ProjectItemInstance[] items = project.GetItems(DotNetTools.Item).ToArray();
             if (items.Length == 0) return [];
-            if (items.Any(item => item.DirectMetadataCount != 0))
+            // Metadata includes item-definition metadata but not built-in item metadata.
+            if (items.Any(item => item.Metadata.Any()))
                 throw Unavailable(identity, DotNetTools.Item,
                     "Required tool declarations do not accept metadata.");
             if (TestCapability(project, identity) == "None")

@@ -799,6 +799,10 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         "Required external tool npm needs node.")]
     [DataRow("<ThreeRequiredTool Include=\"node\" Version=\"24\" />", "true",
         "Required tool declarations do not accept metadata.")]
+    [DataRow("</ItemGroup><ItemDefinitionGroup><ThreeRequiredTool><Version>24</Version>" +
+        "</ThreeRequiredTool></ItemDefinitionGroup><ItemGroup>" +
+        "<ThreeRequiredTool Include=\"node\" />", "true",
+        "Required tool declarations do not accept metadata.")]
     [DataRow("<ThreeRequiredTool Include=\"node\" />", "false",
         "Only test projects declare required tools.")]
     [Timeout(30000, CooperativeCancellation = true)]

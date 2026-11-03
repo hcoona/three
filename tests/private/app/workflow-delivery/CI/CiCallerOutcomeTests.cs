@@ -147,6 +147,14 @@ public sealed class CiCallerOutcomeTests(TestContext context)
                     ["none"] = Set("none", (0, CheckStatus.Passed)),
                     ["node"] = Set("node", (1, status)),
                 }).Outcome.Satisfied);
+        CiPlan toolOnly = new(Candidate, Candidate, DotNetCiCaller.Scope, [plan.Checks[1]]);
+        CiOutcome silent = DotNetCiCaller.Join(toolOnly,
+            new Dictionary<string, DotNetGroupResultSet>
+            { ["node"] = Set("node", (1, CheckStatus.Passed)) }).Outcome;
+        Assert.IsFalse(silent.Satisfied);
+        Assert.Contains(".NET group reported no result set: none", silent.Errors);
+        Assert.IsFalse(DotNetCiCaller.Join(new(Candidate, Candidate, DotNetCiCaller.Scope, []),
+            new Dictionary<string, DotNetGroupResultSet>()).Outcome.Satisfied);
     }
 
     [TestMethod]
