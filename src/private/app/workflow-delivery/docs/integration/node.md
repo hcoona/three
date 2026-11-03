@@ -408,8 +408,13 @@ declared range.
 **Plan and workflow.** The runtime readback keeps its variants and adds the
 schedule commit, `newestRelease` and the derived lower bound as provenance. Its
 sources become `eng/node-release-schedule.json`, `mise.toml`, `mise.lock` and
-the engines manifests, replacing the workflow matrix. The schedule file is a
-shared Node input for every member, like the other root inputs. `node-group`
+the engines manifests, replacing the workflow matrix. The schedule file and
+every manifest that contributes an `engines.node` range are shared Node inputs
+for every member, like the other root inputs: under the union rule one
+manifest can change the matrix for all members, so a change to any of them
+selects every member and qualifies it on the new plan. A scenario test changes
+one member's `engines.node` and asserts that all members are selected on the
+resulting matrix. `node-group`
 always emits the complete runtime plan, including when no retained work is
 applicable, as the single-line JSON output `node_versions`, the ordered
 selector array. `node-tests` consumes it as
