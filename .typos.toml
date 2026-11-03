@@ -80,4 +80,4 @@ extend-words = { certifi = "certifi" } # Preserve the native package name in rec
 
 [type.node-release-schedule]
 extend-glob = ["node-release-schedule.json"]
-extend-words = { Jod = "Jod" } # Upstream Node.js 22 release codename.
+extend-words = { Jod = "Jod" }               # Upstream Node.js 22 release codename.
