@@ -475,6 +475,18 @@ public sealed class CiScopeTests
         Assert.IsFalse(jobs.Mise || jobs.Scholarly || jobs.NuGetNativePreparation);
     }
 
+    // The .NET test jobs run the skipped-test summary; no Python test reads it, and a Python
+    // reason would fail the Python group's input projection.
+    [TestMethod]
+    public void SkippedTestSummaryIsNotAPythonGroupInput()
+    {
+        string path = CiScope.SkippedTestSummary;
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk));
+        string rows = string.Join(", ", row.Reasons.Select(item => item.Owner + ":" + item.Rule));
+        Assert.IsFalse(row.Reasons.Any(reason => reason.Owner == "python"), rows);
+    }
+
     [TestMethod]
     [DataRow(".github/x.sh")]
     [DataRow(".agents/x.sh")]

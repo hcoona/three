@@ -410,7 +410,8 @@ internal static partial class CiScope
             return ["mise", "azureauth", "ruby", "scholarly"];
         var jobs = new List<string>();
         if (Name(path) is "mise.toml" or "mise.lock") jobs.Add("mise");
-        if (AzureInput(path)) jobs.Add("azureauth");
+        // The AzureAuth artifact job runs the skipped-test summary; its Python tests do not.
+        if (AzureInput(path) || path == SkippedTestSummary) jobs.Add("azureauth");
         if (RubyInputs.Contains(path, StringComparer.Ordinal) ||
             gems.Any(root => Under(path, root))) jobs.Add("ruby");
         if (Under(path, Scholarly) ||
@@ -421,7 +422,7 @@ internal static partial class CiScope
 
     private static bool AzureInput(string path) =>
         DotNetInheritedInputs.Consumes(path, [Azure, "tests/private/app/azureauth-credprovider"]) ||
-        Under(path, "eng/scripts/azureauth-credprovider") || path == SkippedTestSummary ||
+        Under(path, "eng/scripts/azureauth-credprovider") ||
         Under(path, "src/public/lib/nbgv-python") ||
         PythonInputs.Contains(path, StringComparer.Ordinal);
 
