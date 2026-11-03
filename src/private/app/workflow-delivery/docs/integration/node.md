@@ -297,11 +297,11 @@ always plans the same matrix.
 
 ```json
 {
-  "newestRelease": "26.0.0",
-  "schedule": {
-    "commit": "<40-hex nodejs/Release commit>",
-    "releases": { "v24": { "start": "...", "lts": "...", "end": "..." } }
-  }
+    "newestRelease": "26.0.0",
+    "schedule": {
+        "commit": "<40-hex nodejs/Release commit>",
+        "releases": { "v24": { "start": "...", "lts": "...", "end": "..." } }
+    }
 }
 ```
 
