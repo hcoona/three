@@ -6,6 +6,8 @@ namespace Hcoona.VsCodeCopilotTelegramHook.Tests;
 
 public sealed class CopilotCliExtensionManagerTests
 {
+    private static readonly TimeSpan NodeDeadline = TimeSpan.FromSeconds(60);
+
     private static readonly JsonSerializerOptions HarnessJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -401,7 +403,19 @@ public sealed class CopilotCliExtensionManagerTests
         process.Start();
         Task<string> standardOutput = process.StandardOutput.ReadToEndAsync();
         Task<string> standardError = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
+        using CancellationTokenSource deadline = new(NodeDeadline);
+        try
+        {
+            await process.WaitForExitAsync(deadline.Token);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+        {
+            process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync();
+            Assert.Fail(
+                $"node {string.Join(' ', arguments)} exceeded its "
+                + $"{NodeDeadline.TotalSeconds}-second deadline.");
+        }
 
         return new ProcessResult(
             process.ExitCode,

@@ -22410,9 +22410,7 @@ public sealed class HookCommandServiceTests
         HttpClient httpClient = new(handler) { BaseAddress = new Uri("https://api.telegram.org/") };
 
         SessionLogFileContext context = logContext ?? new SessionLogFileContext();
-        IProcessRunner processRunner = new ProcessRunner(
-            CreateLogger<ProcessRunner>(loggerFactory)
-        );
+        IProcessRunner processRunner = new NoExternalToolsProcessRunner();
         TelegramCredentialProvider credentialProvider = new(
             processRunner,
             new SystemInteractiveConsole(),

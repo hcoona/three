@@ -1781,7 +1781,7 @@ public sealed class UserCommandServiceTests
         };
 
         IProcessRunner effectiveProcessRunner = processRunner
-            ?? new ProcessRunner(CreateLogger<ProcessRunner>(loggerFactory));
+            ?? new NoExternalToolsProcessRunner();
         IInteractiveConsole effectiveInteractiveConsole = interactiveConsole
             ?? new SystemInteractiveConsole();
         TelegramCredentialProvider credentialProvider = new(
