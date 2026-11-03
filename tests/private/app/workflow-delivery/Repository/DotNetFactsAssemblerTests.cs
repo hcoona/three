@@ -88,7 +88,8 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
         await repo.GitAsync("reset", "--hard", commit);
         GitMaterialization candidate = await GitMaterialization.BindAsync(repo.Directory,
             commit, context.CancellationToken);
-        string selection = """{"version":"24.1.0","active":true,"source":{"type":"mise.toml","path":""" +
+        string selection =
+            """{"version":"24.1.0","active":true,"source":{"type":"mise.toml","path":""" +
             System.Text.Json.JsonSerializer.Serialize(Path.Combine(repo.Directory, "mise.toml")) +
             "}}";
         var commands = new List<NativeCommand>();

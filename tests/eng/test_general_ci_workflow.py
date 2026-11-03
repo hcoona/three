@@ -243,7 +243,9 @@ def _required_context_step(key: str, step: dict[str, Any]) -> None:
         action, tool, version = DOTNET_TOOL_SETUP[step["name"]]
         assert step["if"] == f"matrix.group.tools.{tool}"
         assert step["uses"] == f"actions/{action}@v7"
-        assert step["with"] == {version: f"${{{{ matrix.group.tools.{tool} }}}}"}
+        assert step["with"] == {
+            version: f"${{{{ matrix.group.tools.{tool} }}}}"
+        }
         assert not step.get("continue-on-error", False)
     elif key == "azureauth-foundation-artifacts" and "&& (matrix." in step.get(
         "if", ""
@@ -1052,7 +1054,7 @@ def test_dotnet_check_receives_original_plan_and_complete_control(
 
 
 def test_dotnet_groups_follow_the_plan_and_provision_planned_tools(workflow):
-    """Each planned tool group is one job provisioned from committed versions."""
+    """Each planned tool group is one job using committed tool versions."""
     scope = workflow["jobs"]["scope"]
     job = workflow["jobs"]["dotnet-tests"]
     assert scope["outputs"]["dotnet_groups"] == (
@@ -1073,8 +1075,7 @@ def test_dotnet_groups_follow_the_plan_and_provision_planned_tools(workflow):
         step for step in job["steps"] if " execute " in step.get("run", "")
     )
     assert all(
-        job["steps"].index(step) < job["steps"].index(execute)
-        for step in setup
+        job["steps"].index(step) < job["steps"].index(execute) for step in setup
     )
     upload = _action(job, "actions/upload-artifact")
     assert upload["with"]["name"] == (

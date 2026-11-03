@@ -769,7 +769,9 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             """);
         fixture.Write("tools.proj", """
             <Project>
-              <PropertyGroup><IsTestingPlatformApplication>true</IsTestingPlatformApplication></PropertyGroup>
+              <PropertyGroup>
+                <IsTestingPlatformApplication>true</IsTestingPlatformApplication>
+              </PropertyGroup>
               <ItemGroup>
                 <ThreeRequiredTool Include="python" /><ThreeRequiredTool Include="npm" />
                 <ThreeRequiredTool Include="node" />
@@ -812,7 +814,9 @@ public sealed class DotNetGraphTaskTests(TestContext context)
         using var fixture = new GraphFixture();
         fixture.Write("dirs.proj", $"""
             <Project>
-              <PropertyGroup><IsTestingPlatformApplication>{test}</IsTestingPlatformApplication></PropertyGroup>
+              <PropertyGroup>
+                <IsTestingPlatformApplication>{test}</IsTestingPlatformApplication>
+              </PropertyGroup>
               <ItemGroup>{items}</ItemGroup>
             </Project>
             """);
