@@ -133,9 +133,13 @@ public sealed class NodeGroupReaderTests
         Assert.Contains(new SelectionReason(path, NodeScenario.Candidate, Retained),
             Assert.ContainsSingle(group.Retained).Reasons);
         foreach (NodeRuntimeVariant variant in runtime.Variants)
-            Assert.IsNotEmpty(adopted.Checks.Where(check => check.Work.Key.Variant ==
-                variant.Key && check.Reasons.Contains(
-                    new SelectionReason(path, NodeScenario.Candidate, Adopted))));
+        {
+            PlannedCheck[] checks = adopted.Checks.Where(check =>
+                check.Work.Key.Variant == variant.Key && check.Reasons.Contains(
+                    new SelectionReason(path, NodeScenario.Candidate, Adopted))).ToArray();
+            Assert.AreEqual(variant.Key is "node24" or "node26", checks.Length != 0,
+                variant.Key);
+        }
     }
 
     [TestMethod]

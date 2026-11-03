@@ -10,6 +10,8 @@ public sealed class CiCallerNodeTests
     private static readonly string Candidate = new('a', 40);
     private static readonly string[] Runtimes = ["node22", "node24"];
     private static readonly string[] Operations = ["node/project-build-v1", "node/project-test-v1"];
+    private static readonly string[] RetainedOnly = ["src/retained"];
+    private static readonly string[] LateAndRetained = ["src/late", "src/retained"];
 
     [TestMethod]
     public void JoinRequiresIndependentCompleteRuntimeResults()
@@ -84,6 +86,49 @@ public sealed class CiCallerNodeTests
         Assert.IsTrue(NodeCiCaller.Join(group, []).Outcome.Satisfied);
     }
 
+    [TestMethod]
+    public void RetainedMembersAreSelectedOnlyOnAdmittingRuntimeVariants()
+    {
+        NodeGroupReadback group = Group();
+        group = group with
+        {
+            Retained = [new("src/late", []), new("src/retained", [])],
+            Runtime = group.Runtime with
+            {
+                Variants = [new("node20", "20.x", null), new("node22", "22.x", null),
+                    new("node24", "24.x", null), new("node26", "26.x", null)],
+                Members = [new("src/late", 26), new("src/retained", 24)],
+            },
+        };
+
+        CollectionAssert.AreEqual(Array.Empty<string>(),
+            NodeCiCaller.RetainedMembers(group, "node20"));
+        CollectionAssert.AreEqual(Array.Empty<string>(),
+            NodeCiCaller.RetainedMembers(group, "node22"));
+        CollectionAssert.AreEqual(RetainedOnly,
+            NodeCiCaller.RetainedMembers(group, "node24"));
+        CollectionAssert.AreEqual(LateAndRetained,
+            NodeCiCaller.RetainedMembers(group, "node26"));
+    }
+
+    [TestMethod]
+    public void RetainedMemberWithNoAdmittedRuntimeFailsPlanning()
+    {
+        NodeGroupReadback original = Group();
+        NodeGroupReadback group = original with
+        {
+            Retained = [new("src/retained", [])],
+            Runtime = original.Runtime with { Members = [new("src/retained", 28)] },
+        };
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            NodeCiCaller.RetainedMembers(group, "node24"));
+
+        Assert.AreEqual(
+            "No planned Node runtime satisfies a retained member's engines range.",
+            error.Message);
+    }
+
     private static NodeGroupReadback Group()
     {
         PlannedCheck[] checks = Runtimes.SelectMany(runtime =>
@@ -95,7 +140,7 @@ public sealed class CiCallerNodeTests
         return new(new(Candidate, Candidate, NodeFactsAssembler.Scope, checks), [], "src/node",
             new(Candidate, [new("node22", "22.x", "22.1.0"), new("node24", "24.x", null)],
                 "10.0.0", ["mise.toml", "eng/node-release-schedule.json"], "node22",
-                new string('d', 40), "24.1.0", 22));
+                new string('d', 40), "24.1.0", 22, []));
     }
 
     private static NodeRunResult Result(NodeGroupReadback group, string runtime, CheckStatus

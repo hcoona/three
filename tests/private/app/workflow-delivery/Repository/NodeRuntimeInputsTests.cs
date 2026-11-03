@@ -19,6 +19,11 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
     private static readonly string[] PreOneRows = ["\"v0.12\": { \"start\": \"2015-02-06\" }"];
     private static readonly string[] NativeCommands =
         ["ls --json --current --locked node", "ls --json --current --locked pnpm"];
+    private static readonly string[] MixedMatrix = ["20.x", "22.x", "24.x", "26.x"];
+    private static readonly string[] AdoptedVariants = ["node24", "node26"];
+    private static readonly string[] RetainedVariants = ["node20", "node22", "node24", "node26"];
+    private static readonly string[] BuildAndTestChecks =
+        ["node/project-build-v1", "node/project-test-v1"];
 
     [TestMethod]
     public async Task ReadPlansFromCommittedDataAndNativeMiseToolIdentities()
@@ -68,6 +73,90 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
         Assert.AreEqual(newest, inputs.NewestRelease);
         Assert.AreEqual("24.21.0", inputs.Variants.Single(v => v.Key == "node24").ExactVersion);
         Assert.ContainsSingle(inputs.Variants.Where(v => v.ExactVersion is not null));
+    }
+
+    [TestMethod]
+    public async Task MemberRangesProjectTheUnionMatrixAndFilterAdoptedObligations()
+    {
+        const string retained = "packages/retained";
+        string root = Path.Combine(Path.GetTempPath(), "node-runtime-checkout");
+        NodeRuntimeInputs inputs = NodeRuntimeReader.Read(new(NodeScenario.Candidate, []), root,
+            Workflow, Schedule(), Mise, MiseLock,
+            [
+                new("package.json", Manifest(">=22")),
+                new(Source + "/package.json", Manifest(">=24.0.0")),
+                new(retained + "/package.json", Manifest(">=20")),
+            ], Tool(root, "node"), Tool(root, "pnpm"));
+        NodeRevisionInputs At(string revision) => NodeScenario.Units(NodeScenario.Inputs(revision,
+            NodeScenario.Project(Source), NodeScenario.Project(retained)),
+            NodeScenario.Unit("fixture", ("npm", Source)));
+        CiPlan original = await NodeScenario.Plan(At(NodeScenario.Basis),
+            At(NodeScenario.Candidate), Source + "/index.js", retained + "/index.js");
+
+        CiPlan plan = inputs.Expand(original);
+
+        CollectionAssert.AreEqual(MixedMatrix,
+            inputs.Variants.Select(variant => variant.Selector).ToArray());
+        Assert.AreEqual(20, inputs.LowerBound);
+        CollectionAssert.AreEquivalent(new[]
+        {
+            new NodeRuntimeMember(Source, 24),
+            new NodeRuntimeMember(retained, 20),
+        }, inputs.Members);
+        Assert.HasCount(15, plan.Checks);
+        PlannedCheck[] buildAndTest = plan.Checks.Where(check =>
+            check.Work.Key.Check is "node/project-build-v1" or "node/project-test-v1").ToArray();
+        Assert.HasCount(12, buildAndTest);
+        foreach ((string directory, string[] variants) in new[]
+        {
+            (Source, AdoptedVariants),
+            (retained, RetainedVariants),
+        })
+        {
+            PlannedCheck[] memberChecks = buildAndTest.Where(check =>
+                check.Work.Key.Target == directory).ToArray();
+            CollectionAssert.AreEquivalent(variants, memberChecks
+                .Select(check => check.Work.Key.Variant).Distinct().ToArray());
+            foreach (string variant in variants)
+                CollectionAssert.AreEquivalent(BuildAndTestChecks,
+                    memberChecks.Where(check => check.Work.Key.Variant == variant)
+                    .Select(check => check.Work.Key.Check).ToArray());
+        }
+        PlannedCheck[] packaging = plan.Checks.Where(check =>
+            check.Work.Key.Check is "node/npm-artifact-v1" or
+                "node/npm-artifact-contents-v1" or "node/npm-install-import-v1").ToArray();
+        Assert.HasCount(3, packaging);
+        Assert.IsTrue(packaging.All(check => check.Work.Key.Variant == "node24"));
+        Assert.IsTrue(packaging.All(check => check.Work.Package?.Directory == Source));
+        PlannedCheck pack = packaging.Single(check => check.Work.Key.Check ==
+            "node/npm-artifact-v1");
+        Assert.AreEqual(new CheckKey(Source, "node/project-build-v1", "node24"),
+            Assert.ContainsSingle(pack.Work.Prerequisites));
+        Assert.IsEmpty(plan.Checks.Where(check => check.Work.Key.Variant == "node26" &&
+            check.Work.Key.Check.StartsWith("node/npm-", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task ConfiguredPackagingVariantMustBeAdmittedByAdoptedMemberRange()
+    {
+        const string retained = "packages/retained";
+        string root = Path.Combine(Path.GetTempPath(), "node-runtime-checkout");
+        NodeRuntimeInputs inputs = NodeRuntimeReader.Read(new(NodeScenario.Candidate, []), root,
+            Workflow, Schedule(), Mise, MiseLock,
+            [
+                new("package.json", Manifest(">=22")),
+                new(Source + "/package.json", Manifest(">=26")),
+                new(retained + "/package.json", Manifest(">=20")),
+            ], Tool(root, "node"), Tool(root, "pnpm"));
+        CiPlan original = await PackagePlanAsync();
+
+        InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            inputs.Expand(original));
+
+        Assert.AreEqual("Configured packaging runtime is outside the adopted Node engines range.",
+            error.Message);
+        Assert.IsTrue(inputs.Variants.Any(variant => variant.Key == "node26"));
+        Assert.AreEqual("node24", inputs.PackagingVariant);
     }
 
     [TestMethod]
@@ -395,7 +484,7 @@ public sealed class NodeRuntimeInputsTests(TestContext context)
     private static NodeRuntimeInputs Inputs(string revision) => new(revision,
         [new("node22", "22.x", null), new("node24", "24.x", "24.21.0")], "12.8.2",
         [NodeRuntimeReader.Schedule, "mise.toml", "mise.lock"], "node24", ScheduleCommit,
-        "26.1.0", 22);
+        "26.1.0", 22, [new(Source, 22)]);
 
     private static Task<CiPlan> PackagePlanAsync()
     {

@@ -9,9 +9,10 @@ using YamlDotNet.Serialization;
 namespace WorkflowDelivery.Repository;
 
 internal sealed record NodeRuntimeVariant(string Key, string Selector, string? ExactVersion);
+internal sealed record NodeRuntimeMember(string Directory, int LowerBound);
 internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] Variants,
     string PnpmVersion, string[] Sources, string PackagingVariant, string ScheduleCommit,
-    string NewestRelease, int LowerBound)
+    string NewestRelease, int LowerBound, NodeRuntimeMember[] Members)
 {
     internal CiPlan Expand(CiPlan plan)
     {
@@ -22,6 +23,8 @@ internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] V
             throw new InvalidDataException("Unresolved Node runtime plan subject.");
         // Validate the complete original plan before projecting its concrete variants.
         ResultCollector.Collect(plan, []);
+        var membersByDirectory = Members.ToDictionary(member => member.Directory,
+            StringComparer.Ordinal);
         var checks = new List<PlannedCheck>();
         foreach (PlannedCheck item in plan.Checks)
         {
@@ -32,8 +35,23 @@ internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] V
                 work.Runner != "ubuntu-latest" || (!package && work.Key.Check is not
                     ("node/project-build-v1" or "node/project-test-v1")))
                 throw new InvalidDataException("Unsupported Node runtime check projection.");
+            NodeRuntimeMember member;
+            if (package)
+            {
+                if (work.Package is null ||
+                    !membersByDirectory.TryGetValue(work.Package.Directory, out member!))
+                    throw new InvalidDataException("Node package check has no engines member.");
+            }
+            else if (work.Package is not null ||
+                !membersByDirectory.TryGetValue(work.Key.Target, out member!))
+                throw new InvalidDataException(
+                    "Node project check has no engines member: " + work.Key.Target);
+            if (!Variants.Any(variant => Admits(member, variant)))
+                throw new InvalidDataException(
+                    "No planned Node runtime satisfies a selected member's engines range.");
             foreach (NodeRuntimeVariant variant in Variants.Where(v =>
-                !package || v.Key == PackagingVariant))
+                Admits(member, v) &&
+                (!package || v.Key == PackagingVariant)))
             {
                 var dimensions = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
@@ -54,10 +72,25 @@ internal sealed record NodeRuntimeInputs(string Revision, NodeRuntimeVariant[] V
                 });
             }
         }
+        NodeRuntimeVariant packaging = Variants.Single(variant =>
+            variant.Key == PackagingVariant);
+        int packagingMajor = System.Version.Parse(packaging.ExactVersion!).Major;
+        foreach (PlannedCheck item in plan.Checks.Where(check =>
+            check.Work.Key.Check is "node/npm-artifact-v1" or
+                "node/npm-artifact-contents-v1" or "node/npm-install-import-v1"))
+        {
+            NodeRuntimeMember member = membersByDirectory[item.Work.Package!.Directory];
+            if (member.LowerBound > packagingMajor)
+                throw new InvalidDataException(
+                    "Configured packaging runtime is outside the adopted Node engines range.");
+        }
         CiPlan expanded = plan with { Checks = [.. checks] };
         ResultCollector.Collect(expanded, []);
         return expanded;
     }
+
+    private static bool Admits(NodeRuntimeMember member, NodeRuntimeVariant variant) =>
+        member.LowerBound <= int.Parse(variant.Selector[..^2], CultureInfo.InvariantCulture);
 }
 
 internal sealed record NodeEnginesManifest(string Path, string? Text);
@@ -140,11 +173,12 @@ internal sealed class NodeRuntimeReader
             .ToArray();
         return new(revision.Commit, variants, pnpm,
             [Schedule, "mise.toml", "mise.lock", .. manifests.Select(m => m.Path)],
-            "node" + Major(packaging), plan.ScheduleCommit, plan.NewestRelease, plan.LowerBound);
+            "node" + Major(packaging), plan.ScheduleCommit, plan.NewestRelease, plan.LowerBound,
+            plan.Members);
     }
 
     private sealed record NodeRuntimePlan(int[] Majors, string ScheduleCommit,
-        string NewestRelease, int LowerBound);
+        string NewestRelease, int LowerBound, NodeRuntimeMember[] Members);
 
     private static NodeRuntimePlan Plan(string? workflow, string? schedule, string? mise,
         string? miseLock, IReadOnlyList<NodeEnginesManifest> manifests)
@@ -162,8 +196,19 @@ internal sealed class NodeRuntimeReader
         (string commit, string newest, Dictionary<int, bool> lts) = ReadSchedule(schedule);
         if (manifests.Count == 0 || !manifests.Any(m => m.Path == "package.json"))
             throw new InvalidDataException("Missing root Node engines manifest.");
-        // Lowest minimum (union): every member runs on every planned major.
-        int lower = manifests.Min(LowerMajor);
+        // The global minimum plans the matrix; each workspace member retains its own minimum.
+        var bounds = manifests.Select(manifest => (Manifest: manifest,
+            Major: LowerMajor(manifest))).ToArray();
+        int lower = bounds.Min(entry => entry.Major);
+        var members = bounds.Where(entry => entry.Manifest.Path != "package.json")
+            .Select(entry =>
+            {
+                string directory = entry.Manifest.Path[..^"/package.json".Length];
+                return new NodeRuntimeMember(directory, entry.Major);
+            }).ToArray();
+        if (members.Select(member => member.Directory).Distinct(StringComparer.Ordinal).Count() !=
+            members.Length)
+            throw new InvalidDataException("Ambiguous native Node engines members.");
         int newestMajor = int.Parse(newest.Split('.')[0], CultureInfo.InvariantCulture);
         if (lower > newestMajor)
             throw new InvalidDataException(
@@ -176,7 +221,7 @@ internal sealed class NodeRuntimeReader
                     Major(major));
             if (designated || major == newestMajor) majors.Add(major);
         }
-        return new([.. majors], commit, newest, lower);
+        return new([.. majors], commit, newest, lower, members);
     }
 
     private static void RequireMatrixConsumer(string workflow)

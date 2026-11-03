@@ -235,15 +235,19 @@ The retained Node matrix depends one-way on scope and this group. Successful
 planning supplies explicit retained-member selections/reasons and applicability;
 failed/missing group planning cannot become a skip. Exclude exactly the group-owned
 fixture using PNPM's native negative directory filter for recursive build/test,
-while preserving full frozen installation, every other workspace member, every
-planned runtime variant, if-present test behavior and the Hexo typecheck/packed probes.
+while preserving full frozen installation, every eligible workspace member,
+if-present test behavior and the Hexo typecheck/packed probes. The plan supplies
+the member list per Node selector; a selector with no retained members performs
+no retained setup or execution.
 Resolve any real generated-output prerequisite before crossing this boundary.
 Do not execute an adopted check again through the retained aggregate owner.
 
-Preserve complete build and source-test obligations for every declared runtime;
-source tests have no build prerequisite. The configured packaging runtime also
-requires npm pack after build, followed by contents and clean installed consumer
-checks. A plan with N runtime variants therefore has 2N + 3 obligations.
+Each selected member has complete build and source-test obligations on every
+planned runtime admitted by its `engines.node` lower bound; source tests have
+no build prerequisite. The adopted package must admit the configured packaging
+runtime, which also requires npm pack after build, followed by contents and clean
+installed-consumer checks. Work is projected per member, so variants can have
+different check sets.
 
 The Node group plans the runtime variants as described in
 [Planned Runtime Matrix](#planned-runtime-matrix); the workflow does not
@@ -254,9 +258,10 @@ general matrix include/exclude or dynamic task graph. Keep exact native Node and
 PNPM readback for the configured packaging context and major readback for moving
 matrix contexts. The planned matrix is the only runtime roster; no second
 application-owned roster or largest-major heuristic is permitted. Each runtime
-receives the original complete plan and its selected context. Collect every
-original required key without substituting another runtime's success for
-missing or abnormal results.
+receives the original complete plan and its selected context, but executes only
+checks projected onto that runtime. The group omits adopted runtime executions
+with no selected checks. Collect every projected required key without
+substituting another runtime's success for missing or abnormal results.
 
 Planning obtains lockfile-only native PNPM facts and metadata without installing
 product dependencies at either endpoint. Selected execution retains its frozen
@@ -383,9 +388,12 @@ Current inputs declare `>=22` (root, Hexo renderer, Steam exporter),
 adopted npm fixture). The fixture is a selected member: it is the group's
 adopted package, and it currently runs on every matrix runtime.
 
-**Combining differing ranges (pending an owner decision).** The Wave entry
-returns this product tradeoff to the owner. Implementation must not start until
-the owner chooses:
+**Combining differing ranges (owner decision recorded in
+[Issue #1508](https://github.com/hcoona/three/issues/1508)).** The owner chose
+C: the matrix uses the union rule, and each variant executes only workspace
+members whose declared `engines.node` lower major it admits. Today the adopted
+fixture's `>=24.0.0` excludes it from `22.x`; members declaring `>=22` or
+`>=22.6.0` remain eligible for that variant.
 
 - **A. Lowest minimum (union).** `L` is the smallest input major (22 today).
   Every member runs on every planned major. This keeps today's coverage,
@@ -393,20 +401,16 @@ the owner chooses:
 - **B. Root manifest only.** `L` comes from the root `package.json` (22 today).
   Member ranges are not inputs. A member range below the root range is never
   qualified.
-- **C. Union with per-member filtering.** The matrix is as in A, but each
-  variant runs only members whose range admits it. The fixture would skip 22.
-  This needs per-variant member selection in the group plan, the retained
-  filter and the packaging variant.
+- **C. Union with per-member filtering (chosen).** The matrix is as in A, but
+  each variant runs only members whose range admits it. The adopted package's
+  configured packaging runtime must satisfy its own range.
 - **D. Highest minimum (intersection).** `L` is the largest input major (24
   today). The matrix becomes `24.x`, `26.x` and drops the 22 coverage that most
   members declare.
 
-Recommendation: A, because it matches the current behavior and needs no new
-per-variant machinery. Choose C instead if a member must never run outside its
-declared range.
-
 **Plan and workflow.** The runtime readback keeps its variants and adds the
-schedule commit, `newestRelease` and the derived lower bound as provenance. Its
+schedule commit, `newestRelease`, the global derived lower bound and each
+workspace member's lower bound as provenance. Its
 sources become `eng/node-release-schedule.json`, `mise.toml`, `mise.lock` and
 the engines manifests, replacing the workflow matrix. The schedule file and
 every manifest that contributes an `engines.node` range are shared Node inputs
@@ -414,11 +418,14 @@ for every member, like the other root inputs: under the union rule one
 manifest can change the matrix for all members, so a change to any of them
 selects every member and qualifies it on the new plan. A scenario test changes
 one member's `engines.node` and asserts that all members are selected on the
-resulting matrix. `node-group`
+resulting matrix, each only on eligible variants. `node-group`
 always emits the complete runtime plan, including when no retained work is
 applicable, as the single-line JSON output `node_versions`, the ordered
 selector array. `node-tests` consumes it as
 `matrix.node-version: ${{ fromJSON(needs.node-group.outputs.node_versions) }}`.
+The group emits retained member directories keyed by selector; a matrix job
+with an empty member list succeeds without setting up tools or executing
+retained checks.
 The reader requires that exact expression and rejects a literal list. A failed
 group or a missing or malformed output fails matrix evaluation; it cannot
 become a skip, and Validate observes the failure.
