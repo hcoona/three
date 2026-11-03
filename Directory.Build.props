@@ -57,4 +57,11 @@
   <PropertyGroup Label="CI" Condition="'$(ContinuousIntegrationBuild)' == 'true' or '$(TF_BUILD)' == 'true'">
     <DeterministicSourcePaths>true</DeterministicSourcePaths>
   </PropertyGroup>
+
+  <!-- CI sets ThreeTestResultsDirectory so each test project writes TRX that names skipped tests and their reasons. -->
+  <PropertyGroup Label="CI test results" Condition="'$(ThreeTestResultsDirectory)' != ''">
+    <TestingPlatformCommandLineArguments>$(TestingPlatformCommandLineArguments) --report-trx --results-directory "$(ThreeTestResultsDirectory)/$(MSBuildProjectName)"</TestingPlatformCommandLineArguments>
+    <VSTestLogger>trx</VSTestLogger>
+    <VSTestResultsDirectory>$(ThreeTestResultsDirectory)/$(MSBuildProjectName)</VSTestResultsDirectory>
+  </PropertyGroup>
 </Project>

@@ -120,6 +120,14 @@ Parallel job durations are not added as wall time. Integration optimization
 preserves required real-tool proof, immutable preparation reuse, isolated
 writable fixtures, bounded concurrency and owned temporary-file cleanup.
 
+A real-tool test that CI must run fails when `CI=true` and its tool is
+missing; local runs may still skip it with the reason. Platform-capability
+gates (operating system, symlink support) remain skips.
+[Issue #1503](https://github.com/hcoona/three/issues/1503) records which tests
+CI must run and in which job. Each .NET test step writes TRX results, and a
+following `Name skipped tests` step lists every skipped test and its reason in
+the job summary; that report step never fails the job.
+
 ## Complete Git Paths and File Operands
 
 [The Git helper](../../eng/scripts/workflow_delivery_v3_hk.py) retains deleted

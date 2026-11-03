@@ -34,6 +34,7 @@ VALIDATE_NEEDS = [
     "ruby-group",
     "node-tests",
 ]
+SKIPPED_TEST_SUMMARY = "./eng/scripts/Write-SkippedTestSummary.ps1 -Path "
 NODE_PACKAGE_DIR = "src/public/lib/hexo-renderer-asciidoc"
 NODE_RETAINED = [NODE_PACKAGE_DIR, "src/retained"]
 NODE_ADOPTED = (
@@ -160,7 +161,22 @@ def _python_retention_step(step: dict[str, Any]) -> None:
     assert not step.get("continue-on-error", False)
 
 
+def _skipped_test_summary_step(step: dict[str, Any]) -> bool:
+    """Report-only steps that name skipped tests after a test step ran."""
+    if step.get("name") != "Name skipped tests":
+        return False
+    assert step["if"].startswith("always() && ")
+    assert step["if"].endswith(("outcome != 'skipped'", "outcome == 'success'"))
+    assert step["shell"] == "pwsh"
+    assert step["run"].startswith(SKIPPED_TEST_SUMMARY)
+    assert "uses" not in step
+    assert not step.get("continue-on-error", False)
+    return True
+
+
 def _required_context_step(key: str, step: dict[str, Any]) -> None:
+    if _skipped_test_summary_step(step):
+        return
     if key == "native-preparation-tests":
         conditions = {
             "Setup selected native tools": (
@@ -727,6 +743,8 @@ def _run_dotnet(
     for step in job["steps"]:
         if "run" not in step or step.get("if") == "cancelled()":
             continue
+        if _skipped_test_summary_step(step):
+            continue
         if step.get("continue-on-error", False):
             _required_context_step("dotnet-tests", step)
             continue
@@ -1194,6 +1212,8 @@ def test_required_validate_rejects_missing_or_failed_consumers(
 
 def _cancelable_dotnet_step(step):
     """Preserve required native result retention and failure handling."""
+    if _skipped_test_summary_step(step):
+        return
     if "Retain" in step["name"]:
         assert step["if"] == "always()"
         assert step["uses"].startswith("actions/upload-artifact@")
@@ -1227,6 +1247,8 @@ def test_canceled_ci_work_stops_and_cannot_report_success(workflow, tmp_path):
                         "always()",
                     }
                 assert not step.get("continue-on-error", False)
+            elif _skipped_test_summary_step(step):
+                continue
             elif step["if"].startswith("always() &&"):
                 assert step.get("uses", "").startswith(
                     "actions/upload-artifact@"
@@ -1541,6 +1563,34 @@ def test_github_release_native_preparation_runs_the_real_recipe(workflow):
         upload["with"]["path"] == "artifacts/github-release-native-preparation"
     )
     assert upload["with"]["if-no-files-found"] == "error"
+
+
+def test_ci_dotnet_test_steps_name_skipped_tests(workflow):
+    """Every CI .NET test execution writes TRX that a later step reports."""
+    covered = set()
+    for name, job in workflow["jobs"].items():
+        steps = job["steps"]
+        for index, step in enumerate(steps):
+            run = step.get("run", "")
+            if "dotnet test" not in run and "caller-dotnet execute" not in run:
+                continue
+            assert "--report-trx" in run or (
+                "ThreeTestResultsDirectory" in step["env"]
+            )
+            summary = next(
+                later
+                for later in steps[index + 1 :]
+                if later.get("name") == "Name skipped tests"
+            )
+            assert _skipped_test_summary_step(summary)
+            covered.add(name)
+    assert covered == {
+        "dotnet-tests",
+        "azureauth-foundation-artifacts",
+        "nuget-native-preparation",
+        "github-release-native-preparation",
+        "native-preparation-tests",
+    }
 
 
 def test_nuget_reproducibility_runs_on_dispatch_and_main_changes(workflow):

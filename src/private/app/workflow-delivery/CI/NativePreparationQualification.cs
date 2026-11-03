@@ -15,7 +15,7 @@ internal static class NativePreparationQualification
 {
     private const string Products = "tests/private/app/workflow-delivery/fixtures/products/";
     private static readonly string[] Shared = [".github/workflows/ci.yml", "mise.toml",
-        "mise.lock", "workflow-delivery.quality.yml"];
+        "mise.lock", "workflow-delivery.quality.yml", Repository.CiScope.SkippedTestSummary];
     private static readonly string[] Managed = ["src/private/app/workflow-delivery",
         "tests/private/app/workflow-delivery"];
     // The root PNPM workspace files the Node contract tests' tools read: the locked PNPM

@@ -1653,12 +1653,17 @@ public sealed class SystemProcessRunnerTests
     [Fact]
     public async Task RunAsyncCancellationFallsBackWhenGroupSignalReturnsEsrch()
     {
-        string? sessionLauncher = FindProductionUnixSessionLauncher();
-        string? compiler = FindExecutableOnPath("cc");
-        if (!OperatingSystem.IsLinux() || sessionLauncher is null || compiler is null)
+        if (!OperatingSystem.IsLinux())
         {
             return;
         }
+
+        string? sessionLauncher = FindProductionUnixSessionLauncher();
+        string? compiler = FindExecutableOnPath("cc");
+        RequiredExternalTool.Require(
+            sessionLauncher is not null && compiler is not null,
+            "The setsid ESRCH fallback test requires the Unix session launcher and cc."
+        );
 
         string testDirectory = CreateTestDirectory("setsid-esrch-cancellation");
         string pidFile = Path.Combine(testDirectory, "processes.pid");
@@ -1723,12 +1728,17 @@ public sealed class SystemProcessRunnerTests
     [Fact]
     public async Task RunAsyncTimeoutFallsBackToLauncherTreeWhenProcessGroupSignalReturnsEsrch()
     {
-        string? sessionLauncher = FindProductionUnixSessionLauncher();
-        string? compiler = FindExecutableOnPath("cc");
-        if (!OperatingSystem.IsLinux() || sessionLauncher is null || compiler is null)
+        if (!OperatingSystem.IsLinux())
         {
             return;
         }
+
+        string? sessionLauncher = FindProductionUnixSessionLauncher();
+        string? compiler = FindExecutableOnPath("cc");
+        RequiredExternalTool.Require(
+            sessionLauncher is not null && compiler is not null,
+            "The setsid ESRCH fallback test requires the Unix session launcher and cc."
+        );
 
         string testDirectory = CreateTestDirectory("setsid-esrch-timeout");
         string pidFile = Path.Combine(testDirectory, "processes.pid");

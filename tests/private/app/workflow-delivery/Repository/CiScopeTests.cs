@@ -212,6 +212,7 @@ public sealed class CiScopeTests
     [DataRow("src/private/lib/scholarly-publication/tests/test_x.py", false, false, true)]
     [DataRow("apm.lock.yaml", false, false, true)]
     [DataRow(".git-blame-ignore-revs", false, false, false)]
+    [DataRow(CiScope.SkippedTestSummary, false, true, false)]
     public void RetainedJobsFollowTheirFiniteInputs(string path, bool mise, bool azure,
         bool scholarly)
     {
@@ -245,6 +246,7 @@ public sealed class CiScopeTests
     [DataRow("global.json", true)]
     [DataRow("stylecop.json", true)]
     [DataRow(".github/workflows/ci.yml", true)]
+    [DataRow(CiScope.SkippedTestSummary, true)]
     [DataRow("pyproject.toml", false)]
     [DataRow("docs/README.md", false)]
     [DataRow("src/private/app/workflow-delivery/README.md", false)]
@@ -471,6 +473,18 @@ public sealed class CiScopeTests
         CiScopeApplicability jobs = CiScope.Select([path], Comparison(path), false, []);
         Assert.AreEqual(python, jobs.AzureAuth, rows);
         Assert.IsFalse(jobs.Mise || jobs.Scholarly || jobs.NuGetNativePreparation);
+    }
+
+    // The .NET test jobs run the skipped-test summary; no Python test reads it, and a Python
+    // reason would fail the Python group's input projection.
+    [TestMethod]
+    public void SkippedTestSummaryIsNotAPythonGroupInput()
+    {
+        string path = CiScope.SkippedTestSummary;
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk));
+        string rows = string.Join(", ", row.Reasons.Select(item => item.Owner + ":" + item.Rule));
+        Assert.IsFalse(row.Reasons.Any(reason => reason.Owner == "python"), rows);
     }
 
     [TestMethod]

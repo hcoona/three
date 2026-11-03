@@ -31,6 +31,8 @@ internal static partial class CiScope
     // The root HK configuration; native Pkl imports name the local modules it consumes.
     internal const string HkConfiguration = "hk.pkl";
     internal const string RenovateConfiguration = "renovate.json";
+    // Every CI .NET test job runs this report after its tests.
+    internal const string SkippedTestSummary = "eng/scripts/Write-SkippedTestSummary.ps1";
     private const string RenovateWorkflow = ".github/workflows/renovate.yml";
     private const string Azure = "src/private/app/azureauth-credprovider";
     private const string Scholarly = "src/private/lib/scholarly-publication";
@@ -72,7 +74,8 @@ internal static partial class CiScope
             foreach (string job in Jobs(path, gems).Where(reasons.ContainsKey))
                 reasons[job].Add(path);
             bool shared = AllInputs.Contains(path, StringComparer.Ordinal) ||
-                path == "stylecop.json" || resourceInputs.Contains(path, StringComparer.Ordinal);
+                path is "stylecop.json" or SkippedTestSummary ||
+                resourceInputs.Contains(path, StringComparer.Ordinal);
             nuget.UnionWith(shared ? NuGetUnits : NuGetPreparationUnits(path));
             githubRelease |= shared || GithubReleasePreparationInput(path);
         }
@@ -407,7 +410,8 @@ internal static partial class CiScope
             return ["mise", "azureauth", "ruby", "scholarly"];
         var jobs = new List<string>();
         if (Name(path) is "mise.toml" or "mise.lock") jobs.Add("mise");
-        if (AzureInput(path)) jobs.Add("azureauth");
+        // The AzureAuth artifact job runs the skipped-test summary; its Python tests do not.
+        if (AzureInput(path) || path == SkippedTestSummary) jobs.Add("azureauth");
         if (RubyInputs.Contains(path, StringComparer.Ordinal) ||
             gems.Any(root => Under(path, root))) jobs.Add("ruby");
         if (Under(path, Scholarly) ||

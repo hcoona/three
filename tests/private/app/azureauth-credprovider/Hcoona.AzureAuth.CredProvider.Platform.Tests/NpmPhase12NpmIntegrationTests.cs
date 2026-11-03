@@ -17,7 +17,10 @@ public sealed class NpmPhase12NpmIntegrationTests
     [Fact]
     public void ResolveWorkspaceAsync_UsesRealNpmPrefix_ForWorkspaceMember()
     {
-        Assert.SkipUnless(IsNpmInstalled(), "Real npm integration requires npm on PATH.");
+        RequiredExternalTool.Require(
+            IsNpmInstalled(),
+            "Real npm integration requires npm on PATH."
+        );
         NpmPrefixFixture fixture = NpmPrefixFixture.Create(
             "packages/*",
             "packages/member",
@@ -46,7 +49,10 @@ public sealed class NpmPhase12NpmIntegrationTests
     [Fact]
     public void ResolveWorkspaceAsync_UsesRealNpmPrefix_ForNonWorkspacePackage()
     {
-        Assert.SkipUnless(IsNpmInstalled(), "Real npm integration requires npm on PATH.");
+        RequiredExternalTool.Require(
+            IsNpmInstalled(),
+            "Real npm integration requires npm on PATH."
+        );
         NpmPrefixFixture fixture = NpmPrefixFixture.Create(
             "packages/*",
             "tools/nonmember",
@@ -78,7 +84,10 @@ public sealed class NpmPhase12NpmIntegrationTests
     [Fact]
     public void ResolveWorkspaceAsync_UsesRealNpmPrefix_ForCharacterClassWorkspaceMember()
     {
-        Assert.SkipUnless(IsNpmInstalled(), "Real npm integration requires npm on PATH.");
+        RequiredExternalTool.Require(
+            IsNpmInstalled(),
+            "Real npm integration requires npm on PATH."
+        );
         NpmPrefixFixture fixture = NpmPrefixFixture.Create(
             "packages/[a-z]*",
             "packages/apple",
@@ -111,7 +120,7 @@ public sealed class NpmPhase12NpmIntegrationTests
             OperatingSystem.IsWindows(),
             "Native npm prefix diagnostics require Windows."
         );
-        Assert.SkipUnless(
+        RequiredExternalTool.Require(
             IsNpmInstalled(),
             "Native npm prefix diagnostics require npm on PATH."
         );
@@ -134,7 +143,7 @@ public sealed class NpmPhase12NpmIntegrationTests
                 fixture.ProcessRunner.RecordedMilestoneEvidence
             );
             completedSuccessfully = true;
-            Assert.Skip(evidence);
+            TestContext.Current.TestOutputHelper?.WriteLine(evidence);
         }
         finally
         {
