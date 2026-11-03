@@ -325,9 +325,14 @@ committed data instead.
 is no new scheduled workflow or write-capable token. `renovate.json` adds two
 regex custom managers for this file:
 
-- `newestRelease` uses the `node-version` datasource with `semver` versioning.
-  The default `node` versioning treats a major as unstable until it enters LTS,
-  so it would not propose the Current line. Only major updates are proposed.
+- `newestRelease` uses the `node-version` datasource with `semver` versioning
+  and a dependency-scoped `ignoreUnstable: false`. The datasource marks every
+  non-LTS release `isStable: false`, and Renovate's update filter honors that
+  flag independently of versioning, so `semver` alone would not propose the
+  Current line until it enters LTS. An explicit `allowedVersions` of
+  `/^\d+\.\d+\.\d+$/` keeps prereleases out. A Renovate contract case
+  proves that a released, not-yet-LTS major is proposed. Only major updates are
+  proposed.
   They follow the existing rule for manually reviewed Node major updates, so
   they are not automerged.
 - `schedule.commit` uses the `git-refs` datasource for branch `main` of
