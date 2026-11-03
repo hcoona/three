@@ -256,3 +256,90 @@ ends a grant. Git and the proposing PR retain the reason and history.
   workflow; no change to existing tool or runtime versions, other projects'
   behavior or required checks, and no new CI workflow; no publication,
   release, credential or access change.
+
+### Align .NET tests that launch external tools with the engineering principles
+
+- **Work carrier:** [Issue #1501](https://github.com/hcoona/three/issues/1501),
+  [Issue #1503](https://github.com/hcoona/three/issues/1503) and their linked
+  pull requests. The AzureAuth Python doctor harness timed out repeatedly in
+  `Build & Test (.NET 10)`. The repository owner then reviewed the external
+  tools that job's tests launch and requested the three advancements below.
+- **Accepted inputs:** the [engineering principles](engineering/engineering-principles.md),
+  root `mise.toml`, `mise.lock`, `.python-version`, `global.json`,
+  `eng/scripts/locked_tool_versions.py`, the GitHub workflows, and the
+  accepted records of AzureAuth CredProvider, Workflow Delivery and
+  vscode-copilot-telegram-hook. The tool inventory and stall analysis in
+  #1501 are unreviewed inputs.
+- **Diagnosis:**
+    - `Build & Test (.NET 10)` provisions only the .NET SDK. Its tests resolve
+      `python`, `npm` and `node` from the runner image, which can differ from
+      the locked versions; the timed-out harness ran the image's Python
+      3.12.10 while `.python-version` selects 3.14.3.
+    - Workflow Delivery already runs its locked-toolchain native contracts
+      outside that job through `testconfig.json` category exclusions;
+      AzureAuth CredProvider and vscode-copilot-telegram-hook have no
+      equivalent split.
+    - Some Workflow Delivery `NativeProcess` and `NativeCommand` tests launch
+      `pwsh` only as an arbitrary child process; some of them re-prove
+      documented .NET `Process` behavior.
+    - The AzureAuth Python and npm integration tests skip rather than fail
+      when their tool is missing, so CI can pass without running them.
+- **Owner decisions:**
+    - Order the work as advancement 1, then 2, then 3.
+    - Real-tool tests move to CI jobs that provision locked versions; the work
+      adds no tool installation to `Build & Test (.NET 10)`.
+    - Neither moved tests nor their destination jobs gain new mise tool
+      installation (`mise install`, `mise exec --locked`, `jdx/mise-action`
+      installing tools, or an equivalent); destinations provision through
+      official setup actions reading committed versions, as the
+      `conformance` and `azureauth-foundation-artifacts` jobs do. Whether
+      workflows should stop using mise installation generally is a separate
+      decision in [Issue #1505](https://github.com/hcoona/three/issues/1505).
+    - Tests whose subject is a workflow `shell: bash` or `shell: pwsh` step,
+      such as `BashWorkflowCallerTests` and `NuGetWorkflowCallerTests`, keep
+      the runner image's shells and git, which GitHub Actions itself uses,
+      and remain in their current job. Advancement 1 still reviews them.
+- **Advancement and outcome:**
+    1. Inventory every .NET test that launches an external executable other
+       than the test's own build output, and assess each against the testing
+       principles. Remove tests that only re-prove documented platform
+       contracts. Replace external tools used merely as an arbitrary child
+       process with an in-repository test helper process. Repair other
+       principle findings in those tests, such as missing launch deadlines.
+       Record the inventory and dispositions in #1501.
+    2. Give each remaining test that needs a locked external runtime (Python,
+       Node.js or npm) a test category, exclude it from
+       `Build & Test (.NET 10)`, and run it in a CI job that provisions the
+       locked version. Prefer an existing job of the owning project; add a
+       job or step to `ci.yml` only when no existing job fits.
+    3. Under #1503, decide which real-tool tests CI must run. In CI, those
+       tests fail rather than skip when their tool is missing. CI results
+       name skipped tests and their reasons.
+- **Ordering and gates:** merge this entry before any of the work. Each pull
+  request follows the owning project's engineering and OCR review gates. It
+  also follows record-system review for record changes, and
+  research-evidence review for evidence claims such as the #1501 cause
+  analysis. Independently classify material findings before repair. A
+  destination job that would need to become a newly required check, or any
+  new feasibility or product tradeoff, returns to the owner.
+- **Acceptance:**
+    - `Build & Test (.NET 10)` launches no Python, Node.js or npm.
+    - Each moved test runs against its locked version in its destination job.
+    - Each remaining external-executable test has a recorded disposition.
+    - Tests that CI must run fail when their tool is missing.
+    - #1501 records whether the timeout recurs once the doctor test runs
+      against the locked Python. Toolcache prewarming is considered only if
+      it does, and only by a further owner decision.
+    - Delete this entry when accepted.
+- **Effects:** permit source and repository/GitHub inspection,
+  documentation, test, test-configuration and CI workflow changes,
+  isolated local builds and credential-free tests, independent delegated
+  review, ordinary Issue/PR/check operations and their normal CI, and
+  ordinary reruns of failed CI jobs.
+- **Exclusions:**
+    - No product-behavior, runtime or dependency version changes.
+    - No change to existing mise tool installation in workflows (#1505).
+    - No toolcache prewarming.
+    - No required-check or ruleset change.
+    - No release, proving or campaign dispatch, publication, credential,
+      Environment, account, publisher or other access change.
