@@ -41,7 +41,8 @@ the caller does not schedule compiler nodes.
 CI produces a finite work list before execution. Each selected item identifies:
 
 - the concrete project, native aggregate or artifact target;
-- operation and dimensions, suitable runner/toolchain and required inputs;
+- operation and dimensions, suitable runner/toolchain, required external tools
+  and required inputs;
 - required/advisory status and its resolved preset/native-retained origin;
 - real prerequisites and the reasons it was selected.
 
@@ -74,19 +75,24 @@ The diagram uses the aliases below. `Artifacts` is the Actions artifact store,
 not a job. The parallel branches show permitted independence after `scope`,
 not a guarantee of simultaneous scheduling. Node tests still wait for Node's
 retained-selection outputs; Validate joins only its declared prerequisites.
+The .NET rows show the
+[tool-grouped execution](../integration/dotnet.md#external-tool-dimension) that
+starts after the ruleset no longer names `Build & Test (.NET 10)`; until then,
+`dotnet-tests` is one job and no `dotnet-results` job exists.
 
-| Alias      | YAML job ID                         | Runner       |
-| ---------- | ----------------------------------- | ------------ |
-| Scope      | `scope`                             | Windows      |
-| .NET       | `dotnet-tests`                      | Windows      |
-| Ruby       | `ruby-group`                        | Linux        |
-| Node       | `node-group`                        | Linux        |
-| Node tests | `node-tests`                        | Linux matrix |
-| Python     | `python-tests`                      | Linux        |
-| Prep       | `native-preparation-tests`          | Linux        |
-| NuGet      | `nuget-native-preparation`          | Windows      |
-| GitHub     | `github-release-native-preparation` | Windows      |
-| Validate   | `validation`                        | Linux        |
+| Alias        | YAML job ID                         | Runner         |
+| ------------ | ----------------------------------- | -------------- |
+| Scope        | `scope`                             | Windows        |
+| .NET         | `dotnet-tests`                      | Windows matrix |
+| .NET results | `dotnet-results`                    | Linux          |
+| Ruby         | `ruby-group`                        | Linux          |
+| Node         | `node-group`                        | Linux          |
+| Node tests   | `node-tests`                        | Linux matrix   |
+| Python       | `python-tests`                      | Linux          |
+| Prep         | `native-preparation-tests`          | Linux          |
+| NuGet        | `nuget-native-preparation`          | Windows        |
+| GitHub       | `github-release-native-preparation` | Windows        |
+| Validate     | `validation`                        | Linux          |
 
 `ci-scope` carries selection and reasons. `ci-dotnet-plan` carries the complete
 control output, including `python-control.zip` and the Ruby facts helper, and
@@ -98,6 +104,7 @@ sequenceDiagram
     participant Scope
     participant Store as Artifacts
     participant DotNet as .NET
+    participant DotNetJoin as .NET results
     participant Ruby
     participant Node
     participant NodeTests as Node tests
@@ -111,10 +118,13 @@ sequenceDiagram
     Scope->>Store: ci-dotnet-plan
     Scope-->>NuGet: nuget_native_preparation<br/>Applicability, row filter, count
     Scope-->>Github: github_release_native_preparation<br/>Applicability
+    Scope-->>DotNet: dotnet_groups<br/>Planned tool groups
     par .NET
         Store->>DotNet: ci-dotnet-plan
-        DotNet->>Store: dotnet-group-results
-        DotNet-->>Validate: job result
+        DotNet->>Store: dotnet-group-results-*
+        DotNet-->>Validate: matrix job result
+        Store->>DotNetJoin: ci-dotnet-plan,<br/>dotnet-group-results-*
+        DotNetJoin-->>Validate: job result
     and Ruby
         Store->>Ruby: ci-scope,<br/>ci-dotnet-plan
         Ruby->>Store: ruby-group-results
@@ -170,7 +180,9 @@ Every required result must be present and satisfied. Failure, conflicting result
 cancellation, timeout, skipping or missing required work prevents success.
 Advisory results remain visible without changing the required result. Collection
 must account for failed dependencies; platform cancellation may still prevent a
-final report and must not be interpreted as success.
+final report and must not be interpreted as success. When one group's plan runs
+in several jobs, the join requires exactly one result set from each planned job
+and each planned check exactly once before collecting against the original plan.
 
 HK retains source/configuration conformance. The control application's tests have
 one ordinary CI owner, selected by actual inputs/dependencies. CI never imports
@@ -198,9 +210,10 @@ skipped rows) and exit code qualify them; missing, skipped or failed rows fail.
 
 ## Validation Scenarios
 
-| Contract  | Required cases                                                                                     | Primary validation boundary               |
-| --------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| Execution | Complete selected variants/checks; shared prerequisites; runner mismatch; failed/missing execution | Work planning and real workflow transfers |
+| Contract    | Required cases                                                                                               | Primary validation boundary               |
+| ----------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| Execution   | Complete selected variants/checks; shared prerequisites; runner mismatch; failed/missing execution           | Work planning and real workflow transfers |
+| Tool groups | Declared tools and versions; provisioned version mismatch; undeclared tool removal; exact join across groups | Planning, executor and hosted group runs  |
 
 Concrete CI groups remain in
 [.NET](../integration/dotnet.md#native-net-ci-group),
