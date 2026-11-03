@@ -357,7 +357,7 @@ def _run_validation(
 def test_required_general_ci_checks_remain_eligible(
     workflow: dict[str, Any],
 ) -> None:
-    """Protect the required-context subset observed in the main Ruleset."""
+    """The main Ruleset requires only Validate, which gates every job."""
     events = workflow.get("on", workflow.get(True))
     for event in ("pull_request", "push"):
         assert "main" in events[event]["branches"]
@@ -376,21 +376,8 @@ def test_required_general_ci_checks_remain_eligible(
     assert "python" not in entry
     assert 'ci caller-node plan "$state" "$scope"' in entry
     contexts = {job["name"]: key for key, job in jobs.items()}
-    node = jobs["node-tests"]
-    for version in node["strategy"]["matrix"]["node-version"]:
-        contexts[resolve(node["name"], {"matrix.node-version": version})] = (
-            "node-tests"
-        )
-    required = {
-        "Validate": "validation",
-        "Build & Test (.NET 10)": "dotnet-tests",
-        "Test (Python)": "python-tests",
-        "Test & Build (Node.js 22.x)": "node-tests",
-        "Test & Build (Node.js 24.x)": "node-tests",
-    }
+    required = {"Validate": "validation"}
     assert required.items() <= contexts.items()
-    for excluded in node["strategy"]["matrix"].get("exclude", []):
-        assert excluded.get("node-version") not in ("22.x", "24.x")
     pending = [contexts[name] for name in required]
     visited = set()
     while pending:

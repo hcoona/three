@@ -75,10 +75,11 @@ unrelated Python tests.
 The scope job builds the candidate control application, then installs locked
 tools and performs a locked `dotnet restore dirs.proj`
 at each endpoint before selection; it runs no tests or full validation.
-Each existing required GitHub context remains present and fails if selection
+The `main` ruleset requires only the `Validate` context. Every job's GitHub
+context fails if selection
 fails, is canceled, or omits required output. Successful explicit
 non-applicability may omit work; selected work must complete successfully.
-The stable required `Validate` context consumes the results of the jobs listed
+The stable `Validate` context consumes the results of the jobs listed
 in its `needs` in [ci.yml](../../.github/workflows/ci.yml). Its short result
 guard rejects failed, skipped, missing or canceled
 results, including workflow cancellation. These workers
