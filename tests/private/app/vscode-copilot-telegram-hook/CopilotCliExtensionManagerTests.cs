@@ -412,7 +412,9 @@ public sealed class CopilotCliExtensionManagerTests
         {
             process.Kill(entireProcessTree: true);
             await process.WaitForExitAsync();
-            Assert.Fail($"node {string.Join(' ', arguments)} exceeded its {NodeDeadline.TotalSeconds}-second deadline.");
+            Assert.Fail(
+                $"node {string.Join(' ', arguments)} exceeded its "
+                + $"{NodeDeadline.TotalSeconds}-second deadline.");
         }
 
         return new ProcessResult(
