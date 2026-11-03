@@ -24,8 +24,8 @@ importers:
         specifier: ^21.0.0
         version: 21.2.3
       '@playwright/mcp':
-        specifier: 0.0.83
-        version: 0.0.83
+        specifier: 0.0.84
+        version: 0.0.84
       '@upstash/context7-mcp':
         specifier: 4.4.4
         version: 4.4.4
@@ -642,8 +642,8 @@ packages:
   '@oxc-project/types@0.156.0':
     resolution: {integrity: sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw==}
 
-  '@playwright/mcp@0.0.83':
-    resolution: {integrity: sha512-oNcl+Ae2/IAjhfPeP46BfIkSakfmprY+aOtkv5MjrQ4lPav4/yNtPhL0iq8SlIM90oApWgBDUxaNKvktazUKOg==}
+  '@playwright/mcp@0.0.84':
+    resolution: {integrity: sha512-weqLrA7/D8MJzNV9/t3Hnjp100tS2sxFXKeb2gH6Nhktqmdfvx5qRA9AZ5Mhjnre1jY0wltsrRK5VZS5NBgcvw==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -2277,13 +2277,13 @@ packages:
   pkg-types@2.4.0:
     resolution: {integrity: sha512-07Fys7iVx0X6TcviMOgogM1Lk33ZyqOezMnU79S+kffWqwolG/5W9V8EgQSeYCIfFTYVgssRbnH630Oa2+soBA==}
 
-  playwright-core@1.64.0-alpha-1790635538000:
-    resolution: {integrity: sha512-pNwaXirhXMRLaRQs4NQ18EpTdtDoFwyPH9FOaaDC7YXG4hpwE2xmwCic/1srbuExVQC7zT9LJSJpDBAru+Vo9A==}
+  playwright-core@1.65.0-alpha-2026-10-30:
+    resolution: {integrity: sha512-LPMw8B/HRQKMcJeXTqWSrkB/AfCKKmbDQMbu0p7zg8MgibOWaKMjZWR/StAtrQkOxvOmZEju1o1TnPgdoOCwrg==}
     engines: {node: '>=20'}
     hasBin: true
 
-  playwright@1.64.0-alpha-1790635538000:
-    resolution: {integrity: sha512-/5XDUMxpOd/9AojJtWDFIRV3EJZNQ0AwvK69wgt3CPzy8wTgiBG9pX45VfxtqtvIRGwfWzMhrvawNKreG69Snw==}
+  playwright@1.65.0-alpha-2026-10-30:
+    resolution: {integrity: sha512-dmAJMVHKzHvMQjn+XDcaq/pxaZ0W6n8i78rwTM+VGRtQ3WBF5ZiSdB1yL/cyoYUGUMwg3jxN65KqC9cERaCbIg==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -3351,10 +3351,10 @@ snapshots:
 
   '@oxc-project/types@0.156.0': {}
 
-  '@playwright/mcp@0.0.83':
+  '@playwright/mcp@0.0.84':
     dependencies:
-      playwright: 1.64.0-alpha-1790635538000
-      playwright-core: 1.64.0-alpha-1790635538000
+      playwright: 1.65.0-alpha-2026-10-30
+      playwright-core: 1.65.0-alpha-2026-10-30
 
   '@quansync/fs@1.1.0':
     dependencies:
@@ -4937,11 +4937,11 @@ snapshots:
       exsolve: 1.2.0
       pathe: 2.0.3
 
-  playwright-core@1.64.0-alpha-1790635538000: {}
+  playwright-core@1.65.0-alpha-2026-10-30: {}
 
-  playwright@1.64.0-alpha-1790635538000:
+  playwright@1.65.0-alpha-2026-10-30:
     dependencies:
-      playwright-core: 1.64.0-alpha-1790635538000
+      playwright-core: 1.65.0-alpha-2026-10-30
 
   postcss@8.5.32:
     dependencies:
