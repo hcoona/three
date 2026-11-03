@@ -25,12 +25,16 @@ internal static class DotNetFactsAssembler
         DotNetPackageContext[] packages = selected.Where(project =>
             project.Origin != CheckOrigin.NativeRetained || project.QualityPreset is not null)
             .Select(project => DotNetPackageChecks.Resolve(project, selection)).ToArray();
-        CiPlan retained = Complete(selection with
+        DotNetSelection retainedSelection = selection with
         {
             Reasons = selection.Reasons.Where(pair => !packages.Any(package =>
                 package.Project == pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value,
                 StringComparer.Ordinal)
-        }, token);
+        };
+        string[] tools = retainedSelection.Reasons.Keys.SelectMany(project =>
+            selection.CandidateNodes.GetValueOrDefault(project) ?? []).SelectMany(node =>
+            node.RequiredTools ?? []).Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal).ToArray();
         string checkout = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Checkout));
         string scratch = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Scratch));
         if (!Path.IsPathFullyQualified(request.Checkout) ||
@@ -40,7 +44,12 @@ internal static class DotNetFactsAssembler
             throw new InvalidDataException("Native projection requires fresh external scratch.");
         if (!GitReader.IsCommitId(selection.Request.Candidate.Revision))
             throw new InvalidDataException("Native projection requires its exact candidate.");
-        await GitMaterialization.BindAsync(checkout, selection.Request.Candidate.Revision, token);
+        GitMaterialization bound = await GitMaterialization.BindAsync(checkout,
+            selection.Request.Candidate.Revision, token);
+        Func<Platform.NativeCommand, CancellationToken, Task<Platform.NativeCommandResult>>
+            native = execute ?? Platform.NativeProcess.ExecuteAsync;
+        CiPlan retained = Complete(retainedSelection, token,
+            await VersionsAsync(tools, bound, checkout, native, token));
         if (packages.Any(package => !Path.GetFullPath(package.Node.Identity.Project).Equals(
                 Path.GetFullPath(Path.Combine(checkout, package.Project)),
                 OperatingSystem.IsWindows() ?
@@ -51,8 +60,7 @@ internal static class DotNetFactsAssembler
         foreach (DotNetPackageContext package in packages)
             checks.Add(package.Project, await DotNetPackageChecks.ProjectAsync(package,
                 checkout, Path.Combine(scratch, "version-" + index++ + ".json"),
-                Math.Min(request.DeadlineSeconds, 30),
-                execute ?? Platform.NativeProcess.ExecuteAsync, token));
+                Math.Min(request.DeadlineSeconds, 30), native, token));
         RepositoryFacts candidate = selection.Request.Candidate with
         {
             Projects = selection.Request.Candidate.Projects.Select(project =>
@@ -67,7 +75,35 @@ internal static class DotNetFactsAssembler
             selection.Reasons);
     }
 
-    internal static CiPlan Complete(DotNetSelection selection, CancellationToken token)
+    // Planned external tool versions come from the candidate's committed configuration and are
+    // read only for tools that a selected project declares.
+    internal static async Task<Dictionary<string, string>> VersionsAsync(string[] tools,
+        GitMaterialization candidate, string checkout,
+        Func<Platform.NativeCommand, CancellationToken, Task<Platform.NativeCommandResult>>
+            execute, CancellationToken token)
+    {
+        var versions = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (tools.Contains("python"))
+            versions.Add("python", (await candidate.ReadOptionalTextAsync(".python-version",
+                token) ?? throw new InvalidDataException(
+                    "Missing committed Python runtime selection.")).Trim());
+        if (tools.Contains("node"))
+        {
+            Platform.NativeCommandResult answer = await execute(new("mise", checkout,
+                Release.LockedToolSelection.Query("node"), 30), token);
+            if (!answer.Succeeded)
+                throw new InvalidDataException("Native locked node query failed: " +
+                    (answer.Error ?? answer.Stderr.Trim()));
+            versions.Add("node", Release.LockedToolSelection.Selected("node", checkout,
+                answer.Stdout));
+        }
+        if (tools.Contains("npm")) versions.Add("npm", DotNetTools.Bundled);
+        foreach ((string tool, string version) in versions) DotNetTools.Version(tool, version);
+        return versions;
+    }
+
+    internal static CiPlan Complete(DotNetSelection selection, CancellationToken token,
+        IReadOnlyDictionary<string, string>? versions = null)
     {
         var identities = new HashSet<(string Project, string Globals)>(
             new DotNetRepositoryReader.NativeIdentityComparer());
@@ -92,7 +128,7 @@ internal static class DotNetFactsAssembler
             {
                 if (!identities.Add(DotNetRepositoryReader.Key(node.Identity)))
                     throw new InvalidDataException("Duplicate selected complete native identity.");
-                checks.AddRange(DotNetChecks.Expand(project.Id, node));
+                checks.AddRange(DotNetChecks.Expand(project.Id, node, versions));
             }
             if (checks.Count == 0)
                 throw new InvalidDataException("Selected project has no native inner identity: " +

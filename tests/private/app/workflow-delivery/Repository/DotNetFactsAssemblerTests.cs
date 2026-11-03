@@ -1,4 +1,5 @@
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Tests.Repository;
@@ -65,8 +66,60 @@ public sealed class DotNetFactsAssemblerTests(TestContext context)
         Assert.IsTrue(plan.Checks.All(check => check.Work.Key.Target == "product/A.csproj"));
         CollectionAssert.AreEquivalent(NativeFrameworks, plan.Checks.Select(check =>
             DotNetChecks.Read(check.Work, fixture.Root).Dimension.TargetFramework).ToArray());
-        Assert.IsTrue(plan.Checks.All(check => check.Work.Dimensions.Count == 3 &&
+        Assert.IsTrue(plan.Checks.All(check => check.Work.Dimensions.Count == 4 &&
+            check.Work.Dimensions[DotNetTools.Dimension] == "{}" &&
             !check.Work.Dimensions.ContainsKey("VersionBaseDirectory")));
+    }
+
+    [TestMethod]
+    [DataRow("", "", "")]
+    [DataRow("python", "3.13", "Malformed planned python version")]
+    [DataRow("python", null, "Missing committed Python runtime selection.")]
+    [DataRow("node", "failed", "Native locked node query failed")]
+    [DataRow("node", "ambiguous", "no single locked selection")]
+    public async Task PlannedToolVersionsComeFromCommittedConfiguration(string defect,
+        string? value, string reason)
+    {
+        using var repo = await GitReaderTests.GitFixture.CreateAsync(context.CancellationToken);
+        if (!(defect == "python" && value is null))
+            await repo.SetAsync(".python-version", defect == "python" ? value! : "3.13.1\n");
+        await repo.SetAsync("mise.toml", "[tools]\n");
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+        GitMaterialization candidate = await GitMaterialization.BindAsync(repo.Directory,
+            commit, context.CancellationToken);
+        string selection =
+            """{"version":"24.1.0","active":true,"source":{"type":"mise.toml","path":""" +
+            System.Text.Json.JsonSerializer.Serialize(Path.Combine(repo.Directory, "mise.toml")) +
+            "}}";
+        var commands = new List<NativeCommand>();
+        Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
+            CancellationToken token)
+        {
+            commands.Add(command);
+            return Task.FromResult(new NativeCommandResult(
+                NativeTermination.Exited, defect == "node" && value == "failed" ? 1 : 0,
+                defect == "node" && value == "ambiguous" ? "[" + selection + "," + selection +
+                    "]" : "[" + selection + "]", "", 0, null));
+        }
+        string[] tools = ["node", "npm", "python"];
+        if (defect.Length != 0)
+        {
+            InvalidDataException error = await Assert.ThrowsExactlyAsync<InvalidDataException>(
+                () => DotNetFactsAssembler.VersionsAsync(tools, candidate, repo.Directory,
+                    ExecuteAsync, context.CancellationToken));
+            Assert.Contains(reason, error.Message);
+            return;
+        }
+        Assert.IsEmpty(await DotNetFactsAssembler.VersionsAsync([], candidate, repo.Directory,
+            ExecuteAsync, context.CancellationToken));
+        Assert.IsEmpty(commands);
+        Dictionary<string, string> versions = await DotNetFactsAssembler.VersionsAsync(tools,
+            candidate, repo.Directory, ExecuteAsync, context.CancellationToken);
+        Assert.AreEqual("""{"node":"24.1.0","npm":"bundled","python":"3.13.1"}""",
+            DotNetTools.Serialize(versions));
+        Assert.AreEqual("mise ls --json --current --locked node", commands.Single().Executable +
+            " " + string.Join(' ', commands.Single().Arguments));
     }
 
     [TestMethod]

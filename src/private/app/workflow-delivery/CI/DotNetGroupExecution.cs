@@ -17,7 +17,8 @@ internal static class DotNetGroupExecution
         DotNetRunRequest request,
         Func<CiPlan, DotNetRunRequest, CancellationToken, Task<DotNetRunResult>>? retained,
         Func<CiPlan, DotNetRunRequest, CancellationToken, Task<DotNetPackageRunResult>>? packages,
-        CancellationToken token)
+        CancellationToken token,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>>? execute = null)
     {
         ResultCollector.Collect(plan, []);
         if (plan.Scope != DotNetFactsAssembler.Scope)
@@ -40,6 +41,10 @@ internal static class DotNetGroupExecution
         };
         ResultCollector.Collect(nativePlan, []);
         ResultCollector.Collect(packagePlan, []);
+        DotNetToolGroup[] present = DotNetTools.Groups(plan).Where(group =>
+            plan.Checks.Any(check => DotNetTools.Group(check) == group.Key)).ToArray();
+        if (present.Length > 1)
+            throw new InvalidDataException("A native group executes one external tool group.");
         string checkout = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Checkout));
         string scratch = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.Scratch));
         if (!Path.IsPathFullyQualified(request.Checkout) ||
@@ -52,15 +57,22 @@ internal static class DotNetGroupExecution
             throw new InvalidDataException("Native group execution requires its exact candidate.");
         GitMaterialization materialization = await GitMaterialization.BindAsync(checkout,
             plan.Candidate, token);
-        retained ??= (partition, partitionRequest, cancellation) =>
-            DotNetExecution.RunBoundAsync(partition, partitionRequest, materialization,
-                cancellation);
-        packages ??= (partition, partitionRequest, cancellation) =>
-            DotNetPackageExecution.RunBoundAsync(partition, partitionRequest, materialization,
-                cancellation);
         // Reuse each executor's complete contract validation before either product partition.
         DotNetExecution.ReadChecks(nativePlan, checkout);
         await DotNetPackageExecution.ReadChecksAsync(packagePlan, materialization, token);
+        execute ??= NativeProcess.ExecuteAsync;
+        string path = await DotNetToolEnvironment.PathAsync(
+            present.SingleOrDefault()?.Tools ?? [], checkout,
+            Environment.GetEnvironmentVariable("PATH"),
+            Environment.GetEnvironmentVariable("PATHEXT"), execute, token);
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> scoped =
+            DotNetToolEnvironment.Scoped(path, execute);
+        retained ??= (partition, partitionRequest, cancellation) =>
+            DotNetExecution.RunBoundAsync(partition, partitionRequest, materialization,
+                scoped, cancellation);
+        packages ??= (partition, partitionRequest, cancellation) =>
+            DotNetPackageExecution.RunBoundAsync(partition, partitionRequest, materialization,
+                scoped, cancellation);
         DotNetRunResult native = await retained(nativePlan, request with
         { Scratch = Directory.CreateDirectory(Path.Combine(scratch, "retained")).FullName }, token);
         DotNetPackageRunResult package;

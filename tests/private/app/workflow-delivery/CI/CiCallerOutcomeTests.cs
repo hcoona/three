@@ -61,7 +61,8 @@ public sealed class CiCallerOutcomeTests(TestContext context)
             TransferJson.Default.CiPlan);
         string directory = Path.Combine(files.Root, "execution-state");
         CiOutcome outcome = await DotNetCiCaller.ExecuteAsync(repo.Directory, transfer, directory,
-            commit, commit, context.CancellationToken, (original, request, _) =>
+            commit, commit, DotNetTools.None, context.CancellationToken,
+            (original, request, _) =>
             {
                 Assert.AreEqual(plan.Candidate, original.Candidate);
                 Assert.AreEqual(plan.Checks[0].Work.Key, original.Checks[0].Work.Key);
@@ -75,6 +76,8 @@ public sealed class CiCallerOutcomeTests(TestContext context)
         Assert.AreEqual("missing", outcome.Checks.Single().Status);
         Assert.IsTrue(File.Exists(Path.Combine(directory, "result.json")));
         Assert.IsTrue(File.Exists(Path.Combine(directory, "request.json")));
+        Assert.AreEqual(DotNetTools.None, CiCallerTransfer.Read(Path.Combine(directory,
+            DotNetCiCaller.GroupResults), TransferJson.Default.DotNetGroupResultSet).Group);
         Assert.AreEqual(commit, CiCallerTransfer.Read(Path.Combine(directory, "outcome.json"),
             TransferJson.Default.CiOutcome).Candidate);
     }
@@ -103,7 +106,98 @@ public sealed class CiCallerOutcomeTests(TestContext context)
     }
 
     private static CiPlan Plan() => new(Candidate, Candidate, DotNetCiCaller.Scope,
-        [new(new(new("src/project.csproj", "dotnet/build-v1", "Debug"), [], "windows-latest",
-            true, []),
-            [], [], [CheckOrigin.NativeRetained])]);
+        [Check("src/project.csproj", "{}")]);
+
+    private static PlannedCheck Check(string project, string tools) =>
+        new(new(new(project, "dotnet/build-v1", "Debug"),
+            new() { [DotNetTools.Dimension] = tools }, "windows-latest", true, []),
+            [], [], [CheckOrigin.NativeRetained]);
+
+    private static CiPlan Grouped() => new(Candidate, Candidate, DotNetCiCaller.Scope,
+        [Check("src/plain.csproj", "{}"), Check("src/node.csproj", "{\"node\":\"24.1.0\"}")]);
+
+    private static DotNetGroupResultSet Set(string group, params (int Check,
+        CheckStatus Status)[] results) => new(group, Candidate, [.. results.Select(result =>
+            new CheckResult(Candidate, Grouped().Checks[result.Check].Work.Key,
+                result.Status))]);
+
+    [TestMethod]
+    public void DotNetJoinCollectsEveryPlannedGroupAndKeepsMissingGroupsMissing()
+    {
+        CiPlan plan = Grouped();
+        Assert.AreEqual("node+none", string.Join('+',
+            DotNetTools.Groups(plan).Select(group => group.Key)));
+        Assert.AreEqual("src/node.csproj",
+            DotNetTools.Select(plan, "node").Checks.Single().Work.Key.Target);
+        Assert.IsTrue(DotNetCiCaller.Join(plan, new Dictionary<string, DotNetGroupResultSet>
+        {
+            ["none"] = Set("none", (0, CheckStatus.Passed)),
+            ["node"] = Set("node", (1, CheckStatus.Passed)),
+        }).Outcome.Satisfied);
+        CiOutcome missing = DotNetCiCaller.Join(plan,
+            new Dictionary<string, DotNetGroupResultSet>
+            { ["none"] = Set("none", (0, CheckStatus.Passed)) }).Outcome;
+        Assert.IsFalse(missing.Satisfied);
+        Assert.AreEqual("missing,passed", string.Join(',',
+            missing.Checks.Select(check => check.Status).Order(StringComparer.Ordinal)));
+        foreach (CheckStatus status in new[] { CheckStatus.Failed, CheckStatus.Cancelled })
+            Assert.IsFalse(DotNetCiCaller.Join(plan,
+                new Dictionary<string, DotNetGroupResultSet>
+                {
+                    ["none"] = Set("none", (0, CheckStatus.Passed)),
+                    ["node"] = Set("node", (1, status)),
+                }).Outcome.Satisfied);
+        CiPlan toolOnly = new(Candidate, Candidate, DotNetCiCaller.Scope, [plan.Checks[1]]);
+        CiOutcome silent = DotNetCiCaller.Join(toolOnly,
+            new Dictionary<string, DotNetGroupResultSet>
+            { ["node"] = Set("node", (1, CheckStatus.Passed)) }).Outcome;
+        Assert.IsFalse(silent.Satisfied);
+        Assert.Contains(".NET group reported no result set: none", silent.Errors);
+        Assert.IsFalse(DotNetCiCaller.Join(new(Candidate, Candidate, DotNetCiCaller.Scope, []),
+            new Dictionary<string, DotNetGroupResultSet>()).Outcome.Satisfied);
+    }
+
+    [TestMethod]
+    public void DotNetJoinRejectsExtraDuplicatedMisplacedAndUnplannedResults()
+    {
+        CiPlan plan = Grouped();
+        foreach (Dictionary<string, DotNetGroupResultSet> sets in new[]
+                 {
+                     new Dictionary<string, DotNetGroupResultSet>
+                     { ["none"] = Set("none", (0, CheckStatus.Passed), (1, CheckStatus.Passed)) },
+                     new Dictionary<string, DotNetGroupResultSet>
+                     { ["none"] = Set("none", (0, CheckStatus.Passed), (0, CheckStatus.Passed)) },
+                     new Dictionary<string, DotNetGroupResultSet>
+                     { ["none"] = Set("none", (1, CheckStatus.Passed)) },
+                     new Dictionary<string, DotNetGroupResultSet>
+                     { ["node"] = Set("none", (1, CheckStatus.Passed)) },
+                     new Dictionary<string, DotNetGroupResultSet>
+                     { ["python"] = Set("python") },
+                 })
+            Assert.ThrowsExactly<InvalidDataException>(() => DotNetCiCaller.Join(plan, sets));
+    }
+
+    [TestMethod]
+    public void DotNetJoinReadsGroupArtifactsAndRejectsStrayEntries()
+    {
+        using var files = new CiCallerFiles();
+        string transfer = files.Transfer();
+        CiCallerTransfer.Write(Path.Combine(transfer, "dotnet-plan.json"), Grouped(),
+            TransferJson.Default.CiPlan);
+        string results = Path.Combine(files.Root, "group-results");
+        string group = Directory.CreateDirectory(Path.Combine(results, "none")).FullName;
+        CiCallerTransfer.Write(Path.Combine(group, DotNetCiCaller.GroupResults),
+            Set("none", (0, CheckStatus.Passed)), TransferJson.Default.DotNetGroupResultSet);
+        Directory.CreateDirectory(Path.Combine(results, "node"));
+        string directory = Path.Combine(files.Root, "join");
+        string root = Directory.CreateDirectory(Path.Combine(files.Root, "checkout")).FullName;
+        CiOutcome outcome = DotNetCiCaller.Join(root, transfer, results, directory,
+            Candidate, Candidate);
+        Assert.IsFalse(outcome.Satisfied);
+        Assert.AreEqual(1, outcome.Checks.Count(check => check.Status == "missing"));
+        Assert.IsTrue(File.Exists(Path.Combine(directory, "outcome.json")));
+        File.WriteAllText(Path.Combine(results, "stray.json"), "{}");
+        Assert.ThrowsExactly<InvalidDataException>(() => DotNetCiCaller.Join(root,
+            transfer, results, Path.Combine(files.Root, "join-again"), Candidate, Candidate));
+    }
 }

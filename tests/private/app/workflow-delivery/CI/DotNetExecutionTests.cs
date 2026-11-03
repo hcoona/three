@@ -416,6 +416,11 @@ public sealed class DotNetExecutionTests(TestContext context)
     [DataRow("required")]
     [DataRow("missing-test")]
     [DataRow("missing-build")]
+    [DataRow("tools-missing")]
+    [DataRow("tools-mismatch")]
+    [DataRow("tools-unknown")]
+    [DataRow("tools-version")]
+    [DataRow("tools-noncanonical")]
     public async Task InvalidPlanStopsBeforeProductCommands(string defect)
     {
         using var fixture = Shared();
@@ -430,6 +435,19 @@ public sealed class DotNetExecutionTests(TestContext context)
             { Origins = [CheckOrigin.Preset], QualityPresets = ["adopted-quality"] };
             else if (defect == "required") first = first with
             { Work = first.Work with { Required = false } };
+            else if (defect.StartsWith("tools-", StringComparison.Ordinal))
+            {
+                var dimensions = new Dictionary<string, string>(first.Work.Dimensions);
+                if (defect == "tools-missing") dimensions.Remove(DotNetTools.Dimension);
+                else dimensions[DotNetTools.Dimension] = defect switch
+                {
+                    "tools-mismatch" => "{\"node\":\"24.1.0\"}",
+                    "tools-unknown" => "{\"ruby\":\"3.4.1\"}",
+                    "tools-version" => "{\"node\":\"24\"}",
+                    _ => "{ \"node\": \"24.1.0\" }",
+                };
+                first = first with { Work = first.Work with { Dimensions = dimensions } };
+            }
             else
             {
                 var dimensions = new Dictionary<string, string>(first.Work.Dimensions);

@@ -29,11 +29,14 @@ internal static class CiCallerTransfer
             File.AppendAllText(path, key + "=" + value + "\n");
     }
 
-    internal static void OutputArray(string key, string[] values)
+    internal static void OutputArray(string key, string[] values) =>
+        OutputJson(key, values, TransferJson.Default.StringArray);
+
+    internal static void OutputJson<T>(string key, T value, JsonTypeInfo<T> type)
     {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
-            JsonSerializer.Serialize(writer, values, TransferJson.Default.StringArray);
+            JsonSerializer.Serialize(writer, value, type);
         Output(key, System.Text.Encoding.UTF8.GetString(buffer.ToArray()));
     }
 

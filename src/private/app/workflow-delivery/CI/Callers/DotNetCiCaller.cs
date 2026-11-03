@@ -165,6 +165,8 @@ internal static class DotNetCiCaller
             tests.ToString(System.Globalization.CultureInfo.InvariantCulture));
         CiCallerTransfer.Output("base", request.Basis.Reference);
         CiCallerTransfer.Output("candidate", request.Candidate.Reference);
+        CiCallerTransfer.OutputJson("dotnet_groups", DotNetTools.Groups(readback.Plan),
+            TransferJson.Default.DotNetToolGroupArray);
         return result;
 
         static JsonArray Strings(IEnumerable<string> values) =>
@@ -178,15 +180,16 @@ internal static class DotNetCiCaller
     }
 
     internal static async Task<CiOutcome> ExecuteAsync(string root, string transfer,
-        string directory, string basis, string candidate, CancellationToken token,
+        string directory, string basis, string candidate, string group, CancellationToken token,
         Func<CiPlan, DotNetRunRequest, CancellationToken, Task<DotNetGroupRunResult>>? execute =
             null, TextWriter? diagnostics = null)
     {
         CiCallerTransfer.External(root, directory);
         _ = CiCallerTransfer.Application(transfer);
-        CiPlan plan = CiCallerTransfer.Read(Path.Combine(transfer, "dotnet-plan.json"),
+        CiPlan original = CiCallerTransfer.Read(Path.Combine(transfer, "dotnet-plan.json"),
             TransferJson.Default.CiPlan);
-        CiCallerTransfer.Plan(plan, basis, candidate, Scope);
+        CiCallerTransfer.Plan(original, basis, candidate, Scope);
+        CiPlan plan = DotNetTools.Select(original, group);
         var reader = new GitReader(root);
         if (await reader.ResolveAsync("HEAD", token) != candidate ||
             await reader.ResolveAsync(basis, token) != basis)
@@ -204,6 +207,9 @@ internal static class DotNetCiCaller
             TransferJson.Default.CheckResultArray);
         if (result.Candidate != candidate)
             throw new InvalidDataException(".NET result has a different original candidate.");
+        CiCallerTransfer.Write(Path.Combine(directory, GroupResults),
+            new DotNetGroupResultSet(group, candidate, result.Results),
+            TransferJson.Default.DotNetGroupResultSet);
         CiOutcome outcome = CiCallerTransfer.Outcome(plan, result.Outcome);
         CiCallerTransfer.Write(Path.Combine(directory, "outcome.json"), outcome,
             TransferJson.Default.CiOutcome);
@@ -216,4 +222,70 @@ internal static class DotNetCiCaller
                 command.Result)), diagnostics);
         return outcome;
     }
+
+    internal const string GroupResults = "group-results.json";
+
+    // The downloaded group artifacts hold one <key>/group-results.json each. A missing group
+    // leaves missing results and fails the join; any other entry or misplaced, repeated or
+    // extra result fails.
+    internal static CiOutcome Join(string root, string transfer, string results,
+        string directory, string basis, string candidate)
+    {
+        CiCallerTransfer.External(root, directory);
+        CiPlan plan = CiCallerTransfer.Read(Path.Combine(transfer, "dotnet-plan.json"),
+            TransferJson.Default.CiPlan);
+        CiCallerTransfer.Plan(plan, basis, candidate, Scope);
+        string[] groups = DotNetTools.Groups(plan).Select(group => group.Key).ToArray();
+        var sets = new Dictionary<string, DotNetGroupResultSet>(StringComparer.Ordinal);
+        results = CiCallerTransfer.Absolute(results);
+        if (Directory.Exists(results))
+            foreach (string entry in Directory.EnumerateFileSystemEntries(results))
+            {
+                string key = Path.GetFileName(entry);
+                if (!groups.Contains(key, StringComparer.Ordinal) || !Directory.Exists(entry))
+                    throw new InvalidDataException("Unplanned .NET group result: " + key);
+                string path = Path.Combine(entry, GroupResults);
+                if (File.Exists(path)) sets.Add(key, CiCallerTransfer.Read(path,
+                    TransferJson.Default.DotNetGroupResultSet));
+            }
+        else if (File.Exists(results))
+            throw new InvalidDataException("Unplanned .NET group result: " + results);
+        (CheckResult[] union, CiOutcome outcome) = Join(plan, sets);
+        CiCallerTransfer.Fresh(directory);
+        CiCallerTransfer.Write(Path.Combine(directory, "results.json"), union,
+            TransferJson.Default.CheckResultArray);
+        CiCallerTransfer.Write(Path.Combine(directory, "outcome.json"), outcome,
+            TransferJson.Default.CiOutcome);
+        return outcome;
+    }
+
+    internal static (CheckResult[] Results, CiOutcome Outcome) Join(CiPlan plan,
+        IReadOnlyDictionary<string, DotNetGroupResultSet> sets)
+    {
+        foreach ((string key, DotNetGroupResultSet set) in sets)
+        {
+            CiPlan selected = DotNetTools.Select(plan, key);
+            CheckKey[] keys = set.Results.Select(result => result.Key).ToArray();
+            if (set.Group != key || set.Candidate != plan.Candidate ||
+                keys.Distinct().Count() != keys.Length ||
+                !keys.ToHashSet().SetEquals(selected.Checks.Select(check => check.Work.Key)) ||
+                ResultCollector.Collect(selected, set.Results).Errors.Length != 0)
+                throw new InvalidDataException(
+                    ".NET group result does not cover exactly its planned checks: " + key);
+        }
+        CheckResult[] union = sets.Values.SelectMany(set => set.Results).ToArray();
+        CiOutcome outcome = ResultCollector.Collect(plan, union);
+        // Every planned group, including one with no checks, must report its own result set.
+        string[] absent = DotNetTools.Groups(plan).Select(group => group.Key)
+            .Where(key => !sets.ContainsKey(key)).ToArray();
+        return absent.Length == 0 ? (union, outcome) : (union, outcome with
+        {
+            Satisfied = false,
+            Errors = [.. outcome.Errors, .. absent.Select(key =>
+                ".NET group reported no result set: " + key)],
+        });
+    }
 }
+
+internal sealed record DotNetGroupResultSet(string Group, string Candidate,
+    CheckResult[] Results);

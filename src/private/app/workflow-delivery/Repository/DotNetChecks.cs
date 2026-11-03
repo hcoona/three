@@ -11,7 +11,8 @@ internal static class DotNetChecks
     internal const string Build = "dotnet/project-build-v1";
     internal const string Test = "dotnet/project-test-v1";
 
-    internal static CheckSpec[] Expand(string project, DotNetGraphNode node)
+    internal static CheckSpec[] Expand(string project, DotNetGraphNode node,
+        IReadOnlyDictionary<string, string>? versions = null)
     {
         ImpactPlanner.ValidatePath(project);
         if (!new[] { ".csproj", ".fsproj", ".vbproj" }.Contains(Path.GetExtension(project),
@@ -29,6 +30,8 @@ internal static class DotNetChecks
             ["msbuild"] = JsonSerializer.Serialize(node.Dimension,
                 TransferJson.Default.MsBuildDimension),
             ["test-capability"] = node.TestCapability,
+            [DotNetTools.Dimension] = DotNetTools.Serialize(DotNetTools.Planned(
+                node.RequiredTools ?? [], versions ?? new Dictionary<string, string>())),
         };
         var build = new CheckSpec(new(project, Build, variant), dimensions, "windows-latest",
             true, []);
@@ -39,11 +42,13 @@ internal static class DotNetChecks
 
     internal static DotNetGraphNode Read(CheckSpec check, string checkout)
     {
-        if (check.Dimensions.Count != 3 ||
+        if (check.Dimensions.Count != 4 ||
             !check.Dimensions.TryGetValue("globals", out string? originalGlobals) ||
             !check.Dimensions.TryGetValue("msbuild", out string? nativeDimension) ||
-            !check.Dimensions.TryGetValue("test-capability", out string? capability))
+            !check.Dimensions.TryGetValue("test-capability", out string? capability) ||
+            !check.Dimensions.TryGetValue(DotNetTools.Dimension, out string? toolDimension))
             throw new InvalidDataException("Missing complete native check dimensions.");
+        Dictionary<string, string> tools = DotNetTools.Parse(toolDimension);
         Dictionary<string, string> globals = JsonSerializer.Deserialize(
             originalGlobals, TransferJson.Default.DictionaryStringString)
             ?? throw new InvalidDataException("Missing original native globals.");
@@ -51,8 +56,11 @@ internal static class DotNetChecks
             TransferJson.Default.MsBuildDimension)
             ?? throw new InvalidDataException("Missing native MSBuild dimension.");
         var node = new DotNetGraphNode(new(Path.GetFullPath(Path.Combine(checkout,
-                check.Key.Target)), globals), false, dimension, "", "", [], capability);
-        CheckSpec[] expected = Expand(check.Key.Target, node);
+                check.Key.Target)), globals), false, dimension, "", "", [], capability,
+            RequiredTools: DotNetTools.Names(tools.Keys));
+        if (tools.Count != 0 && capability == "None")
+            throw new InvalidDataException("Only test projects declare required tools.");
+        CheckSpec[] expected = Expand(check.Key.Target, node, tools);
         CheckSpec? contract = expected.SingleOrDefault(item => item.Key == check.Key);
         if (contract is null || check.Runner != contract.Runner ||
             check.Required != contract.Required || check.Package is not null ||

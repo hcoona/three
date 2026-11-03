@@ -31,6 +31,11 @@ internal static class DotNetPackageExecution
         DotNetRunRequest request, GitMaterialization bound, CancellationToken token) =>
         RunAsync(plan, request, bound, NativeProcess.ExecuteAsync, token);
 
+    internal static Task<DotNetPackageRunResult> RunBoundAsync(CiPlan plan,
+        DotNetRunRequest request, GitMaterialization bound,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token) => RunAsync(plan, request, bound, execute, token);
+
     private static async Task<DotNetPackageRunResult> RunAsync(CiPlan plan,
         DotNetRunRequest request, GitMaterialization? bound,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,

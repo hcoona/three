@@ -76,9 +76,7 @@ not a job. The parallel branches show permitted independence after `scope`,
 not a guarantee of simultaneous scheduling. Node tests still wait for Node's
 retained-selection and planned-matrix outputs; Validate joins only its declared
 prerequisites. The .NET rows show the
-[tool-grouped execution](../integration/dotnet.md#external-tool-dimension) that
-starts after the ruleset no longer names `Build & Test (.NET 10)`; until then,
-`dotnet-tests` is one job and no `dotnet-results` job exists.
+[tool-grouped execution](../integration/dotnet.md#external-tool-dimension).
 
 | Alias        | YAML job ID                         | Runner         |
 | ------------ | ----------------------------------- | -------------- |

@@ -28,9 +28,13 @@ internal static class CiCallerCli
                     scope, token).GetAwaiter().GetResult().ToJsonString());
                 return 0;
             case ["ci", "caller-dotnet", "execute", var root, var transfer, var directory,
-                var basis, var candidate]:
+                var basis, var candidate, var group]:
                 return Outcome(DotNetCiCaller.ExecuteAsync(root, transfer, directory, basis,
-                    candidate, token, diagnostics: diagnostics).GetAwaiter().GetResult());
+                    candidate, group, token, diagnostics: diagnostics).GetAwaiter().GetResult());
+            case ["ci", "caller-dotnet", "join", var root, var transfer, var results,
+                var directory, var basis, var candidate]:
+                return Outcome(DotNetCiCaller.Join(root, transfer, results, directory, basis,
+                    candidate));
             case ["ci", var caller, "materialize", var root, var scope, var transfer, var directory]
                 when caller is "caller-python" or "caller-ruby" or "caller-node":
                 Materialize(caller, root, scope, transfer, directory);
