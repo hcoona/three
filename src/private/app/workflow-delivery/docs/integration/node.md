@@ -235,25 +235,28 @@ The retained Node matrix depends one-way on scope and this group. Successful
 planning supplies explicit retained-member selections/reasons and applicability;
 failed/missing group planning cannot become a skip. Exclude exactly the group-owned
 fixture using PNPM's native negative directory filter for recursive build/test,
-while preserving full frozen installation, every other workspace member, both
-runtime variants, if-present test behavior and the Hexo typecheck/packed probes.
+while preserving full frozen installation, every other workspace member, every
+planned runtime variant, if-present test behavior and the Hexo typecheck/packed probes.
 Resolve any real generated-output prerequisite before crossing this boundary.
 Do not execute an adopted check again through the retained aggregate owner.
 
 Preserve complete build and source-test obligations for every declared runtime;
 source tests have no build prerequisite. The configured packaging runtime also
 requires npm pack after build, followed by contents and clean installed consumer
-checks. The current two-entry matrix expands to seven obligations.
+checks. A plan with N runtime variants therefore has 2N + 3 obligations.
 
-Resolve variants from root CI's existing `node-version` matrix. The committed
-mise Node tool selection determines the packaging runtime; it must occur in that
-matrix. Support a finite nonempty unique list of major `.x` selectors, with no
+The Node group plans the runtime variants as described in
+[Planned Runtime Matrix](#planned-runtime-matrix); the workflow does not
+hard-code them. The committed mise Node tool selection determines the packaging
+runtime; its major must occur in the planned matrix, or planning fails. Variants
+are a finite nonempty unique ascending list of major `.x` selectors, with no
 general matrix include/exclude or dynamic task graph. Keep exact native Node and
 PNPM readback for the configured packaging context and major readback for moving
-matrix contexts. No application-owned second runtime roster or largest-major
-heuristic is permitted. Each runtime receives the original complete plan and
-its selected context. Collect every original required key without substituting
-another runtime's success for missing or abnormal results.
+matrix contexts. The planned matrix is the only runtime roster; no second
+application-owned roster or largest-major heuristic is permitted. Each runtime
+receives the original complete plan and its selected context. Collect every
+original required key without substituting another runtime's success for
+missing or abnormal results.
 
 Planning obtains lockfile-only native PNPM facts and metadata without installing
 product dependencies at either endpoint. Selected execution retains its frozen
@@ -279,6 +282,150 @@ Use native checkouts, not application cleanup/recovery logic. An empty product
 plan requires no product runtime execution. Root CI retains overall result
 ownership; the group and retained executor remain required when applicable.
 
+### Planned Runtime Matrix
+
+This section realizes
+[Issue #1508](https://github.com/hcoona/three/issues/1508) under the Delivery
+Wave entry "Derive the Node.js CI matrix from declared engines". The owner
+decided the rule: the matrix is every LTS major from the lowest version that
+satisfies the declared `engines.node`, up to the newest release, plus the newest
+Node.js major. Release-schedule data is committed and changes only through
+reviewable pull requests, so planning never queries the network and one commit
+always plans the same matrix.
+
+**Schedule data.** `eng/node-release-schedule.json` is one UTF-8 JSON object:
+
+```json
+{
+  "newestRelease": "26.0.0",
+  "schedule": {
+    "commit": "<40-hex nodejs/Release commit>",
+    "releases": { "v24": { "start": "...", "lts": "...", "end": "..." } }
+  }
+}
+```
+
+- `newestRelease` is a released Node.js version, `MAJOR.MINOR.PATCH` with no
+  prerelease. Its major is the newest Node.js major (the Current line). An
+  announced or alpha line that has no release yet is never the newest major.
+- `schedule.releases` is the verbatim `schedule.json` object of
+  [nodejs/Release](https://github.com/nodejs/Release) at `schedule.commit`.
+  Planning reads only keys matching `^v(0\.[0-9]+|[1-9][0-9]*)$` and whether a
+  row has a nonempty `lts` member. It ignores dates, `codename`, `alpha` and
+  other members.
+- The C# reader is the typed contract. A missing file, invalid JSON, unknown
+  top-level member, invalid version or commit, or a duplicate or invalid key
+  fails planning.
+
+The schedule alone cannot select the newest major without a clock, because it
+lists majors before their first release. `newestRelease` records that fact as
+committed data instead.
+
+**Updates.** The existing self-hosted Renovate workflow updates the file. There
+is no new scheduled workflow or write-capable token. `renovate.json` adds two
+regex custom managers for this file:
+
+- `newestRelease` uses the `node-version` datasource with `semver` versioning.
+  The default `node` versioning treats a major as unstable until it enters LTS,
+  so it would not propose the Current line. Only major updates are proposed.
+  They follow the existing rule for manually reviewed Node major updates, so
+  they are not automerged.
+- `schedule.commit` uses the `git-refs` datasource for branch `main` of
+  `https://github.com/nodejs/Release` as a digest. A post-upgrade task, added to
+  the global `allowedCommands` and the manager's file filters, downloads
+  `schedule.json` at the new commit and rewrites `schedule.releases`. A monthly
+  Renovate schedule bounds noise from unrelated upstream commits. These pull
+  requests are not automerged, because they can change the qualification
+  matrix.
+
+Network access happens only inside Renovate at update time. The planned matrix
+changes only when a reviewed data, engines or mise change merges, and that
+pull request's CI qualifies the new matrix.
+
+**Algorithm.** Planning reads the candidate commit only and evaluates no date or
+wall-clock time:
+
+1. Read the engines inputs and derive the lower-bound major `L` by the
+   combination rule below.
+2. Let `N` be the major of `newestRelease`.
+3. Fail if `L > N`, or if any major `m` with `L <= m <= N` has no `v<m>` row.
+4. The matrix is `{ m : L <= m <= N and v<m> has nonempty lts } ∪ {N}`, in
+   ascending order. Major `m` is rendered as selector `m.x` and variant key
+   `node<m>`.
+5. Fail if the packaging major from mise is not in the matrix.
+
+An LTS major is a major whose schedule row designates LTS. The decision does not
+depend on whether the LTS date has already passed. Today this means even majors
+before 27 and every major from 27, following the upstream schedule. Comparing
+dates would need a "now" that the commit does not fix. It would also briefly
+drop a line: for example, Node.js 25 was released before 24 entered LTS. An LTS
+major stays in the matrix after its end of life while the declared engines still
+admit it. Narrowing then requires an engines change. With today's data
+(`L = 22`, `N = 26`) the matrix is `22.x`, `24.x`, `26.x`, which is identical
+to the current literal matrix.
+
+**Engines inputs.** Inputs are the root `package.json` and every importer in the
+candidate's native PNPM workspace facts. The roster is complete and independent
+of change selection, so the matrix depends on the commit alone. Each input must
+declare `engines.node` as exactly one `>=MAJOR[.MINOR[.PATCH]]` comparator. The
+lowest satisfying major of that range is `MAJOR`. A missing `engines.node`, any
+other range form, or an unreadable manifest fails planning. Supporting further
+range grammar is a reviewed reader change, not a fallback.
+
+Current inputs declare `>=22` (root, Hexo renderer, Steam exporter),
+`>=22.6.0` (the three IM ACP gateway proofs of concept) and `>=24.0.0` (the
+adopted npm fixture). The fixture is a selected member: it is the group's
+adopted package, and it currently runs on every matrix runtime.
+
+**Combining differing ranges (pending an owner decision).** The Wave entry
+returns this product tradeoff to the owner. Implementation must not start until
+the owner chooses:
+
+- **A. Lowest minimum (union).** `L` is the smallest input major (22 today).
+  Every member runs on every planned major. This keeps today's coverage,
+  including the fixture on 22 outside its declared range.
+- **B. Root manifest only.** `L` comes from the root `package.json` (22 today).
+  Member ranges are not inputs. A member range below the root range is never
+  qualified.
+- **C. Union with per-member filtering.** The matrix is as in A, but each
+  variant runs only members whose range admits it. The fixture would skip 22.
+  This needs per-variant member selection in the group plan, the retained
+  filter and the packaging variant.
+- **D. Highest minimum (intersection).** `L` is the largest input major (24
+  today). The matrix becomes `24.x`, `26.x` and drops the 22 coverage that most
+  members declare.
+
+Recommendation: A, because it matches the current behavior and needs no new
+per-variant machinery. Choose C instead if a member must never run outside its
+declared range.
+
+**Plan and workflow.** The runtime readback keeps its variants and adds the
+schedule commit, `newestRelease` and the derived lower bound as provenance. Its
+sources become `eng/node-release-schedule.json`, `mise.toml`, `mise.lock` and
+the engines manifests, replacing the workflow matrix. The schedule file is a
+shared Node input for every member, like the other root inputs. `node-group`
+always emits the complete runtime plan, including when no retained work is
+applicable, as the single-line JSON output `node_versions`, the ordered
+selector array. `node-tests` consumes it as
+`matrix.node-version: ${{ fromJSON(needs.node-group.outputs.node_versions) }}`.
+The reader requires that exact expression and rejects a literal list. A failed
+group or a missing or malformed output fails matrix evaluation; it cannot
+become a skip, and Validate observes the failure.
+
+Job names keep the form `Test & Build (Node.js <selector>)`. These names change
+with the plan, so no ruleset entry may name them. Every matrix job gates merge
+only through Validate (Issue #1511). The literal matrix is replaced only after
+the ruleset no longer names Node.js matrix contexts. Until then, planning may
+ship while the literal remains; the reader then requires the literal to equal
+the planned selectors and fails on any difference.
+
+Validate this section with algorithm cases: current data; a new Current major;
+odd and even majors before 27 and the all-LTS schedule from 27; an end-of-life
+lower bound; `L > N`; a missing row; an unsupported or missing range; a
+packaging major outside the plan; and the chosen range combination. Add data
+reader cases for each failure above and a workflow contract case for the
+`fromJSON` consumer.
+
 ### Fixture Ownership and Changed-Source Qualification
 
 The native member lives at
@@ -303,7 +450,7 @@ classification and supported copy roles. Unsupported indirect control inputs mus
 fail explicitly. Qualify the retained endpoint graph and separate Debug resource
 query under their actual SDK globals, including additions/deletions, unavailable
 facts and cross-checkout original-plan execution. Then validate the changed-code
-hosted transfer, retained filter and all seven obligations. These are changed-source
+hosted transfer, retained filter and every planned obligation. These are changed-source
 qualification conditions, not transferable acceptance from an earlier source or
 permission to revive the stopped Node campaign. A necessary native capability gap
 returns to the owner.
