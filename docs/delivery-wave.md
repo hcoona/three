@@ -288,6 +288,9 @@ ends a grant. Git and the proposing PR retain the reason and history.
       when their tool is missing, so CI can pass without running them.
 - **Owner decisions:**
     - Order the work as advancement 1, then 2.
+    - Advancement 2 does not wait for the external-tool dimension entry. It
+      applies fail-closed behavior in whichever job runs each test at the
+      time; a later move into a tool-provisioning group keeps that behavior.
     - Tests whose subject is a workflow `shell: bash` or `shell: pwsh` step,
       such as `BashWorkflowCallerTests` and `NuGetWorkflowCallerTests`, keep
       the runner image's shells and git, which GitHub Actions itself uses,
