@@ -257,8 +257,9 @@ The old coarse .NET Boolean is not selected-plan authority.
 Resolve adopted presets and explicit native-retained checks under the MLD's
 [quality-origin contract](../design/repository-and-selection.md#declarations-and-quality-autonomy).
 Emit the original .NET
-[`CiPlan`](../design/repository-and-selection.md#implementation-type-names) as a distinct artifact for the existing
-`dotnet-tests` execution/collection consumer, with native artifact ID and resolved
+[`CiPlan`](../design/repository-and-selection.md#implementation-type-names) as a distinct artifact for the
+`dotnet-tests` execution groups and their result join under the
+[external-tool dimension](#external-tool-dimension), with native artifact ID and resolved
 applicability. Failed/missing/cancelled planning cannot become a successful skip.
 Successful empty work remains valid; required CI composition still accounts for
 the planning owner and .NET execution/result check.
@@ -354,15 +355,109 @@ No retired provider or caller is a runtime fallback.
 No publication/proving dispatch, authentication, access or Environment change
 follows from this group.
 
+### External-Tool Dimension
+
+A whole .NET test project declares the external tools its tests launch
+([Issue #1509](https://github.com/hcoona/three/issues/1509)). The supported
+tools are `python`, `node` and `npm`. The dimension does not select runners,
+filter tests inside a project or add selection inputs outside the project graph;
+[Issue #1512](https://github.com/hcoona/three/issues/1512) owns those.
+
+The test project file declares each tool as an item:
+
+```xml
+<ItemGroup>
+  <ThreeRequiredTool Include="python" />
+</ItemGroup>
+```
+
+The planning task reads `ThreeRequiredTool` items from each evaluated native
+node through `ProjectInstance.GetItems`, as it reads test capability; it does
+not parse project XML. Planning fails, without a fallback, when a declaring node
+has no test capability, a name is unknown or repeated, an item has metadata,
+`npm` is declared without `node`, or the variants of one project declare
+different sets.
+
+Every native-retained build and test check carries a `tools` dimension: a JSON
+object from each declared tool to its planned version, or `{}` without
+declarations. Both checks of a declaring project carry the same value, so the
+test's build prerequisite stays in its group. Package preset checks carry no
+tools. The runner stays `windows-latest`. Execution reading requires the
+dimension and applies the same name rules. Planning reads versions from the
+candidate's committed configuration:
+
+| Tool     | Committed source                                                                    | Planned value                     |
+| -------- | ----------------------------------------------------------------------------------- | --------------------------------- |
+| `python` | `.python-version`, as the [Python group](python.md#native-python-ci-group) reads it | Its exact `X.Y.Z` version         |
+| `node`   | `mise.lock`, through native `mise ls --json --current --locked node`                | The single exact locked version   |
+| `npm`    | None; npm ships with Node.js                                                        | `bundled`, the planned Node's npm |
+
+A missing, malformed or ambiguous version fails planning. `.python-version`
+projects the locked Python, and the HK `python-mise-authority` step keeps it
+equal to `mise.lock`. These files are dimension inputs, not new selection
+inputs: `mise.lock` is already a caller source for every .NET consumer, and an
+inconsistent `.python-version` fails conformance under `Validate`.
+
+The group key is the sorted declared names joined by `+`, or `none`.
+`ci caller-dotnet select` also writes the group list: each distinct key in the
+plan with its planned versions, plus `none`, so the matrix is never empty and
+successful empty work stays valid. The `scope` job publishes it as the
+`dotnet_groups` output.
+
+`dotnet-tests` becomes a matrix over that output with `fail-fast: false`, named
+`.NET group (<key>)`. The names stay stable per tool set and are not required
+checks; `Validate` gates every group. A group runs `actions/setup-python` with
+the planned Python version when `python` is declared, and `actions/setup-node`
+with the planned Node.js version when `node` is declared. It does not install
+tools through mise. `ci caller-dotnet execute` takes the group key, executes only
+the checks of that group (package preset checks belong to `none`) in one test
+session, and the job uploads `dotnet-group-results-<key>`.
+
+Before its build session, the executor validates the provisioned tools and
+fails closed. It resolves each declared tool on the job `PATH`:
+`python --version` must print `Python <version>`, `node --version` must print
+`v<version>`, and `npm` must resolve in the directory of the validated `node`.
+It then removes from the session `PATH` every directory that resolves `python`,
+`python3`, `node` or `npm` through `PATHEXT`, except the directories of
+validated declared tools. The `none` group launches none of these tools and
+keeps none of those directories. A missing tool, different version or npm
+location fails the group before its build, naming the tool, expected value,
+actual value and path. This covers `PATH` resolution only: it makes no claim
+about absolute paths, the Windows `py` launcher or registry discovery. Because
+npm ships beside Node.js, a group that declares `node` without `npm` can still
+resolve npm.
+
+A `dotnet-results` job, named `.NET results`, needs `scope` and `dotnet-tests`,
+runs unless cancelled and executes `ci caller-dotnet join`. The join downloads
+the original plan and every `dotnet-group-results-*` artifact. It requires
+exactly one result set for each planned group and no other; each set covers
+exactly its group's checks, once each. It then collects the union against the
+original plan through the existing result collector. `Validate` needs both
+`dotnet-tests` and `dotnet-results`.
+
+Planning failure fails `scope`, and no group runs. A failed, cancelled or
+missing group leaves failed or missing results. Extra, duplicated or misplaced
+results fail the join even when their statuses passed. Any of these fails
+`Validate`.
+
+Execution grouping starts only after the `main` ruleset no longer names
+`Build & Test (.NET 10)`. Until then, `dotnet-tests` keeps that name and runs
+the whole plan in one job. Qualify the declaration and version reads, including
+their failure cases; plan reading; partition and exact join with missing,
+extra, duplicated, misplaced, failed and cancelled groups; version readback and
+`PATH` removal; and a hosted run in which the `none` group passes and each
+declaring project runs against its locked versions.
+
 ## Control-Test Input Routing
 
 Root CI connects the
 [control-test resource consumer](#control-test-resource-consumer)
 to root CI. Run native evaluation and final selection in the existing `scope`
 job on Windows, keeping its job name, outputs, downstream guards and final
-`ci-scope` artifact. Keep `Build & Test (.NET 10)` as the sole general .NET test
-executor. This co-location needs no extra resource producer job, and the
-comparison/resource response does not cross a job boundary: only the concrete
+`ci-scope` artifact. Keep `dotnet-tests`, with its
+[tool groups](#external-tool-dimension), as the sole general .NET test executor.
+This co-location needs no extra resource producer job, and the comparison/resource
+response does not cross a job boundary: only the concrete
 receiving process in the scope job consumes it.
 
 Prepare the selected candidate control application once using its pinned SDK and
